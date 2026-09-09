@@ -14,7 +14,7 @@ use ratatui::{
 
 use crate::{
     app::App,
-    picker::{Picker, PickerItem, PickerLayout},
+    component::picker::{Picker, PickerItem, PickerLayout},
     theme::Theme,
     ui::{drop_from_left, editor::SCROLLBAR_WIDTH, fill, put, text_width},
 };

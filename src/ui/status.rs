@@ -14,7 +14,7 @@ use crate::{
     buffer::Buffer,
     icons,
     lsp::ServerState,
-    picker::Picker,
+    component::picker::Picker,
     theme::Theme,
     ui::{fill, text_width, truncate_from_left, write},
 };

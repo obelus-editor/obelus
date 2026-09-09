@@ -11,6 +11,7 @@
 pub mod app;
 pub mod buffer;
 pub mod command;
+pub mod component;
 pub mod coordinates;
 pub mod event;
 pub mod icons;
@@ -18,7 +19,6 @@ pub mod jump;
 pub mod keymap;
 pub mod logging;
 pub mod lsp;
-pub mod picker;
 pub mod syntax;
 pub mod text;
 pub mod theme;

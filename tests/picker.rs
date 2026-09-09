@@ -5,8 +5,8 @@ mod support;
 use crossterm::event::KeyCode;
 use obelus::{
     app::App,
+    component::picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue},
     event::Event,
-    picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue},
 };
 use support::{press, press_control, type_text};
 
@@ -1134,7 +1134,7 @@ fn a_file_is_previewed_from_its_first_line() {
 /// again on every row.
 #[test]
 fn a_place_preview_marks_the_symbol_it_is_about() {
-    use obelus::picker::{PickerItem, PickerLayout, PickerValue};
+    use obelus::component::picker::{PickerItem, PickerLayout, PickerValue};
 
     let mut app = app();
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/long.rs");
@@ -1289,7 +1289,7 @@ fn the_preview_stops_at_the_top_of_the_file() {
 /// one in a list of references.
 #[test]
 fn moving_the_selection_forgets_the_scrolling() {
-    use obelus::picker::{PickerItem, PickerLayout, PickerValue};
+    use obelus::component::picker::{PickerItem, PickerLayout, PickerValue};
 
     let path =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
@@ -1374,7 +1374,7 @@ fn a_key_with_an_unknown_modifier_falls_through() {
 /// room on the half nobody asked for.
 #[test]
 fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
-    use obelus::picker::{PickerItem, PickerLayout, PickerValue};
+    use obelus::component::picker::{PickerItem, PickerLayout, PickerValue};
 
     let path =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");

@@ -28,7 +28,7 @@ use crate::{
         client::{Client, Reply},
         position,
     },
-    picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files},
+    component::picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files},
     syntax::{LanguageId, highlight::Highlights, parse::SyntaxState, tags},
     theme::{Theme, builtin},
     ui,
