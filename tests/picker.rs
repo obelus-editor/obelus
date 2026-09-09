@@ -1031,6 +1031,11 @@ fn control_paging_scrolls_the_preview_and_not_the_list() {
     );
 
     support::check("preview_scrolled_60x22", &scrolled);
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 60, 22)),
+        support::text_block(&scrolled),
+        "the scroll did not survive the next frame"
+    );
 
     support::press_control_key(&mut app, KeyCode::PageUp);
     assert_eq!(
@@ -1150,4 +1155,68 @@ fn a_key_with_an_unknown_modifier_falls_through() {
         "the selection moved"
     );
     assert_eq!(picker.query(), "", "something reached the prompt");
+}
+
+/// A place in the middle of a file is previewed in the middle of the preview.
+/// The rows above a definition -- its signature, its doc comment -- are what
+/// the reader is looking for, and putting the line at the top spends half the
+/// room on the half nobody asked for.
+#[test]
+fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
+    use obelus::picker::{PickerItem, PickerLayout, PickerValue};
+
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let mut app = app();
+    app.open_picker_for_test(
+        vec![PickerItem {
+            icon: None,
+            label: "many_lines.rs:31".to_string(),
+            detail: None,
+            trailing: None,
+            value: PickerValue::Place {
+                path,
+                line: 30,
+                character: 10,
+                end_line: 30,
+                end_character: 17,
+            },
+        }],
+        PickerLayout::FullArea,
+    );
+
+    // Ten rows of list, a rule, and twenty-two rows of preview, so the
+    // eleventh of them is the middle.
+    let dump = support::render(&mut app, 60, 34);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    assert!(
+        rows[11 + 11].contains("LINE_30"),
+        "the place is not in the middle of the preview:\n{dump}"
+    );
+    assert!(
+        rows[11].contains("LINE_19"),
+        "what leads up to it is not there:\n{dump}"
+    );
+    support::check("preview_middle_60x34", &dump);
+
+    // Up from the middle of a file: the only case that pins the direction
+    // down. Reaching the top of the file leaves the offset at zero, and an
+    // offset of zero is the same view whichever way the rows were counted.
+    support::press_control_key(&mut app, KeyCode::PageUp);
+    let up = support::render(&mut app, 60, 34);
+    let rows: Vec<&str> = support::text_block(&up)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    assert!(
+        !rows.iter().any(|row| row.contains("LINE_30")),
+        "paging up did not leave the place behind:\n{up}"
+    );
+    assert!(
+        rows[11].contains("Forty lines"),
+        "paging up did not reach the top of the file:\n{up}"
+    );
 }

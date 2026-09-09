@@ -571,6 +571,9 @@ impl App {
         self.open(path);
 
         let Some(id) = self.current else { return };
+        // Before the buffer is borrowed: the area depends on which file is
+        // current, which the open above has just settled.
+        let area = self.text_area();
         let Some(buffer) = self.buffers.get_mut(id.get()) else {
             return;
         };
@@ -583,6 +586,7 @@ impl App {
         let at = lsp_types::Position { line, character };
         let (line, column) = position::from_lsp(buffer.text(), at, &encoding);
         buffer.place_cursor(line, column);
+        buffer.center_on_cursor(area);
 
         if let Some(from) = from {
             self.jumps.push(from);
@@ -622,8 +626,12 @@ impl App {
             return;
         }
         self.current = Some(to.buffer);
+        let area = self.text_area();
         if let Some(buffer) = self.buffers.get_mut(to.buffer.get()) {
             buffer.place_cursor(to.line, to.column);
+            // Arriving, like the jump that led here: the line the reader left
+            // deserves its context as much as the definition did.
+            buffer.center_on_cursor(area);
         }
     }
 
@@ -847,17 +855,22 @@ impl App {
             preview.scrolled = 0;
         }
 
-        // Two lines above the line in question, so there is something to read
-        // it in the context of, and then wherever the reader has scrolled to.
+        // The line in question in the middle, the same as arriving at it by
+        // jumping, and then wherever the reader has scrolled to. A preview is
+        // read for the context around a line, so putting the line at the top
+        // spends half the room on the half that was not asked for.
         let target = LineNumber::new(marked.line as usize);
-        let start = target.saturating_sub(2);
-        let top = if preview.scrolled >= 0 {
-            start.saturating_add(preview.scrolled.unsigned_abs())
-        } else {
-            start.saturating_sub(preview.scrolled.unsigned_abs())
+        let text = TextArea {
+            width: area
+                .width
+                .saturating_sub(ui::editor::gutter_width(preview.buffer.text().line_count())),
+            height: area.height,
         };
-        preview.buffer.place_viewport(top);
         preview.buffer.place_cursor(target, CharColumn::new(0));
+        preview.buffer.center_on_cursor(text);
+        // Stored back, so rows the file does not have are not banked against
+        // the next press the other way.
+        preview.scrolled = preview.buffer.scroll_rows(preview.scrolled, text);
         preview.marked = marked.resolve(preview.buffer.text(), &encoding);
 
         let range = visible_bytes(&preview.buffer, area.height);
@@ -882,10 +895,9 @@ impl App {
             return;
         };
         let rows = isize::try_from(area.height.max(1)).unwrap_or(1);
-        // Clamped so the top of the file is as far up as it goes; the far end
-        // is clamped by the viewport itself, which cannot pass the last line.
-        let anchor = isize::try_from(preview.target.0.saturating_sub(2)).unwrap_or(isize::MAX);
-        preview.scrolled = (preview.scrolled + pages * rows).max(-anchor);
+        // Not clamped here: what the file can actually give is known when it
+        // is drawn, and `refresh_preview` stores that back.
+        preview.scrolled += pages * rows;
     }
 
     /// The file, and the part of it, the picker's selection is about.

@@ -11,16 +11,16 @@ screen 60x22  editor 60x21  status 60x1
  8|                                                            
  9|                                                            
 10|────────────────────────────────────────────────────────────
-11|  11 pub const LINE_10: u32 = 10;                           
-12|  12 pub const LINE_11: u32 = 11;                           
-13|  13 pub const LINE_12: u32 = 12;                           
-14|  14 pub const LINE_13: u32 = 13;                           
-15|  15 pub const LINE_14: u32 = 14;                           
-16|  16 pub const LINE_15: u32 = 15;                           
-17|  17 pub const LINE_16: u32 = 16;                           
-18|  18 pub const LINE_17: u32 = 17;                           
-19|  19 pub const LINE_18: u32 = 18;                           
-20|  20 pub const LINE_19: u32 = 19;                           
+11|  10 pub const LINE_09: u32 = 9;                            
+12|  11 pub const LINE_10: u32 = 10;                           
+13|  12 pub const LINE_11: u32 = 11;                           
+14|  13 pub const LINE_12: u32 = 12;                           
+15|  14 pub const LINE_13: u32 = 13;                           
+16|  15 pub const LINE_14: u32 = 14;                           
+17|  16 pub const LINE_15: u32 = 15;                           
+18|  17 pub const LINE_16: u32 = 16;                           
+19|  18 pub const LINE_17: u32 = 17;                           
+20|  19 pub const LINE_18: u32 = 18;                           
 21| >                                                        1 
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -34,7 +34,7 @@ screen 60x22  editor 60x21  status 60x1
  8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
  9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-11|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+11|bbccbdddbdddddbeeeeeeefbeeebbbgfbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 12|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
 13|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
 14|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb

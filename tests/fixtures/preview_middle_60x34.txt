@@ -1,0 +1,84 @@
+screen 60x34  editor 60x33  status 60x1
+-- text --
+ 0| many_lines.rs:31                                           
+ 1|                                                            
+ 2|                                                            
+ 3|                                                            
+ 4|                                                            
+ 5|                                                            
+ 6|                                                            
+ 7|                                                            
+ 8|                                                            
+ 9|                                                            
+10|────────────────────────────────────────────────────────────
+11|  20 pub const LINE_19: u32 = 19;                           
+12|  21 pub const LINE_20: u32 = 20;                           
+13|  22 pub const LINE_21: u32 = 21;                           
+14|  23 pub const LINE_22: u32 = 22;                           
+15|  24 pub const LINE_23: u32 = 23;                           
+16|  25 pub const LINE_24: u32 = 24;                           
+17|  26 pub const LINE_25: u32 = 25;                           
+18|  27 pub const LINE_26: u32 = 26;                           
+19|  28 pub const LINE_27: u32 = 27;                           
+20|  29 pub const LINE_28: u32 = 28;                           
+21|  30 pub const LINE_29: u32 = 29;                           
+22|  31 pub const LINE_30: u32 = 30;                           
+23|  32 pub const LINE_31: u32 = 31;                           
+24|  33 pub const LINE_32: u32 = 32;                           
+25|  34 pub const LINE_33: u32 = 33;                           
+26|  35 pub const LINE_34: u32 = 34;                           
+27|  36 pub const LINE_35: u32 = 35;                           
+28|  37 pub const LINE_36: u32 = 36;                           
+29|  38 pub const LINE_37: u32 = 37;                           
+30|  39 pub const LINE_38: u32 = 38;                           
+31|  40                                                        
+32|                                                            
+33| >                                                        1 
+-- style --
+ 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 2|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 5|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 7|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+11|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+12|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+13|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+14|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+15|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+16|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+17|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+18|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+19|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+20|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+21|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+22|bbffbdddbdddddbhhhhhhhfbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+23|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+24|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+25|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+26|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+27|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+28|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+29|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+30|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+31|bbccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+32|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+33|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiji
+-- legend --
+a fg=#e4e4e7 bg=#27272a
+b fg=#e4e4e7 bg=#18181b
+c fg=#52525b bg=#18181b
+d fg=#c084fc bg=#18181b
+e fg=#fbbf24 bg=#18181b
+f fg=#a1a1aa bg=#18181b
+g fg=#f472b6 bg=#18181b
+h fg=#fbbf24 bg=#1e3a5f
+i fg=#d4d4d8 bg=#27272a
+j fg=#52525b bg=#27272a
+-- cursor --
+3,33

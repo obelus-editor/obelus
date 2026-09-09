@@ -278,16 +278,6 @@ impl Buffer {
         // a line.
     }
 
-    /// Puts the top of the screen at a line outright.
-    ///
-    /// For a preview, which arrives at a place rather than scrolling to it:
-    /// scrolling the least amount would put the line on the bottom row, and
-    /// a preview is read from the top.
-    pub fn place_viewport(&mut self, top: LineNumber) {
-        self.viewport.top = self.text.clamp_line(top);
-        self.viewport.top_row = 0;
-    }
-
     /// Moves the cursor.
     ///
     /// Up and down step one *visual* row, not one line. With wrapping on, a
@@ -422,6 +412,53 @@ impl Buffer {
             at = next;
         }
         None
+    }
+
+    /// Puts the cursor's row in the middle of the text area.
+    ///
+    /// For arriving somewhere rather than scrolling to it. Scrolling the
+    /// least amount is right for a cursor the reader is moving, but it leaves
+    /// a jumped-to definition on the bottom row with all of its context off
+    /// the top -- and the context above a definition is the half you came for.
+    ///
+    /// Near the top of a file the row simply stays where it is: stepping back
+    /// stops at the first row, so the screen is not padded with blank rows to
+    /// put line one in the middle.
+    pub fn center_on_cursor(&mut self, area: TextArea) {
+        let width = area.width.max(1);
+        let (cursor_row, _) =
+            self.text
+                .visual_position(self.cursor.line, self.cursor.column, width);
+        let above = isize::try_from(area.height / 2).unwrap_or(isize::MAX);
+        let (top, top_row) = self.step_rows(self.cursor.line, cursor_row, -above, width);
+        self.viewport.top = top;
+        self.viewport.top_row = top_row;
+    }
+
+    /// Moves the viewport by whole visual rows, leaving the cursor where it
+    /// is, and answers how many rows it actually moved.
+    ///
+    /// The answer is the point. It stops at the ends of the document, so a
+    /// caller keeping a scroll offset can store what came back and never
+    /// accumulate rows that do not exist: without that, pressing page-up ten
+    /// times at the top of a file means pressing page-down ten times before
+    /// anything moves.
+    pub fn scroll_rows(&mut self, rows: isize, area: TextArea) -> isize {
+        let width = area.width.max(1);
+        let step = if rows > 0 { 1 } else { -1 };
+        let mut at = (self.viewport.top, self.viewport.top_row);
+        let mut moved = 0;
+        for _ in 0..rows.unsigned_abs() {
+            let next = self.step_rows(at.0, at.1, step, width);
+            if next == at {
+                break;
+            }
+            at = next;
+            moved += step;
+        }
+        self.viewport.top = at.0;
+        self.viewport.top_row = at.1;
+        moved
     }
 
     /// Scrolls the least amount that brings the cursor on screen.

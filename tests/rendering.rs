@@ -521,3 +521,110 @@ fn a_motion_with_an_unknown_modifier_does_not_move() {
         );
     }
 }
+
+/// Arriving at a place a server named puts it in the middle of the screen.
+/// Scrolling the least amount would leave the definition on the bottom row
+/// with everything above it -- its signature, its doc comment -- off screen,
+/// which is the half the reader came for.
+#[test]
+fn a_jump_lands_in_the_middle_of_the_screen() {
+    use obelus::picker::{PickerItem, PickerLayout, PickerValue};
+
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    app.open_picker_for_test(
+        vec![PickerItem {
+            icon: None,
+            label: "many_lines.rs:31".to_string(),
+            detail: None,
+            trailing: None,
+            value: PickerValue::Place {
+                path,
+                line: 30,
+                character: 10,
+                end_line: 30,
+                end_character: 17,
+            },
+        }],
+        PickerLayout::FullArea,
+    );
+    press(&mut app, KeyCode::Enter);
+
+    // Eleven rows of text under the status bar, so the middle one is the
+    // sixth: five rows of what leads up to the definition.
+    let dump = support::render(&mut app, 40, 12);
+    assert_eq!(support::cursor_line(&dump), "15,5", "{dump}");
+
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    assert!(
+        rows[5].contains("LINE_30"),
+        "the definition is not there:\n{dump}"
+    );
+    assert!(
+        rows[0].contains("LINE_25"),
+        "what leads up to it is not there:\n{dump}"
+    );
+}
+
+/// Coming back from a jump is arriving too, so the line the reader left gets
+/// the middle of the screen as well. Scrolling the least amount would put it
+/// on the top row, which is the same loss of context the other way up.
+#[test]
+fn a_jump_back_lands_in_the_middle_too() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    use obelus::picker::{PickerItem, PickerLayout, PickerValue};
+
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    // Away from line one, where centring has nowhere to go and would look
+    // the same as not centring at all. Eight *visual* rows, which is line
+    // eight: the doc comment at the top wraps into two of them.
+    for _ in 0..8 {
+        press(&mut app, KeyCode::Down);
+    }
+    app.open_picker_for_test(
+        vec![PickerItem {
+            icon: None,
+            label: "many_lines.rs:31".to_string(),
+            detail: None,
+            trailing: None,
+            value: PickerValue::Place {
+                path,
+                line: 30,
+                character: 10,
+                end_line: 30,
+                end_character: 17,
+            },
+        }],
+        PickerLayout::FullArea,
+    );
+    press(&mut app, KeyCode::Enter);
+
+    app.handle(obelus::event::Event::Key(KeyEvent::new(
+        KeyCode::Left,
+        KeyModifiers::ALT,
+    )));
+    let dump = support::render(&mut app, 40, 12);
+    assert_eq!(support::cursor_line(&dump), "5,5", "{dump}");
+
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    assert!(
+        rows[5].contains("LINE_07"),
+        "the line left behind is not in the middle:\n{dump}"
+    );
+    // And the rows above it are the ones the least amount of scrolling would
+    // have thrown away.
+    assert!(rows[0].contains("LINE_02"), "{dump}");
+}
