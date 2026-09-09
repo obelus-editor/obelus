@@ -208,6 +208,8 @@ pub struct Theme {
     /// Behind the run of characters a preview is about — the symbol a
     /// language server named.
     pub marked_background: Color,
+    /// Behind the characters selected by the reader.
+    pub selection_background: Color,
     /// Behind the bracket under the cursor and the one that closes it.
     ///
     /// Its own colour rather than [`Theme::marked_background`]: one appears

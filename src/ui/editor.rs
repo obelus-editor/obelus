@@ -59,6 +59,8 @@ pub struct EditorView<'a> {
     theme: &'a Theme,
     /// A run of characters to mark, for a preview of somewhere in particular.
     marked: Option<Span>,
+    /// The characters selected in the file being read.
+    selection: Option<Span>,
 }
 
 impl EditorView<'_> {
@@ -89,6 +91,7 @@ impl<'a> EditorView<'a> {
             highlights: app.highlights(),
             theme: app.theme(),
             marked: None,
+            selection: app.current_buffer().and_then(Buffer::selection),
         }
     }
 
@@ -114,6 +117,7 @@ impl<'a> EditorView<'a> {
             highlights,
             theme,
             marked,
+            selection: None,
         }
     }
 }
@@ -199,6 +203,7 @@ impl Widget for EditorView<'_> {
                         highlights: self.highlights,
                         theme: self.theme,
                         marked: self.marked,
+                        selection: self.selection,
                         brackets,
                     },
                 );
@@ -268,6 +273,8 @@ struct Painting<'a> {
     theme: &'a Theme,
     /// The run a preview is about.
     marked: Option<Span>,
+    /// The characters the reader selected in the file being read.
+    selection: Option<Span>,
     /// The bracket under the cursor and its partner.
     brackets: Option<(ByteOffset, ByteOffset)>,
 }
@@ -309,6 +316,12 @@ fn draw_row(
             .is_some_and(|marked| marked.contains(line, CharColumn::new(column)))
         {
             style = style.bg(painting.theme.marked_background);
+        }
+        if painting
+            .selection
+            .is_some_and(|selection| selection.contains(line, CharColumn::new(column)))
+        {
+            style = style.bg(painting.theme.selection_background);
         }
         // The bracket the cursor is on, and its partner. After the mark, so
         // a symbol a preview is about keeps its own background where the two

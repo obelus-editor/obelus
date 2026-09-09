@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 
 use crate::{
-    coordinates::{CharColumn, DisplayColumn, LineNumber},
+    coordinates::{CharColumn, DisplayColumn, LineNumber, Span},
     syntax::{
         LanguageId,
         parse::{self, SyntaxState},
@@ -190,6 +190,12 @@ pub struct Buffer {
     /// had, and a source file down a pipe costs nothing.
     version: i32,
     cursor: Cursor,
+    /// Where the current selection started, if the reader is extending one.
+    ///
+    /// The cursor is the other end. Keeping the anchor rather than a range
+    /// means changing direction naturally shrinks the selection and can pass
+    /// back through it without a special case.
+    selection_anchor: Option<Cursor>,
     /// Whether the viewport has been scrolled away from the cursor on
     /// purpose.
     ///
@@ -233,6 +239,7 @@ impl Buffer {
                 column: CharColumn::new(0),
                 remembered_cell: DisplayColumn::new(0),
             },
+            selection_anchor: None,
             detached: false,
             viewport: Viewport {
                 top: LineNumber::new(0),
@@ -360,6 +367,24 @@ impl Buffer {
         self.cursor
     }
 
+    /// The selected characters, if the cursor has moved away from its anchor.
+    #[must_use]
+    pub fn selection(&self) -> Option<Span> {
+        let anchor = self.selection_anchor?;
+        let (start, end) = if (anchor.line, anchor.column) <= (self.cursor.line, self.cursor.column)
+        {
+            (anchor, self.cursor)
+        } else {
+            (self.cursor, anchor)
+        };
+        ((start.line, start.column) != (end.line, end.column)).then_some(Span {
+            line: start.line,
+            column: start.column,
+            end_line: end.line,
+            end_column: end.column,
+        })
+    }
+
     /// What part of the document is on screen.
     #[must_use]
     pub const fn viewport(&self) -> Viewport {
@@ -374,6 +399,7 @@ impl Buffer {
         // Being put somewhere is arriving, and arriving ends a detour: every
         // caller of this follows it by saying where the screen should be.
         self.detached = false;
+        self.selection_anchor = None;
         self.cursor.line = self.text.clamp_line(line);
         self.cursor.column = self.text.clamp_column(self.cursor.line, column);
         // The remembered cell is recomputed on the next vertical move, which
@@ -394,6 +420,20 @@ impl Buffer {
     /// is and the screen comes back on the next move. See
     /// [`Buffer::scroll_by`].
     pub fn page(&mut self, pages: isize, area: TextArea) {
+        self.page_with_selection(pages, area, false);
+    }
+
+    /// Moves the viewport by whole screenfuls and extends the selection.
+    pub fn extend_selection_by_page(&mut self, pages: isize, area: TextArea) {
+        self.page_with_selection(pages, area, true);
+    }
+
+    fn page_with_selection(&mut self, pages: isize, area: TextArea, extend_selection: bool) {
+        if extend_selection {
+            self.selection_anchor.get_or_insert(self.cursor);
+        } else {
+            self.selection_anchor = None;
+        }
         let width = area.width.max(1);
         // Where on the screen the cursor is now, which is what has to hold.
         // Off screen -- after a wheel scroll -- counts as the top row: the
@@ -481,9 +521,28 @@ impl Buffer {
     /// the reader at the top or bottom edge of a screen they had left, which
     /// is the worst of both places.
     pub fn move_cursor(&mut self, motion: Motion, area: TextArea) {
+        self.move_cursor_with_selection(motion, area, false);
+    }
+
+    /// Moves the cursor and extends the selection from its original position.
+    pub fn extend_selection(&mut self, motion: Motion, area: TextArea) {
+        self.move_cursor_with_selection(motion, area, true);
+    }
+
+    fn move_cursor_with_selection(
+        &mut self,
+        motion: Motion,
+        area: TextArea,
+        extend_selection: bool,
+    ) {
+        if extend_selection {
+            self.selection_anchor.get_or_insert(self.cursor);
+        } else {
+            self.selection_anchor = None;
+        }
         if self.detached {
             self.detached = false;
-            self.move_cursor(motion, area);
+            self.move_cursor_with_selection(motion, area, extend_selection);
             self.center_on_cursor(area);
             return;
         }

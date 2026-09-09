@@ -54,6 +54,11 @@ pub fn press_control(app: &mut App, character: char) {
     )));
 }
 
+/// Sends a key with shift held.
+pub fn press_shift(app: &mut App, code: KeyCode) {
+    app.handle(Event::Key(KeyEvent::new(code, KeyModifiers::SHIFT)));
+}
+
 /// Sends a key with control held.
 pub fn press_control_key(app: &mut App, code: KeyCode) {
     app.handle(Event::Key(KeyEvent::new(code, KeyModifiers::CONTROL)));

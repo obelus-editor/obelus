@@ -7,7 +7,7 @@ use obelus::{
     app::App,
     coordinates::{CharColumn, LineNumber},
 };
-use support::press;
+use support::{press, press_shift};
 
 /// The screen these tests use unless they say otherwise.
 const WIDTH: u16 = 40;
@@ -215,6 +215,98 @@ fn the_cursor_follows_the_keys() {
     // five columns before that. The tab is why the two numbers differ.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert_eq!(support::cursor_line(&dump), "13,1", "{dump}");
+}
+
+/// Shift extends the selection from where the reader began, while an ordinary
+/// motion starts a new place and clears it.
+#[test]
+fn shift_arrows_select_and_plain_motion_clears_the_selection() {
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    press_shift(&mut app, KeyCode::Right);
+    press_shift(&mut app, KeyCode::Right);
+
+    let selected = app.current_buffer().and_then(|buffer| buffer.selection());
+    assert_eq!(
+        selected,
+        Some(obelus::coordinates::Span {
+            line: LineNumber::new(0),
+            column: CharColumn::new(0),
+            end_line: LineNumber::new(0),
+            end_column: CharColumn::new(2),
+        })
+    );
+
+    let selected_dump = support::render(&mut app, WIDTH, HEIGHT);
+    let style_at = |dump: &str, x: usize| {
+        support::style_block(dump)
+            .lines()
+            .find(|row| !row.is_empty())
+            .and_then(|row| row.chars().nth(3 + x))
+            .expect("a style cell")
+    };
+    assert_eq!(style_at(&selected_dump, 5), style_at(&selected_dump, 6));
+    assert_ne!(style_at(&selected_dump, 5), style_at(&selected_dump, 7));
+
+    press(&mut app, KeyCode::Right);
+    let buffer = app.current_buffer().expect("a buffer");
+    assert!(
+        buffer.selection().is_none(),
+        "the selection survived a plain move"
+    );
+    assert_eq!(buffer.cursor().column, CharColumn::new(3));
+}
+
+/// Shift applies equally to the line and document-sized motions. A page moves
+/// the cursor, so it extends a selection rather than merely moving the view.
+#[test]
+fn shift_home_end_and_paging_adjust_the_selection() {
+    let mut line = app_on_screen(WIDTH, HEIGHT);
+    for _ in 0..3 {
+        press(&mut line, KeyCode::Right);
+    }
+    press_shift(&mut line, KeyCode::Home);
+    assert_eq!(
+        line.current_buffer().and_then(|buffer| buffer.selection()),
+        Some(obelus::coordinates::Span {
+            line: LineNumber::new(0),
+            column: CharColumn::new(0),
+            end_line: LineNumber::new(0),
+            end_column: CharColumn::new(3),
+        })
+    );
+    press_shift(&mut line, KeyCode::End);
+    assert_eq!(
+        line.current_buffer()
+            .expect("a buffer")
+            .selection()
+            .expect("a selection")
+            .end_column,
+        line.current_buffer()
+            .expect("a buffer")
+            .text()
+            .line_length(LineNumber::new(0))
+    );
+
+    let mut page = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut page, 40, 6);
+    press_shift(&mut page, KeyCode::PageDown);
+    let selected = page
+        .current_buffer()
+        .and_then(|buffer| buffer.selection())
+        .expect("shift page down selected text");
+    assert!(selected.end_line > selected.line, "{selected:?}");
+
+    let mut page_up = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut page_up, 40, 6);
+    press(&mut page_up, KeyCode::PageDown);
+    press_shift(&mut page_up, KeyCode::PageUp);
+    assert!(
+        page_up
+            .current_buffer()
+            .and_then(|buffer| buffer.selection())
+            .is_some(),
+        "shift page up did not select text"
+    );
 }
 
 /// Nothing to put a cursor in.

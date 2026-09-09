@@ -1977,21 +1977,29 @@ impl App {
         // Paging the file being read, which is scrolling and not a motion:
         // the cursor stays where the reader left it.
         if self.picker.is_none()
-            && let Some(pages) = editor_paging(&key)
+            && let Some((pages, extend_selection)) = editor_paging(&key)
         {
             let area = self.text_area();
             if let Some(buffer) = self.current_buffer_mut() {
-                buffer.page(pages, area);
+                if extend_selection {
+                    buffer.extend_selection_by_page(pages, area);
+                } else {
+                    buffer.page(pages, area);
+                }
             }
             return;
         }
 
         if self.picker.is_none()
-            && let Some(motion) = motion_for(&key)
+            && let Some((motion, extend_selection)) = motion_for(&key)
         {
             let area = self.text_area();
             if let Some(buffer) = self.current_buffer_mut() {
-                buffer.move_cursor(motion, area);
+                if extend_selection {
+                    buffer.extend_selection(motion, area);
+                } else {
+                    buffer.move_cursor(motion, area);
+                }
             }
             return;
         }
@@ -2214,13 +2222,12 @@ fn view_step(key: &KeyEvent, height: u16) -> Option<isize> {
 ///
 /// Separate from the motions because paging is not one: what moves is the
 /// window on the file, not the place in it.
-fn editor_paging(key: &KeyEvent) -> Option<isize> {
-    if !keymap::modifiers_of(key)?.is_empty() {
-        return None;
-    }
-    match key.code {
-        KeyCode::PageDown => Some(1),
-        KeyCode::PageUp => Some(-1),
+fn editor_paging(key: &KeyEvent) -> Option<(isize, bool)> {
+    match (keymap::modifiers_of(key)?, key.code) {
+        (KeyModifiers::NONE, KeyCode::PageDown) => Some((1, false)),
+        (KeyModifiers::NONE, KeyCode::PageUp) => Some((-1, false)),
+        (KeyModifiers::SHIFT, KeyCode::PageDown) => Some((1, true)),
+        (KeyModifiers::SHIFT, KeyCode::PageUp) => Some((-1, true)),
         _ => None,
     }
 }
@@ -2230,7 +2237,7 @@ fn editor_paging(key: &KeyEvent) -> Option<isize> {
 /// A modifier obelus has no meaning for disqualifies the key: `ctrl+left` is a
 /// word motion it does not have yet, and treating it as a plain left would be
 /// a wrong answer rather than a missing one.
-fn motion_for(key: &KeyEvent) -> Option<Motion> {
+fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
     // Judged the same way the key table judges, so a key means the same thing
     // in both places or nothing in both places.
     let modifiers = keymap::modifiers_of(key)?;
@@ -2239,15 +2246,24 @@ fn motion_for(key: &KeyEvent) -> Option<Motion> {
         // Not `ctrl+PageUp`/`ctrl+PageDown`: those mean previous and next tab
         // almost everywhere, and the nearest thing obelus has to a tab is a
         // buffer, so they are worth leaving free.
-        (KeyModifiers::CONTROL, KeyCode::Home) => Some(Motion::DocumentStart),
-        (KeyModifiers::CONTROL, KeyCode::End) => Some(Motion::DocumentEnd),
+        (KeyModifiers::CONTROL, KeyCode::Home) => Some((Motion::DocumentStart, false)),
+        (KeyModifiers::CONTROL, KeyCode::End) => Some((Motion::DocumentEnd, false)),
+        (KeyModifiers::SHIFT, code) => match code {
+            KeyCode::Left => Some((Motion::Left, true)),
+            KeyCode::Right => Some((Motion::Right, true)),
+            KeyCode::Up => Some((Motion::Up, true)),
+            KeyCode::Down => Some((Motion::Down, true)),
+            KeyCode::Home => Some((Motion::LineStart, true)),
+            KeyCode::End => Some((Motion::LineEnd, true)),
+            _ => None,
+        },
         (KeyModifiers::NONE, code) => match code {
-            KeyCode::Left => Some(Motion::Left),
-            KeyCode::Right => Some(Motion::Right),
-            KeyCode::Up => Some(Motion::Up),
-            KeyCode::Down => Some(Motion::Down),
-            KeyCode::Home => Some(Motion::LineStart),
-            KeyCode::End => Some(Motion::LineEnd),
+            KeyCode::Left => Some((Motion::Left, false)),
+            KeyCode::Right => Some((Motion::Right, false)),
+            KeyCode::Up => Some((Motion::Up, false)),
+            KeyCode::Down => Some((Motion::Down, false)),
+            KeyCode::Home => Some((Motion::LineStart, false)),
+            KeyCode::End => Some((Motion::LineEnd, false)),
             _ => None,
         },
         _ => None,

@@ -22,6 +22,7 @@ pub const DARK: Theme = Theme {
     picker_selected_background: Color::Rgb(39, 39, 42),
     picker_match: Color::Rgb(96, 165, 250),
     marked_background: Color::Rgb(30, 58, 95),
+    selection_background: Color::Rgb(49, 46, 129),
     // Grey rather than a hue: it sits under whatever colour the bracket
     // already has, and a coloured background under a coloured glyph is two
     // hues fighting.
@@ -59,6 +60,7 @@ pub const LIGHT: Theme = Theme {
     picker_selected_background: Color::Rgb(228, 228, 231),
     picker_match: Color::Rgb(29, 78, 216),
     marked_background: Color::Rgb(191, 219, 254),
+    selection_background: Color::Rgb(224, 231, 255),
     bracket_background: Color::Rgb(212, 212, 216),
     syntax: SyntaxTheme {
         attribute: Color::Rgb(194, 65, 12),
