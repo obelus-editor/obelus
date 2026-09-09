@@ -10,6 +10,7 @@
 
 pub mod app;
 pub mod buffer;
+pub mod clipboard;
 pub mod command;
 pub mod component;
 pub mod coordinates;

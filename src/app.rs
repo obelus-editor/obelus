@@ -1456,7 +1456,12 @@ impl App {
             return;
         };
 
-        match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.set_text(text)) {
+        // Handed to the terminal, which owns it from here: that is what
+        // makes the copy outlive obelus and what makes it work over ssh. A
+        // terminal that does not implement the sequence copies nothing and
+        // cannot say so, so the note reports what obelus did rather than
+        // what the terminal did with it.
+        match crate::clipboard::copy(&text) {
             Ok(()) => self.note = Some("copied selection".to_string()),
             Err(error) => {
                 tracing::warn!(%error, "copying the selection failed");
