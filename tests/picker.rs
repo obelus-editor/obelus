@@ -931,43 +931,131 @@ fn a_question_bound_to_a_key_is_still_left_out_without_a_server() {
     );
 }
 
-/// The whole rule, in both directions, with nothing running: every command
-/// that needs a server is left out and every command that does not is
-/// listed. The palette is the list of what obelus can be asked to do, so a
-/// row that cannot do it is worse than a missing row.
+/// The whole rule, in one place: a command is offered when it can do its job
+/// and left out when it cannot. A row that silently fails is worse than a row
+/// that is not there, and a list of twenty commands of which six do nothing
+/// here is a list nobody trusts.
 ///
-/// `lsp.restart` stays: with nothing running, starting one is exactly what
-/// it is for. `lsp.stop` goes, because there is nothing to stop.
+/// With a plain Rust file open and no server, so what goes is everything
+/// needing a server, a selection, a bracket, a history, or markdown.
 #[test]
-fn the_palette_leaves_out_exactly_what_needs_a_server() {
+fn the_palette_offers_exactly_what_can_run() {
     let mut app = app();
+    support::lay_out(&mut app, 60, 12);
     press_control(&mut app, 'p');
-    let picker = app.picker().expect("the palette is open");
-    // The list itself rather than the screen: the query goes on the status
-    // row, so a rendered dump contains the name of whatever was typed
-    // whether or not anything matched it.
-    let listed: Vec<&str> = picker.matches().map(|item| item.label.as_str()).collect();
+    let listed: Vec<String> = app
+        .picker()
+        .expect("the palette is open")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
 
-    // Named here rather than taken from `needs_server`, which is the rule
-    // under test: asking the rule what it expects makes the assertion agree
-    // with itself whatever the rule says.
-    let questions = [
+    // Named here rather than taken from `requires`, which is the rule under
+    // test: asking the rule what it expects makes the assertion agree with
+    // itself whatever the rule says.
+    for name in [
         "symbol.definition",
         "symbol.typeDefinition",
         "symbol.implementation",
         "symbol.references",
         "lsp.stop",
-    ];
-    for spec in obelus::command::ALL {
-        let expected = !questions.contains(&spec.name);
-        assert_eq!(
-            listed.contains(&spec.name),
-            expected,
-            "{} is {}in the palette with no server running: {listed:?}",
-            spec.name,
-            if expected { "not " } else { "" }
+        "selection.copy",
+        "selection.clear",
+        "go.bracket",
+        "go.back",
+        "go.forward",
+        "markdown.preview",
+    ] {
+        assert!(
+            !listed.contains(&name.to_string()),
+            "{name} was offered with nothing for it to do: {listed:?}"
         );
     }
+
+    // And everything else is there, including the two that are worth
+    // pressing precisely when nothing is running.
+    for name in [
+        "file.open",
+        "file.reload",
+        "buffer.list",
+        "buffer.close",
+        "theme.select",
+        "symbol.menu",
+        "symbol.outline",
+        "go.line",
+        "log.open",
+        "lsp.restart",
+        "app.quit",
+    ] {
+        assert!(
+            listed.contains(&name.to_string()),
+            "{name} is missing: {listed:?}"
+        );
+    }
+}
+
+/// And each condition turns its command back on when it is met. The palette
+/// is rebuilt every time it opens, so what it lists is the answer to "what
+/// can I do *now*".
+#[test]
+fn a_condition_met_puts_its_command_back() {
+    let offered = |app: &App, name: &str| {
+        app.picker()
+            .expect("the palette is open")
+            .matches()
+            .any(|item| item.label == name)
+    };
+
+    // Something selected.
+    let mut selecting = app();
+    support::lay_out(&mut selecting, 60, 12);
+    support::press_shift(&mut selecting, KeyCode::Right);
+    press_control(&mut selecting, 'p');
+    assert!(
+        offered(&selecting, "selection.copy"),
+        "a selection was not noticed"
+    );
+    assert!(offered(&selecting, "selection.clear"));
+
+    // A bracket under the cursor: `sample.rs` line one is `fn main() {`.
+    let mut bracket = app();
+    support::lay_out(&mut bracket, 60, 12);
+    for _ in 0..7 {
+        press(&mut bracket, KeyCode::Right);
+    }
+    press_control(&mut bracket, 'p');
+    assert!(offered(&bracket, "go.bracket"), "a bracket was not noticed");
+
+    // Somewhere to go back to.
+    let mut jumped = app();
+    support::lay_out(&mut jumped, 60, 12);
+    press_control(&mut jumped, 'l');
+    type_text(&mut jumped, "3");
+    press(&mut jumped, KeyCode::Enter);
+    press_control(&mut jumped, 'p');
+    assert!(offered(&jumped, "go.back"), "a jump was not noticed");
+    assert!(
+        !offered(&jumped, "go.forward"),
+        "nothing is in front until something goes back"
+    );
+
+    // A markdown file.
+    let mut markdown = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut markdown, 60, 12);
+    press_control(&mut markdown, 'p');
+    assert!(
+        offered(&markdown, "markdown.preview"),
+        "a .md file was not noticed"
+    );
+
+    // And nothing open at all leaves only what works with nothing open.
+    let mut empty = App::new(Vec::new());
+    support::lay_out(&mut empty, 60, 12);
+    press_control(&mut empty, 'p');
+    assert!(offered(&empty, "file.open"));
+    assert!(!offered(&empty, "file.reload"), "reloading what?");
+    assert!(!offered(&empty, "go.line"), "into which file?");
+    assert!(!offered(&empty, "symbol.outline"), "of what?");
 }
 
 /// Nothing to ask, so no menu: the reason goes on the status bar. A list with
@@ -2150,4 +2238,95 @@ fn a_line_prompt_takes_digits_and_clamps_them() {
     assert!(app.prompt().is_some(), "an empty prompt answered anyway");
     press(&mut app, KeyCode::Esc);
     assert!(app.prompt().is_none(), "escape did not give up on it");
+}
+
+/// Opening a file records where the reader was. The history is for leaps,
+/// and switching files is one: without this, a session of opening files
+/// leaves nothing to go back *to*, and `go.back` answers "nowhere further
+/// back" to a reader who has been three files deep.
+#[test]
+fn opening_a_file_is_somewhere_to_come_back_from() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 60, 12);
+    for _ in 0..6 {
+        press(&mut app, KeyCode::Down);
+    }
+    let left = app.current_buffer().expect("a buffer").cursor().line;
+    let first = app.current_buffer().expect("a buffer").path().to_path_buf();
+
+    // Somewhere else, through the file picker.
+    press_control(&mut app, 'o');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["tests/fixtures/long.rs".into()],
+    });
+    press(&mut app, KeyCode::Enter);
+    assert!(
+        app.current_buffer()
+            .expect("a buffer")
+            .path()
+            .ends_with("long.rs"),
+        "the file did not open"
+    );
+
+    // And back to the line that was being read, not to the top of it.
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
+    let buffer = app.current_buffer().expect("a buffer");
+    assert_eq!(buffer.path(), first, "went back to the wrong file");
+    assert_eq!(buffer.cursor().line, left, "went back to the wrong line");
+
+    // The file picker choosing a file that is *already* open is the same
+    // leap by a different route, and goes through a different branch.
+    press_control(&mut app, 'o');
+    app.handle(Event::FilesFound {
+        generation: 2,
+        paths: vec!["tests/fixtures/long.rs".into()],
+    });
+    press(&mut app, KeyCode::Enter);
+    assert!(
+        app.current_buffer()
+            .expect("a buffer")
+            .path()
+            .ends_with("long.rs"),
+        "the already-open file was not switched to"
+    );
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
+    assert_eq!(
+        app.current_buffer().expect("a buffer").path(),
+        first,
+        "opening a file that was already open recorded nothing"
+    );
+
+    // The buffer list is the same kind of leap.
+    press_control(&mut app, 'e');
+    type_text(&mut app, "long");
+    press(&mut app, KeyCode::Enter);
+    assert!(
+        app.current_buffer()
+            .expect("a buffer")
+            .path()
+            .ends_with("long.rs")
+    );
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
+    assert_eq!(
+        app.current_buffer().expect("a buffer").path(),
+        first,
+        "the buffer list recorded nothing"
+    );
+
+    // Re-opening the file already being read records nothing, or the
+    // history would fill with the place the reader never left.
+    let before = app.picker().is_none();
+    assert!(before);
+    press_control(&mut app, 'e');
+    type_text(&mut app, "many_lines");
+    press(&mut app, KeyCode::Enter);
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoForward);
+    assert!(
+        app.current_buffer()
+            .expect("a buffer")
+            .path()
+            .ends_with("long.rs"),
+        "re-opening the current file left a place in the history"
+    );
 }

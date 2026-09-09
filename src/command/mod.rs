@@ -48,6 +48,8 @@ pub enum Command {
     GoBracket,
     /// Copy the selected text to the system clipboard.
     SelectionCopy,
+    /// Stop selecting.
+    SelectionClear,
     /// Return to where the last jump was made from.
     GoBack,
     /// Undo a jump back.
@@ -98,15 +100,35 @@ impl Group {
     }
 }
 
-/// What a command needs before it is worth offering.
+/// What has to be true before a command is worth offering.
 ///
-/// Spelled out per command rather than left to a wildcard, so a new command
-/// has to say which it is. The alternative is that every new command silently
-/// requires nothing, which is right often enough to be a bad default.
+/// The palette leaves out anything that cannot do its job right now: a row
+/// that silently fails is worse than a row that is not there, and a list of
+/// twenty commands of which six do nothing here is a list nobody trusts.
+///
+/// One variant per *condition*, not per command, so the answers live in one
+/// place: [`Command::requires`] says which condition each command is under,
+/// and the application turns each condition into a yes or no from its own
+/// state. Both matches are exhaustive with no wildcard arm, so a new command
+/// has to declare a condition and a new condition has to be answered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Requires {
     /// Always available.
     Nothing,
+    /// Some file has to be open.
+    AFileOpen,
+    /// The open file has to be in a language obelus can parse.
+    AKnownLanguage,
+    /// The open file has to be markdown, or already shown as markdown.
+    AMarkdownFile,
+    /// The cursor has to be on a bracket.
+    ABracket,
+    /// Something has to be selected.
+    ASelection,
+    /// The history has to have somewhere behind the reader.
+    SomewhereBack,
+    /// And somewhere in front.
+    SomewhereForward,
     /// A language server has to be running for this file.
     ARunningServer,
     /// The running server has to say it answers this question.
@@ -211,6 +233,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Copy the selected text",
     },
     CommandSpec {
+        command: Command::SelectionClear,
+        name: "selection.clear",
+        title: "Stop selecting",
+    },
+    CommandSpec {
         command: Command::GoBack,
         name: "go.back",
         title: "Go back to where you were",
@@ -266,6 +293,7 @@ impl Command {
             | Self::GoLine
             | Self::GoBracket
             | Self::SelectionCopy
+            | Self::SelectionClear
             | Self::GoBack
             | Self::GoForward => Group::Code,
             Self::LspRestart
@@ -292,20 +320,31 @@ impl Command {
             | Self::SymbolImplementation
             | Self::SymbolReferences => Requires::AnAnswer,
             Self::LspStop => Requires::ARunningServer,
+            // Everything that acts on the file being read. With nothing
+            // open, each of them is a key that reports why instead of doing
+            // something.
+            Self::FileReload | Self::BufferClose | Self::BufferList | Self::GoLine => {
+                Requires::AFileOpen
+            }
+            // An outline comes from the syntax tree when no server will
+            // answer, so what it needs is a language obelus can parse.
+            Self::SymbolOutline => Requires::AKnownLanguage,
+            // Both ways: it turns the rendering on for a markdown file and
+            // off again for one already showing as markdown.
+            Self::MarkdownPreview => Requires::AMarkdownFile,
+            Self::GoBracket => Requires::ABracket,
+            Self::SelectionCopy | Self::SelectionClear => Requires::ASelection,
+            Self::GoBack => Requires::SomewhereBack,
+            Self::GoForward => Requires::SomewhereForward,
+            // `symbol.menu` needs nothing: with no server it is the thing
+            // that says why there is none. Nor does `lsp.restart`, which is
+            // how a stopped or dead server is started. `file.open`,
+            // `theme.select`, `log.open` and the palette itself work with
+            // nothing open at all.
             Self::FileOpen
-            | Self::FileReload
-            | Self::BufferList
-            | Self::BufferClose
-            | Self::MarkdownPreview
             | Self::ThemeSelect
             | Self::CommandPalette
             | Self::SymbolMenu
-            | Self::SymbolOutline
-            | Self::GoLine
-            | Self::GoBracket
-            | Self::SelectionCopy
-            | Self::GoBack
-            | Self::GoForward
             | Self::LogOpen
             | Self::LspRestart
             | Self::Quit => Requires::Nothing,
@@ -357,6 +396,7 @@ mod tests {
             Command::GoLine,
             Command::GoBracket,
             Command::SelectionCopy,
+            Command::SelectionClear,
             Command::GoBack,
             Command::GoForward,
             Command::LogOpen,

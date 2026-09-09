@@ -16,7 +16,7 @@ use ratatui::{
 
 use crate::{
     buffer::{Buffer, BufferId, Cursor, Mode, Motion, TextArea},
-    command::{Requires, dispatch},
+    command::{Command, Requires, dispatch},
     component::{
         picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files},
         prompt::{Prompt, PromptKind, PromptOutcome},
@@ -731,6 +731,16 @@ impl App {
         }
     }
 
+    /// Records a place in the history, if there was one.
+    ///
+    /// One line, but it is the line every leap has to remember, and the
+    /// three callers each compute `from` before moving.
+    fn record(&mut self, from: Option<Jump>) {
+        if let Some(from) = from {
+            self.jumps.push(from);
+        }
+    }
+
     /// Where the cursor is, for the history.
     fn here(&self) -> Option<Jump> {
         let id = self.current?;
@@ -867,23 +877,10 @@ impl App {
     /// Offers every command by name.
     pub fn open_command_palette(&mut self) {
         // What a server would answer right now, so the palette offers a
-        // question only when there is something to answer it. The same
-        // function the symbol menu uses: two rules would disagree, and the
-        // disagreement would be a row that does nothing.
-        let answerable = self.symbol_actions().unwrap_or_default();
-        let serving = self
-            .current_buffer()
-            .and_then(Buffer::language)
-            .is_some_and(|language| self.servers.contains_key(&language));
+        // question only when there is something to answer it.
         let items = crate::command::ALL
             .iter()
-            .filter(|spec| match spec.command.requires() {
-                Requires::Nothing => true,
-                Requires::ARunningServer => serving,
-                Requires::AnAnswer => answerable
-                    .iter()
-                    .any(|action| action.command() == spec.command),
-            })
+            .filter(|spec| self.offers(spec.command))
             .map(|spec| PickerItem {
                 icon: icons::enabled().then(|| icons::for_command(spec.name)),
                 depth: 0,
@@ -1449,6 +1446,17 @@ impl App {
         self.prompt = Some(Prompt::new(PromptKind::Line));
     }
 
+    /// Stops selecting, leaving the cursor where it is.
+    ///
+    /// What escape does at the file itself. Silent when there is nothing
+    /// selected: escape meaning "never mind" is not worth a note when there
+    /// was nothing to mind.
+    pub fn clear_selection(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.clear_selection();
+        }
+    }
+
     /// Copies the selected text to the system clipboard.
     pub fn copy_selection(&mut self) {
         let Some(text) = self.current_buffer().and_then(Buffer::selected_text) else {
@@ -1524,12 +1532,65 @@ impl App {
         }
     }
 
+    /// Whether a command can do its job right now.
+    ///
+    /// One exhaustive match over the conditions rather than a test per
+    /// command: what each command needs is declared beside it in
+    /// [`crate::command::Command::requires`], and this is the one place that
+    /// turns a condition into a yes or no from the application's own state.
+    /// A row that silently fails is worse than a row that is not there.
+    #[must_use]
+    pub fn offers(&self, command: Command) -> bool {
+        let buffer = self.current_buffer();
+        match command.requires() {
+            Requires::Nothing => true,
+            Requires::AFileOpen => buffer.is_some(),
+            Requires::AKnownLanguage => buffer.and_then(Buffer::language).is_some(),
+            Requires::AMarkdownFile => buffer.is_some_and(|buffer| {
+                is_markdown(buffer.path()) || buffer.mode() == Mode::Markdown
+            }),
+            // The character under the cursor, not the scan the command does.
+            // The scan needs the whole file highlighted to know a bracket in
+            // a string from one in code, and deciding whether to *list* a
+            // row is not worth a pass over the file; a bracket inside a
+            // string is then offered and answers "no bracket here", which is
+            // a reason rather than a silence.
+            Requires::ABracket => buffer.is_some_and(|buffer| {
+                let cursor = buffer.cursor();
+                let text = buffer.text();
+                let at = text.byte_of_char(text.char_offset(cursor.line, cursor.column));
+                text.rope()
+                    .byte_slice(at.get()..)
+                    .chars()
+                    .next()
+                    .is_some_and(|character| matches!(character, '(' | ')' | '[' | ']' | '{' | '}'))
+            }),
+            Requires::ASelection => buffer.and_then(Buffer::selection).is_some(),
+            Requires::SomewhereBack => self.jumps.can_go_back(),
+            Requires::SomewhereForward => self.jumps.can_go_forward(),
+            Requires::ARunningServer => buffer
+                .and_then(Buffer::language)
+                .is_some_and(|language| self.servers.contains_key(&language)),
+            // Per command: a server may answer one of these questions and
+            // not another, and the menu is built from the same list.
+            Requires::AnAnswer => self
+                .symbol_actions()
+                .unwrap_or_default()
+                .iter()
+                .any(|action| action.command() == command),
+        }
+    }
+
     fn accept(&mut self, value: PickerValue) {
         self.picker = None;
         match value {
             PickerValue::Command(command) => dispatch::dispatch(self, command),
             PickerValue::File(path) => self.open(&self.working_directory.join(path)),
             PickerValue::Buffer(id) => {
+                if self.current != Some(id) {
+                    let from = self.here();
+                    self.record(from);
+                }
                 if id.get() < self.buffers.len() {
                     self.go_to_buffer(id);
                 }
@@ -1556,12 +1617,24 @@ impl App {
         // shimmering logo, and nothing else on screen moves.
         self.ticker = None;
 
+        // Where the reader was, before they are somewhere else. Opening a
+        // file is a leap, and the history is for leaps: without this, a
+        // session of opening files leaves nothing to go back *to*, and
+        // `go.back` answers "nowhere further back" to a reader who has been
+        // three files deep. `push` drops a repeat of the same place, so
+        // re-opening the file already being read records nothing.
+        let from = self.here();
+
         if let Some(index) = self
             .buffers
             .iter()
             .position(|buffer| buffer.as_ref().is_some_and(|open| open.path() == path))
         {
-            self.go_to_buffer(BufferId::new(index));
+            let id = BufferId::new(index);
+            if self.current != Some(id) {
+                self.record(from);
+            }
+            self.go_to_buffer(id);
             return;
         }
         match Buffer::open(path) {
@@ -1573,6 +1646,11 @@ impl App {
                 }
                 self.buffers.push(Some(buffer));
                 let index = self.buffers.len() - 1;
+                // Only once the file is known to be readable: a path that
+                // turns out to be a directory leaves the reader where they
+                // were, and a history entry for a leap that did not happen
+                // is a place `go.back` would take them for no reason.
+                self.record(from);
                 self.go_to_buffer(BufferId::new(index));
                 self.serve(index);
             }
@@ -2269,6 +2347,16 @@ fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
         // buffer, so they are worth leaving free.
         (KeyModifiers::CONTROL, KeyCode::Home) => Some((Motion::DocumentStart, false)),
         (KeyModifiers::CONTROL, KeyCode::End) => Some((Motion::DocumentEnd, false)),
+        // With shift as well, the same two motions extend the selection.
+        // Without these the ends of the file are the one place a selection
+        // cannot reach, and the rule that a modifier obelus has no meaning
+        // for disqualifies the key made them do nothing at all.
+        (m, KeyCode::Home) if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+            Some((Motion::DocumentStart, true))
+        }
+        (m, KeyCode::End) if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+            Some((Motion::DocumentEnd, true))
+        }
         (KeyModifiers::SHIFT, code) => match code {
             KeyCode::Left => Some((Motion::Left, true)),
             KeyCode::Right => Some((Motion::Right, true)),

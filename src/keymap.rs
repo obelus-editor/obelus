@@ -262,6 +262,16 @@ impl Keymap {
                 // and it is the copy chord every terminal can report. A
                 // desktop's `super+c` can map to this later, but cannot be a
                 // portable default because many terminals never receive it.
+                // Escape, which means "never mind" everywhere. It reaches
+                // the key table only when no picker and no prompt is open,
+                // because each of those takes it first -- so this is escape
+                // pressed at the file itself, and the only thing there to
+                // give up on is a selection.
+                Binding {
+                    command: Command::SelectionClear,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Esc, KeyModifiers::NONE),
+                },
                 Binding {
                     command: Command::SelectionCopy,
                     context: Context::Normal,

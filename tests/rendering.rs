@@ -1288,3 +1288,62 @@ fn nowhere_to_jump_says_so() {
         "the cursor moved anyway"
     );
 }
+
+/// The ends of the file are the one place a selection could not reach: the
+/// rule that a modifier obelus has no meaning for disqualifies the key made
+/// `ctrl+shift+End` do nothing at all rather than extend to the end.
+#[test]
+fn shift_and_control_together_select_to_the_ends_of_the_file() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+    let both = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+
+    app.handle(obelus::event::Event::Key(KeyEvent::new(KeyCode::End, both)));
+    let buffer = app.current_buffer().expect("a buffer");
+    let selection = buffer.selection().expect("a selection to the end");
+    assert_eq!(selection.line, LineNumber::new(0));
+    assert_eq!(selection.end_line, buffer.text().last_line());
+
+    // And back to the start, which passes through the anchor and comes out
+    // the other side rather than needing a special case.
+    app.handle(obelus::event::Event::Key(KeyEvent::new(
+        KeyCode::Home,
+        both,
+    )));
+    let buffer = app.current_buffer().expect("a buffer");
+    assert_eq!(buffer.cursor().line, LineNumber::new(0));
+    assert!(
+        buffer.selection().is_none(),
+        "back at the anchor is nothing selected"
+    );
+}
+
+/// Escape at the file itself gives up on the selection. It reaches the key
+/// table only when no picker and no prompt is open, each of which takes it
+/// first, so there is nothing else there for it to mean.
+#[test]
+fn escape_stops_selecting() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    support::press_shift(&mut app, KeyCode::Right);
+    support::press_shift(&mut app, KeyCode::Right);
+    assert!(
+        app.current_buffer()
+            .and_then(obelus::buffer::Buffer::selection)
+            .is_some()
+    );
+
+    press(&mut app, KeyCode::Esc);
+    let buffer = app.current_buffer().expect("a buffer");
+    assert!(buffer.selection().is_none(), "escape left it selected");
+    // The cursor stays: giving up on the selection is not going back.
+    assert_eq!(buffer.cursor().column, CharColumn::new(2));
+
+    // And escape still belongs to a picker while one is open.
+    support::press_control(&mut app, 'p');
+    press(&mut app, KeyCode::Esc);
+    assert!(app.picker().is_none(), "escape did not close the palette");
+}

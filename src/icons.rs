@@ -133,6 +133,7 @@ pub fn for_command(name: &str) -> char {
         // A number, which is what this one asks for.
         "go.line" => '\u{f03a0}',
         "go.bracket" => '\u{f0172}',
+        "selection.clear" => '\u{f0156}',
         "go.back" => '\u{f17b3}',
         "go.forward" => '\u{f17b7}',
         "log.open" => '\u{f09ed}',

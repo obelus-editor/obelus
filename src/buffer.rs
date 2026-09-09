@@ -367,6 +367,11 @@ impl Buffer {
         self.cursor
     }
 
+    /// Forgets the anchor, so nothing is selected.
+    pub const fn clear_selection(&mut self) {
+        self.selection_anchor = None;
+    }
+
     /// The selected characters, if the cursor has moved away from its anchor.
     #[must_use]
     pub fn selection(&self) -> Option<Span> {

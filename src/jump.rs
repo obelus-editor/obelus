@@ -42,6 +42,23 @@ impl JumpList {
         self.at = self.entries.len();
     }
 
+    /// Whether there is anywhere behind the reader.
+    ///
+    /// Asked without moving, so the palette can leave the command out when
+    /// there is nothing to go back to. [`JumpList::back`] takes `&mut self`
+    /// because going back records where it went back *from*, which is not a
+    /// question anyone can ask twice.
+    #[must_use]
+    pub const fn can_go_back(&self) -> bool {
+        self.at > 0
+    }
+
+    /// And whether there is anywhere in front.
+    #[must_use]
+    pub const fn can_go_forward(&self) -> bool {
+        self.at + 1 < self.entries.len()
+    }
+
     /// Steps back, given where the cursor is now so it can be stepped forward
     /// to again.
     pub fn back(&mut self, current: Jump) -> Option<Jump> {
