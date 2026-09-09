@@ -76,8 +76,9 @@ fn start() -> Option<(Client, Receiver<Event>)> {
         return None;
     }
     let (sender, events) = obelus::event::channel();
-    let client = Client::start(LanguageId::Rust, "rust-analyzer", &root(), sender)
-        .expect("starting rust-analyzer");
+    let server = obelus::lsp::server_for(LanguageId::Rust).expect("a server for Rust");
+    let client =
+        Client::start(LanguageId::Rust, server, &root(), sender).expect("starting rust-analyzer");
     Some((client, events))
 }
 
@@ -243,4 +244,147 @@ fn messages_sent_before_the_handshake_are_held_until_it_finishes() {
     assert_eq!(client.queued(), 0);
     assert_eq!(client.sent(), after + 1);
     client.shutdown();
+}
+
+/// The badge on the status bar claims a server is running, so what it reads
+/// has to be the process and not just the handshake. A server that has died
+/// is otherwise silent: its reader thread stops and questions simply go
+/// unanswered.
+#[test]
+fn a_real_server_reads_as_running_and_then_as_gone() {
+    use obelus::lsp::ServerState;
+
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    assert_eq!(
+        client.state(),
+        ServerState::Starting,
+        "a server is not ready before it has said so"
+    );
+
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+    assert!(client.check_alive(), "the server is not running");
+    assert_eq!(client.state(), ServerState::Ready);
+
+    client.shutdown();
+    // Shutdown waits for the process, so the next look finds it gone. This is
+    // the state the badge exists to show.
+    assert!(
+        !client.check_alive(),
+        "a stopped server still reads as alive"
+    );
+    assert_eq!(client.state(), ServerState::Gone);
+}
+
+/// Request ids are each server's own and start again from zero, so two
+/// incarnations of the same server hand out the same ids. That is why a
+/// question waiting for an answer is keyed by the server as well as by the
+/// id: keyed by the id alone, the first answer after a restart is matched to
+/// a question asked of a process that no longer exists.
+#[test]
+fn a_restarted_server_hands_out_the_same_ids_again() {
+    let params = serde_json::json!({
+        "textDocument": { "uri": "file:///nowhere.rs" },
+    });
+
+    let Some((mut first, _events)) = start() else {
+        return;
+    };
+    let before = first
+        .request("textDocument/documentSymbol", &params)
+        .expect("the first request");
+    first.shutdown();
+
+    let Some((mut second, _events)) = start() else {
+        return;
+    };
+    let after = second
+        .request("textDocument/documentSymbol", &params)
+        .expect("the second request");
+    second.shutdown();
+
+    assert_eq!(
+        before, after,
+        "ids no longer collide across restarts, so the key can be simplified"
+    );
+}
+
+/// A real server's outline: nested, and about the names.
+///
+/// Two assumptions obelus is built on, neither of which a value-based test
+/// can check. The protocol lets a server answer `documentSymbol` with a flat
+/// list whose positions are the *definitions* -- which start at an attribute
+/// or a doc comment as often as at the name -- unless the client declares it
+/// understands the nested shape. obelus declares it; this is what says the
+/// declaration is still being honoured.
+#[test]
+fn a_real_server_outlines_a_file_by_name_and_by_nesting() {
+    use obelus::lsp::outline;
+
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    let path = root().join("src/jump.rs");
+    let uri = obelus::lsp::client::uri_for(&path).expect("a uri");
+    let text = std::fs::read_to_string(&path).expect("reading the file");
+    client
+        .notify(
+            "textDocument/didOpen",
+            &serde_json::json!({ "textDocument": {
+                "uri": uri, "languageId": "rust", "version": 1, "text": text,
+            }}),
+        )
+        .expect("saying the file is open");
+    // Asked before the handshake has finished, which the client queues.
+    let asked = client
+        .request(
+            "textDocument/documentSymbol",
+            &serde_json::json!({ "textDocument": { "uri": uri } }),
+        )
+        .expect("asking");
+
+    let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+        reply.is_some_and(|reply| reply.id == asked)
+    })
+    .expect("an answer");
+    client.shutdown();
+
+    let symbols = outline::symbols_in(reply.result);
+    assert!(!symbols.is_empty(), "the server outlined nothing");
+
+    // `JumpList` is a struct with fields, and `push` is a method on it, so
+    // the answer has to have two levels in it.
+    assert!(
+        symbols.iter().any(|symbol| symbol.depth > 0),
+        "every symbol came back at the top level, so the nested shape was \
+         not used: {symbols:?}"
+    );
+
+    // And a name's position is the name's. `pub struct Jump` puts the name
+    // eleven columns in; the line above it is an attribute, which is where
+    // the flat shape would have pointed.
+    let jump = symbols
+        .iter()
+        .find(|symbol| symbol.name == "Jump")
+        .expect("Jump is in there");
+    assert!(
+        jump.end_character > jump.character,
+        "the name has no extent: {jump:?}"
+    );
+    assert_eq!(
+        usize::try_from(jump.end_character - jump.character).unwrap_or_default(),
+        "Jump".len(),
+        "the span is not the name: {jump:?}"
+    );
+    let line = text
+        .lines()
+        .nth(usize::try_from(jump.line).unwrap_or_default())
+        .expect("the line");
+    assert!(
+        line.contains("struct Jump"),
+        "the position is not on the line the name is on: {line:?}"
+    );
 }

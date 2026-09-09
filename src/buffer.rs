@@ -47,10 +47,6 @@ pub enum Motion {
     Up,
     /// One line down.
     Down,
-    /// One screenful up.
-    PageUp,
-    /// One screenful down.
-    PageDown,
     /// The first character of the line.
     LineStart,
     /// Past the last character of the line.
@@ -131,6 +127,12 @@ pub struct Buffer {
     /// had, and a source file down a pipe costs nothing.
     version: i32,
     cursor: Cursor,
+    /// Whether the viewport has been paged away from the cursor on purpose.
+    ///
+    /// While it is, nothing drags the screen back: the cursor being off
+    /// screen is what the reader asked for. The next cursor move clears it
+    /// and brings the screen back, centred.
+    detached: bool,
     viewport: Viewport,
 }
 
@@ -162,6 +164,7 @@ impl Buffer {
                 column: CharColumn::new(0),
                 remembered_cell: DisplayColumn::new(0),
             },
+            detached: false,
             viewport: Viewport {
                 top: LineNumber::new(0),
                 top_row: 0,
@@ -271,6 +274,9 @@ impl Buffer {
     /// For arriving rather than for moving: a place a language server named,
     /// or one the history remembered.
     pub fn place_cursor(&mut self, line: LineNumber, column: CharColumn) {
+        // Being put somewhere is arriving, and arriving ends a detour: every
+        // caller of this follows it by saying where the screen should be.
+        self.detached = false;
         self.cursor.line = self.text.clamp_line(line);
         self.cursor.column = self.text.clamp_column(self.cursor.line, column);
         // The remembered cell is recomputed on the next vertical move, which
@@ -278,14 +284,66 @@ impl Buffer {
         // a line.
     }
 
+    /// Moves the viewport by whole screenfuls, leaving the cursor alone.
+    ///
+    /// Paging is *reading*, not moving: a reader looking further down a file
+    /// has not chosen a new place to be, and dragging the cursor along would
+    /// throw away the place they came from. The viewport stays where it is
+    /// put until the cursor moves, and then it comes back to it -- see
+    /// [`Buffer::move_cursor`].
+    pub fn page(&mut self, pages: isize, area: TextArea) {
+        let rows = isize::try_from(area.height.max(1)).unwrap_or(isize::MAX);
+        self.scroll_by(pages.saturating_mul(rows), area);
+    }
+
+    /// Moves the viewport by rows, leaving the cursor alone.
+    ///
+    /// What the wheel does. Same rule as [`Buffer::page`], of which it is
+    /// the general case: the view moves, the place the reader chose does
+    /// not, and the next cursor move brings the screen back to it.
+    pub fn scroll_by(&mut self, rows: isize, area: TextArea) {
+        self.scroll_rows(rows, area);
+
+        // The last screenful is as far down as it goes. `scroll_rows` stops
+        // at the last *line*, which for a reader means a page too far: a
+        // screen holding one line of text and ten of nothing, with nothing
+        // saying which way is back.
+        let width = area.width.max(1);
+        let last = self.text.last_line();
+        let last_row = self.text.row_count(last, width).saturating_sub(1);
+        let back = isize::try_from(usize::from(area.height.max(1)) - 1).unwrap_or(isize::MAX);
+        let limit = self.step_rows(last, last_row, -back, width);
+        if (self.viewport.top, self.viewport.top_row) > limit {
+            self.viewport.top = limit.0;
+            self.viewport.top_row = limit.1;
+        }
+        self.detached = true;
+    }
+
+    /// Whether the viewport has been paged away from the cursor.
+    #[must_use]
+    pub const fn is_detached(&self) -> bool {
+        self.detached
+    }
+
     /// Moves the cursor.
     ///
     /// Up and down step one *visual* row, not one line. With wrapping on, a
     /// long line is many rows tall, and stepping over all of them at once is
     /// not what pressing down once looks like it should do.
+    ///
+    /// After paging, the first move brings the screen back to the cursor and
+    /// centres it. Scrolling the least amount instead would drop the reader
+    /// at the top or bottom edge of a screen they had left, which is the
+    /// worst of both places.
     pub fn move_cursor(&mut self, motion: Motion, area: TextArea) {
+        if self.detached {
+            self.detached = false;
+            self.move_cursor(motion, area);
+            self.center_on_cursor(area);
+            return;
+        }
         let width = area.width.max(1);
-        let page = isize::try_from(area.height.max(1)).unwrap_or(isize::MAX);
         let (row, _) = self
             .text
             .visual_position(self.cursor.line, self.cursor.column, width);
@@ -293,8 +351,6 @@ impl Buffer {
         let rows = match motion {
             Motion::Up => -1,
             Motion::Down => 1,
-            Motion::PageUp => -page,
-            Motion::PageDown => page,
             Motion::Left => {
                 self.cursor.column = self.cursor.column.saturating_sub(1);
                 self.remember(width);
@@ -461,7 +517,8 @@ impl Buffer {
         moved
     }
 
-    /// Scrolls the least amount that brings the cursor on screen.
+    /// Scrolls the least amount that brings the cursor on screen, unless the
+    /// reader has paged away on purpose.
     pub fn scroll_into_view(&mut self, area: TextArea) {
         let width = area.width.max(1);
         let height = usize::from(area.height).max(1);
@@ -473,6 +530,13 @@ impl Buffer {
                 .row_count(self.viewport.top, width)
                 .saturating_sub(1),
         );
+
+        // Paged away deliberately: the cursor being off screen is the point,
+        // and dragging the view back to it every frame would undo the page
+        // before it was drawn.
+        if self.detached {
+            return;
+        }
 
         let (cursor_row, _) =
             self.text

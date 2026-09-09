@@ -16,7 +16,7 @@ use crate::{
     app::App,
     picker::{Picker, PickerItem, PickerLayout},
     theme::Theme,
-    ui::{drop_from_left, fill, put, text_width},
+    ui::{drop_from_left, editor::SCROLLBAR_WIDTH, fill, put, text_width},
 };
 
 /// How many rows the list keeps for itself.
@@ -123,44 +123,129 @@ impl Widget for PickerView<'_> {
                 .bg(self.theme.background),
         );
 
+        // The tabs first, with their own rule under them, and the list below
+        // whatever they took. The rule is why a tab row reads as a heading
+        // over the list rather than as its first row.
+        let tabs = self.picker.tab_rows();
+        if tabs > 0 {
+            self.tab_row(cells, area);
+            crate::ui::rule(
+                cells,
+                Rect {
+                    y: area.y + 1,
+                    height: 1,
+                    ..area
+                },
+                self.theme,
+            );
+        }
+        let list = Rect {
+            y: area.y + tabs,
+            height: area.height.saturating_sub(tabs),
+            ..area
+        };
+
+        // Nothing to list. A region of background says only that a key did
+        // something and nothing came of it; the reason is the whole content
+        // of that region. Below the tabs rather than instead of them: an
+        // empty tab is the one place a reader most needs to see the others.
+        if let Some(reason) = self.picker.nothing_to_show() {
+            let style = Style::new().fg(self.theme.gutter).bg(self.theme.background);
+            write(cells, list, 1, list.y, reason, style, None, 0);
+            return;
+        }
+
+        // The same bar the editor has, for the same reason: a window over
+        // something longer than itself should say how much longer. The rows
+        // give up its column, so a row never draws under it.
+        let first = self.picker.first_visible(list.height);
+        let rows = Rect {
+            width: list.width.saturating_sub(SCROLLBAR_WIDTH),
+            ..list
+        };
+        crate::ui::scrollbar(cells, list, first, self.picker.match_count(), self.theme);
+
         let selected = self.picker.selected();
         for (row, (index, item)) in self
             .picker
             .matches()
             .enumerate()
-            .skip(self.first_visible(area.height))
-            .take(usize::from(area.height))
+            .skip(first)
+            .take(usize::from(list.height))
             .enumerate()
         {
             let Ok(row) = u16::try_from(row) else { break };
-            self.row(cells, area, area.y + row, item, index == selected);
+            self.row(
+                cells,
+                rows,
+                rows.y + row,
+                item,
+                index == selected,
+                self.picker.indices_at(index),
+            );
         }
     }
 }
 
 impl PickerView<'_> {
-    /// Which match is on the top row.
+    /// The row of tabs, and the arrows that say how to change them.
     ///
-    /// Placed so the selection sits near the middle of the window, clamped at
-    /// both ends of the list. Anchoring the selection to the bottom row
-    /// instead is simpler and reads badly once paging exists: every move
-    /// slides the whole list under a cursor that never moves.
-    fn first_visible(&self, height: u16) -> usize {
-        let height = usize::from(height);
-        self.picker
-            .selected()
-            .saturating_sub(height / 2)
-            .min(self.picker.match_count().saturating_sub(height))
+    /// The one that is showing gets the selected row's background, which is
+    /// the same thing that marks the selected row: on this screen, that
+    /// background means "this is the one you are on".
+    fn tab_row(&self, cells: &mut CellBuffer, area: Rect) {
+        let style = Style::new().fg(self.theme.gutter).bg(self.theme.background);
+        fill(cells, Rect { height: 1, ..area }, style);
+
+        let mut column = 1u16;
+        for (index, name) in self.picker.tabs().iter().enumerate() {
+            let style = if index == self.picker.tab() {
+                Style::new()
+                    .fg(self.theme.foreground)
+                    .bg(self.theme.picker_selected_background)
+            } else {
+                style
+            };
+            let padded = format!(" {name} ");
+            column = write(cells, area, column, area.y, &padded, style, None, 0);
+        }
+
+        // How to move between them. Not a hint that can go stale: the keys
+        // are the arrows, and there is nowhere to rebind them to.
+        let keys = "\u{2190} \u{2192}";
+        if let Ok(offset) =
+            u16::try_from(usize::from(area.width).saturating_sub(text_width(keys) + 1))
+            && offset > column
+        {
+            write(cells, area, offset, area.y, keys, style, None, 0);
+        }
     }
 
     /// One row: its background, then its icon, label, detail and key.
-    fn row(&self, cells: &mut CellBuffer, area: Rect, y: u16, item: &PickerItem, chosen: bool) {
+    fn row(
+        &self,
+        cells: &mut CellBuffer,
+        area: Rect,
+        y: u16,
+        item: &PickerItem,
+        chosen: bool,
+        matched: &[u32],
+    ) {
         let background = if chosen {
             self.theme.picker_selected_background
         } else {
             self.theme.background
         };
         let style = Style::new().fg(self.theme.foreground).bg(background);
+        // A row that names a thing is coloured by what it names, in the same
+        // colours the code itself uses: an outline of a file is a list of
+        // its own words, and reading it should feel like reading the file.
+        // The matched characters still win over this -- why a row is in the
+        // list beats what the row is.
+        let label_style = match item.kind {
+            Some(kind) => style.fg(self.theme.syntax.colour(kind)),
+            None => style,
+        };
         fill(
             cells,
             Rect {
@@ -171,7 +256,10 @@ impl PickerView<'_> {
             style,
         );
 
-        let mut column = 1u16;
+        // Two columns a level, which is enough to see and cheap enough to
+        // spend: an outline of deeply nested code otherwise pushes the names
+        // off the row it is meant to be showing.
+        let mut column = 1u16.saturating_add(item.depth.saturating_mul(2).min(area.width / 3));
         if let Some(icon) = item.icon {
             let mut glyph = String::new();
             glyph.push(icon);
@@ -215,8 +303,8 @@ impl PickerView<'_> {
             column,
             y,
             &item.label,
-            style,
-            chosen.then(|| (self.picker.selected_indices(), self.theme.picker_match)),
+            label_style,
+            (!matched.is_empty()).then_some((matched, self.theme.picker_match)),
             dropped,
         );
 

@@ -38,9 +38,40 @@ fn main() -> Result<()> {
     // Without that chaining a panic leaves the terminal in raw mode and the
     // backtrace unreadable.
     let mut terminal = ratatui::try_init()?;
+    // Mouse reporting, for the wheel.
+    //
+    // Without it a terminal in the alternate screen translates the wheel
+    // into arrow keys, which arrive indistinguishable from the arrow keys --
+    // so the wheel moves the cursor and there is no way to tell it not to.
+    // With it the wheel is a wheel and scrolls the view.
+    //
+    // The cost is the terminal's own text selection: while an application is
+    // reading the mouse, dragging is the application's to interpret, and
+    // every terminal puts its own selection behind a modifier (shift almost
+    // everywhere). That is a real loss for a reader, and it buys the one
+    // thing a reader does with a mouse far more often.
+    let mouse = enable_mouse();
     let mut app = App::new(buffers);
     let outcome = app::run(&mut terminal, &mut app);
+    if mouse {
+        let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
+    }
     ratatui::try_restore()?;
 
     outcome
+}
+
+/// Turns on mouse reporting, and says whether it worked.
+///
+/// Best effort: a terminal that will not report the mouse is a terminal where
+/// the wheel keeps sending arrow keys, which is how obelus behaved before it
+/// asked. Not a reason to refuse to start.
+fn enable_mouse() -> bool {
+    match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(%error, "no mouse reporting");
+            false
+        }
+    }
 }

@@ -1,0 +1,55 @@
+screen 60x20  editor 60x19  status 60x1
+-- text --
+ 0|   1 fn main() {                                           █
+ 1|   2     let greeting = "你好";                            █
+ 2|   3     println!("{greeting} world");                     █
+ 3|   4 }                                                     █
+ 4|   5                                                       █
+ 5|                                                           █
+ 6|────────────────────────────────────────────────────────────
+ 7|  all  files  code  server  obelus                      ← → 
+ 8|────────────────────────────────────────────────────────────
+ 9| 󰈞 file.open  Open a file                              󰘴 o █
+10| 󰑐 file.reload  Re-read this file from disk            󰘴 r █
+11| 󰈢 buffer.list  Switch to an open file                 󰘴 e █
+12| 󰮘 buffer.close  Close this file                       󰘴 w █
+13| 󰏘 theme.select  Change the colours                        █
+14| 󰆍 command.palette  Run a command by name              󰘴 p █
+15| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘴 g █
+16| 󰉹 symbol.outline  Everything this file defines        󰘴 t │
+17| 󱞳 go.back  Go back to where you were                  󰘵 ← │
+18| 󱞷 go.forward  Go forward again                        󰘵 → │
+19| 󰍉                                                       13 
+-- style --
+ 0|aaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 1|aaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 2|aaaeaaaaaddddddddbffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaaab
+ 3|aaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 4|aaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 6|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 7|egggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 8|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 9|gggggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggghhhgb
+10|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeab
+11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaeeeab
+12|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeab
+13|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaab
+14|aaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaeeeab
+15|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeab
+16|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaeeeae
+17|aaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaeeeae
+18|aaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaaeeeae
+19|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhi
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#c084fc bg=#18181b
+d fg=#60a5fa bg=#18181b
+e fg=#52525b bg=#18181b
+f fg=#a3e635 bg=#18181b
+g fg=#e4e4e7 bg=#27272a
+h fg=#52525b bg=#27272a
+i fg=#d4d4d8 bg=#27272a
+-- cursor --
+4,19

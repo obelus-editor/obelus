@@ -12,9 +12,9 @@ screen 64x20  editor 64x19  status 64x1
  9|                                                                
 10|         ──────────────────────────────────────────────         
 11|                                                                
-12|          ctrl+f   open a file                                  
-13|          ctrl+p   run a command by name                        
-14|          ctrl+q   leave obelus                                 
+12|          󰘴 o   open a file                                     
+13|          󰘴 p   run a command by name                           
+14|          󰘴 q   leave obelus                                    
 15|                                                                
 16|         ~/Work/obelus                           v0.1.0         
 17|                                                                
@@ -33,9 +33,9 @@ screen 64x20  editor 64x19  status 64x1
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 10|aaaaaaaaajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjaaaaaaaaa
 11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-12|aaaaaaaaakkkkkkkkaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-13|aaaaaaaaakkkkkkkkaajjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaa
-14|aaaaaaaaakkkkkkkkaajjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+12|aaaaaaaaakkkkkaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+13|aaaaaaaaakkkkkaajjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaa
+14|aaaaaaaaakkkkkaajjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 16|aaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaajjjjjjaaaaaaaaa
 17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -44,13 +44,13 @@ screen 64x20  editor 64x19  status 64x1
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#c084fc bg=#18181b
-c fg=#b288fb bg=#18181b
-d fg=#a48dfb bg=#18181b
-e fg=#9692fb bg=#18181b
-f fg=#8996fa bg=#18181b
-g fg=#7b9bfa bg=#18181b
-h fg=#6da0fa bg=#18181b
-i fg=#60a5fa bg=#18181b
+c fg=#b488fb bg=#18181b
+d fg=#a88cfb bg=#18181b
+e fg=#9c90fb bg=#18181b
+f fg=#9094fb bg=#18181b
+g fg=#8498fa bg=#18181b
+h fg=#789cfa bg=#18181b
+i fg=#6ca0fa bg=#18181b
 j fg=#52525b bg=#18181b
 k fg=#e4e4e7 bg=#27272a
 l fg=#d4d4d8 bg=#27272a

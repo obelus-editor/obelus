@@ -6,7 +6,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use crate::command::Command;
+use crate::{command::Command, icons};
 
 /// The modifiers a binding can name.
 ///
@@ -50,32 +50,58 @@ impl KeyChord {
     /// key changes what is displayed rather than leaving a hint that lies.
     #[must_use]
     pub fn label(self) -> String {
+        self.label_in(icons::enabled())
+    }
+
+    /// The same, with the glyphs asked for or refused.
+    ///
+    /// Takes the switch rather than reading it, so both ways of writing a
+    /// chord can be tested. With glyphs, a key that is a *word* -- `pagedown`
+    /// is eight columns -- becomes one column, and the modifiers stop being
+    /// prefixes; the arrow keys stay arrows either way, being symbols
+    /// already. Every glyph is followed by a blank column, because a Nerd
+    /// Font's non-`Mono` variants draw them two cells wide.
+    #[must_use]
+    pub fn label_in(self, glyphs: bool) -> String {
         let mut label = String::new();
-        for (modifier, name) in [
-            (KeyModifiers::CONTROL, "ctrl"),
-            (KeyModifiers::ALT, "alt"),
-            (KeyModifiers::SHIFT, "shift"),
+        for (modifier, name, glyph) in [
+            (KeyModifiers::CONTROL, "ctrl", icons::key::CONTROL),
+            (KeyModifiers::ALT, "alt", icons::key::ALT),
+            (KeyModifiers::SHIFT, "shift", icons::key::SHIFT),
         ] {
             if self.modifiers.contains(modifier) {
-                label.push_str(name);
-                label.push('+');
+                if glyphs {
+                    label.push(glyph);
+                    label.push(' ');
+                } else {
+                    label.push_str(name);
+                    label.push('+');
+                }
             }
         }
-        match self.code {
-            KeyCode::Char(' ') => label.push_str("space"),
-            KeyCode::Char(character) => label.push(character),
-            KeyCode::Left => label.push('\u{2190}'),
-            KeyCode::Up => label.push('\u{2191}'),
-            KeyCode::Right => label.push('\u{2192}'),
-            KeyCode::Down => label.push('\u{2193}'),
-            KeyCode::Enter => label.push_str("enter"),
-            KeyCode::Esc => label.push_str("esc"),
-            KeyCode::Home => label.push_str("home"),
-            KeyCode::End => label.push_str("end"),
-            KeyCode::PageUp => label.push_str("pageup"),
-            KeyCode::PageDown => label.push_str("pagedown"),
-            KeyCode::Backspace => label.push_str("backspace"),
-            other => label.push_str(&format!("{other:?}").to_lowercase()),
+
+        let named: Option<(&str, char)> = match self.code {
+            KeyCode::Char(' ') => Some(("space", icons::key::SPACE)),
+            KeyCode::Enter => Some(("enter", icons::key::ENTER)),
+            KeyCode::Esc => Some(("esc", icons::key::ESCAPE)),
+            KeyCode::Home => Some(("home", icons::key::HOME)),
+            KeyCode::End => Some(("end", icons::key::END)),
+            KeyCode::PageUp => Some(("pageup", icons::key::PAGE_UP)),
+            KeyCode::PageDown => Some(("pagedown", icons::key::PAGE_DOWN)),
+            KeyCode::Backspace => Some(("backspace", icons::key::BACKSPACE)),
+            KeyCode::Delete => Some(("delete", icons::key::DELETE)),
+            KeyCode::Tab => Some(("tab", icons::key::TAB)),
+            _ => None,
+        };
+        match (named, self.code) {
+            (Some((_, glyph)), _) if glyphs => label.push(glyph),
+            (Some((name, _)), _) => label.push_str(name),
+            (None, KeyCode::Char(character)) => label.push(character),
+            (None, KeyCode::Left) => label.push('\u{2190}'),
+            (None, KeyCode::Up) => label.push('\u{2191}'),
+            (None, KeyCode::Right) => label.push('\u{2192}'),
+            (None, KeyCode::Down) => label.push('\u{2193}'),
+            (None, other) => label.push_str(&format!("{other:?}").to_lowercase()),
         }
         label
     }
@@ -154,20 +180,41 @@ impl Keymap {
     pub fn new() -> Self {
         Self {
             bindings: vec![
+                // `ctrl+o` for open, as in most things that open a file.
+                // `ctrl+f` is deliberately left unbound: it means *find* in
+                // every browser and editor, and obelus will want it for
+                // searching a file.
                 Binding {
                     command: Command::FileOpen,
                     context: Context::Normal,
-                    chord: control('f'),
+                    chord: control('o'),
                 },
                 Binding {
                     command: Command::BufferList,
                     context: Context::Normal,
                     chord: control('e'),
                 },
+                // `ctrl+w` is "close this" in every browser and most
+                // editors. In a terminal it is also the shell's "delete the
+                // last word", which obelus has no use for: nothing here is
+                // typed at a shell.
+                Binding {
+                    command: Command::BufferClose,
+                    context: Context::Normal,
+                    chord: control('w'),
+                },
                 Binding {
                     command: Command::CommandPalette,
                     context: Context::Normal,
                     chord: control('p'),
+                },
+                // `ctrl+t` for the table of contents, which is what an
+                // outline is. Also vim's tag stack, which is the same idea
+                // reached a different way.
+                Binding {
+                    command: Command::SymbolOutline,
+                    context: Context::Normal,
+                    chord: control('t'),
                 },
                 Binding {
                     command: Command::SymbolMenu,
@@ -178,12 +225,12 @@ impl Keymap {
                 // places, walked in both directions. vim's `ctrl+o` and
                 // `ctrl+i` cannot both be used — `ctrl+i` *is* tab.
                 Binding {
-                    command: Command::JumpBack,
+                    command: Command::GoBack,
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Left, KeyModifiers::ALT),
                 },
                 Binding {
-                    command: Command::JumpForward,
+                    command: Command::GoForward,
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Right, KeyModifiers::ALT),
                 },

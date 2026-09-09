@@ -18,7 +18,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthChar as _;
 
-use crate::app::App;
+use crate::{app::App, theme::Theme};
 
 /// Where the two regions of the screen are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,24 +121,34 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
         let region = view.region(regions.editor);
         view.render(region, cells);
 
+        // A compact list sits on top of the code, so it needs an edge: the
+        // same rule the preview gets, for the same reason, which is that two
+        // different things sharing a screen have to be told apart. A list
+        // filling the whole region has no room above it and needs none.
+        if region.y > regions.editor.y {
+            rule(
+                cells,
+                Rect {
+                    y: region.y - 1,
+                    height: 1,
+                    ..region
+                },
+                app.theme(),
+            );
+        }
+
         // Below the list, with a rule between them. The preview is drawn by
         // the editor's own view, which is what makes it look like the editor.
         if let Some(preview) = picker::preview_region(app.picker(), regions.editor) {
-            let rule = Rect {
-                y: preview.y - 1,
-                height: 1,
-                ..preview
-            };
-            fill(cells, rule, Style::new().bg(app.theme().background));
-            for x in rule.left()..rule.right() {
-                put(
-                    cells,
-                    x,
-                    rule.y,
-                    '\u{2500}',
-                    Style::new().fg(app.theme().gutter),
-                );
-            }
+            rule(
+                cells,
+                Rect {
+                    y: preview.y - 1,
+                    height: 1,
+                    ..preview
+                },
+                app.theme(),
+            );
 
             match app.preview() {
                 Some((buffer, highlights, marked)) => {
@@ -152,6 +162,65 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
         }
     }
     status::StatusView::new(app).render(regions.status, cells);
+}
+
+/// One row of rule, saying that what is above it and what is below it are
+/// different things.
+///
+/// Filled first: the row it goes on held code a moment ago, and a rule drawn
+/// over the top of that would have the code showing between its cells.
+pub(crate) fn rule(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
+    fill(cells, area, Style::new().bg(theme.background));
+    for x in area.left()..area.right() {
+        put(cells, x, area.y, '\u{2500}', Style::new().fg(theme.gutter));
+    }
+}
+
+/// A bar down the right-hand edge of a region: where its window sits.
+///
+/// Shared by the editor and the lists, because it is the same question in
+/// both -- how much of this is on screen, and which part -- and two
+/// implementations would answer it in two shapes.
+///
+/// `total` is how many rows the whole thing has and `top` which of them is
+/// on the first row. A `total` that fits leaves the track empty, which is
+/// itself an answer: what you see is all there is.
+pub(crate) fn scrollbar(
+    cells: &mut CellBuffer,
+    area: Rect,
+    top: usize,
+    total: usize,
+    theme: &Theme,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let height = usize::from(area.height);
+    let total = total.max(1);
+    let x = area.right().saturating_sub(1);
+
+    // At least one row of thumb, or a long list has a bar with nothing on it.
+    let thumb = (height * height / total).clamp(1, height);
+    let travel = height.saturating_sub(thumb);
+    // Scaled by how far the *top* can travel, not by the total: dividing by
+    // the total leaves the thumb short of the bottom exactly when the last
+    // row is on screen, which is the one position anyone checks it against.
+    let furthest = total.saturating_sub(height).max(1);
+    let start = if total <= height {
+        0
+    } else {
+        (top * travel).div_ceil(furthest).min(travel)
+    };
+
+    for row in 0..area.height {
+        let inside = usize::from(row) >= start && usize::from(row) < start + thumb;
+        let (glyph, colour) = if inside {
+            ('\u{2588}', theme.gutter_current)
+        } else {
+            ('\u{2502}', theme.gutter)
+        };
+        put(cells, x, area.y + row, glyph, Style::new().fg(colour));
+    }
 }
 
 /// Paints every cell of a region in one style, blanking whatever was there.

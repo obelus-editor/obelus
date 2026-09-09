@@ -15,9 +15,9 @@ use std::{
 
 use anyhow::{Context as _, Result};
 use lsp_types::{
-    ClientCapabilities, GeneralClientCapabilities, InitializeParams, InitializeResult,
-    PositionEncodingKind, ServerCapabilities, TextDocumentClientCapabilities, Uri,
-    WindowClientCapabilities, WorkspaceFolder,
+    ClientCapabilities, DocumentSymbolClientCapabilities, GeneralClientCapabilities,
+    InitializeParams, InitializeResult, PositionEncodingKind, ServerCapabilities,
+    TextDocumentClientCapabilities, Uri, WindowClientCapabilities, WorkspaceFolder,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -43,6 +43,8 @@ pub struct Reply {
 pub struct Client {
     language: LanguageId,
     process: Child,
+    /// Whether the process has been found to have stopped.
+    exited: bool,
     outgoing: Sender<String>,
     next_id: i64,
     /// Messages held until the handshake finishes.
@@ -92,11 +94,13 @@ impl Client {
     /// which is a different thing and visible through [`Client::working_on`].
     pub fn start(
         language: LanguageId,
-        command: &str,
+        server: crate::lsp::Server,
         root: &Path,
         sender: Sender<Event>,
     ) -> Result<Self> {
+        let command = server.command;
         let mut process = Command::new(command)
+            .args(server.arguments)
             .current_dir(root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -118,6 +122,7 @@ impl Client {
         let mut client = Self {
             language,
             process,
+            exited: false,
             outgoing,
             next_id: INITIALIZE_ID + 1,
             queued: Vec::new(),
@@ -142,6 +147,37 @@ impl Client {
     #[must_use]
     pub const fn is_ready(&self) -> bool {
         self.capabilities.is_some()
+    }
+
+    /// Asks the operating system whether the process is still running, and
+    /// remembers the answer.
+    ///
+    /// Needs `&mut` because reaping does, which is why the answer is kept:
+    /// the status bar reads it from a place that has only `&self`. A server
+    /// that has died is not otherwise noticed -- its reader thread simply
+    /// stops, and every question after that goes unanswered with no reply to
+    /// say so.
+    pub fn check_alive(&mut self) -> bool {
+        if self.exited {
+            return false;
+        }
+        if matches!(self.process.try_wait(), Ok(Some(_))) {
+            tracing::warn!(language = self.language.name(), "the server has exited");
+            self.exited = true;
+        }
+        !self.exited
+    }
+
+    /// What [`Client::check_alive`] last found out.
+    #[must_use]
+    pub const fn state(&self) -> crate::lsp::ServerState {
+        if self.exited {
+            crate::lsp::ServerState::Gone
+        } else if self.capabilities.is_some() {
+            crate::lsp::ServerState::Ready
+        } else {
+            crate::lsp::ServerState::Starting
+        }
     }
 
     /// What the server said it can do, once it has said so.
@@ -292,7 +328,21 @@ impl Client {
                     ]),
                     ..Default::default()
                 }),
-                text_document: Some(TextDocumentClientCapabilities::default()),
+                text_document: Some(TextDocumentClientCapabilities {
+                    // Nesting, for the outline. Without this the protocol
+                    // says a server *may* answer `documentSymbol` with the
+                    // flat shape, and rust-analyzer does: every symbol at
+                    // the top level, and each one's position the start of
+                    // the whole item rather than of its name -- so a mark on
+                    // it lands on the line above, on an attribute or a doc
+                    // comment. Declared support turns the same request into
+                    // a tree of names.
+                    document_symbol: Some(DocumentSymbolClientCapabilities {
+                        hierarchical_document_symbol_support: Some(true),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
                 window: Some(WindowClientCapabilities {
                     work_done_progress: Some(true),
                     ..Default::default()

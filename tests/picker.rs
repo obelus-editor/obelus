@@ -23,6 +23,9 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
             detail: None,
             trailing: None,
             value: PickerValue::File(label.into()),
+            depth: 0,
+            kind: None,
+            tab: None,
         })
         .collect()
 }
@@ -46,6 +49,9 @@ fn many(count: usize) -> Vec<PickerItem> {
             detail: None,
             trailing: None,
             value: PickerValue::File(format!("item-{index:03}").into()),
+            depth: 0,
+            kind: None,
+            tab: None,
         })
         .collect()
 }
@@ -54,7 +60,11 @@ fn many(count: usize) -> Vec<PickerItem> {
 fn the_command_palette_hugs_the_status_bar_and_leaves_the_code_visible() {
     let mut app = app();
     press_control(&mut app, 'p');
-    support::check("palette_60x12", &support::render(&mut app, 60, 12));
+    // Tall enough to show what the layout is for: ten rows of list, the tabs
+    // above them, and the code still readable over the top. On a screen too
+    // short for that the list takes what there is, which is the same rule
+    // arriving at a different answer.
+    support::check("palette_60x20", &support::render(&mut app, 60, 20));
 }
 
 #[test]
@@ -132,6 +142,77 @@ fn the_matched_characters_of_the_selected_row_are_coloured() {
     );
 }
 
+/// Every row on screen gets its matched characters coloured, not only the
+/// selected one. The colouring is the only thing that says why a row is in a
+/// list it does not literally contain the query of, and that question is
+/// asked of the rows the reader is comparing -- which is all of them.
+#[test]
+fn the_matched_characters_of_every_visible_row_are_coloured() {
+    // Two legend letters, because the match colour appears on the selected
+    // row's background as well as the ordinary one.
+    fn match_letters(dump: &str) -> Vec<char> {
+        support::legend_block(dump)
+            .lines()
+            .filter(|line| line.contains("fg=#60a5fa"))
+            .filter_map(|line| line.trim().chars().next())
+            .collect()
+    }
+
+    let mut app = app();
+    press_control(&mut app, 'o');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec![
+            "src/one/alpha.rs".into(),
+            "src/two/beta.rs".into(),
+            "src/three/gamma.rs".into(),
+            "src/four/delta.rs".into(),
+        ],
+    });
+    type_text(&mut app, "src");
+
+    let dump = support::render(&mut app, 60, 24);
+    let letters = match_letters(&dump);
+    assert!(!letters.is_empty(), "nothing was coloured at all:\n{dump}");
+
+    let rows: Vec<&str> = support::style_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    for (index, row) in rows.iter().take(4).enumerate() {
+        let coloured = row.chars().filter(|cell| letters.contains(cell)).count();
+        assert_eq!(
+            coloured, 3,
+            "row {index} coloured {coloured} of the three characters of `src`:\n{dump}"
+        );
+    }
+
+    // And the rows at the far end of a list long enough to scroll. The
+    // positions are worked out for the window being drawn, so a window that
+    // has moved has to have moved them with it.
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: (0..40)
+            .map(|number| format!("src/dir_{number:02}/file.rs").into())
+            .collect(),
+    });
+    support::press_control_key(&mut app, KeyCode::End);
+
+    let dump = support::render(&mut app, 60, 22);
+    let letters = match_letters(&dump);
+    let rows: Vec<&str> = support::style_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    for (index, row) in rows.iter().take(10).enumerate() {
+        let coloured = row.chars().filter(|cell| letters.contains(cell)).count();
+        assert_eq!(
+            coloured, 3,
+            "row {index} of a scrolled window coloured {coloured}:\n{dump}"
+        );
+    }
+}
+
 #[test]
 fn escape_leaves_the_code_as_it_was() {
     let mut app = app();
@@ -206,9 +287,9 @@ fn arrows_move_the_selection_rather_than_the_cursor() {
 #[test]
 fn paths_from_a_superseded_walk_are_dropped() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     press(&mut app, KeyCode::Esc);
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
 
     // Generation one belongs to the first open; the second bumped it.
     app.handle(Event::FilesFound {
@@ -226,7 +307,7 @@ fn paths_from_a_superseded_walk_are_dropped() {
 #[test]
 fn paths_from_the_current_walk_are_listed() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/somewhere.rs".into()],
@@ -379,7 +460,7 @@ fn a_page_is_the_number_of_rows_on_screen() {
 #[test]
 fn paging_scrolls_the_window() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: (0..40)
@@ -441,7 +522,7 @@ fn control_home_and_end_do_not_panic_on_an_empty_list() {
 #[test]
 fn the_file_picker_shows_a_glyph_for_each_file() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec![
@@ -465,7 +546,7 @@ fn the_file_picker_shows_a_glyph_for_each_file() {
 #[test]
 fn a_query_matches_the_name_and_not_the_glyph() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/app.rs".into()],
@@ -512,7 +593,7 @@ fn the_command_palette_has_no_glyphs() {
 #[test]
 fn a_long_path_keeps_its_end_and_marks_the_cut() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
@@ -539,7 +620,7 @@ fn a_long_path_keeps_its_end_and_marks_the_cut() {
 #[test]
 fn a_truncated_row_keeps_the_padding_on_its_right() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
@@ -564,8 +645,15 @@ fn a_truncated_row_keeps_the_padding_on_its_right() {
             usize::from(width),
             "the dump should be one character per cell at width {width}"
         );
+        // The last column is the scrollbar's, so the row's own reserved
+        // column is the one before it.
         assert!(
-            drawn.ends_with(' '),
+            drawn.ends_with("\u{2502}") || drawn.ends_with('\u{2588}'),
+            "the scrollbar is not on the right at width {width}:\n{dump}"
+        );
+        let inside: String = drawn.chars().take(usize::from(width) - 1).collect();
+        assert!(
+            inside.ends_with(' '),
             "the reserved column on the right was written into at width {width}:\n{dump}"
         );
     }
@@ -576,7 +664,7 @@ fn a_truncated_row_keeps_the_padding_on_its_right() {
 #[test]
 fn truncation_does_not_move_the_matched_characters() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
@@ -597,7 +685,7 @@ fn truncation_does_not_move_the_matched_characters() {
 #[test]
 fn a_match_in_the_cut_away_head_colours_nothing() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["averydeepdirectory/tree/leading/to/x.rs".into()],
@@ -625,7 +713,9 @@ fn a_match_in_the_cut_away_head_colours_nothing() {
 fn the_palette_shows_the_key_each_command_is_bound_to() {
     let mut app = app();
     press_control(&mut app, 'p');
-    let dump = support::render(&mut app, 60, 12);
+    // Tall enough for the whole list: what is asserted below is about which
+    // rows show a key, not about which rows fit.
+    let dump = support::render(&mut app, 60, 26);
     let text = support::text_block(&dump);
 
     let row = |text: &str, needle: &str| {
@@ -635,21 +725,51 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
             .unwrap_or_else(|| panic!("{needle:?} is not listed:\n{dump}"))
     };
 
-    assert!(row(text, "file.open").contains("ctrl+f"), "{dump}");
+    let label = |command| {
+        obelus::keymap::Keymap::new()
+            .chord_for(command)
+            .map(obelus::keymap::KeyChord::label)
+            .expect("the command is bound")
+    };
+
     assert!(
-        !row(text, "theme.select").contains("ctrl"),
+        row(text, "file.open").contains(&label(obelus::command::Command::FileOpen)),
+        "{dump}"
+    );
+    // A command bound to nothing shows nothing. Whatever the label of a bound
+    // key looks like, an unbound row cannot hold the one thing every label
+    // has, which is a key. Trimmed of the scrollbar and the padding, so what
+    // is left is the row's own text.
+    let unbound = row(text, "theme.select");
+    let ends_with_description = unbound
+        .trim_end_matches(['\u{2502}', '\u{2588}', ' '])
+        .ends_with("colours");
+    assert!(
+        ends_with_description,
         "theme.select has no binding, so it should show no key:\n{dump}"
     );
-    // The four symbol questions are commands with no key: the menu is the way
-    // in, and a chord each would rebuild what the menu replaces.
-    assert!(!row(text, "symbol.definition").contains("ctrl"), "{dump}");
+
+    // Past the ten rows a compact list shows, so it is reached the way a
+    // reader reaches it: by typing.
+    type_text(&mut app, "log");
+    let narrowed = support::render(&mut app, 60, 26);
+    assert!(
+        row(support::text_block(&narrowed), "log.open")
+            .trim_end_matches(['\u{2502}', '\u{2588}', ' '])
+            .ends_with("file"),
+        "a command bound to nothing showed a key:\n{narrowed}"
+    );
+    for _ in 0..3 {
+        press(&mut app, KeyCode::Backspace);
+    }
 
     // More commands than a compact list has rows, so the rest are reached by
     // typing rather than by scrolling.
     type_text(&mut app, "quit");
     let narrowed = support::render(&mut app, 60, 12);
     assert!(
-        row(support::text_block(&narrowed), "app.quit").contains("ctrl+q"),
+        row(support::text_block(&narrowed), "app.quit")
+            .contains(&label(obelus::command::Command::Quit)),
         "{narrowed}"
     );
 }
@@ -663,10 +783,19 @@ fn the_keys_line_up_in_a_column() {
     let dump = support::render(&mut app, 60, 12);
     let text = support::text_block(&dump);
 
+    // Where the key starts on the row, whatever a key looks like.
+    let key = obelus::keymap::Keymap::new()
+        .chord_for(obelus::command::Command::FileOpen)
+        .map(obelus::keymap::KeyChord::label)
+        .expect("file.open is bound");
+    // In characters rather than bytes: a glyph is four bytes and one column.
     let column_of = |needle: &str| {
         text.lines()
             .find(|row| row.contains(needle))
-            .and_then(|row| row.rfind("ctrl+"))
+            .and_then(|row| {
+                row.rfind(key.split_whitespace().next().unwrap_or(&key))
+                    .map(|byte| row[..byte].chars().count())
+            })
             .unwrap_or_else(|| panic!("no key on the {needle:?} row:\n{dump}"))
     };
 
@@ -705,16 +834,15 @@ fn the_palette_reads_the_key_table() {
     let dump = support::render(&mut app, 60, 12);
     let text = support::text_block(&dump);
 
+    let rebound = KeyChord::new(KeyCode::Char('k'), KeyModifiers::ALT).label();
+    let old = KeyChord::new(KeyCode::Char('p'), KeyModifiers::CONTROL).label();
     assert!(
-        text.contains("alt+k"),
+        text.contains(&rebound),
         "the rebound key is not shown:\n{dump}"
     );
+    assert!(!text.contains(&old), "the old key is still shown:\n{dump}");
     assert!(
-        !text.contains("ctrl+p"),
-        "the old key is still shown:\n{dump}"
-    );
-    assert!(
-        !text.contains("ctrl+f"),
+        !text.contains(&KeyChord::new(KeyCode::Char('f'), KeyModifiers::CONTROL).label()),
         "a command with no binding left still shows one:\n{dump}"
     );
 }
@@ -762,10 +890,11 @@ fn the_theme_picker_leaves_the_code_visible() {
     support::check("themes_60x12", &dump);
 }
 
-/// The symbol menu reads the same key table as the palette, so a question
-/// bound to a key shows it in both and a rebind changes both.
+/// A question no server can answer is left out even when it is bound to a
+/// key. A row with a key beside it is the strongest claim the palette makes
+/// that something will happen.
 #[test]
-fn the_symbol_menu_shows_the_key_a_question_is_bound_to() {
+fn a_question_bound_to_a_key_is_still_left_out_without_a_server() {
     use crossterm::event::KeyModifiers;
     use obelus::{
         command::Command,
@@ -788,14 +917,57 @@ fn the_symbol_menu_shows_the_key_a_question_is_bound_to() {
         },
     ]));
 
-    // The palette shows it.
     press_control(&mut app, 'p');
     type_text(&mut app, "definition");
     let palette = support::render(&mut app, 60, 12);
+    let text = support::text_block(&palette);
     assert!(
-        support::text_block(&palette).contains("alt+d"),
-        "the palette does not show the binding:\n{palette}"
+        !text.contains("symbol.definition"),
+        "a question with no server to answer it was offered:\n{palette}"
     );
+    assert!(
+        !text.contains("alt+d"),
+        "its key was shown, which is a promise:\n{palette}"
+    );
+}
+
+/// The whole rule, in both directions, with nothing running: every command
+/// that needs a server is left out and every command that does not is
+/// listed. The palette is the list of what obelus can be asked to do, so a
+/// row that cannot do it is worse than a missing row.
+///
+/// `server.restart` stays: with nothing running, starting one is exactly what
+/// it is for. `server.stop` goes, because there is nothing to stop.
+#[test]
+fn the_palette_leaves_out_exactly_what_needs_a_server() {
+    let mut app = app();
+    press_control(&mut app, 'p');
+    let picker = app.picker().expect("the palette is open");
+    // The list itself rather than the screen: the query goes on the status
+    // row, so a rendered dump contains the name of whatever was typed
+    // whether or not anything matched it.
+    let listed: Vec<&str> = picker.matches().map(|item| item.label.as_str()).collect();
+
+    // Named here rather than taken from `needs_server`, which is the rule
+    // under test: asking the rule what it expects makes the assertion agree
+    // with itself whatever the rule says.
+    let questions = [
+        "symbol.definition",
+        "symbol.typeDefinition",
+        "symbol.implementation",
+        "symbol.references",
+        "server.stop",
+    ];
+    for spec in obelus::command::ALL {
+        let expected = !questions.contains(&spec.name);
+        assert_eq!(
+            listed.contains(&spec.name),
+            expected,
+            "{} is {}in the palette with no server running: {listed:?}",
+            spec.name,
+            if expected { "not " } else { "" }
+        );
+    }
 }
 
 /// No server, so the menu says which of the several reasons it is rather than
@@ -825,7 +997,7 @@ fn the_symbol_menu_says_why_when_there_is_nothing_to_ask() {
 #[test]
 fn the_file_picker_previews_the_selected_file() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec![
@@ -842,7 +1014,7 @@ fn the_file_picker_previews_the_selected_file() {
 #[test]
 fn the_preview_follows_the_selection() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec![
@@ -863,16 +1035,47 @@ fn the_preview_follows_the_selection() {
     );
 }
 
-/// A palette of commands has nothing to preview, and a compact list is
-/// compact so the code stays visible.
+/// A palette of commands has an edge above it, because it sits on top of the
+/// code, and nothing below it, because there is nothing to preview. Two rules
+/// would mean a border round a preview that does not exist.
 #[test]
-fn the_palette_has_no_preview() {
+fn the_palette_has_an_edge_above_it_and_no_preview_below() {
     let mut app = app();
     press_control(&mut app, 'p');
     let dump = support::render(&mut app, 60, 22);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+
+    let rules: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.contains('\u{2500}'))
+        .map(|(index, _)| index)
+        .collect();
+    // Two: the edge of the whole block, and the one under the tabs. What
+    // there is not is a third one below the list, which would be a border
+    // round a preview that does not exist.
+    assert_eq!(rules.len(), 2, "not the two expected rules:\n{dump}");
+
+    let rule = rules[0];
     assert!(
-        !support::text_block(&dump).contains('\u{2500}'),
-        "a rule was drawn for a list with nothing to preview:\n{dump}"
+        rows[rule + 1].contains("all"),
+        "the tabs are not directly under the block's edge:\n{dump}"
+    );
+    assert_eq!(
+        rules[1],
+        rule + 2,
+        "the tabs have no rule under them:\n{dump}"
+    );
+    assert!(
+        rows[rules[1] + 1].contains("file.open"),
+        "the list does not start under the tabs' rule:\n{dump}"
+    );
+    assert!(
+        rows[..rule].iter().any(|row| row.contains("fn main")),
+        "the code above it is gone, so the list is not compact:\n{dump}"
     );
 }
 
@@ -881,7 +1084,7 @@ fn the_palette_has_no_preview() {
 #[test]
 fn a_short_screen_gets_the_list_and_no_preview() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/sample.rs".into()],
@@ -906,12 +1109,14 @@ fn a_short_screen_gets_the_list_and_no_preview() {
 #[test]
 fn a_file_is_previewed_from_its_first_line() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
+    // Neither of these is the file being read, so the row that starts
+    // selected is the first one rather than the one the picker opens on.
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec![
             "tests/fixtures/long.rs".into(),
-            "tests/fixtures/sample.rs".into(),
+            "tests/fixtures/indented.rs".into(),
         ],
     });
 
@@ -948,6 +1153,9 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
                 end_line: 1,
                 end_character: 11,
             },
+            depth: 0,
+            kind: None,
+            tab: None,
         }],
         PickerLayout::FullArea,
     );
@@ -966,7 +1174,7 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
 #[test]
 fn a_taller_screen_gives_the_extra_rows_to_the_preview() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/many_lines.rs".into()],
@@ -1006,7 +1214,7 @@ fn a_taller_screen_gives_the_extra_rows_to_the_preview() {
 #[test]
 fn control_paging_scrolls_the_preview_and_not_the_list() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/many_lines.rs".into()],
@@ -1051,7 +1259,7 @@ fn control_paging_scrolls_the_preview_and_not_the_list() {
 #[test]
 fn the_preview_stops_at_the_top_of_the_file() {
     let mut app = app();
-    press_control(&mut app, 'f');
+    press_control(&mut app, 'o');
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/many_lines.rs".into()],
@@ -1097,6 +1305,9 @@ fn moving_the_selection_forgets_the_scrolling() {
             end_line: line,
             end_character: 17,
         },
+        depth: 0,
+        kind: None,
+        tab: None,
     };
 
     let mut app = app();
@@ -1181,6 +1392,9 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
                 end_line: 30,
                 end_character: 17,
             },
+            depth: 0,
+            kind: None,
+            tab: None,
         }],
         PickerLayout::FullArea,
     );
@@ -1218,5 +1432,504 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
     assert!(
         rows[11].contains("Forty lines"),
         "paging up did not reach the top of the file:\n{up}"
+    );
+}
+
+/// The symbol menu and the theme picker are compact too, so they get the same
+/// edge. One rule drawn for one layout and not the others would read as an
+/// inconsistency rather than as a feature.
+#[test]
+fn every_compact_list_has_an_edge_above_it() {
+    for key in ['p', 'g', 't'] {
+        let mut app = app();
+        if key == 't' {
+            // The theme picker has no key of its own; the palette is the way
+            // in, which is also what the palette is for.
+            press_control(&mut app, 'p');
+            type_text(&mut app, "theme.select");
+            press(&mut app, KeyCode::Enter);
+        } else {
+            press_control(&mut app, key);
+        }
+
+        let dump = support::render(&mut app, 60, 22);
+        let rows: Vec<&str> = support::text_block(&dump)
+            .lines()
+            .filter(|row| !row.is_empty())
+            .collect();
+        let rule = rows
+            .iter()
+            .position(|row| row.contains('\u{2500}'))
+            .unwrap_or_else(|| panic!("no edge for the list opened by {key:?}:\n{dump}"));
+        assert!(
+            !rows[rule + 1].trim().is_empty(),
+            "the edge has nothing under it:\n{dump}"
+        );
+        assert!(
+            rows[..rule].iter().any(|row| row.contains("fn main")),
+            "the code above the edge is gone:\n{dump}"
+        );
+    }
+}
+
+/// The file picker opens on the file being read, even when the walk finds it
+/// in a later batch. A list of every file in a project, opened at the top,
+/// starts by pointing at something arbitrary.
+#[test]
+fn the_file_picker_opens_on_the_file_being_read() {
+    let mut app = app();
+    press_control(&mut app, 'o');
+
+    // The walk arrives in batches and the current file is in the second of
+    // them, which is the case a picker that only looked once would miss.
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["src/one.rs".into(), "src/two.rs".into()],
+    });
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["tests/fixtures/sample.rs".into(), "src/three.rs".into()],
+    });
+
+    let picker = app.picker().expect("the picker is open");
+    assert_eq!(
+        picker
+            .matches()
+            .nth(picker.selected())
+            .map(|item| item.label.as_str()),
+        Some("tests/fixtures/sample.rs"),
+        "the picker did not open on the file being read"
+    );
+
+    // And the window puts it in the middle, which is what makes the rows
+    // around it the ones worth looking at.
+    let dump = support::render(&mut app, 60, 22);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    assert!(
+        rows[2].contains("sample.rs"),
+        "the selected row is not where the window centres:\n{dump}"
+    );
+}
+
+/// Once the reader has typed, the list is theirs: a batch arriving afterwards
+/// must not pull the selection back to the file being read.
+#[test]
+fn a_late_batch_does_not_move_a_selection_the_reader_has_touched() {
+    let mut app = app();
+    press_control(&mut app, 'o');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["src/one.rs".into(), "src/two.rs".into()],
+    });
+
+    press(&mut app, KeyCode::Down);
+    let chosen = app
+        .picker()
+        .and_then(|picker| picker.selected_item())
+        .map(|item| item.label.clone())
+        .expect("a row is selected");
+
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["tests/fixtures/sample.rs".into()],
+    });
+    assert_eq!(
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.clone()),
+        Some(chosen),
+        "an arriving batch moved the selection"
+    );
+}
+
+/// Stopping and restarting always say what happened. Both are asked for when
+/// nothing is answering, which is exactly when silence is the one thing that
+/// cannot be told from a key that did nothing.
+#[test]
+fn stopping_and_restarting_say_what_happened() {
+    use obelus::command::Command;
+
+    let mut empty = App::new(vec![]);
+    support::lay_out(&mut empty, 60, 12);
+    obelus::command::dispatch::dispatch(&mut empty, Command::ServerStop);
+    assert_eq!(empty.note(), Some("no file to stop a server for"));
+    obelus::command::dispatch::dispatch(&mut empty, Command::ServerRestart);
+    assert_eq!(empty.note(), Some("no file to restart a server for"));
+
+    // A language obelus highlights but has no server for. The reason is the
+    // useful part: "nothing happened" is not.
+    let mut toml = App::new(vec![support::open_fixture("sample.toml")]);
+    support::lay_out(&mut toml, 60, 12);
+    obelus::command::dispatch::dispatch(&mut toml, Command::ServerStop);
+    assert_eq!(toml.note(), Some("no language server for toml"));
+    obelus::command::dispatch::dispatch(&mut toml, Command::ServerRestart);
+    assert_eq!(toml.note(), Some("no language server for toml"));
+
+    // And the note is on screen, which is the only place it is of any use.
+    let dump = support::render(&mut toml, 60, 12);
+    assert!(
+        support::text_block(&dump).contains("no language server for toml"),
+        "the note is not on the status bar:\n{dump}"
+    );
+
+    // A language with a server, none of it running: still a reason, and it
+    // names the program so that "not installed" can be acted on.
+    let mut rust = app();
+    support::lay_out(&mut rust, 60, 12);
+    obelus::command::dispatch::dispatch(&mut rust, Command::ServerStop);
+    let note = rust.note().unwrap_or_default().to_string();
+    assert!(note.contains("rust-analyzer"), "{note:?}");
+}
+
+/// The theme picker opens on the theme that is on, previews each one by
+/// wearing it, and puts the old one back if the reader escapes. A list of
+/// colour-scheme names is not a choice between colour schemes: the only
+/// honest preview of a theme is the screen in it.
+#[test]
+fn the_theme_picker_previews_and_can_be_backed_out_of() {
+    let mut app = app();
+    let before = support::render(&mut app, 60, 12);
+
+    press_control(&mut app, 'p');
+    type_text(&mut app, "theme.select");
+    press(&mut app, KeyCode::Enter);
+
+    // On the theme that is on, whichever that is.
+    let opened = app.picker().expect("the theme picker");
+    assert_eq!(
+        opened.selected_item().map(|item| item.label.clone()),
+        Some(app.theme().name.to_string()),
+        "the picker did not open on the current theme"
+    );
+
+    // Moving previews: the code behind the list is repainted.
+    press(&mut app, KeyCode::Down);
+    let previewing = support::render(&mut app, 60, 12);
+    assert_ne!(
+        support::legend_block(&previewing),
+        support::legend_block(&before),
+        "moving the selection did not change any colour"
+    );
+
+    // And escaping puts back exactly what was there.
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        support::render(&mut app, 60, 12),
+        before,
+        "escaping left the previewed theme on"
+    );
+}
+
+/// Choosing keeps it, which is the other half: an undo that also undid a
+/// choice would make the picker impossible to use.
+#[test]
+fn choosing_a_theme_keeps_it() {
+    let mut app = app();
+    let before = support::render(&mut app, 60, 12);
+
+    press_control(&mut app, 'p');
+    type_text(&mut app, "theme.select");
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+
+    let after = support::render(&mut app, 60, 12);
+    assert_ne!(
+        support::legend_block(&after),
+        support::legend_block(&before),
+        "the chosen theme was not kept"
+    );
+
+    // And a later escape from something else does not resurrect the old one.
+    press_control(&mut app, 'p');
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        support::legend_block(&support::render(&mut app, 60, 12)),
+        support::legend_block(&after),
+        "escaping another picker put the old theme back"
+    );
+}
+
+/// The palette's tabs group the commands, and the arrows walk them. Fourteen
+/// commands is more than a compact list shows at once, and the groups are
+/// what a reader is choosing between when they do not already know the name.
+#[test]
+fn the_palette_groups_its_commands_into_tabs() {
+    let mut app = app();
+    press_control(&mut app, 'p');
+
+    let names: Vec<String> = app
+        .picker()
+        .expect("the palette")
+        .tabs()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(names[0], "all", "the first tab is not everything");
+
+    let listed = |app: &App| -> Vec<String> {
+        app.picker()
+            .expect("the palette")
+            .matches()
+            .map(|item| item.label.clone())
+            .collect()
+    };
+    let everything = listed(&app);
+    assert!(everything.len() > 5, "{everything:?}");
+
+    // One step right is the first group, which is a subset and not the whole
+    // list.
+    press(&mut app, KeyCode::Right);
+    let files = listed(&app);
+    assert!(files.contains(&"file.open".to_string()), "{files:?}");
+    assert!(!files.contains(&"app.quit".to_string()), "{files:?}");
+    assert!(files.len() < everything.len(), "{files:?}");
+
+    // And the row of tabs is on screen with the one showing marked, which is
+    // the only thing that says which list this is.
+    let dump = support::render(&mut app, 62, 14);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("files") && row.contains("code"))
+        .unwrap_or_else(|| panic!("no tabs on screen:\n{dump}"))
+        .to_string();
+    assert!(row.contains("all"), "{dump}");
+
+    // Left from the first group wraps to the last, so walking the tabs never
+    // dead-ends.
+    press(&mut app, KeyCode::Left);
+    press(&mut app, KeyCode::Left);
+    let last = listed(&app);
+    assert!(last.contains(&"app.quit".to_string()), "{last:?}");
+
+    // And the block is the same height whichever tab is showing. Sizing it
+    // to the tab's contents would move the rows out from under a reader
+    // walking the tabs -- and the tabs themselves with them.
+    let row_of_tabs = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| !row.is_empty())
+            .position(|row| row.contains("all") && row.contains("code"))
+            .unwrap_or_else(|| panic!("no tabs on screen:\n{dump}"))
+    };
+    let one = row_of_tabs(&support::render(&mut app, 62, 20));
+    press(&mut app, KeyCode::Right);
+    let two = row_of_tabs(&support::render(&mut app, 62, 20));
+    assert_eq!(one, two, "the block changed height with the tab");
+}
+
+/// A tab with nothing in it says so, like every other empty list. Walking
+/// into a blank region would read as the arrow key having broken something.
+#[test]
+fn a_list_with_nothing_in_it_says_why() {
+    // No file open, so the buffer list is empty for a reason worth stating.
+    let mut empty = App::new(Vec::new());
+    support::lay_out(&mut empty, 50, 8);
+    press_control(&mut empty, 'e');
+    let dump = support::render(&mut empty, 50, 8);
+    assert!(
+        support::text_block(&dump).contains("no file is open"),
+        "an empty buffer list said nothing:\n{dump}"
+    );
+
+    // A query that matches nothing is a fact about the query, and the list
+    // says that instead.
+    let mut app = app();
+    support::lay_out(&mut app, 50, 8);
+    press_control(&mut app, 'p');
+    type_text(&mut app, "zzzz");
+    let dump = support::render(&mut app, 50, 8);
+    assert!(
+        support::text_block(&dump).contains("no match"),
+        "a query that matched nothing said nothing:\n{dump}"
+    );
+}
+
+/// `ctrl+w` closes whatever the screen is about: the row under the selection
+/// while the buffer list is open, and the file being read otherwise. One key
+/// meaning "close this" everywhere beats a second key that works in one list
+/// only -- and the palette already says what this one is bound to.
+#[test]
+fn the_buffer_list_closes_the_selected_file_with_the_same_key() {
+    let mut app = App::new(vec![
+        support::open_fixture("sample.rs"),
+        support::open_fixture("long.rs"),
+    ]);
+    support::lay_out(&mut app, 60, 12);
+    press_control(&mut app, 'e');
+
+    // The second row, to prove it closes what is *selected* and not what was
+    // being read.
+    press(&mut app, KeyCode::Down);
+    let chosen = app
+        .picker()
+        .and_then(|picker| picker.selected_item())
+        .map(|item| item.label.clone())
+        .expect("a row is selected");
+    assert!(chosen.contains("long.rs"), "{chosen}");
+
+    // The selected row goes, the list stays open, and the other row is still
+    // there: closing several files one after another is why you are in here.
+    press_control(&mut app, 'w');
+    let after = support::render(&mut app, 60, 12);
+    let text = support::text_block(&after);
+    assert!(
+        !text.contains("long.rs"),
+        "the file is still listed:\n{after}"
+    );
+    assert!(
+        text.contains("sample.rs"),
+        "the list closed itself:\n{after}"
+    );
+
+    // And the file being read is the one that is left.
+    press(&mut app, KeyCode::Esc);
+    let reading = support::render(&mut app, 60, 12);
+    assert!(
+        support::text_block(&reading).contains("sample.rs"),
+        "the reader was left on a closed file:\n{reading}"
+    );
+}
+
+/// Closing the last file leaves the welcome screen, which is the only honest
+/// thing to show: there is nothing to read.
+#[test]
+fn closing_the_last_file_goes_back_to_the_welcome_screen() {
+    use obelus::command::Command;
+
+    let mut app = app();
+    support::lay_out(&mut app, 64, 20);
+    obelus::command::dispatch::dispatch(&mut app, Command::BufferClose);
+
+    let dump = support::render(&mut app, 64, 20);
+    assert!(
+        support::text_block(&dump).contains('\u{2588}'),
+        "the welcome screen is not back:\n{dump}"
+    );
+    assert!(
+        !support::text_block(&dump).contains("fn main"),
+        "the closed file is still on screen:\n{dump}"
+    );
+
+    // And a stale id -- the jump list keeps them -- does nothing rather than
+    // finding a different file.
+    obelus::command::dispatch::dispatch(&mut app, Command::GoBack);
+    let after = support::render(&mut app, 64, 20);
+    assert!(
+        !support::text_block(&after).contains("fn main"),
+        "going back resurrected a closed file:\n{after}"
+    );
+}
+
+/// The outline: every symbol the file defines, coloured by what it is, with
+/// the symbol shown in its own code below. Everything except where the rows
+/// come from is the file picker's machinery.
+#[test]
+fn the_outline_lists_what_a_file_defines_and_colours_it() {
+    let mut app = App::new(vec![
+        obelus::buffer::Buffer::open(std::path::Path::new("src/jump.rs")).expect("a file"),
+    ]);
+    support::lay_out(&mut app, 60, 24);
+    // Down into the file first: an outline is opened to ask "where am I",
+    // and a list that always started at the top would answer "at the
+    // beginning", which is almost never true.
+    for _ in 0..30 {
+        press(&mut app, KeyCode::Down);
+    }
+    press_control(&mut app, 't');
+    let here = app
+        .picker()
+        .and_then(|picker| picker.selected_item())
+        .map(|item| item.label.clone())
+        .expect("a row is selected");
+    assert_eq!(
+        here, "JumpList",
+        "the outline did not open on the symbol the cursor is in"
+    );
+
+    let labels: Vec<String> = app
+        .picker()
+        .expect("the outline")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert!(labels.contains(&"JumpList".to_string()), "{labels:?}");
+    assert!(labels.contains(&"push".to_string()), "{labels:?}");
+
+    let dump = support::render(&mut app, 60, 24);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    let styles: Vec<&str> = support::style_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+
+    // A type and a function are different colours, because the colour is the
+    // whole of what says which is which.
+    let letter = |needle: &str| {
+        let at = rows
+            .iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"));
+        let column = rows[at].find(needle).expect("the label");
+        let column = rows[at][..column].chars().count();
+        styles[at].chars().nth(column).expect("a style")
+    };
+    assert_ne!(
+        letter("JumpList"),
+        letter("push"),
+        "a type and a function are the same colour:\n{dump}"
+    );
+
+    // Nesting shows as indentation. `mod tests` is a definition and the
+    // tests inside it are inside it, so their rows start further right --
+    // which is the whole of what makes an outline a tree rather than a list.
+    let starts_at = |needle: &str| {
+        let at = rows
+            .iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"));
+        let byte = rows[at].find(needle).expect("the label");
+        rows[at][..byte].chars().count()
+    };
+    assert!(
+        starts_at("nothing_to_go_back_to") > starts_at("tests"),
+        "a nested symbol is not indented under the one that holds it:\n{dump}"
+    );
+
+    // And the preview below shows the selected symbol in its own code, which
+    // is what makes an outline readable rather than an index.
+    assert!(
+        rows.iter().any(|row| row.contains("pub struct Jump")),
+        "the symbol is not previewed in its code:\n{dump}"
+    );
+
+    // Choosing one goes there.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    let after = support::render(&mut app, 60, 24);
+    assert!(
+        support::text_block(&after).contains("pub struct JumpList"),
+        "choosing a symbol did not go to it:\n{after}"
+    );
+}
+
+/// A language whose grammar ships no tags query has no outline, and that is
+/// a different fact from a file that defines nothing.
+#[test]
+fn a_language_with_no_tags_says_so_rather_than_looking_empty() {
+    let mut app = App::new(vec![support::open_fixture("sample.toml")]);
+    support::lay_out(&mut app, 60, 12);
+    press_control(&mut app, 't');
+
+    let dump = support::render(&mut app, 60, 12);
+    assert!(
+        support::text_block(&dump).contains("no outline for this language"),
+        "an empty outline said nothing:\n{dump}"
     );
 }

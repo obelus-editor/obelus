@@ -45,14 +45,40 @@ unicode-linebreak = "0.1"
 ropey = "1.6"
 
 # The grammars depend only on `tree-sitter-language`, so they impose no bound
-# on the core version and the three can move independently of it.
+# on the core version and each can move independently of it. `cargo tree -i
+# tree-sitter` has to show one version: two would make `Language` two
+# different types, and the error says nothing useful about why.
+#
+# Each is a C parser compiled by its build script, so this list is most of
+# obelus's cold build. A language whose files nobody opens is paid for on
+# every clean build, which is the reason not to add every grammar that exists.
 tree-sitter = "0.27"
 tree-sitter-rust = "0.24"
 tree-sitter-toml-ng = "0.7"
 tree-sitter-json = "0.24"
+tree-sitter-python = "0.25"
+# JavaScript's query is also half of TypeScript's and TSX's, and its JSX rules
+# are appended to its own, so this one is not optional the way the others are.
+tree-sitter-javascript = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-go = "0.25"
+tree-sitter-c = "0.24"
+# C's query is the other half of C++'s, the same way JavaScript's is of
+# TypeScript's.
+tree-sitter-cpp = "0.23"
+tree-sitter-bash = "0.25"
+tree-sitter-css = "0.25"
+tree-sitter-html = "0.23"
+tree-sitter-yaml = "0.7"
+# No markdown: it is two grammars, a block one and an inline one, which the
+# one-grammar-per-language registry cannot express. It needs the injection
+# machinery obelus does not have yet.
 unicode-width = "0.2"
 
 anyhow = "1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+serde_json = "1"

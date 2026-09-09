@@ -68,7 +68,8 @@ fn a_narrow_screen_gets_the_keys_without_the_wordmark() {
     let mut app = App::new(Vec::new());
     let dump = support::render(&mut app, 34, 10);
 
-    assert!(support::text_block(&dump).contains("ctrl+f"), "{dump}");
+    let control_o = obelus::keymap::control('o').label();
+    assert!(support::text_block(&dump).contains(&control_o), "{dump}");
     assert!(
         !support::text_block(&dump).contains('\u{2588}'),
         "the wordmark was drawn into a screen too narrow for it:\n{dump}"
@@ -88,26 +89,27 @@ fn the_welcome_screen_reads_the_key_table() {
 
     let mut app = App::new(Vec::new());
     let shown = support::render(&mut app, 64, 20);
-    assert!(support::text_block(&shown).contains("ctrl+f"), "{shown}");
+    let control_o = KeyChord::new(KeyCode::Char('o'), KeyModifiers::CONTROL).label();
+    assert!(support::text_block(&shown).contains(&control_o), "{shown}");
 
     app.set_keymap(Keymap::from_bindings(vec![Binding {
         command: Command::FileOpen,
         context: Context::Normal,
-        chord: KeyChord::new(KeyCode::Char('o'), KeyModifiers::ALT),
+        chord: KeyChord::new(KeyCode::Char('z'), KeyModifiers::ALT),
     }]));
     let rebound = support::render(&mut app, 64, 20);
     let text = support::text_block(&rebound);
 
     assert!(
-        text.contains("alt+o"),
+        text.contains(&KeyChord::new(KeyCode::Char('z'), KeyModifiers::ALT).label()),
         "the rebound key is not shown:\n{rebound}"
     );
     assert!(
-        !text.contains("ctrl+f"),
+        !text.contains(&control_o),
         "the old key is still being offered:\n{rebound}"
     );
     assert!(
-        !text.contains("ctrl+q"),
+        !text.contains(&KeyChord::new(KeyCode::Char('q'), KeyModifiers::CONTROL).label()),
         "a command with no binding left is still listed:\n{rebound}"
     );
 }
@@ -231,15 +233,28 @@ fn a_picker_takes_the_cursor_into_its_prompt() {
     support::press_control(&mut app, 'p');
     let dump = support::render(&mut app, 60, 12);
 
-    // Column one is the padding, then `> `, so the caret is at three; the
-    // status row is the last one.
-    assert_eq!(support::cursor_line(&dump), "3,11", "{dump}");
+    // Inside the prompt on the status row, past the padding and the prompt
+    // itself. How wide the prompt is depends on whether it is a glyph or a
+    // `>`, so what is pinned here is that the caret is in it and that it
+    // follows what is typed.
+    let at = |dump: &str| {
+        let (x, y) = support::cursor_line(dump)
+            .split_once(',')
+            .expect("a cursor position");
+        (
+            x.parse::<usize>().expect("a column"),
+            y.parse::<usize>().expect("a row"),
+        )
+    };
+    let (column, row) = at(&dump);
+    assert_eq!(row, 11, "the caret is not on the status row:\n{dump}");
+    assert!(column >= 2, "the caret is in the padding:\n{dump}");
 
     support::type_text(&mut app, "theme");
     let dump = support::render(&mut app, 60, 12);
     assert_eq!(
-        support::cursor_line(&dump),
-        "8,11",
+        at(&dump),
+        (column + "theme".len(), row),
         "the caret did not follow the query:\n{dump}"
     );
 }
@@ -477,9 +492,12 @@ fn the_welcome_screen_lines_up_keys_of_different_widths() {
 
     let dump = support::render(&mut app, 64, 20);
     let text = support::text_block(&dump);
+    // Counted in characters, not bytes: a glyph from the private use area is
+    // four bytes and one column, so byte offsets on two rows with different
+    // numbers of glyphs are not comparable.
     let column_of = |needle: &str| {
         text.lines()
-            .find_map(|row| row.find(needle))
+            .find_map(|row| row.find(needle).map(|byte| row[..byte].chars().count()))
             .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"))
     };
 
@@ -488,7 +506,15 @@ fn the_welcome_screen_lines_up_keys_of_different_widths() {
         column_of("leave obelus"),
         "the descriptions do not start together:\n{dump}"
     );
-    assert!(column_of("esc") > column_of("ctrl+alt+o"), "{dump}");
+    // The wider chord's key starts further left, which is what right-aligning
+    // a column of keys means.
+    let wide = KeyChord::new(
+        KeyCode::Char('o'),
+        KeyModifiers::CONTROL | KeyModifiers::ALT,
+    )
+    .label();
+    let narrow = KeyChord::new(KeyCode::Esc, KeyModifiers::NONE).label();
+    assert!(column_of(&narrow) > column_of(&wide), "{dump}");
 }
 
 /// A motion key held with a modifier obelus has no meaning for does nothing.
@@ -548,6 +574,9 @@ fn a_jump_lands_in_the_middle_of_the_screen() {
                 end_line: 30,
                 end_character: 17,
             },
+            depth: 0,
+            kind: None,
+            tab: None,
         }],
         PickerLayout::FullArea,
     );
@@ -604,6 +633,9 @@ fn a_jump_back_lands_in_the_middle_too() {
                 end_line: 30,
                 end_character: 17,
             },
+            depth: 0,
+            kind: None,
+            tab: None,
         }],
         PickerLayout::FullArea,
     );
@@ -627,4 +659,303 @@ fn a_jump_back_lands_in_the_middle_too() {
     // And the rows above it are the ones the least amount of scrolling would
     // have thrown away.
     assert!(rows[0].contains("LINE_02"), "{dump}");
+}
+
+/// The wordmark's colours travel with time. One tick, one step: the ramp runs
+/// out and back over a fixed number of steps, so it slides across the letters
+/// without a seam and comes back to where it began.
+#[test]
+fn the_wordmark_shimmers_and_comes_back_round() {
+    let mut app = App::new(Vec::new());
+    let first = support::render(&mut app, 64, 20);
+
+    app.handle(obelus::event::Event::Tick);
+    let moved = support::render(&mut app, 64, 20);
+    // The legend, not the style map: the map's letters are handed out per
+    // distinct style in the order they are met, so a palette that has slid
+    // along one step gets the same letters in the same places and only the
+    // colours behind them differ.
+    assert_ne!(
+        support::legend_block(&moved),
+        support::legend_block(&first),
+        "a tick did not move the colours"
+    );
+    assert_eq!(
+        support::text_block(&moved),
+        support::text_block(&first),
+        "a tick moved something other than the colours"
+    );
+
+    // Round the cycle. Sixteen steps out and back, so the seventeenth frame
+    // is the first one again -- a ramp that wrapped instead would have a
+    // visible edge crossing the letters.
+    for _ in 1..16 {
+        app.handle(obelus::event::Event::Tick);
+    }
+    let round = support::render(&mut app, 64, 20);
+    assert_eq!(
+        support::legend_block(&round),
+        support::legend_block(&first),
+        "the cycle does not close"
+    );
+    assert_eq!(support::style_block(&round), support::style_block(&first));
+
+    // Out and back, not round. The ramp runs to its far colour and returns,
+    // so every frame of the cycle is a gradient. Letting the position run
+    // past the end and clamping it there instead would leave whole frames
+    // painted in one flat colour -- which is what a wrapped ramp looks like
+    // from inside.
+    let mut app = App::new(Vec::new());
+    for phase in 0..16 {
+        let dump = support::render(&mut app, 64, 20);
+        let text: Vec<&str> = support::text_block(&dump).lines().collect();
+        let styles: Vec<&str> = support::style_block(&dump).lines().collect();
+        let colours: std::collections::HashSet<char> = text
+            .iter()
+            .zip(&styles)
+            .filter(|(row, _)| row.contains('\u{2588}'))
+            .flat_map(|(row, style)| {
+                // Only the cells the wordmark painted: the rest of the row is
+                // the background, in the background's own style.
+                row.chars()
+                    .zip(style.chars())
+                    .filter(|(character, _)| *character == '\u{2588}')
+                    .map(|(_, letter)| letter)
+            })
+            .collect();
+        assert!(
+            colours.len() > 2,
+            "frame {phase} of the cycle is nearly flat: {colours:?}\n{dump}"
+        );
+        app.handle(obelus::event::Event::Tick);
+    }
+}
+
+/// Nothing animates behind an open file. The ticker is dropped when one
+/// opens, and even a tick that arrives before it stops must leave the screen
+/// alone: a redraw a reader did not ask for can only get in the way.
+#[test]
+fn a_tick_changes_nothing_once_a_file_is_open() {
+    let mut app = app();
+    support::lay_out(&mut app, 40, 8);
+    let before = support::render(&mut app, 40, 8);
+
+    for _ in 0..5 {
+        app.handle(obelus::event::Event::Tick);
+    }
+    assert_eq!(support::render(&mut app, 40, 8), before);
+}
+
+/// Paging is reading, not moving. The cursor stays where it was left -- the
+/// status bar still reports it -- and the first cursor move afterwards brings
+/// the screen back to it, centred.
+#[test]
+fn paging_moves_the_screen_and_leaves_the_cursor_alone() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+    // Away from the first line, where centring has nowhere to go and looks
+    // the same as not centring.
+    for _ in 0..12 {
+        press(&mut app, KeyCode::Down);
+    }
+
+    let start = support::render(&mut app, 40, 12);
+    let position = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .last()
+            .expect("a status row")
+            .to_string()
+    };
+    let before = position(&start);
+
+    press(&mut app, KeyCode::PageDown);
+    let paged = support::render(&mut app, 40, 12);
+    assert_eq!(
+        position(&paged),
+        before,
+        "paging moved the cursor:\n{paged}"
+    );
+    assert_ne!(
+        support::text_block(&paged),
+        support::text_block(&start),
+        "paging moved nothing"
+    );
+    // Off screen, which is the whole point: the reader is looking somewhere
+    // else and can come back.
+    assert_eq!(
+        support::cursor_line(&paged),
+        "none",
+        "the cursor is still on screen after a page:\n{paged}"
+    );
+
+    // And one arrow key brings the screen back with the cursor in the middle
+    // of it, rather than at the edge the least scrolling would leave.
+    press(&mut app, KeyCode::Down);
+    let back = support::render(&mut app, 40, 12);
+    let (_, row) = support::cursor_line(&back)
+        .split_once(',')
+        .expect("the cursor is on screen again");
+    assert_eq!(
+        row.parse::<u16>().expect("a row"),
+        5,
+        "the cursor did not come back to the middle:\n{back}"
+    );
+}
+
+/// Paging up at the top of a file, and down at the end, stop there. A page
+/// that ran off would leave a screen of nothing with no way to tell why.
+#[test]
+fn paging_stops_at_both_ends() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    let start = support::render(&mut app, 40, 12);
+    for _ in 0..3 {
+        press(&mut app, KeyCode::PageUp);
+    }
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 40, 12)),
+        support::text_block(&start),
+        "paging up from the first line moved somewhere"
+    );
+
+    for _ in 0..20 {
+        press(&mut app, KeyCode::PageDown);
+    }
+    let far = support::render(&mut app, 40, 12);
+    assert!(
+        support::text_block(&far).contains("LINE_38"),
+        "paging down ran past the end of the file:\n{far}"
+    );
+}
+
+/// The thumb reaches the bottom of the track when the last line is on
+/// screen. That is the one position a reader checks it against: a bar that
+/// stops short says there is more below when there is not.
+#[test]
+fn the_scrollbar_reaches_both_ends() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    let thumb_rows = |dump: &str| -> Vec<usize> {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| !row.is_empty())
+            .enumerate()
+            .filter(|(_, row)| row.ends_with('\u{2588}'))
+            .map(|(index, _)| index)
+            .collect()
+    };
+
+    let top = support::render(&mut app, 40, 12);
+    let at_top = thumb_rows(&top);
+    assert_eq!(
+        at_top.first(),
+        Some(&0),
+        "the thumb is not at the top of the track:\n{top}"
+    );
+
+    // The editor is eleven rows tall, so the last of them is row ten.
+    for _ in 0..10 {
+        press(&mut app, KeyCode::PageDown);
+    }
+    let bottom = support::render(&mut app, 40, 12);
+    let at_bottom = thumb_rows(&bottom);
+    assert!(
+        support::text_block(&bottom).contains("LINE_38"),
+        "not actually at the end of the file:\n{bottom}"
+    );
+    assert_eq!(
+        at_bottom.last(),
+        Some(&10),
+        "the thumb stopped short of the bottom:\n{bottom}"
+    );
+}
+
+/// The wheel moves the view, not the cursor. Which is only knowable because
+/// obelus asks the terminal to report the mouse: without that the wheel
+/// arrives as arrow keys and there is no way to tell it not to.
+#[test]
+fn the_wheel_scrolls_without_moving_the_cursor() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    let start = support::render(&mut app, 40, 12);
+    let status = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .last()
+            .expect("a status row")
+            .to_string()
+    };
+    let before = status(&start);
+
+    app.handle(obelus::event::Event::Scroll(3));
+    let scrolled = support::render(&mut app, 40, 12);
+    assert_eq!(
+        status(&scrolled),
+        before,
+        "the wheel moved the cursor:\n{scrolled}"
+    );
+    assert_ne!(
+        support::text_block(&scrolled),
+        support::text_block(&start),
+        "the wheel moved nothing"
+    );
+
+    // Back up, and the screen is where it started: three rows down and three
+    // rows up is nowhere.
+    app.handle(obelus::event::Event::Scroll(-3));
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 40, 12)),
+        support::text_block(&start),
+        "rolling back did not come back"
+    );
+
+    // And a cursor move afterwards brings the screen back to the cursor,
+    // like any other detour.
+    app.handle(obelus::event::Event::Scroll(9));
+    press(&mut app, KeyCode::Down);
+    let back = support::render(&mut app, 40, 12);
+    assert!(
+        support::cursor_line(&back) != "none",
+        "the cursor is still off screen after moving it:\n{back}"
+    );
+}
+
+/// A list under a wheel scrolls, one row a notch. With the mouse reported the
+/// wheel no longer arrives as arrow keys, so a picker that ignored it would
+/// have lost something it used to do.
+#[test]
+fn the_wheel_moves_a_list_by_one_row() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 20);
+    support::press_control(&mut app, 'p');
+
+    let first = app
+        .picker()
+        .and_then(|picker| picker.selected_item())
+        .map(|item| item.label.clone())
+        .expect("a row");
+    app.handle(obelus::event::Event::Scroll(3));
+    let second = app
+        .picker()
+        .and_then(|picker| picker.selected_item())
+        .map(|item| item.label.clone())
+        .expect("a row");
+    assert_ne!(first, second, "the wheel did not move the list");
+
+    // And it stops at the top rather than wrapping round: a wheel is rolled
+    // without looking.
+    for _ in 0..10 {
+        app.handle(obelus::event::Event::Scroll(-3));
+    }
+    assert_eq!(
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.clone()),
+        Some(first),
+        "the wheel wrapped past the top of the list"
+    );
 }

@@ -30,6 +30,13 @@ use crate::{
 /// the width would then change from file to file.
 const MINIMUM_GUTTER_WIDTH: u16 = 5;
 
+/// The column the scrollbar takes, on the right.
+///
+/// Always reserved, even for a file that fits: a column that came and went
+/// would rewrap the text as files were opened, and an empty track is itself
+/// an answer -- it says that what is on screen is all there is.
+pub const SCROLLBAR_WIDTH: u16 = 1;
+
 /// How many cells the gutter takes for a document with this many lines.
 ///
 /// Enough digits for the largest line number, plus one column of separation,
@@ -52,6 +59,25 @@ pub struct EditorView<'a> {
     theme: &'a Theme,
     /// A run of characters to mark, for a preview of somewhere in particular.
     marked: Option<Span>,
+}
+
+impl EditorView<'_> {
+    /// The bar down the right-hand edge: where in the file this screen is.
+    ///
+    /// Measured in *lines*, not in visual rows. Counting rows would mean
+    /// wrapping every line in the document on every frame, which is the one
+    /// thing this program must not do -- and a scrollbar is an indication of
+    /// where you are, not a measurement. With wrapping on, a file of very
+    /// long lines shows a thumb a little too big; nothing depends on it.
+    fn scrollbar(&self, cells: &mut CellBuffer, area: Rect, buffer: &Buffer) {
+        crate::ui::scrollbar(
+            cells,
+            area,
+            buffer.viewport().top.get(),
+            buffer.text().line_count(),
+            self.theme,
+        );
+    }
 }
 
 impl<'a> EditorView<'a> {
@@ -108,9 +134,13 @@ impl Widget for EditorView<'_> {
 
         let text = buffer.text();
         let gutter = gutter_width(text.line_count()).min(area.width);
-        let width = area.width - gutter;
+        let bar = SCROLLBAR_WIDTH.min(area.width - gutter);
+        let width = area.width - gutter - bar;
         if width == 0 {
             return;
+        }
+        if bar > 0 {
+            self.scrollbar(cells, area, buffer);
         }
         let cursor = buffer.cursor();
         let viewport = buffer.viewport();

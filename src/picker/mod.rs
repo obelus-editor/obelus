@@ -6,7 +6,6 @@
 //! screens.
 
 pub mod files;
-pub mod icons;
 
 use std::path::PathBuf;
 
@@ -70,6 +69,23 @@ pub struct PickerItem {
     pub trailing: Option<String>,
     /// What choosing it does.
     pub value: PickerValue,
+    /// How deep the row sits in whatever it is a list of.
+    ///
+    /// Not part of the label, so the query never matches the indentation and
+    /// the score never depends on how deeply nested a symbol is.
+    pub depth: u16,
+    /// What sort of thing the label names, if the row is about one.
+    ///
+    /// A colour rather than a word: an outline is a list of names, and the
+    /// only honest way to highlight a name is by what it names. The matched
+    /// characters still win over it -- why a row is in the list beats what
+    /// the row is.
+    pub kind: Option<crate::theme::SyntaxKind>,
+    /// Which tab the row belongs to, if the picker has tabs.
+    ///
+    /// An index into the picker's own tab names. `None` means every tab,
+    /// which is what a picker without tabs gives all of its rows.
+    pub tab: Option<usize>,
 }
 
 /// How much of the screen the list takes.
@@ -116,12 +132,49 @@ pub struct Picker {
     /// A field rather than a return value so the allocation survives every
     /// keystroke.
     matched: Vec<(usize, u32)>,
-    /// Which character positions of the selected row matched.
+    /// Which character positions matched, for the rows on screen.
     ///
-    /// Also reused. Only ever holds the selected row's, because that is the
-    /// only row whose matched characters get their own colour.
-    indices: Vec<u32>,
+    /// One entry per visible row, in the order they are drawn, holding the
+    /// row's position in `matched` and its matched character positions. Only
+    /// the visible rows: computing positions is dearer than scoring, and a
+    /// file list is tens of thousands of rows long.
+    ///
+    /// Also reused, so the inner allocations survive a keystroke that leaves
+    /// something typed.
+    indices: Vec<(usize, Vec<u32>)>,
     selected: usize,
+    /// The file this list is the outline of, if that is what it is.
+    ///
+    /// A language server answers `documentSymbol` a moment after being
+    /// asked, by which time the reader may have closed the list or opened a
+    /// different one. The tag is what lets the answer find the list it
+    /// belongs to -- and lets it be dropped when the list has gone, without
+    /// anything having to remember to clear a flag.
+    outline: Option<std::path::PathBuf>,
+    /// The tabs across the top, if this picker has any.
+    ///
+    /// Data rather than a kind: the picker itself has no idea what a group
+    /// is, and the one caller with groups hands over names and puts an index
+    /// on each row. The first tab shows everything, so nothing is ever
+    /// unreachable by walking them.
+    tabs: Vec<String>,
+    /// Which tab is showing.
+    tab: usize,
+    /// What to say when there is nothing to list.
+    ///
+    /// Per picker, because the reason differs: an empty file list and an
+    /// empty buffer list are different facts about the world. An empty
+    /// region says only that something is broken.
+    empty: String,
+    /// A row to select as soon as the list contains it.
+    ///
+    /// The file list arrives in batches from a walking thread, so the row
+    /// worth starting on is usually not there yet when the picker opens.
+    /// Re-applied on every batch, because an arriving batch renumbers the
+    /// rows, and dropped the moment the reader does anything at all: a list
+    /// that jumped under a reader who had already started choosing would be
+    /// worse than one that never moved.
+    prefer: Option<String>,
     layout: PickerLayout,
     matcher: Matcher,
     /// Scratch for `Utf32Str::new`, which needs somewhere to put a converted
@@ -153,12 +206,136 @@ impl Picker {
             matched: Vec::new(),
             indices: Vec::new(),
             selected: 0,
+            outline: Option::None,
+            tabs: Vec::new(),
+            tab: 0,
+            empty: "nothing to choose from".to_string(),
+            prefer: None,
             layout,
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
             haystack: Vec::new(),
         };
         picker.refilter();
         picker
+    }
+
+    /// Gives the picker a row of tabs.
+    ///
+    /// `names` are the groups; the tab drawn first is "all", which the picker
+    /// adds itself, so every row is reachable by walking them and so is a row
+    /// belonging to no group.
+    pub fn with_tabs(&mut self, names: &[&str]) {
+        self.tabs = std::iter::once("all".to_string())
+            .chain(names.iter().map(|name| (*name).to_string()))
+            .collect();
+        self.refilter();
+    }
+
+    /// The tab names, empty for a picker without tabs.
+    #[must_use]
+    pub fn tabs(&self) -> &[String] {
+        &self.tabs
+    }
+
+    /// Which tab is showing.
+    #[must_use]
+    pub const fn tab(&self) -> usize {
+        self.tab
+    }
+
+    /// How many rows the tabs take: the names, a rule, or none at all.
+    #[must_use]
+    pub const fn tab_rows(&self) -> u16 {
+        if self.tabs.is_empty() { 0 } else { 2 }
+    }
+
+    /// Moves to the next tab, or the previous one, wrapping.
+    fn step_tab(&mut self, forward: bool) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        let last = self.tabs.len() - 1;
+        self.tab = match (forward, self.tab) {
+            (true, at) if at == last => 0,
+            (true, at) => at + 1,
+            (false, 0) => last,
+            (false, at) => at - 1,
+        };
+        // A different list, so the old selection means nothing.
+        self.selected = 0;
+        self.refilter();
+    }
+
+    /// Says this list is the outline of a file.
+    pub fn is_outline_of(&mut self, path: std::path::PathBuf) {
+        self.outline = Some(path);
+    }
+
+    /// Which file it is the outline of, if it is one.
+    #[must_use]
+    pub fn outline_of(&self) -> Option<&std::path::Path> {
+        self.outline.as_deref()
+    }
+
+    /// Replaces every row, keeping the query and the tag.
+    ///
+    /// For an answer that arrives after the list is on screen. The selection
+    /// goes back to the top: the rows are not the rows that were there, so
+    /// where the selection was means nothing.
+    pub fn replace(&mut self, items: Vec<PickerItem>) {
+        self.items = items;
+        self.selected = 0;
+        self.refilter();
+    }
+
+    /// Moves the selection by rows, stopping at the ends.
+    ///
+    /// For the wheel, which is not the arrow keys: rolling past the end of a
+    /// list and reappearing at the top is a jump nobody asked for, and a
+    /// wheel is rolled without looking.
+    pub fn move_selection_by(&mut self, rows: isize) {
+        self.move_selection(rows, Wrap::No);
+    }
+
+    /// Puts a query back, for a list that has been rebuilt under a reader
+    /// who had already typed one.
+    pub fn set_query(&mut self, query: &str) {
+        self.query = query.to_string();
+        self.refilter();
+    }
+
+    /// Sets what the list says when it is empty.
+    ///
+    /// Written for the case where there is nothing *to* list, which is a fact
+    /// about the world; a query that matches nothing is a fact about the
+    /// query, and the view says that itself.
+    pub fn when_empty(&mut self, reason: &str) {
+        self.empty = reason.to_string();
+    }
+
+    /// What to show instead of rows, if anything.
+    ///
+    /// `None` while there are rows to draw.
+    #[must_use]
+    pub fn nothing_to_show(&self) -> Option<&str> {
+        if self.match_count() > 0 {
+            return None;
+        }
+        Some(if self.query.is_empty() {
+            &self.empty
+        } else {
+            "no match"
+        })
+    }
+
+    /// Asks for a row to be selected once the list holds one with this label.
+    ///
+    /// For the file picker, which opens on the file being read: a list of
+    /// every file in a project, opened at the top, starts by pointing at
+    /// something arbitrary.
+    pub fn prefer(&mut self, label: String) {
+        self.prefer = Some(label);
+        self.refilter();
     }
 
     /// How much of the screen it takes.
@@ -176,8 +353,17 @@ impl Picker {
     pub fn visible_rows(&self, available: u16) -> u16 {
         match self.layout {
             PickerLayout::FullArea => available,
+            // A list with tabs keeps its full height whatever the tab holds:
+            // walking the tabs would otherwise resize the block under the
+            // reader, and the rows would move as they read them. Without
+            // tabs the list is as tall as it has rows -- at least one, which
+            // is where the reason for having none goes.
+            PickerLayout::Compact { rows } if !self.tabs.is_empty() => {
+                rows.saturating_add(self.tab_rows()).min(available)
+            }
             PickerLayout::Compact { rows } => u16::try_from(self.match_count())
                 .unwrap_or(u16::MAX)
+                .max(1)
                 .min(rows)
                 .min(available),
         }
@@ -213,10 +399,66 @@ impl Picker {
         self.selected
     }
 
-    /// The character positions of the selected row that the query matched.
+    /// The character positions of one visible row that the query matched.
+    ///
+    /// Empty for a row outside the window [`Picker::refresh_indices`] was last
+    /// given, which is the window the renderer is about to draw.
     #[must_use]
-    pub fn selected_indices(&self) -> &[u32] {
-        &self.indices
+    pub fn indices_at(&self, row: usize) -> &[u32] {
+        self.indices
+            .iter()
+            .find(|(at, _)| *at == row)
+            .map_or(&[], |(_, indices)| indices.as_slice())
+    }
+
+    /// Which match is on the top row of a window `height` rows tall.
+    ///
+    /// Placed so the selection sits near the middle of the window, clamped at
+    /// both ends of the list. Anchoring the selection to the bottom row
+    /// instead is simpler and reads badly once paging exists: every move
+    /// slides the whole list under a cursor that never moves.
+    #[must_use]
+    pub fn first_visible(&self, height: u16) -> usize {
+        let height = usize::from(height);
+        self.selected
+            .saturating_sub(height / 2)
+            .min(self.match_count().saturating_sub(height))
+    }
+
+    /// Works out which characters matched, for the rows about to be drawn.
+    ///
+    /// Called once a frame with the height the list will have, rather than
+    /// from every path that changes the query or the selection: the window
+    /// depends on the geometry, and the geometry is only settled at that
+    /// point.
+    pub fn refresh_indices(&mut self, height: u16) {
+        // Reuse the allocations: `indices` holds one vector per row, and the
+        // rows are the same rows on the next keystroke.
+        let mut spare: Vec<Vec<u32>> = self
+            .indices
+            .drain(..)
+            .map(|(_, mut indices)| {
+                indices.clear();
+                indices
+            })
+            .collect();
+        if self.query.is_empty() {
+            return;
+        }
+
+        let pattern = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
+        let first = self.first_visible(height);
+        for row in first..first.saturating_add(usize::from(height)) {
+            let Some((index, _)) = self.matched.get(row) else {
+                break;
+            };
+            let mut indices = spare.pop().unwrap_or_default();
+            let haystack = Utf32Str::new(&self.items[*index].label, &mut self.haystack);
+            pattern.indices(haystack, &mut self.matcher, &mut indices);
+            indices.sort_unstable();
+            indices.dedup();
+            self.indices.push((row, indices));
+        }
     }
 
     /// Adds more items to a list that is still being gathered.
@@ -248,7 +490,7 @@ impl Picker {
         let control = modifiers == KeyModifiers::CONTROL;
         let bare = modifiers.is_empty();
 
-        match key.code {
+        let outcome = match key.code {
             // The same keys the editor uses to reach the ends of a document,
             // doing the same thing to a list. That they duplicate Home and
             // End here is worth it: a key should not mean one thing in one
@@ -259,6 +501,17 @@ impl Picker {
             }
             KeyCode::End if control => {
                 self.select(self.matched.len().saturating_sub(1));
+                PickerOutcome::Consumed
+            }
+            // Only where there are tabs to walk. Elsewhere they fall
+            // through, which is what a picker with nothing to switch should
+            // do with an arrow that means nothing to it.
+            KeyCode::Right if bare && !self.tabs.is_empty() => {
+                self.step_tab(true);
+                PickerOutcome::Consumed
+            }
+            KeyCode::Left if bare && !self.tabs.is_empty() => {
+                self.step_tab(false);
                 PickerOutcome::Consumed
             }
             KeyCode::Esc if bare => PickerOutcome::Cancelled,
@@ -309,13 +562,20 @@ impl Picker {
                 PickerOutcome::Consumed
             }
             _ => PickerOutcome::Ignored,
+        };
+
+        // The reader has taken over. One place rather than a line in each arm
+        // above: an arm that forgot it would leave the list jumping to a file
+        // that arrived after the reader started choosing.
+        if !matches!(outcome, PickerOutcome::Ignored) {
+            self.prefer = None;
         }
+        outcome
     }
 
     /// Selects a row outright.
     fn select(&mut self, row: usize) {
         self.selected = row.min(self.matched.len().saturating_sub(1));
-        self.recompute_indices();
     }
 
     fn move_selection(&mut self, by: isize, wrap: Wrap) {
@@ -331,20 +591,34 @@ impl Picker {
             Wrap::Yes if by < 0 && self.selected == 0 => last,
             _ => self.selected.saturating_add_signed(by).min(last),
         };
-        self.recompute_indices();
     }
 
     fn refilter(&mut self) {
         self.matched.clear();
 
+        // The first tab is every row; any other one is its own.
+        let tab = self.tab;
+        let showing = move |item: &PickerItem| match (tab, item.tab) {
+            (0, _) | (_, None) => true,
+            (tab, Some(of)) => tab == of,
+        };
+
         if self.query.is_empty() {
             // An empty query keeps the given order, which is the order the
             // caller thought worth showing: recent buffers, the command table.
-            self.matched
-                .extend((0..self.items.len()).map(|index| (index, 0)));
+            self.matched.extend(
+                self.items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| showing(item))
+                    .map(|(index, _)| (index, 0)),
+            );
         } else {
             let pattern = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
             for (index, item) in self.items.iter().enumerate() {
+                if !showing(item) {
+                    continue;
+                }
                 let haystack = Utf32Str::new(&item.label, &mut self.haystack);
                 if let Some(score) = pattern.score(haystack, &mut self.matcher) {
                     self.matched.push((index, score));
@@ -357,21 +631,17 @@ impl Picker {
         }
 
         self.selected = self.selected.min(self.matched.len().saturating_sub(1));
-        self.recompute_indices();
-    }
 
-    fn recompute_indices(&mut self) {
-        self.indices.clear();
-        if self.query.is_empty() {
-            return;
+        // Last, because it is the strongest claim about which row to start
+        // on: it beats both the order the items came in and where the
+        // selection happened to be before the list changed under it.
+        if let Some(label) = self.prefer.as_deref()
+            && let Some(row) = self
+                .matched
+                .iter()
+                .position(|(index, _)| self.items[*index].label == label)
+        {
+            self.selected = row;
         }
-        let Some((index, _)) = self.matched.get(self.selected) else {
-            return;
-        };
-        let pattern = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
-        let haystack = Utf32Str::new(&self.items[*index].label, &mut self.haystack);
-        pattern.indices(haystack, &mut self.matcher, &mut self.indices);
-        self.indices.sort_unstable();
-        self.indices.dedup();
     }
 }

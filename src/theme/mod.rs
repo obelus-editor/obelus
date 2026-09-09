@@ -79,6 +79,14 @@ impl SyntaxKind {
             "comment" => Some(Self::Comment),
             "constant" => Some(Self::Constant),
             "constructor" => Some(Self::Constructor),
+            // C and C++ call `;` and `,` delimiters where the others call
+            // them punctuation.
+            "delimiter" => Some(Self::Punctuation),
+            // The interpolated part of a string: `${name}`, `f"{value}"`,
+            // `$(command)`. It is code rather than string, and what it names
+            // is nearly always a variable. Anything captured inside it still
+            // wins, because the innermost capture does.
+            "embedded" => Some(Self::Variable),
             "escape" => Some(Self::Escape),
             "function" => Some(Self::Function),
             "keyword" => Some(Self::Keyword),
@@ -88,6 +96,14 @@ impl SyntaxKind {
             "property" => Some(Self::Property),
             "punctuation" => Some(Self::Punctuation),
             "string" => Some(Self::String),
+            // An HTML element, a CSS selector, a JSX component. The name of
+            // the kind of thing the element is, which is what a type is, and
+            // in JSX a capitalised tag *is* a type. `tag.error` -- a close
+            // tag matching nothing -- falls back to this rather than getting
+            // a colour of its own: obelus does not show diagnostics yet, and
+            // a colour that only appears in broken files is one nobody has
+            // learnt.
+            "tag" => Some(Self::Type),
             "type" => Some(Self::Type),
             "variable" => Some(Self::Variable),
             _ => None,

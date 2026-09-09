@@ -1,59 +1,59 @@
 screen 60x22  editor 60x21  status 60x1
 -- text --
- 0|  tests/fixtures/sample.rs                                 
- 1|  tests/fixtures/long.rs                                   
- 2|                                                            
- 3|                                                            
- 4|                                                            
- 5|                                                            
- 6|                                                            
- 7|                                                            
- 8|                                                            
- 9|                                                            
+ 0|  tests/fixtures/sample.rs                                █
+ 1|  tests/fixtures/long.rs                                  █
+ 2|                                                           █
+ 3|                                                           █
+ 4|                                                           █
+ 5|                                                           █
+ 6|                                                           █
+ 7|                                                           █
+ 8|                                                           █
+ 9|                                                           █
 10|────────────────────────────────────────────────────────────
-11|   1 fn main() {                                            
-12|   2     let greeting = "你好";                             
-13|   3     println!("{greeting} world");                      
-14|   4 }                                                      
-15|   5                                                        
-16|                                                            
-17|                                                            
-18|                                                            
-19|                                                            
-20|                                                            
-21| >                                                        2 
+11|   1 fn main() {                                           █
+12|   2     let greeting = "你好";                            █
+13|   3     println!("{greeting} world");                     █
+14|   4 }                                                     █
+15|   5                                                       █
+16|                                                           █
+17|                                                           █
+18|                                                           █
+19|                                                           █
+20|                                                           █
+21| 󰍉                                                        2 
 -- style --
- 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 2|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 5|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 7|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-11|bbbdbeebffffddbdbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-12|bbbcbbbbbeeebbbbbbbbbbbbggggggdbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-13|bbbcbbbbbffffffffdggggggggggggggggggddbbbbbbbbbbbbbbbbbbbbbb
-14|bbbcbdbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-15|bbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-16|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-17|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-18|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-19|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-20|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 2|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 4|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+10|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+11|cccbceecffffbbcbcccccccccccccccccccccccccccccccccccccccccccb
+12|cccdccccceeeccccccccccccggggggbccccccccccccccccccccccccccccb
+13|cccdcccccffffffffbggggggggggggggggggbbcccccccccccccccccccccb
+14|cccdcbcccccccccccccccccccccccccccccccccccccccccccccccccccccb
+15|cccdcccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+19|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
 21|hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhih
 -- legend --
 a fg=#e4e4e7 bg=#27272a
-b fg=#e4e4e7 bg=#18181b
-c fg=#52525b bg=#18181b
-d fg=#a1a1aa bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#e4e4e7 bg=#18181b
+d fg=#52525b bg=#18181b
 e fg=#c084fc bg=#18181b
 f fg=#60a5fa bg=#18181b
 g fg=#a3e635 bg=#18181b
 h fg=#d4d4d8 bg=#27272a
 i fg=#52525b bg=#27272a
 -- cursor --
-3,21
+4,21

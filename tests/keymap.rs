@@ -146,3 +146,46 @@ fn a_modifier_obelus_does_not_know_disqualifies_the_key() {
     let event = press(KeyCode::Char('q'), KeyModifiers::CONTROL);
     assert_eq!(keymap.lookup(&event, Context::Normal), Some(Command::Quit));
 }
+
+/// Both ways of writing a chord. With glyphs the modifiers stop being
+/// prefixes and a key that is a word becomes one column, which is the point:
+/// `ctrl+pagedown` is thirteen columns of a right-aligned key column, and
+/// every one of them comes off the room the description has.
+#[test]
+fn a_chord_is_written_with_glyphs_or_spelled_out() {
+    use obelus::icons;
+
+    let control_f = control('f');
+    assert_eq!(control_f.label_in(false), "ctrl+f");
+    assert_eq!(
+        control_f.label_in(true),
+        format!("{} f", icons::key::CONTROL)
+    );
+
+    let page = KeyChord::new(KeyCode::PageDown, KeyModifiers::CONTROL);
+    assert_eq!(page.label_in(false), "ctrl+pagedown");
+    assert_eq!(
+        page.label_in(true),
+        format!("{} {}", icons::key::CONTROL, icons::key::PAGE_DOWN)
+    );
+    // Which is the whole argument for the glyphs: five columns instead of
+    // thirteen.
+    assert!(page.label_in(true).chars().count() < page.label_in(false).chars().count());
+
+    // An arrow is a symbol in any font, so it is an arrow either way.
+    let jump = KeyChord::new(KeyCode::Left, KeyModifiers::ALT);
+    assert_eq!(jump.label_in(false), "alt+\u{2190}");
+    assert_eq!(jump.label_in(true), format!("{} \u{2190}", icons::key::ALT));
+
+    // And every glyph is followed by a blank column, because a non-`Mono`
+    // Nerd Font draws them two cells wide and the second cell is not ours.
+    assert!(
+        control_f
+            .label_in(true)
+            .contains(&format!("{} ", icons::key::CONTROL)),
+        "a glyph with nothing after it bleeds over whatever follows"
+    );
+
+    // `label` is one of the two, and which one is the switch's business.
+    assert_eq!(control_f.label(), control_f.label_in(icons::enabled()));
+}

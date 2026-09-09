@@ -48,6 +48,13 @@ const WORDMARK: &[&str] = &[
 /// a golden fixture's legend into forty lines nobody can read.
 const RAMP_STEPS: u16 = 8;
 
+/// How many ticks the ramp takes to travel its own length once.
+///
+/// Sixteen at twelve a second, so a little over a second a cycle: slow enough
+/// to read as a sheen moving across the letters rather than as something
+/// flashing, and a whole number of steps so the cycle has no seam.
+const CYCLE: u32 = RAMP_STEPS as u32 * 2;
+
 /// What the name means, and what the thing is for.
 const TAGLINE: &str = "read the code you didn't write";
 
@@ -56,6 +63,12 @@ pub struct WelcomeView<'a> {
     keymap: &'a Keymap,
     working_directory: &'a Path,
     theme: &'a Theme,
+    /// How far the ramp has travelled, in ticks.
+    ///
+    /// Zero unless something is ticking, and nothing ticks once a file is
+    /// open or when the session is remote, so this is the only thing that
+    /// makes the screen differ between two draws.
+    phase: u32,
 }
 
 impl<'a> WelcomeView<'a> {
@@ -66,6 +79,7 @@ impl<'a> WelcomeView<'a> {
             keymap: app.keymap(),
             working_directory: app.working_directory(),
             theme: app.theme(),
+            phase: app.phase(),
         }
     }
 }
@@ -121,14 +135,13 @@ impl WelcomeView<'_> {
             let mut column = 0u16;
             for character in row.chars() {
                 if character != ' ' {
-                    let step = column * RAMP_STEPS / width.max(1);
-                    let along = f32::from(step) / f32::from(RAMP_STEPS - 1);
+                    let step = u32::from(column * RAMP_STEPS / width.max(1));
                     put(
                         cells,
                         left + column,
                         y,
                         character,
-                        Style::new().fg(ramp(from, to, along)),
+                        Style::new().fg(sheen(from, to, step, self.phase)),
                     );
                 }
                 column = column.saturating_add(1);
@@ -284,6 +297,25 @@ fn width_of(row: &str) -> u16 {
 }
 
 /// A colour `along` of the way from one to another.
+/// The colour of one step of the wordmark at one moment.
+///
+/// The ramp runs from `from` to `to` and back again over [`CYCLE`] steps, and
+/// the phase slides the whole thing along. Out and back rather than round,
+/// because a ramp that wraps from its last colour straight to its first has a
+/// visible seam travelling across the letters -- which reads as a glitch,
+/// not as a sheen.
+fn sheen(from: Color, to: Color, step: u32, phase: u32) -> Color {
+    let at = (step + phase) % CYCLE;
+    let half = CYCLE / 2;
+    // The way back, mirrored.
+    let along = if at < half { at } else { CYCLE - at };
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "both are below CYCLE, which is sixteen"
+    )]
+    ramp(from, to, along as f32 / half as f32)
+}
+
 fn ramp(from: Color, to: Color, along: f32) -> Color {
     let (Color::Rgb(fr, fg, fb), Color::Rgb(tr, tg, tb)) = (from, to) else {
         // A theme in named colours has nothing to interpolate between.

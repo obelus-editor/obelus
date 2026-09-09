@@ -1,79 +1,79 @@
 screen 60x34  editor 60x33  status 60x1
 -- text --
- 0|  tests/fixtures/many_lines.rs                             
- 1|                                                            
- 2|                                                            
- 3|                                                            
- 4|                                                            
- 5|                                                            
- 6|                                                            
- 7|                                                            
- 8|                                                            
- 9|                                                            
+ 0|  tests/fixtures/many_lines.rs                            █
+ 1|                                                           █
+ 2|                                                           █
+ 3|                                                           █
+ 4|                                                           █
+ 5|                                                           █
+ 6|                                                           █
+ 7|                                                           █
+ 8|                                                           █
+ 9|                                                           █
 10|────────────────────────────────────────────────────────────
-11|   1 //! Forty lines, so a preview has more to show than it 
-12|     has room for.                                          
-13|   2 pub const LINE_01: u32 = 1;                            
-14|   3 pub const LINE_02: u32 = 2;                            
-15|   4 pub const LINE_03: u32 = 3;                            
-16|   5 pub const LINE_04: u32 = 4;                            
-17|   6 pub const LINE_05: u32 = 5;                            
-18|   7 pub const LINE_06: u32 = 6;                            
-19|   8 pub const LINE_07: u32 = 7;                            
-20|   9 pub const LINE_08: u32 = 8;                            
-21|  10 pub const LINE_09: u32 = 9;                            
-22|  11 pub const LINE_10: u32 = 10;                           
-23|  12 pub const LINE_11: u32 = 11;                           
-24|  13 pub const LINE_12: u32 = 12;                           
-25|  14 pub const LINE_13: u32 = 13;                           
-26|  15 pub const LINE_14: u32 = 14;                           
-27|  16 pub const LINE_15: u32 = 15;                           
-28|  17 pub const LINE_16: u32 = 16;                           
-29|  18 pub const LINE_17: u32 = 17;                           
-30|  19 pub const LINE_18: u32 = 18;                           
-31|  20 pub const LINE_19: u32 = 19;                           
-32|  21 pub const LINE_20: u32 = 20;                           
-33| >                                                        1 
+11|   1 //! Forty lines, so a preview has more to show than   █
+12|     it has room for.                                      █
+13|   2 pub const LINE_01: u32 = 1;                           █
+14|   3 pub const LINE_02: u32 = 2;                           █
+15|   4 pub const LINE_03: u32 = 3;                           █
+16|   5 pub const LINE_04: u32 = 4;                           █
+17|   6 pub const LINE_05: u32 = 5;                           █
+18|   7 pub const LINE_06: u32 = 6;                           █
+19|   8 pub const LINE_07: u32 = 7;                           █
+20|   9 pub const LINE_08: u32 = 8;                           █
+21|  10 pub const LINE_09: u32 = 9;                           █
+22|  11 pub const LINE_10: u32 = 10;                          █
+23|  12 pub const LINE_11: u32 = 11;                          │
+24|  13 pub const LINE_12: u32 = 12;                          │
+25|  14 pub const LINE_13: u32 = 13;                          │
+26|  15 pub const LINE_14: u32 = 14;                          │
+27|  16 pub const LINE_15: u32 = 15;                          │
+28|  17 pub const LINE_16: u32 = 16;                          │
+29|  18 pub const LINE_17: u32 = 17;                          │
+30|  19 pub const LINE_18: u32 = 18;                          │
+31|  20 pub const LINE_19: u32 = 19;                          │
+32|  21 pub const LINE_20: u32 = 20;                          │
+33| 󰍉                                                        1 
 -- style --
- 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 2|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 5|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 7|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-11|bbbdbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-12|bbbbbeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-13|bbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-14|bbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-15|bbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-16|bbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-17|bbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-18|bbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-19|bbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-20|bbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-21|bbccbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-22|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
-23|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
-24|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
-25|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
-26|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
-27|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
-28|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
-29|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
-30|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
-31|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
-32|bbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 2|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 4|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+10|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+11|cccbceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeccb
+12|ccccceeeeeeeeeeeeeeeeccccccccccccccccccccccccccccccccccccccb
+13|cccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccccb
+14|cccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccccb
+15|cccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccccb
+16|cccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccccb
+17|cccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccccb
+18|cccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccccb
+19|cccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccccb
+20|cccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccccb
+21|ccddcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccccb
+22|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccb
+23|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
+24|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
+25|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
+26|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
+27|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
+28|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
+29|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
+30|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
+31|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
+32|ccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
 33|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiji
 -- legend --
 a fg=#e4e4e7 bg=#27272a
-b fg=#e4e4e7 bg=#18181b
-c fg=#52525b bg=#18181b
-d fg=#a1a1aa bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#e4e4e7 bg=#18181b
+d fg=#52525b bg=#18181b
 e fg=#71717a bg=#18181b
 f fg=#c084fc bg=#18181b
 g fg=#fbbf24 bg=#18181b
@@ -81,4 +81,4 @@ h fg=#f472b6 bg=#18181b
 i fg=#d4d4d8 bg=#27272a
 j fg=#52525b bg=#27272a
 -- cursor --
-3,33
+4,33

@@ -14,15 +14,20 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::FileOpen => app.open_file_picker(),
         Command::FileReload => app.reload_current(),
         Command::BufferList => app.open_buffer_picker(),
+        Command::BufferClose => app.close_current(),
         Command::ThemeSelect => app.open_theme_picker(),
         Command::CommandPalette => app.open_command_palette(),
         Command::SymbolMenu => app.open_symbol_menu(),
+        Command::SymbolOutline => app.open_outline(),
         Command::SymbolDefinition
         | Command::SymbolTypeDefinition
         | Command::SymbolImplementation
         | Command::SymbolReferences => app.ask_about_symbol(command),
-        Command::JumpBack => app.jump_back(),
-        Command::JumpForward => app.jump_forward(),
+        Command::GoBack => app.go_back(),
+        Command::GoForward => app.go_forward(),
+        Command::LogOpen => app.open_log(),
+        Command::ServerRestart => app.restart_server(),
+        Command::ServerStop => app.stop_server(),
         Command::Quit => app.request_quit(),
     }
 }

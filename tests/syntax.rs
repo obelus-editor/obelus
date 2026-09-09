@@ -244,3 +244,170 @@ fn an_edits_points_are_byte_columns_not_character_columns() {
     );
     assert_eq!(edit.start_position.row, 0);
 }
+
+/// Every language actually produces highlights.
+///
+/// A query that compiles but matches nothing is the failure this catches: the
+/// file opens, the parse succeeds, and the screen shows plain text. That is
+/// indistinguishable from a language obelus has never heard of, so nothing
+/// else would report it. It is a real risk here because several of these
+/// queries are two upstream queries concatenated -- TypeScript's covers only
+/// what TypeScript adds to JavaScript.
+#[test]
+fn every_language_highlights_its_own_sample() {
+    // One snippet per language, each holding a comment, a string and a
+    // keyword or a tag, which are the three things every one of these has.
+    let samples: &[(LanguageId, &str)] = &[
+        (LanguageId::Rust, "// c\nfn main() { let s = \"hi\"; }\n"),
+        (LanguageId::Toml, "# c\n[table]\nkey = \"hi\"\n"),
+        (LanguageId::Json, "{\"key\": \"hi\", \"n\": 1}\n"),
+        (
+            LanguageId::Python,
+            "# c\ndef greet(name):\n    return f\"hi {name}\"\n",
+        ),
+        (
+            LanguageId::JavaScript,
+            "// c\nfunction greet(name) { return `hi ${name}`; }\n",
+        ),
+        (
+            LanguageId::TypeScript,
+            "// c\nfunction greet(name: string): string { return \"hi\"; }\n",
+        ),
+        (
+            LanguageId::Tsx,
+            "// c\nconst App = (): JSX.Element => <div className=\"a\">hi</div>;\n",
+        ),
+        (
+            LanguageId::Go,
+            "// c\npackage main\nfunc main() { s := \"hi\" }\n",
+        ),
+        (
+            LanguageId::C,
+            "// c\n#include <stdio.h>\nint main(void) { return puts(\"hi\"); }\n",
+        ),
+        (
+            LanguageId::Cpp,
+            "// c\n#include <string>\nint main() { std::string s = \"hi\"; return 0; }\n",
+        ),
+        (LanguageId::Bash, "# c\nname=\"hi\"\necho \"${name}\"\n"),
+        (
+            LanguageId::Css,
+            "/* c */\ndiv.a { color: red; content: \"hi\"; }\n",
+        ),
+        (LanguageId::Html, "<!-- c -->\n<div class=\"a\">hi</div>\n"),
+        (LanguageId::Yaml, "# c\nkey: \"hi\"\nlist:\n  - 1\n"),
+    ];
+
+    assert_eq!(
+        samples.len(),
+        LanguageId::ALL.len(),
+        "a language has no sample here, so nothing checks that it highlights"
+    );
+
+    for (language, source) in samples {
+        let text = Text::from_string(source);
+        let state = SyntaxState::new(*language, &text).expect("parsing");
+        let kinds = kinds(&text, &state);
+        let found: std::collections::HashSet<SyntaxKind> = kinds.into_iter().flatten().collect();
+
+        // JSON has no comments, which is the one thing this list cannot ask
+        // of every language on it.
+        if *language != LanguageId::Json {
+            assert!(
+                found.contains(&SyntaxKind::Comment),
+                "{} did not highlight its comment: {found:?}",
+                language.name()
+            );
+        }
+        assert!(
+            found.contains(&SyntaxKind::String),
+            "{} did not highlight its string: {found:?}",
+            language.name()
+        );
+        // Something beyond the two kinds every query in the world finds. A
+        // query matching only comments and strings has matched the parts that
+        // look the same in every language and nothing about this one -- which
+        // is exactly what a half-applied concatenated query looks like.
+        assert!(
+            found
+                .iter()
+                .any(|kind| !matches!(kind, SyntaxKind::Comment | SyntaxKind::String)),
+            "{} highlighted nothing but comments and strings: {found:?}",
+            language.name()
+        );
+    }
+}
+
+/// The outline a syntax tree gives, for the languages whose grammars ship a
+/// tags query. It is the floor under the outline command: no server, no
+/// indexing, and available the moment the file is open.
+#[test]
+fn the_tree_gives_an_outline_of_what_a_file_defines() {
+    use obelus::syntax::tags;
+
+    // A function *before* a type, deliberately: the query reports its
+    // matches pattern by pattern, and the Rust tags query has the type
+    // patterns first. Anything that skipped sorting would come out in the
+    // query's order, which is not the order the file reads in.
+    let source = "\
+fn free() {}
+
+struct Thing {
+    field: u32,
+}
+
+impl Thing {
+    fn method(&self) -> u32 {
+        self.field
+    }
+}
+
+const NAMED: u32 = 1;
+";
+    let text = Text::from_string(source);
+    let state = SyntaxState::new(LanguageId::Rust, &text).expect("parsing");
+    let found = tags::outline(&state, &text);
+
+    let names: Vec<&str> = found.iter().map(|symbol| symbol.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["free", "Thing", "method", "NAMED"],
+        "not the definitions, in the order they appear"
+    );
+
+    // One row per symbol. Upstream's queries have several patterns matching
+    // the same node -- a method is both a method and a function -- and each
+    // match would otherwise be a row.
+    assert_eq!(
+        names.len(),
+        found
+            .iter()
+            .map(|symbol| (symbol.line.get(), symbol.column.get()))
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        "a symbol is listed more than once: {found:?}"
+    );
+
+    // The kind is a colour, because the row is a name and the only honest
+    // way to highlight a name is by what it names.
+    assert_eq!(found[0].kind, SyntaxKind::Function);
+    assert_eq!(found[1].kind, SyntaxKind::Type);
+    assert_eq!(found[3].kind, SyntaxKind::Constant);
+
+    // The columns bracket the name itself, so a preview can mark exactly it.
+    let thing = &found[1];
+    assert_eq!(thing.line.get(), 2);
+    assert_eq!(
+        thing.end_column.get() - thing.column.get(),
+        "Thing".len(),
+        "the span is not the name"
+    );
+
+    // A language with no tags query has no outline, which is not the same as
+    // a file that defines nothing.
+    assert!(tags::has_tags(LanguageId::Rust));
+    assert!(!tags::has_tags(LanguageId::Yaml));
+    let yaml = Text::from_string("key: 1\n");
+    let state = SyntaxState::new(LanguageId::Yaml, &yaml).expect("parsing");
+    assert!(tags::outline(&state, &yaml).is_empty());
+}

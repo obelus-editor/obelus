@@ -1,7 +1,7 @@
 //! Application state, and the loop that drives it.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -15,10 +15,11 @@ use ratatui::{
 };
 
 use crate::{
-    buffer::{Buffer, BufferId, Motion, TextArea},
-    command::dispatch,
+    buffer::{Buffer, BufferId, Cursor, Motion, TextArea},
+    command::{Requires, dispatch},
     coordinates::{ByteOffset, CharColumn, LineNumber, Span},
-    event::{self, Event},
+    event::{self, Event, Ticker},
+    icons,
     jump::{Jump, JumpList},
     keymap::{self, Context, KeyChord, Keymap},
     lsp::{
@@ -27,8 +28,8 @@ use crate::{
         client::{Client, Reply},
         position,
     },
-    picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files, icons},
-    syntax::{LanguageId, highlight::Highlights},
+    picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files},
+    syntax::{LanguageId, highlight::Highlights, parse::SyntaxState, tags},
     theme::{Theme, builtin},
     ui,
     watch::Watcher,
@@ -54,7 +55,15 @@ const EVENT_DRAIN_LIMIT: usize = 256;
 #[derive(Debug)]
 pub struct App {
     keymap: Keymap,
-    buffers: Vec<Buffer>,
+    /// Every file opened this session, with a hole where one has been closed.
+    ///
+    /// Holes rather than removal, because [`BufferId`] is an index and the
+    /// jump list, the pending questions and `current` all hold one. Removing
+    /// an element would leave every id above it pointing at a *different*
+    /// file, which is the kind of wrong that shows up as the wrong file
+    /// opening a week later. A closed slot makes a stale id dead instead:
+    /// whoever holds it gets nothing and does nothing.
+    buffers: Vec<Option<Buffer>>,
     current: Option<BufferId>,
     theme: &'static Theme,
     /// The open picker, if one is open.
@@ -71,12 +80,23 @@ pub struct App {
     /// One language server per language, started when a file of that language
     /// is first opened.
     servers: HashMap<LanguageId, Client>,
+    /// Languages whose server has been stopped on purpose.
+    ///
+    /// Without this, opening the next file of that language starts it again,
+    /// and a reader who stopped rust-analyzer because it was eating the
+    /// machine would find it back a moment later with nothing saying why.
+    stopped: HashSet<LanguageId>,
     /// What each question that is still out was about.
     ///
     /// Kept here rather than in the client because the answer arrives after
     /// the world has moved on, and only this side can say whether it still
     /// means anything.
-    asked: HashMap<i64, Question>,
+    ///
+    /// Keyed by the server as well as the request id, because ids are each
+    /// server's own and start again from zero. Two servers running at once,
+    /// or one restarted, otherwise hand out the same id twice, and the second
+    /// answer would be matched to the first question.
+    asked: HashMap<(LanguageId, i64), Question>,
     /// Where the reader has been.
     jumps: JumpList,
     /// The file the picker's selection names, opened so it can be shown.
@@ -84,6 +104,24 @@ pub struct App {
     /// Keyed by path: moving through a list reads each file once as it is
     /// passed, and moving back to one that is still selected reads nothing.
     preview: Option<Preview>,
+    /// How far along the welcome screen's colours have travelled.
+    ///
+    /// One number, advanced by a tick. The wordmark is the only thing that
+    /// reads it, and it reads it as an offset into a repeating ramp, so it
+    /// can grow forever and wrap on its own.
+    phase: u32,
+    /// The theme to go back to if the theme picker is cancelled.
+    ///
+    /// Set while that picker is open, because moving through it *applies*
+    /// each theme: a list of colour names is not a choice between colour
+    /// schemes, and the only honest preview of a theme is the screen wearing
+    /// it. Cancelling has to undo that.
+    theme_before: Option<&'static Theme>,
+    /// The thread sending ticks, while anything wants them.
+    ///
+    /// Held so that dropping it stops the animation. There is nothing to
+    /// animate once a file is open, and nothing over a network at all.
+    ticker: Option<Ticker>,
     /// Something to tell the reader, until the next key.
     ///
     /// Half of what a language server does is answer with nothing, and
@@ -118,6 +156,7 @@ impl App {
     #[must_use]
     pub fn new(buffers: Vec<Buffer>) -> Self {
         let current = (!buffers.is_empty()).then(|| BufferId::new(0));
+        let buffers: Vec<Option<Buffer>> = buffers.into_iter().map(Some).collect();
         Self {
             keymap: Keymap::new(),
             buffers,
@@ -125,9 +164,13 @@ impl App {
             theme: &builtin::DARK,
             picker: None,
             servers: HashMap::new(),
+            stopped: HashSet::new(),
             asked: HashMap::new(),
             jumps: JumpList::default(),
             preview: None,
+            phase: 0,
+            ticker: None,
+            theme_before: None,
             note: None,
             walk_generation: 0,
             events: None,
@@ -198,11 +241,11 @@ impl App {
     /// The document being read, if any is open.
     #[must_use]
     pub fn current_buffer(&self) -> Option<&Buffer> {
-        self.buffers.get(self.current?.get())
+        self.buffers.get(self.current?.get())?.as_ref()
     }
 
     fn current_buffer_mut(&mut self) -> Option<&mut Buffer> {
-        self.buffers.get_mut(self.current?.get())
+        self.buffers.get_mut(self.current?.get())?.as_mut()
     }
 
     /// Starts everything that needs the loop's channel.
@@ -213,6 +256,13 @@ impl App {
     /// missing program.
     fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
+        // Only if the welcome screen is what will be on screen. Starting a
+        // ticker for a reader who opened a file from the command line would
+        // be twelve redraws a second behind a screen with nothing moving on
+        // it.
+        if self.buffers.is_empty() {
+            self.ticker = Ticker::start(sender.clone());
+        }
         self.start_watching(sender);
         for index in 0..self.buffers.len() {
             self.serve(index);
@@ -228,7 +278,7 @@ impl App {
                 return;
             }
         };
-        for buffer in &self.buffers {
+        for buffer in self.buffers.iter().flatten() {
             if let Err(error) = watcher.watch(buffer.path()) {
                 tracing::warn!(%error, path = %buffer.path().display(), "not watching");
             }
@@ -250,6 +300,15 @@ impl App {
         Some((&preview.buffer, &preview.highlights, preview.marked))
     }
 
+    /// How far along the welcome screen's colours have travelled, in ticks.
+    ///
+    /// Zero until something ticks, so a screen drawn without a running
+    /// ticker -- a test, a remote session -- is the same screen every time.
+    #[must_use]
+    pub const fn phase(&self) -> u32 {
+        self.phase
+    }
+
     /// What obelus has to say, until the next key.
     #[must_use]
     pub fn note(&self) -> Option<&str> {
@@ -266,6 +325,29 @@ impl App {
         self.servers.values().find_map(Client::working_on)
     }
 
+    /// The server for the file being read, and what it is doing.
+    ///
+    /// Only the current file's: a status bar listing every server obelus has
+    /// started would be a table, and the question a reader has is whether
+    /// *this* file's questions can be answered.
+    #[must_use]
+    pub fn server_state(&self) -> Option<(&'static str, lsp::ServerState)> {
+        let language = self.current_buffer()?.language()?;
+        let client = self.servers.get(&language)?;
+        Some((lsp::command_for(language)?, client.state()))
+    }
+
+    /// Asks each server whether it is still running.
+    ///
+    /// Once a frame, from [`App::prepare`]: reaping needs `&mut`, and a dead
+    /// server is otherwise silent -- the reader thread stops and the
+    /// questions simply stop being answered.
+    fn check_servers(&mut self) {
+        for client in self.servers.values_mut() {
+            client.check_alive();
+        }
+    }
+
     /// Starts a server for a buffer's language, if there is one to start and
     /// it is not already running.
     ///
@@ -273,7 +355,7 @@ impl App {
     /// directory, and asking it about a file outside its own tree gets
     /// answers about a project it cannot see.
     fn serve(&mut self, index: usize) {
-        let Some(buffer) = self.buffers.get(index) else {
+        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -283,11 +365,19 @@ impl App {
             tracing::debug!(path = %buffer.path().display(), "outside the root, so no server");
             return;
         }
+        if self.stopped.contains(&language) {
+            tracing::debug!(
+                language = language.name(),
+                "stopped on purpose, so no server"
+            );
+            return;
+        }
 
         if !self.servers.contains_key(&language) {
-            let Some(command) = lsp::command_for(language) else {
+            let Some(server) = lsp::server_for(language) else {
                 return;
             };
+            let command = server.command;
             if !lsp::on_path(command) {
                 tracing::info!(%command, "not on PATH, so no server for {}", language.name());
                 return;
@@ -295,7 +385,7 @@ impl App {
             let Some(sender) = self.events.clone() else {
                 return;
             };
-            match Client::start(language, command, &self.working_directory, sender) {
+            match Client::start(language, server, &self.working_directory, sender) {
                 Ok(client) => {
                     tracing::info!(%command, "started");
                     self.servers.insert(language, client);
@@ -312,7 +402,7 @@ impl App {
 
     /// Tells the server about a document.
     fn open_document(&mut self, index: usize) {
-        let Some(buffer) = self.buffers.get(index) else {
+        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -342,7 +432,7 @@ impl App {
 
     /// Tells the server a document changed.
     fn change_document(&mut self, index: usize) {
-        let Some(buffer) = self.buffers.get(index) else {
+        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -388,11 +478,14 @@ impl App {
                 .map(|action| {
                     let command = action.command();
                     PickerItem {
-                        icon: None,
+                        icon: icons::enabled().then(|| icons::for_command(command.spec().name)),
                         label: command.spec().name.to_string(),
                         detail: Some(command.spec().title.to_string()),
                         trailing: self.keymap.chord_for(command).map(KeyChord::label),
                         value: PickerValue::Command(command),
+                        depth: 0,
+                        kind: None,
+                        tab: None,
                     }
                 })
                 .collect(),
@@ -404,6 +497,9 @@ impl App {
                 detail: None,
                 trailing: None,
                 value: PickerValue::Nothing,
+                depth: 0,
+                kind: None,
+                tab: None,
             }],
         };
         self.picker = Some(Picker::new(
@@ -452,7 +548,7 @@ impl App {
     /// Asks one of those questions.
     fn ask(&mut self, action: SymbolAction) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.buffers.get(id.get()) else {
+        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -481,12 +577,11 @@ impl App {
         match client.request(action.method(), &params) {
             Ok(request) => {
                 self.asked.insert(
-                    request,
+                    (language, request),
                     Question {
-                        action,
+                        asked: Asked::Symbol(action),
                         buffer: id,
                         version,
-                        language,
                     },
                 );
                 self.note = Some(format!("{}\u{2026}", action.title()));
@@ -504,15 +599,20 @@ impl App {
     /// function of the reply and two numbers: this is only what to do about
     /// each answer.
     fn on_reply(&mut self, language: LanguageId, reply: Reply) {
-        let Some(question) = self.asked.remove(&reply.id) else {
+        let Some(question) = self.asked.remove(&(language, reply.id)) else {
             tracing::debug!(id = reply.id, "an answer with nothing waiting for it");
             return;
         };
-        if question.language != language {
-            return;
-        }
 
-        let now = self.buffers.get(question.buffer.get()).map(Buffer::version);
+        let now = self
+            .buffers
+            .get(question.buffer.get())
+            .and_then(Option::as_ref)
+            .map(Buffer::version);
+        let Asked::Symbol(action) = question.asked else {
+            self.on_outline(reply);
+            return;
+        };
         let indexing = self.server_working_on().is_some();
         match action::outcome_of(reply.result, question.version, now, indexing) {
             Outcome::Stale => {
@@ -526,7 +626,7 @@ impl App {
             Outcome::Failed(message) => self.note = Some(message),
             Outcome::NotYet => self.note = Some("still indexing".to_string()),
             Outcome::Nothing => {
-                self.note = Some(format!("nothing for {}", question.action.title()));
+                self.note = Some(format!("nothing for {}", action.title()));
             }
             Outcome::Places(mut places) if places.len() == 1 => {
                 let place = places.remove(0);
@@ -537,7 +637,7 @@ impl App {
                 let items = places
                     .into_iter()
                     .map(|place| PickerItem {
-                        icon: Some(crate::picker::icons::for_path(&place.path)),
+                        icon: Some(icons::for_path(&place.path)),
                         label: format!(
                             "{}:{}:{}",
                             relative(&place.path, &self.working_directory),
@@ -553,6 +653,9 @@ impl App {
                             end_line: place.end_line,
                             end_character: place.end_character,
                         },
+                        depth: 0,
+                        kind: None,
+                        tab: None,
                     })
                     .collect();
                 self.note = None;
@@ -574,7 +677,7 @@ impl App {
         // Before the buffer is borrowed: the area depends on which file is
         // current, which the open above has just settled.
         let area = self.text_area();
-        let Some(buffer) = self.buffers.get_mut(id.get()) else {
+        let Some(buffer) = self.buffers.get_mut(id.get()).and_then(Option::as_mut) else {
             return;
         };
         let encoding = buffer
@@ -596,7 +699,7 @@ impl App {
     /// Where the cursor is, for the history.
     fn here(&self) -> Option<Jump> {
         let id = self.current?;
-        let cursor = self.buffers.get(id.get())?.cursor();
+        let cursor = self.buffers.get(id.get())?.as_ref()?.cursor();
         Some(Jump {
             buffer: id,
             line: cursor.line,
@@ -605,7 +708,7 @@ impl App {
     }
 
     /// Returns to where the last jump started.
-    pub fn jump_back(&mut self) {
+    pub fn go_back(&mut self) {
         let Some(here) = self.here() else { return };
         match self.jumps.back(here) {
             Some(there) => self.go(there),
@@ -614,7 +717,7 @@ impl App {
     }
 
     /// Undoes a jump back.
-    pub fn jump_forward(&mut self) {
+    pub fn go_forward(&mut self) {
         match self.jumps.forward() {
             Some(there) => self.go(there),
             None => self.note = Some("nowhere further forward".to_string()),
@@ -627,7 +730,11 @@ impl App {
         }
         self.current = Some(to.buffer);
         let area = self.text_area();
-        if let Some(buffer) = self.buffers.get_mut(to.buffer.get()) {
+        if let Some(buffer) = self
+            .buffers
+            .get_mut(to.buffer.get())
+            .and_then(Option::as_mut)
+        {
             buffer.place_cursor(to.line, to.column);
             // Arriving, like the jump that led here: the line the reader left
             // deserves its context as much as the definition did.
@@ -643,7 +750,19 @@ impl App {
     /// Offers every file under the working directory.
     pub fn open_file_picker(&mut self) {
         self.walk_generation += 1;
-        self.picker = Some(Picker::new(Vec::new(), PickerLayout::FullArea));
+        let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
+        // Shown for the moment before the first batch arrives as well as for
+        // a tree with nothing in it, which is why it is about the search
+        // rather than about the result.
+        picker.when_empty("no files under this directory");
+        // Open on the file being read. The walk decides where in the list it
+        // is, and it may be in the last batch, so the picker holds on to the
+        // name and selects the row when it turns up. The window puts the
+        // selection near its middle, so this also decides what is around it.
+        if let Some(buffer) = self.current_buffer() {
+            picker.prefer(relative(buffer.path(), &self.working_directory));
+        }
+        self.picker = Some(picker);
         if let Some(sender) = self.events.clone() {
             files::spawn_walk(&self.working_directory, self.walk_generation, sender);
         }
@@ -655,44 +774,83 @@ impl App {
             .buffers
             .iter()
             .enumerate()
+            // Closed slots are holes, not rows.
+            .filter_map(|(index, buffer)| buffer.as_ref().map(|buffer| (index, buffer)))
             .map(|(index, buffer)| PickerItem {
                 icon: Some(icons::for_path(buffer.path())),
                 label: relative(buffer.path(), &self.working_directory),
                 detail: None,
                 trailing: None,
                 value: PickerValue::Buffer(BufferId::new(index)),
+                depth: 0,
+                kind: None,
+                tab: None,
             })
             .collect();
-        self.picker = Some(Picker::new(items, PickerLayout::FullArea));
+        let mut picker = Picker::new(items, PickerLayout::FullArea);
+        // Reachable with nothing open at all, which is how obelus starts.
+        picker.when_empty("no file is open");
+        self.picker = Some(picker);
     }
 
     /// Offers the built-in themes.
     pub fn open_theme_picker(&mut self) {
+        self.theme_before = Some(self.theme);
         let items = builtin::ALL
             .iter()
             .map(|theme| PickerItem {
-                // Themes and commands are not files, and a glyph for each
-                // would be decoration rather than information.
-                icon: None,
+                // The same glyph on every row, which is the honest one: what
+                // distinguishes two themes is the colours, and the row's own
+                // name is what says which.
+                icon: icons::enabled().then_some(icons::ui::THEME),
                 label: theme.name.to_string(),
                 detail: None,
                 trailing: None,
                 value: PickerValue::Theme(theme),
+                depth: 0,
+                kind: None,
+                tab: None,
             })
             .collect();
-        self.picker = Some(Picker::new(
-            items,
-            PickerLayout::Compact { rows: COMPACT_ROWS },
-        ));
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.when_empty("no theme is built in");
+        // Open on the one that is on, so the list starts by saying which
+        // theme this is rather than making the reader work it out.
+        picker.prefer(self.theme.name.to_string());
+        self.picker = Some(picker);
     }
 
     /// Offers every command by name.
     pub fn open_command_palette(&mut self) {
+        // What a server would answer right now, so the palette offers a
+        // question only when there is something to answer it. The same
+        // function the symbol menu uses: two rules would disagree, and the
+        // disagreement would be a row that does nothing.
+        let answerable = self.symbol_actions().unwrap_or_default();
+        let serving = self
+            .current_buffer()
+            .and_then(Buffer::language)
+            .is_some_and(|language| self.servers.contains_key(&language));
         let items = crate::command::ALL
             .iter()
+            .filter(|spec| match spec.command.requires() {
+                Requires::Nothing => true,
+                Requires::ARunningServer => serving,
+                Requires::AnAnswer => answerable
+                    .iter()
+                    .any(|action| action.command() == spec.command),
+            })
             .map(|spec| PickerItem {
-                icon: None,
+                icon: icons::enabled().then(|| icons::for_command(spec.name)),
+                depth: 0,
+                kind: None,
                 label: spec.name.to_string(),
+                // The tab it lives under. One past its position in the list
+                // of groups, because the picker's own first tab is "all".
+                tab: crate::command::Group::ALL
+                    .iter()
+                    .position(|group| *group == spec.command.group())
+                    .map(|at| at + 1),
                 detail: Some(spec.title.to_string()),
                 // The key it is bound to, if it is bound to one. A command
                 // with nothing here is one the palette is the only way to
@@ -701,10 +859,425 @@ impl App {
                 value: PickerValue::Command(spec.command),
             })
             .collect();
-        self.picker = Some(Picker::new(
-            items,
-            PickerLayout::Compact { rows: COMPACT_ROWS },
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        // The palette leaves out what cannot run, so it can come up empty --
+        // and an empty palette with no explanation reads as a broken key.
+        picker.when_empty("no command can run here");
+        // Tabs over one long list. Fourteen commands is already more than a
+        // compact list shows at once, and the groups are what a reader is
+        // choosing between when they do not already know the name.
+        let names: Vec<&str> = crate::command::Group::ALL
+            .iter()
+            .map(|group| group.name())
+            .collect();
+        picker.with_tabs(&names);
+        self.picker = Some(picker);
+    }
+
+    /// Stops the server for the current file and starts it again.
+    ///
+    /// The way out of a server that has died, or wedged, or was installed
+    /// after obelus started: those are the three states where every question
+    /// gets the same silence, and none of them is worth restarting the whole
+    /// program over. With none running it simply starts one, which is why it
+    /// is offered whether or not there is one.
+    pub fn restart_server(&mut self) {
+        let Some(language) = self.current_buffer().and_then(Buffer::language) else {
+            self.note = Some("no file to restart a server for".to_string());
+            return;
+        };
+
+        self.stop(language);
+        // Deliberately stopped and now deliberately started: the restart is
+        // the way back from a stop, so it lifts one.
+        self.stopped.remove(&language);
+
+        // Announce every open file of that language to the new server, not
+        // just the current one: the others are still open, and a server that
+        // has not been told about a file answers nothing about it.
+        let indices: Vec<usize> = (0..self.buffers.len())
+            .filter(|index| {
+                self.buffers
+                    .get(*index)
+                    .and_then(Option::as_ref)
+                    .and_then(Buffer::language)
+                    .is_some_and(|of| of == language)
+            })
+            .collect();
+        for index in indices {
+            self.serve(index);
+        }
+
+        self.note = Some(match lsp::command_for(language) {
+            Some(command) if self.servers.contains_key(&language) => format!("restarted {command}"),
+            Some(command) if !lsp::on_path(command) => format!("{command} is not installed"),
+            Some(command) => format!("{command} would not start"),
+            None => format!("no language server for {}", language.name()),
+        });
+    }
+
+    /// Stops the server for the current file and leaves it stopped.
+    ///
+    /// For a server that is costing more than it is answering. It stays
+    /// stopped until `server.restart`, because otherwise opening the next
+    /// file of that language would start it again.
+    pub fn stop_server(&mut self) {
+        let Some(language) = self.current_buffer().and_then(Buffer::language) else {
+            self.note = Some("no file to stop a server for".to_string());
+            return;
+        };
+        let was_running = self.stop(language);
+        self.stopped.insert(language);
+        self.note = Some(match (lsp::command_for(language), was_running) {
+            (Some(command), true) => format!("stopped {command}"),
+            (Some(command), false) => format!("{command} was not running"),
+            (None, _) => format!("no language server for {}", language.name()),
+        });
+    }
+
+    /// Stops one server, and says whether there was one to stop.
+    ///
+    /// Shared by stopping and restarting, which differ only in what they do
+    /// afterwards.
+    fn stop(&mut self, language: LanguageId) -> bool {
+        let running = match self.servers.remove(&language) {
+            // Politely, then not: `shutdown` waits briefly for the process to
+            // go and kills it if it does not. A server left running would
+            // hold the same files open and answer nothing.
+            Some(mut client) => {
+                client.shutdown();
+                true
+            }
+            None => false,
+        };
+        // Every question still out was asked of the process that has just
+        // gone. Its answers are never coming, and the next server's ids start
+        // again from zero.
+        self.asked.retain(|(asked, _), _| *asked != language);
+        running
+    }
+
+    /// Stops showing the current file.
+    ///
+    /// The slot stays: [`BufferId`] is an index, and the jump list holds
+    /// them. What goes is the file, the language server's copy of it, and
+    /// the watch on it -- and the reader is left on whichever file is
+    /// nearest, or on the welcome screen if that was the last one.
+    pub fn close_current(&mut self) {
+        // Whichever file the screen is about. With the buffer list open that
+        // is the row under the selection, not the file behind it: the list is
+        // what the reader is pointing at, and one key that means "close this"
+        // everywhere beats a second key that only works in one place.
+        if let Some(id) = self.selected_buffer() {
+            self.close(id);
+            // Rebuilt rather than patched, keeping whatever was typed: a
+            // patched list would have to agree with the buffers about which
+            // slots are holes.
+            let query = self
+                .picker
+                .as_ref()
+                .map(|picker| picker.query().to_string())
+                .unwrap_or_default();
+            self.open_buffer_picker();
+            if let Some(picker) = self.picker.as_mut() {
+                picker.set_query(&query);
+            }
+            return;
+        }
+
+        let Some(id) = self.current else {
+            self.note = Some("no file to close".to_string());
+            return;
+        };
+        self.close(id);
+    }
+
+    /// The buffer the open picker's selection names, if that is what it is.
+    fn selected_buffer(&self) -> Option<BufferId> {
+        match self.picker.as_ref()?.selected_item()?.value {
+            PickerValue::Buffer(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Stops showing one file, whichever the reader is on.
+    fn close(&mut self, id: BufferId) {
+        let Some(buffer) = self.buffers.get_mut(id.get()).and_then(Option::take) else {
+            return;
+        };
+
+        // Tell the server before dropping it: the message needs the path, and
+        // a server left believing a file is open answers questions about a
+        // version that no longer exists anywhere.
+        if let Some(language) = buffer.language()
+            && let Some(client) = self.servers.get_mut(&language)
+            && let Ok(uri) = lsp::client::uri_for(buffer.path())
+        {
+            let _ = client.notify(
+                "textDocument/didClose",
+                &serde_json::json!({ "textDocument": { "uri": uri } }),
+            );
+        }
+        if let Some(watcher) = self.watcher.as_mut() {
+            watcher.unwatch(buffer.path());
+        }
+        self.note = Some(format!(
+            "closed {}",
+            relative(buffer.path(), &self.working_directory)
         ));
+        drop(buffer);
+
+        // Whichever file is nearest, before the closed one for preference:
+        // closing the last of several usually means going back to the one
+        // before it.
+        if self.current == Some(id) {
+            self.current = self.nearest_open(id.get());
+        }
+        // Nothing left, so the welcome screen is what is on screen -- and it
+        // is the only thing that animates.
+        if self.current.is_none() {
+            self.ticker = self.events.clone().and_then(Ticker::start);
+        }
+    }
+
+    /// The open buffer nearest to a slot, looking back first.
+    fn nearest_open(&self, from: usize) -> Option<BufferId> {
+        (0..from)
+            .rev()
+            .chain(from + 1..self.buffers.len())
+            .find(|index| self.buffers.get(*index).is_some_and(Option::is_some))
+            .map(BufferId::new)
+    }
+
+    /// Everything the current file defines, to jump into.
+    ///
+    /// A full-area picker, so it gets the preview the file picker has: the
+    /// list on top, the symbol in its own code below, marked. Filtering is
+    /// the prompt, moving is the arrows, and choosing is a jump -- all of
+    /// which the picker already does. What is new here is only where the
+    /// rows come from.
+    ///
+    /// From the syntax tree. A language server knows more, and asking it is
+    /// the next step; the tree is what makes the outline work on a file with
+    /// no server, before indexing has finished, and outside the project
+    /// root.
+    pub fn open_outline(&mut self) {
+        let Some(buffer) = self.current_buffer() else {
+            self.note = Some("no file to outline".to_string());
+            return;
+        };
+        let path = buffer.path().to_path_buf();
+        let Some(language) = buffer.syntax().map(SyntaxState::language) else {
+            self.note = Some("obelus does not know this language".to_string());
+            return;
+        };
+
+        // A server, if one is running for this language, gets asked. What it
+        // knows is not what a tags query knows: the nesting is real, a
+        // method is a method rather than a function that happens to sit
+        // inside something, and a name it reports is a name the rest of the
+        // semantic layer will agree about.
+        //
+        // The cost is that the answer arrives afterwards, so the list opens
+        // saying it is waiting. That is the price of the better answer, and
+        // it is a few milliseconds once the project is indexed.
+        if self.servers.contains_key(&language) && self.ask_outline(&path, language) {
+            let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
+            picker.when_empty("asking the language server\u{2026}");
+            picker.is_outline_of(path);
+            self.picker = Some(picker);
+            return;
+        }
+
+        self.outline_from_tree();
+    }
+
+    /// The outline the syntax tree gives.
+    ///
+    /// The floor: no server, or one that will not answer. Also what a
+    /// server's empty answer falls back to, which is why it is its own
+    /// method rather than the tail of the one above.
+    fn outline_from_tree(&mut self) {
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        let path = buffer.path().to_path_buf();
+        let Some(state) = buffer.syntax() else {
+            return;
+        };
+        let language = state.language();
+        let symbols = tags::outline(state, buffer.text());
+        let text = buffer.text();
+        let encoding = self.encoding_for(language);
+
+        let items: Vec<PickerItem> = symbols
+            .iter()
+            .map(|symbol| {
+                let at = position::to_lsp(text, symbol.line, symbol.column, &encoding);
+                let end = position::to_lsp(text, symbol.line, symbol.end_column, &encoding);
+                let (line, character) = (at.line, at.character);
+                let end_character = end.character;
+                PickerItem {
+                    icon: icons::enabled().then(|| icons::for_kind(symbol.kind)),
+                    depth: u16::try_from(symbol.depth).unwrap_or(u16::MAX),
+                    kind: Some(symbol.kind),
+                    label: symbol.name.clone(),
+                    detail: None,
+                    trailing: Some(format!("{}", symbol.line.get() + 1)),
+                    value: PickerValue::Place {
+                        path: path.clone(),
+                        line,
+                        character,
+                        end_line: line,
+                        end_character,
+                    },
+                    tab: None,
+                }
+            })
+            .collect();
+
+        let mut picker = Picker::new(items, PickerLayout::FullArea);
+        picker.when_empty(if tags::has_tags(language) {
+            "this file defines nothing"
+        } else {
+            // Not the same fact, and the difference is the reader's next
+            // move: one means look elsewhere, the other means do not bother
+            // pressing this key for this language.
+            "no outline for this language"
+        });
+        // On the symbol the cursor is in, or the nearest one above it, which
+        // is the answer to "where am I" that an outline is usually opened to
+        // ask.
+        if let Some(here) = nearest_symbol(&symbols, self.current_buffer().map(Buffer::cursor)) {
+            picker.prefer(here);
+        }
+        picker.is_outline_of(path);
+        self.picker = Some(picker);
+    }
+
+    /// Asks a server what a file defines, and says whether the question got
+    /// out.
+    fn ask_outline(&mut self, path: &Path, language: LanguageId) -> bool {
+        let Ok(uri) = lsp::client::uri_for(path) else {
+            return false;
+        };
+        let Some(id) = self.current else { return false };
+        let Some(version) = self
+            .buffers
+            .get(id.get())
+            .and_then(Option::as_ref)
+            .map(Buffer::version)
+        else {
+            return false;
+        };
+        let Some(client) = self.servers.get_mut(&language) else {
+            return false;
+        };
+        let params = serde_json::json!({ "textDocument": { "uri": uri } });
+        match client.request("textDocument/documentSymbol", &params) {
+            Ok(request) => {
+                self.asked.insert(
+                    (language, request),
+                    Question {
+                        asked: Asked::Outline,
+                        buffer: id,
+                        version,
+                    },
+                );
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, "could not ask for an outline");
+                false
+            }
+        }
+    }
+
+    /// Puts a server's answer into the list that is waiting for it.
+    ///
+    /// Nothing to put it in means the reader has closed the list or opened a
+    /// different one, and an answer nobody is looking at is dropped. An
+    /// empty answer falls back to the syntax tree: a server that will not
+    /// answer this question yet should not cost the reader the outline.
+    fn on_outline(&mut self, reply: Reply) {
+        let Some(path) = self
+            .picker
+            .as_ref()
+            .and_then(Picker::outline_of)
+            .map(Path::to_path_buf)
+        else {
+            tracing::debug!("an outline with nothing waiting for it");
+            return;
+        };
+
+        let symbols = lsp::outline::symbols_in(reply.result);
+        if symbols.is_empty() {
+            tracing::debug!("the server has no outline, so the tree's it is");
+            self.outline_from_tree();
+            return;
+        }
+
+        let items: Vec<PickerItem> = symbols
+            .iter()
+            .map(|symbol| PickerItem {
+                icon: icons::enabled().then(|| icons::for_kind(symbol.kind)),
+                depth: u16::try_from(symbol.depth).unwrap_or(u16::MAX),
+                kind: Some(symbol.kind),
+                label: symbol.name.clone(),
+                detail: None,
+                trailing: Some(format!("{}", symbol.line.saturating_add(1))),
+                value: PickerValue::Place {
+                    path: path.clone(),
+                    line: symbol.line,
+                    character: symbol.character,
+                    end_line: symbol.line,
+                    end_character: symbol.end_character,
+                },
+                tab: None,
+            })
+            .collect();
+
+        let here = self
+            .current_buffer()
+            .map(Buffer::cursor)
+            .and_then(|cursor| {
+                symbols
+                    .iter()
+                    .rfind(|symbol| symbol.line as usize <= cursor.line.get())
+            })
+            .map(|symbol| symbol.name.clone());
+        if let Some(picker) = self.picker.as_mut() {
+            picker.replace(items);
+            picker.when_empty("this file defines nothing");
+            if let Some(here) = here {
+                picker.prefer(here);
+            }
+        }
+    }
+
+    /// Which units a server counts positions in, or UTF-16 if none will say.
+    fn encoding_for(&self, language: LanguageId) -> lsp_types::PositionEncodingKind {
+        self.servers
+            .get(&language)
+            .map_or(lsp_types::PositionEncodingKind::UTF16, |client| {
+                client.encoding().clone()
+            })
+    }
+
+    /// Opens the log, as a file like any other.
+    ///
+    /// A reader is what obelus is, so the log needs no viewer of its own: it
+    /// becomes a buffer, the watcher on its directory reloads it as it grows,
+    /// and the cursor stays where it was put. What is in it that no screen
+    /// shows is a server's own words -- its stderr, its handshake, and the
+    /// requests obelus sent it.
+    pub fn open_log(&mut self) {
+        match crate::logging::current_file() {
+            Some(path) => self.open(&path),
+            // Logging is allowed to fail without stopping obelus starting, so
+            // there may genuinely be no file.
+            None => self.note = Some("no log file".to_string()),
+        }
     }
 
     fn accept(&mut self, value: PickerValue) {
@@ -717,7 +1290,11 @@ impl App {
                     self.current = Some(id);
                 }
             }
-            PickerValue::Theme(theme) => self.set_theme(theme),
+            PickerValue::Theme(theme) => {
+                // Chosen, so there is nothing to go back to.
+                self.theme_before = None;
+                self.set_theme(theme);
+            }
             PickerValue::Place {
                 path,
                 line,
@@ -730,7 +1307,16 @@ impl App {
 
     /// Opens a file, or switches to it if it is already open.
     fn open(&mut self, path: &Path) {
-        if let Some(index) = self.buffers.iter().position(|buffer| buffer.path() == path) {
+        // Whatever happens next, the welcome screen is over: even a file that
+        // fails to open leaves a reader looking at something other than a
+        // shimmering logo, and nothing else on screen moves.
+        self.ticker = None;
+
+        if let Some(index) = self
+            .buffers
+            .iter()
+            .position(|buffer| buffer.as_ref().is_some_and(|open| open.path() == path))
+        {
             self.current = Some(BufferId::new(index));
             return;
         }
@@ -741,7 +1327,7 @@ impl App {
                 {
                     tracing::warn!(%error, path = %buffer.path().display(), "not watching");
                 }
-                self.buffers.push(buffer);
+                self.buffers.push(Some(buffer));
                 let index = self.buffers.len() - 1;
                 self.current = Some(BufferId::new(index));
                 self.serve(index);
@@ -757,7 +1343,10 @@ impl App {
         let width = match self.current_buffer() {
             Some(buffer) => {
                 let gutter = ui::editor::gutter_width(buffer.text().line_count());
-                self.editor_area.width.saturating_sub(gutter)
+                self.editor_area
+                    .width
+                    .saturating_sub(gutter)
+                    .saturating_sub(ui::editor::SCROLLBAR_WIDTH)
             }
             None => self.editor_area.width,
         };
@@ -777,6 +1366,21 @@ impl App {
     /// that knows that is [`App::draw_into`], which is the one caller.
     fn prepare(&mut self, editor_area: Rect) {
         self.editor_area = editor_area;
+        self.check_servers();
+
+        // Which rows the list will draw is what decides which rows need
+        // their matched characters worked out, and only the geometry knows
+        // how many rows there are.
+        let rows = ui::picker::PickerView::new(self).map(|view| view.region(editor_area).height);
+        if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
+            picker.refresh_indices(rows);
+        }
+
+        // Before anything is drawn or measured: the theme decides colours
+        // only, but the preview is the application wearing it, and a frame
+        // drawn half in one theme is a frame nobody should see.
+        self.preview_theme();
+
         let area = self.text_area();
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.scroll_into_view(area);
@@ -790,7 +1394,10 @@ impl App {
             highlights,
             ..
         } = self;
-        let Some(buffer) = current.and_then(|id| buffers.get(id.get())) else {
+        let Some(buffer) = current
+            .and_then(|id| buffers.get(id.get()))
+            .and_then(Option::as_ref)
+        else {
             highlights.clear();
             return;
         };
@@ -800,6 +1407,22 @@ impl App {
         };
         let range = visible_bytes(buffer, area.height);
         highlights.refresh(state, buffer.text(), range);
+    }
+
+    /// Wears whatever theme the picker's selection names.
+    ///
+    /// The preview *is* the application: there is no way to show what a theme
+    /// looks like other than by using it, and every view already reads its
+    /// colours from one place. Cancelling puts the old one back.
+    fn preview_theme(&mut self) {
+        let selected = self
+            .picker
+            .as_ref()
+            .and_then(Picker::selected_item)
+            .map(|item| item.value.clone());
+        if let Some(PickerValue::Theme(theme)) = selected {
+            self.theme = theme;
+        }
     }
 
     /// Reads whatever the picker's selection names, and points it at the line
@@ -863,7 +1486,8 @@ impl App {
         let text = TextArea {
             width: area
                 .width
-                .saturating_sub(ui::editor::gutter_width(preview.buffer.text().line_count())),
+                .saturating_sub(ui::editor::gutter_width(preview.buffer.text().line_count()))
+                .saturating_sub(ui::editor::SCROLLBAR_WIDTH),
             height: area.height,
         };
         preview.buffer.place_cursor(target, CharColumn::new(0));
@@ -880,6 +1504,27 @@ impl App {
                 .refresh(state, preview.buffer.text(), range);
         } else {
             preview.highlights.clear();
+        }
+    }
+
+    /// What the wheel turns.
+    ///
+    /// Whatever the reader is looking at: the list when one is open -- a list
+    /// under a wheel scrolls, and with the mouse reported the wheel no longer
+    /// arrives as arrow keys, so a picker that ignored it would have lost
+    /// something -- and otherwise the file, by rows, with the cursor left
+    /// where it was put.
+    fn scroll(&mut self, rows: isize) {
+        if let Some(picker) = self.picker.as_mut() {
+            // One row a notch in a list. Three is right for text, where a
+            // notch is a gesture at a paragraph; a list is chosen through one
+            // row at a time.
+            picker.move_selection_by(rows.signum());
+            return;
+        }
+        let area = self.text_area();
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.scroll_by(rows, area);
         }
     }
 
@@ -910,6 +1555,7 @@ impl App {
             PickerValue::Buffer(id) => self
                 .buffers
                 .get(id.get())
+                .and_then(Option::as_ref)
                 .map(|buffer| (buffer.path().to_path_buf(), Marked::top())),
             PickerValue::Place {
                 path,
@@ -936,7 +1582,10 @@ impl App {
     /// files obelus does not have open.
     fn reload_path(&mut self, path: &Path) {
         for index in 0..self.buffers.len() {
-            if self.buffers[index].path() == path && reload(&mut self.buffers[index]) {
+            let Some(buffer) = self.buffers[index].as_mut() else {
+                continue;
+            };
+            if buffer.path() == path && reload(buffer) {
                 self.change_document(index);
             }
         }
@@ -947,7 +1596,7 @@ impl App {
         let Some(index) = self.current.map(BufferId::get) else {
             return;
         };
-        if let Some(buffer) = self.buffers.get_mut(index)
+        if let Some(buffer) = self.buffers.get_mut(index).and_then(Option::as_mut)
             && reload(buffer)
         {
             self.change_document(index);
@@ -990,6 +1639,8 @@ impl App {
                     self.on_reply(language, reply);
                 }
             }
+            Event::Scroll(rows) => self.scroll(rows),
+            Event::Tick => self.phase = self.phase.wrapping_add(1),
             Event::FilesFound { generation, paths } => {
                 // A batch from a walk whose picker is gone, or from one
                 // superseded by a later open.
@@ -1003,6 +1654,9 @@ impl App {
                         detail: None,
                         trailing: None,
                         value: PickerValue::File(path),
+                        depth: 0,
+                        kind: None,
+                        tab: None,
                     }));
                 }
             }
@@ -1031,6 +1685,12 @@ impl App {
                 PickerOutcome::Consumed => return,
                 PickerOutcome::Cancelled => {
                     self.picker = None;
+                    // A theme previewed but not chosen. Nothing else a picker
+                    // shows changes the application while it is open, so
+                    // nothing else has to be put back.
+                    if let Some(before) = self.theme_before.take() {
+                        self.theme = before;
+                    }
                     return;
                 }
                 PickerOutcome::Accepted(value) => {
@@ -1047,6 +1707,18 @@ impl App {
             && let Some(pages) = preview_paging(&key)
         {
             self.scroll_preview(pages);
+            return;
+        }
+
+        // Paging the file being read, which is scrolling and not a motion:
+        // the cursor stays where the reader left it.
+        if self.picker.is_none()
+            && let Some(pages) = editor_paging(&key)
+        {
+            let area = self.text_area();
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.page(pages, area);
+            }
             return;
         }
 
@@ -1140,11 +1812,35 @@ impl Marked {
 /// What one question that is still out was about.
 #[derive(Debug)]
 struct Question {
-    action: SymbolAction,
+    asked: Asked,
     buffer: BufferId,
     /// The document version it was asked against.
     version: i32,
-    language: LanguageId,
+}
+
+/// What a question was about.
+///
+/// Two kinds of answer come back over the same channel and are told apart by
+/// the id they arrive under, so what was asked has to be remembered here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Asked {
+    /// One of the questions about the symbol under the cursor.
+    Symbol(SymbolAction),
+    /// Everything the file defines.
+    Outline,
+}
+
+/// The name of the symbol the cursor is in, or the last one before it.
+///
+/// "Where am I in this file" is what an outline is usually opened to ask, and
+/// a list that opens at the top answers "at the beginning", which is almost
+/// never true.
+fn nearest_symbol(symbols: &[tags::Symbol], cursor: Option<Cursor>) -> Option<String> {
+    let cursor = cursor?;
+    symbols
+        .iter()
+        .rfind(|symbol| symbol.line <= cursor.line)
+        .map(|symbol| symbol.name.clone())
 }
 
 /// A path as it should be read: relative to the root when it lies under it.
@@ -1211,6 +1907,21 @@ fn preview_paging(key: &KeyEvent) -> Option<isize> {
     }
 }
 
+/// How many screenfuls a bare paging key moves the file by.
+///
+/// Separate from the motions because paging is not one: what moves is the
+/// window on the file, not the place in it.
+fn editor_paging(key: &KeyEvent) -> Option<isize> {
+    if !keymap::modifiers_of(key)?.is_empty() {
+        return None;
+    }
+    match key.code {
+        KeyCode::PageDown => Some(1),
+        KeyCode::PageUp => Some(-1),
+        _ => None,
+    }
+}
+
 /// The motion a navigation key stands for.
 ///
 /// A modifier obelus has no meaning for disqualifies the key: `ctrl+left` is a
@@ -1232,8 +1943,6 @@ fn motion_for(key: &KeyEvent) -> Option<Motion> {
             KeyCode::Right => Some(Motion::Right),
             KeyCode::Up => Some(Motion::Up),
             KeyCode::Down => Some(Motion::Down),
-            KeyCode::PageUp => Some(Motion::PageUp),
-            KeyCode::PageDown => Some(Motion::PageDown),
             KeyCode::Home => Some(Motion::LineStart),
             KeyCode::End => Some(Motion::LineEnd),
             _ => None,

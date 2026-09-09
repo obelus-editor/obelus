@@ -13,6 +13,7 @@ pub mod buffer;
 pub mod command;
 pub mod coordinates;
 pub mod event;
+pub mod icons;
 pub mod jump;
 pub mod keymap;
 pub mod logging;

@@ -1,0 +1,3 @@
+# A sample, for the tests that need a language with no server.
+[package]
+name = "sample"

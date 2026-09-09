@@ -1,24 +1,24 @@
 screen 34x10  editor 34x9  status 34x1
 -- text --
  0|                                  
- 1|  obelus                          
+ 1|   obelus                         
  2|                                  
- 3|  ctrl+f   open a file            
- 4|  ctrl+p   run a command by name  
- 5|  ctrl+q   leave obelus           
+ 3|   󰘴 o   open a file              
+ 4|   󰘴 p   run a command by name    
+ 5|   󰘴 q   leave obelus             
  6|                                  
- 7|  ~/Work/obelus                   
+ 7|   ~/Work/obelus                  
  8|                                  
  9|                                  
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  2|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 3|aaaaaaaaaaabbbbbbbbbbbaaaaaaaaaaaa
- 4|aaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbaa
- 5|aaaaaaaaaaabbbbbbbbbbbbaaaaaaaaaaa
+ 3|aaaaaaaaabbbbbbbbbbbaaaaaaaaaaaaaa
+ 4|aaaaaaaaabbbbbbbbbbbbbbbbbbbbbaaaa
+ 5|aaaaaaaaabbbbbbbbbbbbaaaaaaaaaaaaa
  6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 7|aabbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaa
+ 7|aaabbbbbbbbbbbbbaaaaaaaaaaaaaaaaaa
  8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  9|cccccccccccccccccccccccccccccccccc
 -- legend --

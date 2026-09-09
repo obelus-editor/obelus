@@ -6,7 +6,7 @@
 //! does not refresh", which is the hardest kind of bug to be told about.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::mpsc::{self, RecvTimeoutError, Sender},
     time::{Duration, Instant},
@@ -32,7 +32,7 @@ pub struct Watcher {
     /// A set rather than a reference count because nothing can stop watching
     /// yet: M0 has no way to close a buffer. When it has one, this becomes a
     /// count and the last buffer out of a directory takes the watch with it.
-    directories: HashSet<PathBuf>,
+    directories: HashMap<PathBuf, usize>,
 }
 
 impl std::fmt::Debug for Watcher {
@@ -77,7 +77,7 @@ impl Watcher {
 
         Ok(Self {
             inner,
-            directories: HashSet::new(),
+            directories: HashMap::new(),
         })
     }
 
@@ -90,23 +90,59 @@ impl Watcher {
     /// the directory and filtering by path is the only arrangement that keeps
     /// working.
     pub fn watch(&mut self, path: &Path) -> Result<()> {
-        let Some(directory) = path.parent() else {
+        let Some(directory) = directory_of(path) else {
             return Ok(());
         };
-        // An empty parent means a bare filename, so the current directory.
-        let directory = if directory.as_os_str().is_empty() {
-            Path::new(".")
-        } else {
-            directory
-        };
+        let directory = directory.as_path();
 
-        if !self.directories.insert(directory.to_path_buf()) {
+        // Counted, not just remembered: two open files in one directory are
+        // one watch, and closing the first of them must not take the watch
+        // away from the second.
+        let count = self.directories.entry(directory.to_path_buf()).or_default();
+        *count += 1;
+        if *count > 1 {
             return Ok(());
         }
         self.inner
             .watch(directory, RecursiveMode::NonRecursive)
             .with_context(|| format!("watching {}", directory.display()))
     }
+
+    /// Gives up the watch one file needed, if nothing else needs it.
+    ///
+    /// Failure is ignored: the watch going away is the point, and a watch
+    /// that will not go away costs a wakeup for a directory nobody is
+    /// reading -- not a wrong answer.
+    pub fn unwatch(&mut self, path: &Path) {
+        let Some(directory) = directory_of(path) else {
+            return;
+        };
+        let Some(count) = self.directories.get_mut(&directory) else {
+            return;
+        };
+        *count -= 1;
+        if *count > 0 {
+            return;
+        }
+        self.directories.remove(&directory);
+        if let Err(error) = self.inner.unwatch(&directory) {
+            tracing::debug!(%error, directory = %directory.display(), "not unwatched");
+        }
+    }
+}
+
+/// The directory a path lives in, as a watch needs it.
+///
+/// One place, because `watch` and `unwatch` disagreeing about what a path's
+/// directory is would leak a watch or drop a live one.
+fn directory_of(path: &Path) -> Option<PathBuf> {
+    let directory = path.parent()?;
+    // An empty parent means a bare filename, so the current directory.
+    Some(if directory.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        directory.to_path_buf()
+    })
 }
 
 /// Runs the thread that gathers changes and reports them once.

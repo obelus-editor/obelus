@@ -2,6 +2,7 @@
 
 pub mod highlight;
 pub mod parse;
+pub mod tags;
 
 use std::{path::Path, sync::OnceLock};
 
@@ -18,6 +19,28 @@ pub enum LanguageId {
     Toml,
     /// JSON.
     Json,
+    /// Python.
+    Python,
+    /// JavaScript, JSX included.
+    JavaScript,
+    /// TypeScript without JSX.
+    TypeScript,
+    /// TypeScript with JSX.
+    Tsx,
+    /// Go.
+    Go,
+    /// C.
+    C,
+    /// C++.
+    Cpp,
+    /// A shell script.
+    Bash,
+    /// CSS.
+    Css,
+    /// HTML.
+    Html,
+    /// YAML.
+    Yaml,
 }
 
 impl LanguageId {
@@ -32,6 +55,24 @@ impl LanguageId {
             "rs" => Some(Self::Rust),
             "toml" => Some(Self::Toml),
             "json" => Some(Self::Json),
+            "py" | "pyi" | "pyw" => Some(Self::Python),
+            // JSX goes to the JavaScript grammar, whose query is shipped with
+            // the JSX rules appended.
+            "js" | "mjs" | "cjs" | "jsx" => Some(Self::JavaScript),
+            "ts" | "mts" | "cts" => Some(Self::TypeScript),
+            "tsx" => Some(Self::Tsx),
+            "go" => Some(Self::Go),
+            // `.h` to C, which is the convention and is right for the header
+            // that came with a C library. A C++ header called `.h` parses as
+            // C well enough to read: the declarations look the same, and
+            // being wrong here costs some highlighting rather than a wrong
+            // answer.
+            "c" | "h" => Some(Self::C),
+            "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" | "ipp" => Some(Self::Cpp),
+            "sh" | "bash" | "zsh" | "ksh" => Some(Self::Bash),
+            "css" => Some(Self::Css),
+            "html" | "htm" | "xhtml" => Some(Self::Html),
+            "yaml" | "yml" => Some(Self::Yaml),
             _ => None,
         }
     }
@@ -43,8 +84,41 @@ impl LanguageId {
             Self::Rust => "rust",
             Self::Toml => "toml",
             Self::Json => "json",
+            Self::Python => "python",
+            Self::JavaScript => "javascript",
+            Self::TypeScript => "typescript",
+            Self::Tsx => "tsx",
+            Self::Go => "go",
+            Self::C => "c",
+            Self::Cpp => "c++",
+            Self::Bash => "bash",
+            Self::Css => "css",
+            Self::Html => "html",
+            Self::Yaml => "yaml",
         }
     }
+
+    /// Every language, for the tests that have to cover all of them.
+    ///
+    /// A language left out of this list is one whose query is never compiled
+    /// by the tests, and a query that does not compile takes the whole
+    /// program down the first time that language is opened.
+    pub const ALL: &'static [Self] = &[
+        Self::Rust,
+        Self::Toml,
+        Self::Json,
+        Self::Python,
+        Self::JavaScript,
+        Self::TypeScript,
+        Self::Tsx,
+        Self::Go,
+        Self::C,
+        Self::Cpp,
+        Self::Bash,
+        Self::Css,
+        Self::Html,
+        Self::Yaml,
+    ];
 }
 
 /// A compiled grammar and query, built once and shared.
@@ -104,6 +178,17 @@ pub fn grammar(language: LanguageId) -> &'static Grammar {
     static RUST: OnceLock<Grammar> = OnceLock::new();
     static TOML: OnceLock<Grammar> = OnceLock::new();
     static JSON: OnceLock<Grammar> = OnceLock::new();
+    static PYTHON: OnceLock<Grammar> = OnceLock::new();
+    static JAVASCRIPT: OnceLock<Grammar> = OnceLock::new();
+    static TYPESCRIPT: OnceLock<Grammar> = OnceLock::new();
+    static TSX: OnceLock<Grammar> = OnceLock::new();
+    static GO: OnceLock<Grammar> = OnceLock::new();
+    static C: OnceLock<Grammar> = OnceLock::new();
+    static CPP: OnceLock<Grammar> = OnceLock::new();
+    static BASH: OnceLock<Grammar> = OnceLock::new();
+    static CSS: OnceLock<Grammar> = OnceLock::new();
+    static HTML: OnceLock<Grammar> = OnceLock::new();
+    static YAML: OnceLock<Grammar> = OnceLock::new();
 
     match language {
         LanguageId::Rust => RUST.get_or_init(|| {
@@ -124,7 +209,106 @@ pub fn grammar(language: LanguageId) -> &'static Grammar {
                 tree_sitter_json::HIGHLIGHTS_QUERY,
             )
         }),
+        LanguageId::Python => PYTHON.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_python::LANGUAGE.into(),
+                tree_sitter_python::HIGHLIGHTS_QUERY,
+            )
+        }),
+        // The JSX rules are appended rather than kept for `.jsx` alone: they
+        // capture nodes a plain JavaScript file does not contain, so they
+        // cost nothing there, and one grammar per file extension would be
+        // three copies of JavaScript.
+        LanguageId::JavaScript => JAVASCRIPT.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_javascript::LANGUAGE.into(),
+                &format!(
+                    "{}\n{}",
+                    tree_sitter_javascript::HIGHLIGHT_QUERY,
+                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY
+                ),
+            )
+        }),
+        // TypeScript's own query covers only what TypeScript adds to
+        // JavaScript. On its own it highlights the types and leaves the code
+        // around them plain, which reads as a broken file rather than as a
+        // missing query.
+        LanguageId::TypeScript => TYPESCRIPT.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+                &typescript_query(),
+            )
+        }),
+        LanguageId::Tsx => TSX.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_typescript::LANGUAGE_TSX.into(),
+                &format!(
+                    "{}\n{}",
+                    typescript_query(),
+                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY
+                ),
+            )
+        }),
+        LanguageId::Go => GO.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_go::LANGUAGE.into(),
+                tree_sitter_go::HIGHLIGHTS_QUERY,
+            )
+        }),
+        LanguageId::C => C.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_c::LANGUAGE.into(),
+                tree_sitter_c::HIGHLIGHT_QUERY,
+            )
+        }),
+        LanguageId::Cpp => CPP.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_cpp::LANGUAGE.into(),
+                &format!(
+                    "{}\n{}",
+                    tree_sitter_c::HIGHLIGHT_QUERY,
+                    tree_sitter_cpp::HIGHLIGHT_QUERY
+                ),
+            )
+        }),
+        LanguageId::Bash => BASH.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_bash::LANGUAGE.into(),
+                tree_sitter_bash::HIGHLIGHT_QUERY,
+            )
+        }),
+        LanguageId::Css => CSS.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_css::LANGUAGE.into(),
+                tree_sitter_css::HIGHLIGHTS_QUERY,
+            )
+        }),
+        LanguageId::Html => HTML.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_html::LANGUAGE.into(),
+                tree_sitter_html::HIGHLIGHTS_QUERY,
+            )
+        }),
+        LanguageId::Yaml => YAML.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_yaml::LANGUAGE.into(),
+                tree_sitter_yaml::HIGHLIGHTS_QUERY,
+            )
+        }),
     }
+}
+
+/// JavaScript's rules, then TypeScript's.
+///
+/// In that order, because a later pattern wins where two match the same node
+/// and TypeScript's are the more specific.
+fn typescript_query() -> String {
+    format!(
+        "{}
+{}",
+        tree_sitter_javascript::HIGHLIGHT_QUERY,
+        tree_sitter_typescript::HIGHLIGHTS_QUERY
+    )
 }
 
 #[cfg(test)]
@@ -141,8 +325,48 @@ mod tests {
             LanguageId::for_path(Path::new("Cargo.toml")),
             Some(LanguageId::Toml)
         );
+        assert_eq!(
+            LanguageId::for_path(Path::new("setup.py")),
+            Some(LanguageId::Python)
+        );
+        // JSX to the JavaScript grammar and TSX to its own: the TypeScript
+        // grammar comes in two, and only one of them parses a tag.
+        assert_eq!(
+            LanguageId::for_path(Path::new("app.jsx")),
+            Some(LanguageId::JavaScript)
+        );
+        assert_eq!(
+            LanguageId::for_path(Path::new("app.tsx")),
+            Some(LanguageId::Tsx)
+        );
+        assert_eq!(
+            LanguageId::for_path(Path::new("index.ts")),
+            Some(LanguageId::TypeScript)
+        );
+        // `.h` is a C header by convention, whichever language wrote it.
+        assert_eq!(
+            LanguageId::for_path(Path::new("zlib.h")),
+            Some(LanguageId::C)
+        );
+        assert_eq!(
+            LanguageId::for_path(Path::new("main.cc")),
+            Some(LanguageId::Cpp)
+        );
+        assert_eq!(
+            LanguageId::for_path(Path::new("ci.yml")),
+            Some(LanguageId::Yaml)
+        );
         assert_eq!(LanguageId::for_path(Path::new("README.md")), None);
         assert_eq!(LanguageId::for_path(Path::new("Makefile")), None);
+    }
+
+    /// Every language has a name, and no two share one. The name is what the
+    /// server table and the logs are keyed by in prose.
+    #[test]
+    fn every_language_has_its_own_name() {
+        let names: std::collections::HashSet<&str> =
+            LanguageId::ALL.iter().map(|id| id.name()).collect();
+        assert_eq!(names.len(), LanguageId::ALL.len());
     }
 
     /// A capture the theme has no kind for renders as plain text, silently. If
@@ -151,7 +375,7 @@ mod tests {
     /// is understood.
     #[test]
     fn the_theme_understands_what_the_queries_capture() {
-        for language in [LanguageId::Rust, LanguageId::Toml, LanguageId::Json] {
+        for language in LanguageId::ALL.iter().copied() {
             let grammar = grammar(language);
             let names = grammar.query().capture_names();
             let unknown: Vec<&str> = names
