@@ -117,6 +117,19 @@ pub struct Buffer {
     /// contents would be worse than showing something out of date — so
     /// without saying so on screen the reader has no way to know.
     stale: bool,
+    /// How many times this document has changed, counted from one.
+    ///
+    /// The protocol needs it on every change, and every request records the
+    /// version it was asked against: an answer that arrives after a reload is
+    /// about text that is no longer on screen.
+    ///
+    /// What is sent with it is the whole document, not the range that changed.
+    /// The range would have to be in the *old* document's coordinates, which
+    /// means a second representation of the edit alongside the byte offsets
+    /// tree-sitter needs, converted through whichever units the server
+    /// negotiated. That is the shape every coordinate bug in this program has
+    /// had, and a source file down a pipe costs nothing.
+    version: i32,
     cursor: Cursor,
     viewport: Viewport,
 }
@@ -129,11 +142,21 @@ impl Buffer {
         let text = Text::from_string(&contents);
         let syntax =
             LanguageId::for_path(path).and_then(|language| SyntaxState::new(language, &text));
+        // Made absolute here, once. A relative path is what a reader types,
+        // and it is the wrong thing to keep: the protocol needs an absolute
+        // URI, the watcher needs a directory, and deciding whether a file is
+        // inside the root is a comparison a relative path fails silently.
+        //
+        // Absolute rather than canonical: resolving symlinks would report the
+        // file under a name the reader did not use.
+        let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+
         Ok(Self {
-            path: path.to_path_buf(),
+            path,
             text,
             syntax,
             stale: false,
+            version: 1,
             cursor: Cursor {
                 line: LineNumber::new(0),
                 column: CharColumn::new(0),
@@ -158,10 +181,25 @@ impl Buffer {
         &self.text
     }
 
+    /// How many times this document has changed.
+    #[must_use]
+    pub const fn version(&self) -> i32 {
+        self.version
+    }
+
     /// Whether the file could not be re-read the last time obelus tried.
     #[must_use]
     pub const fn is_stale(&self) -> bool {
         self.stale
+    }
+
+    /// Which language this is, if obelus knows it.
+    ///
+    /// Taken from the parse rather than from the path a second time, so the
+    /// server and the highlighting can never disagree about what a file is.
+    #[must_use]
+    pub fn language(&self) -> Option<LanguageId> {
+        self.syntax.as_ref().map(SyntaxState::language)
     }
 
     /// The parse, if this is a language obelus knows.
@@ -196,6 +234,7 @@ impl Buffer {
 
         let edit = parse::edit_between(&self.text, &new);
         self.text = new;
+        self.version = self.version.saturating_add(1);
 
         match (self.syntax.as_mut(), edit) {
             (Some(state), Some(edit)) => state.reparse(&self.text, &edit),
@@ -225,6 +264,28 @@ impl Buffer {
     #[must_use]
     pub const fn viewport(&self) -> Viewport {
         self.viewport
+    }
+
+    /// Puts the cursor somewhere outright, clamped into the document.
+    ///
+    /// For arriving rather than for moving: a place a language server named,
+    /// or one the history remembered.
+    pub fn place_cursor(&mut self, line: LineNumber, column: CharColumn) {
+        self.cursor.line = self.text.clamp_line(line);
+        self.cursor.column = self.text.clamp_column(self.cursor.line, column);
+        // The remembered cell is recomputed on the next vertical move, which
+        // needs the width; leaving it is right, arriving is not a move along
+        // a line.
+    }
+
+    /// Puts the top of the screen at a line outright.
+    ///
+    /// For a preview, which arrives at a place rather than scrolling to it:
+    /// scrolling the least amount would put the line on the bottom row, and
+    /// a preview is read from the top.
+    pub fn place_viewport(&mut self, top: LineNumber) {
+        self.viewport.top = self.text.clamp_line(top);
+        self.viewport.top_row = 0;
     }
 
     /// Moves the cursor.

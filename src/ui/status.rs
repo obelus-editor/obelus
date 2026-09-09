@@ -15,6 +15,11 @@ use crate::{
 /// The status region.
 pub struct StatusView<'a> {
     buffer: Option<&'a Buffer>,
+    /// Something to tell the reader, or what a language server is busy with.
+    ///
+    /// One place for both: they are the same kind of thing — a passing word
+    /// about state — and a note is the more urgent of the two.
+    middle: Option<&'a str>,
     /// When a picker is open the row is its prompt instead.
     picker: Option<&'a Picker>,
     theme: &'a Theme,
@@ -27,6 +32,7 @@ impl<'a> StatusView<'a> {
     pub fn new(app: &'a App) -> Self {
         Self {
             buffer: app.current_buffer(),
+            middle: app.note().or_else(|| app.server_working_on()),
             picker: app.picker(),
             theme: app.theme(),
             working_directory: app.working_directory(),
@@ -81,6 +87,16 @@ impl StatusView<'_> {
         let marker = if buffer.is_stale() { " [stale]" } else { "" };
         let marker_width = text_width(marker);
 
+        // What the server is doing, between the file and the position. It is
+        // there so that an empty answer during indexing can be told from an
+        // empty answer about a symbol with no definition: on the wire they
+        // are the same message, and this is the only thing that says which.
+        let working = self
+            .middle
+            .map(|what| format!("{what} "))
+            .unwrap_or_default();
+        let working_width = text_width(&working);
+
         let cursor = buffer.cursor();
         // One-based, because that is what every other tool reports. The column
         // counts characters rather than cells: it is the cursor's position in
@@ -91,7 +107,10 @@ impl StatusView<'_> {
         // One column of padding at each end, at least one between the two
         // halves, and room for the marker, which is never the part that gets
         // dropped.
-        let reserved = right_width.saturating_add(3).saturating_add(marker_width);
+        let reserved = right_width
+            .saturating_add(3)
+            .saturating_add(marker_width)
+            .saturating_add(working_width);
         let path = relative_to(buffer.path(), self.working_directory)
             .display()
             .to_string();
@@ -118,6 +137,21 @@ impl StatusView<'_> {
                 area.y,
                 marker,
                 style.fg(self.theme.status_stale),
+            );
+        }
+
+        // Just left of the position, which is where the eye already goes for
+        // the state of things.
+        if !working.is_empty()
+            && let Ok(offset) = u16::try_from(right_start.saturating_sub(working_width))
+            && usize::from(offset) > after_path + marker_width
+        {
+            write(
+                cells,
+                area.x + offset,
+                area.y,
+                &working,
+                style.fg(self.theme.gutter),
             );
         }
 

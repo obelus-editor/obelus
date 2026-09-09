@@ -180,6 +180,9 @@ pub struct Theme {
     pub picker_selected_background: Color,
     /// The characters of the selected row that the query matched.
     pub picker_match: Color,
+    /// Behind the run of characters a preview is about — the symbol a
+    /// language server named.
+    pub marked_background: Color,
     /// The syntax colours.
     pub syntax: SyntaxTheme,
 }

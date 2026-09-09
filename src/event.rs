@@ -40,6 +40,14 @@ pub enum Event {
         /// The paths, relative to the walk's root.
         paths: Vec<PathBuf>,
     },
+    /// A message from a language server.
+    Lsp {
+        /// Which server it came from.
+        language: crate::syntax::LanguageId,
+        /// The message, still as JSON: what it means depends on what was
+        /// asked for, and that is not the transport's business.
+        message: serde_json::Value,
+    },
     /// A file on disk changed.
     ///
     /// Reported for everything in a watched directory, since the watch is on

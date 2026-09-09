@@ -23,6 +23,12 @@ crossterm = "0.29"
 
 
 clap = { version = "4", features = ["derive"] }
+# The protocol's data types. Writing them by hand would be a lot of typing
+# with a lot of chances to get a JSON shape subtly wrong.
+lsp-types = "0.97"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
 # Fuzzy matching. `nucleo-matcher` rather than `nucleo`: the latter adds a
 # streaming worker on rayon and parking_lot, and obelus matches a list it
 # already holds.

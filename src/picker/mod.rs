@@ -28,6 +28,25 @@ pub enum PickerValue {
     Buffer(BufferId),
     /// Switch theme.
     Theme(&'static Theme),
+    /// Go to a place a language server named.
+    ///
+    /// The position is in the protocol's own units and is converted when the
+    /// file is opened, because converting it needs that file's text and the
+    /// file may never be visited.
+    Place {
+        /// Which file.
+        path: PathBuf,
+        /// Its line, counted from zero.
+        line: u32,
+        /// And how far along, in whichever units the server agreed to.
+        character: u32,
+        /// The line it ends on.
+        end_line: u32,
+        /// And how far along that one.
+        end_character: u32,
+    },
+    /// Nothing. A row that is there to say why the list is short.
+    Nothing,
 }
 
 /// One row.
@@ -175,6 +194,13 @@ impl Picker {
         self.matched.iter().map(|(index, _)| &self.items[*index])
     }
 
+    /// The selected row, if there is one.
+    #[must_use]
+    pub fn selected_item(&self) -> Option<&PickerItem> {
+        let (index, _) = self.matched.get(self.selected)?;
+        self.items.get(*index)
+    }
+
     /// How many rows match.
     #[must_use]
     pub fn match_count(&self) -> usize {
@@ -212,9 +238,15 @@ impl Picker {
         use crossterm::event::{KeyCode, KeyModifiers};
 
         let page = isize::try_from(page.max(1)).unwrap_or(isize::MAX);
-        let modifiers =
-            key.modifiers & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT);
+        // A key carrying a modifier this branch does not name falls through,
+        // the same rule the key table and the editor's motions follow.
+        // Without it `ctrl+pageup` pages the list, which is a different thing
+        // from what it should do.
+        let Some(modifiers) = crate::keymap::modifiers_of(key) else {
+            return PickerOutcome::Ignored;
+        };
         let control = modifiers == KeyModifiers::CONTROL;
+        let bare = modifiers.is_empty();
 
         match key.code {
             // The same keys the editor uses to reach the ends of a document,
@@ -229,41 +261,41 @@ impl Picker {
                 self.select(self.matched.len().saturating_sub(1));
                 PickerOutcome::Consumed
             }
-            KeyCode::Esc => PickerOutcome::Cancelled,
-            KeyCode::Enter => self
+            KeyCode::Esc if bare => PickerOutcome::Cancelled,
+            KeyCode::Enter if bare => self
                 .matched
                 .get(self.selected)
                 .map_or(PickerOutcome::Consumed, |(index, _)| {
                     PickerOutcome::Accepted(self.items[*index].value.clone())
                 }),
-            KeyCode::Down => {
+            KeyCode::Down if bare => {
                 self.move_selection(1, Wrap::Yes);
                 PickerOutcome::Consumed
             }
-            KeyCode::Up => {
+            KeyCode::Up if bare => {
                 self.move_selection(-1, Wrap::Yes);
                 PickerOutcome::Consumed
             }
             // Clamped rather than wrapped, unlike a single step. Paging is how
             // you get to the end of a long list, and a page that wraps past it
             // back to the top overshoots the thing you were reaching for.
-            KeyCode::PageDown => {
+            KeyCode::PageDown if bare => {
                 self.move_selection(page, Wrap::No);
                 PickerOutcome::Consumed
             }
-            KeyCode::PageUp => {
+            KeyCode::PageUp if bare => {
                 self.move_selection(-page, Wrap::No);
                 PickerOutcome::Consumed
             }
-            KeyCode::Home => {
+            KeyCode::Home if bare => {
                 self.select(0);
                 PickerOutcome::Consumed
             }
-            KeyCode::End => {
+            KeyCode::End if bare => {
                 self.select(self.matched.len().saturating_sub(1));
                 PickerOutcome::Consumed
             }
-            KeyCode::Backspace => {
+            KeyCode::Backspace if bare => {
                 self.query.pop();
                 self.refilter();
                 PickerOutcome::Consumed
@@ -271,7 +303,7 @@ impl Picker {
             // Only a bare or shifted character is text. `ctrl+q` has to reach
             // the key table, or there would be no way out of a picker other
             // than Escape.
-            KeyCode::Char(character) if (key.modifiers - KeyModifiers::SHIFT).is_empty() => {
+            KeyCode::Char(character) if (modifiers - KeyModifiers::SHIFT).is_empty() => {
                 self.query.push(character);
                 self.refilter();
                 PickerOutcome::Consumed

@@ -120,6 +120,36 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     if let Some(view) = picker::PickerView::new(app) {
         let region = view.region(regions.editor);
         view.render(region, cells);
+
+        // Below the list, with a rule between them. The preview is drawn by
+        // the editor's own view, which is what makes it look like the editor.
+        if let Some(preview) = picker::preview_region(app.picker(), regions.editor) {
+            let rule = Rect {
+                y: preview.y - 1,
+                height: 1,
+                ..preview
+            };
+            fill(cells, rule, Style::new().bg(app.theme().background));
+            for x in rule.left()..rule.right() {
+                put(
+                    cells,
+                    x,
+                    rule.y,
+                    '\u{2500}',
+                    Style::new().fg(app.theme().gutter),
+                );
+            }
+
+            match app.preview() {
+                Some((buffer, highlights, marked)) => {
+                    editor::EditorView::for_buffer(buffer, highlights, app.theme(), marked)
+                        .render(preview, cells);
+                }
+                // Room set aside and nothing to put in it: a file that has
+                // gone, or a row that names no file.
+                None => fill(cells, preview, Style::new().bg(app.theme().background)),
+            }
+        }
     }
     status::StatusView::new(app).render(regions.status, cells);
 }

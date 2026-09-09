@@ -490,3 +490,34 @@ fn the_welcome_screen_lines_up_keys_of_different_widths() {
     );
     assert!(column_of("esc") > column_of("ctrl+alt+o"), "{dump}");
 }
+
+/// A motion key held with a modifier obelus has no meaning for does nothing.
+/// Reading it as the plain key would make `super+End` jump somewhere the
+/// reader did not ask to go, and `ctrl+super+Home` leave the file entirely.
+#[test]
+fn a_motion_with_an_unknown_modifier_does_not_move() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut app, 40, 6);
+
+    press(&mut app, KeyCode::Down);
+    let buffer = app.current_buffer().expect("a buffer");
+    let (line, column) = (buffer.cursor().line, buffer.cursor().column);
+
+    for (code, modifier) in [
+        (KeyCode::Down, KeyModifiers::SUPER),
+        (KeyCode::End, KeyModifiers::SUPER),
+        (KeyCode::PageDown, KeyModifiers::HYPER),
+        (KeyCode::Home, KeyModifiers::CONTROL | KeyModifiers::SUPER),
+        (KeyCode::End, KeyModifiers::CONTROL | KeyModifiers::META),
+    ] {
+        app.handle(obelus::event::Event::Key(KeyEvent::new(code, modifier)));
+        let buffer = app.current_buffer().expect("a buffer");
+        assert_eq!(
+            (buffer.cursor().line, buffer.cursor().column),
+            (line, column),
+            "{code:?} with {modifier:?} moved the cursor"
+        );
+    }
+}

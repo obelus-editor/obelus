@@ -1,0 +1,59 @@
+screen 60x22  editor 60x21  status 60x1
+-- text --
+ 0|  tests/fixtures/many_lines.rs                             
+ 1|                                                            
+ 2|                                                            
+ 3|                                                            
+ 4|                                                            
+ 5|                                                            
+ 6|                                                            
+ 7|                                                            
+ 8|                                                            
+ 9|                                                            
+10|────────────────────────────────────────────────────────────
+11|  11 pub const LINE_10: u32 = 10;                           
+12|  12 pub const LINE_11: u32 = 11;                           
+13|  13 pub const LINE_12: u32 = 12;                           
+14|  14 pub const LINE_13: u32 = 13;                           
+15|  15 pub const LINE_14: u32 = 14;                           
+16|  16 pub const LINE_15: u32 = 15;                           
+17|  17 pub const LINE_16: u32 = 16;                           
+18|  18 pub const LINE_17: u32 = 17;                           
+19|  19 pub const LINE_18: u32 = 18;                           
+20|  20 pub const LINE_19: u32 = 19;                           
+21| >                                                        1 
+-- style --
+ 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 2|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 5|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 7|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+11|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+12|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+13|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+14|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+15|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+16|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+17|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+18|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+19|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+20|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbb
+21|hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhih
+-- legend --
+a fg=#e4e4e7 bg=#27272a
+b fg=#e4e4e7 bg=#18181b
+c fg=#52525b bg=#18181b
+d fg=#c084fc bg=#18181b
+e fg=#fbbf24 bg=#18181b
+f fg=#a1a1aa bg=#18181b
+g fg=#f472b6 bg=#18181b
+h fg=#d4d4d8 bg=#27272a
+i fg=#52525b bg=#27272a
+-- cursor --
+3,21

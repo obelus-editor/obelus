@@ -19,6 +19,49 @@ use crate::{
     ui::{drop_from_left, fill, put, text_width},
 };
 
+/// How many rows the list keeps for itself.
+///
+/// Fixed rather than sized to the candidates: a boundary that moved as the
+/// query narrowed the list would slide the preview up and down under a reader
+/// who is looking at it.
+const LIST_ROWS: u16 = 10;
+
+/// The fewest rows worth giving a preview.
+///
+/// A preview showing three lines has stopped being a preview and become a
+/// strip of decoration above the prompt.
+const LEAST_PREVIEW_ROWS: u16 = 4;
+
+/// Where the preview goes, if there is room for one.
+///
+/// Below the list rather than beside it: a terminal is usually wider than one
+/// column of paths needs and never taller than it could use, and splitting
+/// left and right makes both halves narrow at once.
+///
+/// The list takes its ten rows and the preview takes the rest, so a taller
+/// terminal buys more of the file rather than more file names — which is the
+/// way round that matters, since the list is filtered by typing and the
+/// preview is not.
+///
+/// Only for a list whose rows name a file. A palette of commands has nothing
+/// to show.
+#[must_use]
+pub fn preview_region(picker: Option<&Picker>, editor: Rect) -> Option<Rect> {
+    let picker = picker?;
+    if picker.layout() != PickerLayout::FullArea {
+        return None;
+    }
+    // The list, the rule between them, and enough left to be worth it.
+    if editor.height < LIST_ROWS + 1 + LEAST_PREVIEW_ROWS {
+        return None;
+    }
+    Some(Rect {
+        y: editor.y + LIST_ROWS + 1,
+        height: editor.height - LIST_ROWS - 1,
+        ..editor
+    })
+}
+
 /// The list, above the prompt.
 pub struct PickerView<'a> {
     picker: &'a Picker,
@@ -38,11 +81,19 @@ impl<'a> PickerView<'a> {
     /// Where the list goes within the editor region.
     ///
     /// A compact list sits on the bottom edge and grows upwards only as far as
-    /// it has to, so the code above stays readable.
+    /// it has to, so the code above stays readable. A full-area list gives up
+    /// its bottom rows to the preview, and one row between them to the rule
+    /// that says they are different things.
     #[must_use]
     pub fn region(&self, editor: Rect) -> Rect {
         match self.picker.layout() {
-            PickerLayout::FullArea => editor,
+            PickerLayout::FullArea => match preview_region(Some(self.picker), editor) {
+                Some(_) => Rect {
+                    height: LIST_ROWS,
+                    ..editor
+                },
+                None => editor,
+            },
             PickerLayout::Compact { .. } => {
                 let wanted = self.picker.visible_rows(editor.height);
                 Rect {

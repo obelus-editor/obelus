@@ -21,6 +21,7 @@ pub const DARK: Theme = Theme {
     status_stale: Color::Rgb(248, 113, 113),
     picker_selected_background: Color::Rgb(39, 39, 42),
     picker_match: Color::Rgb(96, 165, 250),
+    marked_background: Color::Rgb(30, 58, 95),
     syntax: SyntaxTheme {
         attribute: Color::Rgb(251, 146, 60),
         boolean: Color::Rgb(244, 114, 182),
@@ -53,6 +54,7 @@ pub const LIGHT: Theme = Theme {
     status_stale: Color::Rgb(185, 28, 28),
     picker_selected_background: Color::Rgb(228, 228, 231),
     picker_match: Color::Rgb(29, 78, 216),
+    marked_background: Color::Rgb(191, 219, 254),
     syntax: SyntaxTheme {
         attribute: Color::Rgb(194, 65, 12),
         boolean: Color::Rgb(190, 24, 93),

@@ -73,11 +73,12 @@ fn the_three_ways_a_terminal_reports_a_shifted_letter_agree() {
 }
 
 #[test]
-fn modifiers_no_binding_can_rely_on_are_dropped() {
+fn a_modifier_no_binding_can_rely_on_is_kept_and_so_matches_nothing() {
     // SUPER and HYPER only ever arrive from a terminal speaking the kitty
-    // protocol, so a chord carrying one would match in some terminals and
-    // not others.
-    assert_eq!(
+    // protocol, so a chord carrying one would match in some terminals and not
+    // others. It is kept rather than dropped, so such a chord is a binding
+    // that never fires — not one that steals `ctrl+q`.
+    assert_ne!(
         KeyChord::new(
             KeyCode::Char('q'),
             KeyModifiers::CONTROL | KeyModifiers::SUPER
@@ -122,4 +123,26 @@ fn no_global_binding_is_shadowed_by_a_context_binding() {
             );
         }
     }
+}
+
+/// A key held with a modifier obelus cannot be bound to is a different key,
+/// and matches nothing. Ignoring the modifier instead would quit on
+/// `ctrl+super+q` — an answer, and the wrong one, where none was asked for.
+#[test]
+fn a_modifier_obelus_does_not_know_disqualifies_the_key() {
+    let keymap = Keymap::new();
+    for extra in [KeyModifiers::SUPER, KeyModifiers::HYPER, KeyModifiers::META] {
+        let event = press(KeyCode::Char('q'), KeyModifiers::CONTROL | extra);
+        assert_eq!(
+            keymap.lookup(&event, Context::Normal),
+            None,
+            "{extra:?} was ignored rather than respected"
+        );
+        assert_eq!(KeyChord::from_event(&event), None, "{extra:?}");
+    }
+
+    // And the bare chord still works, so the check above is about the
+    // modifier and not about the key.
+    let event = press(KeyCode::Char('q'), KeyModifiers::CONTROL);
+    assert_eq!(keymap.lookup(&event, Context::Normal), Some(Command::Quit));
 }

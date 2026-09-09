@@ -8,6 +8,34 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::command::Command;
 
+/// The modifiers a binding can name.
+///
+/// `SUPER`, `HYPER` and `META` are not among them: they reach a terminal
+/// program only through the kitty keyboard protocol, which obelus does not
+/// ask for, so a binding on one would work in some terminals and not others.
+///
+/// A key arriving with one of them is therefore not a key obelus understands,
+/// and [`KeyChord::from_event`] gives no chord for it. That is deliberately
+/// different from ignoring the modifier: `ctrl+super+q` is not `ctrl+q`, and
+/// quitting because of the half of the chord we recognize is a wrong answer
+/// rather than a missing one.
+pub const BINDABLE_MODIFIERS: KeyModifiers = KeyModifiers::CONTROL
+    .union(KeyModifiers::ALT)
+    .union(KeyModifiers::SHIFT);
+
+/// The modifiers held down, or `None` if any of them is not [bindable].
+///
+/// Every path that reads a key goes through this — the key table, the editor's
+/// motions, the picker — so all of them draw the line in the same place.
+///
+/// [bindable]: BINDABLE_MODIFIERS
+#[must_use]
+pub fn modifiers_of(event: &KeyEvent) -> Option<KeyModifiers> {
+    (event.modifiers - BINDABLE_MODIFIERS)
+        .is_empty()
+        .then_some(event.modifiers)
+}
+
 /// A key plus its modifiers, in a form two equivalent presses agree on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct KeyChord {
@@ -58,11 +86,11 @@ impl KeyChord {
         // Terminals disagree about shifted letters: some report `Char('A')`
         // with SHIFT, some `Char('a')` with SHIFT, some `Char('A')` bare.
         // Fold all three onto the uppercase character with SHIFT removed.
-        // Modifiers beyond these three are dropped: SUPER and HYPER arrive
-        // only from terminals speaking the kitty protocol, and a binding on
-        // one would work in some terminals and not others.
-        let modifiers =
-            modifiers & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT);
+        //
+        // Modifiers are otherwise kept as given. A chord naming one outside
+        // `BINDABLE_MODIFIERS` matches no event, which is the honest outcome:
+        // a binding that cannot fire, rather than one that fires on a
+        // different key.
         match code {
             KeyCode::Char(character) if modifiers.contains(KeyModifiers::SHIFT) => Self {
                 code: KeyCode::Char(character.to_ascii_uppercase()),
@@ -72,16 +100,18 @@ impl KeyChord {
         }
     }
 
-    /// The chord a key event stands for, or `None` if the event is not a press.
+    /// The chord a key event stands for, or `None` if there is not one.
     ///
-    /// Release events must be discarded rather than matched. Terminals
-    /// speaking the kitty keyboard protocol report both a press and a release,
-    /// and treating them alike fires every binding twice.
+    /// Two reasons there is not. Release events must be discarded rather than
+    /// matched: terminals speaking the kitty keyboard protocol report both a
+    /// press and a release, and treating them alike fires every binding twice.
+    /// And a key held with a modifier outside [`BINDABLE_MODIFIERS`] is a key
+    /// obelus has no name for.
     #[must_use]
     pub fn from_event(event: &KeyEvent) -> Option<Self> {
         match event.kind {
             KeyEventKind::Press | KeyEventKind::Repeat => {
-                Some(Self::new(event.code, event.modifiers))
+                Some(Self::new(event.code, modifiers_of(event)?))
             }
             KeyEventKind::Release => None,
         }
@@ -138,6 +168,24 @@ impl Keymap {
                     command: Command::CommandPalette,
                     context: Context::Normal,
                     chord: control('p'),
+                },
+                Binding {
+                    command: Command::SymbolMenu,
+                    context: Context::Normal,
+                    chord: control('g'),
+                },
+                // The browser's keys, for the browser's idea: a history of
+                // places, walked in both directions. vim's `ctrl+o` and
+                // `ctrl+i` cannot both be used — `ctrl+i` *is* tab.
+                Binding {
+                    command: Command::JumpBack,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Left, KeyModifiers::ALT),
+                },
+                Binding {
+                    command: Command::JumpForward,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Right, KeyModifiers::ALT),
                 },
                 // `theme.select` has no key. It is reached from the palette,
                 // which is what the palette is for; giving every command a

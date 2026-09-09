@@ -9,7 +9,9 @@ use ropey::{Rope, RopeSlice};
 use unicode_linebreak::linebreaks;
 use unicode_width::UnicodeWidthChar;
 
-use crate::coordinates::{ByteOffset, CharColumn, CharOffset, DisplayColumn, LineNumber};
+use crate::coordinates::{
+    ByteOffset, CharColumn, CharOffset, DisplayColumn, LineNumber, Utf16Column,
+};
 
 /// How many cells a tab advances to.
 ///
@@ -138,6 +140,44 @@ impl Text {
     #[must_use]
     pub fn line_start_byte(&self, line: LineNumber) -> ByteOffset {
         ByteOffset::new(self.rope.line_to_byte(self.clamp_line(line).get()))
+    }
+
+    /// How many UTF-16 code units into its line a column is.
+    ///
+    /// What the language server protocol counts in when a server will not
+    /// agree to bytes. A character outside the basic multilingual plane costs
+    /// two of these and one of everything else, which is the case that a
+    /// conversion written as `column as u32` gets wrong on every position
+    /// after it on the line.
+    #[must_use]
+    pub fn utf16_column(&self, line: LineNumber, column: CharColumn) -> Utf16Column {
+        let column = self.clamp_column(line, column);
+        Utf16Column::new(
+            self.line(line)
+                .chars()
+                .take(column.get())
+                .map(char::len_utf16)
+                .sum(),
+        )
+    }
+
+    /// The column at a UTF-16 offset into a line.
+    ///
+    /// An offset landing on the second half of a surrogate pair resolves to
+    /// the character it belongs to, the way a display column landing on the
+    /// second cell of a wide glyph does.
+    #[must_use]
+    pub fn column_at_utf16(&self, line: LineNumber, target: Utf16Column) -> CharColumn {
+        let target = target.get();
+        let mut units = 0usize;
+        for (index, character) in self.line(line).chars().enumerate() {
+            let next = units + character.len_utf16();
+            if target < next {
+                return CharColumn::new(index);
+            }
+            units = next;
+        }
+        CharColumn::new(self.line(line).len_chars())
     }
 
     /// The line a byte offset falls on.

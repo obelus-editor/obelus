@@ -422,3 +422,136 @@ fn an_indent_wider_than_half_the_room_is_not_carried() {
     let cramped = text.wrap_rows(line, 20);
     assert_eq!(cramped[1].indent, 0, "twelve of twenty is not");
 }
+
+/// The fifth coordinate space: what the language server protocol counts in
+/// when a server will not agree to bytes.
+///
+/// Everything about it is invisible until a character outside the basic
+/// multilingual plane turns up. An emoji is one `char`, two UTF-16 code
+/// units, four bytes and two display cells — the one sample where all five
+/// spaces disagree.
+#[test]
+fn utf16_columns_differ_from_every_other_column_on_an_emoji() {
+    use obelus::coordinates::Utf16Column;
+
+    let text = Text::from_string("let party = \"\u{1f389}!\";\n");
+    let line = LineNumber::new(0);
+    let emoji = CharColumn::new(13);
+    assert_eq!(text.line(line).char(emoji.get()), '\u{1f389}');
+
+    // Before it, everything agrees.
+    assert_eq!(text.utf16_column(line, emoji), Utf16Column::new(13));
+    // After it, they do not.
+    let after = CharColumn::new(14);
+    assert_eq!(text.utf16_column(line, after), Utf16Column::new(15));
+    assert_eq!(
+        text.byte_column(text.byte_of_char(text.char_offset(line, after))),
+        17
+    );
+    assert_eq!(text.display_column(line, after).get(), 15);
+}
+
+#[test]
+fn utf16_columns_round_trip() {
+    let samples = [
+        "plain ascii\n",
+        "\u{4f60}\u{597d} mixed \u{4e16}\u{754c}\n",
+        "let party = \"\u{1f389}\u{1f680}\";\n",
+        "\ttabbed \u{1f389}\n",
+    ];
+    for source in samples {
+        let text = Text::from_string(source);
+        for line in 0..text.line_count() {
+            let line = LineNumber::new(line);
+            for column in 0..=text.line_length(line).get() {
+                let column = CharColumn::new(column);
+                let units = text.utf16_column(line, column);
+                assert_eq!(
+                    text.column_at_utf16(line, units),
+                    column,
+                    "{source:?} {line:?} {column:?} came back wrong"
+                );
+            }
+        }
+    }
+}
+
+/// An offset landing on the second half of a surrogate pair resolves to the
+/// character it belongs to, the way a display column landing on the second
+/// cell of a wide glyph does.
+#[test]
+fn the_second_half_of_a_surrogate_pair_resolves_to_its_character() {
+    use obelus::coordinates::Utf16Column;
+
+    let text = Text::from_string("a\u{1f389}b\n");
+    let line = LineNumber::new(0);
+
+    assert_eq!(
+        text.column_at_utf16(line, Utf16Column::new(0)),
+        CharColumn::new(0)
+    );
+    assert_eq!(
+        text.column_at_utf16(line, Utf16Column::new(1)),
+        CharColumn::new(1)
+    );
+    assert_eq!(
+        text.column_at_utf16(line, Utf16Column::new(2)),
+        CharColumn::new(1),
+        "the low surrogate belongs to the emoji"
+    );
+    assert_eq!(
+        text.column_at_utf16(line, Utf16Column::new(3)),
+        CharColumn::new(2)
+    );
+}
+
+/// A protocol position is a line and a count into it, and which count depends
+/// on what the server agreed to. Getting the units wrong points at a
+/// different character on every line that is not plain ASCII.
+#[test]
+fn protocol_positions_round_trip_in_both_encodings() {
+    use lsp_types::PositionEncodingKind;
+    use obelus::lsp::position::{from_lsp, to_lsp};
+
+    let samples = [
+        "plain ascii here\n",
+        "let s = \"\u{4f60}\u{597d}\u{4e16}\u{754c}\";\n",
+        "let party = \"\u{1f389}\u{1f680}\";\n",
+        "\tlet indented = 1;\n",
+    ];
+    for encoding in [PositionEncodingKind::UTF8, PositionEncodingKind::UTF16] {
+        for source in samples {
+            let text = Text::from_string(source);
+            for line in 0..text.line_count() {
+                let line = LineNumber::new(line);
+                for column in 0..=text.line_length(line).get() {
+                    let column = CharColumn::new(column);
+                    let position = to_lsp(&text, line, column, &encoding);
+                    assert_eq!(
+                        from_lsp(&text, position, &encoding),
+                        (line, column),
+                        "{encoding:?} {source:?} {line:?} {column:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The two encodings disagree, and the point of keeping them apart is that
+/// the numbers really are different.
+#[test]
+fn the_two_encodings_give_different_numbers_past_a_wide_character() {
+    use lsp_types::PositionEncodingKind;
+    use obelus::lsp::position::to_lsp;
+
+    let text = Text::from_string("let s = \"\u{4f60}\u{597d}\";\n");
+    let line = LineNumber::new(0);
+    // Just past the two Han characters.
+    let column = CharColumn::new(11);
+
+    let bytes = to_lsp(&text, line, column, &PositionEncodingKind::UTF8);
+    let units = to_lsp(&text, line, column, &PositionEncodingKind::UTF16);
+    assert_eq!(bytes.character, 15, "three bytes each");
+    assert_eq!(units.character, 11, "one code unit each");
+}

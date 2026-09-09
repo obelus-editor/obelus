@@ -16,7 +16,7 @@ use ratatui::{
 use crate::{
     app::App,
     buffer::Buffer,
-    coordinates::LineNumber,
+    coordinates::{CharColumn, LineNumber, Span},
     syntax::highlight::Highlights,
     text::WrapRow,
     theme::Theme,
@@ -50,6 +50,8 @@ pub struct EditorView<'a> {
     buffer: Option<&'a Buffer>,
     highlights: &'a Highlights,
     theme: &'a Theme,
+    /// A run of characters to mark, for a preview of somewhere in particular.
+    marked: Option<Span>,
 }
 
 impl<'a> EditorView<'a> {
@@ -60,6 +62,32 @@ impl<'a> EditorView<'a> {
             buffer: app.current_buffer(),
             highlights: app.highlights(),
             theme: app.theme(),
+            marked: None,
+        }
+    }
+
+    /// Draws a document that is not the one being read.
+    ///
+    /// What makes a preview look like the editor is that it *is* the editor:
+    /// the same gutter, the same highlighting, the same wrapping. A second
+    /// drawing path would be a second set of those decisions, and they would
+    /// drift.
+    /// `marked` is the run of characters the preview is about — the symbol a
+    /// language server named. A list of references is read by looking at that
+    /// symbol in each one, and a preview that says only which line leaves the
+    /// reader finding it again on every row.
+    #[must_use]
+    pub const fn for_buffer(
+        buffer: &'a Buffer,
+        highlights: &'a Highlights,
+        theme: &'a Theme,
+        marked: Option<Span>,
+    ) -> Self {
+        Self {
+            buffer: Some(buffer),
+            highlights,
+            theme,
+            marked,
         }
     }
 }
@@ -125,7 +153,15 @@ impl Widget for EditorView<'_> {
                     width,
                     row: wrap,
                 };
-                draw_row(placement, buffer, line, cells, self.highlights, self.theme);
+                draw_row(
+                    placement,
+                    buffer,
+                    line,
+                    cells,
+                    self.highlights,
+                    self.theme,
+                    self.marked,
+                );
                 screen_row += 1;
             }
             skip = 0;
@@ -189,13 +225,14 @@ fn draw_row(
     cells: &mut CellBuffer,
     highlights: &Highlights,
     theme: &Theme,
+    marked: Option<Span>,
 ) {
     let Placement { x, y, width, row } = placement;
     let text = buffer.text();
     let start = usize::from(text.display_column(line, row.first).get());
     let indent = usize::from(row.indent);
 
-    for glyph in text.glyphs(line) {
+    for (column, glyph) in text.glyphs(line).enumerate() {
         if glyph.first_cell < start {
             continue;
         }
@@ -210,8 +247,12 @@ fn draw_row(
         }
         let colour = theme.colour_for(highlights.kind_at(glyph.first_byte));
 
-        // Only a foreground, so the background the fill painted stays.
-        let style = Style::new().fg(colour);
+        // A foreground, so the background the fill painted stays — except
+        // where the run being marked needs one of its own.
+        let mut style = Style::new().fg(colour);
+        if marked.is_some_and(|marked| marked.contains(line, CharColumn::new(column))) {
+            style = style.bg(theme.marked_background);
+        }
 
         // A tab is blanks by definition.
         if glyph.character == '\t' {

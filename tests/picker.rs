@@ -628,17 +628,29 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     let dump = support::render(&mut app, 60, 12);
     let text = support::text_block(&dump);
 
-    let row = |needle: &str| {
+    let row = |text: &str, needle: &str| {
         text.lines()
             .find(|row| row.contains(needle))
+            .map(str::to_string)
             .unwrap_or_else(|| panic!("{needle:?} is not listed:\n{dump}"))
     };
 
-    assert!(row("file.open").contains("ctrl+f"), "{dump}");
-    assert!(row("app.quit").contains("ctrl+q"), "{dump}");
+    assert!(row(text, "file.open").contains("ctrl+f"), "{dump}");
     assert!(
-        !row("theme.select").contains("ctrl"),
+        !row(text, "theme.select").contains("ctrl"),
         "theme.select has no binding, so it should show no key:\n{dump}"
+    );
+    // The four symbol questions are commands with no key: the menu is the way
+    // in, and a chord each would rebuild what the menu replaces.
+    assert!(!row(text, "symbol.definition").contains("ctrl"), "{dump}");
+
+    // More commands than a compact list has rows, so the rest are reached by
+    // typing rather than by scrolling.
+    type_text(&mut app, "quit");
+    let narrowed = support::render(&mut app, 60, 12);
+    assert!(
+        row(support::text_block(&narrowed), "app.quit").contains("ctrl+q"),
+        "{narrowed}"
     );
 }
 
@@ -663,7 +675,9 @@ fn the_keys_line_up_in_a_column() {
         column_of("command.palette"),
         "{dump}"
     );
-    assert_eq!(column_of("file.open"), column_of("app.quit"), "{dump}");
+    // Rows within the compact list's ten. There are more commands than that
+    // now, and the ones past it are reached by typing rather than scrolling.
+    assert_eq!(column_of("file.open"), column_of("symbol.menu"), "{dump}");
 }
 
 /// The keys come from the key table, like the welcome screen's. A rebound key
@@ -746,4 +760,394 @@ fn the_theme_picker_leaves_the_code_visible() {
         "the code was covered by two rows of choices:\n{dump}"
     );
     support::check("themes_60x12", &dump);
+}
+
+/// The symbol menu reads the same key table as the palette, so a question
+/// bound to a key shows it in both and a rebind changes both.
+#[test]
+fn the_symbol_menu_shows_the_key_a_question_is_bound_to() {
+    use crossterm::event::KeyModifiers;
+    use obelus::{
+        command::Command,
+        keymap::{Binding, Context, KeyChord, Keymap},
+    };
+
+    let mut app = app();
+    app.set_keymap(Keymap::from_bindings(vec![
+        // The palette's own key has to be in the table too: replacing the
+        // table replaces all of it.
+        Binding {
+            command: Command::CommandPalette,
+            context: Context::Normal,
+            chord: KeyChord::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+        },
+        Binding {
+            command: Command::SymbolDefinition,
+            context: Context::Normal,
+            chord: KeyChord::new(KeyCode::Char('d'), KeyModifiers::ALT),
+        },
+    ]));
+
+    // The palette shows it.
+    press_control(&mut app, 'p');
+    type_text(&mut app, "definition");
+    let palette = support::render(&mut app, 60, 12);
+    assert!(
+        support::text_block(&palette).contains("alt+d"),
+        "the palette does not show the binding:\n{palette}"
+    );
+}
+
+/// No server, so the menu says which of the several reasons it is rather than
+/// coming up empty. An empty list says only that it is empty.
+#[test]
+fn the_symbol_menu_says_why_when_there_is_nothing_to_ask() {
+    let mut app = app();
+    press_control(&mut app, 'g');
+    let dump = support::render(&mut app, 60, 12);
+    let text = support::text_block(&dump);
+
+    assert!(
+        text.contains("not installed")
+            || text.contains("no server running")
+            || text.contains("still starting")
+            || text.contains("no language server"),
+        "the menu gave no reason:\n{dump}"
+    );
+    assert!(
+        !text.contains("symbol.definition"),
+        "a question was offered with no server to answer it:\n{dump}"
+    );
+}
+
+/// The file picker shows what the selection names, below the list, drawn by
+/// the editor's own view.
+#[test]
+fn the_file_picker_previews_the_selected_file() {
+    let mut app = app();
+    press_control(&mut app, 'f');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec![
+            "tests/fixtures/sample.rs".into(),
+            "tests/fixtures/long.rs".into(),
+        ],
+    });
+
+    support::check("preview_60x22", &support::render(&mut app, 60, 22));
+}
+
+/// Moving the selection changes what is previewed. Reading the file once and
+/// keeping it would show the first row's file for the whole list.
+#[test]
+fn the_preview_follows_the_selection() {
+    let mut app = app();
+    press_control(&mut app, 'f');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec![
+            "tests/fixtures/sample.rs".into(),
+            "tests/fixtures/long.rs".into(),
+        ],
+    });
+
+    let first = support::text_block(&support::render(&mut app, 60, 22)).to_string();
+    assert!(first.contains("fn main()"), "{first}");
+    assert!(!first.contains("fn before()"), "{first}");
+
+    press(&mut app, KeyCode::Down);
+    let second = support::text_block(&support::render(&mut app, 60, 22)).to_string();
+    assert!(
+        second.contains("fn before()"),
+        "the preview did not follow the selection:\n{second}"
+    );
+}
+
+/// A palette of commands has nothing to preview, and a compact list is
+/// compact so the code stays visible.
+#[test]
+fn the_palette_has_no_preview() {
+    let mut app = app();
+    press_control(&mut app, 'p');
+    let dump = support::render(&mut app, 60, 22);
+    assert!(
+        !support::text_block(&dump).contains('\u{2500}'),
+        "a rule was drawn for a list with nothing to preview:\n{dump}"
+    );
+}
+
+/// A preview that leaves three candidates showing has stopped being a preview
+/// and become the thing in the way of the list.
+#[test]
+fn a_short_screen_gets_the_list_and_no_preview() {
+    let mut app = app();
+    press_control(&mut app, 'f');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["tests/fixtures/sample.rs".into()],
+    });
+
+    let dump = support::render(&mut app, 60, 10);
+    let text = support::text_block(&dump);
+    assert!(text.contains("sample.rs"), "the list went missing:\n{dump}");
+    assert!(
+        !text.contains("fn main()"),
+        "a preview was squeezed into a screen with no room:\n{dump}"
+    );
+}
+
+/// A row that names a file is previewed from its top; a row that names a
+/// *place* stops two lines above it, so the line in question has something to
+/// be read in the context of.
+///
+/// The place half of that is exercised by the references list in the next
+/// milestone. What can be pinned here is that a plain file starts at line one
+/// rather than wherever a previous preview happened to be looking.
+#[test]
+fn a_file_is_previewed_from_its_first_line() {
+    let mut app = app();
+    press_control(&mut app, 'f');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec![
+            "tests/fixtures/long.rs".into(),
+            "tests/fixtures/sample.rs".into(),
+        ],
+    });
+
+    let dump = support::render(&mut app, 60, 22);
+    let text = support::text_block(&dump);
+    assert!(text.contains("fn before()"), "{dump}");
+    assert!(
+        text.contains("  1 fn before()"),
+        "the preview did not start at the first line:\n{dump}"
+    );
+}
+
+/// A list of references is read by looking at the symbol in each one, so the
+/// preview marks it. Saying only which line leaves the reader finding it
+/// again on every row.
+#[test]
+fn a_place_preview_marks_the_symbol_it_is_about() {
+    use obelus::picker::{PickerItem, PickerLayout, PickerValue};
+
+    let mut app = app();
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/long.rs");
+    // Line 1 of `long.rs` is the long `const NAMES` line; `NAMES` is at
+    // characters six to eleven.
+    app.open_picker_for_test(
+        vec![PickerItem {
+            icon: None,
+            label: "long.rs:2:7".to_string(),
+            detail: None,
+            trailing: None,
+            value: PickerValue::Place {
+                path,
+                line: 1,
+                character: 6,
+                end_line: 1,
+                end_character: 11,
+            },
+        }],
+        PickerLayout::FullArea,
+    );
+
+    let dump = support::render(&mut app, 60, 22);
+    assert!(
+        support::legend_block(&dump).contains("#1e3a5f"),
+        "the symbol was not marked:\n{dump}"
+    );
+    support::check("preview_marked_60x22", &dump);
+}
+
+/// The list takes its ten rows and the preview takes the rest, so a taller
+/// terminal buys more of the file rather than more file names. The list is
+/// filtered by typing; the preview is not.
+#[test]
+fn a_taller_screen_gives_the_extra_rows_to_the_preview() {
+    let mut app = app();
+    press_control(&mut app, 'f');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["tests/fixtures/many_lines.rs".into()],
+    });
+
+    // A file with more lines than either preview has room for, so the count
+    // is the room rather than the file.
+    let shown = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| row.contains("pub const LINE_"))
+            .count()
+    };
+
+    let short = support::render(&mut app, 60, 20);
+    let tall = support::render(&mut app, 60, 34);
+    assert!(
+        shown(&tall) > shown(&short),
+        "the taller screen showed no more of the file:\n{tall}"
+    );
+    // The list stayed the same size while the preview grew, which is the
+    // point: a taller terminal buys more of the file, not more file names.
+    let rows_of_list = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .position(|row| row.contains('\u{2500}'))
+            .expect("a rule")
+    };
+    assert_eq!(rows_of_list(&short), rows_of_list(&tall));
+
+    support::check("preview_tall_60x34", &tall);
+}
+
+/// The plain keys page the list; the same keys with control scroll the
+/// preview. Reading a candidate and choosing between candidates are different
+/// jobs, and a list of references is read by doing both at once.
+#[test]
+fn control_paging_scrolls_the_preview_and_not_the_list() {
+    let mut app = app();
+    press_control(&mut app, 'f');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["tests/fixtures/many_lines.rs".into()],
+    });
+
+    let at_rest = support::render(&mut app, 60, 22);
+    assert!(
+        support::text_block(&at_rest).contains("LINE_01"),
+        "{at_rest}"
+    );
+
+    support::press_control_key(&mut app, KeyCode::PageDown);
+    let scrolled = support::render(&mut app, 60, 22);
+    let text = support::text_block(&scrolled);
+    assert!(
+        !text.contains("LINE_01"),
+        "the preview did not move:\n{scrolled}"
+    );
+    assert!(
+        text.contains("tests/fixtures/many_lines.rs"),
+        "the list moved instead:\n{scrolled}"
+    );
+
+    support::check("preview_scrolled_60x22", &scrolled);
+
+    support::press_control_key(&mut app, KeyCode::PageUp);
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 60, 22)),
+        support::text_block(&at_rest),
+        "scrolling back did not come back"
+    );
+}
+
+/// The top of the file is as far up as it goes, and pressing past it does not
+/// bank a debt: one press the other way moves. Letting the offset run past the
+/// top spends the next several presses coming back with nothing happening.
+#[test]
+fn the_preview_stops_at_the_top_of_the_file() {
+    let mut app = app();
+    press_control(&mut app, 'f');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["tests/fixtures/many_lines.rs".into()],
+    });
+
+    let at_rest = support::text_block(&support::render(&mut app, 60, 22)).to_string();
+    for _ in 0..5 {
+        support::press_control_key(&mut app, KeyCode::PageUp);
+    }
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 60, 22)),
+        at_rest,
+        "the top of the file is not where it stopped"
+    );
+
+    support::press_control_key(&mut app, KeyCode::PageDown);
+    let after = support::render(&mut app, 60, 22);
+    assert!(
+        !support::text_block(&after).contains("LINE_01"),
+        "the presses above the top were still being paid back:\n{after}"
+    );
+}
+
+/// Moving to a different row is a different subject, so whatever was scrolled
+/// to belongs to the row that was left. Two rows in the same file, because
+/// that is the case the file's identity cannot answer -- and it is the common
+/// one in a list of references.
+#[test]
+fn moving_the_selection_forgets_the_scrolling() {
+    use obelus::picker::{PickerItem, PickerLayout, PickerValue};
+
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let place = |line: u32| PickerItem {
+        icon: None,
+        label: format!("many_lines.rs:{}", line + 1),
+        detail: None,
+        trailing: None,
+        value: PickerValue::Place {
+            path: path.clone(),
+            line,
+            character: 10,
+            end_line: line,
+            end_character: 17,
+        },
+    };
+
+    let mut app = app();
+    app.open_picker_for_test(vec![place(1), place(2)], PickerLayout::FullArea);
+
+    assert!(support::text_block(&support::render(&mut app, 60, 22)).contains("LINE_01"));
+    support::press_control_key(&mut app, KeyCode::PageDown);
+    assert!(!support::text_block(&support::render(&mut app, 60, 22)).contains("LINE_01"));
+
+    press(&mut app, KeyCode::Down);
+    let moved = support::render(&mut app, 60, 22);
+    assert!(
+        support::text_block(&moved).contains("LINE_01"),
+        "the row that was selected kept the scrolling of the row that was left:\n{moved}"
+    );
+}
+
+/// The picker judges modifiers the way the key table does, so a chord obelus
+/// has no name for is not text, not a motion, and not a selection — it falls
+/// through. A picker that typed `super+f` into the prompt would be the same
+/// bug as one that paged on `ctrl+pagedown`.
+#[test]
+fn a_key_with_an_unknown_modifier_falls_through() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    let mut picker = Picker::new(many(20), PickerLayout::FullArea);
+    picker.handle_key(&key(KeyCode::Down), PAGE);
+    let before = picker.selected_item().map(|item| item.label.clone());
+
+    for (code, modifier) in [
+        (KeyCode::Char('f'), KeyModifiers::SUPER),
+        (
+            KeyCode::Char('f'),
+            KeyModifiers::CONTROL | KeyModifiers::HYPER,
+        ),
+        (KeyCode::Down, KeyModifiers::SUPER),
+        (
+            KeyCode::PageDown,
+            KeyModifiers::CONTROL | KeyModifiers::META,
+        ),
+        (KeyCode::Esc, KeyModifiers::SUPER),
+        (KeyCode::Enter, KeyModifiers::SUPER),
+        (KeyCode::Backspace, KeyModifiers::SUPER),
+        (KeyCode::Home, KeyModifiers::CONTROL | KeyModifiers::SUPER),
+    ] {
+        let event = KeyEvent::new(code, modifier);
+        assert!(
+            matches!(picker.handle_key(&event, PAGE), PickerOutcome::Ignored),
+            "{code:?} with {modifier:?} was taken"
+        );
+    }
+
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.clone()),
+        before,
+        "the selection moved"
+    );
+    assert_eq!(picker.query(), "", "something reached the prompt");
 }

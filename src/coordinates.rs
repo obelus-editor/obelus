@@ -33,6 +33,15 @@ pub struct LineNumber(usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CharColumn(usize);
 
+/// A UTF-16 code unit offset from the start of its line.
+///
+/// The unit the language server protocol counts in unless a server agrees to
+/// count bytes instead. Distinct from every other column here: a character
+/// outside the basic multilingual plane — an emoji — is one `char`, two of
+/// these, four bytes and two cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Utf16Column(usize);
+
 /// A terminal display column, counted in cells.
 ///
 /// Distinct from [`CharColumn`] because a wide glyph occupies two cells and a
@@ -63,6 +72,7 @@ usize_coordinate!(ByteOffset);
 usize_coordinate!(CharOffset);
 usize_coordinate!(LineNumber);
 usize_coordinate!(CharColumn);
+usize_coordinate!(Utf16Column);
 
 impl DisplayColumn {
     /// Wraps a raw cell count.
@@ -115,5 +125,80 @@ impl CharColumn {
     #[must_use]
     pub const fn saturating_sub(self, characters: usize) -> Self {
         Self(self.0.saturating_sub(characters))
+    }
+}
+
+/// A run of characters in a document.
+///
+/// Where the two ends are on the same line, which is nearly always, `line`
+/// and `end_line` are equal. Nothing here assumes that: a language server is
+/// entitled to name a range that spans lines, and a highlight that assumed
+/// otherwise would mark the wrong cells rather than fail.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Span {
+    /// The line it starts on.
+    pub line: LineNumber,
+    /// The character it starts at.
+    pub column: CharColumn,
+    /// The line it ends on.
+    pub end_line: LineNumber,
+    /// One past the character it ends at.
+    pub end_column: CharColumn,
+}
+
+impl Span {
+    /// Whether a position is inside it.
+    #[must_use]
+    pub fn contains(self, line: LineNumber, column: CharColumn) -> bool {
+        if line < self.line || line > self.end_line {
+            return false;
+        }
+        if line == self.line && column < self.column {
+            return false;
+        }
+        if line == self.end_line && column >= self.end_column {
+            return false;
+        }
+        true
+    }
+}
+
+#[cfg(test)]
+mod spans {
+    use super::*;
+
+    fn span(line: usize, column: usize, end_line: usize, end_column: usize) -> Span {
+        Span {
+            line: LineNumber::new(line),
+            column: CharColumn::new(column),
+            end_line: LineNumber::new(end_line),
+            end_column: CharColumn::new(end_column),
+        }
+    }
+
+    #[test]
+    fn one_line_covers_its_own_characters_and_no_others() {
+        let it = span(4, 8, 4, 12);
+        assert!(!it.contains(LineNumber::new(4), CharColumn::new(7)));
+        assert!(it.contains(LineNumber::new(4), CharColumn::new(8)));
+        assert!(it.contains(LineNumber::new(4), CharColumn::new(11)));
+        // The end is one past, the way a range is.
+        assert!(!it.contains(LineNumber::new(4), CharColumn::new(12)));
+        assert!(!it.contains(LineNumber::new(3), CharColumn::new(9)));
+        assert!(!it.contains(LineNumber::new(5), CharColumn::new(9)));
+    }
+
+    /// A server is entitled to name a range that spans lines. Assuming it
+    /// cannot marks the wrong cells rather than failing.
+    #[test]
+    fn several_lines_cover_the_ends_and_all_of_the_middle() {
+        let it = span(2, 5, 4, 3);
+        assert!(!it.contains(LineNumber::new(2), CharColumn::new(4)));
+        assert!(it.contains(LineNumber::new(2), CharColumn::new(5)));
+        // A whole line in the middle, however long it is.
+        assert!(it.contains(LineNumber::new(3), CharColumn::new(0)));
+        assert!(it.contains(LineNumber::new(3), CharColumn::new(999)));
+        assert!(it.contains(LineNumber::new(4), CharColumn::new(2)));
+        assert!(!it.contains(LineNumber::new(4), CharColumn::new(3)));
     }
 }

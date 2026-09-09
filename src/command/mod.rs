@@ -26,6 +26,20 @@ pub enum Command {
     ThemeSelect,
     /// Choose a command by name.
     CommandPalette,
+    /// Ask a language server about the symbol under the cursor.
+    SymbolMenu,
+    /// Where the symbol under the cursor is defined.
+    SymbolDefinition,
+    /// Where its type is defined.
+    SymbolTypeDefinition,
+    /// What implements it.
+    SymbolImplementation,
+    /// Everywhere it is used.
+    SymbolReferences,
+    /// Return to where the last jump was made from.
+    JumpBack,
+    /// Undo a jump back.
+    JumpForward,
     /// Leave obelus.
     Quit,
 }
@@ -69,6 +83,45 @@ pub const ALL: &[CommandSpec] = &[
         title: "Run a command by name",
     },
     CommandSpec {
+        command: Command::SymbolMenu,
+        name: "symbol.menu",
+        title: "Ask about the symbol under the cursor",
+    },
+    // No default keys. The menu is the way in, and giving each of these a
+    // chord would rebuild the one-key-per-question arrangement the menu
+    // exists to replace. Binding one later needs no code: the menu and the
+    // palette both read the key table.
+    CommandSpec {
+        command: Command::SymbolDefinition,
+        name: "symbol.definition",
+        title: "Go to definition",
+    },
+    CommandSpec {
+        command: Command::SymbolTypeDefinition,
+        name: "symbol.typeDefinition",
+        title: "Go to type definition",
+    },
+    CommandSpec {
+        command: Command::SymbolImplementation,
+        name: "symbol.implementation",
+        title: "Go to implementation",
+    },
+    CommandSpec {
+        command: Command::SymbolReferences,
+        name: "symbol.references",
+        title: "Find references",
+    },
+    CommandSpec {
+        command: Command::JumpBack,
+        name: "jump.back",
+        title: "Go back to where the last jump started",
+    },
+    CommandSpec {
+        command: Command::JumpForward,
+        name: "jump.forward",
+        title: "Undo a jump back",
+    },
+    CommandSpec {
         command: Command::Quit,
         name: "app.quit",
         title: "Leave obelus",
@@ -110,6 +163,13 @@ mod tests {
             Command::BufferList,
             Command::ThemeSelect,
             Command::CommandPalette,
+            Command::SymbolMenu,
+            Command::SymbolDefinition,
+            Command::SymbolTypeDefinition,
+            Command::SymbolImplementation,
+            Command::SymbolReferences,
+            Command::JumpBack,
+            Command::JumpForward,
             Command::Quit,
         ] {
             assert_eq!(command.spec().command, command);

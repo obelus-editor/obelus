@@ -16,6 +16,13 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::BufferList => app.open_buffer_picker(),
         Command::ThemeSelect => app.open_theme_picker(),
         Command::CommandPalette => app.open_command_palette(),
+        Command::SymbolMenu => app.open_symbol_menu(),
+        Command::SymbolDefinition
+        | Command::SymbolTypeDefinition
+        | Command::SymbolImplementation
+        | Command::SymbolReferences => app.ask_about_symbol(command),
+        Command::JumpBack => app.jump_back(),
+        Command::JumpForward => app.jump_forward(),
         Command::Quit => app.request_quit(),
     }
 }
