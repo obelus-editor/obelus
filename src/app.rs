@@ -173,7 +173,7 @@ impl App {
     /// Best effort: a watcher that will not start is logged and then done
     /// without. Refusing to run because a file cannot be watched would trade a
     /// missing convenience for a missing program.
-    pub fn start_watching(&mut self, sender: std::sync::mpsc::Sender<Event>) {
+    fn start_watching(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
         let mut watcher = match Watcher::new(sender) {
             Ok(watcher) => watcher,
@@ -324,7 +324,10 @@ impl App {
     ///
     /// In this order: the highlight range depends on where the viewport ended
     /// up, so scrolling has to have happened.
-    pub fn prepare(&mut self, editor_area: Rect) {
+    ///
+    /// Private: it has to run before the frame is drawn, and the only thing
+    /// that knows that is [`App::draw_into`], which is the one caller.
+    fn prepare(&mut self, editor_area: Rect) {
         self.editor_area = editor_area;
         let area = self.text_area();
         if let Some(buffer) = self.current_buffer_mut() {

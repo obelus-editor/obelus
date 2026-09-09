@@ -14,8 +14,13 @@ use ratatui::{
 };
 
 use crate::{
-    app::App, buffer::Buffer, coordinates::LineNumber, syntax::highlight::Highlights,
-    text::WrapRow, theme::Theme,
+    app::App,
+    buffer::Buffer,
+    coordinates::LineNumber,
+    syntax::highlight::Highlights,
+    text::WrapRow,
+    theme::Theme,
+    ui::{fill, put},
 };
 
 /// The narrowest the gutter is allowed to be.
@@ -61,7 +66,13 @@ impl<'a> EditorView<'a> {
 
 impl Widget for EditorView<'_> {
     fn render(self, area: Rect, cells: &mut CellBuffer) {
-        fill(area, cells, self.theme.foreground, self.theme.background);
+        fill(
+            cells,
+            area,
+            Style::new()
+                .fg(self.theme.foreground)
+                .bg(self.theme.background),
+        );
 
         let Some(buffer) = self.buffer else {
             return;
@@ -123,19 +134,6 @@ impl Widget for EditorView<'_> {
     }
 }
 
-/// Paints a whole region in one colour.
-fn fill(area: Rect, cells: &mut CellBuffer, foreground: Color, background: Color) {
-    let style = Style::new().fg(foreground).bg(background);
-    for y in area.top()..area.bottom() {
-        for x in area.left()..area.right() {
-            if let Some(cell) = cells.cell_mut((x, y)) {
-                cell.set_symbol(" ");
-                cell.set_style(style);
-            }
-        }
-    }
-}
-
 /// Writes a right-aligned line number, one-based, with a trailing space.
 fn draw_line_number(
     x: u16,
@@ -161,10 +159,7 @@ fn draw_line_number(
         if offset >= width {
             break;
         }
-        if let Some(cell) = cells.cell_mut((x + offset, y)) {
-            cell.set_char(character);
-            cell.set_fg(colour);
-        }
+        put(cells, x + offset, y, character, Style::new().fg(colour));
     }
 }
 
@@ -215,35 +210,19 @@ fn draw_row(
         }
         let colour = theme.colour_for(highlights.kind_at(glyph.first_byte));
 
+        // Only a foreground, so the background the fill painted stays.
+        let style = Style::new().fg(colour);
+
         // A tab is blanks by definition.
         if glyph.character == '\t' {
             for cell in 0..glyph.cells.min(usize::from(width - offset)) {
                 let Ok(cell) = u16::try_from(cell) else { break };
-                write(cells, x + offset + cell, y, ' ', colour);
+                put(cells, x + offset + cell, y, ' ', style);
             }
             continue;
         }
 
-        write(cells, x + offset, y, glyph.character, colour);
-        // A wide glyph owns the cells after it: they must hold no symbol at
-        // all, or the terminal advances twice and the rest of the row shifts.
-        for cell in 1..glyph.cells {
-            let Ok(cell) = u16::try_from(cell) else { break };
-            if offset + cell >= width {
-                break;
-            }
-            if let Some(target) = cells.cell_mut((x + offset + cell, y)) {
-                target.set_symbol("");
-                target.set_fg(colour);
-            }
-        }
-    }
-}
-
-fn write(cells: &mut CellBuffer, x: u16, y: u16, character: char, colour: Color) {
-    if let Some(cell) = cells.cell_mut((x, y)) {
-        cell.set_char(character);
-        cell.set_fg(colour);
+        put(cells, x + offset, y, glyph.character, style);
     }
 }
 

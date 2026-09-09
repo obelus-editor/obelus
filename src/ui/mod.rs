@@ -13,6 +13,7 @@ pub mod welcome;
 use ratatui::{
     buffer::Buffer as CellBuffer,
     layout::{Position, Rect, Size},
+    style::Style,
     widgets::Widget as _,
 };
 use unicode_width::UnicodeWidthChar as _;
@@ -121,6 +122,56 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
         view.render(region, cells);
     }
     status::StatusView::new(app).render(regions.status, cells);
+}
+
+/// Paints every cell of a region in one style, blanking whatever was there.
+pub fn fill(cells: &mut CellBuffer, area: Rect, style: Style) {
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            if let Some(cell) = cells.cell_mut((x, y)) {
+                cell.set_symbol(" ");
+                cell.set_style(style);
+            }
+        }
+    }
+}
+
+/// Writes one character, and blanks the cells it covers beyond the first.
+///
+/// A wide glyph owns the cells after it, and they must hold no symbol at all:
+/// the terminal advances two columns for the glyph, so anything left in the
+/// second cell shifts the rest of the row. That is the rule in here that
+/// breaks silently, which is why there is one copy of it.
+///
+/// The style is patched onto the cell rather than replacing it, so a caller
+/// that only wants to set a foreground can pass one and keep whatever
+/// background was painted underneath.
+///
+/// Returns how many columns were used, never zero: a character the terminal
+/// does not advance over still advances this, or a caller stepping through a
+/// string would not terminate.
+pub fn put(cells: &mut CellBuffer, x: u16, y: u16, character: char, style: Style) -> u16 {
+    let width = u16::try_from(character.width().unwrap_or(0)).unwrap_or(0);
+    if let Some(cell) = cells.cell_mut((x, y)) {
+        cell.set_char(character);
+        cell.set_style(style);
+    }
+    for extra in 1..width {
+        if let Some(cell) = cells.cell_mut((x + extra, y)) {
+            cell.set_symbol("");
+            cell.set_style(style);
+        }
+    }
+    width.max(1)
+}
+
+/// Writes a string, returning the column after it.
+pub fn write(cells: &mut CellBuffer, x: u16, y: u16, contents: &str, style: Style) -> u16 {
+    let mut column = x;
+    for character in contents.chars() {
+        column = column.saturating_add(put(cells, column, y, character, style));
+    }
+    column
 }
 
 /// How many cells a string occupies.

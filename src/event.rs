@@ -57,8 +57,7 @@ impl Event {
     /// Mouse, focus and paste events are dropped rather than stored: nothing
     /// reads them yet, and a variant nothing reads is indistinguishable from a
     /// broken feature.
-    #[must_use]
-    pub fn from_terminal(event: TerminalEvent) -> Option<Self> {
+    fn from_terminal(event: TerminalEvent) -> Option<Self> {
         match event {
             TerminalEvent::Key(key) => Some(Self::Key(key)),
             TerminalEvent::Resize(_, _) => Some(Self::Resize),

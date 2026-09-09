@@ -3,14 +3,13 @@
 use std::path::Path;
 
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
-use unicode_width::UnicodeWidthChar;
 
 use crate::{
     app::App,
     buffer::Buffer,
     picker::Picker,
     theme::Theme,
-    ui::{text_width, truncate_from_left},
+    ui::{fill, text_width, truncate_from_left, write},
 };
 
 /// The status region.
@@ -47,22 +46,35 @@ impl Widget for StatusView<'_> {
         // The whole row, including the padding at both ends and the gap in the
         // middle, so the bar reads as one solid band rather than as coloured
         // text floating on the code's background.
-        for x in area.left()..area.right() {
-            if let Some(cell) = cells.cell_mut((x, area.y)) {
-                cell.set_symbol(" ");
-                cell.set_style(style);
-            }
-        }
+        fill(cells, area, style);
 
         if let Some(picker) = self.picker {
             self.render_prompt(picker, area, cells, style);
-            return;
+        } else if let Some(buffer) = self.buffer {
+            self.render_file(buffer, area, cells, style);
         }
+    }
+}
 
-        let Some(buffer) = self.buffer else {
-            return;
-        };
+/// What the prompt shows.
+fn prompt_text(picker: &Picker) -> String {
+    format!("> {}", picker.query())
+}
 
+/// Which column of the status row the caret belongs in.
+///
+/// The terminal draws the caret, so this is only where to tell it to put it.
+/// Shared with the renderer so the text and the caret cannot disagree.
+#[must_use]
+pub fn prompt_caret(picker: &Picker) -> u16 {
+    let caret = 1usize.saturating_add(text_width(&prompt_text(picker)));
+    u16::try_from(caret).unwrap_or(u16::MAX)
+}
+
+impl StatusView<'_> {
+    /// The file on the left, the cursor position on the right, and a marker
+    /// between them when the file can no longer be read.
+    fn render_file(&self, buffer: &Buffer, area: Rect, cells: &mut CellBuffer, style: Style) {
         // Sits with the path rather than with the cursor position, because it
         // is a fact about the file. In its own colour: the whole point is that
         // it is noticed without being looked for.
@@ -90,7 +102,7 @@ impl Widget for StatusView<'_> {
             .saturating_sub(right_width)
             .saturating_sub(1);
 
-        draw(cells, area.x + 1, area.y, &path, style);
+        write(cells, area.x + 1, area.y, &path, style);
 
         // Only if it fits before the cursor position. On a screen too narrow
         // for both, the position wins: it is there every frame, and half a
@@ -100,7 +112,7 @@ impl Widget for StatusView<'_> {
             && !marker.is_empty()
             && after_path + marker_width <= right_start
         {
-            draw(
+            write(
                 cells,
                 area.x + offset,
                 area.y,
@@ -110,31 +122,14 @@ impl Widget for StatusView<'_> {
         }
 
         if let Ok(offset) = u16::try_from(right_start) {
-            draw(cells, area.x + offset, area.y, &right, style);
+            write(cells, area.x + offset, area.y, &right, style);
         }
     }
-}
 
-/// What the prompt shows.
-fn prompt_text(picker: &Picker) -> String {
-    format!("> {}", picker.query())
-}
-
-/// Which column of the status row the caret belongs in.
-///
-/// The terminal draws the caret, so this is only where to tell it to put it.
-/// Shared with the renderer so the text and the caret cannot disagree.
-#[must_use]
-pub fn prompt_caret(picker: &Picker) -> u16 {
-    let caret = 1usize.saturating_add(text_width(&prompt_text(picker)));
-    u16::try_from(caret).unwrap_or(u16::MAX)
-}
-
-impl StatusView<'_> {
     /// The prompt: what has been typed.
     fn render_prompt(&self, picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style) {
         let prompt = prompt_text(picker);
-        draw(cells, area.x + 1, area.y, &prompt, style);
+        write(cells, area.x + 1, area.y, &prompt, style);
         let caret = usize::from(prompt_caret(picker));
 
         // How much of the list is being shown, on the right, where the cursor
@@ -146,7 +141,7 @@ impl StatusView<'_> {
         if let Ok(offset) = u16::try_from(start)
             && usize::from(offset) > caret
         {
-            draw(
+            write(
                 cells,
                 area.x + offset,
                 area.y,
@@ -154,24 +149,6 @@ impl StatusView<'_> {
                 style.fg(self.theme.gutter),
             );
         }
-    }
-}
-
-fn draw(cells: &mut CellBuffer, x: u16, y: u16, contents: &str, style: Style) {
-    let mut offset = 0u16;
-    for character in contents.chars() {
-        let width = u16::try_from(character.width().unwrap_or(0)).unwrap_or(0);
-        if let Some(cell) = cells.cell_mut((x + offset, y)) {
-            cell.set_char(character);
-            cell.set_style(style);
-        }
-        for extra in 1..width {
-            if let Some(cell) = cells.cell_mut((x + offset + extra, y)) {
-                cell.set_symbol("");
-                cell.set_style(style);
-            }
-        }
-        offset = offset.saturating_add(width.max(1));
     }
 }
 

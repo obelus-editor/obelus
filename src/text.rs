@@ -330,14 +330,6 @@ pub struct Glyph {
     pub cells: usize,
 }
 
-impl Glyph {
-    /// One past the last cell this glyph occupies.
-    #[must_use]
-    pub const fn end_cell(self) -> usize {
-        self.first_cell + self.cells
-    }
-}
-
 impl Text {
     /// Where a line breaks when wrapped to `width` cells.
     ///

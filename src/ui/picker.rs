@@ -11,13 +11,12 @@ use ratatui::{
     style::{Color, Style},
     widgets::Widget,
 };
-use unicode_width::UnicodeWidthChar;
 
 use crate::{
     app::App,
-    picker::{Picker, PickerLayout},
+    picker::{Picker, PickerItem, PickerLayout},
     theme::Theme,
-    ui::{drop_from_left, text_width},
+    ui::{drop_from_left, fill, put, text_width},
 };
 
 /// The list, above the prompt.
@@ -65,138 +64,131 @@ impl Widget for PickerView<'_> {
         // The whole region first. A list with fewer rows than the region
         // would otherwise leave the code showing underneath, which reads as a
         // half-drawn screen rather than as a short list.
-        let empty = Style::new()
-            .fg(self.theme.foreground)
-            .bg(self.theme.background);
-        for y in area.top()..area.bottom() {
-            for x in area.left()..area.right() {
-                if let Some(cell) = cells.cell_mut((x, y)) {
-                    cell.set_symbol(" ");
-                    cell.set_style(empty);
-                }
-            }
-        }
+        fill(
+            cells,
+            area,
+            Style::new()
+                .fg(self.theme.foreground)
+                .bg(self.theme.background),
+        );
 
         let selected = self.picker.selected();
-        // The window is placed so the selection sits near the middle of it,
-        // clamped at both ends of the list. Anchoring the selection to the
-        // bottom row instead is simpler and reads badly once paging exists:
-        // every move slides the whole list under a cursor that never moves.
-        let height = usize::from(area.height);
-        let count = self.picker.match_count();
-        let first = selected
-            .saturating_sub(height / 2)
-            .min(count.saturating_sub(height));
-
         for (row, (index, item)) in self
             .picker
             .matches()
             .enumerate()
-            .skip(first)
-            .take(height)
+            .skip(self.first_visible(area.height))
+            .take(usize::from(area.height))
             .enumerate()
         {
             let Ok(row) = u16::try_from(row) else { break };
-            let y = area.y + row;
-            let chosen = index == selected;
+            self.row(cells, area, area.y + row, item, index == selected);
+        }
+    }
+}
 
-            let background = if chosen {
-                self.theme.picker_selected_background
-            } else {
-                self.theme.background
-            };
-            let style = Style::new().fg(self.theme.foreground).bg(background);
-            for x in area.left()..area.right() {
-                if let Some(cell) = cells.cell_mut((x, y)) {
-                    cell.set_symbol(" ");
-                    cell.set_style(style);
-                }
-            }
+impl PickerView<'_> {
+    /// Which match is on the top row.
+    ///
+    /// Placed so the selection sits near the middle of the window, clamped at
+    /// both ends of the list. Anchoring the selection to the bottom row
+    /// instead is simpler and reads badly once paging exists: every move
+    /// slides the whole list under a cursor that never moves.
+    fn first_visible(&self, height: u16) -> usize {
+        let height = usize::from(height);
+        self.picker
+            .selected()
+            .saturating_sub(height / 2)
+            .min(self.picker.match_count().saturating_sub(height))
+    }
 
-            let mut column = 1u16;
-            if let Some(icon) = item.icon {
-                let mut glyph = String::new();
-                glyph.push(icon);
-                column = write(cells, area, column, y, &glyph, style, None, 0);
-                // One blank column after it, always. The terminal allocates
-                // one cell for a private-use codepoint, and the icons in a
-                // Nerd Font's non-`Mono` variant are drawn two cells wide, so
-                // the glyph bleeds to the right. This is what it bleeds into.
-                column = column.saturating_add(1);
-            }
-
-            // What the right-aligned text needs, plus a gap, comes out of
-            // everything else's room first: it is the one part of a row that
-            // never gets cut.
-            let trailing = item.trailing.as_deref().unwrap_or_default();
-            let reserved = if trailing.is_empty() {
-                0
-            } else {
-                u16::try_from(text_width(trailing) + 2).unwrap_or(u16::MAX)
-            };
-            let limit = area.width.saturating_sub(1).saturating_sub(reserved);
-            let inner = Rect {
-                width: limit,
+    /// One row: its background, then its icon, label, detail and key.
+    fn row(&self, cells: &mut CellBuffer, area: Rect, y: u16, item: &PickerItem, chosen: bool) {
+        let background = if chosen {
+            self.theme.picker_selected_background
+        } else {
+            self.theme.background
+        };
+        let style = Style::new().fg(self.theme.foreground).bg(background);
+        fill(
+            cells,
+            Rect {
+                y,
+                height: 1,
                 ..area
-            };
+            },
+            style,
+        );
 
-            // A path too long for the row loses its head, not its tail: the
-            // file name is the part being looked for, and the directories
-            // above it are the part already known.
-            let room = usize::from(limit.saturating_sub(column));
-            let dropped = drop_from_left(&item.label, room);
-            if dropped >= item.label.chars().count() {
-                // Not even room for the ellipsis.
-                continue;
-            }
-            if dropped > 0 {
-                column = write(cells, inner, column, y, "\u{2026}", style, None, 0);
-            }
+        let mut column = 1u16;
+        if let Some(icon) = item.icon {
+            let mut glyph = String::new();
+            glyph.push(icon);
+            column = write(cells, area, column, y, &glyph, style, None, 0);
+            // One blank column after it, always. The terminal allocates one
+            // cell for a private-use codepoint, and the icons in a Nerd
+            // Font's non-`Mono` variant are drawn two cells wide, so the
+            // glyph bleeds to the right. This is what it bleeds into.
+            column = column.saturating_add(1);
+        }
+
+        // What the right-aligned text needs, plus a gap, comes out of
+        // everything else's room first: it is the one part of a row that
+        // never gets cut.
+        let trailing = item.trailing.as_deref().unwrap_or_default();
+        let reserved = if trailing.is_empty() {
+            0
+        } else {
+            u16::try_from(text_width(trailing) + 2).unwrap_or(u16::MAX)
+        };
+        let limit = area.width.saturating_sub(1).saturating_sub(reserved);
+        let inner = Rect {
+            width: limit,
+            ..area
+        };
+
+        // A path too long for the row loses its head, not its tail: the file
+        // name is the part being looked for, and the directories above it are
+        // the part already known.
+        let dropped = drop_from_left(&item.label, usize::from(limit.saturating_sub(column)));
+        if dropped >= item.label.chars().count() {
+            // Not even room for the ellipsis.
+            return;
+        }
+        if dropped > 0 {
+            column = write(cells, inner, column, y, "\u{2026}", style, None, 0);
+        }
+        column = write(
+            cells,
+            inner,
+            column,
+            y,
+            &item.label,
+            style,
+            chosen.then(|| (self.picker.selected_indices(), self.theme.picker_match)),
+            dropped,
+        );
+
+        let dim = style.fg(self.theme.gutter);
+        if let Some(detail) = &item.detail {
             column = write(
                 cells,
                 inner,
-                column,
+                column.saturating_add(2),
                 y,
-                &item.label,
-                style,
-                if chosen {
-                    Some((self.picker.selected_indices(), self.theme.picker_match))
-                } else {
-                    None
-                },
-                dropped,
+                detail,
+                dim,
+                None,
+                0,
             );
+        }
 
-            if let Some(detail) = &item.detail {
-                column = column.saturating_add(2);
-                write(
-                    cells,
-                    inner,
-                    column,
-                    y,
-                    detail,
-                    style.fg(self.theme.gutter),
-                    None,
-                    0,
-                );
-            }
-
-            if !trailing.is_empty()
-                && let Ok(offset) =
-                    u16::try_from(usize::from(area.width).saturating_sub(text_width(trailing) + 1))
-                && offset >= column
-            {
-                write(
-                    cells,
-                    area,
-                    offset,
-                    y,
-                    trailing,
-                    style.fg(self.theme.gutter),
-                    None,
-                    0,
-                );
-            }
+        if !trailing.is_empty()
+            && let Ok(offset) =
+                u16::try_from(usize::from(area.width).saturating_sub(text_width(trailing) + 1))
+            && offset >= column
+        {
+            write(cells, area, offset, y, trailing, dim, None, 0);
         }
     }
 }
@@ -225,7 +217,6 @@ fn write(
 ) -> u16 {
     let mut column = start;
     for (index, character) in contents.chars().enumerate().skip(skip) {
-        let width = u16::try_from(character.width().unwrap_or(0)).unwrap_or(0);
         if column >= area.width {
             break;
         }
@@ -234,17 +225,7 @@ fn write(
             Some((indices, colour)) if indices.binary_search(&index).is_ok() => style.fg(colour),
             _ => style,
         };
-        if let Some(cell) = cells.cell_mut((area.x + column, y)) {
-            cell.set_char(character);
-            cell.set_style(style);
-        }
-        for extra in 1..width {
-            if let Some(cell) = cells.cell_mut((area.x + column + extra, y)) {
-                cell.set_symbol("");
-                cell.set_style(style);
-            }
-        }
-        column = column.saturating_add(width.max(1));
+        column = column.saturating_add(put(cells, area.x + column, y, character, style));
     }
     column
 }

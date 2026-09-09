@@ -18,9 +18,15 @@ use ratatui::{
     style::{Color, Style},
     widgets::Widget,
 };
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthStr;
 
-use crate::{app::App, command::Command, keymap::Keymap, theme::Theme};
+use crate::{
+    app::App,
+    command::Command,
+    keymap::Keymap,
+    theme::Theme,
+    ui::{put, write},
+};
 
 /// The commands worth naming, in the order they are shown.
 const OFFERED: &[Command] = &[Command::FileOpen, Command::CommandPalette, Command::Quit];
@@ -117,7 +123,13 @@ impl WelcomeView<'_> {
                 if character != ' ' {
                     let step = column * RAMP_STEPS / width.max(1);
                     let along = f32::from(step) / f32::from(RAMP_STEPS - 1);
-                    put(cells, left + column, y, character, ramp(from, to, along));
+                    put(
+                        cells,
+                        left + column,
+                        y,
+                        character,
+                        Style::new().fg(ramp(from, to, along)),
+                    );
                 }
                 column = column.saturating_add(1);
             }
@@ -131,7 +143,13 @@ impl WelcomeView<'_> {
         // A rule the full width of the block, which is what makes the
         // wordmark read as a heading rather than as decoration.
         for column in 0..width {
-            put(cells, left + column, y, '\u{2500}', self.theme.gutter);
+            put(
+                cells,
+                left + column,
+                y,
+                '\u{2500}',
+                Style::new().fg(self.theme.gutter),
+            );
         }
         y += 2;
 
@@ -142,10 +160,16 @@ impl WelcomeView<'_> {
         }
 
         y += 1;
-        write(cells, left, y, footer, self.theme.gutter);
+        write(cells, left, y, footer, Style::new().fg(self.theme.gutter));
         let version = concat!("v", env!("CARGO_PKG_VERSION"));
         if let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(version.width())) {
-            write(cells, left + offset, y, version, self.theme.gutter);
+            write(
+                cells,
+                left + offset,
+                y,
+                version,
+                Style::new().fg(self.theme.gutter),
+            );
         }
     }
 
@@ -162,7 +186,13 @@ impl WelcomeView<'_> {
         let left = area.x + (area.width - width) / 2;
         let mut y = area.y + (area.height - height) / 2;
 
-        write(cells, left, y, "obelus", self.theme.foreground);
+        write(
+            cells,
+            left,
+            y,
+            "obelus",
+            Style::new().fg(self.theme.foreground),
+        );
         y += 2;
 
         let keys = hints.iter().map(|hint| hint.key.width()).max().unwrap_or(0);
@@ -172,7 +202,7 @@ impl WelcomeView<'_> {
         }
 
         y += 1;
-        write(cells, left, y, footer, self.theme.gutter);
+        write(cells, left, y, footer, Style::new().fg(self.theme.gutter));
     }
 
     /// One key and its description, the keys right-aligned into their column
@@ -196,17 +226,35 @@ impl WelcomeView<'_> {
                 .fg(self.theme.foreground)
                 .bg(self.theme.picker_selected_background);
             let capped = format!(" {} ", hint.key);
-            styled(cells, left + pad, y, &capped, style);
+            write(cells, left + pad, y, &capped, style);
             let Ok(offset) = u16::try_from(keys + 4) else {
                 return;
             };
-            write(cells, left + offset, y, &hint.text, self.theme.gutter);
+            write(
+                cells,
+                left + offset,
+                y,
+                &hint.text,
+                Style::new().fg(self.theme.gutter),
+            );
         } else {
-            write(cells, left + pad, y, &hint.key, self.theme.foreground);
+            write(
+                cells,
+                left + pad,
+                y,
+                &hint.key,
+                Style::new().fg(self.theme.foreground),
+            );
             let Ok(offset) = u16::try_from(keys + 3) else {
                 return;
             };
-            write(cells, left + offset, y, &hint.text, self.theme.gutter);
+            write(
+                cells,
+                left + offset,
+                y,
+                &hint.text,
+                Style::new().fg(self.theme.gutter),
+            );
         }
     }
 
@@ -273,34 +321,5 @@ fn centred(cells: &mut CellBuffer, left: u16, y: u16, width: u16, contents: &str
         return;
     };
     let offset = width.saturating_sub(text) / 2;
-    write(cells, left + offset, y, contents, colour);
-}
-
-fn write(cells: &mut CellBuffer, x: u16, y: u16, contents: &str, colour: Color) {
-    styled(cells, x, y, contents, Style::new().fg(colour));
-}
-
-fn styled(cells: &mut CellBuffer, x: u16, y: u16, contents: &str, style: Style) {
-    let mut offset = 0u16;
-    for character in contents.chars() {
-        let width = u16::try_from(character.width().unwrap_or(0)).unwrap_or(0);
-        if let Some(cell) = cells.cell_mut((x + offset, y)) {
-            cell.set_char(character);
-            cell.set_style(style);
-        }
-        for extra in 1..width {
-            if let Some(cell) = cells.cell_mut((x + offset + extra, y)) {
-                cell.set_symbol("");
-                cell.set_style(style);
-            }
-        }
-        offset = offset.saturating_add(width.max(1));
-    }
-}
-
-fn put(cells: &mut CellBuffer, x: u16, y: u16, character: char, colour: Color) {
-    if let Some(cell) = cells.cell_mut((x, y)) {
-        cell.set_char(character);
-        cell.set_fg(colour);
-    }
+    write(cells, left + offset, y, contents, Style::new().fg(colour));
 }
