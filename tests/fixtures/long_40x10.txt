@@ -1,0 +1,35 @@
+screen 40x10  editor 40x9  status 40x1
+-- text --
+ 0|   1 fn before() {}                     
+ 1|   2 const NAMES: [&str; 12] =          
+ 2|     ["item-00", "item-01", "item-02",  
+ 3|     "item-03", "item-04", "item-05",   
+ 4|     "item-06", "item-07", "item-08",   
+ 5|     "item-09", "item-10", "item-11"];  
+ 6|   3 fn after() {}                      
+ 7|   4                                    
+ 8|                                        
+ 9| tests/fixtures/long.rs             1:1 
+-- style --
+ 0|aaabaccaddddddbbabbaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaeacccccafffffbabbfffbaggbaaaaaaaaaaaa
+ 2|aaaaabhhhhhhhhhbahhhhhhhhhbahhhhhhhhhbaa
+ 3|aaaaahhhhhhhhhbahhhhhhhhhbahhhhhhhhhbaaa
+ 4|aaaaahhhhhhhhhbahhhhhhhhhbahhhhhhhhhbaaa
+ 5|aaaaahhhhhhhhhbahhhhhhhhhbahhhhhhhhhbbaa
+ 6|aaaeaccadddddbbabbaaaaaaaaaaaaaaaaaaaaaa
+ 7|aaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 9|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#c084fc bg=#18181b
+d fg=#60a5fa bg=#18181b
+e fg=#52525b bg=#18181b
+f fg=#fbbf24 bg=#18181b
+g fg=#f472b6 bg=#18181b
+h fg=#a3e635 bg=#18181b
+i fg=#d4d4d8 bg=#27272a
+-- cursor --
+5,0

@@ -1,0 +1,29 @@
+screen 40x8  editor 40x7  status 40x1
+-- text --
+ 0|   1 fn main() {                        
+ 1|   2     let greeting = "你好";         
+ 2|   3     println!("{greeting} world");  
+ 3|   4 }                                  
+ 4|   5                                    
+ 5|                                        
+ 6|                                        
+ 7| tests/fixtures/sample.rs           3:1 
+-- style --
+ 0|aaabaccaddddeeaeaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaabaaaaacccaaaaaaaaaaaaffffffeaaaaaaaaa
+ 2|aaaeaaaaaddddddddeffffffffffffffffffeeaa
+ 3|aaabaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|gggggggggggggggggggggggggggggggggggggggg
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#52525b bg=#18181b
+c fg=#c084fc bg=#18181b
+d fg=#60a5fa bg=#18181b
+e fg=#a1a1aa bg=#18181b
+f fg=#a3e635 bg=#18181b
+g fg=#d4d4d8 bg=#27272a
+-- cursor --
+5,2

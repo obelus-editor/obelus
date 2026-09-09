@@ -1,0 +1,29 @@
+screen 46x8  editor 46x7  status 46x1
+-- text --
+ 0|   1 fn outer() {                             
+ 1|   2     if condition {                       
+ 2|   3         println!("{} {} {} {}", alpha,   
+ 3|             beta, gamma, delta, epsilon,     
+ 4|             zeta);                           
+ 5|   4     }                                    
+ 6|   5 }                                        
+ 7| tests/fixtures/indented.rs               1:1 
+-- style --
+ 0|aaabaccadddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaeaaaaaccaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaaeaaaaaaaaaddddddddbfffffffffffffbaaaaaabaaa
+ 3|aaaaaaaaaaaaaaaaabaaaaaabaaaaaabaaaaaaaabaaaaa
+ 4|aaaaaaaaaaaaaaaaabbaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|aaaeaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|gggggggggggggggggggggggggggggggggggggggggggggg
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#c084fc bg=#18181b
+d fg=#60a5fa bg=#18181b
+e fg=#52525b bg=#18181b
+f fg=#a3e635 bg=#18181b
+g fg=#d4d4d8 bg=#27272a
+-- cursor --
+5,0

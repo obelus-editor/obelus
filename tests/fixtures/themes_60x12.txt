@@ -1,0 +1,39 @@
+screen 60x12  editor 60x11  status 60x1
+-- text --
+ 0|   1 fn main() {                                            
+ 1|   2     let greeting = "你好";                             
+ 2|   3     println!("{greeting} world");                      
+ 3|   4 }                                                      
+ 4|   5                                                        
+ 5|                                                            
+ 6|                                                            
+ 7|                                                            
+ 8|                                                            
+ 9| dark                                                       
+10| light                                                      
+11| >                                                        2 
+-- style --
+ 0|aaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaaeaaaaaddddddddbffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaaaa
+ 3|aaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 9|gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+11|hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhih
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#c084fc bg=#18181b
+d fg=#60a5fa bg=#18181b
+e fg=#52525b bg=#18181b
+f fg=#a3e635 bg=#18181b
+g fg=#e4e4e7 bg=#27272a
+h fg=#d4d4d8 bg=#27272a
+i fg=#52525b bg=#27272a
+-- cursor --
+3,11

@@ -1,0 +1,39 @@
+screen 60x12  editor 60x11  status 60x1
+-- text --
+ 0|   1 fn main() {                                            
+ 1|   2     let greeting = "你好";                             
+ 2|   3     println!("{greeting} world");                      
+ 3|   4 }                                                      
+ 4|   5                                                        
+ 5| file.open  Open a file                              ctrl+f 
+ 6| file.reload  Re-read this file from disk            ctrl+r 
+ 7| buffer.list  Switch to an open file                 ctrl+e 
+ 8| theme.select  Change the colours                           
+ 9| command.palette  Run a command by name              ctrl+p 
+10| app.quit  Leave obelus                              ctrl+q 
+11| >                                                        6 
+-- style --
+ 0|aaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaaeaaaaaddddddddbffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaaaa
+ 3|aaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|gggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggghhhhhhg
+ 6|aaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeeeea
+ 7|aaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaeeeeeea
+ 8|aaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 9|aaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaeeeeeea
+10|aaaaaaaaaaaeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeea
+11|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihi
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#c084fc bg=#18181b
+d fg=#60a5fa bg=#18181b
+e fg=#52525b bg=#18181b
+f fg=#a3e635 bg=#18181b
+g fg=#e4e4e7 bg=#27272a
+h fg=#52525b bg=#27272a
+i fg=#d4d4d8 bg=#27272a
+-- cursor --
+3,11

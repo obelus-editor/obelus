@@ -1,0 +1,52 @@
+[package]
+name = "obelus"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "A terminal code reader. It doesn't want you to type."
+
+[[bin]]
+name = "ob"
+path = "src/main.rs"
+
+[dependencies]
+# 0.30 split the backends into separate crates (ratatui-crossterm and friends).
+# `crossterm_0_29` pins the backend to the same crossterm we depend on directly
+# below: the tree must contain exactly one crossterm, or `KeyEvent` is two
+# unrelated types and the mismatch surfaces as an unreadable trait error.
+ratatui = { version = "0.30", features = ["crossterm_0_29"] }
+
+# Declared directly, not taken from ratatui's re-export, so the version this
+# crate compiles against is stated in one place next to the feature that pins
+# ratatui's backend to it.
+crossterm = "0.29"
+
+
+clap = { version = "4", features = ["derive"] }
+# Fuzzy matching. `nucleo-matcher` rather than `nucleo`: the latter adds a
+# streaming worker on rayon and parking_lot, and obelus matches a list it
+# already holds.
+nucleo-matcher = "0.3"
+
+# Walking the tree for the file picker, respecting .gitignore.
+ignore = "0.4"
+
+# File watching. Its callback runs on its own thread; the debounce thread
+# turns that into events on the one channel the main loop reads.
+notify = "8"
+
+unicode-linebreak = "0.1"
+ropey = "1.6"
+
+# The grammars depend only on `tree-sitter-language`, so they impose no bound
+# on the core version and the three can move independently of it.
+tree-sitter = "0.27"
+tree-sitter-rust = "0.24"
+tree-sitter-toml-ng = "0.7"
+tree-sitter-json = "0.24"
+unicode-width = "0.2"
+
+anyhow = "1"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

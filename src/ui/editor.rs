@@ -1,0 +1,271 @@
+//! The gutter and the text.
+//!
+//! A hand-written widget rather than a `Paragraph`: the text needs per-cell
+//! styling, a tab has to expand to the next tab stop, a wide glyph has to
+//! occupy two cells, and a glyph straddling either edge of a horizontally
+//! scrolled viewport has to render as blanks. None of that survives going
+//! through a widget that takes styled spans.
+
+use ratatui::{
+    buffer::Buffer as CellBuffer,
+    layout::Rect,
+    style::{Color, Style},
+    widgets::Widget,
+};
+
+use crate::{
+    app::App, buffer::Buffer, coordinates::LineNumber, syntax::highlight::Highlights,
+    text::WrapRow, theme::Theme,
+};
+
+/// The narrowest the gutter is allowed to be.
+///
+/// Enough for four digits and the separating space. A short file would
+/// otherwise get a two-column gutter, which is correct and looks starved, and
+/// the width would then change from file to file.
+const MINIMUM_GUTTER_WIDTH: u16 = 5;
+
+/// How many cells the gutter takes for a document with this many lines.
+///
+/// Enough digits for the largest line number, plus one column of separation,
+/// never narrower than [`MINIMUM_GUTTER_WIDTH`]. No upper bound: showing a
+/// wrong line number is worse than spending a column, and a file with more
+/// than five digits of lines is rare rather than impossible.
+#[must_use]
+pub fn gutter_width(line_count: usize) -> u16 {
+    let digits = line_count.max(1).ilog10() + 1;
+    u16::try_from(digits)
+        .unwrap_or(u16::MAX)
+        .saturating_add(1)
+        .max(MINIMUM_GUTTER_WIDTH)
+}
+
+/// The editor region.
+pub struct EditorView<'a> {
+    buffer: Option<&'a Buffer>,
+    highlights: &'a Highlights,
+    theme: &'a Theme,
+}
+
+impl<'a> EditorView<'a> {
+    /// Borrows what the view needs from the application.
+    #[must_use]
+    pub fn new(app: &'a App) -> Self {
+        Self {
+            buffer: app.current_buffer(),
+            highlights: app.highlights(),
+            theme: app.theme(),
+        }
+    }
+}
+
+impl Widget for EditorView<'_> {
+    fn render(self, area: Rect, cells: &mut CellBuffer) {
+        fill(area, cells, self.theme.foreground, self.theme.background);
+
+        let Some(buffer) = self.buffer else {
+            return;
+        };
+
+        let text = buffer.text();
+        let gutter = gutter_width(text.line_count()).min(area.width);
+        let width = area.width - gutter;
+        if width == 0 {
+            return;
+        }
+        let cursor = buffer.cursor();
+        let viewport = buffer.viewport();
+
+        let mut screen_row = 0u16;
+        let mut line = viewport.top;
+        let mut skip = viewport.top_row;
+
+        while screen_row < area.height && line.get() < text.line_count() {
+            for (index, wrap) in text.wrap_rows(line, width).into_iter().enumerate() {
+                if index < skip {
+                    continue;
+                }
+                if screen_row >= area.height {
+                    break;
+                }
+                let y = area.y + screen_row;
+
+                // Only the first row of a wrapped line is numbered. Repeating
+                // the number on every row of one long line is how a wrapped
+                // view stops being readable.
+                if index == 0 {
+                    draw_line_number(
+                        area.x,
+                        y,
+                        gutter,
+                        line,
+                        cells,
+                        if line == cursor.line {
+                            self.theme.gutter_current
+                        } else {
+                            self.theme.gutter
+                        },
+                    );
+                }
+
+                let placement = Placement {
+                    x: area.x + gutter,
+                    y,
+                    width,
+                    row: wrap,
+                };
+                draw_row(placement, buffer, line, cells, self.highlights, self.theme);
+                screen_row += 1;
+            }
+            skip = 0;
+            line = line.saturating_add(1);
+        }
+    }
+}
+
+/// Paints a whole region in one colour.
+fn fill(area: Rect, cells: &mut CellBuffer, foreground: Color, background: Color) {
+    let style = Style::new().fg(foreground).bg(background);
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            if let Some(cell) = cells.cell_mut((x, y)) {
+                cell.set_symbol(" ");
+                cell.set_style(style);
+            }
+        }
+    }
+}
+
+/// Writes a right-aligned line number, one-based, with a trailing space.
+fn draw_line_number(
+    x: u16,
+    y: u16,
+    width: u16,
+    line: LineNumber,
+    cells: &mut CellBuffer,
+    colour: Color,
+) {
+    if width == 0 {
+        return;
+    }
+    let label = (line.get() + 1).to_string();
+    let digits = u16::try_from(label.len()).unwrap_or(u16::MAX);
+    // The separating space is the last column, so the number is right-aligned
+    // in the ones before it.
+    let padding = width.saturating_sub(1).saturating_sub(digits);
+    for (index, character) in label.chars().enumerate() {
+        let index = u16::try_from(index).unwrap_or(u16::MAX);
+        let Some(offset) = padding.checked_add(index) else {
+            break;
+        };
+        if offset >= width {
+            break;
+        }
+        if let Some(cell) = cells.cell_mut((x + offset, y)) {
+            cell.set_char(character);
+            cell.set_fg(colour);
+        }
+    }
+}
+
+/// Where one visual row of text goes.
+#[derive(Clone, Copy)]
+struct Placement {
+    /// The first column of the text area.
+    x: u16,
+    /// The screen row.
+    y: u16,
+    /// How many columns the text area has.
+    width: u16,
+    /// Which slice of the line this row shows.
+    row: WrapRow,
+}
+
+/// Writes one visual row of a line.
+///
+/// No clipping and no scroll offset: with wrapping, the row is by construction
+/// exactly the characters that fit, so every glyph on it is fully on screen.
+/// The one case that needed care — a two-cell glyph cut in half by an edge —
+/// is gone, because the wrapping refuses to put one there.
+fn draw_row(
+    placement: Placement,
+    buffer: &Buffer,
+    line: LineNumber,
+    cells: &mut CellBuffer,
+    highlights: &Highlights,
+    theme: &Theme,
+) {
+    let Placement { x, y, width, row } = placement;
+    let text = buffer.text();
+    let start = usize::from(text.display_column(line, row.first).get());
+    let indent = usize::from(row.indent);
+
+    for glyph in text.glyphs(line) {
+        if glyph.first_cell < start {
+            continue;
+        }
+        if glyph.first_cell >= usize::from(text.display_column(line, row.end).get()) {
+            break;
+        }
+        let Ok(offset) = u16::try_from(indent + glyph.first_cell - start) else {
+            break;
+        };
+        if offset >= width {
+            break;
+        }
+        let colour = theme.colour_for(highlights.kind_at(glyph.first_byte));
+
+        // A tab is blanks by definition.
+        if glyph.character == '\t' {
+            for cell in 0..glyph.cells.min(usize::from(width - offset)) {
+                let Ok(cell) = u16::try_from(cell) else { break };
+                write(cells, x + offset + cell, y, ' ', colour);
+            }
+            continue;
+        }
+
+        write(cells, x + offset, y, glyph.character, colour);
+        // A wide glyph owns the cells after it: they must hold no symbol at
+        // all, or the terminal advances twice and the rest of the row shifts.
+        for cell in 1..glyph.cells {
+            let Ok(cell) = u16::try_from(cell) else { break };
+            if offset + cell >= width {
+                break;
+            }
+            if let Some(target) = cells.cell_mut((x + offset + cell, y)) {
+                target.set_symbol("");
+                target.set_fg(colour);
+            }
+        }
+    }
+}
+
+fn write(cells: &mut CellBuffer, x: u16, y: u16, character: char, colour: Color) {
+    if let Some(cell) = cells.cell_mut((x, y)) {
+        cell.set_char(character);
+        cell.set_fg(colour);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MINIMUM_GUTTER_WIDTH, gutter_width};
+
+    #[test]
+    fn short_files_get_the_minimum() {
+        for lines in [1, 9, 10, 999] {
+            assert_eq!(gutter_width(lines), MINIMUM_GUTTER_WIDTH);
+        }
+    }
+
+    #[test]
+    fn the_gutter_grows_once_the_numbers_no_longer_fit() {
+        // Five digits plus the separating space is the first width past the
+        // minimum, and nothing caps it after that.
+        assert_eq!(gutter_width(9_999), 5);
+        assert_eq!(gutter_width(10_000), 6);
+        assert_eq!(gutter_width(99_999), 6);
+        assert_eq!(gutter_width(100_000), 7);
+        assert_eq!(gutter_width(1_000_000), 8);
+    }
+}

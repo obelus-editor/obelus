@@ -1,0 +1,222 @@
+#![allow(
+    dead_code,
+    reason = "shared by several test binaries, each of which uses part of it"
+)]
+
+//! Golden-file support for the rendering tests.
+//!
+//! What is asserted on is the cell grid: every cell's symbol, foreground and
+//! background. Only the symbols would leave highlighting, theming and the
+//! status bar's band untested — a widget can write every character correctly
+//! and paint none of them, and an assertion on the text cannot tell.
+//!
+//! The dump also records where the terminal was told to put its cursor. The
+//! cursor is the terminal's, not a painted cell, so it is invisible to an
+//! assertion on the grid — and it is the terminal drawing it that makes it go
+//! hollow when the window loses focus.
+//!
+//! Regenerate with `UPDATE_FIXTURES=1 cargo test`.
+//!
+//! In the text block, a cell holding an empty symbol prints as nothing. That
+//! is how the second half of a wide glyph is stored, so the glyph before it
+//! occupies the two columns the pair really covers and the block stays
+//! aligned.
+
+use std::{fmt::Write as _, fs, path::PathBuf};
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use obelus::{app::App, buffer::Buffer, event::Event, ui};
+use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Color};
+
+/// Lays the screen out without keeping the result.
+///
+/// The loop draws before it waits for a key, so by the time any key arrives
+/// the geometry is known. A test that presses first would be asking the
+/// application to move a cursor through a zero-sized screen — which, with
+/// wrapping, is a screen one cell wide.
+pub fn lay_out(app: &mut App, width: u16, height: u16) {
+    let _ = render(app, width, height);
+}
+
+/// Sends a key with no modifiers through the real handler.
+///
+/// Driving the tests through key handling rather than a test-only mover means
+/// the fixtures also pin down which keys move the cursor.
+pub fn press(app: &mut App, code: KeyCode) {
+    app.handle(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)));
+}
+
+/// Sends a key with control held.
+pub fn press_control(app: &mut App, character: char) {
+    app.handle(Event::Key(KeyEvent::new(
+        KeyCode::Char(character),
+        KeyModifiers::CONTROL,
+    )));
+}
+
+/// Sends a key with control held.
+pub fn press_control_key(app: &mut App, code: KeyCode) {
+    app.handle(Event::Key(KeyEvent::new(code, KeyModifiers::CONTROL)));
+}
+
+/// Types a string into whatever is listening.
+pub fn type_text(app: &mut App, text: &str) {
+    for character in text.chars() {
+        app.handle(Event::Key(KeyEvent::new(
+            KeyCode::Char(character),
+            KeyModifiers::NONE,
+        )));
+    }
+}
+
+/// Reads one of the sample source files.
+pub fn open_fixture(name: &str) -> Buffer {
+    let path = fixtures().join(name);
+    Buffer::open(&path).expect("opening a fixture")
+}
+
+/// Draws an application at the given size and dumps the cells.
+pub fn render(app: &mut App, width: u16, height: u16) -> String {
+    let area = Rect::new(0, 0, width, height);
+    let mut cells = CellBuffer::empty(area);
+    let cursor = app.draw_into(&mut cells, area);
+    let mut out = dump(&cells, width, height);
+    out.push_str(&match cursor {
+        Some(position) => format!("-- cursor --\n{},{}\n", position.x, position.y),
+        None => "-- cursor --\nnone\n".to_string(),
+    });
+    out
+}
+
+/// Where the terminal was told to put its cursor, as the dump records it.
+pub fn cursor_line(dump: &str) -> &str {
+    let marker = "-- cursor --\n";
+    dump.find(marker)
+        .map_or("", |index| dump[index + marker.len()..].trim_end())
+}
+
+/// The text rows of a dump.
+pub fn text_block(dump: &str) -> &str {
+    section(dump, "-- text --", "-- style --")
+}
+
+/// The style rows of a dump.
+pub fn style_block(dump: &str) -> &str {
+    section(dump, "-- style --", "-- legend --")
+}
+
+/// The legend of a dump.
+pub fn legend_block(dump: &str) -> &str {
+    section(dump, "-- legend --", "-- cursor --")
+}
+
+fn section<'a>(dump: &'a str, from: &str, to: &str) -> &'a str {
+    let start = dump.find(from).map_or(0, |index| index + from.len());
+    let end = dump[start..]
+        .find(to)
+        .map_or(dump.len(), |index| start + index);
+    &dump[start..end]
+}
+
+/// Compares a dump against its fixture.
+pub fn check(name: &str, actual: &str) {
+    let path = fixtures().join(format!("{name}.txt"));
+
+    if std::env::var_os("UPDATE_FIXTURES").is_some() {
+        fs::write(&path, actual).expect("writing the fixture");
+        return;
+    }
+
+    let Ok(expected) = fs::read_to_string(&path) else {
+        panic!(
+            "fixture {name} does not exist yet.\n\
+             Review this output, then create it with UPDATE_FIXTURES=1:\n\n{actual}"
+        );
+    };
+
+    assert!(
+        expected == actual,
+        "{name} does not match its fixture.\n\
+         If the change is intended: UPDATE_FIXTURES=1 cargo test\n\n\
+         --- fixture ---\n{expected}\n--- rendered ---\n{actual}"
+    );
+}
+
+fn fixtures() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+}
+
+/// One cell grid, as text.
+fn dump(cells: &CellBuffer, width: u16, height: u16) -> String {
+    let regions = ui::regions(ui::area_of(ratatui::layout::Size { width, height }));
+
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "screen {width}x{height}  editor {}x{}  status {}x{}",
+        regions.editor.width, regions.editor.height, regions.status.width, regions.status.height
+    );
+
+    // One letter per distinct style, assigned in the order first seen so the
+    // legend reads top-to-bottom like the screen does.
+    let mut styles: Vec<(Color, Color)> = Vec::new();
+
+    out.push_str("-- text --\n");
+    for y in 0..height {
+        let _ = write!(out, "{y:2}|");
+        for x in 0..width {
+            let Some(cell) = cells.cell((x, y)) else {
+                continue;
+            };
+            out.push_str(cell.symbol());
+        }
+        out.push('\n');
+    }
+
+    out.push_str("-- style --\n");
+    for y in 0..height {
+        let _ = write!(out, "{y:2}|");
+        for x in 0..width {
+            let Some(cell) = cells.cell((x, y)) else {
+                continue;
+            };
+            let key = (cell.fg, cell.bg);
+            let index = styles
+                .iter()
+                .position(|entry| *entry == key)
+                .unwrap_or_else(|| {
+                    styles.push(key);
+                    styles.len() - 1
+                });
+            out.push(label(index));
+        }
+        out.push('\n');
+    }
+
+    out.push_str("-- legend --\n");
+    for (index, (foreground, background)) in styles.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "{} fg={} bg={}",
+            label(index),
+            colour(*foreground),
+            colour(*background)
+        );
+    }
+
+    out
+}
+
+/// A stable one-character name for a style.
+fn label(index: usize) -> char {
+    const LABELS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    char::from(*LABELS.get(index).unwrap_or(&b'?'))
+}
+
+fn colour(colour: Color) -> String {
+    match colour {
+        Color::Rgb(red, green, blue) => format!("#{red:02x}{green:02x}{blue:02x}"),
+        Color::Reset => "reset".to_string(),
+        other => format!("{other:?}"),
+    }
+}
