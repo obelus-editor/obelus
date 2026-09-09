@@ -46,6 +46,8 @@ pub enum Command {
     GoLine,
     /// Go to the bracket that matches the one under the cursor.
     GoBracket,
+    /// Copy the selected text to the system clipboard.
+    SelectionCopy,
     /// Return to where the last jump was made from.
     GoBack,
     /// Undo a jump back.
@@ -204,6 +206,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Go to the matching bracket",
     },
     CommandSpec {
+        command: Command::SelectionCopy,
+        name: "selection.copy",
+        title: "Copy the selected text",
+    },
+    CommandSpec {
         command: Command::GoBack,
         name: "go.back",
         title: "Go back to where you were",
@@ -258,6 +265,7 @@ impl Command {
             | Self::SymbolReferences
             | Self::GoLine
             | Self::GoBracket
+            | Self::SelectionCopy
             | Self::GoBack
             | Self::GoForward => Group::Code,
             Self::LspRestart
@@ -295,6 +303,7 @@ impl Command {
             | Self::SymbolOutline
             | Self::GoLine
             | Self::GoBracket
+            | Self::SelectionCopy
             | Self::GoBack
             | Self::GoForward
             | Self::LogOpen
@@ -347,6 +356,7 @@ mod tests {
             Command::SymbolReferences,
             Command::GoLine,
             Command::GoBracket,
+            Command::SelectionCopy,
             Command::GoBack,
             Command::GoForward,
             Command::LogOpen,

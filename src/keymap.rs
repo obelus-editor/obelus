@@ -258,6 +258,15 @@ impl Keymap {
                     context: Context::Normal,
                     chord: control('r'),
                 },
+                // Raw mode makes `ctrl+c` an input event rather than SIGINT,
+                // and it is the copy chord every terminal can report. A
+                // desktop's `super+c` can map to this later, but cannot be a
+                // portable default because many terminals never receive it.
+                Binding {
+                    command: Command::SelectionCopy,
+                    context: Context::Normal,
+                    chord: control('c'),
+                },
                 Binding {
                     command: Command::Quit,
                     context: Context::Always,

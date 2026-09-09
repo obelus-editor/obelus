@@ -32,6 +32,16 @@ fn an_unbound_key_resolves_to_nothing() {
 }
 
 #[test]
+fn control_c_copies_the_selection() {
+    let keymap = Keymap::new();
+    let event = press(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    assert_eq!(
+        keymap.lookup(&event, Context::Normal),
+        Some(Command::SelectionCopy)
+    );
+}
+
+#[test]
 fn release_events_are_discarded() {
     let keymap = Keymap::new();
     let mut event = press(KeyCode::Char('q'), KeyModifiers::CONTROL);

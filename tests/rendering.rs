@@ -235,6 +235,11 @@ fn shift_arrows_select_and_plain_motion_clears_the_selection() {
             end_column: CharColumn::new(2),
         })
     );
+    assert_eq!(
+        app.current_buffer()
+            .and_then(|buffer| buffer.selected_text()),
+        Some("fn".to_string())
+    );
 
     let selected_dump = support::render(&mut app, WIDTH, HEIGHT);
     let style_at = |dump: &str, x: usize| {
@@ -254,6 +259,15 @@ fn shift_arrows_select_and_plain_motion_clears_the_selection() {
         "the selection survived a plain move"
     );
     assert_eq!(buffer.cursor().column, CharColumn::new(3));
+}
+
+/// Copying without a selection reports the reason before opening a clipboard,
+/// which also makes the answer useful on a headless machine.
+#[test]
+fn copying_without_a_selection_explains_why() {
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    support::press_control(&mut app, 'c');
+    assert_eq!(app.note(), Some("nothing selected"));
 }
 
 /// Shift applies equally to the line and document-sized motions. A page moves

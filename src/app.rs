@@ -1449,6 +1449,22 @@ impl App {
         self.prompt = Some(Prompt::new(PromptKind::Line));
     }
 
+    /// Copies the selected text to the system clipboard.
+    pub fn copy_selection(&mut self) {
+        let Some(text) = self.current_buffer().and_then(Buffer::selected_text) else {
+            self.note = Some("nothing selected".to_string());
+            return;
+        };
+
+        match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.set_text(text)) {
+            Ok(()) => self.note = Some("copied selection".to_string()),
+            Err(error) => {
+                tracing::warn!(%error, "copying the selection failed");
+                self.note = Some("could not copy selection".to_string());
+            }
+        }
+    }
+
     /// The question being asked, if one is.
     #[must_use]
     pub const fn prompt(&self) -> Option<&Prompt> {

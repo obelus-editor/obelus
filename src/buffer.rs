@@ -385,6 +385,13 @@ impl Buffer {
         })
     }
 
+    /// The text the reader selected, if any.
+    #[must_use]
+    pub fn selected_text(&self) -> Option<String> {
+        self.selection()
+            .map(|selection| self.text.text_in(selection))
+    }
+
     /// What part of the document is on screen.
     #[must_use]
     pub const fn viewport(&self) -> Viewport {

@@ -86,6 +86,7 @@ tree-sitter-md = "0.5.3"
 # obelus writes cells, not ANSI. It is on crossterm 0.29, the same one pinned
 # above, so there is still one crossterm in the tree.
 termimad = "0.35"
+arboard = { version = "3.6.1", features = ["wayland-data-control"] }
 
 [dev-dependencies]
 serde_json = "1"

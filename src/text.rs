@@ -10,7 +10,7 @@ use unicode_linebreak::linebreaks;
 use unicode_width::UnicodeWidthChar;
 
 use crate::coordinates::{
-    ByteOffset, CharColumn, CharOffset, DisplayColumn, LineNumber, Utf16Column,
+    ByteOffset, CharColumn, CharOffset, DisplayColumn, LineNumber, Span, Utf16Column,
 };
 
 /// How many cells a tab advances to.
@@ -111,6 +111,18 @@ impl Text {
         let line = self.rope.char_to_line(offset);
         let column = offset - self.rope.line_to_char(line);
         (LineNumber::new(line), CharColumn::new(column))
+    }
+
+    /// The characters in `span`, including any line endings between its ends.
+    ///
+    /// A selection is expressed in line and character columns, while Rope
+    /// slices use document-wide character offsets. This is the one conversion
+    /// between them, so copying a selection cannot accidentally index bytes.
+    #[must_use]
+    pub fn text_in(&self, span: Span) -> String {
+        let start = self.char_offset(span.line, span.column);
+        let end = self.char_offset(span.end_line, span.end_column);
+        self.rope.slice(start.get()..end.get()).to_string()
     }
 
     /// The byte offset of a `char` offset.

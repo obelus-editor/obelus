@@ -14,12 +14,12 @@ screen 60x20  editor 60x19  status 60x1
 11| 󰈢 buffer.list  Switch to an open file                 󰘴 e █
 12| 󰮘 buffer.close  Close this file                       󰘴 w █
 13| 󰍔 markdown.preview  Show this file rendered, or stop      █
-14| 󰏘 theme.select  Change the colours                        █
+14| 󰏘 theme.select  Change the colours                        │
 15| 󰆍 command.palette  Run a command by name              󰘴 p │
 16| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘴 g │
 17| 󰉹 symbol.outline  Everything this file defines        󰘴 t │
 18| 󰎠 go.line  Go to a line by number                     󰘴 l │
-19| 󰍉                                                       16 
+19| 󰍉                                                       17 
 -- style --
  0|aaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
  1|aaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaab
@@ -35,7 +35,7 @@ screen 60x20  editor 60x19  status 60x1
 11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaeeeab
 12|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeab
 13|aaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaab
-14|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaab
+14|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaae
 15|aaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaeeeae
 16|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeae
 17|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaeeeae
