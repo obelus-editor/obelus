@@ -756,7 +756,7 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     assert!(
         row(support::text_block(&narrowed), "log.open")
             .trim_end_matches(['\u{2502}', '\u{2588}', ' '])
-            .ends_with("file"),
+            .ends_with("log"),
         "a command bound to nothing showed a key:\n{narrowed}"
     );
     for _ in 0..3 {
@@ -936,8 +936,8 @@ fn a_question_bound_to_a_key_is_still_left_out_without_a_server() {
 /// listed. The palette is the list of what obelus can be asked to do, so a
 /// row that cannot do it is worse than a missing row.
 ///
-/// `server.restart` stays: with nothing running, starting one is exactly what
-/// it is for. `server.stop` goes, because there is nothing to stop.
+/// `lsp.restart` stays: with nothing running, starting one is exactly what
+/// it is for. `lsp.stop` goes, because there is nothing to stop.
 #[test]
 fn the_palette_leaves_out_exactly_what_needs_a_server() {
     let mut app = app();
@@ -956,7 +956,7 @@ fn the_palette_leaves_out_exactly_what_needs_a_server() {
         "symbol.typeDefinition",
         "symbol.implementation",
         "symbol.references",
-        "server.stop",
+        "lsp.stop",
     ];
     for spec in obelus::command::ALL {
         let expected = !questions.contains(&spec.name);
@@ -970,26 +970,62 @@ fn the_palette_leaves_out_exactly_what_needs_a_server() {
     }
 }
 
-/// No server, so the menu says which of the several reasons it is rather than
-/// coming up empty. An empty list says only that it is empty.
+/// Nothing to ask, so no menu: the reason goes on the status bar. A list with
+/// one row explaining itself is still a list -- it covers the code, it has to
+/// be dismissed, and it offers nothing.
 #[test]
-fn the_symbol_menu_says_why_when_there_is_nothing_to_ask() {
+fn nothing_to_ask_means_a_note_and_no_menu() {
     let mut app = app();
+    support::lay_out(&mut app, 60, 12);
     press_control(&mut app, 'g');
-    let dump = support::render(&mut app, 60, 12);
-    let text = support::text_block(&dump);
 
     assert!(
-        text.contains("not installed")
+        app.picker().is_none(),
+        "a menu opened with nothing in it to choose"
+    );
+    let dump = support::render(&mut app, 60, 12);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("no symbol here")
+            || text.contains("not installed")
             || text.contains("no server running")
             || text.contains("still starting")
             || text.contains("no language server"),
-        "the menu gave no reason:\n{dump}"
+        "no reason anywhere:\n{dump}"
     );
-    assert!(
-        !text.contains("symbol.definition"),
-        "a question was offered with no server to answer it:\n{dump}"
+    // The code is still on screen, which is the point of not opening a list.
+    assert!(text.contains("fn main"), "the code was covered:\n{dump}");
+}
+
+/// The first of the reasons: the cursor is not on a name. Every question in
+/// the menu is about the thing under the cursor, and on a bracket or a blank
+/// line there is no thing.
+#[test]
+fn the_menu_refuses_a_cursor_that_is_not_on_a_name() {
+    let mut brace = app();
+    support::lay_out(&mut brace, 60, 12);
+    // `sample.rs` line one is `fn main() {`; the end of it is the brace.
+    press(&mut brace, KeyCode::End);
+    press_control(&mut brace, 'g');
+
+    assert!(brace.picker().is_none());
+    assert_eq!(
+        brace.note(),
+        Some("no symbol here"),
+        "the reason was not the one about the cursor"
     );
+
+    // And a blank line, where the smallest node covering the cursor is the
+    // file itself -- whose text does start with a letter, so it is the
+    // leaf-ness that refuses this one and not the first character.
+    let mut blank = app();
+    support::lay_out(&mut blank, 60, 12);
+    for _ in 0..4 {
+        press(&mut blank, KeyCode::Down);
+    }
+    press_control(&mut blank, 'g');
+    assert!(blank.picker().is_none());
+    assert_eq!(blank.note(), Some("no symbol here"), "on a blank line");
 }
 
 /// The file picker shows what the selection names, below the list, drawn by
@@ -1440,9 +1476,12 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
 /// inconsistency rather than as a feature.
 #[test]
 fn every_compact_list_has_an_edge_above_it() {
-    for key in ['p', 'g', 't'] {
+    // The palette and the theme picker. The symbol menu is not among them
+    // any more: it opens only when it has something to offer, which in a
+    // test with no server is never.
+    for key in ['p', 'h'] {
         let mut app = app();
-        if key == 't' {
+        if key == 'h' {
             // The theme picker has no key of its own; the palette is the way
             // in, which is also what the palette is for.
             press_control(&mut app, 'p');
@@ -1554,18 +1593,18 @@ fn stopping_and_restarting_say_what_happened() {
 
     let mut empty = App::new(vec![]);
     support::lay_out(&mut empty, 60, 12);
-    obelus::command::dispatch::dispatch(&mut empty, Command::ServerStop);
+    obelus::command::dispatch::dispatch(&mut empty, Command::LspStop);
     assert_eq!(empty.note(), Some("no file to stop a server for"));
-    obelus::command::dispatch::dispatch(&mut empty, Command::ServerRestart);
+    obelus::command::dispatch::dispatch(&mut empty, Command::LspRestart);
     assert_eq!(empty.note(), Some("no file to restart a server for"));
 
     // A language obelus highlights but has no server for. The reason is the
     // useful part: "nothing happened" is not.
     let mut toml = App::new(vec![support::open_fixture("sample.toml")]);
     support::lay_out(&mut toml, 60, 12);
-    obelus::command::dispatch::dispatch(&mut toml, Command::ServerStop);
+    obelus::command::dispatch::dispatch(&mut toml, Command::LspStop);
     assert_eq!(toml.note(), Some("no language server for toml"));
-    obelus::command::dispatch::dispatch(&mut toml, Command::ServerRestart);
+    obelus::command::dispatch::dispatch(&mut toml, Command::LspRestart);
     assert_eq!(toml.note(), Some("no language server for toml"));
 
     // And the note is on screen, which is the only place it is of any use.
@@ -1579,7 +1618,7 @@ fn stopping_and_restarting_say_what_happened() {
     // names the program so that "not installed" can be acted on.
     let mut rust = app();
     support::lay_out(&mut rust, 60, 12);
-    obelus::command::dispatch::dispatch(&mut rust, Command::ServerStop);
+    obelus::command::dispatch::dispatch(&mut rust, Command::LspStop);
     let note = rust.note().unwrap_or_default().to_string();
     assert!(note.contains("rust-analyzer"), "{note:?}");
 }
@@ -1932,4 +1971,183 @@ fn a_language_with_no_tags_says_so_rather_than_looking_empty() {
         support::text_block(&dump).contains("no outline for this language"),
         "an empty outline said nothing:\n{dump}"
     );
+}
+
+/// The buffer list is ordered by how often each file has been come back to.
+/// A list in the order files were opened puts the one opened by accident an
+/// hour ago above the one being read all afternoon.
+#[test]
+fn the_buffer_list_puts_the_most_visited_first() {
+    let mut app = App::new(vec![
+        support::open_fixture("sample.rs"),
+        support::open_fixture("long.rs"),
+        support::open_fixture("indented.rs"),
+    ]);
+    support::lay_out(&mut app, 60, 12);
+
+    let listed = |app: &App| -> Vec<String> {
+        app.picker()
+            .expect("the buffer list")
+            .matches()
+            .map(|item| item.label.clone())
+            .collect()
+    };
+    let visit = |app: &mut App, needle: &str| {
+        press_control(app, 'e');
+        type_text(app, needle);
+        press(app, KeyCode::Enter);
+    };
+
+    // Twice to the third file, once to the second.
+    visit(&mut app, "indented");
+    visit(&mut app, "long");
+    visit(&mut app, "indented");
+
+    press_control(&mut app, 'e');
+    let order = listed(&app);
+    let at = |needle: &str| {
+        order
+            .iter()
+            .position(|label| label.contains(needle))
+            .unwrap_or_else(|| panic!("{needle:?} is not listed: {order:?}"))
+    };
+    assert!(
+        at("indented.rs") < at("long.rs"),
+        "twice-visited is not above once-visited: {order:?}"
+    );
+    assert!(
+        at("long.rs") < at("sample.rs"),
+        "once-visited is not above never-chosen: {order:?}"
+    );
+}
+
+/// A line number is typed on the status bar, not chosen from a list. A list
+/// of every line in the file would be the file, and a list of one row saying
+/// "type a line number" is a list of nothing pretending to be a hint -- so
+/// the prompt is its own thing and it covers no code.
+#[test]
+fn a_line_number_is_typed_on_the_status_bar() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    let before = support::render(&mut app, 40, 12);
+    press_control(&mut app, 'l');
+    let asking = support::render(&mut app, 40, 12);
+    let rows: Vec<&str> = support::text_block(&asking)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+
+    // The question is the status row, and it says what it wants.
+    assert!(
+        rows.last().is_some_and(|status| status.contains("line: ")),
+        "the question is not on the status bar:\n{asking}"
+    );
+    // And nothing else moved: no list, no rule, no region over the code.
+    let code = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| !row.is_empty())
+            .take(11)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(
+        code(&asking),
+        code(&before),
+        "asking for a line number covered the code:\n{asking}"
+    );
+    // The caret is in the answer, on the status row.
+    let (x, y) = support::cursor_line(&asking)
+        .split_once(',')
+        .expect("a caret");
+    assert_eq!(y.parse::<u16>().expect("a row"), 11, "{asking}");
+    assert_eq!(
+        x.parse::<usize>().expect("a column"),
+        1 + "line: ".len(),
+        "the caret is not after the label:\n{asking}"
+    );
+
+    type_text(&mut app, "30");
+    let typed = support::render(&mut app, 40, 12);
+    assert!(
+        support::text_block(&typed)
+            .lines()
+            .any(|row| row.contains("line: 30")),
+        "what was typed is not shown:\n{typed}"
+    );
+
+    press(&mut app, KeyCode::Enter);
+    let buffer = app.current_buffer().expect("a buffer");
+    // One-based on the way in, because that is what the status bar shows.
+    assert_eq!(buffer.cursor().line.get(), 29);
+    assert!(app.prompt().is_none(), "the question stayed open");
+
+    // Centred, like every other arrival.
+    let after = support::render(&mut app, 40, 12);
+    let (_, row) = support::cursor_line(&after)
+        .split_once(',')
+        .expect("the cursor is on screen");
+    assert_eq!(row.parse::<u16>().expect("a row"), 5, "{after}");
+
+    // And it is a jump, so going back comes back.
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
+    assert_eq!(
+        app.current_buffer().expect("a buffer").cursor().line.get(),
+        0,
+        "typing a line number did not record where it left"
+    );
+}
+
+/// Only digits get in, and a number past the end of the file is the end of
+/// the file: `9999` in a short one means the last line.
+#[test]
+fn a_line_prompt_takes_digits_and_clamps_them() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 40, 12);
+
+    // Letters never get in: the answer is digits, and a prompt that took
+    // them and complained afterwards would tell the reader at the answer
+    // what it could have told them at the keystroke.
+    press_control(&mut app, 'l');
+    type_text(&mut app, "zz");
+    assert_eq!(
+        app.prompt().map(obelus::component::prompt::Prompt::text),
+        Some(""),
+        "a letter got into a line number"
+    );
+    press(&mut app, KeyCode::Enter);
+    assert!(app.prompt().is_some(), "an empty answer was accepted");
+    assert_eq!(
+        app.current_buffer().expect("a buffer").cursor().line.get(),
+        0
+    );
+
+    // A number too big to be a line number is the one thing digits alone
+    // cannot rule out.
+    type_text(&mut app, "99999999999999999999");
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.note(),
+        Some("\"99999999999999999999\" is not a line number")
+    );
+    assert!(app.prompt().is_none(), "the question stayed open");
+
+    press_control(&mut app, 'l');
+    type_text(&mut app, "9999");
+    press(&mut app, KeyCode::Enter);
+    let buffer = app.current_buffer().expect("a buffer");
+    assert_eq!(
+        buffer.cursor().line,
+        buffer.text().last_line(),
+        "a line past the end was not clamped to the end"
+    );
+
+    // An empty prompt answers nothing rather than something arbitrary, and
+    // escape gives up on it.
+    press_control(&mut app, 'l');
+    press(&mut app, KeyCode::Enter);
+    assert!(app.prompt().is_some(), "an empty prompt answered anyway");
+    press(&mut app, KeyCode::Esc);
+    assert!(app.prompt().is_none(), "escape did not give up on it");
 }

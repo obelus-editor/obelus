@@ -58,6 +58,38 @@ impl SyntaxState {
         &self.tree
     }
 
+    /// Whether a byte is inside a name.
+    ///
+    /// The smallest node covering it, and then two questions about that
+    /// node: is it a leaf -- whitespace and the gaps between tokens belong
+    /// to containers, not to leaves -- and does its text start the way a
+    /// name does. Language-agnostic on purpose: it holds for every grammar
+    /// obelus has, and a table of each language's identifier node kinds
+    /// would be fourteen rows to keep right.
+    ///
+    /// Deliberately generous. A keyword and the inside of a string both pass,
+    /// and a server then answers nothing about them, which is the mild
+    /// failure. Refusing to ask about something that would have answered is
+    /// the bad one.
+    #[must_use]
+    pub fn is_name_at(&self, text: &Text, byte: ByteOffset) -> bool {
+        let Some(node) = self
+            .tree
+            .root_node()
+            .descendant_for_byte_range(byte.get(), byte.get())
+        else {
+            return false;
+        };
+        if node.child_count() > 0 {
+            return false;
+        }
+        text.rope()
+            .byte_slice(node.start_byte()..node.end_byte())
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_alphabetic() || first == '_')
+    }
+
     /// Reparses after an edit, reusing the parts of the tree the edit did not
     /// reach.
     ///

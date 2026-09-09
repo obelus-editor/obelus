@@ -36,6 +36,59 @@ impl BufferId {
     }
 }
 
+/// What a buffer holds.
+///
+/// One variant so far. It is here because the answer to "what is a buffer"
+/// and the answer to "how is it being shown" are two different questions,
+/// and conflating them is how a program ends up with a clock that has a
+/// syntax tree: a buffer over a file has text, a version and a language
+/// server; a buffer over a clock or a calendar has none of those and still
+/// wants a name, a place in the buffer list, and a way to be shown.
+///
+/// Deliberately not built out yet. A second variant means the text, the
+/// syntax and the reload path move inside this one, which is a change worth
+/// making when there is something to put beside them and not before.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Content {
+    /// A file on disk.
+    #[default]
+    File,
+}
+
+/// How a buffer is being shown.
+///
+/// A file is text by default, whatever it is: opening a README should show
+/// what is in it. Another mode is a *reading* of the same bytes -- the text
+/// is untouched and the mode can be turned off again -- and the status bar
+/// names it, because a screen showing something other than the file needs to
+/// say so.
+///
+/// One variant per way of showing a buffer, and the extension point for both
+/// questions above: a rendered diff and a hex view are modes over a file's
+/// bytes, and a clock is a mode over a buffer with no bytes at all.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    /// The bytes, highlighted. What every file starts as.
+    #[default]
+    Edit,
+    /// Markdown, rendered.
+    Markdown,
+}
+
+impl Mode {
+    /// What to call it on the status bar, or `None` for the ordinary one.
+    ///
+    /// `None` rather than "edit": a marker that is always there says nothing,
+    /// and the absence of one is what says "this is the file".
+    #[must_use]
+    pub const fn name(self) -> Option<&'static str> {
+        match self {
+            Self::Edit => None,
+            Self::Markdown => Some("markdown"),
+        }
+    }
+}
+
 /// A direction to move the cursor in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Motion {
@@ -104,6 +157,16 @@ pub struct TextArea {
 #[derive(Debug)]
 pub struct Buffer {
     path: PathBuf,
+    /// What it holds.
+    content: Content,
+    /// How it is being shown.
+    mode: Mode,
+    /// How many times the reader has come back to it.
+    ///
+    /// The buffer list is ordered by this. A list in the order files were
+    /// opened puts the one opened by accident an hour ago above the one
+    /// being read all afternoon.
+    activations: u32,
     text: Text,
     syntax: Option<SyntaxState>,
     /// Whether the last attempt to re-read the file failed.
@@ -127,11 +190,14 @@ pub struct Buffer {
     /// had, and a source file down a pipe costs nothing.
     version: i32,
     cursor: Cursor,
-    /// Whether the viewport has been paged away from the cursor on purpose.
+    /// Whether the viewport has been scrolled away from the cursor on
+    /// purpose.
     ///
-    /// While it is, nothing drags the screen back: the cursor being off
-    /// screen is what the reader asked for. The next cursor move clears it
-    /// and brings the screen back, centred.
+    /// The wheel does that: a glance, with the reader's place left where it
+    /// was. While it holds, nothing drags the screen back -- the cursor
+    /// being off screen is what was asked for -- and the next cursor move
+    /// clears it and brings the screen back, centred. Paging does not set
+    /// it, because paging takes the cursor along.
     detached: bool,
     viewport: Viewport,
 }
@@ -155,6 +221,9 @@ impl Buffer {
 
         Ok(Self {
             path,
+            content: Content::File,
+            mode: Mode::Edit,
+            activations: 0,
             text,
             syntax,
             stale: false,
@@ -170,6 +239,34 @@ impl Buffer {
                 top_row: 0,
             },
         })
+    }
+
+    /// What the buffer holds.
+    #[must_use]
+    pub const fn content(&self) -> Content {
+        self.content
+    }
+
+    /// How it is being shown.
+    #[must_use]
+    pub const fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// Shows it a different way.
+    pub const fn set_mode(&mut self, mode: Mode) {
+        self.mode = mode;
+    }
+
+    /// How many times the reader has come back to it.
+    #[must_use]
+    pub const fn activations(&self) -> u32 {
+        self.activations
+    }
+
+    /// Counts a visit.
+    pub const fn activate(&mut self) {
+        self.activations = self.activations.saturating_add(1);
     }
 
     /// Where the document came from.
@@ -284,24 +381,72 @@ impl Buffer {
         // a line.
     }
 
-    /// Moves the viewport by whole screenfuls, leaving the cursor alone.
+    /// Moves the viewport by whole screenfuls, and the cursor with it.
     ///
-    /// Paging is *reading*, not moving: a reader looking further down a file
-    /// has not chosen a new place to be, and dragging the cursor along would
-    /// throw away the place they came from. The viewport stays where it is
-    /// put until the cursor moves, and then it comes back to it -- see
-    /// [`Buffer::move_cursor`].
+    /// The cursor keeps its *place on the screen*: whichever row of the
+    /// window it was on, it is on after the page too. Reading on is still
+    /// reading -- the reader has not chosen a new place -- but a cursor left
+    /// behind means the next arrow key throws the page away, and a cursor
+    /// dropped at the top of the new screen loses where on the page you
+    /// were.
+    ///
+    /// Unlike the wheel, which is a glance: that leaves the cursor where it
+    /// is and the screen comes back on the next move. See
+    /// [`Buffer::scroll_by`].
     pub fn page(&mut self, pages: isize, area: TextArea) {
+        let width = area.width.max(1);
+        // Where on the screen the cursor is now, which is what has to hold.
+        // Off screen -- after a wheel scroll -- counts as the top row: the
+        // reader has no visible place for it to keep.
+        let screen_row = self
+            .cursor_screen_cell(area)
+            .map_or(0, |(row, _)| isize::try_from(row).unwrap_or(0));
+
         let rows = isize::try_from(area.height.max(1)).unwrap_or(isize::MAX);
-        self.scroll_by(pages.saturating_mul(rows), area);
+        self.move_viewport(pages.saturating_mul(rows), area);
+
+        let (line, row) =
+            self.step_rows(self.viewport.top, self.viewport.top_row, screen_row, width);
+        self.cursor.line = line;
+        // The remembered cell, like a vertical move: paging is one.
+        self.cursor.column = self
+            .text
+            .column_in_row(line, row, self.cursor.remembered_cell, width);
+        // On screen again, wherever the wheel had left it.
+        self.detached = false;
     }
 
-    /// Moves the viewport by rows, leaving the cursor alone.
+    /// Moves the window over a rendering, which has rows and nothing else.
     ///
-    /// What the wheel does. Same rule as [`Buffer::page`], of which it is
-    /// the general case: the view moves, the place the reader chose does
-    /// not, and the next cursor move brings the screen back to it.
+    /// The viewport's top line is read as a row index while a mode other
+    /// than [`Mode::Edit`] is on. Reusing it rather than adding a second
+    /// offset keeps one answer to "where is this buffer scrolled to", which
+    /// is what the status bar and the scrollbar both ask.
+    pub fn scroll_rendering(&mut self, rows: isize, total: usize) {
+        let last = total.saturating_sub(1);
+        let top = self.viewport.top.get();
+        let moved = if rows >= 0 {
+            top.saturating_add(rows.unsigned_abs())
+        } else {
+            top.saturating_sub(rows.unsigned_abs())
+        };
+        self.viewport.top = LineNumber::new(moved.min(last));
+        self.viewport.top_row = 0;
+    }
+
+    /// Moves the viewport by rows, leaving the cursor where it is.
+    ///
+    /// What the wheel does, and it is a glance rather than a move: the place
+    /// the reader chose stays chosen, the cursor may go off screen, and the
+    /// next cursor move brings the screen back to it. Paging is the other
+    /// thing -- see [`Buffer::page`], which takes the cursor along.
     pub fn scroll_by(&mut self, rows: isize, area: TextArea) {
+        self.move_viewport(rows, area);
+        self.detached = true;
+    }
+
+    /// The viewport arithmetic both of them share.
+    fn move_viewport(&mut self, rows: isize, area: TextArea) {
         self.scroll_rows(rows, area);
 
         // The last screenful is as far down as it goes. `scroll_rows` stops
@@ -317,10 +462,9 @@ impl Buffer {
             self.viewport.top = limit.0;
             self.viewport.top_row = limit.1;
         }
-        self.detached = true;
     }
 
-    /// Whether the viewport has been paged away from the cursor.
+    /// Whether the viewport has been scrolled away from the cursor.
     #[must_use]
     pub const fn is_detached(&self) -> bool {
         self.detached
@@ -332,10 +476,10 @@ impl Buffer {
     /// long line is many rows tall, and stepping over all of them at once is
     /// not what pressing down once looks like it should do.
     ///
-    /// After paging, the first move brings the screen back to the cursor and
-    /// centres it. Scrolling the least amount instead would drop the reader
-    /// at the top or bottom edge of a screen they had left, which is the
-    /// worst of both places.
+    /// After a wheel scroll, the first move brings the screen back to the
+    /// cursor and centres it. Scrolling the least amount instead would drop
+    /// the reader at the top or bottom edge of a screen they had left, which
+    /// is the worst of both places.
     pub fn move_cursor(&mut self, motion: Motion, area: TextArea) {
         if self.detached {
             self.detached = false;
@@ -531,9 +675,9 @@ impl Buffer {
                 .saturating_sub(1),
         );
 
-        // Paged away deliberately: the cursor being off screen is the point,
-        // and dragging the view back to it every frame would undo the page
-        // before it was drawn.
+        // Scrolled away deliberately: the cursor being off screen is the
+        // point, and dragging the view back to it every frame would undo the
+        // scroll before it was drawn.
         if self.detached {
             return;
         }

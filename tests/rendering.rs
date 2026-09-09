@@ -554,7 +554,7 @@ fn a_motion_with_an_unknown_modifier_does_not_move() {
 /// which is the half the reader came for.
 #[test]
 fn a_jump_lands_in_the_middle_of_the_screen() {
-    use obelus::picker::{PickerItem, PickerLayout, PickerValue};
+    use obelus::component::picker::{PickerItem, PickerLayout, PickerValue};
 
     let path =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
@@ -607,7 +607,7 @@ fn a_jump_lands_in_the_middle_of_the_screen() {
 #[test]
 fn a_jump_back_lands_in_the_middle_too() {
     use crossterm::event::{KeyEvent, KeyModifiers};
-    use obelus::picker::{PickerItem, PickerLayout, PickerValue};
+    use obelus::component::picker::{PickerItem, PickerLayout, PickerValue};
 
     let path =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
@@ -746,60 +746,56 @@ fn a_tick_changes_nothing_once_a_file_is_open() {
     assert_eq!(support::render(&mut app, 40, 8), before);
 }
 
-/// Paging is reading, not moving. The cursor stays where it was left -- the
-/// status bar still reports it -- and the first cursor move afterwards brings
-/// the screen back to it, centred.
+/// Paging takes the cursor along, keeping its place *on the screen*: the row
+/// of the window it was on is the row it is on after the page. A cursor left
+/// behind means the next arrow key throws the page away; a cursor dropped at
+/// the top of the new screen loses where on the page you were.
 #[test]
-fn paging_moves_the_screen_and_leaves_the_cursor_alone() {
+fn paging_keeps_the_cursor_on_the_same_row_of_the_screen() {
     let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
     support::lay_out(&mut app, 40, 12);
-    // Away from the first line, where centring has nowhere to go and looks
-    // the same as not centring.
-    for _ in 0..12 {
+    // Down to the middle of the screen, so keeping the row is visible.
+    for _ in 0..5 {
         press(&mut app, KeyCode::Down);
     }
 
-    let start = support::render(&mut app, 40, 12);
-    let position = |dump: &str| {
-        support::text_block(dump)
-            .lines()
-            .last()
-            .expect("a status row")
-            .to_string()
+    let row_of = |dump: &str| {
+        support::cursor_line(dump)
+            .split_once(',')
+            .map(|(_, y)| y.parse::<u16>().expect("a row"))
+            .expect("the cursor is on screen")
     };
-    let before = position(&start);
+    let line_of = |app: &App| app.current_buffer().expect("a buffer").cursor().line.get();
+
+    let before = support::render(&mut app, 40, 12);
+    let (row, line) = (row_of(&before), line_of(&app));
+    assert_eq!(row, 5, "not where this test meant to start:\n{before}");
 
     press(&mut app, KeyCode::PageDown);
-    let paged = support::render(&mut app, 40, 12);
+    let after = support::render(&mut app, 40, 12);
     assert_eq!(
-        position(&paged),
-        before,
-        "paging moved the cursor:\n{paged}"
+        row_of(&after),
+        row,
+        "the cursor changed rows on the screen:\n{after}"
     );
-    assert_ne!(
-        support::text_block(&paged),
-        support::text_block(&start),
-        "paging moved nothing"
+    assert!(
+        line_of(&app) > line,
+        "the cursor did not come along: {} then {}",
+        line,
+        line_of(&app)
     );
-    // Off screen, which is the whole point: the reader is looking somewhere
-    // else and can come back.
-    assert_eq!(
-        support::cursor_line(&paged),
-        "none",
-        "the cursor is still on screen after a page:\n{paged}"
-    );
+    // A screenful further down the file, which is what a page is.
+    assert_eq!(line_of(&app) - line, 11, "not a screenful");
 
-    // And one arrow key brings the screen back with the cursor in the middle
-    // of it, rather than at the edge the least scrolling would leave.
-    press(&mut app, KeyCode::Down);
+    // And back, to exactly where it was: a page down and a page up is
+    // nowhere.
+    press(&mut app, KeyCode::PageUp);
     let back = support::render(&mut app, 40, 12);
-    let (_, row) = support::cursor_line(&back)
-        .split_once(',')
-        .expect("the cursor is on screen again");
+    assert_eq!(line_of(&app), line);
     assert_eq!(
-        row.parse::<u16>().expect("a row"),
-        5,
-        "the cursor did not come back to the middle:\n{back}"
+        support::text_block(&back),
+        support::text_block(&before),
+        "the screen did not come back"
     );
 }
 
@@ -957,5 +953,232 @@ fn the_wheel_moves_a_list_by_one_row() {
             .map(|item| item.label.clone()),
         Some(first),
         "the wheel wrapped past the top of the list"
+    );
+}
+
+/// A markdown file opens as text, like every other file, and the command
+/// turns it into a rendering. The mode is a *reading* of the same bytes, so
+/// it can be turned off again, and the status bar names it while it is on.
+#[test]
+fn markdown_is_a_mode_over_the_same_file() {
+    use obelus::{buffer::Mode, command::Command};
+
+    let mut app = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut app, 60, 14);
+
+    // Text first: opening a README should show what is in it.
+    let source = support::render(&mut app, 60, 14);
+    assert!(
+        support::text_block(&source).contains("# Title"),
+        "a markdown file did not open as its own text:\n{source}"
+    );
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        Mode::Edit,
+        "a file opened in some mode other than its bytes"
+    );
+
+    obelus::command::dispatch::dispatch(&mut app, Command::MarkdownPreview);
+    let rendered = support::render(&mut app, 60, 14);
+    let text = support::text_block(&rendered);
+    assert!(text.contains("Title"), "{rendered}");
+    assert!(
+        !text.contains("# Title"),
+        "the hashes are still there, so nothing was rendered:\n{rendered}"
+    );
+    assert!(
+        text.contains('\u{2022}'),
+        "the list has no bullets:\n{rendered}"
+    );
+    // The mode is named, because a screen showing something other than the
+    // file has to say so.
+    assert!(
+        text.contains("markdown"),
+        "the status bar does not name the mode:\n{rendered}"
+    );
+    // And no cursor: the rows are not the file's lines, so there is nowhere
+    // in them the cursor honestly is.
+    assert_eq!(support::cursor_line(&rendered), "none", "{rendered}");
+
+    // The same command again puts the file back.
+    obelus::command::dispatch::dispatch(&mut app, Command::MarkdownPreview);
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 60, 14)),
+        support::text_block(&source),
+        "the file did not come back"
+    );
+}
+
+/// A file that is not markdown gets a note, not a screen of nonsense. By
+/// extension, case-insensitively, because the mode is a reading of the bytes
+/// and a reading that does not fit them produces gibberish.
+#[test]
+fn only_a_markdown_file_can_be_rendered() {
+    use obelus::command::Command;
+
+    let mut app = app();
+    support::lay_out(&mut app, 60, 14);
+    obelus::command::dispatch::dispatch(&mut app, Command::MarkdownPreview);
+
+    assert_eq!(app.note(), Some("not a markdown file"));
+
+    // And the extension is read without regard to case: `README.MD` is one.
+    let shouting = std::env::temp_dir().join(format!("obelus-{}-README.MD", std::process::id()));
+    std::fs::write(&shouting, "# Title\n").expect("a file to render");
+    let mut upper = App::new(vec![
+        obelus::buffer::Buffer::open(&shouting).expect("opening it"),
+    ]);
+    support::lay_out(&mut upper, 60, 14);
+    obelus::command::dispatch::dispatch(&mut upper, Command::MarkdownPreview);
+    assert_eq!(
+        upper.current_buffer().expect("a buffer").mode(),
+        obelus::buffer::Mode::Markdown,
+        "an upper-case extension was not recognized"
+    );
+    let _ = std::fs::remove_file(&shouting);
+    let dump = support::render(&mut app, 60, 14);
+    assert!(
+        support::text_block(&dump).contains("fn main"),
+        "the file was replaced anyway:\n{dump}"
+    );
+}
+
+/// The rendering scrolls by rows, with the keys that scroll everything else.
+#[test]
+fn a_rendering_scrolls_by_rows() {
+    use obelus::command::Command;
+
+    let mut app = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut app, 60, 8);
+    obelus::command::dispatch::dispatch(&mut app, Command::MarkdownPreview);
+
+    let first = support::render(&mut app, 60, 8);
+    assert!(support::text_block(&first).contains("Title"), "{first}");
+
+    press(&mut app, KeyCode::PageDown);
+    let paged = support::render(&mut app, 60, 8);
+    assert!(
+        !support::text_block(&paged).contains("Title"),
+        "paging a rendering moved nothing:\n{paged}"
+    );
+
+    // And the right-hand corner counts rows rather than a cursor that is not
+    // there.
+    assert!(
+        support::text_block(&paged)
+            .lines()
+            .last()
+            .is_some_and(|status| status.contains('/')),
+        "the status bar still reports a cursor:\n{paged}"
+    );
+
+    press(&mut app, KeyCode::PageUp);
+    assert_eq!(
+        support::text_block(&support::render(&mut app, 60, 8)),
+        support::text_block(&first),
+        "paging back did not come back"
+    );
+}
+
+/// The bracket under the cursor is highlighted along with its partner, and a
+/// key goes to it. The highlight is what says which two characters are the
+/// pair; the key is what saves reading down the screen to find out.
+#[test]
+fn a_bracket_pair_is_marked_and_can_be_jumped_between() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 40, 8);
+
+    // `sample.rs` line one is `fn main() {`. Onto the opening bracket.
+    for _ in 0..7 {
+        press(&mut app, KeyCode::Right);
+    }
+    let dump = support::render(&mut app, 40, 8);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    let styles: Vec<&str> = support::style_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+
+    // Both brackets share a *background* nothing else on the row has. The
+    // background is the assertion: a foreground they happen to share is
+    // just the punctuation colour, which they would have anyway.
+    let background = |letter: char| {
+        support::legend_block(&dump)
+            .lines()
+            .find(|line| line.trim_start().starts_with(letter))
+            .and_then(|line| line.split("bg=").nth(1))
+            .map(str::to_string)
+            .unwrap_or_else(|| panic!("no legend for {letter:?}:\n{dump}"))
+    };
+    let letters: Vec<char> = rows[0]
+        .chars()
+        .zip(styles[0].chars())
+        .filter(|(character, _)| *character == '(' || *character == ')')
+        .map(|(_, letter)| letter)
+        .collect();
+    assert_eq!(letters.len(), 2, "{dump}");
+    assert_eq!(letters[0], letters[1], "the pair is not one style:\n{dump}");
+    let plain = rows[0]
+        .chars()
+        .zip(styles[0].chars())
+        .find(|(character, _)| *character == 'm')
+        .map(|(_, letter)| letter)
+        .expect("a letter of the name");
+    assert_ne!(
+        background(letters[0]),
+        background(plain),
+        "the pair has no background of its own:\n{dump}"
+    );
+
+    // And the key goes to the other one.
+    app.handle(obelus::event::Event::Key(KeyEvent::new(
+        KeyCode::Char('m'),
+        KeyModifiers::ALT,
+    )));
+    let cursor = app.current_buffer().expect("a buffer").cursor();
+    assert_eq!(cursor.line.get(), 0);
+    assert_eq!(cursor.column.get(), 8, "not on the closing bracket");
+
+    // Back again, because the pair is symmetric.
+    app.handle(obelus::event::Event::Key(KeyEvent::new(
+        KeyCode::Char('m'),
+        KeyModifiers::ALT,
+    )));
+    assert_eq!(
+        app.current_buffer()
+            .expect("a buffer")
+            .cursor()
+            .column
+            .get(),
+        7
+    );
+}
+
+/// A cursor that is not on a bracket gets a note, not a silent nothing.
+#[test]
+fn nowhere_to_jump_says_so() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 40, 8);
+    app.handle(obelus::event::Event::Key(KeyEvent::new(
+        KeyCode::Char('m'),
+        KeyModifiers::ALT,
+    )));
+
+    assert_eq!(app.note(), Some("no bracket here"));
+    assert_eq!(
+        app.current_buffer()
+            .expect("a buffer")
+            .cursor()
+            .column
+            .get(),
+        0,
+        "the cursor moved anyway"
     );
 }

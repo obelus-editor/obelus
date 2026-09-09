@@ -16,8 +16,8 @@ use ratatui::{
 use crate::{
     app::App,
     buffer::Buffer,
-    coordinates::{CharColumn, LineNumber, Span},
-    syntax::highlight::Highlights,
+    coordinates::{ByteOffset, CharColumn, LineNumber, Span},
+    syntax::{brackets, highlight::Highlights},
     text::WrapRow,
     theme::Theme,
     ui::{fill, put},
@@ -145,6 +145,13 @@ impl Widget for EditorView<'_> {
         let cursor = buffer.cursor();
         let viewport = buffer.viewport();
 
+        // The bracket pair, worked out once for the frame rather than per
+        // row: it is one scan over what is on screen, and every row asks the
+        // same question.
+        let visible = crate::app::visible_bytes(buffer, area.height);
+        let at = text.byte_of_char(text.char_offset(cursor.line, cursor.column));
+        let brackets = brackets::pair_at(text, self.highlights, at, visible);
+
         let mut screen_row = 0u16;
         let mut line = viewport.top;
         let mut skip = viewport.top_row;
@@ -188,9 +195,12 @@ impl Widget for EditorView<'_> {
                     buffer,
                     line,
                     cells,
-                    self.highlights,
-                    self.theme,
-                    self.marked,
+                    &Painting {
+                        highlights: self.highlights,
+                        theme: self.theme,
+                        marked: self.marked,
+                        brackets,
+                    },
                 );
                 screen_row += 1;
             }
@@ -248,14 +258,26 @@ struct Placement {
 /// exactly the characters that fit, so every glyph on it is fully on screen.
 /// The one case that needed care — a two-cell glyph cut in half by an edge —
 /// is gone, because the wrapping refuses to put one there.
+/// Everything about how a row looks, as against where it goes.
+///
+/// A struct because the list had grown to the point where the compiler was
+/// the only thing keeping the order straight -- and because "where" and
+/// "how" really are two groups.
+struct Painting<'a> {
+    highlights: &'a Highlights,
+    theme: &'a Theme,
+    /// The run a preview is about.
+    marked: Option<Span>,
+    /// The bracket under the cursor and its partner.
+    brackets: Option<(ByteOffset, ByteOffset)>,
+}
+
 fn draw_row(
     placement: Placement,
     buffer: &Buffer,
     line: LineNumber,
     cells: &mut CellBuffer,
-    highlights: &Highlights,
-    theme: &Theme,
-    marked: Option<Span>,
+    painting: &Painting<'_>,
 ) {
     let Placement { x, y, width, row } = placement;
     let text = buffer.text();
@@ -275,13 +297,27 @@ fn draw_row(
         if offset >= width {
             break;
         }
-        let colour = theme.colour_for(highlights.kind_at(glyph.first_byte));
+        let colour = painting
+            .theme
+            .colour_for(painting.highlights.kind_at(glyph.first_byte));
 
         // A foreground, so the background the fill painted stays — except
         // where the run being marked needs one of its own.
         let mut style = Style::new().fg(colour);
-        if marked.is_some_and(|marked| marked.contains(line, CharColumn::new(column))) {
-            style = style.bg(theme.marked_background);
+        if painting
+            .marked
+            .is_some_and(|marked| marked.contains(line, CharColumn::new(column)))
+        {
+            style = style.bg(painting.theme.marked_background);
+        }
+        // The bracket the cursor is on, and its partner. After the mark, so
+        // a symbol a preview is about keeps its own background where the two
+        // land on the same cell.
+        if painting
+            .brackets
+            .is_some_and(|(open, close)| glyph.first_byte == open || glyph.first_byte == close)
+        {
+            style = style.bg(painting.theme.bracket_background);
         }
 
         // A tab is blanks by definition.

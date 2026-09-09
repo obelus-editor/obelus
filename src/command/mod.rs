@@ -24,6 +24,8 @@ pub enum Command {
     BufferList,
     /// Stop showing the current file.
     BufferClose,
+    /// Show this file as rendered markdown, or stop.
+    MarkdownPreview,
     /// Choose a theme.
     ThemeSelect,
     /// Choose a command by name.
@@ -40,6 +42,10 @@ pub enum Command {
     SymbolImplementation,
     /// Everywhere it is used.
     SymbolReferences,
+    /// Go to a line by number.
+    GoLine,
+    /// Go to the bracket that matches the one under the cursor.
+    GoBracket,
     /// Return to where the last jump was made from.
     GoBack,
     /// Undo a jump back.
@@ -47,34 +53,37 @@ pub enum Command {
     /// Open the file obelus logs to.
     LogOpen,
     /// Stop the language server for this file and start it again.
-    ServerRestart,
+    LspRestart,
     /// Stop the language server for this file and leave it stopped.
-    ServerStop,
+    LspStop,
     /// Leave obelus.
     Quit,
 }
 
 /// The part of obelus a command belongs to.
 ///
-/// Four, and deliberately few: the palette shows these as tabs, and a tab
-/// per dotted prefix would be nine tabs to walk through, which is a worse
-/// way to find `file.open` than typing it. `symbol.*` and `go.*` are one
-/// group because they are one activity -- following code around.
+/// Three, and deliberately few: the palette shows these as tabs, and every
+/// tab is somewhere a reader has to look before deciding to type instead. A
+/// group per dotted prefix would be nine of them, which is a worse way to
+/// find `file.open` than its name is.
+///
+/// Split by what the reader is doing, not by what the code touches: reading
+/// files, following what the code means, and running obelus itself -- which
+/// is where restarting a server and opening the log both belong, being
+/// housekeeping rather than reading.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Group {
     /// Opening and re-reading files, and moving between the open ones.
     Files,
     /// Following the code: what a symbol is, and where you have been.
     Code,
-    /// The language server, and the log it writes to.
-    Server,
-    /// obelus itself.
+    /// obelus itself, its colours, its log, and its language servers.
     Obelus,
 }
 
 impl Group {
     /// Every group, in the order the tabs appear.
-    pub const ALL: &'static [Self] = &[Self::Files, Self::Code, Self::Server, Self::Obelus];
+    pub const ALL: &'static [Self] = &[Self::Files, Self::Code, Self::Obelus];
 
     /// The word on the tab.
     #[must_use]
@@ -82,7 +91,6 @@ impl Group {
         match self {
             Self::Files => "files",
             Self::Code => "code",
-            Self::Server => "server",
             Self::Obelus => "obelus",
         }
     }
@@ -137,6 +145,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Close this file",
     },
     CommandSpec {
+        command: Command::MarkdownPreview,
+        name: "markdown.preview",
+        title: "Show this file rendered, or stop",
+    },
+    CommandSpec {
         command: Command::ThemeSelect,
         name: "theme.select",
         title: "Change the colours",
@@ -181,6 +194,16 @@ pub const ALL: &[CommandSpec] = &[
         title: "Find references",
     },
     CommandSpec {
+        command: Command::GoLine,
+        name: "go.line",
+        title: "Go to a line by number",
+    },
+    CommandSpec {
+        command: Command::GoBracket,
+        name: "go.bracket",
+        title: "Go to the matching bracket",
+    },
+    CommandSpec {
         command: Command::GoBack,
         name: "go.back",
         title: "Go back to where you were",
@@ -193,16 +216,16 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::LogOpen,
         name: "log.open",
-        title: "Open the log file",
+        title: "Open obelus's own log",
     },
     CommandSpec {
-        command: Command::ServerRestart,
-        name: "server.restart",
+        command: Command::LspRestart,
+        name: "lsp.restart",
         title: "Restart the language server",
     },
     CommandSpec {
-        command: Command::ServerStop,
-        name: "server.stop",
+        command: Command::LspStop,
+        name: "lsp.stop",
         title: "Stop the language server",
     },
     CommandSpec {
@@ -222,19 +245,27 @@ impl Command {
     #[must_use]
     pub const fn group(self) -> Group {
         match self {
-            Self::FileOpen | Self::FileReload | Self::BufferList | Self::BufferClose => {
-                Group::Files
-            }
+            Self::FileOpen
+            | Self::FileReload
+            | Self::BufferList
+            | Self::BufferClose
+            | Self::MarkdownPreview => Group::Files,
             Self::SymbolMenu
             | Self::SymbolOutline
             | Self::SymbolDefinition
             | Self::SymbolTypeDefinition
             | Self::SymbolImplementation
             | Self::SymbolReferences
+            | Self::GoLine
+            | Self::GoBracket
             | Self::GoBack
             | Self::GoForward => Group::Code,
-            Self::ServerRestart | Self::ServerStop | Self::LogOpen => Group::Server,
-            Self::ThemeSelect | Self::CommandPalette | Self::Quit => Group::Obelus,
+            Self::LspRestart
+            | Self::LspStop
+            | Self::LogOpen
+            | Self::ThemeSelect
+            | Self::CommandPalette
+            | Self::Quit => Group::Obelus,
         }
     }
 
@@ -243,7 +274,7 @@ impl Command {
     /// The palette leaves out anything that cannot do its job right now: a
     /// row that silently fails is worse than a row that is not there. Note
     /// what is *not* conditional -- `symbol.menu` with no server is the thing
-    /// that says why there is none, and `server.restart` with no server
+    /// that says why there is none, and `lsp.restart` with no server
     /// running is how you get one.
     #[must_use]
     pub const fn requires(self) -> Requires {
@@ -252,19 +283,22 @@ impl Command {
             | Self::SymbolTypeDefinition
             | Self::SymbolImplementation
             | Self::SymbolReferences => Requires::AnAnswer,
-            Self::ServerStop => Requires::ARunningServer,
+            Self::LspStop => Requires::ARunningServer,
             Self::FileOpen
             | Self::FileReload
             | Self::BufferList
             | Self::BufferClose
+            | Self::MarkdownPreview
             | Self::ThemeSelect
             | Self::CommandPalette
             | Self::SymbolMenu
             | Self::SymbolOutline
+            | Self::GoLine
+            | Self::GoBracket
             | Self::GoBack
             | Self::GoForward
             | Self::LogOpen
-            | Self::ServerRestart
+            | Self::LspRestart
             | Self::Quit => Requires::Nothing,
         }
     }
@@ -302,6 +336,7 @@ mod tests {
             Command::FileReload,
             Command::BufferList,
             Command::BufferClose,
+            Command::MarkdownPreview,
             Command::ThemeSelect,
             Command::CommandPalette,
             Command::SymbolMenu,
@@ -310,15 +345,43 @@ mod tests {
             Command::SymbolTypeDefinition,
             Command::SymbolImplementation,
             Command::SymbolReferences,
+            Command::GoLine,
+            Command::GoBracket,
             Command::GoBack,
             Command::GoForward,
             Command::LogOpen,
-            Command::ServerRestart,
-            Command::ServerStop,
+            Command::LspRestart,
+            Command::LspStop,
             Command::Quit,
         ] {
             assert_eq!(command.spec().command, command);
         }
+    }
+
+    /// Where the housekeeping goes. Restarting a language server and opening
+    /// the log are not *reading*, and neither of them is worth a tab: they
+    /// belong with obelus's own settings, which is where a reader looks when
+    /// the tool rather than the code is the problem.
+    #[test]
+    fn housekeeping_is_grouped_with_obelus_itself() {
+        assert_eq!(Command::LogOpen.group(), Group::Obelus);
+        assert_eq!(Command::LspRestart.group(), Group::Obelus);
+        assert_eq!(Command::LspStop.group(), Group::Obelus);
+        assert_eq!(Command::ThemeSelect.group(), Group::Obelus);
+
+        // And the two that are reading.
+        assert_eq!(Command::BufferClose.group(), Group::Files);
+        assert_eq!(Command::SymbolOutline.group(), Group::Code);
+        assert_eq!(Command::GoBack.group(), Group::Code);
+
+        // Few enough to walk. Every tab is somewhere a reader has to look
+        // before deciding to type the name instead, so the count is the
+        // point and not an accident.
+        assert!(
+            Group::ALL.len() <= 3,
+            "the tabs have multiplied: {:?}",
+            Group::ALL
+        );
     }
 
     #[test]

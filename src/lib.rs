@@ -19,6 +19,7 @@ pub mod jump;
 pub mod keymap;
 pub mod logging;
 pub mod lsp;
+pub mod markdown;
 pub mod syntax;
 pub mod text;
 pub mod theme;

@@ -15,8 +15,12 @@ use ratatui::{
 };
 
 use crate::{
-    buffer::{Buffer, BufferId, Cursor, Motion, TextArea},
+    buffer::{Buffer, BufferId, Cursor, Mode, Motion, TextArea},
     command::{Requires, dispatch},
+    component::{
+        picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files},
+        prompt::{Prompt, PromptKind, PromptOutcome},
+    },
     coordinates::{ByteOffset, CharColumn, LineNumber, Span},
     event::{self, Event, Ticker},
     icons,
@@ -28,8 +32,8 @@ use crate::{
         client::{Client, Reply},
         position,
     },
-    component::picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files},
-    syntax::{LanguageId, highlight::Highlights, parse::SyntaxState, tags},
+    markdown,
+    syntax::{LanguageId, brackets, highlight::Highlights, parse::SyntaxState, tags},
     theme::{Theme, builtin},
     ui,
     watch::Watcher,
@@ -110,6 +114,19 @@ pub struct App {
     /// reads it, and it reads it as an offset into a repeating ramp, so it
     /// can grow forever and wrap on its own.
     phase: u32,
+    /// A question on the status bar, while one is being asked.
+    ///
+    /// Not a picker: a prompt has nothing to list, and going through a
+    /// picker to ask for a line number puts a region of screen over the code
+    /// to hold one row that says "type a line number".
+    prompt: Option<Prompt>,
+    /// The current file laid out as markdown, if it is being shown that way.
+    ///
+    /// Kept here rather than in the buffer for the same reason the
+    /// highlights are: it is a function of the text, the width and nothing
+    /// else, and re-deriving it when either changes is simpler than keeping
+    /// a buffer's copy of it right.
+    markdown: Option<Rendered>,
     /// The theme to go back to if the theme picker is cancelled.
     ///
     /// Set while that picker is open, because moving through it *applies*
@@ -170,6 +187,8 @@ impl App {
             preview: None,
             phase: 0,
             ticker: None,
+            prompt: None,
+            markdown: None,
             theme_before: None,
             note: None,
             walk_generation: 0,
@@ -470,38 +489,36 @@ impl App {
     /// take the same argument and differ only in what comes back, and a menu
     /// can say which ones this server actually answers.
     pub fn open_symbol_menu(&mut self) {
-        let items = match self.symbol_actions() {
-            // Rows over commands, like the palette, so both offer the same
-            // things and both show whatever key the table has for them.
-            Ok(actions) => actions
-                .into_iter()
-                .map(|action| {
-                    let command = action.command();
-                    PickerItem {
-                        icon: icons::enabled().then(|| icons::for_command(command.spec().name)),
-                        label: command.spec().name.to_string(),
-                        detail: Some(command.spec().title.to_string()),
-                        trailing: self.keymap.chord_for(command).map(KeyChord::label),
-                        value: PickerValue::Command(command),
-                        depth: 0,
-                        kind: None,
-                        tab: None,
-                    }
-                })
-                .collect(),
-            // A row saying why there is nothing to offer. An empty list would
-            // say only that.
-            Err(why) => vec![PickerItem {
-                icon: None,
-                label: why,
-                detail: None,
-                trailing: None,
-                value: PickerValue::Nothing,
-                depth: 0,
-                kind: None,
-                tab: None,
-            }],
+        let actions = match self.symbol_actions() {
+            Ok(actions) => actions,
+            // No menu at all. A list with one row explaining itself is still
+            // a list: it covers the code, it has to be dismissed, and it
+            // offers nothing. The reason belongs on the status bar, which is
+            // where every other passing word about state goes.
+            Err(why) => {
+                self.note = Some(why);
+                return;
+            }
         };
+
+        // Rows over commands, like the palette, so both offer the same things
+        // and both show whatever key the table has for them.
+        let items: Vec<PickerItem> = actions
+            .into_iter()
+            .map(|action| {
+                let command = action.command();
+                PickerItem {
+                    icon: icons::enabled().then(|| icons::for_command(command.spec().name)),
+                    label: command.spec().name.to_string(),
+                    detail: Some(command.spec().title.to_string()),
+                    trailing: self.keymap.chord_for(command).map(KeyChord::label),
+                    value: PickerValue::Command(command),
+                    depth: 0,
+                    kind: None,
+                    tab: None,
+                }
+            })
+            .collect();
         self.picker = Some(Picker::new(
             items,
             PickerLayout::Compact { rows: COMPACT_ROWS },
@@ -516,6 +533,24 @@ impl App {
         let language = buffer
             .language()
             .ok_or_else(|| "obelus does not know this language".to_string())?;
+
+        // On a name, before anything about servers. Every question in the
+        // menu is about the thing under the cursor, and on a bracket or a
+        // blank line there is no thing: the answer would be nothing, four
+        // different ways. Asked first because it is the reason a reader can
+        // act on -- move the cursor -- where the others are about the
+        // machine.
+        let cursor = buffer.cursor();
+        let at = buffer
+            .text()
+            .byte_of_char(buffer.text().char_offset(cursor.line, cursor.column));
+        if !buffer
+            .syntax()
+            .is_some_and(|state| state.is_name_at(buffer.text(), at))
+        {
+            return Err("no symbol here".to_string());
+        }
+
         let Some(client) = self.servers.get(&language) else {
             return Err(match lsp::command_for(language) {
                 Some(command) if !lsp::on_path(command) => format!("{command} is not installed"),
@@ -728,7 +763,7 @@ impl App {
         if to.buffer.get() >= self.buffers.len() {
             return;
         }
-        self.current = Some(to.buffer);
+        self.go_to_buffer(to.buffer);
         let area = self.text_area();
         if let Some(buffer) = self
             .buffers
@@ -770,12 +805,21 @@ impl App {
 
     /// Offers the files already open.
     pub fn open_buffer_picker(&mut self) {
-        let items = self
+        let mut open: Vec<(usize, &Buffer)> = self
             .buffers
             .iter()
             .enumerate()
             // Closed slots are holes, not rows.
             .filter_map(|(index, buffer)| buffer.as_ref().map(|buffer| (index, buffer)))
+            .collect();
+        // Most visited first. A list in the order files were opened puts the
+        // one opened by accident an hour ago above the one being read all
+        // afternoon; ties keep the order they were opened in, which is the
+        // only other thing obelus knows about them.
+        open.sort_by_key(|(index, buffer)| (std::cmp::Reverse(buffer.activations()), *index));
+
+        let items = open
+            .into_iter()
             .map(|(index, buffer)| PickerItem {
                 icon: Some(icons::for_path(buffer.path())),
                 label: relative(buffer.path(), &self.working_directory),
@@ -919,7 +963,7 @@ impl App {
     /// Stops the server for the current file and leaves it stopped.
     ///
     /// For a server that is costing more than it is answering. It stays
-    /// stopped until `server.restart`, because otherwise opening the next
+    /// stopped until `lsp.restart`, because otherwise opening the next
     /// file of that language would start it again.
     pub fn stop_server(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
@@ -990,6 +1034,18 @@ impl App {
             return;
         };
         self.close(id);
+    }
+
+    /// Moves to a buffer, counting the visit.
+    ///
+    /// One place, because the count is what orders the buffer list and a
+    /// path that set `current` without counting would quietly leave a file
+    /// out of that order.
+    fn go_to_buffer(&mut self, id: BufferId) {
+        if let Some(buffer) = self.buffers.get_mut(id.get()).and_then(Option::as_mut) {
+            buffer.activate();
+            self.current = Some(id);
+        }
     }
 
     /// The buffer the open picker's selection names, if that is what it is.
@@ -1264,6 +1320,141 @@ impl App {
             })
     }
 
+    /// Shows the current file as rendered markdown, or stops.
+    ///
+    /// By extension, case-insensitively, and nothing else: the mode is a
+    /// *reading* of the bytes, and a reading that does not fit them produces
+    /// a screen of nonsense. A file that is not markdown gets a note, which
+    /// is the honest answer to a key that cannot do anything here.
+    pub fn toggle_markdown(&mut self) {
+        let Some(buffer) = self.current_buffer_mut() else {
+            self.note = Some("no file to render".to_string());
+            return;
+        };
+        if buffer.mode() == Mode::Markdown {
+            buffer.set_mode(Mode::Edit);
+            self.markdown = None;
+            return;
+        }
+        if !is_markdown(buffer.path()) {
+            self.note = Some("not a markdown file".to_string());
+            return;
+        }
+        buffer.set_mode(Mode::Markdown);
+        // The first row, because a rendering is a different document from
+        // the file: the cursor's line is not one of its rows, and the
+        // viewport's top is read as a row while this mode is on.
+        buffer.scroll_by(
+            isize::MIN / 2,
+            TextArea {
+                width: 1,
+                height: 1,
+            },
+        );
+    }
+
+    /// The rendering on screen, if the current file is being shown as one.
+    #[must_use]
+    pub fn markdown(&self) -> Option<&[markdown::Row]> {
+        self.markdown
+            .as_ref()
+            .map(|rendered| rendered.rows.as_slice())
+    }
+
+    /// Lays the current file out as markdown, if it needs laying out.
+    ///
+    /// Once per change of text, width or file, not once per frame: the
+    /// layout is the expensive part, and a reader scrolling a README would
+    /// otherwise pay for it on every row moved.
+    fn refresh_markdown(&mut self, width: u16) {
+        let Some(buffer) = self.current_buffer() else {
+            self.markdown = None;
+            return;
+        };
+        if buffer.mode() != Mode::Markdown {
+            self.markdown = None;
+            return;
+        }
+
+        let at = (buffer.path().to_path_buf(), buffer.version(), width);
+        if self
+            .markdown
+            .as_ref()
+            .is_some_and(|rendered| rendered.at == at)
+        {
+            return;
+        }
+        let rows = markdown::render(&buffer.text().rope().to_string(), width);
+        self.markdown = Some(Rendered { at, rows });
+    }
+
+    /// Goes to the bracket that matches the one under the cursor.
+    ///
+    /// Over the whole file rather than what is on screen: the partner being
+    /// off screen is the case worth having a key for. That costs one pass of
+    /// highlighting over the file, because the scan has to know which
+    /// brackets are inside strings and comments -- `"("` is not an unclosed
+    /// bracket -- and highlights are otherwise only computed for what is
+    /// visible. One pass on a keystroke, not per frame.
+    ///
+    /// Not recorded in the jump list. It is a motion within one expression,
+    /// and a history filled with bracket hops is a history you cannot use to
+    /// get back to where you were reading.
+    pub fn go_to_bracket(&mut self) {
+        let Some(buffer) = self.current_buffer() else {
+            self.note = Some("no file open".to_string());
+            return;
+        };
+        let Some(state) = buffer.syntax() else {
+            self.note = Some("obelus does not know this language".to_string());
+            return;
+        };
+        let text = buffer.text();
+        let cursor = buffer.cursor();
+        let at = text.byte_of_char(text.char_offset(cursor.line, cursor.column));
+
+        let whole = ByteOffset::new(0)..text.byte_length();
+        let mut highlights = Highlights::default();
+        highlights.refresh(state, text, whole.clone());
+        let Some((open, close)) = brackets::pair_at(text, &highlights, at, whole) else {
+            self.note = Some("no bracket here".to_string());
+            return;
+        };
+
+        let partner = if open == at { close } else { open };
+        let (line, column) = text.position(text.char_of_byte(partner));
+        let area = self.text_area();
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.place_cursor(line, column);
+            // Centred only if it was somewhere else entirely. A partner on
+            // screen is a short hop, and moving the whole view for it would
+            // throw away the reader's place to show them something they were
+            // already looking at.
+            if buffer.cursor_screen_cell(area).is_none() {
+                buffer.center_on_cursor(area);
+            }
+        }
+    }
+
+    /// Asks for a line number.
+    ///
+    /// A prompt with no rows: there is nothing to list, and a list of every
+    /// line in the file would be the file. The picker takes the query as the
+    /// answer, which is the shape searching a file will want too.
+    pub fn open_line_prompt(&mut self) {
+        if self.current_buffer().is_none() {
+            self.note = Some("no file to go into".to_string());
+            return;
+        }
+        self.prompt = Some(Prompt::new(PromptKind::Line));
+    }
+
+    /// The question being asked, if one is.
+    #[must_use]
+    pub const fn prompt(&self) -> Option<&Prompt> {
+        self.prompt.as_ref()
+    }
+
     /// Opens the log, as a file like any other.
     ///
     /// A reader is what obelus is, so the log needs no viewer of its own: it
@@ -1280,6 +1471,38 @@ impl App {
         }
     }
 
+    /// Acts on an answered prompt.
+    ///
+    /// Where "what it means" lives: the prompt knows what was typed and what
+    /// kind of question it was, and nothing more. A line past the end
+    /// of the file is clamped rather than refused -- `9999` in a short file
+    /// means the end of it -- and a line number that is not a number is a
+    /// note, because it is the reader's slip and not the file's.
+    fn answer(&mut self, kind: PromptKind, text: &str) {
+        match kind {
+            PromptKind::Line => {
+                let Ok(line) = text.trim().parse::<usize>() else {
+                    self.note = Some(format!("{text:?} is not a line number"));
+                    return;
+                };
+                let from = self.here();
+                let area = self.text_area();
+                if let Some(buffer) = self.current_buffer_mut() {
+                    // One-based on the way in, because that is what every
+                    // other tool prints and what the status bar shows.
+                    buffer
+                        .place_cursor(LineNumber::new(line.saturating_sub(1)), CharColumn::new(0));
+                    buffer.center_on_cursor(area);
+                }
+                // A jump, so `go.back` comes back: typing a line number is
+                // exactly the kind of leap the history is for.
+                if let Some(from) = from {
+                    self.jumps.push(from);
+                }
+            }
+        }
+    }
+
     fn accept(&mut self, value: PickerValue) {
         self.picker = None;
         match value {
@@ -1287,7 +1510,7 @@ impl App {
             PickerValue::File(path) => self.open(&self.working_directory.join(path)),
             PickerValue::Buffer(id) => {
                 if id.get() < self.buffers.len() {
-                    self.current = Some(id);
+                    self.go_to_buffer(id);
                 }
             }
             PickerValue::Theme(theme) => {
@@ -1317,7 +1540,7 @@ impl App {
             .iter()
             .position(|buffer| buffer.as_ref().is_some_and(|open| open.path() == path))
         {
-            self.current = Some(BufferId::new(index));
+            self.go_to_buffer(BufferId::new(index));
             return;
         }
         match Buffer::open(path) {
@@ -1329,7 +1552,7 @@ impl App {
                 }
                 self.buffers.push(Some(buffer));
                 let index = self.buffers.len() - 1;
-                self.current = Some(BufferId::new(index));
+                self.go_to_buffer(BufferId::new(index));
                 self.serve(index);
             }
             // A path from the walk can have gone away, or be a file this user
@@ -1382,6 +1605,7 @@ impl App {
         self.preview_theme();
 
         let area = self.text_area();
+        self.refresh_markdown(editor_area.width);
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.scroll_into_view(area);
         }
@@ -1520,6 +1744,12 @@ impl App {
             // notch is a gesture at a paragraph; a list is chosen through one
             // row at a time.
             picker.move_selection_by(rows.signum());
+            return;
+        }
+        if let Some(rows_in_view) = self.markdown().map(<[_]>::len)
+            && let Some(buffer) = self.current_buffer_mut()
+        {
+            buffer.scroll_rendering(rows, rows_in_view);
             return;
         }
         let area = self.text_area();
@@ -1701,12 +1931,46 @@ impl App {
             }
         }
 
+        // A question on the status bar takes keys before anything else: it
+        // is what the reader is looking at, and it is one row rather than a
+        // region, so nothing under it is competing for them.
+        if let Some(prompt) = self.prompt.as_mut() {
+            let kind = prompt.kind();
+            match prompt.handle_key(&key) {
+                PromptOutcome::Consumed => return,
+                PromptOutcome::Cancelled => {
+                    self.prompt = None;
+                    return;
+                }
+                PromptOutcome::Accepted(text) => {
+                    self.prompt = None;
+                    self.answer(kind, &text);
+                    return;
+                }
+                // `ctrl+q` and the rest still reach the key table.
+                PromptOutcome::Ignored => {}
+            }
+        }
+
         // A key the picker did not want, while one is open: the only thing
         // left that a key can move is the preview.
         if self.picker.is_some()
             && let Some(pages) = preview_paging(&key)
         {
             self.scroll_preview(pages);
+            return;
+        }
+
+        // A rendering scrolls by rows. Its rows are not the file's lines, so
+        // the cursor has nowhere to be in it and the motions have nothing to
+        // move: what the keys do here is move the window.
+        if self.picker.is_none()
+            && let Some(rows) = self.markdown().map(<[_]>::len)
+            && let Some(step) = view_step(&key, self.editor_area.height)
+        {
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.scroll_rendering(step, rows);
+            }
             return;
         }
 
@@ -1830,6 +2094,27 @@ enum Asked {
     Outline,
 }
 
+/// A markdown rendering, and what it was made from.
+///
+/// The three things it depends on, so that a change to any of them is
+/// noticed: which file, which version of it, and how wide the screen was.
+#[derive(Debug)]
+struct Rendered {
+    at: (PathBuf, i32, u16),
+    rows: Vec<markdown::Row>,
+}
+
+/// Whether a path names a markdown file.
+///
+/// By extension and case-insensitively -- `README.MD` is one -- and by
+/// nothing else. Sniffing the contents would be guessing, and markdown's
+/// whole trick is that it looks like the text it came from.
+fn is_markdown(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+}
+
 /// The name of the symbol the cursor is in, or the last one before it.
 ///
 /// "Where am I in this file" is what an outline is usually opened to ask, and
@@ -1878,7 +2163,7 @@ fn reload(buffer: &mut Buffer) -> bool {
 ///
 /// Whole lines, so a highlight that starts just off the top edge still reaches
 /// the first visible row.
-fn visible_bytes(buffer: &Buffer, height: u16) -> std::ops::Range<ByteOffset> {
+pub(crate) fn visible_bytes(buffer: &Buffer, height: u16) -> std::ops::Range<ByteOffset> {
     let text = buffer.text();
     let top = buffer.viewport().top;
     let bottom = top.saturating_add(usize::from(height));
@@ -1903,6 +2188,24 @@ fn preview_paging(key: &KeyEvent) -> Option<isize> {
     match key.code {
         KeyCode::PageDown => Some(1),
         KeyCode::PageUp => Some(-1),
+        _ => None,
+    }
+}
+
+/// How far a key moves a rendered view, in rows.
+///
+/// The arrows, the paging keys and the ends of the document, over a document
+/// whose rows are all there is: no columns, no cursor, nothing to remember.
+fn view_step(key: &KeyEvent, height: u16) -> Option<isize> {
+    let modifiers = keymap::modifiers_of(key)?;
+    let page = isize::from(height.max(1) as i16).max(1);
+    match (modifiers, key.code) {
+        (KeyModifiers::NONE, KeyCode::Down) => Some(1),
+        (KeyModifiers::NONE, KeyCode::Up) => Some(-1),
+        (KeyModifiers::NONE, KeyCode::PageDown) => Some(page),
+        (KeyModifiers::NONE, KeyCode::PageUp) => Some(-page),
+        (KeyModifiers::CONTROL, KeyCode::End) => Some(isize::MAX),
+        (KeyModifiers::CONTROL, KeyCode::Home) => Some(isize::MIN),
         _ => None,
     }
 }

@@ -118,7 +118,7 @@ pub const fn server_for(language: LanguageId) -> Option<Server> {
         LanguageId::Yaml => stdio("yaml-language-server"),
         // taplo and the JSON server exist, and neither is installed often
         // enough to be worth a row that only ever fails to find them.
-        LanguageId::Toml | LanguageId::Json => None,
+        LanguageId::Toml | LanguageId::Json | LanguageId::Markdown => None,
     }
 }
 

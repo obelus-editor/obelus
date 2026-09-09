@@ -296,6 +296,14 @@ fn every_language_highlights_its_own_sample() {
         ),
         (LanguageId::Html, "<!-- c -->\n<div class=\"a\">hi</div>\n"),
         (LanguageId::Yaml, "# c\nkey: \"hi\"\nlist:\n  - 1\n"),
+        // Markdown has no comments and no strings of its own: the *block*
+        // grammar is what obelus parses, and what it names is structure --
+        // a heading, a fenced block, a list. So this one is checked by the
+        // exception below rather than by the three assertions.
+        (
+            LanguageId::Markdown,
+            "# Heading\n\nA paragraph.\n\n```rust\nfn main() {}\n```\n",
+        ),
     ];
 
     assert_eq!(
@@ -309,6 +317,21 @@ fn every_language_highlights_its_own_sample() {
         let state = SyntaxState::new(*language, &text).expect("parsing");
         let kinds = kinds(&text, &state);
         let found: std::collections::HashSet<SyntaxKind> = kinds.into_iter().flatten().collect();
+
+        // Markdown, whose block grammar names structure rather than tokens.
+        // A heading is highlighted; a comment and a string are not things it
+        // has.
+        if *language == LanguageId::Markdown {
+            assert!(
+                found.contains(&SyntaxKind::Keyword),
+                "markdown did not highlight its heading: {found:?}"
+            );
+            assert!(
+                found.contains(&SyntaxKind::String),
+                "markdown did not highlight its fenced block: {found:?}"
+            );
+            continue;
+        }
 
         // JSON has no comments, which is the one thing this list cannot ask
         // of every language on it.

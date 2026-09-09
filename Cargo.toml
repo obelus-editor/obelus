@@ -79,6 +79,13 @@ anyhow = "1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tree-sitter-md = "0.5.3"
+# Markdown for a terminal: the parse and the layout, not the painting. Its
+# `FmtText` is a list of lines of styled compounds, which is exactly the
+# structure obelus needs and none of the escape sequences it must not have --
+# obelus writes cells, not ANSI. It is on crossterm 0.29, the same one pinned
+# above, so there is still one crossterm in the tree.
+termimad = "0.35"
 
 [dev-dependencies]
 serde_json = "1"

@@ -12,9 +12,9 @@ use ratatui::{
 use crate::{
     app::App,
     buffer::Buffer,
+    component::picker::Picker,
     icons,
     lsp::ServerState,
-    component::picker::Picker,
     theme::Theme,
     ui::{fill, text_width, truncate_from_left, write},
 };
@@ -27,6 +27,8 @@ pub struct StatusView<'a> {
     /// One place for both: they are the same kind of thing — a passing word
     /// about state — and a note is the more urgent of the two.
     middle: Option<&'a str>,
+    /// How many rows the rendering has, when one is on screen.
+    rows: Option<usize>,
     /// The server for this file, and what it is doing.
     ///
     /// On screen the whole time, unlike `middle`, which comes and goes. A
@@ -36,6 +38,8 @@ pub struct StatusView<'a> {
     server: Option<(&'static str, ServerState)>,
     /// When a picker is open the row is its prompt instead.
     picker: Option<&'a Picker>,
+    /// And when a question is being asked, the row is the question.
+    prompt: Option<&'a crate::component::prompt::Prompt>,
     theme: &'a Theme,
     working_directory: &'a Path,
 }
@@ -47,8 +51,10 @@ impl<'a> StatusView<'a> {
         Self {
             buffer: app.current_buffer(),
             middle: app.note().or_else(|| app.server_working_on()),
+            rows: app.markdown().map(<[_]>::len),
             server: app.server_state(),
             picker: app.picker(),
+            prompt: app.prompt(),
             theme: app.theme(),
             working_directory: app.working_directory(),
         }
@@ -69,7 +75,12 @@ impl Widget for StatusView<'_> {
         // text floating on the code's background.
         fill(cells, area, style);
 
-        if let Some(picker) = self.picker {
+        if let Some(prompt) = self.prompt {
+            // The whole row is the question. Nothing else on it: a file name
+            // beside a half-typed line number is two things asking to be
+            // read at once.
+            write(cells, area.x + 1, area.y, &prompt.line(), style);
+        } else if let Some(picker) = self.picker {
             self.render_prompt(picker, area, cells, style);
         } else if let Some(buffer) = self.buffer {
             self.render_file(buffer, area, cells, style);
@@ -119,6 +130,16 @@ fn prompt_text(picker: &Picker) -> String {
     }
 }
 
+/// Which column the caret belongs in while a question is being asked.
+///
+/// Shared with the renderer, like the picker's, so the text and the caret
+/// cannot disagree about where the answer ends.
+#[must_use]
+pub fn answer_caret(prompt: &crate::component::prompt::Prompt) -> u16 {
+    let caret = 1usize.saturating_add(text_width(&prompt.line()));
+    u16::try_from(caret).unwrap_or(u16::MAX)
+}
+
 /// Which column of the status row the caret belongs in.
 ///
 /// The terminal draws the caret, so this is only where to tell it to put it.
@@ -136,11 +157,20 @@ impl StatusView<'_> {
         // Sits with the path rather than with the cursor position, because it
         // is a fact about the file. In its own colour: the whole point is that
         // it is noticed without being looked for.
-        let marker = match (buffer.is_stale(), icons::enabled()) {
-            (false, _) => String::new(),
-            (true, true) => format!(" {}  stale", icons::ui::STALE),
-            (true, false) => " [stale]".to_string(),
-        };
+        // The mode, then staleness. Both sit with the path rather than with
+        // the cursor position, because both are facts about the file rather
+        // than about where you are in it -- and a screen showing something
+        // other than the file has to say so.
+        let mut marker = String::new();
+        if let Some(mode) = buffer.mode().name() {
+            marker.push_str(&format!("  {mode}"));
+        }
+        if buffer.is_stale() {
+            marker.push_str(&match icons::enabled() {
+                true => format!(" {}  stale", icons::ui::STALE),
+                false => " [stale]".to_string(),
+            });
+        }
         let marker = marker.as_str();
         let marker_width = text_width(marker);
 
@@ -161,7 +191,14 @@ impl StatusView<'_> {
         // One-based, because that is what every other tool reports. The column
         // counts characters rather than cells: it is the cursor's position in
         // the text, which is also the coordinate the LSP layer will speak in.
-        let right = format!("{}:{}", cursor.line.get() + 1, cursor.column.get() + 1);
+        //
+        // Over a rendering there is no cursor, so what goes here is how far
+        // down it the reader has scrolled: a position in what is on screen,
+        // which is the question the same corner answers either way.
+        let right = match self.rows {
+            Some(rows) => format!("{}/{rows}", buffer.viewport().top.get() + 1),
+            None => format!("{}:{}", cursor.line.get() + 1, cursor.column.get() + 1),
+        };
         let right_width = text_width(&right);
 
         // One column of padding at each end, at least one between the two

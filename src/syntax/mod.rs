@@ -1,5 +1,6 @@
 //! Languages, their grammars, and their highlight queries.
 
+pub mod brackets;
 pub mod highlight;
 pub mod parse;
 pub mod tags;
@@ -41,6 +42,8 @@ pub enum LanguageId {
     Html,
     /// YAML.
     Yaml,
+    /// Markdown, block structure only.
+    Markdown,
 }
 
 impl LanguageId {
@@ -73,6 +76,7 @@ impl LanguageId {
             "css" => Some(Self::Css),
             "html" | "htm" | "xhtml" => Some(Self::Html),
             "yaml" | "yml" => Some(Self::Yaml),
+            "md" | "markdown" => Some(Self::Markdown),
             _ => None,
         }
     }
@@ -95,6 +99,7 @@ impl LanguageId {
             Self::Css => "css",
             Self::Html => "html",
             Self::Yaml => "yaml",
+            Self::Markdown => "markdown",
         }
     }
 
@@ -118,6 +123,7 @@ impl LanguageId {
         Self::Css,
         Self::Html,
         Self::Yaml,
+        Self::Markdown,
     ];
 }
 
@@ -189,6 +195,7 @@ pub fn grammar(language: LanguageId) -> &'static Grammar {
     static CSS: OnceLock<Grammar> = OnceLock::new();
     static HTML: OnceLock<Grammar> = OnceLock::new();
     static YAML: OnceLock<Grammar> = OnceLock::new();
+    static MARKDOWN: OnceLock<Grammar> = OnceLock::new();
 
     match language {
         LanguageId::Rust => RUST.get_or_init(|| {
@@ -295,6 +302,21 @@ pub fn grammar(language: LanguageId) -> &'static Grammar {
                 tree_sitter_yaml::HIGHLIGHTS_QUERY,
             )
         }),
+        // The *block* grammar only. Markdown is two grammars -- one for the
+        // structure of a document and one for what is inside a paragraph --
+        // and using the second means parsing the ranges the first hands over,
+        // which is the injection machinery obelus does not have yet.
+        //
+        // What that costs: emphasis, links and code spans inside a paragraph
+        // stay plain. What it buys: headings, fenced code, lists, block
+        // quotes and rules, which is what a reader skimming a README is
+        // looking at.
+        LanguageId::Markdown => MARKDOWN.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_md::LANGUAGE.into(),
+                tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
+            )
+        }),
     }
 }
 
@@ -356,7 +378,10 @@ mod tests {
             LanguageId::for_path(Path::new("ci.yml")),
             Some(LanguageId::Yaml)
         );
-        assert_eq!(LanguageId::for_path(Path::new("README.md")), None);
+        assert_eq!(
+            LanguageId::for_path(Path::new("README.md")),
+            Some(LanguageId::Markdown)
+        );
         assert_eq!(LanguageId::for_path(Path::new("Makefile")), None);
     }
 
@@ -383,6 +408,10 @@ mod tests {
                 .enumerate()
                 .filter(|(index, _)| grammar.kind(*index as u32).is_none())
                 .map(|(_, name)| *name)
+                // `@none` is the one capture that *means* no colour: the
+                // queries use it to stop an enclosing pattern from painting
+                // something, and a colour for it would be inventing one.
+                .filter(|name| *name != "none")
                 .collect();
             assert!(
                 unknown.is_empty(),

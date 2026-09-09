@@ -6,6 +6,7 @@
 //! than the write itself being slow.
 
 pub mod editor;
+pub mod markdown;
 pub mod picker;
 pub mod status;
 pub mod welcome;
@@ -76,6 +77,14 @@ pub fn area_of(size: Size) -> Rect {
 pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
     let regions = regions(area);
 
+    if let Some(prompt) = app.prompt() {
+        let column = status::answer_caret(prompt);
+        return (column < regions.status.width).then(|| Position {
+            x: regions.status.x + column,
+            y: regions.status.y,
+        });
+    }
+
     if let Some(picker) = app.picker() {
         let column = status::prompt_caret(picker);
         return (column < regions.status.width).then(|| Position {
@@ -85,6 +94,11 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
     }
 
     let buffer = app.current_buffer()?;
+    // No cursor over a rendering. The rows are not the file's lines, so
+    // there is nowhere in them the cursor honestly is.
+    if buffer.mode() != crate::buffer::Mode::Edit {
+        return None;
+    }
     let gutter = editor::gutter_width(buffer.text().line_count());
     if gutter >= regions.editor.width {
         return None;
@@ -109,7 +123,18 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
 /// nothing painted.
 pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     let regions = regions(area);
-    editor::EditorView::new(app).render(regions.editor, cells);
+    // A buffer being shown some other way is shown that way. The editor view
+    // draws the file's own bytes, which in this mode is not what is on
+    // screen.
+    match app.markdown() {
+        Some(rows) => {
+            let top = app
+                .current_buffer()
+                .map_or(0, |buffer| buffer.viewport().top.get());
+            markdown::draw(cells, regions.editor, rows, top, app.theme());
+        }
+        None => editor::EditorView::new(app).render(regions.editor, cells),
+    }
     // Nothing open: the editor region has been painted and is otherwise
     // empty, which is the one moment a reader needs telling what the keys are.
     if app.current_buffer().is_none() {

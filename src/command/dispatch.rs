@@ -15,6 +15,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::FileReload => app.reload_current(),
         Command::BufferList => app.open_buffer_picker(),
         Command::BufferClose => app.close_current(),
+        Command::MarkdownPreview => app.toggle_markdown(),
         Command::ThemeSelect => app.open_theme_picker(),
         Command::CommandPalette => app.open_command_palette(),
         Command::SymbolMenu => app.open_symbol_menu(),
@@ -23,11 +24,13 @@ pub fn dispatch(app: &mut App, command: Command) {
         | Command::SymbolTypeDefinition
         | Command::SymbolImplementation
         | Command::SymbolReferences => app.ask_about_symbol(command),
+        Command::GoLine => app.open_line_prompt(),
+        Command::GoBracket => app.go_to_bracket(),
         Command::GoBack => app.go_back(),
         Command::GoForward => app.go_forward(),
         Command::LogOpen => app.open_log(),
-        Command::ServerRestart => app.restart_server(),
-        Command::ServerStop => app.stop_server(),
+        Command::LspRestart => app.restart_server(),
+        Command::LspStop => app.stop_server(),
         Command::Quit => app.request_quit(),
     }
 }

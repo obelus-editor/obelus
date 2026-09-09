@@ -104,6 +104,15 @@ impl SyntaxKind {
             // a colour that only appears in broken files is one nobody has
             // learnt.
             "tag" => Some(Self::Type),
+            // Markdown's queries use the older `text.*` names, and each
+            // means something a code theme already has a colour for: a
+            // heading is the structure of the document, a literal is a code
+            // span or a fenced block, a uri is a value, a reference is a
+            // name pointing at one.
+            "text.title" => Some(Self::Keyword),
+            "text.literal" => Some(Self::String),
+            "text.uri" => Some(Self::Constant),
+            "text.reference" => Some(Self::Property),
             "type" => Some(Self::Type),
             "variable" => Some(Self::Variable),
             _ => None,
@@ -199,6 +208,13 @@ pub struct Theme {
     /// Behind the run of characters a preview is about — the symbol a
     /// language server named.
     pub marked_background: Color,
+    /// Behind the bracket under the cursor and the one that closes it.
+    ///
+    /// Its own colour rather than [`Theme::marked_background`]: one appears
+    /// wherever the cursor rests and the other means "this is the thing you
+    /// went looking for", and two cells that mean different things should
+    /// not look the same.
+    pub bracket_background: Color,
     /// The syntax colours.
     pub syntax: SyntaxTheme,
 }

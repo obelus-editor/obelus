@@ -208,6 +208,22 @@ impl Keymap {
                     context: Context::Normal,
                     chord: control('p'),
                 },
+                // `alt+m` for match, which is what this is called
+                // everywhere. Not `%`: obelus binds no bare keys, because
+                // the day it takes typed text is the day every one of them
+                // becomes a character.
+                Binding {
+                    command: Command::GoBracket,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('m'), KeyModifiers::ALT),
+                },
+                // `ctrl+l` for a line. Free in a full-screen program: the
+                // shell's `ctrl+l` clears a screen obelus is drawing.
+                Binding {
+                    command: Command::GoLine,
+                    context: Context::Normal,
+                    chord: control('l'),
+                },
                 // `ctrl+t` for the table of contents, which is what an
                 // outline is. Also vim's tag stack, which is the same idea
                 // reached a different way.

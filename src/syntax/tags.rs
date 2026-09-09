@@ -229,6 +229,11 @@ fn tags_query(language: LanguageId) -> Option<&'static tree_sitter::Query> {
         | LanguageId::Bash
         | LanguageId::Css
         | LanguageId::Html
-        | LanguageId::Yaml => None,
+        | LanguageId::Yaml
+        // A markdown outline is its headings, and it would be a good one.
+        // The block grammar has the nodes for it but ships no tags query, so
+        // it would have to be written here -- which is a decision, not an
+        // oversight.
+        | LanguageId::Markdown => None,
     }
 }

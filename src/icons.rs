@@ -114,6 +114,7 @@ pub fn for_command(name: &str) -> char {
         "file.reload" => '\u{f0450}',
         "buffer.list" => '\u{f0222}',
         "buffer.close" => '\u{f0b98}',
+        "markdown.preview" => '\u{f0354}',
         "theme.select" => '\u{f03d8}',
         "command.palette" => '\u{f018d}',
         // The menu is the questions themselves; each question is what it
@@ -129,11 +130,14 @@ pub fn for_command(name: &str) -> char {
         "symbol.references" => '\u{f13b8}',
         // The hooked arrows every browser uses, which is what the jump list
         // is.
+        // A number, which is what this one asks for.
+        "go.line" => '\u{f03a0}',
+        "go.bracket" => '\u{f0172}',
         "go.back" => '\u{f17b3}',
         "go.forward" => '\u{f17b7}',
         "log.open" => '\u{f09ed}',
-        "server.restart" => '\u{f0709}',
-        "server.stop" => '\u{f04db}',
+        "lsp.restart" => '\u{f0709}',
+        "lsp.stop" => '\u{f04db}',
         // Leaving obelus, not switching a machine off.
         "app.quit" => '\u{f0206}',
         other => by_family(other),
@@ -168,7 +172,7 @@ fn by_family(name: &str) -> char {
         Some(("symbol", _)) => '\u{f0295}',
         Some(("go", _)) => '\u{f02da}',
         Some(("log", _)) => '\u{f09ed}',
-        Some(("server", _)) => '\u{f048b}',
+        Some(("lsp", _)) => '\u{f048b}',
         // Something in no family obelus knows. A cog says "a thing obelus
         // does" without claiming to know which.
         Some(("app", _)) | None | Some(_) => '\u{f0493}',
@@ -264,7 +268,7 @@ mod command_tests {
     fn opposite_commands_do_not_share_a_glyph() {
         for (left, right) in [
             ("go.back", "go.forward"),
-            ("server.restart", "server.stop"),
+            ("lsp.restart", "lsp.stop"),
             ("symbol.definition", "symbol.references"),
             ("file.open", "file.reload"),
         ] {
