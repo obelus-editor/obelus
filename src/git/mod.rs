@@ -1,25 +1,53 @@
 //! What has changed in a file since the last commit.
 //!
-//! Only that, so far: the working tree against `HEAD`, for one file at a
-//! time, which is what a reader needs in the margin while reading it.
+//! Through `gix` rather than by running `git`: obelus reads a repository
+//! while the reader is reading a file in it, and shelling out means a
+//! process per question, output parsed back out of a format meant for
+//! people, and a program that has to be installed for the editor to be able
+//! to see. Blame in particular is not something to parse: it is a walk of
+//! history, and a library that walks it hands back commit ids rather than
+//! columns of text.
 //!
-//! The old text comes from `git` itself rather than from a library. Reading
-//! git objects properly -- loose and packed, delta chains, alternates -- is
-//! the hard part, and `git show HEAD:./file` is the program that already
-//! does it; obelus spawns language servers, so spawning one more program is
-//! not a new idea here. When the git *views* arrive -- history, blame, tree
-//! diffs -- a library earns its weight and can take over behind
-//! [`head_text`] without anything above noticing.
+//! Nothing here fails loudly. Every answer is an `Option` or an empty
+//! collection, because every one of them is missing for ordinary reasons: a
+//! file outside a repository, a repository with no commits yet, a file git
+//! has never seen.
 
 pub mod change;
 
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 pub use change::{Changes, Hunk, Marker};
+
+/// Where a file sits inside its repository, which is how git addresses it.
+///
+/// Both sides are resolved before they are compared. A repository
+/// discovered from a relative path reports a relative working directory, and
+/// stripping an absolute path with it finds nothing -- which looks exactly
+/// like a file outside the repository it is plainly in. Started as
+/// `ob src/main.rs`, that was every file.
+fn in_repository(repository: &gix::Repository, path: &Path) -> Option<PathBuf> {
+    let work_dir = repository.workdir()?;
+    let work_dir = work_dir.canonicalize().ok()?;
+    let file = path.canonicalize().ok()?;
+    Some(file.strip_prefix(work_dir).ok()?.to_path_buf())
+}
+
+/// The repository a path is in, if it is in one.
+///
+/// Discovered from the path rather than from the working directory: the file
+/// being read is the thing the question is about, and it can be outside the
+/// tree obelus was started in.
+fn repository(path: &Path) -> Option<gix::Repository> {
+    let from = if path.is_dir() { path } else { path.parent()? };
+    // Ceiling directories are left alone deliberately: a reader who opens a
+    // file three levels above the working directory still wants to know
+    // what git says about it.
+    gix::discover(from).ok()
+}
 
 /// What git says about a file in the working tree.
 ///
@@ -36,81 +64,75 @@ pub enum FileStatus {
 
 /// What git says about every file in the repository `root` is in.
 ///
-/// One call rather than one per file: `git status` walks the tree once and
-/// respects every ignore rule on the way, which is a great deal of work to
+/// One walk rather than one question per file: it is a walk of the whole
+/// tree with every ignore rule applied, which is a great deal of work to
 /// repeat for each of ten thousand rows.
 ///
-/// Keyed by absolute path. Git reports paths relative to the repository
-/// root, which is not necessarily the directory obelus was started in, and
-/// a map keyed by one and read with the other silently matches nothing.
+/// Keyed by absolute path. Git works in paths relative to the repository
+/// root, which is not necessarily the directory obelus was started in, and a
+/// map keyed by one and read with the other silently matches nothing.
 ///
 /// Empty for anything that is not a repository, which is the same thing it
 /// means for a file: nothing to say.
 #[must_use]
 pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
-    let Ok(output) = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .arg("status")
-        .arg("--porcelain")
-        // Untracked files one by one rather than a directory standing for
-        // all of them: the picker's rows are files.
-        .arg("--untracked-files=all")
-        // NUL-separated, because a path may contain anything a path may
-        // contain, and the line-based form quotes and escapes those.
-        .arg("-z")
-        .output()
-    else {
-        return HashMap::new();
-    };
-    if !output.status.success() {
-        return HashMap::new();
-    }
-
-    let Ok(text) = String::from_utf8(output.stdout) else {
-        return HashMap::new();
-    };
-    let Some(top) = toplevel(root) else {
-        return HashMap::new();
-    };
     let mut statuses = HashMap::new();
-    let mut records = text.split('\0');
-    while let Some(record) = records.next() {
-        // `XY path`, where X is the index and Y the working tree.
-        if record.len() < 4 {
-            continue;
-        }
-        let (marks, path) = record.split_at(3);
-        let marks = marks.as_bytes();
-        // A rename carries its old path in a second record, which is not a
-        // row of its own.
-        if marks[0] == b'R' || marks[1] == b'R' {
-            records.next();
-        }
-        let status = if marks.starts_with(b"??") || marks[0] == b'A' {
-            FileStatus::New
-        } else {
-            FileStatus::Changed
+    let Some(repository) = repository(root) else {
+        return statuses;
+    };
+    let Some(work_dir) = repository.workdir().map(Path::to_path_buf) else {
+        return statuses;
+    };
+    let Ok(platform) = repository.status(gix::progress::Discard) else {
+        return statuses;
+    };
+    let Ok(iterator) = platform.into_iter(None) else {
+        return statuses;
+    };
+
+    for item in iterator.filter_map(Result::ok) {
+        use gix::status::{Item, index_worktree};
+        let (path, status) = match item {
+            // Tracked and different from the index.
+            Item::IndexWorktree(index_worktree::Item::Modification { rela_path, .. }) => {
+                (rela_path, FileStatus::Changed)
+            }
+            // Found by the directory walk, which is how a file git has never
+            // seen arrives.
+            Item::IndexWorktree(index_worktree::Item::DirectoryContents { entry, .. }) => {
+                (entry.rela_path, FileStatus::New)
+            }
+            // A rename is a deletion and an addition to git; to a reader
+            // looking for something to read, the file that is *there* is a
+            // file they have changed.
+            Item::IndexWorktree(index_worktree::Item::Rewrite { dirwalk_entry, .. }) => {
+                (dirwalk_entry.rela_path, FileStatus::Changed)
+            }
+            // Staged: the index differs from `HEAD`. An addition is a file
+            // that is not in the last commit at all, which is what `New`
+            // means; everything else is a change to a file that is.
+            Item::TreeIndex(change) => {
+                let new = matches!(change, gix::diff::index::Change::Addition { .. });
+                let path = change.location().to_owned();
+                (
+                    path,
+                    if new {
+                        FileStatus::New
+                    } else {
+                        FileStatus::Changed
+                    },
+                )
+            }
         };
-        statuses.insert(top.join(path), status);
+        let Ok(path) = gix::path::try_from_bstring(path) else {
+            continue;
+        };
+        // The first answer wins: a file can be reported twice -- staged and
+        // then modified again -- and "new" is the more surprising of the two
+        // to lose.
+        statuses.entry(work_dir.join(path)).or_insert(status);
     }
     statuses
-}
-
-/// The root of the repository a directory is in.
-fn toplevel(directory: &Path) -> Option<PathBuf> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(directory)
-        .arg("rev-parse")
-        .arg("--show-toplevel")
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let path = String::from_utf8(output.stdout).ok()?;
-    Some(PathBuf::from(path.trim_end()))
 }
 
 /// The file as the last commit has it, or `None` if that question has no
@@ -118,26 +140,14 @@ fn toplevel(directory: &Path) -> Option<PathBuf> {
 ///
 /// No answer covers every way this can decline, and they all mean the same
 /// thing to a reader: no markers. Not a repository, a file git has never
-/// heard of, a repository with no commits yet, or no `git` on the path.
+/// heard of, a repository with no commits yet, or a file whose committed
+/// content is not text.
 #[must_use]
 pub fn head_text(path: &Path) -> Option<String> {
-    let directory = path.parent()?;
-    let name = path.file_name()?.to_str()?;
-
-    // `HEAD:./name` from the file's own directory, so obelus does not have
-    // to find the repository root and then work out a path relative to it --
-    // two chances to disagree with git about which file is meant.
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(directory)
-        .arg("show")
-        .arg(format!("HEAD:./{name}"))
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    // A file git has but obelus cannot read as text is a file with no line
-    // diff to show.
-    String::from_utf8(output.stdout).ok()
+    let repository = repository(path)?;
+    let relative = in_repository(&repository, path)?;
+    let mut tree = repository.head_tree().ok()?;
+    let entry = tree.peel_to_entry_by_path(relative).ok()??;
+    let object = entry.object().ok()?;
+    String::from_utf8(object.data.clone()).ok()
 }

@@ -92,6 +92,10 @@ base64 = "0.23.1"
 # answer `git diff` gives, or the markers in the margin are obelus's opinion
 # rather than the repository's.
 imara-diff = "0.2"
+# Git itself, as a library. The alternative is running `git` and parsing what
+# it prints for people, which means a process per question and a program that
+# has to be installed for obelus to be able to see a repository at all.
+gix = { version = "0.87.1", default-features = false, features = ["status", "revision", "max-performance-safe", "sha1"] }
 
 [dev-dependencies]
 serde_json = "1"
