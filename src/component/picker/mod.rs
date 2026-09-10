@@ -17,7 +17,7 @@ use nucleo_matcher::{
 use crate::{
     buffer::BufferId,
     command::Command,
-    component::window::{Window, Wrap},
+    component::window::{Move, Window, Wrap},
     theme::Theme,
 };
 
@@ -769,31 +769,24 @@ impl Picker {
                 .map_or(PickerOutcome::Consumed, |item| {
                     PickerOutcome::Accepted(item.value.clone())
                 }),
-            KeyCode::Down if bare => {
-                self.move_selection(1, Wrap::Yes);
-                PickerOutcome::Consumed
-            }
-            KeyCode::Up if bare => {
-                self.move_selection(-1, Wrap::Yes);
-                PickerOutcome::Consumed
-            }
-            // Clamped rather than wrapped, unlike a single step. Paging is how
-            // you get to the end of a long list, and a page that wraps past it
-            // back to the top overshoots the thing you were reaching for.
-            KeyCode::PageDown if bare => {
-                self.move_selection(page, Wrap::No);
-                PickerOutcome::Consumed
-            }
-            KeyCode::PageUp if bare => {
-                self.move_selection(-page, Wrap::No);
-                PickerOutcome::Consumed
-            }
-            KeyCode::Home if bare => {
-                self.select(0);
-                PickerOutcome::Consumed
-            }
-            KeyCode::End if bare => {
-                self.select(self.matched.len().saturating_sub(1));
+            // Every key that moves about a list, from the table every list
+            // reads. What is this list's own is what a step means here: a
+            // row that cannot be chosen is stepped over rather than landed
+            // on, so the moving goes through `move_selection` rather than
+            // straight to the window.
+            code if bare && let Some(movement) = Move::of(code) => {
+                match movement {
+                    Move::Up => self.move_selection(-1, Wrap::Yes),
+                    Move::Down => self.move_selection(1, Wrap::Yes),
+                    // Clamped rather than wrapped, unlike a single step:
+                    // paging is how you get to the end of a long list, and
+                    // a page that wraps past it overshoots the thing you
+                    // were reaching for.
+                    Move::PageUp => self.move_selection(-page, Wrap::No),
+                    Move::PageDown => self.move_selection(page, Wrap::No),
+                    Move::First => self.select(0),
+                    Move::Last => self.select(self.matched.len().saturating_sub(1)),
+                }
                 PickerOutcome::Consumed
             }
             KeyCode::Backspace if bare => {

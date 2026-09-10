@@ -80,8 +80,8 @@ pub struct EditorView<'a> {
     selection: Option<Span>,
     /// What has changed since the last commit, if obelus knows.
     ///
-    /// `None` for a file outside a repository and for a preview, and then
-    /// the margin takes no column at all.
+    /// `None` for a file outside a repository, and then the margin takes no
+    /// column at all.
     changes: Option<&'a Changes>,
     /// The hunk the reader has opened, if any.
     opened: Option<LineNumber>,
@@ -90,6 +90,8 @@ pub struct EditorView<'a> {
     blame: Option<&'a [Option<git::Blamed>]>,
     /// Whether a line too long for the width continues on the next row.
     wrap: bool,
+    /// Whether this is the document being read or a look at another one.
+    editing: Editing,
 }
 
 impl EditorView<'_> {
@@ -169,6 +171,26 @@ impl EditorView<'_> {
     }
 }
 
+/// Whether a view is the document itself or a look at somewhere else.
+///
+/// Nothing writes through a view yet, so this is mostly a promise about
+/// what will: a preview is a few lines of a file the reader is not in, and
+/// when the editor learns to change a file this is what says the preview
+/// does not.
+///
+/// It has readers today, which is why it is a mode rather than a comment.
+/// Three things belong to the document being read and not to a look at
+/// another one: the selection, the name against the line the cursor is on,
+/// and an opened hunk. All three are answers to "where am I and what am I
+/// doing", and a preview is not where anybody is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Editing {
+    /// The document being read, and one day written.
+    Allowed,
+    /// A look at somewhere else.
+    Refused,
+}
+
 impl<'a> EditorView<'a> {
     /// Borrows what the view needs from the application.
     #[must_use]
@@ -183,6 +205,7 @@ impl<'a> EditorView<'a> {
             opened: app.opened_hunk(),
             blame: app.blame(),
             wrap: app.config().wrap,
+            editing: Editing::Allowed,
         }
     }
 
@@ -196,31 +219,41 @@ impl<'a> EditorView<'a> {
     /// language server named. A list of references is read by looking at that
     /// symbol in each one, and a preview that says only which line leaves the
     /// reader finding it again on every row.
+    ///
+    /// `changes` is what git says about that file, so a preview carries the
+    /// same margin the editor does: a reader looking at a list of matches
+    /// wants to know which of them are in code that has just been touched,
+    /// and that is the same question the margin answers everywhere else.
     #[must_use]
     pub const fn for_buffer(
         buffer: &'a Buffer,
         highlights: &'a Highlights,
         theme: &'a Theme,
         marked: Option<Span>,
+        changes: Option<&'a Changes>,
     ) -> Self {
         Self {
             buffer: Some(buffer),
             highlights,
             theme,
             marked,
+            changes,
+            // Everything that answers "where am I and what am I doing" is
+            // the document's rather than a look at another one's.
             selection: None,
-            // A preview is about somewhere else in a file the reader is not
-            // editing; a margin of change markers beside it would be about a
-            // question nobody asked.
-            changes: None,
             opened: None,
-            // Nor is a preview the place for names: it is a few lines of
-            // somewhere else, shown to answer where a symbol is.
             blame: None,
             // A preview always wraps: a line running off its edge with no
             // way to scroll it would be a line nobody can read.
             wrap: true,
+            editing: Editing::Refused,
         }
+    }
+
+    /// Whether this view may be written through.
+    #[must_use]
+    pub const fn editing(&self) -> Editing {
+        self.editing
     }
 }
 

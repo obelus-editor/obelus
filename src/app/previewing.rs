@@ -6,13 +6,34 @@
 
 use super::*;
 
+/// What a preview is, for the view that draws it.
+///
+/// A borrow of the whole of it rather than a tuple: it is the same list of
+/// things the editor draws for the document being read, and a tuple of four
+/// grows a fifth without saying what any of them are.
+pub struct Previewed<'a> {
+    /// The file, read into a buffer of its own.
+    pub buffer: &'a Buffer,
+    /// Its syntax, refreshed for the rows on screen.
+    pub highlights: &'a Highlights,
+    /// The run of characters the preview is about, once converted.
+    pub marked: Option<Span>,
+    /// What git says about the file.
+    pub changes: Option<&'a crate::git::Changes>,
+}
+
 impl App {
     /// The file the picker's selection names, if it has been read, and the
     /// part of it the selection is about.
     #[must_use]
-    pub fn preview(&self) -> Option<(&Buffer, &Highlights, Option<Span>)> {
+    pub fn preview(&self) -> Option<Previewed<'_>> {
         let preview = self.preview.as_ref()?;
-        Some((&preview.buffer, &preview.highlights, preview.marked))
+        Some(Previewed {
+            buffer: &preview.buffer,
+            highlights: &preview.highlights,
+            marked: preview.marked,
+            changes: preview.changes.as_ref(),
+        })
     }
 
     /// Wears whatever theme the picker's selection names.
@@ -47,6 +68,9 @@ impl App {
             self.preview = match Buffer::open(&path) {
                 Ok(buffer) => Some(Preview {
                     path: path.clone(),
+                    changes: git::head_text(&path).map(|committed| {
+                        git::Changes::between(&committed, &buffer.text().rope().to_string())
+                    }),
                     buffer,
                     highlights: Highlights::default(),
                     marked: None,
@@ -209,6 +233,13 @@ pub(super) struct Preview {
     path: PathBuf,
     buffer: Buffer,
     highlights: Highlights,
+    /// What git says about this file, so the preview carries the same
+    /// margin the editor does.
+    ///
+    /// Worked out once, when the file is read: a preview is a snapshot of
+    /// somewhere else, and the diff of a file nobody is editing does not
+    /// change while it is being looked at.
+    changes: Option<crate::git::Changes>,
     /// The part of it the selection is about, once converted.
     marked: Option<Span>,
     /// Which part of the file the selection is about, as it arrived.

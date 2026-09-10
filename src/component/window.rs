@@ -15,6 +15,48 @@
 //! as tall as a card, they can be filtered out from under it, and choosing
 //! one can mean anything; all of that belongs to whoever owns the rows.
 
+/// A key that moves about a list.
+///
+/// One table for the six of them, because a list added later should get all
+/// six rather than the two somebody remembered: the settings went a while
+/// with no paging and no ends, and what was missing was not a decision.
+///
+/// Which modifiers a view accepts is the view's own business -- a
+/// conversation's `home` is the row being typed and its `shift+home` is the
+/// transcript -- so this maps the key and nothing else.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Move {
+    /// One row back.
+    Up,
+    /// One row on.
+    Down,
+    /// A screenful back.
+    PageUp,
+    /// A screenful on.
+    PageDown,
+    /// The first row.
+    First,
+    /// The last.
+    Last,
+}
+
+impl Move {
+    /// Which movement a key means, if it means one.
+    #[must_use]
+    pub const fn of(code: crossterm::event::KeyCode) -> Option<Self> {
+        use crossterm::event::KeyCode;
+        match code {
+            KeyCode::Up => Some(Self::Up),
+            KeyCode::Down => Some(Self::Down),
+            KeyCode::PageUp => Some(Self::PageUp),
+            KeyCode::PageDown => Some(Self::PageDown),
+            KeyCode::Home => Some(Self::First),
+            KeyCode::End => Some(Self::Last),
+            _ => None,
+        }
+    }
+}
+
 /// Whether stepping off the end of a list comes back at the other one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Wrap {
@@ -136,6 +178,30 @@ impl Window {
         self.left_the_end = false;
     }
 
+    /// Moves the focus the way a key said to.
+    ///
+    /// `wrap` is the policy for a single step: a list of things to choose
+    /// from wraps, because the other end is faster to reach than to scroll
+    /// back through. Paging never wraps, whatever this says.
+    pub fn apply(&mut self, movement: Move, height: u16, wrap: Wrap) {
+        match movement {
+            Move::Up => {
+                self.step(-1, wrap);
+            }
+            Move::Down => {
+                self.step(1, wrap);
+            }
+            Move::PageUp => {
+                self.page(-1, height);
+            }
+            Move::PageDown => {
+                self.page(1, height);
+            }
+            Move::First => self.home(),
+            Move::Last => self.end(),
+        }
+    }
+
     /// Scrolls the window without moving the focus, for the wheel and for a
     /// transcript's arrows.
     pub fn scroll(&mut self, rows: isize) {
@@ -225,7 +291,7 @@ impl Window {
 
 #[cfg(test)]
 mod tests {
-    use super::{Window, Wrap};
+    use super::{Move, Window, Wrap};
 
     /// The rule every list follows: the window moves by the least that puts
     /// the focus back on screen, and a step that is not at an edge moves it
@@ -257,6 +323,39 @@ mod tests {
         window.step(-1, Wrap::No);
         window.settle(10);
         assert_eq!(window.top(), 0);
+    }
+
+    /// The six keys, from one table.
+    #[test]
+    fn the_keys_that_move_a_list_are_one_table() {
+        use crossterm::event::KeyCode;
+
+        assert_eq!(Move::of(KeyCode::Up), Some(Move::Up));
+        assert_eq!(Move::of(KeyCode::Down), Some(Move::Down));
+        assert_eq!(Move::of(KeyCode::PageUp), Some(Move::PageUp));
+        assert_eq!(Move::of(KeyCode::PageDown), Some(Move::PageDown));
+        assert_eq!(Move::of(KeyCode::Home), Some(Move::First));
+        assert_eq!(Move::of(KeyCode::End), Some(Move::Last));
+        assert_eq!(Move::of(KeyCode::Enter), None);
+
+        let mut window = Window::new();
+        window.set_count(100);
+        window.apply(Move::Last, 10, Wrap::Yes);
+        assert_eq!(window.focus(), 99);
+        window.apply(Move::Down, 10, Wrap::Yes);
+        assert_eq!(window.focus(), 0, "the end did not wrap");
+        window.apply(Move::PageDown, 10, Wrap::No);
+        assert_eq!(window.focus(), 10);
+        window.apply(Move::PageUp, 10, Wrap::No);
+        assert_eq!(window.focus(), 0);
+        window.apply(Move::Up, 10, Wrap::No);
+        assert_eq!(
+            window.focus(),
+            0,
+            "a step that does not wrap ran off the end"
+        );
+        window.apply(Move::First, 10, Wrap::Yes);
+        assert_eq!(window.focus(), 0);
     }
 
     #[test]

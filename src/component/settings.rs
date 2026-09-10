@@ -15,7 +15,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::{
     agent::Status,
     app::agents::Listed as Agent,
-    component::window::{Window, Wrap},
+    component::window::{Move, Window, Wrap},
     config::{self, Config, Group, Kind, Setting, Value},
 };
 
@@ -323,30 +323,17 @@ impl Settings {
             // The ends, with and without control: the same keys reach the
             // ends of a document, a list and a rendering, and a key should
             // not mean one thing in one view and nothing in the next.
-            // Every one of these is the window's, which is why they read
-            // the same here as they do in a picker.
-            KeyCode::Home if count > 0 => {
-                self.window.home();
-                SettingsOutcome::Consumed
-            }
-            KeyCode::End if count > 0 => {
-                self.window.end();
-                SettingsOutcome::Consumed
-            }
-            KeyCode::PageDown if count > 0 => {
-                self.window.page(1, u16::try_from(page).unwrap_or(1));
-                SettingsOutcome::Consumed
-            }
-            KeyCode::PageUp if count > 0 => {
-                self.window.page(-1, u16::try_from(page).unwrap_or(1));
-                SettingsOutcome::Consumed
-            }
-            KeyCode::Down if bare && count > 0 => {
-                self.window.step(1, Wrap::Yes);
-                SettingsOutcome::Consumed
-            }
-            KeyCode::Up if bare && count > 0 => {
-                self.window.step(-1, Wrap::Yes);
+            // Every key that moves about a list, from the table every
+            // list reads -- which is why they do the same here as they do
+            // in a picker. The arrows need a bare key because the left and
+            // right ones walk the tabs; paging and the ends have no other
+            // meaning here.
+            code if count > 0
+                && let Some(movement) = Move::of(code)
+                && (bare || !matches!(movement, Move::Up | Move::Down)) =>
+            {
+                self.window
+                    .apply(movement, u16::try_from(page).unwrap_or(1), Wrap::Yes);
                 SettingsOutcome::Consumed
             }
             // The arrows walk the tabs, as they do in every other view with

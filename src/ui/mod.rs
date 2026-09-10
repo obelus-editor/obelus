@@ -269,9 +269,15 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
             );
 
             match app.preview() {
-                Some((buffer, highlights, marked)) => {
-                    editor::EditorView::for_buffer(buffer, highlights, app.theme(), marked)
-                        .render(preview, cells);
+                Some(shown) => {
+                    editor::EditorView::for_buffer(
+                        shown.buffer,
+                        shown.highlights,
+                        app.theme(),
+                        shown.marked,
+                        shown.changes,
+                    )
+                    .render(preview, cells);
                 }
                 // Room set aside and nothing to put in it: a file that has
                 // gone, or a row that names no file.

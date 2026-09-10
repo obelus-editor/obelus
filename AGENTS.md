@@ -44,6 +44,35 @@ fields (`ByteOffset`, `CharOffset`, `LineNumber`, `CharColumn`,
 `DisplayColumn`, plus `Utf16Column`) exist so that byte, character, display
 column and LSP column cannot be mixed up. Nowhere else adds or subtracts them.
 
+**One thing on screen is drawn by one piece of code.** A screen stays
+coherent because there is nowhere for two answers to the same question to
+drift apart, not because everybody remembered the convention. So before
+writing a view, look for the piece that already does it:
+
+    ui::write_marked   a row's text: what matched marked, what the file
+                       colours coloured, clipped to the list it is in
+    ui::tabs           a tab row and the arrows that walk it
+    ui::typed          the glyph and the words on a row that is typed into
+    ui::nothing        what a list says when it has nothing in it
+    ui::rule           a boundary between two things
+    ui::scrollbar      how much of something longer than the screen is above
+    component::window  which rows are on screen, and when that changes
+    component::window::Move  the six keys that move about a list
+    ui::editor         a document with a gutter: the file being read, and a
+                       preview of somewhere else, which *is* this view
+
+The costs of not doing this were all paid twice: "the window moves only when
+the focus leaves it" was fixed once for the pickers and again for the agents'
+cards; match highlighting had two writers and the newest list had neither;
+the settings shipped with no paging and no ends, because those keys were a
+list of arms rather than a table.
+
+Reuse stops where the *subject* differs, and forcing those together is the
+mistake in the other direction: the editor is not a list, a message being
+written is not a buffer (no undo, no syntax, no file), and an agent's card is
+not a picker row (it is as tall as its description needs and carries a
+button). Share the mechanism, not the meaning.
+
 **Commands are actions; navigation is not a command.** Arrow keys, paging, a
 picker's selection keys belong to whichever component owns the state they move.
 `:cursor.up` is meaningless to invoke by name. The key table is *data* on
@@ -94,7 +123,8 @@ src/
   config.rs       the settings, their file, and what each one is
   command/        the Command enum, its table, groups, and dispatch
   component/      picker (one component, several instantiations), settings,
-                  the conversation and the box a message is written in
+                  the conversation, the box a message is written in, and the
+                  window every list shares
   syntax/         language registry (14 languages), parsing, highlights, tags
   lsp/            transport, client, actions, positions, outline
   git/            gix: head text, statuses, hunks, blame
@@ -138,6 +168,11 @@ Golden fixtures dump every cell's symbol, foreground and background, plus the
 cursor position. Colours are in them because highlighting, themes and the
 status bar's background are otherwise not asserted at all: a list of file names
 can render perfectly and show nothing.
+
+A preview's margin comes from git, so a fixture that shows one depends on
+the fixture file being *committed*: edit `tests/fixtures/long.rs` without
+committing and the preview grows change marks. Which is the feature working,
+and a surprising way to see it.
 
 **Run them in the real checkout, not in a `git worktree`.** The welcome screen
 prints the working directory (`welcome_64x20`, `welcome_narrow_34x10` both
