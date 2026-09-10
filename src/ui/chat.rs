@@ -346,17 +346,25 @@ impl ChatView<'_> {
     /// The conversation's own status row: which way of working is on, and
     /// how to change it.
     fn status(&self, cells: &mut CellBuffer, area: Rect, plain: Style) {
-        let band = plain
-            .bg(self.theme.status_background)
-            .fg(self.theme.status_foreground);
-        fill(cells, area, band);
+        // On the page's own background, not the status bar's band. obelus's
+        // own status bar is the row directly under this one, and two
+        // banded rows touching read as one bar two rows tall. What tells
+        // this row from the box above it is the rule between them, which is
+        // what a rule is for.
+        fill(cells, area, plain);
         // The mode on the left, because it is a fact about the
         // conversation and the left is where obelus puts those.
         let mode = self.mode.unwrap_or(match self.state {
             Talking::Ready | Talking::Thinking => "no modes",
             _ => "",
         });
-        write(cells, area.x + 1, area.y, mode, band);
+        write(
+            cells,
+            area.x + 1,
+            area.y,
+            mode,
+            plain.fg(self.theme.gutter_current),
+        );
 
         // And how to change it, which is only worth saying when there is
         // more than one to change to.
@@ -375,7 +383,7 @@ impl ChatView<'_> {
                 area.x + offset,
                 area.y,
                 &hint,
-                band.fg(self.theme.gutter),
+                plain.fg(self.theme.gutter),
             );
         }
     }

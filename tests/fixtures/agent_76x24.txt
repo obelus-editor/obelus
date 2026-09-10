@@ -47,13 +47,12 @@ screen 76x24  editor 76x23  status 76x1
 19|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 20|abaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 21|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-22|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddeeeeeeeed
+22|acccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbba
 23|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#52525b bg=#18181b
 c fg=#a1a1aa bg=#18181b
 d fg=#d4d4d8 bg=#27272a
-e fg=#52525b bg=#27272a
 -- cursor --
 4,20
