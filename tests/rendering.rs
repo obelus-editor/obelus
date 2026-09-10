@@ -1706,44 +1706,36 @@ impl ratatui::backend::Backend for Recorder {
     }
 }
 
-/// A frame is written with the caret out, and the caret is moved before it
-/// comes back.
+/// An ordinary frame leaves the caret alone.
 ///
-/// Both halves are about the same thing: a terminal that repaints while
-/// obelus is still writing must never have a caret to draw. Ordinarily
-/// nothing repaints mid-write; a frame carrying a picture does, because
-/// handing a terminal a sixel makes it draw then and there -- and the caret
-/// then flashes wherever the last cell was written.
+/// A hide and a show per frame is a caret that visibly blinks, and frames
+/// arrive as fast as a language server reports progress -- so the careful
+/// order that a picture needs (`hide`, write, move, show, because handing a
+/// terminal a sixel makes it repaint mid-write) is used only on the page
+/// that draws pictures. Everywhere else the frame names where the caret
+/// goes and `Terminal::draw` places it.
 #[test]
-fn a_frame_writes_with_the_caret_out_and_places_it_afterwards() {
+fn an_ordinary_frame_does_not_put_the_caret_out() {
     let mut app = app_on_screen(WIDTH, HEIGHT);
     let mut terminal = ratatui::Terminal::new(Recorder {
         inner: ratatui::backend::TestBackend::new(WIDTH, HEIGHT),
         calls: Vec::new(),
     })
     .expect("a terminal");
+    // Twice, because one hide on its own is invisible: it is the hide and
+    // the show *together*, frame after frame, that blinks.
     obelus::app::render(&mut terminal, &mut app).expect("a frame");
+    obelus::app::render(&mut terminal, &mut app).expect("another frame");
 
     let calls = &terminal.backend().calls;
-    assert_eq!(
-        calls.first(),
-        Some(&Caret::Hidden),
-        "the caret was up while the frame was written: {calls:?}"
-    );
-    let wrote = calls
-        .iter()
-        .rposition(|call| *call == Caret::Wrote)
-        .expect("something was written");
-    let shown = calls
-        .iter()
-        .position(|call| *call == Caret::Shown)
-        .expect("the caret came back");
-    let moved = calls
-        .iter()
-        .position(|call| *call == Caret::Moved)
-        .expect("the caret was placed");
     assert!(
-        wrote < moved && moved < shown,
-        "the caret was shown before it was placed: {calls:?}"
+        !calls.contains(&Caret::Hidden),
+        "the caret was put out for a frame with no picture in it: {calls:?}"
+    );
+    // And it is still placed: this file has a cursor in it, and a reader
+    // has to be able to see where they are.
+    assert!(
+        calls.contains(&Caret::Moved),
+        "the caret was never placed: {calls:?}"
     );
 }

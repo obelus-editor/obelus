@@ -972,26 +972,47 @@ where
     B: Backend,
     B::Error: std::error::Error + Send + Sync + 'static,
 {
-    // The caret is put out before anything is written and placed again
-    // afterwards, rather than being named on the frame.
+    // A frame carrying a picture is written with the caret put out, and
+    // every other frame lets `Terminal::draw` place it.
     //
     // `Terminal::draw` writes the whole diff with the caret still visible
     // where the last frame left it, and then -- for a frame that names a
     // position -- *shows* the caret before moving it. Both are moments when
-    // a terminal that repaints mid-write draws a caret somewhere obelus did
-    // not put one. Ordinarily nothing repaints mid-write and nobody sees
-    // it; a frame carrying a picture is different, because handing a
-    // terminal a sixel makes it draw then and there. That was a caret
-    // flashing across the agents page on every step of the selection.
-    let mut position = None;
-    terminal.hide_cursor()?;
+    // a terminal that repaints mid-write would draw a caret somewhere
+    // obelus did not put one. Ordinarily nothing repaints mid-write and
+    // nobody sees either of them; handing a terminal a sixel makes it draw
+    // then and there, which had a caret flashing across the agents page on
+    // every step of the selection.
+    //
+    // Putting the caret out on *every* frame fixed that and cost more than
+    // it was worth: a hide and a show per frame is a caret that visibly
+    // blinks, and frames arrive as fast as a language server reports
+    // progress. So the careful order is used where it is needed, which is
+    // the one page that draws pictures.
+    let pictures = app.shows_pictures();
+    if pictures {
+        terminal.hide_cursor()?;
+    }
+    let mut placed = None;
     terminal.draw(|frame| {
         let area = frame.area();
-        position = app.draw_into(frame.buffer_mut(), area);
+        let position = app.draw_into(frame.buffer_mut(), area);
+        match pictures {
+            // Held back until the write is over.
+            true => placed = position,
+            // `Terminal::draw` shows the cursor and moves it when the frame
+            // names a position, and hides it when the frame does not, so
+            // saying where it goes is the whole of it.
+            false => {
+                if let Some(position) = position {
+                    frame.set_cursor_position(position);
+                }
+            }
+        }
     })?;
-    // Moved first and shown second, which is the order that has no frame in
-    // it where the caret is visible in the wrong place.
-    if let Some(position) = position {
+    // Moved first and shown second, which is the order that has no moment
+    // in it where the caret is visible in the wrong place.
+    if let Some(position) = placed {
         terminal.set_cursor_position(position)?;
         terminal.show_cursor()?;
     }

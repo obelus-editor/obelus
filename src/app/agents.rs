@@ -184,6 +184,23 @@ impl App {
         }
     }
 
+    /// Whether the next frame will hand the terminal a picture.
+    ///
+    /// Which is worth knowing outside the agents page, because a terminal
+    /// handed a sixel draws it then and there -- in the middle of obelus
+    /// writing the rest of the frame. That is the one case where the frame
+    /// has to be written with the caret put out, and everywhere else the
+    /// caret is left alone: see [`crate::app::render`].
+    ///
+    /// One place today. If a second thing starts drawing pictures, this is
+    /// the function that has to know about it.
+    #[must_use]
+    pub fn shows_pictures(&self) -> bool {
+        self.images.available()
+            && !self.icons.is_empty()
+            && self.settings.as_ref().is_some_and(Settings::on_agents)
+    }
+
     /// Encodes the marks the agents page is about to draw.
     ///
     /// Per frame, and free after the first: encoding is cached, and what
@@ -191,10 +208,7 @@ impl App {
     /// than in the view because handing pixels to a terminal changes what
     /// obelus is holding, and a view holds nothing.
     pub(super) fn prepare_icons(&mut self) {
-        if !self.images.available() || self.icons.is_empty() {
-            return;
-        }
-        if !self.settings.as_ref().is_some_and(Settings::on_agents) {
+        if !self.shows_pictures() {
             return;
         }
         let palette = Palette {
