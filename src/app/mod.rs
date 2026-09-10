@@ -199,6 +199,13 @@ pub struct App {
     asked_registry: bool,
     /// Why the registry could not be fetched, until it is tried again.
     registry_failure: Option<String>,
+    /// Each agent's own mark, as SVG, by the registry's id for it.
+    icons: HashMap<String, String>,
+    /// Whether the marks have been asked for.
+    asked_icons: bool,
+    /// The marks again, as pixels the terminal will take -- or nothing to
+    /// take them, on a terminal that cannot show a picture.
+    images: crate::ui::image::Images,
     /// The installs running, and how far each has got.
     installing: HashMap<String, crate::agent::install::Progress>,
     /// Why an install did not work, per agent, until it is tried again.
@@ -311,6 +318,9 @@ impl App {
             registry: Vec::new(),
             asked_registry: false,
             registry_failure: None,
+            icons: HashMap::new(),
+            asked_icons: false,
+            images: crate::ui::image::Images::none(),
             installing: HashMap::new(),
             install_failures: HashMap::new(),
             config: crate::config::Config::default(),
@@ -563,6 +573,7 @@ impl App {
         }
 
         self.settle_agents(editor_area);
+        self.prepare_icons();
 
         let area = self.text_area();
         self.refresh_markdown(editor_area.width);
@@ -639,6 +650,7 @@ impl App {
                 done,
             } => self.on_matches(generation, hits, done),
             Event::Registry { agents, failure } => self.on_registry(agents, failure),
+            Event::Icon { id, svg } => self.on_icon(id, svg),
             Event::Installing { id, progress } => self.on_installing(id, progress),
             Event::Installed { id, failure } => self.on_installed(id, failure),
             Event::Blamed { path, lines } => {

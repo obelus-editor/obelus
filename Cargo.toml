@@ -118,6 +118,22 @@ sha2 = "0.11.0"
 flate2 = "1.1.10"
 tar = "0.4.46"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+# Handing pixels to the terminal: kitty's graphics protocol, iTerm2's inline
+# images, or sixels, whichever the terminal answers that it speaks. Its
+# default features probe for chafa, a C library, and its build script *fails*
+# where chafa is not installed -- so those are off. What chafa would have
+# added is the half-block fallback, and obelus falls back to a glyph instead:
+# a sixteen-pixel mark pressed into two half-block cells is four coloured
+# squares.
+ratatui-image = { version = "11.0.8", default-features = false, features = ["crossterm"] }
+# The pixels themselves. Only png, because obelus decodes no image files at
+# all -- this is the buffer type `ratatui-image` takes.
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+# The registry's marks are SVG, so something has to draw them. Without its
+# default features: no text, no system fonts, no raster images inside an SVG.
+# These are single-path drawings, and the text support alone is a font stack
+# -- fontdb, rustybuzz, ttf-parser -- for glyphs that never appear.
+resvg = { version = "0.48.1", default-features = false }
 
 [dev-dependencies]
 serde_json = "1"

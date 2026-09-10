@@ -85,6 +85,19 @@ pub enum Event {
         /// What is known about how far along it is.
         progress: crate::agent::install::Progress,
     },
+    /// One agent's mark, from the disk or from the network.
+    ///
+    /// Its own event per agent rather than a batch: forty small drawings
+    /// arriving one at a time is forty cheap frames, and a page whose marks
+    /// all appear at once is a page that had none until the slowest one
+    /// landed.
+    Icon {
+        /// Which agent, by the registry's own name for it.
+        id: String,
+        /// The drawing, still as SVG. What size to draw it at and what
+        /// colour to ink it in belong to the view.
+        svg: String,
+    },
     /// An install finished, one way or the other.
     Installed {
         /// Which agent.

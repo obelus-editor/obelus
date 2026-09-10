@@ -43,6 +43,8 @@ pub struct SettingsView<'a> {
     agents: Vec<Listed>,
     /// Why the list could not be fetched, if it could not.
     failure: Option<&'a str>,
+    /// The agents' own marks, for a terminal that can draw one.
+    images: &'a crate::ui::image::Images,
 }
 
 impl<'a> SettingsView<'a> {
@@ -55,6 +57,7 @@ impl<'a> SettingsView<'a> {
             theme: app.theme(),
             agents: app.listed_agents(),
             failure: app.registry_failure(),
+            images: app.images(),
         })
     }
 }
@@ -291,13 +294,22 @@ impl SettingsView<'_> {
 
         let mut name_at = left;
         if crate::icons::enabled() {
-            put(
-                cells,
-                left,
-                area.y,
-                crate::icons::for_agent(&agent.agent.id),
-                plain.fg(self.theme.gutter_current),
-            );
+            // The agent's real mark where the terminal can show a picture,
+            // and a glyph where it cannot. Both are two cells wide, so the
+            // words start in the same place either way -- which is why the
+            // one that fails is allowed to fail silently.
+            if !self
+                .images
+                .draw(cells, left, area.y, &agent.agent.id, focused)
+            {
+                put(
+                    cells,
+                    left,
+                    area.y,
+                    crate::icons::for_agent(&agent.agent.id),
+                    plain.fg(self.theme.gutter_current),
+                );
+            }
             // Two blank columns after a glyph: one the glyph bleeds into,
             // because a Nerd Font draws these two cells wide, and one to
             // read by.

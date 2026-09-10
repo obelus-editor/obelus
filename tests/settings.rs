@@ -433,6 +433,7 @@ fn the_agents_page_is_a_list_of_cards() {
             authors: vec!["Somebody".to_string()],
             license: "MIT".to_string(),
             website: None,
+            icon: None,
             distribution: obelus::agent::Distribution::Node {
                 package: format!("agent-{index}@1.0.0"),
                 arguments: Vec::new(),
@@ -549,6 +550,7 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
         authors: vec!["Someone".to_string()],
         license: "MIT".to_string(),
         website: None,
+        icon: None,
         distribution: obelus::agent::Distribution::Node {
             package: "one@1.0.0".to_string(),
             arguments: Vec::new(),
@@ -604,6 +606,7 @@ fn the_cards_scroll_only_at_an_edge() {
             authors: vec!["Somebody".to_string()],
             license: "MIT".to_string(),
             website: None,
+            icon: None,
             distribution: obelus::agent::Distribution::Node {
                 package: format!("agent-{index}@1.0.0"),
                 arguments: Vec::new(),

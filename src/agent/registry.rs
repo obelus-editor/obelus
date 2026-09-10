@@ -80,6 +80,7 @@ fn agent(entry: &Value) -> Option<Agent> {
             .unwrap_or_default(),
         license: text("license").unwrap_or_default(),
         website: text("website").or_else(|| text("repository")),
+        icon: text("icon"),
         distribution: distribution(entry.get("distribution")?)?,
     })
 }
@@ -265,6 +266,7 @@ mod tests {
           "description": "The Claude agent over ACP",
           "authors": ["Anthropic"], "license": "MIT",
           "repository": "https://example.invalid/claude",
+          "icon": "https://example.invalid/claude.svg",
           "distribution": { "npx": { "package": "@acp/claude-agent-acp@0.76.0" } }
         },
         {
@@ -304,6 +306,15 @@ mod tests {
         let agents = agents_in(SAMPLE);
         let names: Vec<&str> = agents.iter().map(|agent| agent.name.as_str()).collect();
         assert_eq!(names, ["Claude Agent", "Gemini CLI", "Py Agent", "Amp"]);
+
+        // The mark, where an entry has one. Every entry in the registry
+        // does today, but it is somebody else's file: an entry without one
+        // is a card that wears a glyph, not an entry obelus drops.
+        assert_eq!(
+            agents[0].icon.as_deref(),
+            Some("https://example.invalid/claude.svg")
+        );
+        assert!(agents[1].icon.is_none());
 
         assert_eq!(
             agents[0].distribution,

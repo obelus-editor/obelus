@@ -6,7 +6,10 @@
 //! last time one was tried.
 
 use super::*;
-use crate::agent::{self, Agent, Distribution, Status, install::Progress};
+use crate::{
+    agent::{self, Agent, Distribution, Status, install::Progress},
+    ui::image::{Images, Palette},
+};
 
 /// One row of the agents page: what the registry says, and what obelus
 /// knows about it here.
@@ -105,6 +108,62 @@ impl App {
         }
         self.registry_failure = None;
         self.registry = agents;
+        // Marks are fetched from the list, so this is the first moment
+        // there is anything to fetch. The cached list arrives first and the
+        // fetched one replaces it; the once-only flag inside means the
+        // second arrival costs nothing.
+        self.fetch_icons();
+    }
+
+    /// Takes the marks the terminal will draw, or the fact that it will
+    /// not.
+    ///
+    /// Set from `main`, because asking the terminal what it can do means
+    /// writing to it and reading its answer -- which has to happen before
+    /// the alternate screen, and cannot happen inside a frame. A test gets
+    /// no pictures, which is also what most terminals get.
+    pub fn use_images(&mut self, images: Images) {
+        self.images = images;
+    }
+
+    /// The marks, for the view to draw.
+    #[must_use]
+    pub fn images(&self) -> &Images {
+        &self.images
+    }
+
+    /// Fetches every mark obelus does not have, once.
+    ///
+    /// Only on a terminal that can show one: on every other terminal the
+    /// cards wear glyphs, and forty downloads for something nothing will
+    /// draw is forty requests a reader did not ask for.
+    fn fetch_icons(&mut self) {
+        if !self.images.available() || self.asked_icons || self.registry.is_empty() {
+            return;
+        }
+        let wanted: Vec<(String, String)> = self
+            .registry
+            .iter()
+            .filter(|agent| !self.icons.contains_key(&agent.id))
+            .filter_map(|agent| {
+                agent
+                    .icon
+                    .clone()
+                    .map(|address| (agent.id.clone(), address))
+            })
+            .collect();
+        if wanted.is_empty() {
+            return;
+        }
+        self.asked_icons = true;
+        if let Some(sender) = self.events.clone() {
+            agent::icon::spawn_fetch(wanted, sender);
+        }
+    }
+
+    /// Takes one agent's mark.
+    pub(super) fn on_icon(&mut self, id: String, svg: String) {
+        self.icons.insert(id, svg);
     }
 
     /// Moves the agents page's window of cards, if the focused one has
@@ -122,6 +181,44 @@ impl App {
         let room = (editor_area.width, editor_area.height);
         if let Some(settings) = self.settings.as_mut() {
             settings.settle_cards(&listed, room);
+        }
+    }
+
+    /// Encodes the marks the agents page is about to draw.
+    ///
+    /// Per frame, and free after the first: encoding is cached, and what
+    /// this walks is the handful of cards on screen. It happens here rather
+    /// than in the view because handing pixels to a terminal changes what
+    /// obelus is holding, and a view holds nothing.
+    pub(super) fn prepare_icons(&mut self) {
+        if !self.images.available() || self.icons.is_empty() {
+            return;
+        }
+        if !self.settings.as_ref().is_some_and(Settings::on_agents) {
+            return;
+        }
+        let palette = Palette {
+            ink: self.theme().gutter_current,
+            paper: self.theme().background,
+            selected: self.theme().picker_selected_background,
+        };
+        let listed = self.listed_agents();
+        let wanted: Vec<(String, bool)> = {
+            let Some(settings) = self.settings.as_ref() else {
+                return;
+            };
+            let rows = settings.agents(&listed);
+            let focus = settings.focus().min(rows.len().saturating_sub(1));
+            rows.iter()
+                .enumerate()
+                .map(|(index, agent)| (agent.agent.id.clone(), index == focus))
+                .collect()
+        };
+        let Self { images, icons, .. } = self;
+        for (id, focused) in wanted {
+            if let Some(svg) = icons.get(&id) {
+                images.prepare(&id, svg, focused, palette);
+            }
         }
     }
 

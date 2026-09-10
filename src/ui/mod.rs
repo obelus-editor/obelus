@@ -6,6 +6,7 @@
 //! than the write itself being slow.
 
 pub mod editor;
+pub mod image;
 pub mod markdown;
 pub mod picker;
 pub mod settings;

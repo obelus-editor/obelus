@@ -11,6 +11,7 @@
 //! is here is the shape of an entry, where obelus keeps what it installs,
 //! and how it tells whether it has.
 
+pub mod icon;
 pub mod install;
 pub mod registry;
 
@@ -39,6 +40,10 @@ pub struct Agent {
     pub license: String,
     /// Where to read more, if it says.
     pub website: Option<String>,
+    /// Where its mark is, if it has one. Every entry in the registry today
+    /// carries one: a monochrome sixteen-pixel SVG drawn in `currentColor`,
+    /// meant to be inked in whatever colour it is put on.
+    pub icon: Option<String>,
     /// How to get it and how to run it.
     pub distribution: Distribution,
 }

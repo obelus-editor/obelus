@@ -87,9 +87,9 @@ src/
   syntax/         language registry (14 languages), parsing, highlights, tags
   lsp/            transport, client, actions, positions, outline
   git/            gix: head text, statuses, hunks, blame
-  agent/          the ACP registry, and installing an agent
-  ui/             editor, status bar, picker, settings, welcome, shared
-                  cell writers
+  agent/          the ACP registry, installing an agent, its marks
+  ui/             editor, status bar, picker, settings, welcome,
+                  images, shared cell writers
 tests/            integration tests plus tests/fixtures/*.txt golden grids
 ```
 
@@ -99,6 +99,15 @@ terminal allocates one), and **whether the font has a glyph cannot be
 detected** — a terminal's column advance comes from Unicode width tables, not
 from the font, so there is one switch (`icons::NERD_FONT`) and a fallback
 behind every glyph.
+
+A picture is a third thing again. A terminal that speaks kitty's graphics
+protocol, iTerm2's inline images or sixels can be handed pixels, and
+`ui::image` does that for the agent registry's SVG marks -- but **whether it
+can is asked once, before the alternate screen** (`Images::detect`, from
+`main`), because asking means writing an escape sequence and reading the
+answer. Everything else gets the glyph: half-blocks are for photographs and
+obelus has none. So a test, a pipe and most terminals draw the glyph path,
+which is why the fixtures never contain pixels.
 
 Golden fixtures dump every cell's symbol, foreground and background, plus the
 cursor position. Colours are in them because highlighting, themes and the

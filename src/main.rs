@@ -33,6 +33,12 @@ fn main() -> Result<()> {
         .map(|path| Buffer::open(path))
         .collect::<Result<Vec<_>>>()?;
 
+    // Asked before the alternate screen and before raw mode, because
+    // asking means writing an escape sequence to the terminal and reading
+    // what it writes back. A terminal that answers can draw an agent's own
+    // mark on the agents page; one that does not gets a glyph.
+    let images = obelus::ui::image::Images::detect();
+
     // `ratatui::try_init` enters the alternate screen, turns on raw mode, and
     // chains a panic hook that undoes both before the previous hook runs.
     // Without that chaining a panic leaves the terminal in raw mode and the
@@ -55,6 +61,7 @@ fn main() -> Result<()> {
     // Read here rather than in `App::new`, so that a test gets the defaults
     // rather than whatever the machine it runs on has in `~/.config`.
     app.load_config();
+    app.use_images(images);
     let outcome = app::run(&mut terminal, &mut app);
     if mouse {
         let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
