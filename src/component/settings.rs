@@ -58,6 +58,15 @@ pub struct Settings {
     group: usize,
     /// Which of the showing rows has the focus.
     focus: usize,
+    /// Which card the agents page draws first.
+    ///
+    /// Kept rather than worked out from the focus each frame. Worked out,
+    /// the focused card ends up as low on the screen as it will go, so
+    /// every step *up* scrolls -- and a list that moves under a reader who
+    /// has not reached its edge is a list they have to watch instead of
+    /// read. Only the cards need it: a group of settings is a dozen rows
+    /// and they all fit.
+    top: usize,
 }
 
 impl Default for Settings {
@@ -74,6 +83,7 @@ impl Settings {
             query: String::new(),
             group: 0,
             focus: 0,
+            top: 0,
         }
     }
 
@@ -112,6 +122,12 @@ impl Settings {
     #[must_use]
     pub const fn focus(&self) -> usize {
         self.focus
+    }
+
+    /// Which card the agents page draws first.
+    #[must_use]
+    pub const fn top(&self) -> usize {
+        self.top
     }
 
     /// The settings on show: this group's, narrowed by what has been typed.
@@ -419,8 +435,53 @@ impl Settings {
     }
 
     /// Puts the focus back on a row that exists, after the rows change.
+    ///
+    /// And the window back to the top, because the rows a query leaves are
+    /// not the rows the window was scrolled through.
     fn settle(&mut self) {
         let rows = self.rows().len();
         self.focus = self.focus.min(rows.saturating_sub(1));
+        self.top = 0;
+    }
+
+    /// Moves the window of cards if the focused one has left it, and no
+    /// further.
+    ///
+    /// The same rule the lists follow -- the least that puts the focus back
+    /// on screen -- counted in rows rather than in cards, because a card is
+    /// as tall as its description needs. So a step towards either edge
+    /// moves nothing until the card at that edge is the focused one.
+    /// Called once a frame with the room the page has, rather than from
+    /// every key that moves the focus: the window depends on the geometry,
+    /// and the geometry is only settled at that point -- which is also what
+    /// makes a resize move the window rather than leave the focus off the
+    /// screen.
+    pub fn settle_cards(&mut self, agents: &[Agent], room: (u16, u16)) {
+        let listed = self.agents(agents);
+        if listed.is_empty() {
+            self.top = 0;
+            return;
+        }
+        self.focus = self.focus.min(listed.len() - 1);
+        // Above the window, and when a narrowed list has left the window
+        // past the end of it: either way the window comes to the focus.
+        self.top = self.top.min(self.focus);
+
+        let width = room.0.saturating_sub(7);
+        let height = room.1.saturating_sub(2).max(1);
+        let heights: Vec<u16> = listed
+            .iter()
+            .map(|agent| self.card_rows(agent, width) + 1)
+            .collect();
+        // Forward a card at a time until the focused card's last row is on
+        // screen. A focused card taller than the whole page stops here with
+        // itself at the top, which is the most of it that can be shown.
+        while self.top < self.focus {
+            let taken: u16 = heights[self.top..=self.focus].iter().sum();
+            if taken <= height {
+                break;
+            }
+            self.top += 1;
+        }
     }
 }

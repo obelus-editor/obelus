@@ -220,26 +220,17 @@ impl SettingsView<'_> {
             return;
         }
 
-        // Which card is at the top. Cards are not all the same height, so
-        // this counts backwards from the focused one until the next would
-        // not fit: the least that keeps the focused card whole, which is
-        // the rule the lists follow with rows.
+        // Which card is at the top is the page's own, moved only when the
+        // focus leaves the window -- so a step that is not at an edge
+        // scrolls nothing. Heights here are for laying the cards out, not
+        // for deciding where the window is.
         let width = area.width.saturating_sub(7);
         let heights: Vec<u16> = listed
             .iter()
             .map(|agent| self.settings.card_rows(agent, width) + 1)
             .collect();
         let focus = self.settings.focus().min(listed.len().saturating_sub(1));
-        let mut first = focus;
-        let mut taken = heights.get(focus).copied().unwrap_or(0);
-        while first > 0 {
-            let above = heights[first - 1];
-            if taken + above > area.height {
-                break;
-            }
-            taken += above;
-            first -= 1;
-        }
+        let first = self.settings.top().min(focus);
 
         let mut y = area.y;
         for (index, agent) in listed.iter().enumerate().skip(first) {

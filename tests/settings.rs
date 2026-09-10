@@ -580,3 +580,90 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
         "the list did not replace the reason:\n{dump}"
     );
 }
+
+/// The window of cards moves only when the focus leaves it.
+///
+/// Worked out from the focus each frame instead, the focused card sits as
+/// low on the screen as it will go -- so every step up scrolls, and the
+/// page slides under a reader who is nowhere near its edge.
+#[test]
+fn the_cards_scroll_only_at_an_edge() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let file = temporary("window");
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::Left);
+
+    let agents: Vec<obelus::agent::Agent> = (0..12)
+        .map(|index| obelus::agent::Agent {
+            id: format!("agent-{index}"),
+            name: format!("Agent {index}"),
+            version: "1.0.0".to_string(),
+            description: "One of several".to_string(),
+            authors: vec!["Somebody".to_string()],
+            license: "MIT".to_string(),
+            website: None,
+            distribution: obelus::agent::Distribution::Node {
+                package: format!("agent-{index}@1.0.0"),
+                arguments: Vec::new(),
+            },
+        })
+        .collect();
+    app.handle(Event::Registry {
+        agents,
+        failure: None,
+    });
+
+    // A step, then the frame it produces: the window is settled against the
+    // room the page has, which only a frame knows.
+    let step = |app: &mut obelus::app::App, key: KeyCode| {
+        support::press(app, key);
+        let dump = support::render(app, 76, 16);
+        (app.settings().expect("the settings").top(), dump)
+    };
+
+    // Every card is four rows, so three whole ones fit the thirteen this
+    // screen leaves the page -- counted by their last row, because the
+    // fourth card's name is drawn in the row left over. Asserted rather
+    // than assumed: the whole point is where the fourth step lands.
+    let dump = support::render(&mut app, 76, 16);
+    let whole = support::text_block(&dump)
+        .matches("1.0.0 \u{b7} Somebody \u{b7} MIT")
+        .count();
+    assert_eq!(whole, 3, "not three whole cards:\n{dump}");
+
+    // Down within the window moves nothing.
+    for expected in 1..3 {
+        let (top, dump) = step(&mut app, KeyCode::Down);
+        assert_eq!(top, 0, "the page scrolled at card {expected}:\n{dump}");
+        assert!(support::text_block(&dump).contains("Agent 0"));
+    }
+
+    // The fourth card is off the window, so the window moves -- by one
+    // card, not by a screenful.
+    let (top, dump) = step(&mut app, KeyCode::Down);
+    assert_eq!(top, 1, "the page did not scroll:\n{dump}");
+    let text = support::text_block(&dump);
+    assert!(!text.contains("Agent 0"), "it scrolled by less:\n{dump}");
+    assert!(text.contains("Agent 3"), "the focused card is off:\n{dump}");
+
+    // Back up. The focused card is inside the window, so the window stays
+    // where it is: this is the one a window derived from the focus got
+    // wrong, by putting the focused card at the bottom every time.
+    for _ in 0..2 {
+        let (top, dump) = step(&mut app, KeyCode::Up);
+        assert_eq!(top, 1, "going up scrolled from the middle:\n{dump}");
+        // On the screen and not only in the number: a view that works the
+        // window out from the focus keeps a correct `top` and draws
+        // something else.
+        let text = support::text_block(&dump);
+        assert!(!text.contains("Agent 0"), "going up scrolled:\n{dump}");
+        assert!(text.contains("Agent 3"), "going up scrolled:\n{dump}");
+    }
+
+    // Now the focus is the window's first card, and one more step moves it.
+    let (top, dump) = step(&mut app, KeyCode::Up);
+    assert_eq!(top, 0, "the window did not follow the focus up:\n{dump}");
+    assert!(support::text_block(&dump).contains("Agent 0"));
+}

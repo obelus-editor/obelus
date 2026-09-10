@@ -107,6 +107,24 @@ impl App {
         self.registry = agents;
     }
 
+    /// Moves the agents page's window of cards, if the focused one has
+    /// left it.
+    ///
+    /// Here rather than in the view because it is state, and the view holds
+    /// none; per frame rather than per keystroke because how many cards fit
+    /// is a fact about the screen, which the reader can resize without
+    /// pressing anything.
+    pub(super) fn settle_agents(&mut self, editor_area: Rect) {
+        if !self.settings.as_ref().is_some_and(Settings::on_agents) {
+            return;
+        }
+        let listed = self.listed_agents();
+        let room = (editor_area.width, editor_area.height);
+        if let Some(settings) = self.settings.as_mut() {
+            settings.settle_cards(&listed, room);
+        }
+    }
+
     /// Why the list could not be fetched, if it could not.
     #[must_use]
     pub fn registry_failure(&self) -> Option<&str> {

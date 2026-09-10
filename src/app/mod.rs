@@ -562,6 +562,7 @@ impl App {
             self.search_this_file();
         }
 
+        self.settle_agents(editor_area);
 
         let area = self.text_area();
         self.refresh_markdown(editor_area.width);
