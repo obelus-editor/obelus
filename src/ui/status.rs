@@ -83,12 +83,13 @@ impl Widget for StatusView<'_> {
             // thing: what has been typed narrows what is above it. And
             // nothing else on the row -- what narrowing did is on the
             // screen above it, in the rows themselves.
-            let line = if icons::enabled() {
-                format!("{}  {}", icons::ui::PROMPT, settings.query())
-            } else {
-                format!("> {}", settings.query())
-            };
-            write(cells, area.x + 1, area.y, &line, style);
+            write(
+                cells,
+                area.x + 1,
+                area.y,
+                &typed(None, settings.query()),
+                style,
+            );
             return;
         }
         if let Some(prompt) = self.prompt {
@@ -133,32 +134,36 @@ fn badge_colour(server: Option<(&'static str, ServerState)>, theme: &Theme) -> C
     }
 }
 
-/// What the prompt shows.
+/// A row of the status bar that is typed into, whatever is typing into it.
 ///
-/// A magnifier for every picker, because every one of them filters by typing:
-/// the four differ in what they list, not in what typing does. Followed by a
-/// blank column, like every other glyph.
-fn prompt_text(picker: &Picker) -> String {
-    let asked = picker.question().map(|question| format!("{question}  "));
+/// A magnifier and then what has been typed: every picker filters by
+/// typing, the settings filter by typing, and they differ in what they list
+/// rather than in what typing does. A question asked before the typing --
+/// an agent asking to be allowed something -- goes in front of it.
+///
+/// One function for the text and the caret, because they are one fact: a
+/// caret worked out separately is a caret that drifts from the words.
+fn typed(question: Option<&str>, words: &str) -> String {
+    let asked = question.map(|question| format!("{question}  "));
     let asked = asked.unwrap_or_default();
     if icons::enabled() {
-        format!("{asked}{}  {}", icons::ui::PROMPT, picker.query())
+        format!("{asked}{}  {words}", icons::ui::PROMPT)
     } else {
-        format!("{asked}> {}", picker.query())
+        format!("{asked}> {words}")
     }
 }
 
+/// Which column the caret belongs in on a row that is typed into.
+#[must_use]
+pub fn typed_caret(question: Option<&str>, words: &str) -> u16 {
+    let caret = 1usize.saturating_add(text_width(&typed(question, words)));
+    u16::try_from(caret).unwrap_or(u16::MAX)
+}
+
 /// Which column the caret belongs in after a filter's text.
-///
-/// Shared with the renderer, like the picker's, so the text and the caret
-/// cannot disagree about where what has been typed ends.
 #[must_use]
 pub fn filter_caret(query: &str) -> u16 {
-    let glyph = if icons::enabled() { 3 } else { 2 };
-    let caret = 1usize
-        .saturating_add(glyph)
-        .saturating_add(text_width(query));
-    u16::try_from(caret).unwrap_or(u16::MAX)
+    typed_caret(None, query)
 }
 
 /// Which column the caret belongs in while a question is being asked.
@@ -177,8 +182,7 @@ pub fn answer_caret(prompt: &crate::component::prompt::Prompt) -> u16 {
 /// Shared with the renderer so the text and the caret cannot disagree.
 #[must_use]
 pub fn prompt_caret(picker: &Picker) -> u16 {
-    let caret = 1usize.saturating_add(text_width(&prompt_text(picker)));
-    u16::try_from(caret).unwrap_or(u16::MAX)
+    typed_caret(picker.question(), picker.query())
 }
 
 impl StatusView<'_> {
@@ -318,7 +322,8 @@ impl StatusView<'_> {
     /// on the row they are typing into is a number in the corner of their
     /// eye.
     fn render_prompt(&self, picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style) {
-        write(cells, area.x + 1, area.y, &prompt_text(picker), style);
+        let line = typed(picker.question(), picker.query());
+        write(cells, area.x + 1, area.y, &line, style);
     }
 }
 

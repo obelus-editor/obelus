@@ -12,7 +12,7 @@ use crate::{
     component::settings::Settings,
     config::{Config, Kind, Value},
     theme::Theme,
-    ui::{fill, put, rule, text_width, write},
+    ui::{Marked, Matched, fill, put, rule, text_width, write, write_marked},
 };
 
 /// How wide a control's column is.
@@ -78,31 +78,16 @@ impl Widget for SettingsView<'_> {
         let plain = Style::new()
             .fg(self.theme.foreground)
             .bg(self.theme.background);
-        let dim = plain.fg(self.theme.gutter);
 
-        // The tabs, the same shape the pickers use: the one showing wears
-        // the selected background, and the arrows say how to change it.
-        let mut column = 1u16;
-        for (index, name) in Settings::tabs().iter().enumerate() {
-            let style = if index == self.settings.tab() {
-                plain.bg(self.theme.picker_selected_background)
-            } else {
-                dim
-            };
-            column = write(cells, area.x + column, area.y, &format!(" {name} "), style)
-                .saturating_sub(area.x);
-        }
-        // The arrows and nothing else, because the arrows are what walks
-        // them: a hint that named a key which does nothing is worse than no
-        // hint, and the tab key's glyph in a Nerd Font reads as a return
-        // arrow, which was read as one.
-        let keys = "\u{2190} \u{2192}";
-        if let Ok(offset) =
-            u16::try_from(usize::from(area.width).saturating_sub(text_width(keys) + 1))
-            && offset > column
-        {
-            write(cells, area.x + offset, area.y, keys, dim);
-        }
+        // The tabs, through the same function every other tab row goes
+        // through: what a tab looks like is not this page's business.
+        crate::ui::tabs(
+            cells,
+            area,
+            &Settings::tabs(),
+            self.settings.tab(),
+            self.theme,
+        );
         rule(
             cells,
             Rect {
@@ -130,12 +115,15 @@ impl Widget for SettingsView<'_> {
 
         let rows = self.settings.rows();
         if rows.is_empty() {
-            write(
+            crate::ui::nothing(
                 cells,
-                area.x + 1,
-                area.y + 2,
+                Rect {
+                    y: area.y + 2,
+                    height: 1,
+                    ..area
+                },
                 "no setting by that name",
-                dim,
+                self.theme,
             );
             return;
         }
@@ -166,17 +154,20 @@ impl Widget for SettingsView<'_> {
             // Cut to what is left before the control's column: a line
             // running under the controls reads as part of them.
             let label = clipped(setting.label, control_at.saturating_sub(area.x + 2));
-            // In three pieces, so the characters the query matched can carry
-            // the background every other list marks a match with: a row in a
-            // narrowed list has to say why it is in it.
-            write_matched(
+            // Through the shared writer, so the characters the query
+            // matched carry the background every other list marks a match
+            // with: a row in a narrowed list has to say why it is in it.
+            write_marked(
                 cells,
+                row,
                 area.x + 1,
                 y,
                 &label,
-                self.settings.matched(setting),
                 plain.bg(background),
-                plain.bg(self.theme.picker_match_background),
+                &Marked::matched(
+                    run_of(self.settings.matched(setting)),
+                    self.theme.picker_match_background,
+                ),
             );
             draw_control(
                 cells,
@@ -319,14 +310,21 @@ impl SettingsView<'_> {
         let (state, colour) = self.state_of(agent);
         let taken = u16::try_from(text_width(&state)).unwrap_or(0);
         let room = inner.saturating_sub(taken + 2);
-        write_matched(
+        write_marked(
             cells,
+            Rect {
+                y: area.y,
+                height: 1,
+                ..area
+            },
             name_at,
             area.y,
             &clipped(&agent.agent.name, room),
-            self.settings.matched_in(&agent.agent.name),
             plain,
-            plain.bg(self.theme.picker_match_background),
+            &Marked::matched(
+                run_of(self.settings.matched_in(&agent.agent.name)),
+                self.theme.picker_match_background,
+            ),
         );
         if let Ok(offset) = u16::try_from(
             usize::from(area.width).saturating_sub(text_width(&state) + usize::from(INDENT)),
@@ -437,30 +435,9 @@ impl SettingsView<'_> {
     }
 }
 
-/// Writes text with the characters a query matched marked.
-///
-/// The same background every list marks a match with, and one function for
-/// the settings' rows and the agents' names: a row in a narrowed list has
-/// to say why it is in it, and two implementations of that would be two
-/// answers.
-fn write_matched(
-    cells: &mut CellBuffer,
-    x: u16,
-    y: u16,
-    text: &str,
-    run: Option<std::ops::Range<usize>>,
-    plain: Style,
-    marked: Style,
-) -> u16 {
-    let characters = text.chars().count();
-    let Some(run) = run.filter(|run| run.start < characters) else {
-        return write(cells, x, y, text, plain);
-    };
-    let end = run.end.min(characters);
-    let piece = |from: usize, to: usize| -> String { text.chars().take(to).skip(from).collect() };
-    let mut at = write(cells, x, y, &piece(0, run.start), plain);
-    at = write(cells, at, y, &piece(run.start, end), marked);
-    write(cells, at, y, &piece(end, characters), plain)
+/// A matched run, as the shared writer takes it.
+fn run_of(run: Option<std::ops::Range<usize>>) -> Matched<'static> {
+    run.map_or(Matched::Nothing, |run| Matched::Run(run.start, run.end))
 }
 
 /// As much of a sentence as fits, with a mark where it was cut.

@@ -303,7 +303,26 @@ impl ChatView<'_> {
                 1 => plain.fg(self.theme.gutter_current),
                 _ => plain,
             };
-            let ended = write(cells, area.x + MARGIN + INDENT, y, &name, style);
+            // What was typed, marked the way every other narrowed list
+            // marks it -- the slash included, because it is part of what
+            // was typed.
+            let typed = typing.as_deref().map_or(0, |name| name.chars().count() + 1);
+            let ended = crate::ui::write_marked(
+                cells,
+                Rect {
+                    y,
+                    height: 1,
+                    ..area
+                },
+                area.x + MARGIN + INDENT,
+                y,
+                &name,
+                style,
+                &crate::ui::Marked::matched(
+                    crate::ui::Matched::Run(0, typed),
+                    self.theme.picker_match_background,
+                ),
+            );
             let about = match &order.hint {
                 Some(hint) => format!("{hint}  \u{2014}  {}", order.description),
                 None => order.description.clone(),

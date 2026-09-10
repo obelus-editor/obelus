@@ -5,19 +5,14 @@
 //! overlay would leave one cell of a pair showing the code underneath and the
 //! other showing the list.
 
-use ratatui::{
-    buffer::Buffer as CellBuffer,
-    layout::Rect,
-    style::{Color, Style},
-    widgets::Widget,
-};
+use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
 use crate::{
     app::App,
-    component::picker::{Colouring, Picker, PickerItem, PickerLayout},
+    component::picker::{Picker, PickerItem, PickerLayout},
     git::FileStatus,
     theme::Theme,
-    ui::{drop_from_left, editor::SCROLLBAR_WIDTH, fill, put, text_width},
+    ui::{Marked, Matched, drop_from_left, editor::SCROLLBAR_WIDTH, fill, text_width},
 };
 
 /// How many rows the list keeps for itself.
@@ -129,7 +124,13 @@ impl Widget for PickerView<'_> {
         // over the list rather than as its first row.
         let tabs = self.picker.tab_rows();
         if tabs > 0 {
-            self.tab_row(cells, area);
+            crate::ui::tabs(
+                cells,
+                area,
+                self.picker.tabs(),
+                self.picker.tab(),
+                self.theme,
+            );
             crate::ui::rule(
                 cells,
                 Rect {
@@ -151,8 +152,7 @@ impl Widget for PickerView<'_> {
         // of that region. Below the tabs rather than instead of them: an
         // empty tab is the one place a reader most needs to see the others.
         if let Some(reason) = self.picker.nothing_to_show() {
-            let style = Style::new().fg(self.theme.gutter).bg(self.theme.background);
-            write(cells, list, 1, list.y, reason, style, None, 0);
+            crate::ui::nothing(cells, list, reason, self.theme);
             return;
         }
 
@@ -194,39 +194,6 @@ impl Widget for PickerView<'_> {
 }
 
 impl PickerView<'_> {
-    /// The row of tabs, and the arrows that say how to change them.
-    ///
-    /// The one that is showing gets the selected row's background, which is
-    /// the same thing that marks the selected row: on this screen, that
-    /// background means "this is the one you are on".
-    fn tab_row(&self, cells: &mut CellBuffer, area: Rect) {
-        let style = Style::new().fg(self.theme.gutter).bg(self.theme.background);
-        fill(cells, Rect { height: 1, ..area }, style);
-
-        let mut column = 1u16;
-        for (index, name) in self.picker.tabs().iter().enumerate() {
-            let style = if index == self.picker.tab() {
-                Style::new()
-                    .fg(self.theme.foreground)
-                    .bg(self.theme.picker_selected_background)
-            } else {
-                style
-            };
-            let padded = format!(" {name} ");
-            column = write(cells, area, column, area.y, &padded, style, None, 0);
-        }
-
-        // How to move between them. Not a hint that can go stale: the keys
-        // are the arrows, and there is nowhere to rebind them to.
-        let keys = "\u{2190} \u{2192}";
-        if let Ok(offset) =
-            u16::try_from(usize::from(area.width).saturating_sub(text_width(keys) + 1))
-            && offset > column
-        {
-            write(cells, area, offset, area.y, keys, style, None, 0);
-        }
-    }
-
     /// One row: its background, then its icon, label, detail and key.
     fn row(
         &self,
@@ -281,7 +248,7 @@ impl PickerView<'_> {
         if let Some(icon) = item.icon {
             let mut glyph = String::new();
             glyph.push(icon);
-            column = write(cells, area, column, y, &glyph, style, None, 0);
+            column = at(cells, area, column, y, &glyph, style, &Marked::plain());
             // One blank column after it, always. The terminal allocates one
             // cell for a private-use codepoint, and the icons in a Nerd
             // Font's non-`Mono` variant are drawn two cells wide, so the
@@ -317,34 +284,37 @@ impl PickerView<'_> {
             return;
         }
         if dropped > 0 {
-            column = write(cells, inner, column, y, "\u{2026}", style, None, 0);
+            column = at(cells, inner, column, y, "\u{2026}", style, &Marked::plain());
         }
-        column = write_coloured(
+        column = at(
             cells,
             inner,
             column,
             y,
             &item.label,
             label_style,
-            (!matched.is_empty()).then_some((matched, self.theme.picker_match_background)),
-            dropped,
-            item.colours
-                .as_deref()
-                .filter(|runs| !runs.is_empty())
-                .map(|runs| (runs, self.theme)),
+            &Marked {
+                matched: Matched::Indices(matched),
+                mark: self.theme.picker_match_background,
+                syntax: item
+                    .colours
+                    .as_deref()
+                    .filter(|runs| !runs.is_empty())
+                    .map(|runs| (runs, self.theme)),
+                skip: dropped,
+            },
         );
 
         let dim = style.fg(self.theme.gutter);
         if let Some(detail) = &item.detail {
-            column = write(
+            column = at(
                 cells,
                 inner,
                 column.saturating_add(2),
                 y,
                 detail,
                 dim,
-                None,
-                0,
+                &Marked::plain(),
             );
         }
 
@@ -363,90 +333,43 @@ impl PickerView<'_> {
                 && offset >= column
             {
                 if dropped > 0 {
-                    write(cells, area, offset, y, "\u{2026}", dim, None, 0);
-                    write(cells, area, offset + 1, y, trailing, dim, None, dropped + 1);
+                    at(cells, area, offset, y, "\u{2026}", dim, &Marked::plain());
+                    at(
+                        cells,
+                        area,
+                        offset + 1,
+                        y,
+                        trailing,
+                        dim,
+                        &Marked {
+                            skip: dropped + 1,
+                            ..Marked::plain()
+                        },
+                    );
                 } else {
-                    write(cells, area, offset, y, trailing, dim, None, 0);
+                    at(cells, area, offset, y, trailing, dim, &Marked::plain());
                 }
             }
         }
     }
 }
 
-/// Writes text at a column, optionally colouring the matched characters.
+/// The shared row writer, for a column counted from the row's own left
+/// edge rather than from the screen's.
 ///
-/// `skip` leading characters are not drawn, for text whose head has been
-/// truncated away. The matched positions are still counted from the start of
-/// the whole text, so a match that fell in the dropped part simply has no
-/// character left to colour.
-///
-/// `syntax` colours a row that is a line of code the way the file colours
-/// it. The matched characters still win: why a row is in the list beats what
-/// the row is made of.
-///
-/// Returns the column after the text.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each is a distinct piece of where and how; a struct moves the same list one line up"
-)]
-fn write(
+/// Every list in obelus draws its characters through
+/// [`crate::ui::write_marked`] -- what marks a match, what colours a line of
+/// code, what a truncated head skips. A picker's rows are laid out relative
+/// to the row, so this is the one line of arithmetic between the two.
+fn at(
     cells: &mut CellBuffer,
     area: Rect,
-    start: u16,
+    column: u16,
     y: u16,
     contents: &str,
     style: Style,
-    matched: Option<(&[u32], Color)>,
-    skip: usize,
+    marked: &Marked<'_>,
 ) -> u16 {
-    write_coloured(cells, area, start, y, contents, style, matched, skip, None)
-}
-
-/// The same, with the row's own syntax colours under the matched ones.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each is a distinct piece of where and how; a struct moves the same list one line up"
-)]
-fn write_coloured(
-    cells: &mut CellBuffer,
-    area: Rect,
-    start: u16,
-    y: u16,
-    contents: &str,
-    style: Style,
-    matched: Option<(&[u32], Color)>,
-    skip: usize,
-    syntax: Option<(&[Colouring], &Theme)>,
-) -> u16 {
-    let mut column = start;
-    for (index, character) in contents.chars().enumerate().skip(skip) {
-        if column >= area.width {
-            break;
-        }
-        let index = u32::try_from(index).unwrap_or(u32::MAX);
-        // The row's own colours first, then the matched characters over the
-        // top: a reader scanning the list is looking for why the row is
-        // there, and only then at what it says.
-        let style = match syntax {
-            Some((runs, theme)) => match u16::try_from(index).ok().and_then(|at| {
-                runs.iter()
-                    .find(|(from, to, _)| at >= *from && at < *to)
-                    .map(|(_, _, kind)| *kind)
-            }) {
-                Some(kind) => style.fg(theme.syntax.colour(kind)),
-                None => style,
-            },
-            None => style,
-        };
-        // A background, so it survives whatever colour the character
-        // already has: a row that is a line of code carries the file's own
-        // colours, and a match painted over them would be one more hue
-        // among seven rather than an answer to "why is this row here".
-        let style = match matched {
-            Some((indices, colour)) if indices.binary_search(&index).is_ok() => style.bg(colour),
-            _ => style,
-        };
-        column = column.saturating_add(put(cells, area.x + column, y, character, style));
-    }
-    column
+    crate::ui::write_marked(cells, area, area.x + column, y, contents, style, marked)
+        .saturating_sub(area.x)
 }
