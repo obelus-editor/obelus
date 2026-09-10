@@ -1632,3 +1632,118 @@ fn a_wide_glyph_cut_by_the_edge_leaves_its_cell_blank() {
         "the edge never fell inside the wide character, so nothing was tested"
     );
 }
+
+/// A backend that records what a frame did to the caret, in order.
+///
+/// Everything else it delegates to `TestBackend`: the point is the order of
+/// the caret calls around the writes, which nothing else can see.
+struct Recorder {
+    inner: ratatui::backend::TestBackend,
+    calls: Vec<Caret>,
+}
+
+/// One thing a frame did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Caret {
+    /// Cells were written.
+    Wrote,
+    Hidden,
+    Moved,
+    Shown,
+}
+
+impl ratatui::backend::Backend for Recorder {
+    type Error = std::convert::Infallible;
+
+    fn draw<'a, I>(&mut self, content: I) -> Result<(), Self::Error>
+    where
+        I: Iterator<Item = (u16, u16, &'a ratatui::buffer::Cell)>,
+    {
+        self.calls.push(Caret::Wrote);
+        self.inner.draw(content)
+    }
+
+    fn hide_cursor(&mut self) -> Result<(), Self::Error> {
+        self.calls.push(Caret::Hidden);
+        self.inner.hide_cursor()
+    }
+
+    fn show_cursor(&mut self) -> Result<(), Self::Error> {
+        self.calls.push(Caret::Shown);
+        self.inner.show_cursor()
+    }
+
+    fn set_cursor_position<P: Into<ratatui::layout::Position>>(
+        &mut self,
+        position: P,
+    ) -> Result<(), Self::Error> {
+        self.calls.push(Caret::Moved);
+        self.inner.set_cursor_position(position)
+    }
+
+    fn get_cursor_position(&mut self) -> Result<ratatui::layout::Position, Self::Error> {
+        self.inner.get_cursor_position()
+    }
+
+    fn clear(&mut self) -> Result<(), Self::Error> {
+        self.inner.clear()
+    }
+
+    fn clear_region(&mut self, clear_type: ratatui::backend::ClearType) -> Result<(), Self::Error> {
+        self.inner.clear_region(clear_type)
+    }
+
+    fn size(&self) -> Result<ratatui::layout::Size, Self::Error> {
+        self.inner.size()
+    }
+
+    fn window_size(&mut self) -> Result<ratatui::backend::WindowSize, Self::Error> {
+        self.inner.window_size()
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        self.inner.flush()
+    }
+}
+
+/// A frame is written with the caret out, and the caret is moved before it
+/// comes back.
+///
+/// Both halves are about the same thing: a terminal that repaints while
+/// obelus is still writing must never have a caret to draw. Ordinarily
+/// nothing repaints mid-write; a frame carrying a picture does, because
+/// handing a terminal a sixel makes it draw then and there -- and the caret
+/// then flashes wherever the last cell was written.
+#[test]
+fn a_frame_writes_with_the_caret_out_and_places_it_afterwards() {
+    let mut app = app_on_screen(WIDTH, HEIGHT);
+    let mut terminal = ratatui::Terminal::new(Recorder {
+        inner: ratatui::backend::TestBackend::new(WIDTH, HEIGHT),
+        calls: Vec::new(),
+    })
+    .expect("a terminal");
+    obelus::app::render(&mut terminal, &mut app).expect("a frame");
+
+    let calls = &terminal.backend().calls;
+    assert_eq!(
+        calls.first(),
+        Some(&Caret::Hidden),
+        "the caret was up while the frame was written: {calls:?}"
+    );
+    let wrote = calls
+        .iter()
+        .rposition(|call| *call == Caret::Wrote)
+        .expect("something was written");
+    let shown = calls
+        .iter()
+        .position(|call| *call == Caret::Shown)
+        .expect("the caret came back");
+    let moved = calls
+        .iter()
+        .position(|call| *call == Caret::Moved)
+        .expect("the caret was placed");
+    assert!(
+        wrote < moved && moved < shown,
+        "the caret was shown before it was placed: {calls:?}"
+    );
+}

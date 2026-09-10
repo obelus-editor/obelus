@@ -900,15 +900,29 @@ where
     B: Backend,
     B::Error: std::error::Error + Send + Sync + 'static,
 {
+    // The caret is put out before anything is written and placed again
+    // afterwards, rather than being named on the frame.
+    //
+    // `Terminal::draw` writes the whole diff with the caret still visible
+    // where the last frame left it, and then -- for a frame that names a
+    // position -- *shows* the caret before moving it. Both are moments when
+    // a terminal that repaints mid-write draws a caret somewhere obelus did
+    // not put one. Ordinarily nothing repaints mid-write and nobody sees
+    // it; a frame carrying a picture is different, because handing a
+    // terminal a sixel makes it draw then and there. That was a caret
+    // flashing across the agents page on every step of the selection.
+    let mut position = None;
+    terminal.hide_cursor()?;
     terminal.draw(|frame| {
         let area = frame.area();
-        // `Terminal::draw` shows the cursor and moves it when the frame names
-        // a position, and hides it when the frame does not, so saying where it
-        // goes is the whole of it.
-        if let Some(position) = app.draw_into(frame.buffer_mut(), area) {
-            frame.set_cursor_position(position);
-        }
+        position = app.draw_into(frame.buffer_mut(), area);
     })?;
+    // Moved first and shown second, which is the order that has no frame in
+    // it where the caret is visible in the wrong place.
+    if let Some(position) = position {
+        terminal.set_cursor_position(position)?;
+        terminal.show_cursor()?;
+    }
     Ok(())
 }
 
