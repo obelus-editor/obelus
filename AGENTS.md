@@ -157,10 +157,13 @@ the reference implementation: every method has a type whose field names the
 compiler checks, which is the point -- obelus had the nine methods it needs
 written out by hand and checked once against the schema, and a protocol that
 renames an outcome would have gone on compiling and quietly stopped matching.
-It is executor-agnostic (its tokio is a dev-dependency), so `acp::link` runs
-the connection on one thread with `futures::executor::block_on` and joins it
-to the loop: what obelus wants becomes an `Ask` sent to that thread, and
-everything the agent says becomes an `Event`.
+It is executor-agnostic, so `acp::link` runs the connection on one thread
+with a current-thread tokio runtime and joins it to the loop: what obelus
+wants becomes an `Ask` sent to that thread, and everything the agent says
+becomes an `Event`. One agent, one connection, so a work-stealing pool would
+be threads nobody asked for. The channels stay `futures`' -- that is what the
+protocol's crate speaks, and a channel is runtime-agnostic; tokio is there to
+drive them.
 
 The two directions are not symmetrical, which is the part worth knowing. What
 obelus asks is fire-and-forget -- the answer arrives as an event, because by

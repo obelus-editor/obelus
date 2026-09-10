@@ -180,7 +180,20 @@ pub fn start(
     let outcome = std::thread::Builder::new()
         .name("obelus-acp".to_string())
         .spawn(move || {
-            let reason = futures::executor::block_on(talk(config, root, told.clone(), taken));
+            // A runtime of its own, on this thread: the conversation is one
+            // connection with a handful of tasks in it, so a current-thread
+            // runtime is the whole of what it needs -- a work-stealing pool
+            // for one agent would be threads nobody asked for. Everything
+            // obelus does outside this thread is still a thread blocked on
+            // a channel.
+            //
+            // The channels stay `futures`': that is what the protocol's own
+            // crate speaks, and a channel is runtime-agnostic anyway. What
+            // tokio is here for is driving them.
+            let reason = match tokio::runtime::Builder::new_current_thread().build() {
+                Ok(runtime) => runtime.block_on(talk(config, root, told.clone(), taken)),
+                Err(error) => Some(error.to_string()),
+            };
             let _ = told.send(Event::Acp(Incoming::Gone(reason)));
         });
     if let Err(error) = outcome {
