@@ -66,6 +66,12 @@ const MOST_WRITING: u16 = 6;
 /// One function, shared by the view, the scrolling and the keys, so that a
 /// page of movement is the page on screen and the caret is in the box the
 /// reader can see.
+///
+/// The status row is not among them. While the conversation is what the
+/// screen is showing, obelus's own status row is the conversation's -- one
+/// row at the foot of the screen, which is where a status row goes. A band
+/// of its own inside the region would be a second status bar with the real
+/// one under it, and the pair reads as one bar two rows tall.
 #[derive(Clone, Copy, Debug)]
 pub struct Regions {
     /// Who is being talked to, and what they are doing.
@@ -74,8 +80,6 @@ pub struct Regions {
     pub transcript: Rect,
     /// What is being written.
     pub writing: Rect,
-    /// The conversation's own status row.
-    pub status: Rect,
 }
 
 /// The cells a row of the box has to write in.
@@ -96,9 +100,9 @@ pub fn regions(area: Rect, needed: usize) -> Regions {
         width: area.width,
         height,
     };
-    // The rules, the header and the status row: five rows that are there
-    // whatever is written.
-    let fixed = 5;
+    // The header and three rules: four rows that are there whatever is
+    // written.
+    let fixed = 4;
     let writing = u16::try_from(needed)
         .unwrap_or(MOST_WRITING)
         .clamp(1, MOST_WRITING)
@@ -109,7 +113,6 @@ pub fn regions(area: Rect, needed: usize) -> Regions {
         header: row(top, 1),
         transcript: row(top + 2, transcript),
         writing: row(top + 3 + transcript, writing),
-        status: row(area.bottom().saturating_sub(1), 1),
     }
 }
 
@@ -173,9 +176,9 @@ impl Widget for ChatView<'_> {
             .bg(self.theme.background);
         let dim = plain.fg(self.theme.gutter);
         fill(cells, area, plain);
-        // Four bands and three rules do not fit in less than that, and a
+        // Three bands and three rules do not fit in less than that, and a
         // region this small is a terminal nobody is reading in.
-        if area.height < 7 || area.width < 20 {
+        if area.height < 6 || area.width < 20 {
             return;
         }
 
@@ -202,7 +205,6 @@ impl Widget for ChatView<'_> {
 
         self.transcript(cells, regions.transcript, plain, dim);
         self.writing(cells, regions.writing, &rows, plain, dim);
-        self.status(cells, regions.status, plain);
     }
 }
 
@@ -343,14 +345,17 @@ impl ChatView<'_> {
         }
     }
 
-    /// The conversation's own status row: which way of working is on, and
-    /// how to change it.
-    fn status(&self, cells: &mut CellBuffer, area: Rect, plain: Style) {
-        // On the page's own background, not the status bar's band. obelus's
-        // own status bar is the row directly under this one, and two
-        // banded rows touching read as one bar two rows tall. What tells
-        // this row from the box above it is the rule between them, which is
-        // what a rule is for.
+    /// The status row, which while a conversation is showing is the
+    /// conversation's: which way of working the agent is in, and how to
+    /// change it.
+    ///
+    /// Drawn into obelus's own status region rather than into a row of the
+    /// conversation's, so that there is one status bar on the screen and it
+    /// is at the foot of it.
+    pub fn status(&self, cells: &mut CellBuffer, area: Rect) {
+        let plain = Style::new()
+            .bg(self.theme.status_background)
+            .fg(self.theme.status_foreground);
         fill(cells, area, plain);
         // The mode on the left, because it is a fact about the
         // conversation and the left is where obelus puts those.

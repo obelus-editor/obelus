@@ -161,6 +161,9 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // settings do: it is its own screen with its own typing, and the file
     // behind it is not what is being read.
     if let Some(view) = chat::ChatView::new(app) {
+        // The conversation's status row is obelus's own: one bar, at the
+        // foot of the screen.
+        view.status(cells, regions.status);
         view.render(regions.editor, cells);
         // A list opened over it is the agent's own question: it draws where
         // any compact list draws, with the conversation behind it.
@@ -179,7 +182,6 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
                 );
             }
         }
-        status::StatusView::new(app).render(regions.status, cells);
         return;
     }
     // The settings take the whole region: they are their own screen, with

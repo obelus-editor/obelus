@@ -359,10 +359,10 @@ fn shift_and_tab_walk_the_agents_modes() {
         Some("ask first")
     );
     let dump = support::render(&mut app, WIDTH, HEIGHT);
-    // The conversation's own status row, which is the last row of the
-    // region -- under it is obelus's own.
+    // The status row, which while a conversation is showing is the
+    // conversation's: the foot of the screen, and the only one.
     let screen = rows(&dump);
-    let status = screen[screen.len() - 2].to_string();
+    let status = screen[screen.len() - 1].to_string();
     assert!(
         status.contains("ask first"),
         "the mode is not on the status row:\n{dump}"

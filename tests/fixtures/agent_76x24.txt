@@ -19,11 +19,11 @@ screen 76x24  editor 76x23  status 76x1
 16|                                                                            
 17|                                                                            
 18|                                                                            
-19|────────────────────────────────────────────────────────────────────────────
-20| 󰅂                                                                          
-21|────────────────────────────────────────────────────────────────────────────
-22| ask first                                                         󰘶󰌒  mode 
-23|                                                                            
+19|                                                                            
+20|────────────────────────────────────────────────────────────────────────────
+21| 󰅂                                                                          
+22|────────────────────────────────────────────────────────────────────────────
+23| ask first                                                         󰘶󰌒  mode 
 -- style --
  0|abaaccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbba
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -44,15 +44,17 @@ screen 76x24  editor 76x23  status 76x1
 16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-19|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-20|abaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-21|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-22|acccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbba
-23|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+19|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+20|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+21|abaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+22|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+23|deeeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffd
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#52525b bg=#18181b
 c fg=#a1a1aa bg=#18181b
 d fg=#d4d4d8 bg=#27272a
+e fg=#a1a1aa bg=#27272a
+f fg=#52525b bg=#27272a
 -- cursor --
-4,20
+4,21
