@@ -210,9 +210,10 @@ pub struct App {
     /// Whether the conversation is what the editor region is showing.
     showing_chat: bool,
     /// The agent obelus is talking to, once something has needed it.
-    talker: Option<crate::acp::Client>,
-    /// The permission request waiting on the reader, by its JSON-RPC id.
-    permission: Option<serde_json::Value>,
+    talker: Option<crate::acp::Talk>,
+    /// The permission request waiting on the reader: the channel its
+    /// answer goes back through.
+    permission: Option<crate::acp::Answer<Option<String>>>,
     /// Whether the transcript has already said the agent died.
     ///
     /// The check runs once a frame, so without this the news would be in

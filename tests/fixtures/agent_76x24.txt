@@ -10,7 +10,7 @@ screen 76x24  editor 76x22  status 76x1
  7|                                                                            
  8| 󰖷  Read the file 󰄬                                                         
  9|                                                                            
-10| 󰚩   saying this is what obelus handed over                                 
+10| 󰚩   saying this is what obelus handed over and it refused to write         
 11|                                                                            
 12| 󰋽  asking to run the tests                                                 
 13|                                                                            

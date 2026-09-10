@@ -8,8 +8,6 @@
 //! What arrives from the agent is an [`Event::Acp`] like every other
 //! background source, so nothing here waits on anything.
 
-use serde_json::{Value, json};
-
 use super::*;
 use crate::{
     acp,
@@ -92,7 +90,7 @@ impl App {
             None | Some("") => None,
             Some(id) => Some(id),
         };
-        self.talker.as_ref().and_then(acp::Client::info).or(chosen)
+        self.talker.as_ref().and_then(acp::Talk::info).or(chosen)
     }
 
     /// Which way of working the agent is in, if it offers any.
@@ -104,13 +102,13 @@ impl App {
     /// The ways of working it offers.
     #[must_use]
     pub fn agent_modes(&self) -> &[acp::Mode] {
-        self.talker.as_ref().map_or(&[], acp::Client::modes)
+        self.talker.as_ref().map_or(&[], acp::Talk::modes)
     }
 
     /// The commands it says it takes.
     #[must_use]
     pub fn agent_orders(&self) -> &[acp::Order] {
-        self.talker.as_ref().map_or(&[], acp::Client::orders)
+        self.talker.as_ref().map_or(&[], acp::Talk::orders)
     }
 
     /// Moves to the agent's next way of working.
@@ -118,10 +116,7 @@ impl App {
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
-        if let Err(error) = talker.step_mode() {
-            let why = error.to_string();
-            self.chat.note(&format!("could not change the mode: {why}"));
-        }
+        talker.step_mode();
     }
 
     /// Sends what the reader typed.
@@ -134,15 +129,10 @@ impl App {
             // `start_agent` has already said why in the transcript.
             return;
         };
-        match talker.say(text) {
-            // Held until the session opens, which is the ordinary case for
-            // the first thing said: the reader typed while it was starting.
-            Ok(_) => {}
-            Err(error) => {
-                let why = error.to_string();
-                self.chat.note(&format!("could not send that: {why}"));
-            }
-        }
+        // Held until the session opens, which is the ordinary case for the
+        // first thing said: the reader typed while it was starting, and the
+        // handle sends it when there is somewhere to send it.
+        talker.say(text);
     }
 
     /// Asks the agent to stop what it is doing.
@@ -150,10 +140,7 @@ impl App {
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
-        if let Err(error) = talker.interrupt() {
-            let why = error.to_string();
-            self.chat.note(&format!("could not stop it: {why}"));
-        }
+        talker.interrupt();
     }
 
     /// Stops the agent, if one is running.
@@ -170,13 +157,8 @@ impl App {
     /// has exited is not otherwise noticed -- its reader thread stops, and
     /// every prompt after that goes unanswered with nothing to say so.
     pub(super) fn settle_chat(&mut self, editor_area: Rect) {
-        if let Some(talker) = self.talker.as_mut()
-            && !talker.check_alive()
-            && !self.said_it_died
-        {
-            self.said_it_died = true;
-            self.chat.note("the agent stopped");
-        }
+        // Nothing to check: the thread says when the conversation has
+        // ended, and `on_acp` puts that in the transcript once.
         if !self.showing_chat {
             return;
         }
@@ -188,33 +170,37 @@ impl App {
     }
 
     /// Takes one message from the agent.
-    pub(super) fn on_acp(&mut self, message: Value) {
+    pub(super) fn on_acp(&mut self, incoming: acp::Incoming) {
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
-        match talker.on_message(&message) {
-            acp::Incoming::Nothing | acp::Incoming::Ready => {}
-            acp::Incoming::Started => {
-                tracing::info!("the agent opened a session");
-            }
+        // What the protocol needs of it is dealt with in there -- the
+        // handshake, the session, which mode is on -- and what a reader
+        // needs to see comes back.
+        let Some(incoming) = talker.on(incoming) else {
+            return;
+        };
+        match incoming {
             acp::Incoming::Update(update) => match update {
                 acp::Update::Said(text) => self.chat.chunk(Speaker::Agent, &text),
                 acp::Update::Thought(text) => self.chat.chunk(Speaker::Thought, &text),
                 acp::Update::Tool { id, title, status } => self.chat.tool(&id, &title, &status),
-                // Kept by the client, which is where the view reads them:
+                // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
                 // said, and a transcript with them in it is a log.
                 acp::Update::Mode(_) | acp::Update::Orders(_) => {}
             },
             acp::Incoming::Ended(reason) => {
                 // Only the ends that are not the ordinary one: a turn that
-                // finished has its answer above it, and "end_turn" under
+                // finished has its answer above it, and "end turn" under
                 // every answer is noise.
                 match reason.as_str() {
-                    "end_turn" => {}
+                    "endturn" | "end_turn" => {}
                     "cancelled" => self.chat.note("stopped"),
                     "refusal" => self.chat.note("it declined to answer"),
-                    "max_tokens" => self.chat.note("it ran out of room to answer in"),
+                    "maxtokens" | "max_tokens" => {
+                        self.chat.note("it ran out of room to answer in");
+                    }
                     other => self.chat.note(other),
                 }
             }
@@ -222,13 +208,27 @@ impl App {
                 tracing::warn!(what, why, "the agent");
                 self.chat.note(&format!("{what}: {why}"));
             }
-            acp::Incoming::Permission(permission) => self.ask_permission(permission),
+            acp::Incoming::Permission {
+                title,
+                options,
+                answer,
+            } => self.ask_permission(&title, &options, answer),
             acp::Incoming::Read {
-                id,
                 path,
                 line,
                 limit,
-            } => self.read_for_agent(&id, &path, line, limit),
+                answer,
+            } => self.read_for_agent(&path, line, limit, answer),
+            acp::Incoming::Gone(why) => {
+                if let Some(why) = why {
+                    tracing::warn!(why, "the conversation ended");
+                    self.chat.note(&format!("the agent stopped: {why}"));
+                } else {
+                    self.chat.note("the agent stopped");
+                }
+            }
+            // Folded into the handle above.
+            acp::Incoming::Ready(_) | acp::Incoming::Started { .. } => {}
         }
     }
 
@@ -242,17 +242,18 @@ impl App {
         let Some(sender) = self.events.clone() else {
             return;
         };
-        match acp::Client::start(id, command, arguments, &self.working_directory, sender) {
-            Ok(talker) => {
-                tracing::info!(id, command = %command.display(), "starting an agent");
-                self.talker = Some(talker);
-                self.said_it_died = false;
-            }
-            Err(error) => {
-                let why = error.to_string();
-                self.chat.note(&format!("could not start {id}: {why}"));
-            }
-        }
+        tracing::info!(id, command = %command.display(), "starting an agent");
+        // Nothing to fail here: the process is started on the thread, and
+        // an agent that will not run says so as the conversation ending
+        // with a reason -- which is the same path as one that dies later.
+        self.talker = Some(acp::Talk::start(
+            id,
+            command,
+            arguments,
+            &self.working_directory,
+            sender,
+        ));
+        self.said_it_died = false;
     }
 
     /// Starts the active agent, or says why it cannot.
@@ -279,11 +280,15 @@ impl App {
     /// The compact picker, which is what every other choice in obelus is: a
     /// list of named things with one selected, filtered by typing. A dialog
     /// of its own would be a second way to choose something.
-    fn ask_permission(&mut self, permission: acp::Permission) {
+    fn ask_permission(
+        &mut self,
+        title: &str,
+        options: &[acp::Choice],
+        answer: acp::Answer<Option<String>>,
+    ) {
         self.chat
-            .note(&format!("asking to {}", permission.title.to_lowercase()));
-        let items = permission
-            .options
+            .note(&format!("asking to {}", title.to_lowercase()));
+        let items = options
             .iter()
             .map(|choice| PickerItem {
                 icon: icons::enabled().then(|| icons::for_permission(&choice.kind)),
@@ -300,23 +305,18 @@ impl App {
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.ask(&permission.title);
-        self.permission = Some(permission.id);
+        picker.ask(title);
+        self.permission = Some(answer);
         self.picker = Some(picker);
     }
 
     /// Answers the permission request the reader chose an option for.
     pub(super) fn allow(&mut self, option: &str) {
-        let Some(id) = self.permission.take() else {
+        let Some(answer) = self.permission.take() else {
             return;
         };
-        let Some(talker) = self.talker.as_mut() else {
-            return;
-        };
-        let outcome = json!({ "outcome": "selected", "optionId": option });
-        if let Err(error) = talker.answer(&id, json!({ "outcome": outcome })) {
-            let why = error.to_string();
-            self.chat.note(&format!("could not answer that: {why}"));
+        if answer.send(Some(option.to_string())).is_err() {
+            self.chat.note("it stopped waiting for an answer");
         }
     }
 
@@ -326,13 +326,10 @@ impl App {
     /// request is never answered waits for ever, and one that is told it
     /// was cancelled ends the turn and says so.
     pub(super) fn refuse_permission(&mut self) {
-        let Some(id) = self.permission.take() else {
+        let Some(answer) = self.permission.take() else {
             return;
         };
-        let Some(talker) = self.talker.as_mut() else {
-            return;
-        };
-        let _ = talker.answer(&id, json!({ "outcome": { "outcome": "cancelled" } }));
+        let _ = answer.send(None);
         self.chat.note("not answered");
     }
 
@@ -352,7 +349,13 @@ impl App {
     /// Refused outside the project, whichever way the text would have come:
     /// an agent asking for something outside the tree obelus was started on
     /// is asking for something the reader did not open it to look at.
-    fn read_for_agent(&mut self, id: &Value, path: &Path, line: Option<u32>, limit: Option<u32>) {
+    fn read_for_agent(
+        &mut self,
+        path: &Path,
+        line: Option<u32>,
+        limit: Option<u32>,
+        answer: acp::Answer<Option<String>>,
+    ) {
         let full = if path.is_absolute() {
             path.to_path_buf()
         } else {
@@ -373,18 +376,10 @@ impl App {
             None
         };
 
-        let Some(talker) = self.talker.as_mut() else {
-            return;
-        };
-        let Some(text) = text else {
-            let _ = talker.refuse(id, -32602, "obelus will not read that");
-            return;
-        };
         // A line and a limit, when it asked for them: an agent reading a
         // large file asks for a window of it, and answering with the whole
         // thing is a different answer.
-        let content = window(&text, line, limit);
-        let _ = talker.answer(id, json!({ "content": content }));
+        let _ = answer.send(text.map(|text| window(&text, line, limit)));
     }
 }
 

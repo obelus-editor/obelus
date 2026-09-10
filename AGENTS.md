@@ -129,7 +129,8 @@ src/
   lsp/            transport, client, actions, positions, outline
   git/            gix: head text, statuses, hunks, blame
   agent/          the ACP registry, installing an agent, its marks
-  acp/            the protocol itself: framing, one client, nine methods
+  acp/            the protocol, through its own crate, and the thread that
+                  joins it to the loop
   ui/             editor, status bar, picker, settings, chat, welcome,
                   images, shared cell writers
 tests/            integration tests plus tests/fixtures/*.txt golden grids
@@ -151,12 +152,42 @@ answer. Everything else gets the glyph: half-blocks are for photographs and
 obelus has none. So a test, a pipe and most terminals draw the glyph path,
 which is why the fixtures never contain pixels.
 
+**The agent protocol comes from its own crate.** `agent-client-protocol` is
+the reference implementation: every method has a type whose field names the
+compiler checks, which is the point -- obelus had the nine methods it needs
+written out by hand and checked once against the schema, and a protocol that
+renames an outcome would have gone on compiling and quietly stopped matching.
+It is executor-agnostic (its tokio is a dev-dependency), so `acp::link` runs
+the connection on one thread with `futures::executor::block_on` and joins it
+to the loop: what obelus wants becomes an `Ask` sent to that thread, and
+everything the agent says becomes an `Event`.
+
+The two directions are not symmetrical, which is the part worth knowing. What
+obelus asks is fire-and-forget -- the answer arrives as an event, because by
+then the reader may be looking at something else. What the *agent* asks --
+permission, the text of a file -- obelus cannot answer without the reader, so
+the handler sends the question to the loop with a `oneshot` to answer through
+and waits. Waiting is right there: the agent has stopped, and what it is
+waiting for is a keystroke. This is why `Event` is not `Clone`.
+
+One thing the crate does not promise: that a notification sent after a
+request leaves after it. A cancellation typed in the same instant as a prompt
+can reach the agent first, so an interruption tells the agent *and* ends the
+turn on obelus's side, and a late answer to a turn the reader stopped is
+dropped.
+
 The agent is a real process in the tests. `tests/fixtures/fake-agent.sh`
 speaks the protocol -- handshake, session, streamed answer, a file read back
 through obelus, a permission request -- and `tests/agent.rs` drives obelus at
 it by keys and reads the screen. It is `sh` on purpose: a fake agent written
 in python, node, or a second Rust binary is a test that stops running on
 somebody else's machine.
+
+That fake agent is also what holds obelus to its promises, because the crate
+cannot: it checks the handshake it was given and answers to the name "Wrong
+Client" if the client offered to write files, and it asks for a write during
+the turn and reports back whether it was refused. Both assertions are in
+`a_whole_turn_of_conversation`.
 
 **The agents page's buttons touch the real data directory.** `install` runs
 `npm` and `activate` writes a start record under `dirs::data_dir()`, neither

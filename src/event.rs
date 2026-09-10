@@ -31,7 +31,11 @@ use std::{
 use crossterm::event::{Event as TerminalEvent, KeyEvent};
 
 /// One thing the application has to react to.
-#[derive(Clone, Debug)]
+///
+/// Not `Clone`: an agent's question carries the channel its answer goes
+/// back through, and there is one answer. Nothing clones an event anyway --
+/// what the producers clone is the sender.
+#[derive(Debug)]
 pub enum Event {
     /// A key was pressed.
     Key(KeyEvent),
@@ -105,12 +109,13 @@ pub enum Event {
         /// Why it did not work, or `None` because it did.
         failure: Option<String>,
     },
-    /// A message from the agent obelus is talking to.
+    /// Something from the agent obelus is talking to.
     ///
-    /// Still as JSON, like the language server's: what a message means
-    /// depends on what was asked for, and that is not the transport's
-    /// business.
-    Acp(serde_json::Value),
+    /// Typed, unlike the language server's messages: the protocol's own
+    /// crate does the reading, so what arrives here is what it means. Some
+    /// of it carries a channel to answer through -- an agent asking
+    /// permission has stopped and is waiting for a keystroke.
+    Acp(crate::acp::Incoming),
     /// A message from a language server.
     Lsp {
         /// Which server it came from.

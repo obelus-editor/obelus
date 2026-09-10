@@ -134,6 +134,8 @@ image = { version = "0.25.10", default-features = false, features = ["png"] }
 # These are single-path drawings, and the text support alone is a font stack
 # -- fontdb, rustybuzz, ttf-parser -- for glyphs that never appear.
 resvg = { version = "0.48.1", default-features = false }
+agent-client-protocol = "2.1.0"
+futures = "0.3.34"
 
 [dev-dependencies]
 serde_json = "1"

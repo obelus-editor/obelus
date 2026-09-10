@@ -146,6 +146,12 @@ fn a_whole_turn_of_conversation() {
         text.contains("saying this is what obelus handed over"),
         "the file was not read back:\n{text}"
     );
+    // And the one it asked obelus to *write*, which obelus refuses: it said
+    // so in the handshake, and the agent reports back what it was told.
+    assert!(
+        text.contains("and it refused to write"),
+        "obelus wrote a file for an agent:\n{text}"
+    );
     // The question is a list, which is what every choice in obelus is.
     assert!(text.contains("Allow once"), "no options:\n{text}");
     assert!(text.contains("Reject"), "no options:\n{text}");
