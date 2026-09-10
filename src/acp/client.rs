@@ -33,6 +33,8 @@ enum Ask {
     NewSession,
     /// A turn of the conversation.
     Prompt,
+    /// A change of the way of working.
+    SetMode,
 }
 
 impl Ask {
@@ -42,6 +44,7 @@ impl Ask {
             Self::Initialize => "starting the agent",
             Self::NewSession => "opening a session",
             Self::Prompt => "the agent",
+            Self::SetMode => "changing the mode",
         }
     }
 }
@@ -87,6 +90,13 @@ pub enum Update {
     /// A piece of the agent's thinking, which agents send separately so it
     /// can be shown as what it is.
     Thought(String),
+    /// The way of working changed, to this one's id. Which the agent can do
+    /// on its own -- finishing a plan and starting to write code is a mode
+    /// change nobody pressed a key for.
+    Mode(String),
+    /// The commands the agent takes. Sent once the session is ready,
+    /// usually, and again whenever they change.
+    Orders(Vec<Order>),
     /// The agent is using a tool: what it calls the call, and where it has
     /// got to.
     Tool {
@@ -98,6 +108,31 @@ pub enum Update {
         /// `pending`, `in_progress`, `completed` or `failed`.
         status: String,
     },
+}
+
+/// One way of working the agent offers.
+///
+/// Agents call these modes: "ask", "plan", "code", whatever they have.
+/// What they mean is the agent's business; what obelus does is show which
+/// one is on and let the reader change it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Mode {
+    /// The agent's id for it, which is what a change names.
+    pub id: String,
+    /// What to call it on screen.
+    pub name: String,
+}
+
+/// One command the agent offers, of the kind typed with a slash.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Order {
+    /// Its name, without the slash.
+    pub name: String,
+    /// One line about what it does.
+    pub description: String,
+    /// What it says about whatever is typed after the name, if it takes
+    /// anything.
+    pub hint: Option<String>,
 }
 
 /// A question the agent is waiting on an answer to.
@@ -141,6 +176,19 @@ pub struct Client {
     info: Option<String>,
     /// The prompt in flight, if there is one.
     turn: Option<i64>,
+    /// The ways of working the agent offers, and which one is on.
+    ///
+    /// From the session it opened, and then from the agent's own updates: a
+    /// mode can change because the reader asked for it or because the agent
+    /// moved on to something else, and both arrive the same way.
+    modes: Vec<Mode>,
+    /// Which mode is on, by its id.
+    mode: Option<String>,
+    /// The commands the agent says it takes.
+    ///
+    /// Empty until it says. Most agents send this once, just after the
+    /// session opens; some never do, and then a slash is just a character.
+    orders: Vec<Order>,
     /// A prompt typed before there was a session to send it in.
     ///
     /// The reader can open the agent view and start typing while the process
@@ -206,6 +254,9 @@ impl Client {
             info: None,
             turn: None,
             held: None,
+            modes: Vec::new(),
+            mode: None,
+            orders: Vec::new(),
         };
         client.send_initialize()?;
         Ok(client)
@@ -233,6 +284,54 @@ impl Client {
     #[must_use]
     pub const fn is_thinking(&self) -> bool {
         self.turn.is_some()
+    }
+
+    /// The ways of working the agent offers.
+    #[must_use]
+    pub fn modes(&self) -> &[Mode] {
+        &self.modes
+    }
+
+    /// Which one is on.
+    #[must_use]
+    pub fn mode(&self) -> Option<&Mode> {
+        let id = self.mode.as_deref()?;
+        self.modes.iter().find(|mode| mode.id == id)
+    }
+
+    /// The commands the agent says it takes.
+    #[must_use]
+    pub fn orders(&self) -> &[Order] {
+        &self.orders
+    }
+
+    /// Changes the way of working, by walking to the next one.
+    ///
+    /// Walked rather than chosen from a list: there are two or three of
+    /// these and they are a cycle in the agent's own order, which is what a
+    /// key that steps through them means. The agent answers with nothing,
+    /// so what is shown changes here -- and its own update, if it sends
+    /// one, says the same thing again.
+    pub fn step_mode(&mut self) -> Result<()> {
+        let Some(session) = self.session.clone() else {
+            return Ok(());
+        };
+        if self.modes.len() < 2 {
+            return Ok(());
+        }
+        let at = self
+            .mode
+            .as_deref()
+            .and_then(|id| self.modes.iter().position(|mode| mode.id == id))
+            .unwrap_or(0);
+        let next = self.modes[(at + 1) % self.modes.len()].id.clone();
+        self.mode = Some(next.clone());
+        self.request(
+            Ask::SetMode,
+            "session/set_mode",
+            &json!({ "sessionId": session, "modeId": next }),
+        )
+        .map(|_| ())
     }
 
     /// Asks the operating system whether the process is still running, and
@@ -340,6 +439,10 @@ impl Client {
         match ask {
             Some(Ask::Initialize) => self.on_initialized(&result),
             Some(Ask::NewSession) => self.on_session(&result),
+            // Nothing comes back but an empty object, and what it confirms
+            // is already on screen: the mode changed when the reader asked
+            // for it, because an agent that refuses says so with an error.
+            Some(Ask::SetMode) => Incoming::Nothing,
             Some(Ask::Prompt) => {
                 self.turn = None;
                 Incoming::Ended(
@@ -412,6 +515,13 @@ impl Client {
             return Incoming::Failed("opening a session", "it named no session".to_string());
         };
         self.session = Some(session.to_string());
+        if let Some(state) = result.get("modes") {
+            self.modes = modes_in(state);
+            self.mode = state
+                .get("currentModeId")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+        }
         if let Some(held) = self.held.take()
             && let Err(error) = self.say(&held)
         {
@@ -442,7 +552,21 @@ impl Client {
 
         match (method, id) {
             // A notification, so no answer.
-            ("session/update", _) => update_in(&params).map_or(Incoming::Nothing, Incoming::Update),
+            ("session/update", _) => match update_in(&params) {
+                // Two of the kinds are about the agent rather than about
+                // the conversation, so they are kept here and the view
+                // reads them off the client like everything else it knows.
+                Some(Update::Mode(id)) => {
+                    self.mode = Some(id);
+                    Incoming::Nothing
+                }
+                Some(Update::Orders(orders)) => {
+                    self.orders = orders;
+                    Incoming::Nothing
+                }
+                Some(update) => Incoming::Update(update),
+                None => Incoming::Nothing,
+            },
             ("session/request_permission", Some(id)) => match permission_in(id, &params) {
                 Some(permission) => Incoming::Permission(permission),
                 None => Incoming::Nothing,
@@ -566,6 +690,10 @@ fn update_in(params: &Value) -> Option<Update> {
     match kind {
         "agent_message_chunk" => Some(Update::Said(text_in(update.get("content")?)?)),
         "agent_thought_chunk" => Some(Update::Thought(text_in(update.get("content")?)?)),
+        "current_mode_update" => Some(Update::Mode(
+            update.get("currentModeId")?.as_str()?.to_string(),
+        )),
+        "available_commands_update" => Some(Update::Orders(orders_in(update))),
         "tool_call" | "tool_call_update" => Some(Update::Tool {
             id: update
                 .get("toolCallId")
@@ -608,6 +736,59 @@ fn text_in(content: &Value) -> Option<String> {
         Some("resource") => Some("(a resource)".to_string()),
         _ => None,
     }
+}
+
+/// The modes in a session's mode state.
+fn modes_in(state: &Value) -> Vec<Mode> {
+    state
+        .get("availableModes")
+        .and_then(Value::as_array)
+        .map(|modes| {
+            modes
+                .iter()
+                .filter_map(|mode| {
+                    let id = mode.get("id")?.as_str()?.to_string();
+                    let name = mode
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or(&id)
+                        .to_string();
+                    Some(Mode { id, name })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The commands in an update that lists them.
+fn orders_in(update: &Value) -> Vec<Order> {
+    update
+        .get("availableCommands")
+        .and_then(Value::as_array)
+        .map(|orders| {
+            orders
+                .iter()
+                .filter_map(|order| {
+                    Some(Order {
+                        name: order.get("name")?.as_str()?.to_string(),
+                        description: order
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        // "All text that was typed after the command name
+                        // is provided as input", says the protocol, and the
+                        // hint is what the agent calls that text.
+                        hint: order
+                            .get("input")
+                            .and_then(|input| input.get("hint"))
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// A permission request, as the picker will show it.

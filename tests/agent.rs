@@ -67,6 +67,16 @@ fn pump(app: &mut App, events: &Receiver<Event>, what: &str, until: impl Fn(&App
     }
 }
 
+/// The rows of a dump's text block, one string per screen row.
+///
+/// The block starts with a newline, so `lines()` on its own is one out.
+fn rows(dump: &str) -> Vec<&str> {
+    support::text_block(dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .collect()
+}
+
 /// The transcript's text, as it is on screen.
 fn screen(app: &mut App) -> String {
     let dump = support::render(app, WIDTH, HEIGHT);
@@ -85,22 +95,29 @@ fn a_whole_turn_of_conversation() {
     assert_eq!(app.agent_name(), Some("Fake Agent 0.1"));
 
     support::type_text(&mut app, "what is this file");
-    // The row being typed is the status bar's, like every other row obelus
-    // asks a reader to type into.
+    // What is being written is in the box, near the foot of the region,
+    // with the caret after it.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
-    let status = support::text_block(&dump)
+    let box_row = support::text_block(&dump)
         .lines()
-        .next_back()
-        .expect("a status row")
+        .find(|row| row.contains("what is this file"))
+        .expect("the box")
         .to_string();
+    let row: u16 = box_row
+        .split('|')
+        .next()
+        .expect("a row number")
+        .trim()
+        .parse()
+        .expect("a row number");
     assert!(
-        status.contains("what is this file"),
-        "the typed row is not on the status bar:\n{dump}"
+        row > HEIGHT / 2,
+        "the box is not at the foot of the region:\n{dump}"
     );
     assert_eq!(
         support::cursor_line(&dump),
-        &format!("{},{}", 4 + "what is this file".len(), HEIGHT - 1),
-        "the caret is not after what was typed:\n{dump}"
+        &format!("{},{row}", 4 + "what is this file".len()),
+        "the caret is not after what was written:\n{dump}"
     );
 
     support::press(&mut app, KeyCode::Enter);
@@ -268,4 +285,159 @@ fn the_view_says_when_nobody_is_chosen() {
         "it did not say why it is empty:\n{text}"
     );
     assert_eq!(app.talking(), obelus::app::talking::Talking::Nobody);
+}
+
+/// The box holds more than one line, and enter sends the lot.
+///
+/// `shift+enter` is what a reader reaches for and it only arrives where the
+/// terminal implements the kitty keyboard protocol; `alt+enter` is the
+/// escape prefix, which is as old as terminals and always arrives. Both
+/// break the line.
+#[test]
+fn the_box_takes_a_paragraph() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+
+    support::type_text(&mut app, "first");
+    support::press_shift(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "second");
+    support::press_alt_key(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "third");
+
+    // All three lines are in the box -- asserted on the box itself rather
+    // than on the screen, because a line that was *sent* instead of broken
+    // is also somewhere on the screen: in the transcript.
+    assert_eq!(
+        app.chat().expect("the chat").writing().text(),
+        "first\nsecond\nthird",
+        "the box does not hold the paragraph"
+    );
+
+    // And three rows of it are drawn, so the transcript gave up the room.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let text = support::text_block(&dump);
+    for line in ["first", "second", "third"] {
+        assert!(text.contains(line), "{line} is not drawn:\n{dump}");
+    }
+
+    // The caret is on the last row of the box, after what was typed.
+    let (column, row) = support::cursor_line(&dump)
+        .split_once(',')
+        .expect("a caret");
+    let caret_row: usize = row.parse().expect("a row");
+    assert!(
+        rows(&dump)[caret_row].contains("third"),
+        "the caret is not on the row being typed:\n{dump}"
+    );
+    assert_eq!(column, (4 + "third".len()).to_string());
+
+    // And enter sends all three lines as one message.
+    support::press(&mut app, KeyCode::Enter);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("first") && text.contains("second") && text.contains("third"),
+        "the message did not reach the transcript:\n{text}"
+    );
+    assert!(
+        app.chat().expect("the chat").writing().text().is_empty(),
+        "the box still holds what was sent"
+    );
+}
+
+/// Shift and tab walk the ways of working the agent offers, and the
+/// conversation's own status row says which one is on.
+#[test]
+fn shift_and_tab_walk_the_agents_modes() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the modes", |app| {
+        !app.agent_modes().is_empty()
+    });
+    assert_eq!(
+        app.agent_mode().map(|mode| mode.name.as_str()),
+        Some("ask first")
+    );
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    // The conversation's own status row, which is the last row of the
+    // region -- under it is obelus's own.
+    let screen = rows(&dump);
+    let status = screen[screen.len() - 2].to_string();
+    assert!(
+        status.contains("ask first"),
+        "the mode is not on the status row:\n{dump}"
+    );
+
+    support::press_shift(&mut app, KeyCode::BackTab);
+    assert_eq!(
+        app.agent_mode().map(|mode| mode.name.as_str()),
+        Some("write code"),
+        "shift+tab did not walk the modes"
+    );
+    // And round, because there are two of them.
+    support::press_shift(&mut app, KeyCode::BackTab);
+    assert_eq!(
+        app.agent_mode().map(|mode| mode.name.as_str()),
+        Some("ask first")
+    );
+}
+
+/// A message whose first character is a slash is a command: the agent's own
+/// list of them is offered, tab fills one in, and what goes out is the line
+/// as typed. Anything else is a message and nothing is offered.
+#[test]
+fn a_slash_is_a_command_and_anything_else_is_a_message() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+
+    // An ordinary message offers nothing, even with a slash inside it.
+    support::type_text(&mut app, "what is /usr for");
+    let text = screen(&mut app);
+    assert!(
+        !text.contains("Summarise the conversation"),
+        "a slash inside a message was read as a command:\n{text}"
+    );
+    for _ in 0.."what is /usr for".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+
+    // A slash first offers what the agent takes, narrowed as it is typed.
+    support::type_text(&mut app, "/c");
+    let text = screen(&mut app);
+    assert!(text.contains("/compact"), "no commands offered:\n{text}");
+    assert!(text.contains("/cost"), "not all of them offered:\n{text}");
+    support::type_text(&mut app, "omp");
+    let text = screen(&mut app);
+    assert!(text.contains("/compact"), "the list went away:\n{text}");
+    assert!(!text.contains("/cost"), "the list did not narrow:\n{text}");
+
+    // Tab fills in the one that matches -- and does nothing while several
+    // do, because a key that picks one of three for the reader picks the
+    // wrong one.
+    for _ in 0.."omp".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::press(&mut app, KeyCode::Tab);
+    assert_eq!(
+        app.chat().expect("the chat").writing().text(),
+        "/c",
+        "tab chose between two commands"
+    );
+    support::type_text(&mut app, "omp");
+    support::press(&mut app, KeyCode::Tab);
+    assert_eq!(app.chat().expect("the chat").writing().text(), "/compact ");
+
+    // And what goes out is the line: the agent parses the name itself, and
+    // says which one it ran.
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the command to run", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("ran compact"),
+        "the command did not run:\n{text}"
+    );
 }

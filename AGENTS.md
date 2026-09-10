@@ -54,6 +54,14 @@ every display of it.
 only judge; `SUPER`/`HYPER`/`META` disqualify a key rather than being masked
 away. Masking meant `ctrl+super+q` quit.
 
+**One key needed the terminal's permission.** A traditional terminal sends the
+same byte for `enter` and `shift+enter`, so a program cannot tell them apart —
+and `shift+enter` is how a paragraph is written in the box a message to an
+agent goes in. `main` pushes the *narrowest* kitty-keyboard flag
+(`DISAMBIGUATE_ESCAPE_CODES`) for it, pops it on the way out and from a panic
+hook, and `alt+enter` breaks the line as well, because alt is the escape
+prefix and always arrives. Nothing else in obelus depends on the protocol.
+
 **`dispatch` has no wildcard arm** and warns on one, so a new `Command` fails
 to compile until it is handled. Same idea in `theme`: only fields with readers.
 
@@ -67,9 +75,11 @@ stdin needs its own thread, because a busy server stops draining the pipe. An
 answer that arrives after the world has moved on is the normal case, which is
 why requests record the version they asked against.
 
-**No configuration file exists.** Rebindable keys are guaranteed by the key
-table being data, not by reading a file. Two features now want a config file
-(Nerd Font icons, user theme colours); adding one is a decision, not a chore.
+**The configuration file holds preferences, not state.** `config.rs` is the
+whole of it — one table, `dirs` for where it lives, written the moment
+anything changes. Rebindable keys are still guaranteed by the key table being
+*data* rather than by the file. What is not a preference does not go in it:
+how to start an installed agent is written beside the install, not here.
 
 ## Shape
 
@@ -83,7 +93,8 @@ src/
   icons.rs        the Nerd Font switch and every glyph behind it
   config.rs       the settings, their file, and what each one is
   command/        the Command enum, its table, groups, and dispatch
-  component/      picker (one component, several instantiations) and settings
+  component/      picker (one component, several instantiations), settings,
+                  the conversation and the box a message is written in
   syntax/         language registry (14 languages), parsing, highlights, tags
   lsp/            transport, client, actions, positions, outline
   git/            gix: head text, statuses, hunks, blame

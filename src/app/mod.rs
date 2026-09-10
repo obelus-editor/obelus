@@ -48,7 +48,7 @@ use crate::{
     buffer::{Buffer, BufferId, Cursor, Mode, Motion, TextArea},
     command::{Command, Requires, dispatch},
     component::{
-        chat::ChatOutcome,
+        chat::{ChatOutcome, Room as ChatRoom},
         picker::{
             Colouring, Listing, Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files,
         },
@@ -837,11 +837,19 @@ impl App {
         // answering.
         if self.showing_chat {
             let thinking = self.talking() == talking::Talking::Thinking;
-            // The rows the transcript actually has, from the same function
-            // the view lays it out with: a page of movement is the page on
-            // screen.
-            let room = ui::chat::transcript(self.editor_area).height;
-            match self.chat.handle_key(&key, thinking, room) {
+            // The room the two halves have, from the same functions the
+            // view lays them out with: a page of scrolling is the page on
+            // screen, and the caret moves by the rows the box really has.
+            let width = ui::chat::writing_width(self.editor_area);
+            let needed = self.chat.writing().rows(width).len();
+            let room = ChatRoom {
+                transcript: ui::chat::regions(self.editor_area, needed)
+                    .transcript
+                    .height,
+                writing: width,
+            };
+            let orders = self.agent_orders().to_vec();
+            match self.chat.handle_key(&key, thinking, room, &orders) {
                 ChatOutcome::Consumed => return,
                 ChatOutcome::Cancelled => {
                     self.close_chat();
@@ -853,6 +861,10 @@ impl App {
                 }
                 ChatOutcome::Interrupt => {
                     self.interrupt_agent();
+                    return;
+                }
+                ChatOutcome::StepMode => {
+                    self.step_agent_mode();
                     return;
                 }
                 ChatOutcome::Ignored => {}

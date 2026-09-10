@@ -96,15 +96,12 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
         });
     }
 
-    // The conversation is typed into as well, on the same row: after the
-    // picker, because an agent's own question is a list opened over it and
-    // that list is what the reader is typing into.
+    // The conversation is written into, and its caret is in the box rather
+    // than on the status bar: a message is a paragraph, and a paragraph
+    // does not fit on one row. After the picker, because an agent's own
+    // question is a list opened over it.
     if let Some(chat) = app.chat() {
-        let column = status::chat_caret(chat);
-        return (column < regions.status.width).then(|| Position {
-            x: regions.status.x + column,
-            y: regions.status.y,
-        });
+        return chat::ChatView::caret(regions.editor, chat);
     }
 
     // The settings filter by typing too, so the caret goes where the typing

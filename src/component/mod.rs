@@ -5,6 +5,7 @@
 //! behaviour.
 
 pub mod chat;
+pub mod composer;
 pub mod picker;
 pub mod prompt;
 pub mod settings;

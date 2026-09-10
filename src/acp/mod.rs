@@ -27,7 +27,7 @@
 pub mod client;
 pub mod transport;
 
-pub use client::{Choice, Client, Incoming, Permission, Update};
+pub use client::{Choice, Client, Incoming, Mode, Order, Permission, Update};
 
 /// Which version of the protocol obelus speaks.
 ///

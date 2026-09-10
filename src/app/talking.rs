@@ -95,6 +95,35 @@ impl App {
         self.talker.as_ref().and_then(acp::Client::info).or(chosen)
     }
 
+    /// Which way of working the agent is in, if it offers any.
+    #[must_use]
+    pub fn agent_mode(&self) -> Option<&acp::Mode> {
+        self.talker.as_ref()?.mode()
+    }
+
+    /// The ways of working it offers.
+    #[must_use]
+    pub fn agent_modes(&self) -> &[acp::Mode] {
+        self.talker.as_ref().map_or(&[], acp::Client::modes)
+    }
+
+    /// The commands it says it takes.
+    #[must_use]
+    pub fn agent_orders(&self) -> &[acp::Order] {
+        self.talker.as_ref().map_or(&[], acp::Client::orders)
+    }
+
+    /// Moves to the agent's next way of working.
+    pub(super) fn step_agent_mode(&mut self) {
+        let Some(talker) = self.talker.as_mut() else {
+            return;
+        };
+        if let Err(error) = talker.step_mode() {
+            let why = error.to_string();
+            self.chat.note(&format!("could not change the mode: {why}"));
+        }
+    }
+
     /// Sends what the reader typed.
     pub(super) fn send_to_agent(&mut self, text: &str) {
         self.chat.asked(text);
@@ -151,7 +180,9 @@ impl App {
         if !self.showing_chat {
             return;
         }
-        let region = crate::ui::chat::transcript(editor_area);
+        let width = crate::ui::chat::writing_width(editor_area);
+        let needed = self.chat.writing().rows(width).len();
+        let region = crate::ui::chat::regions(editor_area, needed).transcript;
         let rows = self.chat.rows(region.width.saturating_sub(4)).len();
         self.chat.settle(rows, region.height);
     }
@@ -170,6 +201,10 @@ impl App {
                 acp::Update::Said(text) => self.chat.chunk(Speaker::Agent, &text),
                 acp::Update::Thought(text) => self.chat.chunk(Speaker::Thought, &text),
                 acp::Update::Tool { id, title, status } => self.chat.tool(&id, &title, &status),
+                // Kept by the client, which is where the view reads them:
+                // these are facts about the agent rather than things it
+                // said, and a transcript with them in it is a log.
+                acp::Update::Mode(_) | acp::Update::Orders(_) => {}
             },
             acp::Incoming::Ended(reason) => {
                 // Only the ends that are not the ordinary one: a turn that

@@ -13,6 +13,8 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::{acp::Order, component::composer::Composer};
+
 /// Who said something.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Speaker {
@@ -57,6 +59,19 @@ pub struct Row {
     pub state: Option<String>,
 }
 
+/// How much room the conversation's two halves have.
+///
+/// Both are needed by the keys: a page of scrolling is the transcript's
+/// height, and moving the caret up a row depends on the width the box wraps
+/// at. Passed in rather than kept, because only a frame knows them.
+#[derive(Clone, Copy, Debug)]
+pub struct Room {
+    /// The rows the transcript has.
+    pub transcript: u16,
+    /// The cells a row of the box has.
+    pub writing: u16,
+}
+
 /// What a key did to the conversation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ChatOutcome {
@@ -68,6 +83,8 @@ pub enum ChatOutcome {
     Send(String),
     /// Ask the agent to stop.
     Interrupt,
+    /// Move to the agent's next way of working.
+    StepMode,
     /// Close the view, keeping what is in it.
     Cancelled,
 }
@@ -77,8 +94,8 @@ pub enum ChatOutcome {
 pub struct Chat {
     /// What has been said, oldest first.
     said: Vec<Said>,
-    /// What is being typed.
-    input: String,
+    /// What is being written.
+    input: Composer,
     /// The first row of the transcript on screen.
     top: usize,
     /// Whether the view is following the end of the transcript.
@@ -95,7 +112,7 @@ impl Chat {
     pub fn new() -> Self {
         Self {
             said: Vec::new(),
-            input: String::new(),
+            input: Composer::new(),
             top: 0,
             following: true,
         }
@@ -107,10 +124,41 @@ impl Chat {
         self.said.is_empty()
     }
 
-    /// What is being typed.
+    /// What is being written, for the view to draw.
     #[must_use]
-    pub fn input(&self) -> &str {
+    pub const fn writing(&self) -> &Composer {
         &self.input
+    }
+
+    /// The name of the command being typed, if the line is one.
+    ///
+    /// A message is a command when its first character is a slash and
+    /// nothing else: that is the whole rule, and it is the reader's to
+    /// invoke rather than obelus's to guess at.
+    #[must_use]
+    pub fn typing_command(&self) -> Option<String> {
+        let text = self.input.text();
+        let rest = text.strip_prefix('/')?;
+        // Up to the first blank: after that, what is typed is the
+        // command's own argument and not its name.
+        let name = rest.split_whitespace().next().unwrap_or("");
+        (!rest.contains('\n')).then(|| name.to_string())
+    }
+
+    /// The commands that match what is being typed.
+    ///
+    /// By prefix rather than fuzzily. A slash is a thing a reader types
+    /// from memory and completes; a list that offered `/compact` for "cat"
+    /// would be answering a different question.
+    #[must_use]
+    pub fn matching<'a>(&self, orders: &'a [Order]) -> Vec<&'a Order> {
+        let Some(name) = self.typing_command() else {
+            return Vec::new();
+        };
+        orders
+            .iter()
+            .filter(|order| order.name.starts_with(&name))
+            .collect()
     }
 
     /// The first transcript row on screen.
@@ -221,46 +269,96 @@ impl Chat {
         }
     }
 
+    /// Scrolls the transcript, for the wheel.
+    ///
+    /// Which is not a key: it moves the view and leaves the caret in the
+    /// box where the reader put it.
+    pub fn scroll(&mut self, rows: isize) {
+        self.scroll_by(rows);
+    }
+
     /// Handles a key.
     ///
     /// `thinking` decides what escape means: while the agent is working it
     /// stops the agent, and otherwise it closes the view. One key, and the
     /// thing it does is always "stop what is happening" -- which is what
     /// escape means everywhere else in obelus.
-    pub fn handle_key(&mut self, key: &KeyEvent, thinking: bool, room: u16) -> ChatOutcome {
+    pub fn handle_key(
+        &mut self,
+        key: &KeyEvent,
+        thinking: bool,
+        room: Room,
+        orders: &[Order],
+    ) -> ChatOutcome {
         let Some(modifiers) = crate::keymap::modifiers_of(key) else {
             return ChatOutcome::Ignored;
         };
+        // The line break that every terminal can report. `shift+enter` is
+        // the one a reader reaches for and it needs the kitty keyboard
+        // protocol to arrive at all -- alt is the escape prefix, which is
+        // as old as terminals.
+        if key.code == KeyCode::Enter && modifiers == KeyModifiers::ALT {
+            self.input.newline();
+            return ChatOutcome::Consumed;
+        }
         if modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT {
             return ChatOutcome::Ignored;
         }
         let bare = modifiers == KeyModifiers::NONE;
-        let page = usize::from(room).max(1);
+        let page = usize::from(room.transcript).max(1);
 
         match key.code {
             KeyCode::Esc if bare && thinking => ChatOutcome::Interrupt,
             KeyCode::Esc if bare => ChatOutcome::Cancelled,
-            KeyCode::Enter if bare => {
-                let text = self.input.trim().to_string();
-                if text.is_empty() {
-                    return ChatOutcome::Consumed;
-                }
-                self.input.clear();
-                ChatOutcome::Send(text)
-            }
-            KeyCode::Backspace if bare => {
-                self.input.pop();
+            // Which is why the box takes shift: a message to an agent is a
+            // paragraph, and enter is how you send one.
+            KeyCode::Enter if !bare => {
+                self.input.newline();
                 ChatOutcome::Consumed
             }
-            // The transcript scrolls, because there is no cursor in it to
-            // move: what a reader wants of an answer they have read past is
-            // the answer, not a place in it.
+            KeyCode::Enter => {
+                if self.input.is_blank() {
+                    return ChatOutcome::Consumed;
+                }
+                ChatOutcome::Send(self.input.take())
+            }
+            // Shift and tab, which arrives as its own key and needs no
+            // protocol to be asked for.
+            KeyCode::BackTab => ChatOutcome::StepMode,
+            KeyCode::Tab if bare => {
+                self.complete(orders);
+                ChatOutcome::Consumed
+            }
+            KeyCode::Backspace if bare => {
+                self.input.backspace();
+                ChatOutcome::Consumed
+            }
+            KeyCode::Delete if bare => {
+                self.input.delete();
+                ChatOutcome::Consumed
+            }
+            KeyCode::Left if bare => {
+                self.input.left();
+                ChatOutcome::Consumed
+            }
+            KeyCode::Right if bare => {
+                self.input.right();
+                ChatOutcome::Consumed
+            }
+            // The box owns the arrows, because it is what has a caret in
+            // it. The transcript has no caret and scrolls by pages and by
+            // the wheel -- and by the arrows once the caret is at the edge
+            // of the box, which is where a reader presses them next.
             KeyCode::Up if bare => {
-                self.scroll_by(-1);
+                if !self.input.up(room.writing) {
+                    self.scroll_by(-1);
+                }
                 ChatOutcome::Consumed
             }
             KeyCode::Down if bare => {
-                self.scroll_by(1);
+                if !self.input.down(room.writing) {
+                    self.scroll_by(1);
+                }
                 ChatOutcome::Consumed
             }
             KeyCode::PageUp => {
@@ -271,21 +369,34 @@ impl Chat {
                 self.scroll_by(isize::try_from(page).unwrap_or(1));
                 ChatOutcome::Consumed
             }
-            KeyCode::Home => {
-                self.following = false;
-                self.top = 0;
+            KeyCode::Home if bare => {
+                self.input.home(room.writing);
                 ChatOutcome::Consumed
             }
-            KeyCode::End => {
-                self.following = true;
+            KeyCode::End if bare => {
+                self.input.end(room.writing);
                 ChatOutcome::Consumed
             }
             KeyCode::Char(character) => {
-                self.input.push(character);
+                self.input.insert(character);
                 ChatOutcome::Consumed
             }
             _ => ChatOutcome::Ignored,
         }
+    }
+
+    /// Fills in the command being typed, when one command matches.
+    ///
+    /// Nothing happens with several matches and nothing with none: the
+    /// matches are on screen either way, and a key that picks one of three
+    /// for the reader is a key that picks the wrong one.
+    fn complete(&mut self, orders: &[Order]) {
+        let matching = self.matching(orders);
+        let [order] = matching[..] else {
+            return;
+        };
+        let name = order.name.clone();
+        self.input.replace(&format!("/{name} "));
     }
 
     /// Adds something said, and keeps the view at the end.
@@ -322,6 +433,12 @@ mod tests {
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
+
+    /// A screen with ten rows of transcript and a box twenty cells wide.
+    const ROOM: Room = Room {
+        transcript: 10,
+        writing: 20,
+    };
 
     /// Chunks arrive a few words at a time, and what a reader should see is
     /// one answer rather than one paragraph per packet.
@@ -406,7 +523,7 @@ mod tests {
 
         // Up, and it stays where it is put -- including when something new
         // arrives, which is the whole point.
-        chat.handle_key(&key(KeyCode::Up), false, 10);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
         chat.settle(rows, 10);
         assert_eq!(chat.top(), 28);
         chat.note("something new");
@@ -416,7 +533,7 @@ mod tests {
 
         // Back down to the end, and it follows again.
         for _ in 0..5 {
-            chat.handle_key(&key(KeyCode::Down), false, 10);
+            chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
         }
         chat.settle(rows, 10);
         assert_eq!(chat.top(), rows - 10);
@@ -432,11 +549,11 @@ mod tests {
     fn escape_stops_the_agent_first_and_closes_the_view_second() {
         let mut chat = Chat::new();
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), true, 10),
+            chat.handle_key(&key(KeyCode::Esc), true, ROOM, &[]),
             ChatOutcome::Interrupt
         );
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), false, 10),
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
             ChatOutcome::Cancelled
         );
     }
@@ -446,21 +563,21 @@ mod tests {
     fn what_is_typed_is_sent_once() {
         let mut chat = Chat::new();
         for character in "hello".chars() {
-            chat.handle_key(&key(KeyCode::Char(character)), false, 10);
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
         }
-        chat.handle_key(&key(KeyCode::Backspace), false, 10);
-        assert_eq!(chat.input(), "hell");
+        chat.handle_key(&key(KeyCode::Backspace), false, ROOM, &[]);
+        assert_eq!(chat.writing().text(), "hell");
 
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Enter), false, 10),
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
             ChatOutcome::Send("hell".to_string())
         );
         // Sent, so the row is empty: a prompt still sitting there after
         // being sent is a prompt that gets sent twice.
-        assert_eq!(chat.input(), "");
+        assert_eq!(chat.writing().text(), "");
         // And an empty row sends nothing.
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Enter), false, 10),
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
             ChatOutcome::Consumed
         );
     }
@@ -471,7 +588,10 @@ mod tests {
     fn a_chord_falls_through_to_the_key_table() {
         let mut chat = Chat::new();
         let quit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        assert_eq!(chat.handle_key(&quit, false, 10), ChatOutcome::Ignored);
-        assert_eq!(chat.input(), "", "it typed the chord into the row");
+        assert_eq!(
+            chat.handle_key(&quit, false, ROOM, &[]),
+            ChatOutcome::Ignored
+        );
+        assert_eq!(chat.writing().text(), "", "it typed the chord into the row");
     }
 }

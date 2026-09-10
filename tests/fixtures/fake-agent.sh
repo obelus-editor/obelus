@@ -8,7 +8,9 @@
 # It plays one conversation:
 #
 #   initialize            -> what it is, and protocol version 1
-#   session/new           -> a session
+#   session/new           -> a session, two modes, and two slash commands
+#   session/set_mode      -> taken
+#   session/prompt "/..." -> says which command it ran, and ends the turn
 #   session/prompt        -> it thinks, says something, reads a file through
 #                            obelus, uses a tool, and asks permission; the
 #                            turn ends once the answer to that arrives
@@ -31,7 +33,21 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentInfo":{"name":"Fake Agent","version":"0.1"}}}\n' "$(id_of "$line")"
             ;;
         *'"method":"session/new"'*)
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1"}}\n' "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1","modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]}}}\n' "$(id_of "$line")"
+            # What it takes with a slash, which agents send once the
+            # session is ready.
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Summarise the conversation"},{"name":"cost","description":"What this has cost","input":{"hint":"currency"}}]}}}\n'
+            ;;
+        *'"method":"session/set_mode"'*)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$(id_of "$line")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/'*)
+            # A command: the text starts with a slash, and everything after
+            # the name is the command's own input.
+            turn=$(id_of "$line")
+            asked=$(printf '%s' "$line" | sed -n 's/.*"text":"\/\([^" ]*\).*/\1/p')
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ran %s"}}}}\n' "$asked"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
             ;;
         *'"method":"session/prompt"'*'slowly'*)
             # Asked to take its time: it says nothing and answers nothing,

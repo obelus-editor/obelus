@@ -1,14 +1,16 @@
 //! The conversation with an agent.
 //!
-//! A header saying who is being talked to and what they are doing, and the
-//! transcript under it. Not the editor's own view and not a buffer: there
-//! are no line numbers, no cursor in the text and no file -- what is here is
-//! a conversation.
+//! Four bands: who is being talked to, the transcript, the box a message is
+//! written in, and a status row of the conversation's own. Rules between
+//! them, because a screen holding four different things has to say where
+//! each one stops.
 //!
-//! What is being typed is not here either. It goes on the status bar, where
-//! every other line obelus asks a reader to type goes: a picker's filter, a
-//! question's answer, the settings' filter. One row on the screen is the row
-//! you type into, whatever is above it.
+//! Not the editor's own view and not a buffer: there are no line numbers,
+//! no file, and the only caret is in the box.
+//!
+//! The box grows with what is written, up to a few rows, and the transcript
+//! gives up the room -- a reader writing a paragraph is looking at the
+//! paragraph, and one reading an answer has not started typing.
 //!
 //! The transcript reads from the bottom, like every other transcript: new
 //! rows arrive at the end and the view follows them unless the reader has
@@ -52,19 +54,62 @@ fn mark(speaker: Speaker) -> &'static str {
     }
 }
 
-/// The rows the transcript itself gets.
+/// The most rows the box takes, however much is written in it.
 ///
-/// One function, shared by the view, the scrolling and the key handler, so
-/// that a page of movement is the page that is actually on screen.
+/// Six. A message longer than that scrolls inside the box, because the
+/// transcript is what the reader came for and a box that ate the screen
+/// would be a text editor with an agent attached.
+const MOST_WRITING: u16 = 6;
+
+/// The bands the conversation is drawn in.
+///
+/// One function, shared by the view, the scrolling and the keys, so that a
+/// page of movement is the page on screen and the caret is in the box the
+/// reader can see.
+#[derive(Clone, Copy, Debug)]
+pub struct Regions {
+    /// Who is being talked to, and what they are doing.
+    pub header: Rect,
+    /// What has been said.
+    pub transcript: Rect,
+    /// What is being written.
+    pub writing: Rect,
+    /// The conversation's own status row.
+    pub status: Rect,
+}
+
+/// The cells a row of the box has to write in.
+///
+/// Known from the region alone, which is what lets the number of rows the
+/// box needs be worked out before the bands are laid out.
 #[must_use]
-pub fn transcript(area: Rect) -> Rect {
-    Rect {
+pub fn writing_width(area: Rect) -> u16 {
+    area.width.saturating_sub(MARGIN + INDENT + 1).max(1)
+}
+
+/// Where the four bands go, given how many rows the box needs.
+#[must_use]
+pub fn regions(area: Rect, needed: usize) -> Regions {
+    let row = |y: u16, height: u16| Rect {
         x: area.x,
-        y: area.y + 2,
+        y,
         width: area.width,
-        // The header and the rule under it. What is being typed is on the
-        // status bar, which is not this region.
-        height: area.height.saturating_sub(2),
+        height,
+    };
+    // The rules, the header and the status row: five rows that are there
+    // whatever is written.
+    let fixed = 5;
+    let writing = u16::try_from(needed)
+        .unwrap_or(MOST_WRITING)
+        .clamp(1, MOST_WRITING)
+        .min(area.height.saturating_sub(fixed).max(1));
+    let transcript = area.height.saturating_sub(fixed + writing);
+    let top = area.y;
+    Regions {
+        header: row(top, 1),
+        transcript: row(top + 2, transcript),
+        writing: row(top + 3 + transcript, writing),
+        status: row(area.bottom().saturating_sub(1), 1),
     }
 }
 
@@ -76,6 +121,13 @@ pub struct ChatView<'a> {
     state: Talking,
     /// What to call it.
     name: Option<&'a str>,
+    /// Which way of working is on, and how many there are to walk.
+    mode: Option<&'a str>,
+    /// How many ways of working there are, which is what says whether
+    /// there is anything to switch.
+    modes: usize,
+    /// The commands the agent takes, for completing one.
+    orders: &'a [crate::acp::Order],
 }
 
 impl<'a> ChatView<'a> {
@@ -88,6 +140,28 @@ impl<'a> ChatView<'a> {
             theme: app.theme(),
             state: app.talking(),
             name: app.agent_name(),
+            mode: app.agent_mode().map(|mode| mode.name.as_str()),
+            modes: app.agent_modes().len(),
+            orders: app.agent_orders(),
+        })
+    }
+
+    /// Where the terminal should put its caret: in the box, where the
+    /// writing is.
+    #[must_use]
+    pub fn caret(area: Rect, chat: &Chat) -> Option<ratatui::layout::Position> {
+        let width = writing_width(area);
+        let rows = chat.writing().rows(width);
+        let regions = regions(area, rows.len());
+        let (row, cell) = chat.writing().caret(width);
+        // A box scrolled to keep the caret in it: what is drawn starts at
+        // the same row the caret arithmetic starts at.
+        let first = row.saturating_sub(usize::from(regions.writing.height).saturating_sub(1));
+        let y = regions.writing.y + u16::try_from(row - first).unwrap_or(0);
+        (y < regions.writing.bottom()).then(|| ratatui::layout::Position {
+            x: (regions.writing.x + MARGIN + INDENT + cell.get())
+                .min(regions.writing.right().saturating_sub(1)),
+            y,
         })
     }
 }
@@ -99,44 +173,64 @@ impl Widget for ChatView<'_> {
             .bg(self.theme.background);
         let dim = plain.fg(self.theme.gutter);
         fill(cells, area, plain);
-        if area.height < 4 || area.width < 12 {
+        // Four bands and three rules do not fit in less than that, and a
+        // region this small is a terminal nobody is reading in.
+        if area.height < 7 || area.width < 20 {
             return;
         }
 
-        self.header(cells, area, plain, dim);
-        rule(
-            cells,
-            Rect {
-                y: area.y + 1,
-                height: 1,
-                ..area
-            },
-            self.theme,
-        );
+        let width = writing_width(area);
+        let rows = self.chat.writing().rows(width);
+        let regions = regions(area, rows.len());
 
-        let region = transcript(area);
-        let words = region.x + MARGIN + INDENT;
+        self.header(cells, regions.header, plain, dim);
+        for y in [
+            regions.header.bottom(),
+            regions.writing.y - 1,
+            regions.writing.bottom(),
+        ] {
+            rule(
+                cells,
+                Rect {
+                    y,
+                    height: 1,
+                    ..area
+                },
+                self.theme,
+            );
+        }
+
+        self.transcript(cells, regions.transcript, plain, dim);
+        self.writing(cells, regions.writing, &rows, plain, dim);
+        self.status(cells, regions.status, plain);
+    }
+}
+
+impl ChatView<'_> {
+    /// What has been said, and the commands being completed over it.
+    fn transcript(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
+        let words = area.x + MARGIN + INDENT;
         let rows = self
             .chat
-            .rows(region.width.saturating_sub(MARGIN + INDENT + 1));
+            .rows(area.width.saturating_sub(MARGIN + INDENT + 1));
         if rows.is_empty() {
-            write(cells, region.x + INDENT, region.y, self.nothing_said(), dim);
+            write(cells, words, area.y, self.nothing_said(), dim);
         }
         let first = self.chat.top().min(rows.len());
         for (offset, row) in rows.iter().skip(first).enumerate() {
             let Ok(offset) = u16::try_from(offset) else {
                 break;
             };
-            if offset >= region.height {
+            if offset >= area.height {
                 break;
             }
-            let y = region.y + offset;
+            let y = area.y + offset;
             let (glyph, style) = self.voice(row.speaker, plain, dim);
             if row.first {
                 if icons::enabled() {
-                    put(cells, region.x + MARGIN, y, glyph, style);
+                    put(cells, area.x + MARGIN, y, glyph, style);
                 } else {
-                    write(cells, region.x + MARGIN, y, mark(row.speaker), style);
+                    write(cells, area.x + MARGIN, y, mark(row.speaker), style);
                 }
             }
             let ended = write(cells, words, y, &row.text, style);
@@ -147,10 +241,145 @@ impl Widget for ChatView<'_> {
                 self.state_of(cells, ended + 1, y, state, dim);
             }
         }
+        self.completions(cells, area, plain, dim);
     }
-}
 
-impl ChatView<'_> {
+    /// The commands that match what is being typed, over the foot of the
+    /// transcript.
+    ///
+    /// Drawn there rather than in a list of its own: it is a hint about
+    /// what is in the box, it belongs next to the box, and the rows it
+    /// covers are the oldest thing on screen. A reader who wanted those
+    /// rows is not halfway through typing a command.
+    fn completions(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
+        let matching = self.chat.matching(self.orders);
+        let typing = self.chat.typing_command();
+        if typing.is_none() {
+            return;
+        }
+        if matching.is_empty() {
+            // The agent said which commands it takes and this is not one of
+            // them. Said rather than refused: the reader may know something
+            // the list does not, and enter still sends it.
+            let reason = match self.orders.is_empty() {
+                true => "this agent has not said which commands it takes",
+                false => "no command by that name",
+            };
+            let y = area.bottom().saturating_sub(1);
+            fill(
+                cells,
+                Rect {
+                    y,
+                    height: 1,
+                    ..area
+                },
+                plain,
+            );
+            write(cells, area.x + MARGIN + INDENT, y, reason, dim);
+            return;
+        }
+        let shown = matching.len().min(usize::from(area.height));
+        let top = area
+            .bottom()
+            .saturating_sub(u16::try_from(shown).unwrap_or(1));
+        for (offset, order) in matching.iter().take(shown).enumerate() {
+            let Ok(offset) = u16::try_from(offset) else {
+                break;
+            };
+            let y = top + offset;
+            fill(
+                cells,
+                Rect {
+                    y,
+                    height: 1,
+                    ..area
+                },
+                plain,
+            );
+            let name = format!("/{}", order.name);
+            // The one that tab would fill in is the only one there is: with
+            // several, tab does nothing and the reader keeps typing.
+            let style = match matching.len() {
+                1 => plain.fg(self.theme.gutter_current),
+                _ => plain,
+            };
+            let ended = write(cells, area.x + MARGIN + INDENT, y, &name, style);
+            let about = match &order.hint {
+                Some(hint) => format!("{hint}  \u{2014}  {}", order.description),
+                None => order.description.clone(),
+            };
+            if !about.is_empty() {
+                write(cells, ended + 2, y, &about, dim);
+            }
+        }
+    }
+
+    /// The box, with the caret's own row scrolled into it.
+    fn writing(
+        &self,
+        cells: &mut CellBuffer,
+        area: Rect,
+        rows: &[String],
+        plain: Style,
+        dim: Style,
+    ) {
+        let height = usize::from(area.height);
+        let (caret, _) = self.chat.writing().caret(writing_width(area));
+        // The last rows, or the ones the caret is on: a box that is being
+        // typed into shows where the typing is.
+        let first = caret.saturating_sub(height.saturating_sub(1));
+        for (offset, row) in rows.iter().skip(first).take(height).enumerate() {
+            let Ok(offset) = u16::try_from(offset) else {
+                break;
+            };
+            let y = area.y + offset;
+            if offset == 0 && first == 0 {
+                let _ = match icons::enabled() {
+                    true => put(cells, area.x + MARGIN, y, icons::ui::SAY, dim),
+                    false => write(cells, area.x + MARGIN, y, ">", dim),
+                };
+            }
+            write(cells, area.x + MARGIN + INDENT, y, row, plain);
+        }
+    }
+
+    /// The conversation's own status row: which way of working is on, and
+    /// how to change it.
+    fn status(&self, cells: &mut CellBuffer, area: Rect, plain: Style) {
+        let band = plain
+            .bg(self.theme.status_background)
+            .fg(self.theme.status_foreground);
+        fill(cells, area, band);
+        // The mode on the left, because it is a fact about the
+        // conversation and the left is where obelus puts those.
+        let mode = self.mode.unwrap_or(match self.state {
+            Talking::Ready | Talking::Thinking => "no modes",
+            _ => "",
+        });
+        write(cells, area.x + 1, area.y, mode, band);
+
+        // And how to change it, which is only worth saying when there is
+        // more than one to change to.
+        if self.modes < 2 {
+            return;
+        }
+        let hint = match icons::enabled() {
+            true => format!("{}{}  mode", icons::key::SHIFT, icons::key::TAB),
+            false => "shift+tab  mode".to_string(),
+        };
+        if let Ok(offset) =
+            u16::try_from(usize::from(area.width).saturating_sub(text_width(&hint) + 1))
+        {
+            write(
+                cells,
+                area.x + offset,
+                area.y,
+                &hint,
+                band.fg(self.theme.gutter),
+            );
+        }
+    }
+
     /// Who is being talked to, and what they are doing.
     fn header(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
         let mut column = area.x + MARGIN;

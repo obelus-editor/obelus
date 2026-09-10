@@ -42,9 +42,6 @@ pub struct StatusView<'a> {
     settings: Option<&'a crate::component::settings::Settings>,
     /// The agents, for counting how many the filter leaves.
     agents: Vec<crate::app::agents::Listed>,
-    /// And when the conversation with an agent is showing, the row is what
-    /// is being said to it.
-    chat: Option<&'a crate::component::chat::Chat>,
     /// And when a question is being asked, the row is the question.
     prompt: Option<&'a crate::component::prompt::Prompt>,
     theme: &'a Theme,
@@ -62,7 +59,6 @@ impl<'a> StatusView<'a> {
             server: app.server_state(),
             picker: app.picker(),
             settings: app.settings(),
-            chat: app.chat(),
             agents: app.listed_agents(),
             prompt: app.prompt(),
             theme: app.theme(),
@@ -117,12 +113,6 @@ impl Widget for StatusView<'_> {
             write(cells, area.x + 1, area.y, &prompt.line(), style);
         } else if let Some(picker) = self.picker {
             self.render_prompt(picker, area, cells, style);
-        } else if let Some(chat) = self.chat {
-            // The same shape as a picker's prompt, because it is the same
-            // thing: the row you type into. What is typed here is a whole
-            // sentence rather than a filter, so nothing shares the row --
-            // no count, no file name.
-            write(cells, area.x + 1, area.y, &chat_line(chat), style);
         } else if let Some(buffer) = self.buffer {
             self.render_file(buffer, area, cells, style);
         }
@@ -171,25 +161,6 @@ fn prompt_text(picker: &Picker) -> String {
     } else {
         format!("{asked}> {}", picker.query())
     }
-}
-
-/// What is being said to the agent, as the row shows it.
-fn chat_line(chat: &crate::component::chat::Chat) -> String {
-    if icons::enabled() {
-        format!("{}  {}", icons::ui::SAY, chat.input())
-    } else {
-        format!("> {}", chat.input())
-    }
-}
-
-/// Which column the caret belongs in while talking to an agent.
-///
-/// Shared with the renderer, like every other caret, so the text and the
-/// caret cannot disagree about where what has been typed ends.
-#[must_use]
-pub fn chat_caret(chat: &crate::component::chat::Chat) -> u16 {
-    let caret = 1usize.saturating_add(text_width(&chat_line(chat)));
-    u16::try_from(caret).unwrap_or(u16::MAX)
 }
 
 /// Which column the caret belongs in after a filter's text.

@@ -132,6 +132,12 @@ impl App {
             picker.move_selection_by(rows.signum());
             return;
         }
+        // The conversation's transcript, which is the only thing under a
+        // list here that scrolls without a cursor in it.
+        if self.showing_chat {
+            self.chat.scroll(rows);
+            return;
+        }
         if let Some(rows_in_view) = self.markdown().map(<[_]>::len)
             && let Some(buffer) = self.current_buffer_mut()
         {
