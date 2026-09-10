@@ -8,6 +8,8 @@
 //! What arrives from the agent is an [`Event::Acp`] like every other
 //! background source, so nothing here waits on anything.
 
+use crossterm::event::{KeyCode, KeyModifiers};
+
 use super::*;
 use crate::{
     acp,
@@ -149,6 +151,121 @@ impl App {
             talker.shutdown();
         }
         self.permission = None;
+    }
+
+    /// The agent's own commands, while one is being typed.
+    ///
+    /// A list of them is the ordinary compact list -- the same rows, the
+    /// same chosen row, the same marking of what matched -- rather than
+    /// something drawn for this one screen. What it does not have is the
+    /// keys: the box below it owns those, because that is where the reader
+    /// is typing, and this list follows what they type.
+    #[must_use]
+    pub fn slash(&self) -> Option<&Picker> {
+        self.slash.as_ref()
+    }
+
+    /// Builds or refreshes that list, once a frame.
+    ///
+    /// It exists exactly while a command's *name* is being typed: a slash
+    /// opens it, a blank after the name settles it and closes it, and
+    /// rubbing the slash out closes it too.
+    pub(super) fn refresh_slash(&mut self) {
+        let name = self
+            .chat()
+            .filter(|_| !self.agent_orders().is_empty())
+            .and_then(Chat::typing_command);
+        let Some(name) = name else {
+            self.slash = None;
+            return;
+        };
+        if let Some(slash) = self.slash.as_mut() {
+            if slash.query() != name {
+                slash.set_query(&name);
+            }
+            // A list of nothing is not a list. It also has to stop being
+            // one: a name that matches no command is an ordinary message
+            // as far as the box is concerned, and a list that stayed would
+            // swallow the enter that sends it.
+            if slash.match_count() == 0 {
+                self.slash = None;
+            }
+            return;
+        }
+        let items = self
+            .agent_orders()
+            .iter()
+            .map(|order| PickerItem {
+                // No glyph: a column of the same one down a list says
+                // nothing, and the slash in front of the name is what says
+                // what these rows are.
+                icon: None,
+                label: format!("/{}", order.name),
+                detail: Some(order.description.clone()),
+                trailing: order.hint.clone(),
+                value: PickerValue::Nothing,
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                kind: None,
+                tab: None,
+            })
+            .collect();
+        let mut slash = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        slash.set_query(&name);
+        if slash.match_count() > 0 {
+            self.slash = Some(slash);
+        }
+    }
+
+    /// Whatever a key means to that list, if it means anything.
+    ///
+    /// Only the keys that move about a list and the ones that choose from
+    /// it. Everything else -- every character, every line break -- belongs
+    /// to the box, which is what makes the list a list of what is being
+    /// typed rather than a mode the reader is in.
+    pub(super) fn slash_key(&mut self, key: &KeyEvent) -> bool {
+        let Some(slash) = self.slash.as_mut() else {
+            return false;
+        };
+        let Some(modifiers) = keymap::modifiers_of(key) else {
+            return false;
+        };
+        if modifiers != KeyModifiers::NONE {
+            return false;
+        }
+        match key.code {
+            KeyCode::Up => {
+                slash.move_selection_by(-1);
+                true
+            }
+            KeyCode::Down => {
+                slash.move_selection_by(1);
+                true
+            }
+            // Enter chooses from the list, like enter chooses in every other
+            // list. What sends the message is enter *after* the name is
+            // settled, by which time there is no list.
+            KeyCode::Tab | KeyCode::Enter => {
+                let chosen = slash.selected_item().map(|item| item.label.clone());
+                if let Some(name) = chosen {
+                    // The name and a blank after it: the blank is what
+                    // settles the name, so the list is done and whatever
+                    // the command takes is typed next.
+                    self.chat.put(&format!("{name} "));
+                    self.slash = None;
+                }
+                true
+            }
+            // The list, not the conversation: escape gives up on the
+            // nearest thing first, and what the reader typed stays.
+            KeyCode::Esc => {
+                self.slash = None;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Follows the transcript, and notices an agent that has died.

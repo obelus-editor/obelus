@@ -419,22 +419,81 @@ fn a_slash_is_a_command_and_anything_else_is_a_message() {
     assert!(text.contains("/compact"), "the list went away:\n{text}");
     assert!(!text.contains("/cost"), "the list did not narrow:\n{text}");
 
-    // Tab fills in the one that matches -- and does nothing while several
-    // do, because a key that picks one of three for the reader picks the
-    // wrong one.
+    // The list is the ordinary compact one, so what it shows is what
+    // every list shows: the row, what it is, and what it takes.
+    assert!(
+        text.contains("Summarise the conversation"),
+        "the rows do not say what the commands do:\n{text}"
+    );
+
+    // And it is chosen from the way every list is chosen from: the arrows
+    // move, tab and enter take the row that is on.
     for _ in 0.."omp".len() {
         support::press(&mut app, KeyCode::Backspace);
     }
+    // A frame, because the list follows what is being typed and it is a
+    // frame that tells it what that is now.
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    let first = app
+        .slash()
+        .and_then(|slash| slash.selected_item())
+        .map(|item| item.label.clone())
+        .expect("a row is chosen");
+    support::press(&mut app, KeyCode::Down);
+    let second = app
+        .slash()
+        .and_then(|slash| slash.selected_item())
+        .map(|item| item.label.clone())
+        .expect("a row is chosen");
+    assert_ne!(first, second, "the arrows did not move the selection");
     support::press(&mut app, KeyCode::Tab);
     assert_eq!(
         app.chat().expect("the chat").writing().text(),
-        "/c",
-        "tab chose between two commands"
+        format!("{second} "),
+        "tab did not take the row that was on"
     );
-    support::type_text(&mut app, "omp");
-    support::press(&mut app, KeyCode::Tab);
-    assert_eq!(app.chat().expect("the chat").writing().text(), "/compact ");
+    // The blank after the name settles it, so the list has nothing left to
+    // offer and is gone.
+    assert!(
+        app.slash().is_none(),
+        "the list stayed after the name was settled"
+    );
 
+    // Rubbing the slash out closes it too: without one, what is being
+    // written is a message.
+    while !app.chat().expect("the chat").writing().text().is_empty() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "/co");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(app.slash().is_some(), "no list while a name is typed");
+    for _ in 0.."/co".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(app.slash().is_none(), "the list outlived the slash");
+
+    // A name that matches no command is not a list either -- and enter has
+    // to reach the box: a list of nothing that took the key would leave the
+    // reader unable to send what they had typed.
+    support::type_text(&mut app, "/c");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(app.slash().is_some(), "no list while a name is typed");
+    support::type_text(&mut app, "zzz");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        app.slash().is_none(),
+        "a list of nothing is still a list:\n{}",
+        screen(&mut app)
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the message to go", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(text.contains("ran czzz"), "enter did not send it:\n{text}");
+
+    support::type_text(&mut app, "/compact ");
     // And what goes out is the line: the agent parses the name itself, and
     // says which one it ran.
     support::press(&mut app, KeyCode::Enter);

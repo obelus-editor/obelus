@@ -13,10 +13,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::{
-    acp::Order,
-    component::{composer::Composer, window::Window},
-};
+use crate::component::{composer::Composer, window::Window};
 
 /// Who said something.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,26 +138,11 @@ impl Chat {
     pub fn typing_command(&self) -> Option<String> {
         let text = self.input.text();
         let rest = text.strip_prefix('/')?;
-        // Up to the first blank: after that, what is typed is the
-        // command's own argument and not its name.
-        let name = rest.split_whitespace().next().unwrap_or("");
-        (!rest.contains('\n')).then(|| name.to_string())
-    }
-
-    /// The commands that match what is being typed.
-    ///
-    /// By prefix rather than fuzzily. A slash is a thing a reader types
-    /// from memory and completes; a list that offered `/compact` for "cat"
-    /// would be answering a different question.
-    #[must_use]
-    pub fn matching<'a>(&self, orders: &'a [Order]) -> Vec<&'a Order> {
-        let Some(name) = self.typing_command() else {
-            return Vec::new();
-        };
-        orders
-            .iter()
-            .filter(|order| order.name.starts_with(&name))
-            .collect()
+        // Only while the *name* is being typed. A blank after it settles
+        // it: what follows is the command's own input, and a list of
+        // commands over the box then has nothing left to offer.
+        let settled = rest.contains(char::is_whitespace);
+        (!settled).then(|| rest.to_string())
     }
 
     /// The first transcript row on screen.
@@ -283,13 +265,7 @@ impl Chat {
     /// stops the agent, and otherwise it closes the view. One key, and the
     /// thing it does is always "stop what is happening" -- which is what
     /// escape means everywhere else in obelus.
-    pub fn handle_key(
-        &mut self,
-        key: &KeyEvent,
-        thinking: bool,
-        room: Room,
-        orders: &[Order],
-    ) -> ChatOutcome {
+    pub fn handle_key(&mut self, key: &KeyEvent, thinking: bool, room: Room) -> ChatOutcome {
         let Some(modifiers) = crate::keymap::modifiers_of(key) else {
             return ChatOutcome::Ignored;
         };
@@ -325,10 +301,7 @@ impl Chat {
             // Shift and tab, which arrives as its own key and needs no
             // protocol to be asked for.
             KeyCode::BackTab => ChatOutcome::StepMode,
-            KeyCode::Tab if bare => {
-                self.complete(orders);
-                ChatOutcome::Consumed
-            }
+
             KeyCode::Backspace if bare => {
                 self.input.backspace();
                 ChatOutcome::Consumed
@@ -396,18 +369,13 @@ impl Chat {
         }
     }
 
-    /// Fills in the command being typed, when one command matches.
+    /// Puts a whole message in the box, with the caret after it.
     ///
-    /// Nothing happens with several matches and nothing with none: the
-    /// matches are on screen either way, and a key that picks one of three
-    /// for the reader is a key that picks the wrong one.
-    fn complete(&mut self, orders: &[Order]) {
-        let matching = self.matching(orders);
-        let [order] = matching[..] else {
-            return;
-        };
-        let name = order.name.clone();
-        self.input.replace(&format!("/{name} "));
+    /// For completing a command from the list of them: what the reader
+    /// typed is replaced by the whole name, and they carry on typing its
+    /// input after it.
+    pub fn put(&mut self, words: &str) {
+        self.input.replace(words);
     }
 
     /// Adds something said, and keeps the view at the end.
@@ -525,7 +493,7 @@ mod tests {
 
         // Up, and it stays where it is put -- including when something new
         // arrives, which is the whole point.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM);
         chat.settle(rows, 10);
         assert_eq!(chat.top(), 28);
         chat.note("something new");
@@ -535,7 +503,7 @@ mod tests {
 
         // Back down to the end, and it follows again.
         for _ in 0..5 {
-            chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Down), false, ROOM);
         }
         chat.settle(rows, 10);
         assert_eq!(chat.top(), rows - 10);
@@ -551,11 +519,11 @@ mod tests {
     fn escape_stops_the_agent_first_and_closes_the_view_second() {
         let mut chat = Chat::new();
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), true, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Esc), true, ROOM),
             ChatOutcome::Interrupt
         );
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM),
             ChatOutcome::Cancelled
         );
     }
@@ -565,13 +533,13 @@ mod tests {
     fn what_is_typed_is_sent_once() {
         let mut chat = Chat::new();
         for character in "hello".chars() {
-            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM);
         }
-        chat.handle_key(&key(KeyCode::Backspace), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Backspace), false, ROOM);
         assert_eq!(chat.writing().text(), "hell");
 
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM),
             ChatOutcome::Send("hell".to_string())
         );
         // Sent, so the row is empty: a prompt still sitting there after
@@ -579,7 +547,7 @@ mod tests {
         assert_eq!(chat.writing().text(), "");
         // And an empty row sends nothing.
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM),
             ChatOutcome::Consumed
         );
     }
@@ -590,10 +558,7 @@ mod tests {
     fn a_chord_falls_through_to_the_key_table() {
         let mut chat = Chat::new();
         let quit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        assert_eq!(
-            chat.handle_key(&quit, false, ROOM, &[]),
-            ChatOutcome::Ignored
-        );
+        assert_eq!(chat.handle_key(&quit, false, ROOM), ChatOutcome::Ignored);
         assert_eq!(chat.writing().text(), "", "it typed the chord into the row");
     }
 }

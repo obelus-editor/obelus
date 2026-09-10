@@ -187,9 +187,17 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
         // foot of the screen.
         view.status(cells, regions.status);
         view.render(regions.editor, cells);
-        // A list opened over it is the agent's own question: it draws where
-        // any compact list draws, with the conversation behind it.
-        if let Some(list) = picker::PickerView::new(app) {
+        // A list opened over it is the agent's own question, or the
+        // commands it takes: both draw where any compact list draws, with
+        // the conversation behind them.
+        let over = app
+            .picker()
+            .map(|picker| picker::PickerView::over(picker, app.theme()))
+            .or_else(|| {
+                app.slash()
+                    .map(|slash| picker::PickerView::over(slash, app.theme()))
+            });
+        if let Some(list) = over {
             let region = list.region(regions.editor);
             list.render(region, cells);
             if region.y > regions.editor.y {

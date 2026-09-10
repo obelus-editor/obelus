@@ -211,6 +211,11 @@ pub struct App {
     showing_chat: bool,
     /// The agent obelus is talking to, once something has needed it.
     talker: Option<crate::acp::Talk>,
+    /// The agent's own commands, while one is being typed in the box.
+    ///
+    /// Its own list rather than [`App::picker`], because it does not take
+    /// the keys: it follows what is being typed and the box keeps them.
+    slash: Option<Picker>,
     /// The permission request waiting on the reader: the channel its
     /// answer goes back through.
     permission: Option<crate::acp::Answer<Option<String>>>,
@@ -341,6 +346,7 @@ impl App {
             chat: crate::component::chat::Chat::new(),
             showing_chat: false,
             talker: None,
+            slash: None,
             permission: None,
             said_it_died: false,
             icons: HashMap::new(),
@@ -609,6 +615,7 @@ impl App {
         self.settle_agents(editor_area);
         self.prepare_icons();
         self.settle_chat(editor_area);
+        self.refresh_slash();
 
         let area = self.text_area();
         self.refresh_markdown(editor_area.width);
@@ -849,8 +856,13 @@ impl App {
                     .height,
                 writing: width,
             };
-            let orders = self.agent_orders().to_vec();
-            match self.chat.handle_key(&key, thinking, room, &orders) {
+            // The list of the agent's own commands, when one is showing:
+            // it follows what is being typed in the box, so it takes the
+            // keys that move about a list and leaves the rest to the box.
+            if self.slash_key(&key) {
+                return;
+            }
+            match self.chat.handle_key(&key, thinking, room) {
                 ChatOutcome::Consumed => return,
                 ChatOutcome::Cancelled => {
                     self.close_chat();

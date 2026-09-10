@@ -74,6 +74,18 @@ impl<'a> PickerView<'a> {
         })
     }
 
+    /// The same view over a list that is not the one taking keys.
+    ///
+    /// For a list that follows what is being typed somewhere else -- the
+    /// commands an agent takes, against the box a message is written in.
+    /// It is drawn by the same code as every other list, because it is the
+    /// same thing to a reader: rows, one of them chosen, what matched
+    /// marked.
+    #[must_use]
+    pub const fn over(picker: &'a Picker, theme: &'a Theme) -> Self {
+        Self { picker, theme }
+    }
+
     /// Where the list goes within the editor region.
     ///
     /// A compact list sits on the bottom edge and grows upwards only as far as

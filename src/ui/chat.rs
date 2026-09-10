@@ -131,8 +131,6 @@ pub struct ChatView<'a> {
     /// How many ways of working there are, which is what says whether
     /// there is anything to switch.
     modes: usize,
-    /// The commands the agent takes, for completing one.
-    orders: &'a [crate::acp::Order],
 }
 
 impl<'a> ChatView<'a> {
@@ -147,7 +145,6 @@ impl<'a> ChatView<'a> {
             name: app.agent_name(),
             mode: app.agent_mode().map(|mode| mode.name.as_str()),
             modes: app.agent_modes().len(),
-            orders: app.agent_orders(),
         })
     }
 
@@ -239,96 +236,6 @@ impl ChatView<'_> {
             // changes under them twice.
             if let Some(state) = &row.state {
                 self.state_of(cells, ended + 1, y, state, dim);
-            }
-        }
-        self.completions(cells, area, plain, dim);
-    }
-
-    /// The commands that match what is being typed, over the foot of the
-    /// transcript.
-    ///
-    /// Drawn there rather than in a list of its own: it is a hint about
-    /// what is in the box, it belongs next to the box, and the rows it
-    /// covers are the oldest thing on screen. A reader who wanted those
-    /// rows is not halfway through typing a command.
-    fn completions(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
-        let matching = self.chat.matching(self.orders);
-        let typing = self.chat.typing_command();
-        if typing.is_none() {
-            return;
-        }
-        if matching.is_empty() {
-            // The agent said which commands it takes and this is not one of
-            // them. Said rather than refused: the reader may know something
-            // the list does not, and enter still sends it.
-            let reason = match self.orders.is_empty() {
-                true => "this agent has not said which commands it takes",
-                false => "no command by that name",
-            };
-            let y = area.bottom().saturating_sub(1);
-            fill(
-                cells,
-                Rect {
-                    y,
-                    height: 1,
-                    ..area
-                },
-                plain,
-            );
-            write(cells, area.x + MARGIN + INDENT, y, reason, dim);
-            return;
-        }
-        let shown = matching.len().min(usize::from(area.height));
-        let top = area
-            .bottom()
-            .saturating_sub(u16::try_from(shown).unwrap_or(1));
-        for (offset, order) in matching.iter().take(shown).enumerate() {
-            let Ok(offset) = u16::try_from(offset) else {
-                break;
-            };
-            let y = top + offset;
-            fill(
-                cells,
-                Rect {
-                    y,
-                    height: 1,
-                    ..area
-                },
-                plain,
-            );
-            let name = format!("/{}", order.name);
-            // The one that tab would fill in is the only one there is: with
-            // several, tab does nothing and the reader keeps typing.
-            let style = match matching.len() {
-                1 => plain.fg(self.theme.gutter_current),
-                _ => plain,
-            };
-            // What was typed, marked the way every other narrowed list
-            // marks it -- the slash included, because it is part of what
-            // was typed.
-            let typed = typing.as_deref().map_or(0, |name| name.chars().count() + 1);
-            let ended = crate::ui::write_marked(
-                cells,
-                Rect {
-                    y,
-                    height: 1,
-                    ..area
-                },
-                area.x + MARGIN + INDENT,
-                y,
-                &name,
-                style,
-                &crate::ui::Marked::matched(
-                    crate::ui::Matched::Run(0, typed),
-                    self.theme.picker_match_background,
-                ),
-            );
-            let about = match &order.hint {
-                Some(hint) => format!("{hint}  \u{2014}  {}", order.description),
-                None => order.description.clone(),
-            };
-            if !about.is_empty() {
-                write(cells, ended + 2, y, &about, dim);
             }
         }
     }
