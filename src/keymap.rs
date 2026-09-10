@@ -216,6 +216,25 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('d'), KeyModifiers::ALT),
                 },
+                // The arrows under `alt`, because stepping between changes
+                // is the arrows' own motion at the scale of the diff rather
+                // than the line -- and because `alt` is already what asks
+                // about the line under the cursor here, with `alt+d` for the
+                // diff and `alt+m` for the match.
+                //
+                // Not `ctrl+alt+arrow`, which GNOME and KDE take for
+                // switching workspaces: a key the desktop eats before the
+                // terminal sees it looks like a broken program.
+                Binding {
+                    command: Command::GitPrevious,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Up, KeyModifiers::ALT),
+                },
+                Binding {
+                    command: Command::GitNext,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Down, KeyModifiers::ALT),
+                },
                 // `alt+m` for match, which is what this is called
                 // everywhere. Not `%`: obelus binds no bare keys, because
                 // the day it takes typed text is the day every one of them

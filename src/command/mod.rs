@@ -48,6 +48,10 @@ pub enum Command {
     GoBracket,
     /// Open what changed here, in place, or close it again.
     GitHunk,
+    /// Go to the change above the cursor.
+    GitPrevious,
+    /// Go to the change below the cursor.
+    GitNext,
     /// Copy the selected text to the system clipboard.
     SelectionCopy,
     /// Stop selecting.
@@ -128,6 +132,14 @@ pub enum Requires {
     /// The cursor has to be in something that changed since the last
     /// commit.
     AHunk,
+    /// The file has to have a change above the cursor.
+    AHunkBefore,
+    /// The file has to have a change below the cursor.
+    ///
+    /// Two conditions rather than one about the file, for the same reason
+    /// `go.back` and `go.forward` are two: a reader at the last change in a
+    /// file should not be offered a row that answers "no more changes".
+    AHunkAfter,
     /// Something has to be selected.
     ASelection,
     /// The history has to have somewhere behind the reader.
@@ -238,6 +250,16 @@ pub const ALL: &[CommandSpec] = &[
         title: "Show what changed here",
     },
     CommandSpec {
+        command: Command::GitPrevious,
+        name: "git.previous",
+        title: "Go to the previous change",
+    },
+    CommandSpec {
+        command: Command::GitNext,
+        name: "git.next",
+        title: "Go to the next change",
+    },
+    CommandSpec {
         command: Command::SelectionCopy,
         name: "selection.copy",
         title: "Copy the selected text",
@@ -303,6 +325,8 @@ impl Command {
             | Self::GoLine
             | Self::GoBracket
             | Self::GitHunk
+            | Self::GitPrevious
+            | Self::GitNext
             | Self::SelectionCopy
             | Self::SelectionClear
             | Self::GoBack
@@ -345,6 +369,8 @@ impl Command {
             Self::MarkdownPreview => Requires::AMarkdownFile,
             Self::GoBracket => Requires::ABracket,
             Self::GitHunk => Requires::AHunk,
+            Self::GitPrevious => Requires::AHunkBefore,
+            Self::GitNext => Requires::AHunkAfter,
             Self::SelectionCopy | Self::SelectionClear => Requires::ASelection,
             Self::GoBack => Requires::SomewhereBack,
             Self::GoForward => Requires::SomewhereForward,
@@ -408,6 +434,8 @@ mod tests {
             Command::GoLine,
             Command::GoBracket,
             Command::GitHunk,
+            Command::GitPrevious,
+            Command::GitNext,
             Command::SelectionCopy,
             Command::SelectionClear,
             Command::GoBack,

@@ -133,6 +133,11 @@ pub fn for_command(name: &str) -> char {
         // A number, which is what this one asks for.
         // The branching lines every git tool uses for itself.
         "git.hunk" => '\u{f02a2}',
+        // Arrows, because these two move the reader: the diff is what they
+        // step through, and the git glyph is already on the command that
+        // opens one.
+        "git.previous" => '\u{f0143}',
+        "git.next" => '\u{f0140}',
         "go.line" => '\u{f03a0}',
         "go.bracket" => '\u{f0172}',
         "selection.clear" => '\u{f0156}',

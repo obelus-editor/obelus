@@ -132,4 +132,28 @@ impl Changes {
     pub fn hunk_at(&self, line: LineNumber) -> Option<&Hunk> {
         self.hunks.iter().find(|hunk| hunk.covers(line))
     }
+
+    /// The next change below a line, for stepping through them.
+    ///
+    /// Strictly below where it *starts*, so a cursor somewhere inside a
+    /// long hunk moves to the next change rather than back to the top of
+    /// the one it is already reading.
+    #[must_use]
+    pub fn hunk_after(&self, line: LineNumber) -> Option<&Hunk> {
+        self.hunks.iter().find(|hunk| hunk.line.get() > line.get())
+    }
+
+    /// The next change above a line.
+    ///
+    /// The *last* one that starts above it, so from inside a hunk this is
+    /// the top of that hunk -- which is where a reader stepping backwards
+    /// through a long change wants to arrive, and one more press takes them
+    /// to the change before it.
+    #[must_use]
+    pub fn hunk_before(&self, line: LineNumber) -> Option<&Hunk> {
+        self.hunks
+            .iter()
+            .rev()
+            .find(|hunk| hunk.line.get() < line.get())
+    }
 }

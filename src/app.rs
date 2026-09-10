@@ -1426,6 +1426,64 @@ impl App {
         };
     }
 
+    /// Moves the cursor to the change above it.
+    pub fn go_to_previous_change(&mut self) {
+        self.go_to_change(false);
+    }
+
+    /// Moves the cursor to the change below it.
+    pub fn go_to_next_change(&mut self) {
+        self.go_to_change(true);
+    }
+
+    /// Moves the cursor to the first line of the next change one way or the
+    /// other.
+    ///
+    /// No wrapping. A reader who steps past the last change and lands back
+    /// at the top has lost their place to a keystroke that looked like it
+    /// did nothing; the command is not offered when there is nothing that
+    /// way, which is the honest version of the same information.
+    fn go_to_change(&mut self, forward: bool) {
+        let Some(line) = self.current_buffer().map(|buffer| buffer.cursor().line) else {
+            self.note = Some("no file open".to_string());
+            return;
+        };
+        let target = self.changes().and_then(|changes| {
+            if forward {
+                changes.hunk_after(line)
+            } else {
+                changes.hunk_before(line)
+            }
+            .map(|hunk| hunk.line)
+        });
+        let Some(target) = target else {
+            self.note = Some(if forward {
+                "no change below here".to_string()
+            } else {
+                "no change above here".to_string()
+            });
+            return;
+        };
+
+        // A jump, so `go.back` comes back: stepping to a change is a leap
+        // across the file, the same as typing a line number.
+        let from = self.here();
+        let area = self.text_area();
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.place_cursor(target, CharColumn::new(0));
+            // Centred only when the change was somewhere else entirely, the
+            // same as arriving at a bracket: a hunk already on screen is a
+            // short hop, and moving the view for it throws away the
+            // reader's place.
+            if buffer.cursor_screen_cell(area).is_none() {
+                buffer.center_on_cursor(area);
+            }
+        }
+        if let Some(from) = from {
+            self.jumps.push(from);
+        }
+    }
+
     /// Asks git what has changed, if it has not already been asked about
     /// this version of this file.
     fn refresh_changes(&mut self) {
@@ -1676,6 +1734,16 @@ impl App {
             Requires::AHunk => buffer.is_some_and(|buffer| {
                 self.changes()
                     .and_then(|changes| changes.hunk_at(buffer.cursor().line))
+                    .is_some()
+            }),
+            Requires::AHunkBefore => buffer.is_some_and(|buffer| {
+                self.changes()
+                    .and_then(|changes| changes.hunk_before(buffer.cursor().line))
+                    .is_some()
+            }),
+            Requires::AHunkAfter => buffer.is_some_and(|buffer| {
+                self.changes()
+                    .and_then(|changes| changes.hunk_after(buffer.cursor().line))
                     .is_some()
             }),
             Requires::SomewhereBack => self.jumps.can_go_back(),

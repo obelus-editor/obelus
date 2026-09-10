@@ -64,6 +64,11 @@ pub fn press_control_key(app: &mut App, code: KeyCode) {
     app.handle(Event::Key(KeyEvent::new(code, KeyModifiers::CONTROL)));
 }
 
+/// Sends a key with alt held.
+pub fn press_alt_key(app: &mut App, code: KeyCode) {
+    app.handle(Event::Key(KeyEvent::new(code, KeyModifiers::ALT)));
+}
+
 /// Types a string into whatever is listening.
 pub fn type_text(app: &mut App, text: &str) {
     for character in text.chars() {

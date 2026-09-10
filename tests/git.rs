@@ -484,6 +484,107 @@ fn added_lines_open_onto_their_own_colour() {
     );
 }
 
+/// Stepping between the changes in a file: what the arrows do at the scale
+/// of the diff. A reader who has just come back to a file wants the changes,
+/// not the lines, and hunting for the next mark in the margin by scrolling
+/// is the thing this replaces.
+#[test]
+fn the_changes_can_be_stepped_through() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer, command::Command};
+
+    // Three changes, far enough apart to be three hunks, in a file long
+    // enough that they are not all on screen at once.
+    let mut committed = String::new();
+    for line in 0..60 {
+        committed.push_str(&format!("line {line}\n"));
+    }
+    let repository = Repository::new("steps", &committed);
+    let mut working = committed.clone();
+    for line in [5, 20, 21, 22, 50] {
+        working = working.replace(&format!("line {line}\n"), &format!("changed {line}\n"));
+    }
+    repository.write(&working);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 12);
+    let line = |app: &App| app.current_buffer().expect("a file").cursor().line.get();
+    assert_eq!(line(&app), 0);
+
+    // Down: each change in turn, by its first line, and the middle one
+    // counts once however many lines it has.
+    support::press_alt_key(&mut app, KeyCode::Down);
+    assert_eq!(line(&app), 5, "not the first change");
+    support::press_alt_key(&mut app, KeyCode::Down);
+    assert_eq!(line(&app), 20, "not the second change");
+    support::press_alt_key(&mut app, KeyCode::Down);
+    assert_eq!(line(&app), 50, "the middle change was counted twice");
+
+    // And nothing below the last one: a wrap back to the top would look
+    // like a key that did nothing while losing the reader's place.
+    support::press_alt_key(&mut app, KeyCode::Down);
+    assert_eq!(line(&app), 50, "it wrapped around");
+    assert_eq!(app.note(), Some("no change below here"));
+    // Which is also why the palette does not offer it here.
+    support::press_control(&mut app, 'p');
+    let offered: Vec<String> = app
+        .picker()
+        .expect("the palette")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    support::press(&mut app, KeyCode::Esc);
+    assert!(
+        offered.iter().any(|label| label == "git.previous"),
+        "not offered with changes above: {offered:?}"
+    );
+    assert!(
+        !offered.iter().any(|label| label == "git.next"),
+        "offered with nothing below: {offered:?}"
+    );
+
+    // Up, and from inside a long change: to the top of that change first,
+    // then to the one before it.
+    support::press_alt_key(&mut app, KeyCode::Up);
+    assert_eq!(line(&app), 20);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(line(&app), 22, "still inside the middle change");
+    support::press_alt_key(&mut app, KeyCode::Up);
+    assert_eq!(line(&app), 20, "not the top of the change being read");
+    support::press_alt_key(&mut app, KeyCode::Up);
+    assert_eq!(line(&app), 5);
+    support::press_alt_key(&mut app, KeyCode::Up);
+    assert_eq!(line(&app), 5, "it wrapped around");
+    assert_eq!(app.note(), Some("no change above here"));
+
+    // A leap, so the history brings the reader back where they were: to
+    // where the last step started, and then to where the one before it did
+    // -- including the line the reader had walked to by hand.
+    obelus::command::dispatch::dispatch(&mut app, Command::GoBack);
+    assert_eq!(line(&app), 20, "the step did not record where it left");
+    obelus::command::dispatch::dispatch(&mut app, Command::GoBack);
+    assert_eq!(line(&app), 22, "the step before that recorded nothing");
+
+    // And a change the reader had to leap to arrives in the middle of the
+    // screen, not against an edge: what a change means is the code around
+    // it, and a hunk on the last row has half of that missing.
+    obelus::command::dispatch::dispatch(&mut app, Command::GitNext);
+    let dump = support::render(&mut app, 40, 12);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    let at = rows
+        .iter()
+        .position(|row| row.contains("changed 50"))
+        .unwrap_or_else(|| panic!("the change it went to is not on screen:\n{dump}"));
+    assert!(
+        at > 0 && at < rows.len() - 2,
+        "the change it leapt to is against an edge, at row {at}:\n{dump}"
+    );
+}
+
 /// The changes in the whole file, in a column of its own right of the bar.
 ///
 /// One column, the same width as the margin on the far side and drawn with
