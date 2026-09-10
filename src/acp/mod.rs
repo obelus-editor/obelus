@@ -30,7 +30,9 @@ pub mod link;
 use std::path::Path;
 
 use futures::channel::mpsc;
-pub use link::{Answer, Ask, Choice, Chosen, Incoming, Mode, Order, Setting, Update, Value};
+pub use link::{
+    Answer, Ask, Choice, Chosen, Field, Incoming, Mode, Order, Reply, Setting, Takes, Update, Value,
+};
 
 /// One running agent: how to ask it things, and what it has said about
 /// itself.

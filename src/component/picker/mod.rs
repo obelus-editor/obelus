@@ -69,6 +69,13 @@ pub enum PickerValue {
         /// Which value, by the agent's id for it.
         value: String,
     },
+    /// Answer one field of a form the agent asked the reader to fill in.
+    AgentAsked {
+        /// Which field, by its name in the agent's own schema.
+        field: String,
+        /// Which value, by the agent's id for it.
+        value: String,
+    },
     /// Answer an agent's permission request with this option.
     ///
     /// The agent's own id for it, which is what the answer names -- not the

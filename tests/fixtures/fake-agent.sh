@@ -19,6 +19,9 @@
 #                            obelus, tries to write one (which obelus
 #                            refuses), uses a tool, and asks permission; the
 #                            turn ends once the answer to that arrives
+#   session/prompt "/ask" -> asks the reader three things through
+#                            `elicitation/create` -- one of a list, a switch,
+#                            and a number -- and says what came back
 #   session/prompt        -> with "quickly" in it: it puts itself on the
 #                            faster model and says so, unasked
 #   session/prompt        -> with "slowly" in it: nothing at all, so the turn
@@ -36,6 +39,7 @@ id_of() {
 }
 
 turn=''
+forms=''
 
 # What its settings are on. Changed by `session/set_config_option` and read
 # back out by `options`: an agent's settings are state, and a client that
@@ -74,13 +78,20 @@ while IFS= read -r line; do
                 *'"boolean":{}'*) switches='yes' ;;
                 *) switches='' ;;
             esac
+            # Whether it may ask the reader anything at all. A client that
+            # does not advertise a form cannot be sent one, so obelus's
+            # promise is what decides between the question and the excuse.
+            case "$line" in
+                *'"form":{}'*) forms='yes' ;;
+                *) forms='' ;;
+            esac
             printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentInfo":{"name":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$me"
             ;;
         *'"method":"session/new"'*)
             printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1","modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             # What it takes with a slash, which agents send once the
             # session is ready.
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Summarise the conversation"},{"name":"cost","description":"What this has cost","input":{"hint":"currency"}},{"name":"model","description":"Which model to use"},{"name":"help","description":"What it takes"},{"name":"init","description":"Start again"},{"name":"login","description":"Say who you are"},{"name":"quit","description":"Stop"},{"name":"reset","description":"Forget the session"},{"name":"share","description":"Send it somewhere"},{"name":"theme","description":"Its own colours"},{"name":"usage","description":"What it has spent"}]}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Summarise the conversation"},{"name":"cost","description":"What this has cost","input":{"hint":"currency"}},{"name":"model","description":"Which model to use"},{"name":"ask","description":"Ask the reader something"},{"name":"help","description":"What it takes"},{"name":"init","description":"Start again"},{"name":"login","description":"Say who you are"},{"name":"quit","description":"Stop"},{"name":"reset","description":"Forget the session"},{"name":"share","description":"Send it somewhere"},{"name":"theme","description":"Its own colours"},{"name":"usage","description":"What it has spent"}]}}}\n'
             ;;
         *'"method":"session/set_config_option"'*)
             which=$(printf '%s' "$line" | sed -n 's/.*"configId":"\([^"]*\)".*/\1/p')
@@ -95,6 +106,31 @@ while IFS= read -r line; do
             ;;
         *'"method":"session/set_mode"'*)
             printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$(id_of "$line")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/ask'*)
+            turn=$(id_of "$line")
+            if [ -z "$forms" ]; then
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"this client cannot be asked"}}}}\n'
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            else
+                printf '{"jsonrpc":"2.0","id":903,"method":"elicitation/create","params":{"mode":"form","sessionId":"s-1","message":"which way should I do it","requestedSchema":{"type":"object","properties":{"how":{"type":"string","title":"How","oneOf":[{"const":"fast","title":"Quickly"},{"const":"careful","title":"Carefully","description":"and slowly"}]},"sure":{"type":"boolean","title":"Sure"},"times":{"type":"integer","title":"Times","minimum":1,"maximum":9}}}}}\n'
+            fi
+            ;;
+        *'"id":903'*)
+            case "$line" in
+                *'"action":"accept"'*)
+                    how=$(printf '%s' "$line" | sed -n 's/.*"how":"\([^"]*\)".*/\1/p')
+                    sure=$(printf '%s' "$line" | sed -n 's/.*"sure":\(true\|false\).*/\1/p')
+                    times=$(printf '%s' "$line" | sed -n 's/.*"times":\([0-9.]*\).*/\1/p')
+                    # In brackets, so a test can say exactly what came
+                    # back: a whole number sent as a float would otherwise
+                    # read the same as far as the words go.
+                    said="you said [$how] [$sure] [$times]"
+                    ;;
+                *) said='you would not say' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
             ;;
         *'"method":"session/prompt"'*'"text":"/'*)
             # A command: the text starts with a slash, and everything after

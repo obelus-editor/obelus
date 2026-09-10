@@ -28,7 +28,10 @@ use agent_client_protocol::{
         ProtocolVersion,
         v1::{
             AvailableCommand, BooleanConfigOptionCapabilities, CancelNotification,
-            ClientCapabilities, ClientSessionCapabilities, ContentBlock, FileSystemCapabilities,
+            ClientCapabilities, ClientSessionCapabilities, ContentBlock, CreateElicitationRequest,
+            CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction,
+            ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities,
+            ElicitationMode, ElicitationPropertySchema, ElicitationSchema, FileSystemCapabilities,
             Implementation, InitializeRequest, NewSessionRequest, PermissionOptionId,
             PromptRequest, ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
             RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
@@ -114,6 +117,15 @@ pub enum Incoming {
         options: Vec<Choice>,
         /// Which option, or nothing for "not answered".
         answer: Answer<Option<String>>,
+    },
+    /// The agent is asking the reader for something.
+    Ask {
+        /// What it says it needs, in its own words.
+        message: String,
+        /// What it wants, in the order obelus will put them.
+        fields: Vec<Field>,
+        /// Every field's answer, or nothing for "not answered".
+        answer: Answer<Option<Vec<(String, Reply)>>>,
     },
     /// The agent wants a file's text.
     Read {
@@ -223,6 +235,57 @@ pub struct Order {
     pub hint: Option<String>,
 }
 
+/// One thing an agent asked the reader for.
+///
+/// A field of a form, in the shape obelus can put it: what to call it, what
+/// sort of answer it takes, and the name the answer goes back under.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Field {
+    /// Its name in the schema, which is what keys the answer.
+    pub name: String,
+    /// What to call it on screen.
+    pub title: String,
+    /// One line about it, if the agent said.
+    pub about: Option<String>,
+    /// What sort of answer it takes.
+    pub takes: Takes,
+}
+
+/// What sort of answer a [`Field`] takes.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Takes {
+    /// One of these.
+    One(Vec<Value>),
+    /// On or off, starting here.
+    Switch(bool),
+    /// Words, starting with these if the agent suggested any.
+    Words(Option<String>),
+    /// A number, within these if it said.
+    Number {
+        /// Whether it has to be whole.
+        whole: bool,
+        /// The smallest it may be.
+        least: Option<f64>,
+        /// And the largest.
+        most: Option<f64>,
+    },
+}
+
+/// One answer to one [`Field`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum Reply {
+    /// One of a list, by the agent's id for it.
+    Value(String),
+    /// A switch.
+    Switch(bool),
+    /// Words.
+    Words(String),
+    /// A number.
+    Number(f64),
+    /// A whole number, which the protocol keeps apart from the other kind.
+    Whole(i64),
+}
+
 /// One answer a permission request offers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Choice {
@@ -292,6 +355,7 @@ async fn talk(
 
     let updates = events.clone();
     let asking = events.clone();
+    let elicited = events.clone();
     let reading = events.clone();
 
     let outcome = Client
@@ -363,6 +427,59 @@ async fn talk(
                         responder.respond_with_error(refusal("obelus will not read that"))
                     }
                 }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: CreateElicitationRequest, responder, _connection| {
+                // The agent is asking the reader something. What it may ask
+                // for is a flat form of primitives, and obelus puts that
+                // the way it puts every other choice: a list where the
+                // answer is one of a few, the box where it is words. One
+                // field at a time, because a terminal reader has one thing
+                // on screen and one caret in it.
+                let asked = match &request.mode {
+                    ElicitationMode::Form(form) => fields_of(&form.requested_schema),
+                    // A mode obelus never offered to show -- a URL to open,
+                    // which a reader is not in a browser to follow.
+                    // Declined rather than errored: the agent asked a fair
+                    // question of a client that cannot put it, and it has
+                    // to be able to carry on.
+                    other => Err(format!("{other:?}")),
+                };
+                let fields = match asked {
+                    Ok(fields) => fields,
+                    Err(why) => {
+                        let _ = elicited.send(Event::Acp(Incoming::Failed(
+                            "a question obelus cannot put",
+                            why,
+                        )));
+                        return responder
+                            .respond(CreateElicitationResponse::new(ElicitationAction::Decline));
+                    }
+                };
+                let (answer, answered) = oneshot::channel();
+                let question = Incoming::Ask {
+                    message: request.message.clone(),
+                    fields,
+                    answer,
+                };
+                if elicited.send(Event::Acp(question)).is_err() {
+                    return responder
+                        .respond(CreateElicitationResponse::new(ElicitationAction::Cancel));
+                }
+                // Nothing back is a refusal; the view going away with the
+                // question still up is a cancellation. Either way the agent
+                // hears something, because one that hears nothing waits for
+                // ever.
+                let action = match answered.await {
+                    Ok(Some(given)) => ElicitationAction::Accept(
+                        ElicitationAcceptAction::new().content(content_of(given)),
+                    ),
+                    Ok(None) => ElicitationAction::Decline,
+                    Err(_) => ElicitationAction::Cancel,
+                };
+                responder.respond(CreateElicitationResponse::new(action))
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -544,6 +661,9 @@ fn handshake() -> InitializeRequest {
                     .read_text_file(true)
                     .write_text_file(false))
                 .terminal(false)
+                .elicitation(
+                    ElicitationCapabilities::new().form(ElicitationFormCapabilities::new()),
+                )
                 // A switch is two rows of a list here, which is what the
                 // capability is about: an agent may only offer boolean
                 // settings to a client that says it can show them.
@@ -619,6 +739,114 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
             Vec::new()
         }
     }
+}
+
+/// The fields of a form, in the order obelus will put them.
+///
+/// Or why it cannot put this one. A form obelus half-fills in is worse than
+/// one it declines: the agent gets an answer to a question it did not ask.
+///
+/// The order is the schema's map order, which is alphabetical by name --
+/// the wire has an object and objects have no order, so there is nothing
+/// else to go on.
+fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String> {
+    let mut fields = Vec::new();
+    for (name, property) in &schema.properties {
+        let (title, about, takes) = match property {
+            ElicitationPropertySchema::String(text) => (
+                text.title.clone(),
+                text.description.clone(),
+                match (text.one_of.as_ref(), text.enum_values.as_ref()) {
+                    // Named values: the agent gave each one a title, and
+                    // that is what the row says.
+                    (Some(named), _) => Takes::One(
+                        named
+                            .iter()
+                            .map(|option| Value {
+                                id: option.value.clone(),
+                                name: option.title.clone(),
+                                about: said_twice(option.description.as_deref(), &option.title),
+                            })
+                            .collect(),
+                    ),
+                    // Bare values, which are their own names.
+                    (None, Some(values)) => Takes::One(
+                        values
+                            .iter()
+                            .map(|value| Value {
+                                id: value.clone(),
+                                name: value.clone(),
+                                about: None,
+                            })
+                            .collect(),
+                    ),
+                    (None, None) => Takes::Words(text.default.clone()),
+                },
+            ),
+            ElicitationPropertySchema::Boolean(switch) => (
+                switch.title.clone(),
+                switch.description.clone(),
+                Takes::Switch(switch.default.unwrap_or(false)),
+            ),
+            ElicitationPropertySchema::Number(number) => (
+                number.title.clone(),
+                number.description.clone(),
+                Takes::Number {
+                    whole: false,
+                    least: number.minimum,
+                    most: number.maximum,
+                },
+            ),
+            ElicitationPropertySchema::Integer(number) => (
+                number.title.clone(),
+                number.description.clone(),
+                Takes::Number {
+                    whole: true,
+                    #[expect(
+                        clippy::cast_precision_loss,
+                        reason = "a bound a reader is expected to type by hand"
+                    )]
+                    least: number.minimum.map(|least| least as f64),
+                    #[expect(
+                        clippy::cast_precision_loss,
+                        reason = "a bound a reader is expected to type by hand"
+                    )]
+                    most: number.maximum.map(|most| most as f64),
+                },
+            ),
+            // Several answers at once, which is a form rather than a
+            // question, and obelus puts questions.
+            ElicitationPropertySchema::Array(_) => {
+                return Err(format!("{name} takes several answers at once"));
+            }
+            other => return Err(format!("{name} is a {other:?}")),
+        };
+        fields.push(Field {
+            name: name.clone(),
+            title: title.unwrap_or_else(|| name.clone()),
+            about,
+            takes,
+        });
+    }
+    Ok(fields)
+}
+
+/// The answers, as the protocol takes them.
+fn content_of(
+    given: Vec<(String, Reply)>,
+) -> std::collections::BTreeMap<String, ElicitationContentValue> {
+    given
+        .into_iter()
+        .map(|(name, reply)| {
+            let value = match reply {
+                Reply::Value(value) | Reply::Words(value) => ElicitationContentValue::String(value),
+                Reply::Switch(on) => ElicitationContentValue::Boolean(on),
+                Reply::Number(number) => ElicitationContentValue::Number(number),
+                Reply::Whole(number) => ElicitationContentValue::Integer(number),
+            };
+            (name, value)
+        })
+        .collect()
 }
 
 /// One setting, as the view offers it -- if it is one obelus can show.

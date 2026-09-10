@@ -726,6 +726,127 @@ fn nothing_of_obeluss_own_opens_over_the_conversation() {
     );
 }
 
+/// The agent asks the reader something, and obelus puts the question.
+///
+/// A form of three fields, put one at a time: a list where the answer is one
+/// of a few, the same list for a switch, and the box where it is typed. What
+/// goes back is the whole form, keyed by the names the agent gave.
+#[test]
+fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", |app| {
+        app.picker().is_some()
+    });
+
+    // What it is asking, in its own words, and the first field as a list.
+    let text = screen(&mut app);
+    assert!(
+        text.contains("which way should I do it"),
+        "the question is not in the conversation:\n{text}"
+    );
+    for word in ["How", "Quickly", "Carefully", "and slowly"] {
+        assert!(text.contains(word), "no {word} in the list:\n{text}");
+    }
+
+    // Chosen the way every list is chosen from -- and the next field is
+    // there straight away, because the agent is waiting on all of them.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    let sides: Vec<String> = app
+        .picker()
+        .expect("the switch")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(sides, ["on", "off"], "the switch has other sides");
+    assert_eq!(
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.as_str()),
+        Some("off"),
+        "the switch did not open on the side the agent suggested"
+    );
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Enter);
+
+    // The last one takes a number, so it is asked in the box -- and the
+    // question says what it will take, because a reader who types the wrong
+    // thing otherwise finds out afterwards.
+    assert!(app.picker().is_none(), "a number was put as a list");
+    let text = screen(&mut app);
+    assert!(
+        text.contains("whole number from 1 to 9"),
+        "the question does not say what it takes:\n{text}"
+    );
+
+    // What the reader types is the answer rather than a message, and one
+    // that will not do is said and asked again.
+    support::type_text(&mut app, "later");
+    support::press(&mut app, KeyCode::Enter);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("takes a number"),
+        "words went in as a number:\n{text}"
+    );
+    support::type_text(&mut app, "12");
+    support::press(&mut app, KeyCode::Enter);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("outside"),
+        "a number past the end was taken:\n{text}"
+    );
+    assert!(
+        app.is_asking(),
+        "the form was answered with what will not do"
+    );
+
+    support::type_text(&mut app, "3");
+    support::press(&mut app, KeyCode::Enter);
+    // And the agent says what it was given: the id of the row, the switch
+    // as a boolean, the number as a number.
+    pump(&mut app, &events, "what the agent was given", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("you said [careful] [true] [3]"),
+        "the form did not go back as it was filled in:\n{text}"
+    );
+}
+
+/// Escape says no to the form, and the agent hears that rather than nothing.
+#[test]
+fn escape_on_a_form_tells_the_agent_it_was_not_answered() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/ask ");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", |app| {
+        app.picker().is_some()
+    });
+
+    support::press(&mut app, KeyCode::Esc);
+    assert!(!app.is_asking(), "the form is still waiting");
+    // And escape went to the question, not to the conversation: the
+    // nearest thing first.
+    assert!(app.chat().is_some(), "escape closed the conversation");
+    pump(&mut app, &events, "the agent to hear it", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("you would not say"),
+        "the agent was not told:\n{text}"
+    );
+}
+
 /// That list is the picker, so it scrolls and it marks what matched.
 ///
 /// Both of those come from the geometry: the window follows the selection

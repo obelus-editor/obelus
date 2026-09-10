@@ -16,6 +16,22 @@ use crate::{
     component::chat::{Chat, Speaker},
 };
 
+/// A form an agent asked the reader to fill in.
+///
+/// One field at a time, in the order the agent listed them: a list where
+/// the answer is one of a few, the box where it is words. What has been
+/// answered is kept here until the last field is, because the protocol
+/// takes the whole form as one answer.
+#[derive(Debug)]
+pub struct Asking {
+    /// The fields nobody has answered yet, the next one first.
+    left: std::collections::VecDeque<acp::Field>,
+    /// What has been answered, in the order it was.
+    given: Vec<(String, acp::Reply)>,
+    /// Where the answers go when the last one is in.
+    answer: acp::Answer<Option<Vec<(String, acp::Reply)>>>,
+}
+
 /// What obelus is doing about an agent, for the view to say so.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Talking {
@@ -240,6 +256,13 @@ impl App {
 
     /// Sends what the reader typed.
     pub(super) fn send_to_agent(&mut self, text: &str) {
+        // Unless a field of a form is waiting for it: the agent asked for
+        // words and these are the words, so they go back as the answer
+        // rather than out as a message.
+        if self.is_answering() {
+            self.answer_typed(text);
+            return;
+        }
         // A command that is a setting's name is a choice to be made here,
         // not a message: nothing goes in the transcript and nothing is sent.
         if let Some(name) = text.trim().strip_prefix('/')
@@ -277,6 +300,9 @@ impl App {
             talker.shutdown();
         }
         self.permission = None;
+        // Dropped rather than answered: there is no longer anything to
+        // answer, and dropping is what tells the other side so.
+        self.asking = None;
     }
 
     /// The agent's own commands, while one is being typed.
@@ -428,6 +454,226 @@ impl App {
         }
     }
 
+    /// Whether a field of a form is waiting for words to be typed.
+    ///
+    /// Which is the one state where what is typed in the box is not a
+    /// message: the agent asked for something, and this is it.
+    #[must_use]
+    pub fn is_answering(&self) -> bool {
+        self.asking
+            .as_ref()
+            .and_then(|asking| asking.left.front())
+            .is_some_and(|field| {
+                matches!(
+                    field.takes,
+                    acp::Takes::Words(_) | acp::Takes::Number { .. }
+                )
+            })
+    }
+
+    /// Whether the agent is waiting on an answer to something it asked.
+    #[must_use]
+    pub const fn is_asking(&self) -> bool {
+        self.asking.is_some()
+    }
+
+    /// Puts a form the agent asked for to the reader.
+    fn ask_reader(
+        &mut self,
+        message: &str,
+        fields: Vec<acp::Field>,
+        answer: acp::Answer<Option<Vec<(String, acp::Reply)>>>,
+    ) {
+        self.chat.note(&format!("it asks: {message}"));
+        self.asking = Some(Asking {
+            left: fields.into(),
+            given: Vec::new(),
+            answer,
+        });
+        self.put_the_question();
+    }
+
+    /// Puts the next field, or answers the form when there is none left.
+    fn put_the_question(&mut self) {
+        let Some(field) = self
+            .asking
+            .as_ref()
+            .and_then(|asking| asking.left.front())
+            .cloned()
+        else {
+            self.settle_asking();
+            return;
+        };
+        match &field.takes {
+            // One of a few: the list, like every other choice.
+            acp::Takes::One(values) => {
+                let picker = self.list_of(&field, values, None);
+                self.picker = Some(picker);
+            }
+            acp::Takes::Switch(on) => {
+                let sides = [
+                    acp::Value {
+                        id: "on".to_string(),
+                        name: "on".to_string(),
+                        about: None,
+                    },
+                    acp::Value {
+                        id: "off".to_string(),
+                        name: "off".to_string(),
+                        about: None,
+                    },
+                ];
+                let side = match on {
+                    true => "on",
+                    false => "off",
+                };
+                let picker = self.list_of(&field, &sides, Some(side));
+                self.picker = Some(picker);
+            }
+            // Words: the box, which is where words are typed. What the
+            // reader types next goes back as the answer rather than to the
+            // agent as a message.
+            acp::Takes::Words(suggested) => {
+                self.chat.note(&question(&field));
+                if let Some(words) = suggested {
+                    self.chat.put(words);
+                }
+            }
+            acp::Takes::Number { .. } => self.chat.note(&question(&field)),
+        }
+    }
+
+    /// One field's values, as the list obelus puts every choice in.
+    fn list_of(&self, field: &acp::Field, values: &[acp::Value], on: Option<&str>) -> Picker {
+        let items = values
+            .iter()
+            .map(|value| PickerItem {
+                icon: None,
+                label: value.name.clone(),
+                detail: value.about.clone(),
+                trailing: (Some(value.id.as_str()) == on).then(|| "now".to_string()),
+                value: PickerValue::AgentAsked {
+                    field: field.name.clone(),
+                    value: value.id.clone(),
+                },
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                kind: None,
+                tab: None,
+            })
+            .collect();
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.ask(&field.title);
+        picker.when_empty("it offered nothing to choose from");
+        if let Some(on) = on
+            && let Some(name) = values.iter().find(|value| value.id == on)
+        {
+            picker.prefer(name.name.clone());
+        }
+        picker
+    }
+
+    /// Takes a row the reader chose as one field's answer.
+    pub(super) fn answer_asked(&mut self, field: &str, value: &str) {
+        let Some(asking) = self.asking.as_mut() else {
+            return;
+        };
+        let Some(asked) = asking.left.front().filter(|asked| asked.name == field) else {
+            // A row from a list that is no longer the question. Nothing to
+            // do with it: the form moved on, or was given up on.
+            return;
+        };
+        let (reply, said) = match &asked.takes {
+            acp::Takes::Switch(_) => (acp::Reply::Switch(value == "on"), value.to_string()),
+            // The name for the transcript, not the id: the id is the
+            // agent's word for it and can be anything.
+            acp::Takes::One(values) => (
+                acp::Reply::Value(value.to_string()),
+                values
+                    .iter()
+                    .find(|known| known.id == value)
+                    .map_or(value, |known| known.name.as_str())
+                    .to_string(),
+            ),
+            // A list cannot answer these, so a row from one is not theirs.
+            acp::Takes::Words(_) | acp::Takes::Number { .. } => return,
+        };
+        let title = asked.title.clone();
+        asking.given.push((field.to_string(), reply));
+        asking.left.pop_front();
+        self.chat.note(&format!("{title}: {said}"));
+        self.put_the_question();
+    }
+
+    /// Takes what the reader typed as one field's answer.
+    fn answer_typed(&mut self, text: &str) {
+        let Some(asking) = self.asking.as_mut() else {
+            return;
+        };
+        let Some(asked) = asking.left.front() else {
+            return;
+        };
+        let reply = match &asked.takes {
+            acp::Takes::Words(_) => acp::Reply::Words(text.to_string()),
+            acp::Takes::Number { whole, least, most } => {
+                let Ok(number) = text.trim().parse::<f64>() else {
+                    // The reader's slip, so it is said and asked again:
+                    // an answer nobody can give is worse than a question
+                    // asked twice.
+                    let title = asked.title.clone();
+                    self.chat
+                        .note(&format!("{title} takes a number, not {text:?}"));
+                    return;
+                };
+                if least.is_some_and(|least| number < least)
+                    || most.is_some_and(|most| number > most)
+                {
+                    let question = question(asked);
+                    self.chat.note(&format!("that is outside {question}"));
+                    return;
+                }
+                match whole {
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "a whole number the reader typed, and the protocol takes an i64"
+                    )]
+                    true => acp::Reply::Whole(number as i64),
+                    false => acp::Reply::Number(number),
+                }
+            }
+            // A typed answer to a question that is a list is not an answer.
+            acp::Takes::One(_) | acp::Takes::Switch(_) => return,
+        };
+        let name = asked.name.clone();
+        asking.given.push((name, reply));
+        asking.left.pop_front();
+        // Theirs, in the transcript, because that is what they said -- the
+        // agent asked in words and this is the answer in words.
+        self.chat.asked(text);
+        self.put_the_question();
+    }
+
+    /// Answers the form, now that every field has one.
+    fn settle_asking(&mut self) {
+        let Some(asking) = self.asking.take() else {
+            return;
+        };
+        if asking.answer.send(Some(asking.given)).is_err() {
+            self.chat.note("it stopped waiting for an answer");
+        }
+    }
+
+    /// Says no to the form, whichever field the reader was on.
+    pub(super) fn refuse_asking(&mut self) {
+        let Some(asking) = self.asking.take() else {
+            return;
+        };
+        self.chat.note("not answered");
+        let _ = asking.answer.send(None);
+    }
+
     /// Follows the transcript, and notices an agent that has died.
     ///
     /// Once a frame, like the language servers' own check: an agent that
@@ -490,6 +736,11 @@ impl App {
                 options,
                 answer,
             } => self.ask_permission(&title, &options, answer),
+            acp::Incoming::Ask {
+                message,
+                fields,
+                answer,
+            } => self.ask_reader(&message, fields, answer),
             acp::Incoming::Read {
                 path,
                 line,
@@ -657,6 +908,32 @@ impl App {
         // large file asks for a window of it, and answering with the whole
         // thing is a different answer.
         let _ = answer.send(text.map(|text| window(&text, line, limit)));
+    }
+}
+
+/// One field, as a question in the transcript.
+///
+/// The title, and what it will take: a number with bounds is a question
+/// that has to say them, because a reader who types the wrong one only
+/// finds out afterwards.
+fn question(field: &acp::Field) -> String {
+    let mut asked = field.title.clone();
+    if let acp::Takes::Number { whole, least, most } = field.takes {
+        let kind = match whole {
+            true => "a whole number",
+            false => "a number",
+        };
+        let bounds = match (least, most) {
+            (Some(least), Some(most)) => format!(": {kind} from {least} to {most}"),
+            (Some(least), None) => format!(": {kind}, {least} or more"),
+            (None, Some(most)) => format!(": {kind}, {most} or less"),
+            (None, None) => format!(": {kind}"),
+        };
+        asked.push_str(&bounds);
+    }
+    match field.about.as_deref() {
+        Some(about) => format!("{asked} \u{2014} {about}"),
+        None => asked,
     }
 }
 

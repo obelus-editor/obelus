@@ -205,6 +205,21 @@ the turn and reports back whether it was refused. Both assertions are in
 boolean one is only offered to a client that said in the handshake that it
 can show a switch.
 
+**An agent that wants to ask something uses `elicitation/create`.** That is
+the one way it can put UI on a client's screen, and it is gated on a
+capability: no `elicitation.form` in the handshake and an agent either falls
+back or gives up. What it may ask for is a flat form of primitives, and
+obelus puts it the way it puts everything else -- a list where the answer is
+one of a few or a switch, the box where it is words or a number -- one field
+at a time, because a terminal reader has one thing on screen and one caret
+in it. The whole form goes back as one answer, keyed by the agent's own
+names; escape declines it, and the view going away cancels it, because an
+agent that hears nothing waits for ever. `elicitation.url` is *not*
+declared: obelus is not a browser, and a mode it cannot put is a mode it
+should not be sent. Anything else -- a multi-select, a property type it has
+never heard of -- is declined with the reason in the transcript rather than
+half-filled in.
+
 **A list open over anything owns the status row.** It is the thing taking
 the keys and holding the caret, so `StatusView` draws its prompt before the
 settings' filter or the conversation's own row. A row belonging to what is
@@ -220,7 +235,9 @@ config option* -- `session/new` and `session/update` carry the whole set,
 set again because one value can change what another offers. So obelus lists
 them (`agent.settings`) and, when a typed command is the name of one, opens
 that setting's values instead of sending it. Copilot's own list is `mode`,
-`model`, `reasoning_effort` and `allow_all`; its mode ids are URLs and most
+`model`, `reasoning_effort` and `allow_all`; it does not elicit for
+`/model` either -- probed with `elicitation.form` advertised, 1.0.83 still
+answers in words; its mode ids are URLs and most
 of its rows describe themselves with their own name, which is why a
 description that repeats the name is dropped.
 

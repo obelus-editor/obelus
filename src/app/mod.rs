@@ -216,6 +216,8 @@ pub struct App {
     /// Its own list rather than [`App::picker`], because it does not take
     /// the keys: it follows what is being typed and the box keeps them.
     slash: Option<Picker>,
+    /// The form the agent asked the reader to fill in, while one is open.
+    asking: Option<talking::Asking>,
     /// The permission request waiting on the reader: the channel its
     /// answer goes back through.
     permission: Option<crate::acp::Answer<Option<String>>>,
@@ -347,6 +349,7 @@ impl App {
             showing_chat: false,
             talker: None,
             slash: None,
+            asking: None,
             permission: None,
             said_it_died: false,
             icons: HashMap::new(),
@@ -828,6 +831,12 @@ impl App {
                     if self.is_asking_permission() {
                         self.refuse_permission();
                     }
+                    // And so does a form: a field left unanswered is the
+                    // whole form declined, because the agent is waiting on
+                    // all of it.
+                    if self.is_asking() {
+                        self.refuse_asking();
+                    }
 
                     // A theme previewed but not chosen. Nothing else a picker
                     // shows changes the application while it is open, so
@@ -917,6 +926,13 @@ impl App {
             match self.chat.handle_key(&key, thinking, room) {
                 ChatOutcome::Consumed => return,
                 ChatOutcome::Cancelled => {
+                    // Escape gives up on the nearest thing first, and a
+                    // question the agent is waiting on is nearer than the
+                    // conversation it was asked in.
+                    if self.is_asking() {
+                        self.refuse_asking();
+                        return;
+                    }
                     self.close_chat();
                     return;
                 }

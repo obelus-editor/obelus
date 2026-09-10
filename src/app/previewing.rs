@@ -240,6 +240,7 @@ impl App {
             | PickerValue::Setting { .. }
             | PickerValue::Permission(_)
             | PickerValue::AgentSetting(_)
+            | PickerValue::AgentAsked { .. }
             | PickerValue::AgentValue { .. }
             | PickerValue::Nothing => None,
         }
