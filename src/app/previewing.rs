@@ -239,6 +239,8 @@ impl App {
             | PickerValue::Theme(_)
             | PickerValue::Setting { .. }
             | PickerValue::Permission(_)
+            | PickerValue::AgentSetting(_)
+            | PickerValue::AgentValue { .. }
             | PickerValue::Nothing => None,
         }
     }

@@ -165,6 +165,7 @@ impl App {
                 .is_some_and(|language| self.servers.contains_key(&language)),
             // Per command: a server may answer one of these questions and
             // not another, and the menu is built from the same list.
+            Requires::AnAgentSetting => !self.agent_settings().is_empty(),
             Requires::AnAnswer => self
                 .symbol_actions()
                 .unwrap_or_default()
@@ -229,6 +230,13 @@ impl App {
                 self.change_setting(key, &crate::config::Value::Choice(word));
             }
             PickerValue::Permission(option) => self.allow(&option),
+            // One list leading to another, the way the palette leads to the
+            // theme list: what a setting *is* is a name, and what it can be
+            // is a list of its own.
+            PickerValue::AgentSetting(id) => self.open_agent_setting(&id),
+            PickerValue::AgentValue { setting, value } => {
+                self.set_agent_setting(&setting, &value);
+            }
             PickerValue::Nothing => {}
         }
     }

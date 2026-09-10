@@ -121,8 +121,134 @@ impl App {
         talker.step_mode();
     }
 
+    /// The settings it lets the reader change.
+    #[must_use]
+    pub fn agent_settings(&self) -> &[acp::Setting] {
+        self.talker.as_ref().map_or(&[], acp::Talk::settings)
+    }
+
+    /// Puts the agent's settings up as a list.
+    ///
+    /// The compact list, over the conversation, like every other choice:
+    /// each row is one setting and what it is on now, and choosing one
+    /// opens its values.
+    pub fn open_agent_settings(&mut self) {
+        let items = self
+            .agent_settings()
+            .iter()
+            .map(|setting| PickerItem {
+                icon: None,
+                label: setting.name.clone(),
+                detail: setting.about.clone(),
+                trailing: setting.current_name().map(str::to_string),
+                value: PickerValue::AgentSetting(setting.id.clone()),
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                kind: None,
+                tab: None,
+            })
+            .collect();
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.ask("how it works");
+        picker.when_empty("this agent has nothing to change");
+        self.picker = Some(picker);
+    }
+
+    /// And one setting's values, once one has been chosen.
+    pub(super) fn open_agent_setting(&mut self, id: &str) {
+        let Some(setting) = self.talker.as_ref().and_then(|talker| talker.setting(id)) else {
+            return;
+        };
+        let question = setting.name.clone();
+        let current = setting.current_name().map(str::to_string);
+        let items = setting
+            .values
+            .iter()
+            .map(|value| PickerItem {
+                icon: None,
+                label: value.name.clone(),
+                detail: value.about.clone(),
+                // The one that is on says so in words. A list where the
+                // selected row and the current value look the same cannot
+                // say which of the two it is showing.
+                trailing: (value.id == setting.current).then(|| "current".to_string()),
+                value: PickerValue::AgentValue {
+                    setting: id.to_string(),
+                    value: value.id.clone(),
+                },
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                kind: None,
+                tab: None,
+            })
+            .collect();
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.ask(&question);
+        picker.when_empty("this one has nothing to choose from");
+        // Opened on what it is already on, so the list starts by saying
+        // where the reader is rather than at whatever happens to be first.
+        if let Some(current) = current {
+            picker.prefer(current);
+        }
+        self.picker = Some(picker);
+    }
+
+    /// Asks for one of them to be put on one of its values.
+    pub(super) fn set_agent_setting(&mut self, setting: &str, value: &str) {
+        let Some(talker) = self.talker.as_mut() else {
+            return;
+        };
+        let Some(known) = talker.setting(setting) else {
+            return;
+        };
+        let (name, told) = (known.name.clone(), what_to_say(known, value));
+        let chosen = match known.switch {
+            true => acp::Chosen::Switch(value == "on"),
+            false => acp::Chosen::Value(value.to_string()),
+        };
+        talker.set(setting, chosen);
+        // In the transcript, because it is a thing the reader did to the
+        // conversation: what the agent answers with is the whole set of
+        // settings again, which is not something to show.
+        self.chat.note(&format!("{name}: {told}"));
+    }
+
+    /// The setting a typed command names, if it names one.
+    ///
+    /// `/model` is the reason this exists. An agent's own answer to it is a
+    /// dialog it cannot open -- Copilot says as much, in words, in the
+    /// middle of the conversation -- while the same choice is already on
+    /// offer as a setting. So a command that is the name of a setting opens
+    /// that setting's list instead of being sent.
+    fn setting_named(&self, name: &str) -> Option<String> {
+        let name = name.to_lowercase();
+        let settings = self.agent_settings();
+        settings
+            .iter()
+            .find(|setting| setting.id.to_lowercase() == name)
+            .or_else(|| {
+                settings
+                    .iter()
+                    .find(|setting| setting.name.to_lowercase() == name)
+            })
+            .map(|setting| setting.id.clone())
+    }
+
     /// Sends what the reader typed.
     pub(super) fn send_to_agent(&mut self, text: &str) {
+        // A command that is a setting's name is a choice to be made here,
+        // not a message: nothing goes in the transcript and nothing is sent.
+        if let Some(name) = text.trim().strip_prefix('/')
+            && !name.contains(char::is_whitespace)
+            && let Some(id) = self.setting_named(name)
+        {
+            self.open_agent_setting(&id);
+            return;
+        }
         self.chat.asked(text);
         if self.talker.is_none() {
             self.start_agent();
@@ -250,6 +376,16 @@ impl App {
             KeyCode::Tab | KeyCode::Enter => {
                 let chosen = slash.selected_item().map(|item| item.label.clone());
                 if let Some(name) = chosen {
+                    // A command that names a setting is that setting's
+                    // list: the reader means the choice, and making them
+                    // press enter twice to reach it is obelus being
+                    // pedantic about which of its own lists they are in.
+                    if let Some(id) = self.setting_named(name.trim_start_matches('/')) {
+                        self.chat.put("");
+                        self.slash = None;
+                        self.open_agent_setting(&id);
+                        return true;
+                    }
                     // The name and a blank after it: the blank is what
                     // settles the name, so the list is done and whatever
                     // the command takes is typed next.
@@ -305,7 +441,7 @@ impl App {
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
                 // said, and a transcript with them in it is a log.
-                acp::Update::Mode(_) | acp::Update::Orders(_) => {}
+                acp::Update::Mode(_) | acp::Update::Orders(_) | acp::Update::Settings(_) => {}
             },
             acp::Incoming::Ended(reason) => {
                 // Only the ends that are not the ordinary one: a turn that
@@ -498,6 +634,19 @@ impl App {
         // thing is a different answer.
         let _ = answer.send(text.map(|text| window(&text, line, limit)));
     }
+}
+
+/// What to call a value in the transcript.
+///
+/// Its name, or its id if the agent offered one it does not list -- which is
+/// still what the reader chose.
+fn what_to_say(setting: &acp::Setting, value: &str) -> String {
+    setting
+        .values
+        .iter()
+        .find(|known| known.id == value)
+        .map_or(value, |known| known.name.as_str())
+        .to_string()
 }
 
 /// The lines of `text` an agent asked for.

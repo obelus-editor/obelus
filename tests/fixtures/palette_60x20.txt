@@ -10,7 +10,7 @@ screen 60x20  editor 60x18  status 60x1
  7|────────────────────────────────────────────────────────────
  8| 󰈞 file.open  Open a file                              󰘴 o █
  9| 󰣞 file.changed  Open a file that has changed          󰘴 d █
-10| 󰑐 file.reload  Re-read this file from disk            󰘴 r █
+10| 󰑐 file.reload  Re-read this file from disk            󰘴 r │
 11| 󰈢 buffer.list  Switch to an open file                 󰘴 e │
 12| 󰮘 buffer.close  Close this file                       󰘴 w │
 13| 󰍔 markdown.preview  Show this file rendered, or stop      │
@@ -31,7 +31,7 @@ screen 60x20  editor 60x18  status 60x1
  7|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
  8|gggggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggghhhgb
  9|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaeeeab
-10|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeab
+10|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeae
 11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaeeeae
 12|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeae
 13|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee

@@ -190,7 +190,22 @@ That fake agent is also what holds obelus to its promises, because the crate
 cannot: it checks the handshake it was given and answers to the name "Wrong
 Client" if the client offered to write files, and it asks for a write during
 the turn and reports back whether it was refused. Both assertions are in
-`a_whole_turn_of_conversation`.
+`a_whole_turn_of_conversation`. It does the same for the settings: the
+boolean one is only offered to a client that said in the handshake that it
+can show a switch.
+
+**`/model` is not a question the agent can ask.** An agent's slash commands
+are names it takes in a prompt, and the ones that would open a dialog cannot:
+Copilot answers `/model` with "the model-picker dialog is only available in
+the interactive CLI". The same choice is already on offer as a *session
+config option* -- `session/new` and `session/update` carry the whole set,
+`session/set_config_option` changes one, and the answer to that is the whole
+set again because one value can change what another offers. So obelus lists
+them (`agent.settings`) and, when a typed command is the name of one, opens
+that setting's values instead of sending it. Copilot's own list is `mode`,
+`model`, `reasoning_effort` and `allow_all`; its mode ids are URLs and most
+of its rows describe themselves with their own name, which is why a
+description that repeats the name is dropped.
 
 **The agents page's buttons touch the real data directory.** `install` runs
 `npm` and `activate` writes a start record under `dirs::data_dir()`, neither

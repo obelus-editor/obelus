@@ -212,6 +212,10 @@ pub fn for_command(name: &str) -> char {
         // than one.
         "config.open" => '\u{f062e}',
         "agent.open" => ui::AGENT,
+        // A conversation with a cog on it: this changes how the agent is
+        // working, not how obelus is, and the sliders above already mean
+        // that.
+        "agent.settings" => '\u{f06f1}',
         "log.open" => '\u{f09ed}',
         "lsp.restart" => '\u{f0709}',
         "lsp.stop" => '\u{f04db}',

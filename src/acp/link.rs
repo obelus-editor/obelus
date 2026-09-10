@@ -27,12 +27,16 @@ use agent_client_protocol::{
     schema::{
         ProtocolVersion,
         v1::{
-            AvailableCommand, CancelNotification, ClientCapabilities, ContentBlock,
-            FileSystemCapabilities, Implementation, InitializeRequest, NewSessionRequest,
-            PermissionOptionId, PromptRequest, ReadTextFileRequest, ReadTextFileResponse,
-            RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-            SelectedPermissionOutcome, SessionNotification, SessionUpdate, SetSessionModeRequest,
-            TextContent, WriteTextFileRequest,
+            AvailableCommand, BooleanConfigOptionCapabilities, CancelNotification,
+            ClientCapabilities, ClientSessionCapabilities, ContentBlock, FileSystemCapabilities,
+            Implementation, InitializeRequest, NewSessionRequest, PermissionOptionId,
+            PromptRequest, ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
+            RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+            SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionValue,
+            SessionConfigOptionsCapabilities, SessionConfigSelectOption,
+            SessionConfigSelectOptions, SessionNotification, SessionUpdate,
+            SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent,
+            WriteTextFileRequest,
         },
     },
 };
@@ -56,6 +60,26 @@ pub enum Ask {
     Interrupt,
     /// Work this way from now on.
     Mode(String),
+    /// Put one of the session's settings on this value.
+    Set {
+        /// Which setting, by the agent's id for it.
+        setting: String,
+        /// What to put it on.
+        chosen: Chosen,
+    },
+}
+
+/// What a setting is being put on.
+///
+/// Two shapes because the protocol has two: a value chosen from a list, and
+/// a switch. Which one a setting takes is the setting's own business, so it
+/// is decided where the setting is known rather than here.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Chosen {
+    /// One of a list, by the agent's id for it.
+    Value(String),
+    /// A switch, on or off.
+    Switch(bool),
 }
 
 /// How obelus answers something the agent asked.
@@ -129,6 +153,54 @@ pub enum Update {
     /// The commands it takes, sent once the session is ready and again
     /// whenever they change.
     Orders(Vec<Order>),
+    /// The settings it lets the reader change, sent when the session opens
+    /// and again after every change -- by obelus or by the agent itself.
+    Settings(Vec<Setting>),
+}
+
+/// One thing about the session the agent lets the reader change.
+///
+/// The model, how hard it thinks, whether it asks before doing things: the
+/// agent names them, obelus lists them. Which are on offer is the agent's,
+/// and so is what each of them means -- obelus only shows the names and
+/// sends back the id of what was chosen.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Setting {
+    /// The agent's id for it, which is what a change names.
+    pub id: String,
+    /// What to call it on screen.
+    pub name: String,
+    /// One line about it, if it said.
+    pub about: Option<String>,
+    /// Every value it can take, in the agent's own order.
+    pub values: Vec<Value>,
+    /// Which value is on, by its id.
+    pub current: String,
+    /// Whether it is a switch, which is set with a boolean rather than an
+    /// id and so is offered as two values of obelus's own making.
+    pub switch: bool,
+}
+
+/// One value a [`Setting`] can be put on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Value {
+    /// The agent's id for it, which is what a change names.
+    pub id: String,
+    /// What to call it on screen.
+    pub name: String,
+    /// One line about it, if it said.
+    pub about: Option<String>,
+}
+
+impl Setting {
+    /// What the value that is on is called, for the row that says so.
+    #[must_use]
+    pub fn current_name(&self) -> Option<&str> {
+        self.values
+            .iter()
+            .find(|value| value.id == self.current)
+            .map(|value| value.name.as_str())
+    }
 }
 
 /// One way of working the agent offers.
@@ -214,6 +286,8 @@ async fn talk(
 ) -> Option<String> {
     // The transport *is* the agent: connecting spawns the process and
     // frames the messages over its stdin and stdout.
+    // `AcpAgent::with_debug` hands over every line in both directions,
+    // which is how the traffic in this file was read while it was written.
     let agent = agent_client_protocol::AcpAgent::new(config);
 
     let updates = events.clone();
@@ -332,6 +406,10 @@ async fn talk(
                     None => (Vec::new(), None),
                 };
                 let _ = events.send(Event::Acp(Incoming::Started { modes, current }));
+                if let Some(options) = opened.config_options.as_ref() {
+                    let settings = options.iter().filter_map(setting_of).collect();
+                    let _ = events.send(Event::Acp(Incoming::Update(Update::Settings(settings))));
+                }
 
                 // Whether the turn in flight has been given up on.
                 //
@@ -391,6 +469,41 @@ async fn talk(
                             let _ =
                                 events.send(Event::Acp(Incoming::Ended("cancelled".to_string())));
                         }
+                        Ask::Set { setting, chosen } => {
+                            let told = events.clone();
+                            let value = match chosen {
+                                Chosen::Value(id) => SessionConfigOptionValue::value_id(id),
+                                Chosen::Switch(on) => SessionConfigOptionValue::boolean(on),
+                            };
+                            connection
+                                .send_request(SetSessionConfigOptionRequest::new(
+                                    session.clone(),
+                                    SessionConfigId::new(setting),
+                                    value,
+                                ))
+                                .on_receiving_result(move |asked| {
+                                    // The answer is the whole set of them
+                                    // again: one setting's value can
+                                    // change what another one offers -- a
+                                    // model with no thinking levels, say --
+                                    // so what comes back replaces what is
+                                    // shown rather than patching it.
+                                    let _ = told.send(Event::Acp(match asked {
+                                        Ok(answer) => Incoming::Update(Update::Settings(
+                                            answer
+                                                .config_options
+                                                .iter()
+                                                .filter_map(setting_of)
+                                                .collect(),
+                                        )),
+                                        Err(error) => Incoming::Failed(
+                                            "changing a setting",
+                                            error.to_string(),
+                                        ),
+                                    }));
+                                    std::future::ready(Ok(()))
+                                })?;
+                        }
                         Ask::Mode(mode) => {
                             let told = events.clone();
                             connection
@@ -430,7 +543,16 @@ fn handshake() -> InitializeRequest {
                 .fs(FileSystemCapabilities::new()
                     .read_text_file(true)
                     .write_text_file(false))
-                .terminal(false),
+                .terminal(false)
+                // A switch is two rows of a list here, which is what the
+                // capability is about: an agent may only offer boolean
+                // settings to a client that says it can show them.
+                .session(
+                    ClientSessionCapabilities::default().config_options(
+                        SessionConfigOptionsCapabilities::new()
+                            .boolean(BooleanConfigOptionCapabilities::new()),
+                    ),
+                ),
         )
         .client_info(Implementation::new("obelus", env!("CARGO_PKG_VERSION")))
 }
@@ -485,11 +607,118 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
         SessionUpdate::AvailableCommandsUpdate(update) => vec![Update::Orders(
             update.available_commands.iter().map(order_of).collect(),
         )],
+        SessionUpdate::ConfigOptionUpdate(update) => vec![Update::Settings(
+            update
+                .config_options
+                .iter()
+                .filter_map(setting_of)
+                .collect(),
+        )],
         other => {
             tracing::debug!(?other, "an update obelus does not show");
             Vec::new()
         }
     }
+}
+
+/// One setting, as the view offers it -- if it is one obelus can show.
+///
+/// Nothing but a kind it has never heard of is dropped: a setting whose
+/// values obelus cannot list is a row that would do nothing when chosen,
+/// and the agent's own dialog for it is not obelus's to open.
+fn setting_of(option: &SessionConfigOption) -> Option<Setting> {
+    let (values, current, switch) = match &option.kind {
+        SessionConfigKind::Select(select) => (
+            values_of(&select.options),
+            select.current_value.0.to_string(),
+            false,
+        ),
+        SessionConfigKind::Boolean(boolean) => (
+            vec![
+                Value {
+                    id: ON.to_string(),
+                    name: ON.to_string(),
+                    about: None,
+                },
+                Value {
+                    id: OFF.to_string(),
+                    name: OFF.to_string(),
+                    about: None,
+                },
+            ],
+            match boolean.current_value {
+                true => ON.to_string(),
+                false => OFF.to_string(),
+            },
+            true,
+        ),
+        other => {
+            tracing::debug!(?other, "a setting obelus cannot show");
+            return None;
+        }
+    };
+    Some(Setting {
+        id: option.id.0.to_string(),
+        name: option.name.clone(),
+        about: said_twice(option.description.as_deref(), &option.name),
+        values,
+        current,
+        switch,
+    })
+}
+
+/// What obelus calls the two sides of a switch.
+const ON: &str = "on";
+/// The other one.
+const OFF: &str = "off";
+
+/// The values of a selector, as one list.
+fn values_of(options: &SessionConfigSelectOptions) -> Vec<Value> {
+    match options {
+        SessionConfigSelectOptions::Ungrouped(values) => values.iter().map(value_of).collect(),
+        // Flattened, with each group's name kept on its rows. A list of
+        // rows that can be chosen and headers that cannot would be a list
+        // where the arrows sometimes land on nothing.
+        SessionConfigSelectOptions::Grouped(groups) => groups
+            .iter()
+            .flat_map(|group| {
+                group.options.iter().map(|option| {
+                    let value = value_of(option);
+                    Value {
+                        about: Some(match value.about {
+                            Some(about) => format!("{} \u{b7} {about}", group.name),
+                            None => group.name.clone(),
+                        }),
+                        ..value
+                    }
+                })
+            })
+            .collect(),
+        other => {
+            tracing::debug!(?other, "values obelus cannot list");
+            Vec::new()
+        }
+    }
+}
+
+/// One value of a selector.
+fn value_of(option: &SessionConfigSelectOption) -> Value {
+    Value {
+        id: option.value.0.to_string(),
+        name: option.name.clone(),
+        about: said_twice(option.description.as_deref(), &option.name),
+    }
+}
+
+/// A description, unless it is the name again.
+///
+/// Agents fill both in for every row whether they have anything to add or
+/// not -- Copilot's model list describes "GPT-5.4" as "GPT-5.4" -- and a row
+/// that says the same thing twice reads as a mistake in obelus.
+fn said_twice(about: Option<&str>, name: &str) -> Option<String> {
+    about
+        .filter(|about| about.trim() != name.trim())
+        .map(str::to_string)
 }
 
 /// One command, as the view offers it.

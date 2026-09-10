@@ -30,7 +30,7 @@ pub mod link;
 use std::path::Path;
 
 use futures::channel::mpsc;
-pub use link::{Answer, Ask, Choice, Incoming, Mode, Order, Update};
+pub use link::{Answer, Ask, Choice, Chosen, Incoming, Mode, Order, Setting, Update, Value};
 
 /// One running agent: how to ask it things, and what it has said about
 /// itself.
@@ -58,6 +58,8 @@ pub struct Talk {
     mode: Option<String>,
     /// The commands it says it takes.
     orders: Vec<Order>,
+    /// The settings it lets the reader change.
+    settings: Vec<Setting>,
     /// A prompt typed before there was a session to send it in.
     ///
     /// The ordinary case for the first thing said: opening the view starts
@@ -97,6 +99,7 @@ impl Talk {
             modes: Vec::new(),
             mode: None,
             orders: Vec::new(),
+            settings: Vec::new(),
             held: None,
         }
     }
@@ -148,6 +151,31 @@ impl Talk {
     #[must_use]
     pub fn orders(&self) -> &[Order] {
         &self.orders
+    }
+
+    /// The settings it lets the reader change.
+    #[must_use]
+    pub fn settings(&self) -> &[Setting] {
+        &self.settings
+    }
+
+    /// One of them, by the agent's id for it.
+    #[must_use]
+    pub fn setting(&self, id: &str) -> Option<&Setting> {
+        self.settings.iter().find(|setting| setting.id == id)
+    }
+
+    /// Puts one of them on one of its values.
+    ///
+    /// What is shown does not change here: the agent answers with the whole
+    /// set of them again, because one setting's value can change what
+    /// another offers. So a chosen value appears when the agent has taken
+    /// it, which is the honest thing for a list to show.
+    pub fn set(&mut self, setting: &str, chosen: Chosen) {
+        let _ = self.asks.unbounded_send(Ask::Set {
+            setting: setting.to_string(),
+            chosen,
+        });
     }
 
     /// Sends a prompt, or holds it until there is a session to send it in.
@@ -244,6 +272,10 @@ impl Talk {
             }
             Incoming::Update(Update::Orders(orders)) => {
                 self.orders = orders;
+                None
+            }
+            Incoming::Update(Update::Settings(settings)) => {
+                self.settings = settings;
                 None
             }
             Incoming::Ended(reason) => {

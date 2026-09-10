@@ -60,6 +60,15 @@ pub enum PickerValue {
         /// And how far along that one.
         end_character: u32,
     },
+    /// Open the values of one of the agent's settings.
+    AgentSetting(String),
+    /// Put one of the agent's settings on one of its values.
+    AgentValue {
+        /// Which setting, by the agent's id for it.
+        setting: String,
+        /// Which value, by the agent's id for it.
+        value: String,
+    },
     /// Answer an agent's permission request with this option.
     ///
     /// The agent's own id for it, which is what the answer names -- not the

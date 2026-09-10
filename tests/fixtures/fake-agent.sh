@@ -8,13 +8,18 @@
 # It plays one conversation:
 #
 #   initialize            -> what it is, and protocol version 1
-#   session/new           -> a session, two modes, and two slash commands
+#   session/new           -> a session, two modes, three slash commands and two
+#                            settings
 #   session/set_mode      -> taken
+#   session/set_config_option
+#                         -> taken, and every setting again with the new value
 #   session/prompt "/..." -> says which command it ran, and ends the turn
 #   session/prompt        -> it thinks, says something, reads a file through
 #                            obelus, tries to write one (which obelus
 #                            refuses), uses a tool, and asks permission; the
 #                            turn ends once the answer to that arrives
+#   session/prompt        -> with "quickly" in it: it puts itself on the
+#                            faster model and says so, unasked
 #   session/prompt        -> with "slowly" in it: nothing at all, so the turn
 #                            stays in flight until it is cancelled
 #   session/cancel        -> the turn ends, cancelled
@@ -31,6 +36,27 @@ id_of() {
 
 turn=''
 
+# What its settings are on. Changed by `session/set_config_option` and read
+# back out by `options`: an agent's settings are state, and a client that
+# sets one and is told the old value back has been lied to.
+model='fast'
+allow='false'
+switches=''
+
+# Every setting it offers, as the protocol's own list.
+#
+# The switch is only offered to a client that said it can show one, which is
+# what that capability is for: obelus promises `boolean: {}` in the
+# handshake, and a client that stops promising it stops being offered the
+# row.
+options() {
+    printf '[{"id":"model","name":"Model","description":"Which model it thinks with","type":"select","currentValue":"%s","options":[{"value":"fast","name":"Fast","description":"Fast"},{"value":"careful","name":"Careful","description":"Slower, and better"}]}' "$model"
+    if [ -n "$switches" ]; then
+        printf ',{"id":"allow_all","name":"Allow everything","type":"boolean","currentValue":%s}' "$allow"
+    fi
+    printf ']'
+}
+
 while IFS= read -r line; do
     case "$line" in
         *'"method":"initialize"'*)
@@ -43,13 +69,28 @@ while IFS= read -r line; do
                 *'"readTextFile":true'*'"writeTextFile":false'*) me='Fake Agent' ;;
                 *) me='Wrong Client' ;;
             esac
+            case "$line" in
+                *'"boolean":{}'*) switches='yes' ;;
+                *) switches='' ;;
+            esac
             printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentInfo":{"name":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$me"
             ;;
         *'"method":"session/new"'*)
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1","modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]}}}\n' "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1","modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             # What it takes with a slash, which agents send once the
             # session is ready.
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Summarise the conversation"},{"name":"cost","description":"What this has cost","input":{"hint":"currency"}}]}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Summarise the conversation"},{"name":"cost","description":"What this has cost","input":{"hint":"currency"}},{"name":"model","description":"Which model to use"}]}}}\n'
+            ;;
+        *'"method":"session/set_config_option"'*)
+            which=$(printf '%s' "$line" | sed -n 's/.*"configId":"\([^"]*\)".*/\1/p')
+            # A value id keeps its quotes here and is stripped below; a
+            # switch arrives as `true` or `false`, which is the value.
+            got=$(printf '%s' "$line" | sed -n 's/.*"value":\("[^"]*"\|true\|false\).*/\1/p')
+            case "$which" in
+                model) model=$(printf '%s' "$got" | tr -d '"') ;;
+                allow_all) allow="$got" ;;
+            esac
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             ;;
         *'"method":"session/set_mode"'*)
             printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$(id_of "$line")"
@@ -60,6 +101,15 @@ while IFS= read -r line; do
             turn=$(id_of "$line")
             asked=$(printf '%s' "$line" | sed -n 's/.*"text":"\/\([^" ]*\).*/\1/p')
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ran %s"}}}}\n' "$asked"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            ;;
+        *'"method":"session/prompt"'*'quickly'*)
+            # It changes a setting of its own accord and says so, which is
+            # the other direction that path runs in: agents pick a model to
+            # suit what they were asked and tell the client afterwards.
+            turn=$(id_of "$line")
+            model='fast'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"config_option_update","configOptions":%s}}}\n' "$(options)"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
             ;;
         *'"method":"session/prompt"'*'slowly'*)
