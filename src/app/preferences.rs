@@ -25,6 +25,10 @@ impl App {
         // its own typing, and two of those would take the same keys.
         self.picker = None;
         self.prompt = None;
+        // Asked for now rather than when the tab is reached: the fetch
+        // takes a moment, and a reader who walks to the agents tab should
+        // find a list there rather than watch one arrive.
+        self.refresh_registry();
         self.settings = Some(Settings::new());
     }
 

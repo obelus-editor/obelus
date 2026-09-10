@@ -27,6 +27,11 @@ pub struct Config {
     pub blame: bool,
     /// Whether a line too long for the screen continues on the next row.
     pub wrap: bool,
+    /// Which agent obelus talks to, by the registry's own name for it.
+    ///
+    /// One, or none. Two would mean every question having to say which
+    /// agent it was for, and a reader having to know.
+    pub agent: Option<String>,
 }
 
 impl Default for Config {
@@ -41,6 +46,9 @@ impl Default for Config {
             // who wants it can say so, and then it is a line's own choice
             // no longer.
             wrap: false,
+            // None until the reader installs one: obelus does not choose an
+            // agent for anybody.
+            agent: None,
         }
     }
 }
@@ -151,6 +159,7 @@ impl Config {
             "icons" => Some(Value::Switch(self.icons)),
             "blame" => Some(Value::Switch(self.blame)),
             "wrap" => Some(Value::Switch(self.wrap)),
+            "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
         }
     }
@@ -162,6 +171,11 @@ impl Config {
             ("icons", Value::Switch(on)) => self.icons = *on,
             ("blame", Value::Switch(on)) => self.blame = *on,
             ("wrap", Value::Switch(on)) => self.wrap = *on,
+            // An empty word is nobody, which is how a reader stops talking
+            // to an agent without a second setting meaning "off".
+            ("agent", Value::Choice(word)) => {
+                self.agent = (!word.is_empty()).then(|| word.clone());
+            }
             _ => tracing::debug!(key, ?value, "a setting that does not take this"),
         }
     }
@@ -212,6 +226,9 @@ pub fn from_toml(text: &str) -> Config {
     if let Some(on) = table.get("wrap").and_then(toml::Value::as_bool) {
         config.wrap = on;
     }
+    if let Some(word) = table.get("agent").and_then(toml::Value::as_str) {
+        config.agent = (!word.is_empty()).then(|| word.to_string());
+    }
     config
 }
 
@@ -223,6 +240,12 @@ pub fn to_toml(config: &Config) -> String {
     table.insert("icons".to_string(), config.icons.into());
     table.insert("blame".to_string(), config.blame.into());
     table.insert("wrap".to_string(), config.wrap.into());
+    // Written even when there is nobody, so the file says what obelus read
+    // rather than leaving the reader to wonder whether it noticed.
+    table.insert(
+        "agent".to_string(),
+        config.agent.clone().unwrap_or_default().into(),
+    );
     toml::to_string(&table).unwrap_or_default()
 }
 
@@ -252,6 +275,7 @@ mod tests {
             icons: false,
             blame: false,
             wrap: true,
+            agent: Some("claude-acp".to_string()),
         };
         assert_eq!(from_toml(&to_toml(&config)), config);
         assert_eq!(

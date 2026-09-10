@@ -75,16 +75,21 @@ table being data, not by reading a file. Two features now want a config file
 
 ```
 src/
-  app.rs          state, the loop's handler, and every picker's item source
+  app/            state, the loop's handler, and every picker's item source,
+                  by aspect: documents, moving, searching, choosing, agents
   text.rs         the Rope wrapper: the only place coordinates convert
-  buffer.rs       one open file: text, syntax, cursor, viewport
+  buffer/         one open file: text, syntax, cursor, viewport
   keymap.rs       chords, contexts, the default table, modifiers_of
   icons.rs        the Nerd Font switch and every glyph behind it
+  config.rs       the settings, their file, and what each one is
   command/        the Command enum, its table, groups, and dispatch
-  picker/         one component, five instantiations, nucleo matching
+  component/      picker (one component, several instantiations) and settings
   syntax/         language registry (14 languages), parsing, highlights, tags
   lsp/            transport, client, actions, positions, outline
-  ui/             editor, status bar, picker, welcome, shared cell writers
+  git/            gix: head text, statuses, hunks, blame
+  agent/          the ACP registry, and installing an agent
+  ui/             editor, status bar, picker, settings, welcome, shared
+                  cell writers
 tests/            integration tests plus tests/fixtures/*.txt golden grids
 ```
 

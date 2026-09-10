@@ -13,6 +13,7 @@
 //! `crate::git` is the reading of a repository and `history` here is what
 //! obelus does with what it reads. What is left in this file is the state
 //! itself, the keys, the frame, and the loop.
+pub mod agents;
 mod choosing;
 mod documents;
 mod history;
@@ -192,6 +193,16 @@ pub struct App {
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
     statuses: std::collections::HashMap<PathBuf, git::FileStatus>,
+    /// The agents the registry lists, cached-then-fetched.
+    registry: Vec<crate::agent::Agent>,
+    /// Whether the registry has been asked for and not yet failed.
+    asked_registry: bool,
+    /// Why the registry could not be fetched, until it is tried again.
+    registry_failure: Option<String>,
+    /// The installs running, and how far each has got.
+    installing: HashMap<String, crate::agent::install::Progress>,
+    /// Why an install did not work, per agent, until it is tried again.
+    install_failures: HashMap<String, String>,
     /// What the reader has decided, as read from the file at startup.
     config: crate::config::Config,
     /// Where to write it back, or `None` for an application that was never
@@ -297,6 +308,11 @@ impl App {
             changes: None,
             opened: None,
             statuses: std::collections::HashMap::new(),
+            registry: Vec::new(),
+            asked_registry: false,
+            registry_failure: None,
+            installing: HashMap::new(),
+            install_failures: HashMap::new(),
             config: crate::config::Config::default(),
             config_path: None,
             settings: None,
@@ -546,6 +562,7 @@ impl App {
             self.search_this_file();
         }
 
+
         let area = self.text_area();
         self.refresh_markdown(editor_area.width);
         self.refresh_changes();
@@ -620,6 +637,9 @@ impl App {
                 hits,
                 done,
             } => self.on_matches(generation, hits, done),
+            Event::Registry { agents, failure } => self.on_registry(agents, failure),
+            Event::Installing { id, progress } => self.on_installing(id, progress),
+            Event::Installed { id, failure } => self.on_installed(id, failure),
             Event::Blamed { path, lines } => {
                 // Kept whether or not the reader is still looking at that
                 // file: they walked away from it while a walk of its history
@@ -714,8 +734,16 @@ impl App {
         // theirs to filter with. After the picker, because a list opened
         // over them -- a setting's choices -- is what the reader is
         // looking at.
-        if let Some(settings) = self.settings.as_mut() {
-            let outcome = settings.handle_key(&key, &self.config);
+        if self.settings.is_some() {
+            // The agents the page would show, worked out before the
+            // component is borrowed: it needs them to know what enter
+            // means on a card, and it is not the thing that knows them.
+            let listed = self.listed_agents();
+            let Some(settings) = self.settings.as_mut() else {
+                return;
+            };
+            let room = (self.editor_area.width, self.editor_area.height);
+            let outcome = settings.handle_key(&key, &self.config, &listed, room);
             match outcome {
                 SettingsOutcome::Consumed => return,
                 SettingsOutcome::Cancelled => {
@@ -728,6 +756,18 @@ impl App {
                 }
                 SettingsOutcome::Choose(key, choices, word) => {
                     self.open_choices(key, choices, &word);
+                    return;
+                }
+                SettingsOutcome::Install(id) => {
+                    self.install_agent(&id);
+                    return;
+                }
+                SettingsOutcome::Activate(id) => {
+                    self.activate_agent(&id);
+                    return;
+                }
+                SettingsOutcome::Deactivate => {
+                    self.deactivate_agent();
                     return;
                 }
                 SettingsOutcome::Ignored => {}

@@ -104,6 +104,20 @@ dirs = "7"
 # "is this valid" is not obelus's to own.
 toml = "1"
 gix = { version = "0.87.1", default-features = false, features = ["blame", "status", "revision", "max-performance-safe", "sha1"] }
+# The agent registry, and the archives it points at. Blocking, because the
+# thread that fetches one has nothing else to do -- and small: a once-a-session
+# GET of a 56 KB list needs no connection pool, no middleware and no HTTP/2,
+# which is most of what a bigger client is.
+ureq = "3.4.1"
+# Checking an archive against the checksum the registry gave for it. Half the
+# registry's entries carry one; those get verified before anything is unpacked.
+sha2 = "0.11.0"
+# Unpacking what was downloaded: `.tar.gz` is what nearly every agent ships,
+# `.zip` is most of the rest, and `.tar.bz2` -- four entries -- says so rather
+# than pretending.
+flate2 = "1.1.10"
+tar = "0.4.46"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 serde_json = "1"

@@ -94,7 +94,8 @@ pub mod key {
 
 /// The glyphs the views use for things that are not files.
 pub mod ui {
-    /// A prompt. Every picker filters by typing, so all four get this one.
+    /// A prompt. Every picker filters by typing, so all of them get this
+    /// one -- a magnifier, because what typing does there is *find*.
     pub const PROMPT: char = '\u{f0349}';
     /// A language server that has answered its handshake.
     pub const SERVER_READY: char = '\u{f0318}';
@@ -174,6 +175,28 @@ pub fn for_command(name: &str) -> char {
         // Leaving obelus, not switching a machine off.
         "app.quit" => '\u{f0206}',
         other => by_family(other),
+    }
+}
+
+/// The glyph for an agent, by the registry's own name for it.
+///
+/// The registry ships an icon for every agent, but they are monochrome
+/// 16×16 SVGs drawn with `currentColor` -- glyphs, in other words, and a
+/// terminal cannot be handed one. What it *can* be handed is a codepoint,
+/// and a patched font already carries the marks for the agents a reader is
+/// most likely to reach for.
+///
+/// Everything else gets the robot, which says "an agent" and claims nothing
+/// about which. A wrong mark would be worse than a general one: these are
+/// brands, and a reader scanning for one recognises it or does not.
+#[must_use]
+pub fn for_agent(id: &str) -> char {
+    match id {
+        "claude-acp" => '\u{ec82}',
+        "codex-acp" => '\u{ec81}',
+        "github-copilot-cli" => '\u{ec1e}',
+        "gemini" | "antigravity-acp" => '\u{f02ad}',
+        _ => '\u{f06a9}',
     }
 }
 

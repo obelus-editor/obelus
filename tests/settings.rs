@@ -7,6 +7,7 @@ use obelus::{
     app::App,
     command::{Command, dispatch},
     config,
+    event::Event,
 };
 
 /// Applying a setting touches process-wide state -- the glyph switch is one
@@ -46,7 +47,7 @@ fn a_switch_takes_effect_and_is_written_down() {
     // Down onto the second row of the appearance tab, which is the glyphs.
     support::press(&mut app, KeyCode::Down);
     assert!(obelus::icons::enabled(), "the glyphs start on");
-    support::press(&mut app, KeyCode::Char(' '));
+    support::press(&mut app, KeyCode::Enter);
 
     assert!(!obelus::icons::enabled(), "the glyphs are still on");
     assert!(!app.config().icons, "the setting did not change");
@@ -56,10 +57,15 @@ fn a_switch_takes_effect_and_is_written_down() {
         "the file does not say so: {written:?}"
     );
 
-    // And enter does the same thing as space, because a switch is a thing
-    // you toggle and both are what a reader reaches for.
+    // And again the other way.
     support::press(&mut app, KeyCode::Enter);
     assert!(obelus::icons::enabled(), "enter did not toggle it back");
+
+    // Space is a character, not a second way to flip it: these pages
+    // filter by typing, and "Agent 1" is a name a reader will type.
+    support::press(&mut app, KeyCode::Char(' '));
+    assert!(obelus::icons::enabled(), "space flipped the switch");
+    assert_eq!(app.settings().expect("the settings").query(), " ");
 
     // Put the glyphs back for whatever runs next: this is process-wide
     // state, which is the price of a switch the drawing code can read.
@@ -205,7 +211,8 @@ fn the_tabs_are_the_groups() {
         "the focus is on a row this tab does not have"
     );
 
-    // And back, and round: two tabs, so either arrow reaches the other one.
+    // Left goes back, and once more reaches the agents -- which is a tab
+    // and not a group of settings, so it has no rows of this kind at all.
     support::press(&mut app, KeyCode::Left);
     assert_eq!(
         rows(&app),
@@ -215,24 +222,19 @@ fn the_tabs_are_the_groups() {
         ]
     );
     support::press(&mut app, KeyCode::Left);
-    assert_eq!(
-        rows(&app),
-        [
-            "Wrap a line too long for the screen onto the next row",
-            "Who last changed the line the cursor is on"
-        ]
+    assert!(
+        app.settings().expect("the settings").on_agents(),
+        "the left arrow did not reach the agents"
+    );
+    assert!(
+        rows(&app).is_empty(),
+        "the agents page has settings rows on it"
     );
 
-    // Tab is not one of them: one way to walk them is the way every other
-    // tabbed view here works.
+    // Tab is not one of the keys that walks them: one way to do it is the
+    // way every other tabbed view here works.
     support::press(&mut app, KeyCode::Tab);
-    assert_eq!(
-        rows(&app),
-        [
-            "Wrap a line too long for the screen onto the next row",
-            "Who last changed the line the cursor is on"
-        ]
-    );
+    assert!(app.settings().expect("the settings").on_agents());
 }
 
 /// Typing narrows the rows, and the count on the status bar says how many
@@ -343,7 +345,7 @@ fn nothing_is_written_without_being_told_where() {
     support::lay_out(&mut app, 66, 12);
     dispatch::dispatch(&mut app, Command::ConfigOpen);
     support::press(&mut app, KeyCode::Down);
-    support::press(&mut app, KeyCode::Char(' '));
+    support::press(&mut app, KeyCode::Enter);
     // It still took effect, and there was nowhere to write it.
     assert!(!app.config().icons);
     assert_eq!(app.note(), None, "it complained about not saving");
@@ -373,5 +375,208 @@ fn the_theme_picker_writes_its_choice_down() {
         config::from_toml(&std::fs::read_to_string(&file).expect("the file")).theme,
         chosen,
         "the file does not say which theme was chosen"
+    );
+}
+
+/// The keys that reach the ends of a document reach the ends of a settings
+/// page too, and paging moves by what the page shows. A key should not mean
+/// one thing in one view and nothing in the next.
+#[test]
+fn the_ends_and_the_pages_are_reachable() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let file = temporary("ends");
+    let mut app = open(&file);
+    let focus = |app: &App| app.settings().expect("the settings").focus();
+
+    // Two rows on the appearance tab: End reaches the second, Home the
+    // first, and neither wraps past its end.
+    support::press(&mut app, KeyCode::End);
+    assert_eq!(focus(&app), 1, "End did not reach the last row");
+    support::press(&mut app, KeyCode::End);
+    assert_eq!(focus(&app), 1, "End walked past the end");
+    support::press(&mut app, KeyCode::Home);
+    assert_eq!(focus(&app), 0);
+
+    // A page is what the page shows, and paging is clamped rather than
+    // wrapped: a page that wrapped past the end would overshoot what the
+    // reader was reaching for.
+    support::press(&mut app, KeyCode::PageDown);
+    assert_eq!(focus(&app), 1, "PageDown did not reach the end");
+    support::press(&mut app, KeyCode::PageDown);
+    assert_eq!(focus(&app), 1, "PageDown wrapped");
+    support::press(&mut app, KeyCode::PageUp);
+    assert_eq!(focus(&app), 0, "PageUp did not come back");
+}
+
+/// The agents page is cards, and the same keys walk them: forty of them
+/// scroll, the ends are reachable, and a page moves by the cards that fit
+/// rather than by a number of rows.
+#[test]
+fn the_agents_page_is_a_list_of_cards() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let file = temporary("cards");
+    let mut app = open(&file);
+    // Onto the agents tab, which is the last one.
+    support::press(&mut app, KeyCode::Left);
+    assert!(app.settings().expect("the settings").on_agents());
+
+    let agents: Vec<obelus::agent::Agent> = (0..12)
+        .map(|index| obelus::agent::Agent {
+            id: format!("agent-{index}"),
+            name: format!("Agent {index}"),
+            version: "1.0.0".to_string(),
+            description: "One of several".to_string(),
+            authors: vec!["Somebody".to_string()],
+            license: "MIT".to_string(),
+            website: None,
+            distribution: obelus::agent::Distribution::Node {
+                package: format!("agent-{index}@1.0.0"),
+                arguments: Vec::new(),
+            },
+        })
+        .collect();
+    app.handle(Event::Registry {
+        agents,
+        failure: None,
+    });
+
+    let dump = support::render(&mut app, 76, 16);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("Agent 0") && text.contains("One of several"),
+        "not a card:\n{dump}"
+    );
+    // Not all twelve: the page scrolls, and a card is several rows.
+    assert!(
+        !text.contains("Agent 11"),
+        "twelve cards fitted a sixteen-row screen:\n{dump}"
+    );
+
+    // End reaches the last card, and it is on screen.
+    support::press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 76, 16);
+    assert!(
+        support::text_block(&dump).contains("Agent 11"),
+        "End did not bring the last card on screen:\n{dump}"
+    );
+    assert_eq!(app.settings().expect("the settings").focus(), 11);
+
+    // And the filter is the name, not the description: every one of these
+    // has the same description, and only one has this name.
+    support::type_text(&mut app, "Agent 1");
+    let showing = app
+        .settings()
+        .expect("the settings")
+        .agents(&app.listed_agents())
+        .len();
+    assert_eq!(showing, 3, "not the names that match: Agent 1, 10, 11");
+    support::type_text(&mut app, "0");
+    assert_eq!(
+        app.settings()
+            .expect("the settings")
+            .agents(&app.listed_agents())
+            .len(),
+        1
+    );
+    support::type_text(&mut app, " of several");
+    assert_eq!(
+        app.settings()
+            .expect("the settings")
+            .agents(&app.listed_agents())
+            .len(),
+        0,
+        "the description was searched"
+    );
+}
+
+/// The list is read on a thread -- both the cached copy and the fetched
+/// one -- so opening the settings does no file reading and no waiting. A
+/// fetch that fails says so on the page and lets the next visit try again:
+/// a session that started with no network may have one later.
+#[test]
+fn a_failed_fetch_says_so_and_is_tried_again() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let file = temporary("registry");
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::Left);
+    assert!(app.settings().expect("the settings").on_agents());
+
+    // Nothing has arrived yet: the page says what it is doing.
+    let dump = support::render(&mut app, 70, 12);
+    assert!(
+        support::text_block(&dump).contains("fetching the list of agents"),
+        "not the waiting page:\n{dump}"
+    );
+    assert_eq!(app.registry_failure(), None);
+
+    // It failed, and there was nothing cached: the page says that instead,
+    // because "fetching" would be a lie by now.
+    app.handle(Event::Registry {
+        agents: Vec::new(),
+        failure: Some("dns error: no such host".to_string()),
+    });
+    let dump = support::render(&mut app, 70, 12);
+    assert!(
+        support::text_block(&dump).contains("could not fetch"),
+        "the page still says it is fetching:\n{dump}"
+    );
+    assert_eq!(app.registry_failure(), Some("dns error: no such host"));
+
+    // Reopening the page tries again, which shows as the reason going
+    // away: a session that started with no network may have one by now.
+    support::press(&mut app, KeyCode::Esc);
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    assert_eq!(
+        app.registry_failure(),
+        None,
+        "reopening the page did not try again"
+    );
+    support::press(&mut app, KeyCode::Left);
+
+    // An empty answer with nothing wrong leaves whatever list there is:
+    // the cached one arriving after the fetched one must not wipe it.
+    let one = obelus::agent::Agent {
+        id: "one".to_string(),
+        name: "The One".to_string(),
+        version: "1.0.0".to_string(),
+        description: "An agent".to_string(),
+        authors: vec!["Someone".to_string()],
+        license: "MIT".to_string(),
+        website: None,
+        distribution: obelus::agent::Distribution::Node {
+            package: "one@1.0.0".to_string(),
+            arguments: Vec::new(),
+        },
+    };
+    app.handle(Event::Registry {
+        agents: vec![one.clone()],
+        failure: None,
+    });
+    app.handle(Event::Registry {
+        agents: Vec::new(),
+        failure: None,
+    });
+    let dump = support::render(&mut app, 70, 12);
+    assert!(
+        support::text_block(&dump).contains("The One"),
+        "an empty answer wiped the list:\n{dump}"
+    );
+
+    // And the list arriving later clears it, whichever visit fetched it.
+    app.handle(Event::Registry {
+        agents: vec![one],
+        failure: None,
+    });
+    assert_eq!(app.registry_failure(), None);
+    let dump = support::render(&mut app, 70, 12);
+    assert!(
+        support::text_block(&dump).contains("The One"),
+        "the list did not replace the reason:\n{dump}"
     );
 }

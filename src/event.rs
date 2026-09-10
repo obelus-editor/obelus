@@ -66,6 +66,32 @@ pub enum Event {
         /// `None` for a line no commit accounts for.
         lines: Vec<Option<crate::git::Blamed>>,
     },
+    /// The agent registry, from the disk or from the network.
+    ///
+    /// Twice per fetch, ordinarily: what was cached from a previous session
+    /// arrives first so the page has something to show, and the fetched
+    /// list replaces it when it lands.
+    Registry {
+        /// Every agent it lists that obelus can make sense of.
+        agents: Vec<crate::agent::Agent>,
+        /// Why nothing was fetched, when nothing was. A page that says
+        /// "fetching" for ever is a page that is lying by then.
+        failure: Option<String>,
+    },
+    /// How far an install has got.
+    Installing {
+        /// Which agent, by the registry's own name for it.
+        id: String,
+        /// What is known about how far along it is.
+        progress: crate::agent::install::Progress,
+    },
+    /// An install finished, one way or the other.
+    Installed {
+        /// Which agent.
+        id: String,
+        /// Why it did not work, or `None` because it did.
+        failure: Option<String>,
+    },
     /// A message from a language server.
     Lsp {
         /// Which server it came from.

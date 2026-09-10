@@ -8,6 +8,7 @@
 //! coordinate spaces kept apart by the type system, and a document that owns
 //! every conversion between them.
 
+pub mod agent;
 pub mod app;
 pub mod buffer;
 pub mod clipboard;

@@ -40,6 +40,8 @@ pub struct StatusView<'a> {
     picker: Option<&'a Picker>,
     /// And when the settings are open, the row is what narrows them.
     settings: Option<&'a crate::component::settings::Settings>,
+    /// The agents, for counting how many the filter leaves.
+    agents: Vec<crate::app::agents::Listed>,
     /// And when a question is being asked, the row is the question.
     prompt: Option<&'a crate::component::prompt::Prompt>,
     theme: &'a Theme,
@@ -57,6 +59,7 @@ impl<'a> StatusView<'a> {
             server: app.server_state(),
             picker: app.picker(),
             settings: app.settings(),
+            agents: app.listed_agents(),
             prompt: app.prompt(),
             theme: app.theme(),
             working_directory: app.working_directory(),
@@ -81,7 +84,14 @@ impl Widget for StatusView<'_> {
         if let Some(settings) = self.settings {
             // The same shape a picker's prompt has, because it is the same
             // thing: what has been typed narrows what is above it.
-            let count = settings.rows().len();
+            // What this page shows, which on the agents page is agents:
+            // the number beside a filter is the answer to "how much did
+            // that narrow it", whatever the page is made of.
+            let count = if settings.on_agents() {
+                settings.agents(&self.agents).len()
+            } else {
+                settings.rows().len()
+            };
             let line = if icons::enabled() {
                 format!("{}  {}", icons::ui::PROMPT, settings.query())
             } else {
