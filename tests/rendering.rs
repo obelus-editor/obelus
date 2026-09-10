@@ -209,8 +209,9 @@ fn the_terminal_is_told_where_to_put_its_cursor() {
     let mut app = app();
     let dump = support::render(&mut app, WIDTH, HEIGHT);
 
-    // A five-cell gutter, so the first character of the first line.
-    assert_eq!(support::cursor_line(&dump), "5,0", "{dump}");
+    // A five-cell gutter and the change margin before it, so the first
+    // character of the first line is cell six.
+    assert_eq!(support::cursor_line(&dump), "6,0", "{dump}");
     support::check("sample_40x8", &dump);
 }
 
@@ -223,10 +224,11 @@ fn the_cursor_follows_the_keys() {
     }
 
     // Line 1 is `\tlet greeting = ...`. The tab is four cells, then `let `
-    // is four more, so character five sits at cell eight — and the gutter is
-    // five columns before that. The tab is why the two numbers differ.
+    // is four more, so character five sits at cell eight — and the change
+    // margin and the gutter are six columns before that. The tab is why the
+    // two numbers differ.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
-    assert_eq!(support::cursor_line(&dump), "13,1", "{dump}");
+    assert_eq!(support::cursor_line(&dump), "14,1", "{dump}");
 }
 
 /// Shift extends the selection from where the reader began, while an ordinary
@@ -404,13 +406,13 @@ fn the_cursor_follows_a_wrapped_line_down_its_rows() {
 
     press(&mut app, KeyCode::Down);
     let first = support::render(&mut app, 40, 10);
-    assert_eq!(support::cursor_line(&first), "5,1", "{first}");
+    assert_eq!(support::cursor_line(&first), "6,1", "{first}");
 
     press(&mut app, KeyCode::Down);
     let second = support::render(&mut app, 40, 10);
     // The second row of the long line, indented to nothing since the line has
     // no indentation of its own.
-    assert_eq!(support::cursor_line(&second), "5,2", "{second}");
+    assert_eq!(support::cursor_line(&second), "6,2", "{second}");
 }
 
 #[test]
@@ -757,7 +759,7 @@ fn a_jump_lands_in_the_middle_of_the_screen() {
     // Eleven rows of text under the status bar, so the middle one is the
     // sixth: five rows of what leads up to the definition.
     let dump = support::render(&mut app, 40, 12);
-    assert_eq!(support::cursor_line(&dump), "15,5", "{dump}");
+    assert_eq!(support::cursor_line(&dump), "16,5", "{dump}");
 
     let rows: Vec<&str> = support::text_block(&dump)
         .lines()
@@ -1739,5 +1741,88 @@ fn an_ordinary_frame_does_not_put_the_caret_out() {
     assert!(
         calls.contains(&Caret::Moved),
         "the caret was never placed: {calls:?}"
+    );
+}
+
+/// The caret sits on the character the cursor is on: after the change
+/// margin, and counted from the left edge of what is on screen.
+///
+/// Two things were wrong with it, and both are only visible on a file in a
+/// repository or a line longer than the screen -- which is most files and
+/// most lines. The caret's column came from the gutter alone while the text
+/// is drawn after the margin as well, so it sat one cell to the left of its
+/// character; and the cursor's cell is a cell of the *line*, so on a line
+/// scrolled sideways the caret was drawn far to the right of its character,
+/// or past the edge and not at all.
+#[test]
+fn the_caret_sits_on_its_own_character() {
+    // A file in this repository, so the change margin is there.
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let (column, row) = support::cursor_line(&dump)
+        .split_once(',')
+        .map(|(x, y)| {
+            (
+                x.parse::<usize>().expect("a column"),
+                y.parse::<usize>().expect("a row"),
+            )
+        })
+        .expect("the caret is drawn");
+    let rows: Vec<String> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .map(str::to_string)
+        .collect();
+    // The cursor starts on the first character of the file, so that is the
+    // cell the caret is in. Three characters of `NN|` prefix in the dump.
+    assert_eq!(
+        rows.get(row)
+            .and_then(|drawn| drawn.chars().nth(3 + column)),
+        Some('f'),
+        "the caret is not on the first character of `fn main`:\n{dump}"
+    );
+}
+
+/// And the same on a line long enough to be scrolled sideways.
+#[test]
+fn the_caret_follows_a_line_scrolled_sideways() {
+    // A file with a line far longer than the screen. Wrapping off is the
+    // default, so reaching the end of it scrolls the line sideways.
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+
+    let (column, row) = support::cursor_line(&dump)
+        .split_once(',')
+        .map(|(x, y)| {
+            (
+                x.parse::<usize>().expect("a column"),
+                y.parse::<usize>().expect("a row"),
+            )
+        })
+        .expect("the caret is drawn at all");
+    assert!(
+        column < usize::from(WIDTH),
+        "the caret is off the screen:\n{dump}"
+    );
+
+    // The caret is one past the line's last character, because that is
+    // where the end of a line is -- so the cell before it holds that
+    // character.
+    let rows: Vec<String> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .map(str::to_string)
+        .collect();
+    let drawn = rows.get(row).cloned().unwrap_or_default();
+    // Three characters of `NN|` prefix in the dump.
+    let before: Option<char> = drawn.chars().nth(3 + column - 1);
+    assert_eq!(
+        before,
+        Some(';'),
+        "the caret is not just after the last character of the line:\n{dump}"
     );
 }

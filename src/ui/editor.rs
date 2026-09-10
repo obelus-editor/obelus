@@ -39,6 +39,20 @@ const MINIMUM_GUTTER_WIDTH: u16 = 5;
 /// depends only on which file is open does not.
 pub const MARGIN_WIDTH: u16 = 1;
 
+/// How many columns come before the text: the change margin, then the
+/// gutter.
+///
+/// One function, because two of them disagreed. The caret's own position
+/// used the gutter alone while the text is drawn after the margin as well,
+/// so on every file in a repository the caret sat one cell to the left of
+/// the character it was on -- which is what choosing a search match looks
+/// like when the match is the thing you are staring at.
+#[must_use]
+pub fn text_offset(lines: usize, changes: bool) -> u16 {
+    let margin = if changes { MARGIN_WIDTH } else { 0 };
+    margin.saturating_add(gutter_width(lines))
+}
+
 /// The column the change map takes, right of the scrollbar.
 ///
 /// One column, the same width as the margin on the other side, and drawn
@@ -286,6 +300,13 @@ impl Widget for EditorView<'_> {
         } else {
             0
         };
+        // The same total the caret's position is worked out from, which is
+        // what keeps the two agreeing.
+        debug_assert_eq!(
+            text_offset(text.line_count(), self.changes.is_some()),
+            margin + gutter_width(text.line_count()),
+            "the caret and the text disagree about what comes before the text"
+        );
         let gutter = gutter_width(text.line_count()).min(area.width - margin);
         let map = if self.changes.is_some() {
             CHANGE_MAP_WIDTH.min(area.width - margin - gutter)

@@ -138,16 +138,18 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
     if buffer.mode() != crate::buffer::Mode::Edit {
         return None;
     }
-    let gutter = editor::gutter_width(buffer.text().line_count());
-    if gutter >= regions.editor.width {
+    // Everything the editor draws before the text: the change margin and
+    // the gutter, from the function the editor lays them out with.
+    let offset = editor::text_offset(buffer.text().line_count(), app.changes().is_some());
+    if offset >= regions.editor.width {
         return None;
     }
     let (row, cell) = buffer.cursor_screen_cell(app.text_area())?;
-    if row >= regions.editor.height || cell >= regions.editor.width - gutter {
+    if row >= regions.editor.height || cell >= regions.editor.width - offset {
         return None;
     }
     Some(Position {
-        x: regions.editor.x + gutter + cell,
+        x: regions.editor.x + offset + cell,
         y: regions.editor.y + row,
     })
 }

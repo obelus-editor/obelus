@@ -32,4 +32,4 @@ g fg=#f472b6 bg=#18181b
 h fg=#a3e635 bg=#18181b
 i fg=#d4d4d8 bg=#27272a
 -- cursor --
-5,0
+6,0

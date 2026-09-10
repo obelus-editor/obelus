@@ -318,10 +318,24 @@ impl Buffer {
                 .visual_position(self.cursor.line, self.cursor.column, width);
         let cursor = (self.cursor.line, cursor_row);
 
+        // The cell the cursor is in, counted from the left edge of what is
+        // on screen rather than from the start of the line. With wrapping
+        // off a long line is scrolled sideways, and the cursor's own cell
+        // is a cell of the *line*: on a line scrolled by forty cells the
+        // caret was drawn forty cells to the right of the character it is
+        // on, or -- past the edge -- not drawn at all.
+        let Ok(left) = u16::try_from(self.viewport.left) else {
+            return None;
+        };
+        let cell = cell.get().checked_sub(left)?;
+        if cell >= area.width {
+            return None;
+        }
+
         let mut at = (self.viewport.top, self.viewport.top_row);
         for row in 0..area.height {
             if at == cursor {
-                return Some((row, cell.get()));
+                return Some((row, cell));
             }
             let next = self.step_rows(at.0, at.1, 1, width);
             if next == at {

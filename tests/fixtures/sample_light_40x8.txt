@@ -26,4 +26,4 @@ e fg=#a1a1aa bg=#fafafa
 f fg=#3f6212 bg=#fafafa
 g fg=#27272a bg=#e4e4e7
 -- cursor --
-5,0
+6,0
