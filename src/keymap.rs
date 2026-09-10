@@ -216,6 +216,14 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('d'), KeyModifiers::ALT),
                 },
+                // `ctrl+d` for the files that differ, beside `alt+d` for
+                // the way this line differs: the same letter for the same
+                // question at two sizes.
+                Binding {
+                    command: Command::FileChanged,
+                    context: Context::Normal,
+                    chord: control('d'),
+                },
                 // `ctrl+f` for find, and `alt` for the same question asked
                 // wider: `alt+f` over every file, `alt+s` over the names a
                 // server knows. Which is also why one view holds all three

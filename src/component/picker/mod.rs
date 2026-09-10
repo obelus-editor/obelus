@@ -201,6 +201,9 @@ pub struct Picker {
     /// Whether this list is a search, whose rows are refilled as the query
     /// and the tab move.
     searching: bool,
+    /// Whether this list is a list of files, whose rows are refilled when
+    /// the tab moves.
+    listing: bool,
     /// Whether the empty reason is about the world rather than about there
     /// being nothing to list, and so wins over "no match".
     explains: bool,
@@ -256,6 +259,7 @@ impl Picker {
             top: 0,
             scopes: false,
             searching: false,
+            listing: false,
             explains: false,
             empty: "nothing to choose from".to_string(),
             prefer: None,
@@ -311,6 +315,18 @@ impl Picker {
     #[must_use]
     pub const fn is_searching(&self) -> bool {
         self.searching
+    }
+
+    /// Says this list is a list of files, whose rows the application
+    /// refills when the tab moves.
+    pub const fn lists_files(&mut self) {
+        self.listing = true;
+    }
+
+    /// Whether this list is a list of files.
+    #[must_use]
+    pub const fn is_listing(&self) -> bool {
+        self.listing
     }
 
     /// The tab names, empty for a picker without tabs.

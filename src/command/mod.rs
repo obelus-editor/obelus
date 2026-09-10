@@ -18,6 +18,8 @@ pub mod dispatch;
 pub enum Command {
     /// Choose a file under the working directory and open it.
     FileOpen,
+    /// Open one of the files that have changed since the last commit.
+    FileChanged,
     /// Re-read the current file from disk and reparse what changed.
     FileReload,
     /// Choose among the files already open.
@@ -177,6 +179,11 @@ pub const ALL: &[CommandSpec] = &[
         command: Command::FileOpen,
         name: "file.open",
         title: "Open a file",
+    },
+    CommandSpec {
+        command: Command::FileChanged,
+        name: "file.changed",
+        title: "Open a file that has changed",
     },
     CommandSpec {
         command: Command::FileReload,
@@ -340,6 +347,7 @@ impl Command {
     pub const fn group(self) -> Group {
         match self {
             Self::FileOpen
+            | Self::FileChanged
             | Self::FileReload
             | Self::BufferList
             | Self::BufferClose
@@ -412,6 +420,13 @@ impl Command {
             // do, but a file in one that has never been committed still
             // gets an empty blame, which is an answer.
             Self::GitBlame => Requires::AFileOpen,
+            // Whether anything has changed is a walk of the whole tree with
+            // every ignore rule applied, and the palette would pay for it
+            // every time it opened. So this row is always choosable and the
+            // command says "nothing has changed" when that is the answer --
+            // the one place a row is allowed to report why it did nothing,
+            // and what buys the exception is the cost of the question.
+            Self::FileChanged => Requires::Nothing,
             Self::GitHunk => Requires::AHunk,
             Self::GitPrevious => Requires::AHunkBefore,
             Self::GitNext => Requires::AHunkAfter,
@@ -463,6 +478,7 @@ mod tests {
     fn every_command_is_in_the_table() {
         for command in [
             Command::FileOpen,
+            Command::FileChanged,
             Command::FileReload,
             Command::BufferList,
             Command::BufferClose,

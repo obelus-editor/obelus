@@ -18,7 +18,10 @@ use crate::{
     buffer::{Buffer, BufferId, Cursor, Mode, Motion, TextArea},
     command::{Command, Requires, dispatch},
     component::{
-        picker::{Colouring, Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files},
+        picker::{
+            Colouring, Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files,
+            files::Listing,
+        },
         prompt::{Prompt, PromptKind, PromptOutcome},
     },
     coordinates::{ByteOffset, CharColumn, LineNumber, Span},
@@ -161,6 +164,13 @@ pub struct App {
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
     statuses: std::collections::HashMap<PathBuf, git::FileStatus>,
+    /// What a test said git would say, instead of asking it.
+    given_statuses: Option<HashMap<PathBuf, git::FileStatus>>,
+    /// Which listings the open file list is showing, in tab order.
+    ///
+    /// The changed listing has a tab only when something has changed, so
+    /// which tab is which listing is not fixed.
+    listing: Vec<Listing>,
     /// Which scopes the open search is showing, in tab order.
     ///
     /// The tabs are only the scopes that can answer, so which tab is which
@@ -251,6 +261,8 @@ impl App {
             changes: None,
             opened: None,
             statuses: std::collections::HashMap::new(),
+            given_statuses: None,
+            listing: Vec::new(),
             searching: Vec::new(),
             blames: std::collections::HashMap::new(),
             asking_blame: std::collections::HashSet::new(),
@@ -877,31 +889,145 @@ impl App {
 
     /// Offers every file under the working directory.
     pub fn open_file_picker(&mut self) {
-        self.walk_generation += 1;
+        self.open_files(Listing::All);
+    }
+
+    /// Offers the files git says have changed, or says that none have.
+    pub fn open_changed_files(&mut self) {
+        self.open_files(Listing::Changed);
+    }
+
+    /// Asks git what has changed in the tree, or takes what a test said.
+    fn gather_statuses(&mut self) {
+        self.statuses = match &self.given_statuses {
+            Some(given) => given.clone(),
+            None => git::statuses(&self.working_directory),
+        };
+    }
+
+    /// Says what git would say about the tree, for a test.
+    ///
+    /// The tests run in a checkout whose dirtiness is not theirs to depend
+    /// on: with a real answer, a list of files looks one way on a clean tree
+    /// and another while someone is working in it -- and the second is the
+    /// one anyone runs them on.
+    pub fn statuses_for_test(&mut self, statuses: HashMap<PathBuf, git::FileStatus>) {
+        self.given_statuses = Some(statuses);
+        self.gather_statuses();
+    }
+
+    /// Offers files, at one of the two listings.
+    ///
+    /// Tabs like the search's, and for the same reason: "which file do I
+    /// want" and "what have I been working on" are different questions, and
+    /// a reader coming back to a project asks the second one first. The
+    /// changed listing gets a tab only when something has changed -- a tab
+    /// that is always empty in a clean tree is a tab in the way.
+    fn open_files(&mut self, listing: Listing) {
         // Asked once, here, rather than per row: `git status` walks the tree
         // and applies every ignore rule on the way, and a list of ten
-        // thousand files would ask ten thousand times.
-        self.statuses = git::statuses(&self.working_directory);
+        // thousand files would ask ten thousand times. It also decides
+        // whether there is a second tab at all.
+        self.gather_statuses();
+        let listings: Vec<Listing> = Listing::ALL
+            .into_iter()
+            .filter(|shown| *shown == Listing::All || !self.statuses.is_empty())
+            .collect();
+        let Some(tab) = listings.iter().position(|shown| *shown == listing) else {
+            self.note = Some("nothing has changed".to_string());
+            return;
+        };
+
+        let names: Vec<&str> = listings.iter().map(|listing| listing.label()).collect();
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
-        // Shown for the moment before the first batch arrives as well as for
-        // a tree with nothing in it, which is why it is about the search
-        // rather than about the result.
-        picker.when_empty("no files under this directory");
-        // Open on the file being read. The walk decides where in the list it
-        // is, and it may be in the last batch, so the picker holds on to the
-        // name and selects the row when it turns up. The window puts the
-        // selection near its middle, so this also decides what is around it.
-        if let Some(buffer) = self.current_buffer() {
-            picker.prefer(relative(buffer.path(), &self.working_directory));
+        // Only when there is a second one: a row of tabs with one tab on it
+        // says there is somewhere else to go when there is not.
+        if listings.len() > 1 {
+            picker.with_scopes(&names);
+            picker.go_to_tab(tab);
         }
+        picker.lists_files();
         self.picker = Some(picker);
-        if let Some(sender) = self.events.clone() {
-            files::spawn_walk(&self.working_directory, self.walk_generation, sender);
+        self.listing = listings;
+        self.refresh_listing();
+    }
+
+    /// Fills a file list with the rows of whichever listing is showing.
+    fn refresh_listing(&mut self) {
+        let showing = self
+            .picker
+            .as_ref()
+            .and_then(|picker| self.listing.get(picker.tab()).copied())
+            .unwrap_or(Listing::All);
+        match showing {
+            Listing::All => {
+                // A fresh walk rather than a remembered one: the walk
+                // streams and is over in a moment, and keeping a second copy
+                // of every path in the tree to switch back to costs more
+                // than walking it again.
+                self.walk_generation += 1;
+                let prefer = self
+                    .current_buffer()
+                    .map(|buffer| relative(buffer.path(), &self.working_directory));
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.replace(Vec::new());
+                    // Shown for the moment before the first batch arrives as
+                    // well as for a tree with nothing in it, which is why it
+                    // is about the search rather than about the result.
+                    picker.when_empty("no files under this directory");
+                    // Open on the file being read. The walk decides where in
+                    // the list it is, and it may be in the last batch, so the
+                    // picker holds on to the name and selects the row when it
+                    // turns up.
+                    if let Some(prefer) = prefer {
+                        picker.prefer(prefer);
+                    }
+                }
+                if let Some(sender) = self.events.clone() {
+                    files::spawn_walk(&self.working_directory, self.walk_generation, sender);
+                }
+            }
+            Listing::Changed => {
+                // The walk in flight is answering the other tab's question.
+                self.walk_generation += 1;
+                let root = self.working_directory.clone();
+                let mut rows: Vec<(String, git::FileStatus)> = self
+                    .statuses
+                    .iter()
+                    .map(|(path, status)| (relative(path, &root), *status))
+                    .collect();
+                // By name, because the order git reports them in is the order
+                // it walked the tree, and a list that reorders itself between
+                // openings cannot be learned.
+                rows.sort_by(|left, right| left.0.cmp(&right.0));
+                let items = rows
+                    .into_iter()
+                    .map(|(name, status)| PickerItem {
+                        icon: Some(icons::for_path(std::path::Path::new(&name))),
+                        enabled: true,
+                        colours: None,
+                        status: Some(status),
+                        depth: 0,
+                        kind: None,
+                        label: name.clone(),
+                        detail: None,
+                        trailing: None,
+                        value: PickerValue::File(std::path::PathBuf::from(name)),
+                        tab: None,
+                    })
+                    .collect();
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.replace(items);
+                    picker.when_empty("nothing has changed");
+                }
+            }
         }
     }
 
     /// Offers the files already open.
     pub fn open_buffer_picker(&mut self) {
+        // Before the buffers are borrowed to build the rows.
+        self.gather_statuses();
         let mut open: Vec<(usize, &Buffer)> = self
             .buffers
             .iter()
@@ -915,7 +1041,6 @@ impl App {
         // only other thing obelus knows about them.
         open.sort_by_key(|(index, buffer)| (std::cmp::Reverse(buffer.activations()), *index));
 
-        self.statuses = git::statuses(&self.working_directory);
         let statuses = &self.statuses;
         let items = open
             .into_iter()
@@ -2906,6 +3031,7 @@ impl App {
             // come from, so the application watches those two for movement
             // rather than the picker reporting it.
             let searching = picker.is_searching();
+            let listing = picker.is_listing();
             let before = (picker.tab(), picker.query().to_string());
             let outcome = picker.handle_key(&key, page);
             let after = (picker.tab(), picker.query().to_string());
@@ -2913,6 +3039,9 @@ impl App {
                 PickerOutcome::Consumed => {
                     if searching && after != before {
                         self.refresh_search(after.0 != before.0);
+                    }
+                    if listing && after.0 != before.0 {
+                        self.refresh_listing();
                     }
                     return;
                 }

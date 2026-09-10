@@ -111,6 +111,8 @@ pub fn for_command(name: &str) -> char {
         // Finding a file is what the picker does; the folder is closed until
         // then.
         "file.open" => '\u{f021e}',
+        // A folder with a pencil on it: the files being worked on.
+        "file.changed" => '\u{f08de}',
         "file.reload" => '\u{f0450}',
         "buffer.list" => '\u{f0222}',
         "buffer.close" => '\u{f0b98}',

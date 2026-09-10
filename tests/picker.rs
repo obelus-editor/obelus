@@ -11,7 +11,13 @@ use obelus::{
 use support::{press, press_control, press_control_key, type_text};
 
 fn app() -> App {
-    App::new(vec![support::open_fixture("sample.rs")])
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    // A clean tree, whatever the checkout these tests are running in looks
+    // like: the file list grows a tab for the changed files when there are
+    // any, and a test of how a *row* is drawn should not depend on whether
+    // someone is working in the repository.
+    app.statuses_for_test(std::collections::HashMap::new());
+    app
 }
 
 fn items(labels: &[&str]) -> Vec<PickerItem> {
@@ -2569,5 +2575,151 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
             .path()
             .ends_with("long.rs"),
         "re-opening the current file left a place in the history"
+    );
+}
+
+/// The file list gets a tab for the files that have changed, and only when
+/// some have: "which file do I want" and "what have I been working on" are
+/// different questions, and a reader coming back to a project asks the
+/// second one first.
+#[test]
+fn the_file_list_has_a_tab_for_what_has_changed() {
+    use obelus::{
+        command::{Command, dispatch},
+        git::FileStatus,
+    };
+
+    // A clean tree: one listing, and no row of tabs at all, because a row
+    // of tabs with one tab on it says there is somewhere else to go.
+    let mut clean = app();
+    support::lay_out(&mut clean, 60, 12);
+    press_control(&mut clean, 'o');
+    assert!(
+        clean.picker().expect("the file list").tabs().is_empty(),
+        "a tab row with nowhere to go"
+    );
+
+    // And the key that opens the changed listing says why it will not.
+    press(&mut clean, KeyCode::Esc);
+    dispatch::dispatch(&mut clean, Command::FileChanged);
+    assert!(clean.picker().is_none(), "an empty listing opened");
+    assert_eq!(clean.note(), Some("nothing has changed"));
+
+    // A tree with changes in it: two tabs, and the changed one lists what
+    // git said, by name, in the colours the status gives them.
+    let mut dirty = app();
+    let root = dirty.working_directory().to_path_buf();
+    dirty.statuses_for_test(
+        [
+            (root.join("src/late.rs"), FileStatus::Changed),
+            (root.join("src/early.rs"), FileStatus::New),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    support::lay_out(&mut dirty, 60, 12);
+    press_control(&mut dirty, 'o');
+    let picker = dirty.picker().expect("the file list");
+    assert_eq!(picker.tabs(), ["all", "changed"], "not the two listings");
+    assert_eq!(picker.tab(), 0, "ctrl+o did not open the whole tree");
+
+    // The right arrow moves to it, and its rows are the changed files --
+    // sorted by name, because the order git walks the tree in is not an
+    // order anyone can learn.
+    press(&mut dirty, KeyCode::Right);
+    let rows: Vec<(String, Option<FileStatus>)> = dirty
+        .picker()
+        .expect("the file list")
+        .matches()
+        .map(|item| (item.label.clone(), item.status))
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            ("src/early.rs".to_string(), Some(FileStatus::New)),
+            ("src/late.rs".to_string(), Some(FileStatus::Changed)),
+        ],
+        "not the changed files"
+    );
+
+    // And back to everything: the rows are gone and a walk is running for
+    // them again.
+    press(&mut dirty, KeyCode::Left);
+    let picker = dirty.picker().expect("the file list");
+    assert_eq!(picker.tab(), 0);
+    assert_eq!(picker.match_count(), 0, "the changed rows stayed");
+    assert_eq!(
+        picker.nothing_to_show(),
+        Some("no files under this directory")
+    );
+}
+
+/// A walk still running when the reader moves to the changed listing is
+/// answering the other tab's question, and its batches must not land in
+/// this one: nothing can stop a walk, so its answers have to be recognised
+/// as stale.
+#[test]
+fn a_walk_in_flight_does_not_land_in_the_changed_listing() {
+    use obelus::git::FileStatus;
+
+    let mut app = app();
+    let root = app.working_directory().to_path_buf();
+    app.statuses_for_test(
+        [(root.join("src/changed.rs"), FileStatus::Changed)]
+            .into_iter()
+            .collect(),
+    );
+    support::lay_out(&mut app, 60, 12);
+    press_control(&mut app, 'o');
+    // The walk that opening the list started is the first one.
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["src/walked.rs".into()],
+    });
+    assert_eq!(app.picker().expect("the file list").match_count(), 1);
+
+    press(&mut app, KeyCode::Right);
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec!["src/late.rs".into()],
+    });
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the file list")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        vec!["src/changed.rs".to_string()],
+        "a batch from the other tab's walk landed here"
+    );
+}
+
+/// `ctrl+d` opens the file list on the changed files, which is the whole
+/// point of it having a key: the reader who wants it wants it now.
+#[test]
+fn a_key_opens_the_changed_files_directly() {
+    use obelus::git::FileStatus;
+
+    let mut app = app();
+    let root = app.working_directory().to_path_buf();
+    app.statuses_for_test(
+        [(root.join("src/changed.rs"), FileStatus::Changed)]
+            .into_iter()
+            .collect(),
+    );
+    support::lay_out(&mut app, 60, 12);
+    press_control(&mut app, 'd');
+
+    let picker = app.picker().expect("the file list");
+    assert_eq!(picker.tabs(), ["all", "changed"]);
+    assert_eq!(picker.tab(), 1, "ctrl+d did not open the changed listing");
+    assert_eq!(
+        picker
+            .matches()
+            .map(|item| item.label.clone())
+            .collect::<Vec<_>>(),
+        vec!["src/changed.rs".to_string()]
     );
 }
