@@ -182,6 +182,11 @@ pub struct Picker {
     tabs: Vec<String>,
     /// Which tab is showing.
     tab: usize,
+    /// Which match is on the top row.
+    ///
+    /// The window, and it is state: it moves only when the selection would
+    /// leave it. See [`Picker::first_visible`].
+    top: usize,
     /// Whether the tabs are scopes: rows that come from three different
     /// places rather than three groups of one list.
     scopes: bool,
@@ -240,6 +245,7 @@ impl Picker {
             outline: Option::None,
             tabs: Vec::new(),
             tab: 0,
+            top: 0,
             scopes: false,
             searching: false,
             explains: false,
@@ -532,16 +538,40 @@ impl Picker {
 
     /// Which match is on the top row of a window `height` rows tall.
     ///
-    /// Placed so the selection sits near the middle of the window, clamped at
-    /// both ends of the list. Anchoring the selection to the bottom row
-    /// instead is simpler and reads badly once paging exists: every move
-    /// slides the whole list under a cursor that never moves.
+    /// Remembered rather than worked out from the selection: the window
+    /// moves only when the selection would leave it, so walking down the
+    /// list moves a cursor through rows that stay still, and the rows only
+    /// slide once the cursor is against an edge. Deriving the top from the
+    /// selection -- keeping it near the middle, say -- means every single
+    /// step scrolls the whole list under a cursor that never moves, and a
+    /// reader loses track of where they are in it.
+    ///
+    /// A pure reader: the window is put right by [`Picker::settle`], which
+    /// runs once a frame before anything is drawn, and having two places
+    /// clamp it would leave neither of them responsible.
     #[must_use]
-    pub fn first_visible(&self, height: u16) -> usize {
-        let height = usize::from(height);
-        self.selected
-            .saturating_sub(height / 2)
-            .min(self.match_count().saturating_sub(height))
+    pub const fn first_visible(&self, _height: u16) -> usize {
+        self.top
+    }
+
+    /// Moves the window if the selection has left it, and no further.
+    ///
+    /// One row at a time at the edges, and a whole window's worth when the
+    /// selection arrived by paging: either way the answer is "the least that
+    /// puts the selection back on screen".
+    ///
+    /// A list that shrinks under the window needs no case of its own, which
+    /// is worth saying because one was written first: a window past the end
+    /// of the list has the selection *above* it -- the selection is clamped
+    /// to the last row when the rows go away -- so the first rule below
+    /// pulls the window back down to it.
+    fn settle(&mut self, height: u16) {
+        let height = usize::from(height).max(1);
+        if self.selected < self.top {
+            self.top = self.selected;
+        } else if self.selected >= self.top + height {
+            self.top = self.selected + 1 - height;
+        }
     }
 
     /// Works out which characters matched, for the rows about to be drawn.
@@ -551,6 +581,11 @@ impl Picker {
     /// depends on the geometry, and the geometry is only settled at that
     /// point.
     pub fn refresh_indices(&mut self, height: u16) {
+        // The window first: which rows are about to be drawn is the question
+        // the matched characters are worked out for, and the height is only
+        // known here.
+        self.settle(height);
+
         // Reuse the allocations: `indices` holds one vector per row, and the
         // rows are the same rows on the next keystroke.
         let mut spare: Vec<Vec<u32>> = self

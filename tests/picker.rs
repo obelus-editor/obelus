@@ -459,6 +459,100 @@ fn a_page_is_the_number_of_rows_on_screen() {
     assert_eq!(short.visible_rows(11), 3, "and by the candidates");
 }
 
+/// The rows stay still while the cursor walks through them, and move only
+/// when it is against an edge -- by one row, which is the least that puts it
+/// back on screen. A window worked out from the selection instead slides the
+/// whole list under a cursor that never moves, and a reader loses track of
+/// where they are.
+#[test]
+fn the_list_moves_only_when_the_cursor_reaches_an_edge() {
+    let mut app = app();
+    press_control(&mut app, 'o');
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: (0..40)
+            .map(|index| format!("file-{index:03}.rs").into())
+            .collect(),
+    });
+
+    // How many rows this screen shows, asked of the screen rather than
+    // assumed: the rule is about the last row, whichever row that is.
+    let rows_of = |app: &mut App| {
+        let dump = support::render(app, 60, 12);
+        support::text_block(&dump)
+            .lines()
+            .filter_map(|row| {
+                let at = row.find("file-")?;
+                Some(row[at..at + "file-000.rs".len()].to_string())
+            })
+            .collect::<Vec<String>>()
+    };
+    let first = rows_of(&mut app);
+    let height = first.len();
+    assert!(height > 3, "not enough rows to tell anything apart");
+    let top = |rows: &[String]| rows.first().cloned().unwrap_or_default();
+
+    // Down to the last visible row: the rows have not moved.
+    for _ in 0..height - 1 {
+        press(&mut app, KeyCode::Down);
+    }
+    let held = rows_of(&mut app);
+    assert_eq!(
+        top(&held),
+        top(&first),
+        "the list moved while the cursor was still walking into it"
+    );
+
+    // One more, and it moves by exactly one row.
+    press(&mut app, KeyCode::Down);
+    let moved = rows_of(&mut app);
+    assert_eq!(
+        top(&moved),
+        held[1],
+        "the list did not follow the cursor by one row"
+    );
+
+    // Back up through the window: still nothing moves until the cursor is
+    // on the top row and asked to go further.
+    for _ in 0..height - 1 {
+        press(&mut app, KeyCode::Up);
+    }
+    assert_eq!(
+        top(&rows_of(&mut app)),
+        top(&moved),
+        "the list moved on the way back up"
+    );
+    press(&mut app, KeyCode::Up);
+    assert_eq!(
+        top(&rows_of(&mut app)),
+        top(&first),
+        "the list did not follow the cursor back"
+    );
+
+    // A query that narrows the list brings the window back inside it: the
+    // rows the window was showing may not exist any more.
+    press(&mut app, control(KeyCode::End).code);
+    type_text(&mut app, "file-03");
+    let narrowed = rows_of(&mut app);
+    assert!(
+        !narrowed.is_empty(),
+        "the window is past the end of the narrowed list"
+    );
+    for _ in 0.."file-03".len() {
+        press(&mut app, KeyCode::Backspace);
+    }
+
+    // And a wrap around the end brings the window with it: the cursor is on
+    // the first row, so the first row has to be on screen.
+    press(&mut app, control(KeyCode::End).code);
+    press(&mut app, KeyCode::Down);
+    assert_eq!(
+        top(&rows_of(&mut app)),
+        top(&first),
+        "wrapping to the top left the window at the bottom"
+    );
+}
+
 /// Paging through the list has to bring the rows with it.
 #[test]
 fn paging_scrolls_the_window() {
