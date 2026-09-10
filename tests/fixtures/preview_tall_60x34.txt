@@ -1,15 +1,15 @@
 screen 60x34  editor 60x32  status 60x1
 -- text --
- 0|  tests/fixtures/many_lines.rs                             
- 1|                                                            
- 2|                                                            
- 3|                                                            
- 4|                                                            
- 5|                                                            
- 6|                                                            
- 7|                                                            
- 8|                                                            
- 9|                                                            
+ 0|  tests/fixtures/many_lines.rs                            █
+ 1|  src/other01.rs                                          █
+ 2|  src/other02.rs                                          █
+ 3|  src/other03.rs                                          │
+ 4|  src/other04.rs                                          │
+ 5|  src/other05.rs                                          │
+ 6|  src/other06.rs                                          │
+ 7|  src/other07.rs                                          │
+ 8|  src/other08.rs                                          │
+ 9|  src/other09.rs                                          │
 10|────────────────────────────────────────────────────────────
 11|    1 //! Forty lines, so a preview has more to show than █ 
 12|      it has room for.                                    █ 
@@ -36,44 +36,44 @@ screen 60x34  editor 60x32  status 60x1
 33| 󰍉                                                          
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
- 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 2|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 5|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 7|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-11|bbbbdbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedb
-12|bbbbbbeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbdb
-13|bbbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbdb
-14|bbbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbdb
-15|bbbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbdb
-16|bbbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbdb
-17|bbbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbdb
-18|bbbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbdb
-19|bbbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbdb
-20|bbbbcbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbdb
-21|bbbccbfffbfffffbgggggggdbgggbbbhdbbbbbbbbbbbbbbbbbbbbbbbbbdb
-22|bbbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbcb
-23|bbbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbcb
-24|bbbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbcb
-25|bbbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbcb
-26|bbbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbcb
-27|bbbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbcb
-28|bbbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbcb
-29|bbbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbcb
-30|bbbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbcb
-31|bbbccbfffbfffffbgggggggdbgggbbbhhdbbbbbbbbbbbbbbbbbbbbbbbbcb
-32|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 2|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccd
+ 4|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccd
+ 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccd
+ 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccd
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccd
+ 8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccd
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccd
+10|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+11|ccccbceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebc
+12|cccccceeeeeeeeeeeeeeeeccccccccccccccccccccccccccccccccccccbc
+13|ccccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccbc
+14|ccccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccbc
+15|ccccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccbc
+16|ccccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccbc
+17|ccccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccbc
+18|ccccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccbc
+19|ccccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccbc
+20|ccccdcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccbc
+21|cccddcfffcfffffcgggggggbcgggccchbcccccccccccccccccccccccccbc
+22|cccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccdc
+23|cccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccdc
+24|cccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccdc
+25|cccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccdc
+26|cccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccdc
+27|cccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccdc
+28|cccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccdc
+29|cccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccdc
+30|cccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccdc
+31|cccddcfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccdc
+32|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 33|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --
 a fg=#e4e4e7 bg=#27272a
-b fg=#e4e4e7 bg=#18181b
-c fg=#52525b bg=#18181b
-d fg=#a1a1aa bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#e4e4e7 bg=#18181b
+d fg=#52525b bg=#18181b
 e fg=#71717a bg=#18181b
 f fg=#c084fc bg=#18181b
 g fg=#fbbf24 bg=#18181b

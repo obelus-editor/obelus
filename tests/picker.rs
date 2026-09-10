@@ -1576,13 +1576,16 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
 fn a_taller_screen_gives_the_extra_rows_to_the_preview() {
     let mut app = app();
     press_control(&mut app, 'o');
+    // More names than either list has room for, and the first of them is a
+    // file with more lines than either preview has room for: both counts
+    // are then the room rather than what there is to show.
+    let mut paths: Vec<std::path::PathBuf> = vec!["tests/fixtures/many_lines.rs".into()];
+    paths.extend((1..=30).map(|number| format!("src/other{number:02}.rs").into()));
     app.handle(Event::FilesFound {
         generation: 1,
-        paths: vec!["tests/fixtures/many_lines.rs".into()],
+        paths,
     });
 
-    // A file with more lines than either preview has room for, so the count
-    // is the room rather than the file.
     let shown = |dump: &str| {
         support::text_block(dump)
             .lines()
@@ -1601,12 +1604,94 @@ fn a_taller_screen_gives_the_extra_rows_to_the_preview() {
     let rows_of_list = |dump: &str| {
         support::text_block(dump)
             .lines()
-            .position(|row| row.contains('\u{2500}'))
-            .expect("a rule")
+            .filter(|row| row.contains(".rs"))
+            .count()
     };
     assert_eq!(rows_of_list(&short), rows_of_list(&tall));
+    assert_eq!(rows_of_list(&tall), 10, "the list is not ten rows:\n{tall}");
 
     support::check("preview_tall_60x34", &tall);
+}
+
+/// Ten rows to walk, tabs or no tabs.
+///
+/// A list with tabs spends its first two rows on them -- the tabs and the
+/// rule under them -- so a region ten rows tall drew eight names while the
+/// window and the paging were told ten. What that looked like was a list
+/// that scrolled a row before the last one on screen.
+#[test]
+fn a_list_with_tabs_still_walks_ten_rows() {
+    use obelus::git::FileStatus;
+
+    let mut app = app();
+    let root = app.working_directory().to_path_buf();
+    app.statuses_for_test(
+        [(
+            root.join("tests/fixtures/many_lines.rs"),
+            FileStatus::Changed,
+        )]
+        .into_iter()
+        .collect(),
+    );
+    press_control(&mut app, 'o');
+    let mut paths: Vec<std::path::PathBuf> = vec!["tests/fixtures/many_lines.rs".into()];
+    paths.extend((1..=30).map(|number| format!("src/other{number:02}.rs").into()));
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths,
+    });
+
+    let names = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| row.contains(".rs"))
+            .count()
+    };
+    let dump = support::render(&mut app, 60, 34);
+    assert!(
+        dump.contains("changed"),
+        "this list has no tabs, so it tests nothing:\n{dump}"
+    );
+    assert_eq!(names(&dump), 10, "the list is not ten rows:\n{dump}");
+
+    // Nine steps stay inside those ten rows, so the top of the list has not
+    // moved; the tenth is the row it scrolls on.
+    let first = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .find(|row| row.contains(".rs"))
+            .expect("a row")
+            .to_string()
+    };
+    for _ in 0..9 {
+        press(&mut app, KeyCode::Down);
+    }
+    let walked = support::render(&mut app, 60, 34);
+    assert_eq!(
+        first(&walked),
+        first(&dump),
+        "the list scrolled before the last row on screen:\n{walked}"
+    );
+    press(&mut app, KeyCode::Down);
+    let scrolled = support::render(&mut app, 60, 34);
+    assert_ne!(
+        first(&scrolled),
+        first(&dump),
+        "the list did not scroll at the last row on screen:\n{scrolled}"
+    );
+    assert_eq!(names(&scrolled), 10, "the list lost a row:\n{scrolled}");
+
+    // And a page is those ten rows, not the region they are drawn in: a
+    // page of twelve would step past two rows the reader never saw.
+    support::press_control_key(&mut app, KeyCode::Home);
+    press(&mut app, KeyCode::PageDown);
+    assert_eq!(
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.as_str()),
+        Some("src/other10.rs"),
+        "a page is not the ten rows on screen"
+    );
 }
 
 /// The plain keys page the list; the same keys with control scroll the
@@ -1806,20 +1891,29 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
         PickerLayout::FullArea,
     );
 
-    // Ten rows of list, a rule, and twenty-two rows of preview, so the
-    // eleventh of them is the middle. One row taller than the arithmetic
-    // needs, because the screen keeps one for the rule over the status bar.
+    // Worked out from the two rules rather than counted out here: the list
+    // takes half the room and the preview the rest, and this is a test
+    // about where in the preview the line lands.
     let dump = support::render(&mut app, 60, 35);
     let rows: Vec<&str> = support::text_block(&dump)
         .lines()
         .filter(|row| !row.is_empty())
         .collect();
+    let under_list = rows
+        .iter()
+        .position(|row| row.contains('\u{2500}'))
+        .expect("a rule");
+    let over_status = rows
+        .iter()
+        .rposition(|row| row.contains('\u{2500}'))
+        .expect("the edge");
+    let preview = over_status - under_list - 1;
     assert!(
-        rows[11 + 11].contains("LINE_30"),
+        rows[under_list + 1 + preview / 2].contains("LINE_30"),
         "the place is not in the middle of the preview:\n{dump}"
     );
     assert!(
-        rows[11].contains("LINE_19"),
+        rows[under_list + 1].contains(&format!("LINE_{}", 30 - preview / 2)),
         "what leads up to it is not there:\n{dump}"
     );
     support::check("preview_middle_60x35", &dump);
@@ -1837,8 +1931,12 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
         !rows.iter().any(|row| row.contains("LINE_30")),
         "paging up did not leave the place behind:\n{up}"
     );
+    let under_list = rows
+        .iter()
+        .position(|row| row.contains('\u{2500}'))
+        .expect("a rule");
     assert!(
-        rows[11].contains("Forty lines"),
+        rows[under_list + 1].contains("Forty lines"),
         "paging up did not reach the top of the file:\n{up}"
     );
 }

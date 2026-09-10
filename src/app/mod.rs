@@ -617,7 +617,8 @@ impl App {
         // Which rows the list will draw is what decides which rows need
         // their matched characters worked out, and only the geometry knows
         // how many rows there are.
-        let rows = ui::picker::PickerView::new(self).map(|view| view.region(editor_area).height);
+        let rows = ui::picker::PickerView::new(self)
+            .map(|view| view.rows_region(view.region(editor_area)).height);
         if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
             picker.refresh_indices(rows);
         }
@@ -771,7 +772,6 @@ impl App {
         if KeyChord::from_event(&key).is_none() {
             return;
         }
-        let editor_height = self.editor_area.height;
         // Whatever obelus had to say has been read by now, or was not going to
         // be.
         self.note = None;
@@ -779,10 +779,15 @@ impl App {
         // The picker gets first refusal, because the keys it wants are the
         // ones that move the thing it owns. What it does not want falls
         // through, which is how `ctrl+q` still works with one open.
+        // A page is the rows actually on screen, which is the region the
+        // list is *drawn* in -- not the region it was offered. A full-area
+        // list gives half of that to a preview, and a page of the whole
+        // editor would walk the selection twice as far as the reader can
+        // see.
+        let page = ui::picker::PickerView::new(self).map_or(1, |view| {
+            view.rows_region(view.region(self.editor_area)).height
+        });
         if let Some(picker) = self.picker.as_mut() {
-            // A page is the rows actually on screen, which is why the layout
-            // and the key handler share one function for it.
-            let page = picker.visible_rows(editor_height);
             // What a search is asking, before and after the key. The picker
             // owns the query and the tab and knows nothing about where rows
             // come from, so the application watches those two for movement

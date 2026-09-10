@@ -15,12 +15,21 @@ use crate::{
     ui::{Marked, Matched, drop_from_left, editor::SCROLLBAR_WIDTH, fill, text_width},
 };
 
-/// How many rows the list keeps for itself.
+/// How many rows of the list a reader gets to walk.
 ///
 /// Fixed rather than sized to the candidates: a boundary that moved as the
 /// query narrowed the list would slide the preview up and down under a reader
 /// who is looking at it.
+///
+/// Rows of the *list*, not of the region it is drawn in: a list with tabs
+/// spends its first two rows on them, and a reader who asked for ten rows
+/// meant ten rows to walk.
 const LIST_ROWS: u16 = 10;
+
+/// How tall the whole list is: its rows, and the tabs over them.
+fn list_region_rows(picker: &Picker) -> u16 {
+    LIST_ROWS.saturating_add(picker.tab_rows())
+}
 
 /// The fewest rows worth giving a preview.
 ///
@@ -48,12 +57,13 @@ pub fn preview_region(picker: Option<&Picker>, editor: Rect) -> Option<Rect> {
         return None;
     }
     // The list, the rule between them, and enough left to be worth it.
-    if editor.height < LIST_ROWS + 1 + LEAST_PREVIEW_ROWS {
+    let rows = list_region_rows(picker);
+    if editor.height < rows + 1 + LEAST_PREVIEW_ROWS {
         return None;
     }
     Some(Rect {
-        y: editor.y + LIST_ROWS + 1,
-        height: editor.height - LIST_ROWS - 1,
+        y: editor.y + rows + 1,
+        height: editor.height - rows - 1,
         ..editor
     })
 }
@@ -97,7 +107,7 @@ impl<'a> PickerView<'a> {
         match self.picker.layout() {
             PickerLayout::FullArea => match preview_region(Some(self.picker), editor) {
                 Some(_) => Rect {
-                    height: LIST_ROWS,
+                    height: list_region_rows(self.picker),
                     ..editor
                 },
                 None => editor,
@@ -110,6 +120,26 @@ impl<'a> PickerView<'a> {
                     ..editor
                 }
             }
+        }
+    }
+}
+
+impl PickerView<'_> {
+    /// The rows of the list, within the region it is drawn in.
+    ///
+    /// A list with tabs keeps its first two rows for them -- the tabs and
+    /// the rule under them -- so what a reader walks is what is left. One
+    /// function, shared with the drawing and with everything that has to
+    /// know how many rows are on screen: a window settled on a height the
+    /// rows do not have scrolls before the last row it drew, and a page
+    /// steps further than the reader can see.
+    #[must_use]
+    pub fn rows_region(&self, region: Rect) -> Rect {
+        let tabs = self.picker.tab_rows();
+        Rect {
+            y: region.y + tabs,
+            height: region.height.saturating_sub(tabs),
+            ..region
         }
     }
 }
@@ -134,6 +164,7 @@ impl Widget for PickerView<'_> {
         // The tabs first, with their own rule under them, and the list below
         // whatever they took. The rule is why a tab row reads as a heading
         // over the list rather than as its first row.
+        let list = self.rows_region(area);
         let tabs = self.picker.tab_rows();
         if tabs > 0 {
             crate::ui::tabs(
@@ -153,11 +184,6 @@ impl Widget for PickerView<'_> {
                 self.theme,
             );
         }
-        let list = Rect {
-            y: area.y + tabs,
-            height: area.height.saturating_sub(tabs),
-            ..area
-        };
 
         // Nothing to list. A region of background says only that a key did
         // something and nothing came of it; the reason is the whole content
