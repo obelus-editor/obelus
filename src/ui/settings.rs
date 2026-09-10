@@ -211,9 +211,10 @@ fn draw_control(
             // shape says which way it is without a word to read, and says
             // what the left and right arrows will do to it.
             //
-            // Blocks rather than a round knob on a line: a terminal cell is
-            // taller than it is wide, so a circle between dashes comes out
-            // as a dot on a wire, while a pair of blocks is a knob.
+            // Squares rather than full blocks: a full block fills its
+            // cell's whole height, so the knobs of two rows one above the
+            // other touch and read as one tall bar. A square leaves a
+            // margin above and below, which is the gap between them.
             crate::ui::fill(
                 cells,
                 ratatui::layout::Rect {
@@ -239,16 +240,18 @@ fn draw_control(
                     cells,
                     at + cell,
                     y,
-                    '\u{2588}',
+                    '\u{25a0}',
                     Style::new().fg(colour).bg(theme.status_background),
                 );
             }
         }
         (Kind::Choice(_), Value::Choice(word)) => {
             let after = write(cells, x, y, word, style.fg(theme.foreground));
-            // The mark every droplist has, so a row that opens a list looks
-            // different from a row that slides.
-            put(cells, after + 1, y, '\u{25bc}', style.fg(theme.gutter));
+            // Pointing right, at the value: the list it opens is the
+            // ordinary compact one and comes up wherever that comes up, so
+            // an arrow pointing down would be pointing at whatever happens
+            // to be under this row.
+            put(cells, after + 1, y, '\u{25b8}', style.fg(theme.gutter));
         }
         (kind, value) => {
             tracing::debug!(?kind, ?value, "a control with nothing to draw");

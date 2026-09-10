@@ -141,7 +141,7 @@ fn a_switch_is_a_slider_that_enter_flips() {
         support::text_block(&dump)
             .lines()
             .find(|row| row.contains("Nerd Font"))
-            .and_then(|row| row.find('\u{2588}'))
+            .and_then(|row| row.find('\u{25a0}'))
             .expect("the knob")
     };
 
