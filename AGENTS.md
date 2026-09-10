@@ -100,6 +100,20 @@ cursor position. Colours are in them because highlighting, themes and the
 status bar's background are otherwise not asserted at all: a list of file names
 can render perfectly and show nothing.
 
+**Run them in the real checkout, not in a `git worktree`.** The welcome screen
+prints the working directory (`welcome_64x20`, `welcome_narrow_34x10` both
+carry `~/Work/obelus`), so every fixture that shows it fails in a worktree for
+a reason that has nothing to do with the change under test — and
+`UPDATE_FIXTURES=1` there writes the worktree's path into the fixture, which
+then fails everywhere else. `cargo check` and `cargo clippy` in a worktree are
+fine; `cargo test` belongs in the checkout.
+
+The git tests build real repositories in a temp directory, with one
+deliberate exception: `the_committed_text_comes_from_git` reads *this*
+repository's `src/lib.rs` through `git show`, because a diff of what git
+actually has against what is on disk is the only thing that says the two
+halves agree. It asserts nothing about whether that file is currently dirty.
+
 ## Comments
 
 Comments say *why*, and are worth writing where the code is right for a reason
@@ -111,9 +125,16 @@ existing code is the style guide; match its density.
 
 Workspace symbols and hover (the file outline is done), M1c (diagnostics, a
 gutter that holds more than line numbers), searching a file (`ctrl+f` is left
-unbound for it), git (M2), the diff/semantic bridge (M3), symbol-level history
-(M4), the agent bridge (M5), and a minimal editing set, last. Don't start on
-these without being asked.
+unbound for it), the rest of M2's git (history, blame, tree diffs, staging --
+the working tree's own diff is done: `src/git/`, the margin, the map beside
+the scrollbar, `git.hunk` and the steps between hunks), the diff/semantic
+bridge (M3), symbol-level history (M4), the agent bridge (M5), and a minimal
+editing set, last. Don't start on these without being asked.
+
+`git show` and `git status` are shelled out, behind `git::head_text` and
+`git::statuses`. A library (`gix`) is worth its weight when the views arrive
+and can take over behind those two without anything above noticing; four
+hundred crates for one blob read is not.
 
 Also waiting on a configuration file, which does not exist: the Nerd Font
 switch, user theme colours, the server table, and the word-wrap toggle all
