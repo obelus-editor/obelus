@@ -36,50 +36,52 @@ screen 60x35  editor 60x33  status 60x1
 33|────────────────────────────────────────────────────────────
 34| 󰍉                                                          
 -- style --
- 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
- 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 2|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 5|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 7|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-11|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
-12|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
-13|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
-14|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
-15|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
-16|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
-17|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
-18|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
-19|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
-20|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
-21|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-22|bbffbdddbdddddbhhhhhhhfbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-23|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-24|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-25|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-26|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-27|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-28|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-29|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-30|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-31|bbccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbf
-32|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbf
-33|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-34|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
+ 0|abbbabbbbbaccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad
+ 1|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+ 2|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+ 3|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+ 4|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+ 5|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+ 6|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+ 7|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+ 8|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+ 9|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+10|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+11|ddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddde
+12|ddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddde
+13|ddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddde
+14|ddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddde
+15|ddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddde
+16|ddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddde
+17|ddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddde
+18|ddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddde
+19|ddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddde
+20|ddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddde
+21|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+22|ddhhdfffdfffffdjjjjjjjhdgggdddiihddddddddddddddddddddddddddh
+23|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+24|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+25|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+26|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+27|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+28|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+29|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+30|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+31|ddeedddddddddddddddddddddddddddddddddddddddddddddddddddddddh
+32|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddh
+33|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+34|kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
 -- legend --
 a fg=#e4e4e7 bg=#27272a
-b fg=#e4e4e7 bg=#18181b
-c fg=#52525b bg=#18181b
-d fg=#c084fc bg=#18181b
-e fg=#fbbf24 bg=#18181b
-f fg=#a1a1aa bg=#18181b
-g fg=#f472b6 bg=#18181b
-h fg=#fbbf24 bg=#1e3a5f
-i fg=#d4d4d8 bg=#27272a
+b fg=#c084fc bg=#27272a
+c fg=#fbbf24 bg=#27272a
+d fg=#e4e4e7 bg=#18181b
+e fg=#52525b bg=#18181b
+f fg=#c084fc bg=#18181b
+g fg=#fbbf24 bg=#18181b
+h fg=#a1a1aa bg=#18181b
+i fg=#f472b6 bg=#18181b
+j fg=#fbbf24 bg=#1e3a5f
+k fg=#d4d4d8 bg=#27272a
 -- cursor --
 4,34

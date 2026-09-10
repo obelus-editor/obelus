@@ -345,33 +345,7 @@ impl App {
                 self.go_to(&place.path, place.line, place.character);
             }
             Outcome::Places(places) => {
-                let items = places
-                    .into_iter()
-                    .map(|place| PickerItem {
-                        icon: Some(icons::for_path(&place.path)),
-                        label: format!(
-                            "{}:{}:{}",
-                            relative(&place.path, &self.working_directory),
-                            place.line.saturating_add(1),
-                            place.character.saturating_add(1)
-                        ),
-                        detail: None,
-                        trailing: None,
-                        value: PickerValue::Place {
-                            path: place.path,
-                            line: place.line,
-                            character: place.character,
-                            end_line: place.end_line,
-                            end_character: place.end_character,
-                        },
-                        enabled: true,
-                        colours: None,
-                        status: None,
-                        depth: 0,
-                        kind: None,
-                        tab: None,
-                    })
-                    .collect();
+                let items = place_rows(&places, &self.working_directory);
                 self.note = None;
                 self.picker = Some(Picker::new(items, PickerLayout::FullArea));
             }
@@ -780,4 +754,182 @@ pub(super) fn nearest_symbol(symbols: &[tags::Symbol], cursor: Option<Cursor>) -
         .iter()
         .rfind(|symbol| symbol.line <= cursor.line)
         .map(|symbol| symbol.name.clone())
+}
+
+/// One row per place, in the shape a search's rows have.
+///
+/// The line each place names, with the file it is in after it -- rather
+/// than the path and the line number as the whole of the row, which is
+/// what this listed before. A reference and a match are the same kind of
+/// thing to a reader: somewhere in the workspace worth looking at, and what
+/// says whether it is worth looking at is the line, not the number of it.
+///
+/// The lines are read here rather than left to the frame that draws them.
+/// The list is filtered by typing, and filtering happens against the
+/// labels: rows whose text arrived later would be rows a query could not
+/// reach.
+fn place_rows(places: &[crate::lsp::action::Place], root: &Path) -> Vec<PickerItem> {
+    /// The most a file may weigh before its lines are not worth reading for
+    /// a label. The search's own limit, for the same reason.
+    const BIGGEST: u64 = 2 * 1024 * 1024;
+
+    let mut read: HashMap<PathBuf, Vec<String>> = HashMap::new();
+    places
+        .iter()
+        .map(|place| {
+            let lines = read.entry(place.path.clone()).or_insert_with(|| {
+                let big = std::fs::metadata(&place.path)
+                    .map(|about| about.len() > BIGGEST)
+                    .unwrap_or(true);
+                if big {
+                    return Vec::new();
+                }
+                std::fs::read_to_string(&place.path)
+                    .map(|text| text.lines().map(str::to_string).collect())
+                    .unwrap_or_default()
+            });
+            let text = lines
+                .get(place.line as usize)
+                .map(|line| line.trim().to_string())
+                .filter(|line| !line.is_empty());
+            let at = format!(
+                "{}:{}",
+                relative(&place.path, root),
+                place.line.saturating_add(1)
+            );
+            PickerItem {
+                // No glyph. The file is named on the right of the row, and a
+                // column of the same glyph down a list of references says
+                // nothing.
+                icon: None,
+                // A line that could not be read leaves the place itself as
+                // the row: it is still somewhere to go.
+                label: text.unwrap_or_else(|| at.clone()),
+                detail: None,
+                trailing: Some(at),
+                value: PickerValue::Place {
+                    path: place.path.clone(),
+                    line: place.line,
+                    character: place.character,
+                    end_line: place.end_line,
+                    end_character: place.end_character,
+                },
+                enabled: true,
+                // Filled in by the frame that draws them, for the rows on
+                // screen, from the same pass that colours a search's.
+                colours: None,
+                status: None,
+                depth: 0,
+                kind: None,
+                tab: None,
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::place_rows;
+    use crate::{component::picker::PickerValue, lsp::action::Place};
+
+    /// A list of places reads like a list of matches: the line each one
+    /// names, and the file after it.
+    #[test]
+    fn a_place_is_the_line_it_names_and_the_file_it_is_in() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let path = root.join("tests/fixtures/long.rs");
+        let places = [
+            Place {
+                path: path.clone(),
+                line: 1,
+                character: 6,
+                end_line: 1,
+                end_character: 13,
+            },
+            // Twice from the same file, which is read once.
+            Place {
+                path: path.clone(),
+                line: 2,
+                character: 0,
+                end_line: 2,
+                end_character: 0,
+            },
+        ];
+
+        let rows = place_rows(&places, &root);
+        assert_eq!(rows.len(), 2);
+        // The line, trimmed, because a row that starts with a file's
+        // indentation is a row of blanks.
+        assert!(
+            rows[0].label.starts_with("const NAMES: [&str; 12]"),
+            "not the line the place names: {:?}",
+            rows[0].label
+        );
+        assert_eq!(
+            rows[0].trailing.as_deref(),
+            Some("tests/fixtures/long.rs:2"),
+            "the file is not on the row, or is not relative to the root"
+        );
+        assert!(rows[0].icon.is_none(), "a glyph per row says nothing here");
+        // And the place itself is still what choosing the row goes to.
+        assert!(matches!(
+            &rows[0].value,
+            PickerValue::Place {
+                line: 1,
+                character: 6,
+                ..
+            }
+        ));
+        assert_eq!(rows[1].label, "fn after() {}");
+    }
+
+    /// A place obelus cannot read the line of is still somewhere to go, and
+    /// the row says where.
+    #[test]
+    fn a_line_that_cannot_be_read_leaves_the_place_as_the_row() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let gone = root.join("tests/fixtures/nothing-here.rs");
+        let places = [Place {
+            path: gone,
+            line: 41,
+            character: 0,
+            end_line: 41,
+            end_character: 0,
+        }];
+
+        let rows = place_rows(&places, &root);
+        assert_eq!(rows[0].label, "tests/fixtures/nothing-here.rs:42");
+        assert_eq!(rows[0].trailing.as_deref(), Some(rows[0].label.as_str()));
+    }
+
+    /// A line past the end of a file, and a blank line inside one, are the
+    /// same case: there is nothing to show, so the place is the row. A row
+    /// of nothing is a row a reader cannot tell from a bug.
+    #[test]
+    fn a_blank_line_is_not_a_row_of_nothing() {
+        let directory = std::env::temp_dir().join(format!("obelus-places-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("a directory");
+        let path = directory.join("gaps.rs");
+        std::fs::write(&path, "fn one() {}\n\n    \nfn two() {}\n").expect("writing it");
+
+        // An empty line, a line of blanks, and a line past the end.
+        let places: Vec<Place> = [1, 2, 9_000]
+            .into_iter()
+            .map(|line| Place {
+                path: path.clone(),
+                line,
+                character: 0,
+                end_line: line,
+                end_character: 0,
+            })
+            .collect();
+        let rows = place_rows(&places, &directory);
+        assert_eq!(rows[0].label, "gaps.rs:2");
+        assert_eq!(
+            rows[1].label, "gaps.rs:3",
+            "a line of blanks became a row of blanks"
+        );
+        assert_eq!(rows[2].label, "gaps.rs:9001");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
 }

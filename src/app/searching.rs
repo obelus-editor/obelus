@@ -117,9 +117,9 @@ impl App {
         let Some(picker) = self.picker.as_ref() else {
             return;
         };
-        if !picker.is_searching() {
-            return;
-        }
+        // Whatever the list is, not only a search: a row that names a place
+        // in a file is a row whose text can be coloured, and a list of
+        // references is made of those too.
         let wanted: Vec<(usize, PathBuf, u32)> = picker
             .visible(height)
             .into_iter()
