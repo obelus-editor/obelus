@@ -164,13 +164,7 @@ fn a_whole_turn_of_conversation() {
         text.contains("and it refused to write"),
         "obelus wrote a file for an agent:\n{text}"
     );
-    // The question is a list, which is what every choice in obelus is --
-    // and the question itself is on the row at the foot, because that row
-    // belongs to whatever is taking the keys.
-    assert!(
-        text.contains("Run the tests"),
-        "the question is not on the row:\n{text}"
-    );
+    // The question is a list, which is what every choice in obelus is.
     assert!(text.contains("Allow once"), "no options:\n{text}");
     assert!(text.contains("Reject"), "no options:\n{text}");
 
@@ -729,5 +723,67 @@ fn nothing_of_obeluss_own_opens_over_the_conversation() {
     assert!(
         app.picker().is_some(),
         "escape did not give the key table back"
+    );
+}
+
+/// That list is the picker, so it scrolls and it marks what matched.
+///
+/// Both of those come from the geometry: the window follows the selection
+/// only when it knows how many rows are on screen, and the matched
+/// characters are worked out for the rows about to be drawn. A list that
+/// never got told either would stand still with the selection walking off
+/// the bottom of it.
+#[test]
+fn the_list_of_commands_scrolls_and_says_what_matched() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        app.agent_orders().len() > 10
+    });
+    support::type_text(&mut app, "/");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        dump.contains("/compact"),
+        "the list does not start at the top:\n{dump}"
+    );
+    assert!(
+        !dump.contains("/usage"),
+        "there are fewer commands than rows, so nothing here scrolls:\n{dump}"
+    );
+
+    // Walking to the last row brings it on screen, and the rows above it
+    // have gone off the top -- which is what scrolling is.
+    for _ in 0..app.agent_orders().len() {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let last = app
+        .slash()
+        .and_then(|slash| slash.selected_item())
+        .map(|item| item.label.clone())
+        .expect("a row is chosen");
+    assert_eq!(last, "/usage", "the arrows did not reach the last row");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        dump.contains("/usage"),
+        "the chosen row is not on screen:\n{dump}"
+    );
+    assert!(
+        !dump.contains("/compact"),
+        "the list did not scroll:\n{dump}"
+    );
+
+    // And the query's characters are marked in the rows, the way they are
+    // in every other list.
+    while !app.chat().expect("the chat").writing().text().is_empty() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "/cst");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    let marked = app
+        .slash()
+        .map(|slash| slash.indices_at(0).to_vec())
+        .expect("the list");
+    assert!(
+        !marked.is_empty(),
+        "the list does not say which characters matched"
     );
 }

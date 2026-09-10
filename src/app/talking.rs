@@ -316,6 +316,7 @@ impl App {
             if slash.match_count() == 0 {
                 self.slash = None;
             }
+            self.settle_slash();
             return;
         }
         let items = self
@@ -343,6 +344,26 @@ impl App {
         if slash.match_count() > 0 {
             self.slash = Some(slash);
         }
+        self.settle_slash();
+    }
+
+    /// Gives that list the geometry it is about to be drawn in.
+    ///
+    /// The same thing [`App::prepare`] does for the other list, and for the
+    /// same two reasons: the window follows the selection only when it
+    /// knows how many rows are on screen, and the matched characters are
+    /// worked out for the rows that will be drawn. Without it the list
+    /// neither scrolls nor says what the query matched -- it is the picker,
+    /// so it needs what the picker needs.
+    fn settle_slash(&mut self) {
+        let rows = self.slash.as_ref().zip(self.chat()).map(|(slash, chat)| {
+            let view = ui::picker::PickerView::over(slash, self.theme());
+            view.rows_region(view.region(ui::chat::above_writing(self.editor_area, chat)))
+                .height
+        });
+        if let (Some(rows), Some(slash)) = (rows, self.slash.as_mut()) {
+            slash.refresh_indices(rows);
+        }
     }
 
     /// Whatever a key means to that list, if it means anything.
@@ -362,6 +383,9 @@ impl App {
             return false;
         }
         match key.code {
+            // The window is not moved here: the frame that follows settles
+            // it, which is the one place that knows how many rows are on
+            // screen.
             KeyCode::Up => {
                 slash.move_selection_by(-1);
                 true

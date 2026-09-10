@@ -498,6 +498,17 @@ impl App {
         self.picker.as_ref()
     }
 
+    /// The room a list is drawn in, which is not always the editor region.
+    ///
+    /// Over a conversation it is everything above the box: the list is a
+    /// list of what is being typed there, and it may not cover it.
+    fn picker_room(&self) -> Rect {
+        match self.chat() {
+            Some(chat) => ui::chat::above_writing(self.editor_area, chat),
+            None => self.editor_area,
+        }
+    }
+
     /// Which set of key bindings a key is looked up in.
     ///
     /// What the reader is in, rather than what they are doing: a dialog
@@ -616,9 +627,10 @@ impl App {
 
         // Which rows the list will draw is what decides which rows need
         // their matched characters worked out, and only the geometry knows
-        // how many rows there are.
+        // how many rows there are. The room is the room it is *drawn* in,
+        // which over a conversation is everything above the box.
         let rows = ui::picker::PickerView::new(self)
-            .map(|view| view.rows_region(view.region(editor_area)).height);
+            .map(|view| view.rows_region(view.region(self.picker_room())).height);
         if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
             picker.refresh_indices(rows);
         }
@@ -785,7 +797,7 @@ impl App {
         // editor would walk the selection twice as far as the reader can
         // see.
         let page = ui::picker::PickerView::new(self).map_or(1, |view| {
-            view.rows_region(view.region(self.editor_area)).height
+            view.rows_region(view.region(self.picker_room())).height
         });
         if let Some(picker) = self.picker.as_mut() {
             // What a search is asking, before and after the key. The picker
