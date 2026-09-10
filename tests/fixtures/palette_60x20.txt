@@ -16,10 +16,10 @@ screen 60x20  editor 60x19  status 60x1
 13| 󰏘 theme.select  Change the colours                        █
 14| 󰆍 command.palette  Run a command by name              󰘴 p █
 15| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘴 g █
-16| 󰉹 symbol.outline  Everything this file defines        󰘴 t █
-17| 󰎠 go.line  Go to a line by number                     󰘴 l │
-18| 󰧭 log.open  Open obelus's own log                         │
-19| 󰍉                                                       12 
+16| 󰉹 symbol.outline  Everything this file defines        󰘴 t │
+17| 󰍉 search.file  Search this file                       󰘴 f │
+18| 󰉓 search.project  Search every file                   󰘵 f │
+19| 󰍉                                                       14 
 -- style --
  0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
  1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaba
@@ -37,9 +37,9 @@ screen 60x20  editor 60x19  status 60x1
 13|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaab
 14|aaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaeeeab
 15|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeab
-16|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaeeeab
-17|aaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaeeeae
-18|aaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaaae
+16|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaeeeae
+17|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeae
+18|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaeeeae
 19|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhi
 -- legend --
 a fg=#e4e4e7 bg=#18181b

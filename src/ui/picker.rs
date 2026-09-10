@@ -14,7 +14,7 @@ use ratatui::{
 
 use crate::{
     app::App,
-    component::picker::{Picker, PickerItem, PickerLayout},
+    component::picker::{Colouring, Picker, PickerItem, PickerLayout},
     git::FileStatus,
     theme::Theme,
     ui::{drop_from_left, editor::SCROLLBAR_WIDTH, fill, put, text_width},
@@ -303,15 +303,19 @@ impl PickerView<'_> {
         if dropped > 0 {
             column = write(cells, inner, column, y, "\u{2026}", style, None, 0);
         }
-        column = write(
+        column = write_coloured(
             cells,
             inner,
             column,
             y,
             &item.label,
             label_style,
-            (!matched.is_empty()).then_some((matched, self.theme.picker_match)),
+            (!matched.is_empty()).then_some((matched, self.theme.picker_match_background)),
             dropped,
+            item.colours
+                .as_deref()
+                .filter(|runs| !runs.is_empty())
+                .map(|runs| (runs, self.theme)),
         );
 
         let dim = style.fg(self.theme.gutter);
@@ -345,6 +349,10 @@ impl PickerView<'_> {
 /// the whole text, so a match that fell in the dropped part simply has no
 /// character left to colour.
 ///
+/// `syntax` colours a row that is a line of code the way the file colours
+/// it. The matched characters still win: why a row is in the list beats what
+/// the row is made of.
+///
 /// Returns the column after the text.
 #[expect(
     clippy::too_many_arguments,
@@ -360,14 +368,51 @@ fn write(
     matched: Option<(&[u32], Color)>,
     skip: usize,
 ) -> u16 {
+    write_coloured(cells, area, start, y, contents, style, matched, skip, None)
+}
+
+/// The same, with the row's own syntax colours under the matched ones.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each is a distinct piece of where and how; a struct moves the same list one line up"
+)]
+fn write_coloured(
+    cells: &mut CellBuffer,
+    area: Rect,
+    start: u16,
+    y: u16,
+    contents: &str,
+    style: Style,
+    matched: Option<(&[u32], Color)>,
+    skip: usize,
+    syntax: Option<(&[Colouring], &Theme)>,
+) -> u16 {
     let mut column = start;
     for (index, character) in contents.chars().enumerate().skip(skip) {
         if column >= area.width {
             break;
         }
         let index = u32::try_from(index).unwrap_or(u32::MAX);
+        // The row's own colours first, then the matched characters over the
+        // top: a reader scanning the list is looking for why the row is
+        // there, and only then at what it says.
+        let style = match syntax {
+            Some((runs, theme)) => match u16::try_from(index).ok().and_then(|at| {
+                runs.iter()
+                    .find(|(from, to, _)| at >= *from && at < *to)
+                    .map(|(_, _, kind)| *kind)
+            }) {
+                Some(kind) => style.fg(theme.syntax.colour(kind)),
+                None => style,
+            },
+            None => style,
+        };
+        // A background, so it survives whatever colour the character
+        // already has: a row that is a line of code carries the file's own
+        // colours, and a match painted over them would be one more hue
+        // among seven rather than an answer to "why is this row here".
         let style = match matched {
-            Some((indices, colour)) if indices.binary_search(&index).is_ok() => style.fg(colour),
+            Some((indices, colour)) if indices.binary_search(&index).is_ok() => style.bg(colour),
             _ => style,
         };
         column = column.saturating_add(put(cells, area.x + column, y, character, style));

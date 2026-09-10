@@ -129,3 +129,139 @@ fn kind_of(kind: SymbolKind) -> SyntaxKind {
         _ => SyntaxKind::Variable,
     }
 }
+
+/// One name the server knows, somewhere in the project.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Found {
+    /// What it is called.
+    pub name: String,
+    /// What sort of thing it is, as the colour it will be drawn in.
+    pub kind: SyntaxKind,
+    /// Which file it is in.
+    pub path: std::path::PathBuf,
+    /// Which line of it, in the server's own units.
+    pub line: u32,
+    /// Where the name starts, in the server's own units.
+    pub character: u32,
+    /// Where it ends.
+    pub end_character: u32,
+}
+
+/// The names in a `workspace/symbol` reply.
+///
+/// Two shapes again, and this time the difference is where the position is:
+/// the old one carries a whole range, the newer one is allowed to carry only
+/// the file and fill the range in later on request. A row needs a line to
+/// jump to, so a symbol with no range is dropped -- a row that cannot answer
+/// the one thing it is for is worse than a row that is not there.
+///
+/// Empty for an error and for a null answer, which is what a server that
+/// has not finished indexing says.
+#[must_use]
+pub fn found_in(result: Result<Value, String>) -> Vec<Found> {
+    let Ok(value) = result else {
+        return Vec::new();
+    };
+    // The flat shape first: every server that answers this question at all
+    // answers with it, and the newer shape deserializes from the same JSON
+    // with its range thrown away.
+    if let Ok(symbols) = serde_json::from_value::<Vec<SymbolInformation>>(value.clone()) {
+        return symbols.iter().filter_map(found).collect();
+    }
+    match serde_json::from_value::<Vec<lsp_types::WorkspaceSymbol>>(value) {
+        Ok(symbols) => symbols.iter().filter_map(newer).collect(),
+        Err(error) => {
+            tracing::debug!(%error, "a workspace/symbol answer in no shape obelus knows");
+            Vec::new()
+        }
+    }
+}
+
+/// The old shape, whose location is always a range in a file.
+fn found(symbol: &SymbolInformation) -> Option<Found> {
+    let path = crate::lsp::client::path_of(symbol.location.uri.as_str())?;
+    let start = symbol.location.range.start;
+    Some(Found {
+        name: symbol.name.clone(),
+        kind: kind_of(symbol.kind),
+        path,
+        line: start.line,
+        character: start.character,
+        end_character: symbol.location.range.end.character,
+    })
+}
+
+/// The newer shape, which may carry a file and no range at all.
+fn newer(symbol: &lsp_types::WorkspaceSymbol) -> Option<Found> {
+    let lsp_types::OneOf::Left(location) = &symbol.location else {
+        return None;
+    };
+    let path = crate::lsp::client::path_of(location.uri.as_str())?;
+    Some(Found {
+        name: symbol.name.clone(),
+        kind: kind_of(symbol.kind),
+        path,
+        line: location.range.start.line,
+        character: location.range.start.character,
+        end_character: location.range.end.character,
+    })
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    use serde_json::json;
+
+    use super::found_in;
+    use crate::theme::SyntaxKind;
+
+    /// The shape every server that answers this question at all uses: a
+    /// name, a kind as a number, and a location with a range in it.
+    #[test]
+    fn the_flat_shape_becomes_rows() {
+        let reply = json!([
+            {
+                "name": "Picker",
+                "kind": 23,
+                "location": {
+                    "uri": "file:///p/src/component/picker/mod.rs",
+                    "range": {
+                        "start": { "line": 41, "character": 11 },
+                        "end": { "line": 41, "character": 17 }
+                    }
+                }
+            }
+        ]);
+        let found = found_in(Ok(reply));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "Picker");
+        assert_eq!(found[0].kind, SyntaxKind::Type);
+        assert_eq!(
+            found[0].path,
+            std::path::Path::new("/p/src/component/picker/mod.rs")
+        );
+        assert_eq!((found[0].line, found[0].character), (41, 11));
+        assert_eq!(found[0].end_character, 17);
+    }
+
+    /// The newer shape is allowed to carry only the file and fill the range
+    /// in later, on request. A row needs a line to jump to, so one with no
+    /// range is dropped: a row that cannot answer the one thing it is for is
+    /// worse than a row that is not there.
+    #[test]
+    fn a_symbol_with_no_range_is_not_a_row() {
+        let reply = json!([
+            { "name": "far_away", "kind": 12, "location": { "uri": "file:///p/a.rs" } }
+        ]);
+        assert!(found_in(Ok(reply)).is_empty());
+    }
+
+    /// An error, a null and a shape obelus does not know all mean the same
+    /// thing to the caller: no rows. A server that has not finished indexing
+    /// answers null.
+    #[test]
+    fn nothing_usable_means_no_rows() {
+        assert!(found_in(Err("no".to_string())).is_empty());
+        assert!(found_in(Ok(json!(null))).is_empty());
+        assert!(found_in(Ok(json!({ "unexpected": true }))).is_empty());
+    }
+}

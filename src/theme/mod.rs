@@ -231,8 +231,14 @@ pub struct Theme {
     pub status_stale: Color,
     /// Behind the selected row of a picker.
     pub picker_selected_background: Color,
-    /// The characters of the selected row that the query matched.
-    pub picker_match: Color,
+    /// Behind the characters of a row that the query matched.
+    ///
+    /// A background rather than a colour, because a row can be a line of
+    /// code now: with the characters carrying the file's own syntax colours,
+    /// a matched-character *colour* both fights them and can collide with
+    /// one -- and the reader has to be able to see why a row is in the list
+    /// whatever it is made of.
+    pub picker_match_background: Color,
     /// Behind the run of characters a preview is about — the symbol a
     /// language server named.
     pub marked_background: Color,

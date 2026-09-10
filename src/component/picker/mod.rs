@@ -48,6 +48,12 @@ pub enum PickerValue {
     Nothing,
 }
 
+/// One run of a row's characters, and what to draw them in.
+///
+/// Char offsets into the label, not bytes and not screen columns: the label
+/// is what the row draws, and a run is a claim about its characters.
+pub type Colouring = (u16, u16, crate::theme::SyntaxKind);
+
 /// One row.
 #[derive(Clone, Debug)]
 pub struct PickerItem {
@@ -80,6 +86,16 @@ pub struct PickerItem {
     /// files nobody has touched, and the few that have been are what a
     /// reader is usually looking for.
     pub status: Option<crate::git::FileStatus>,
+    /// What the label's characters *are*, for a row that is a line of code.
+    ///
+    /// Char ranges into the label and the kind to draw each in, so a search
+    /// result reads like the file it came from. Worked out only for the rows
+    /// on screen, and by the application rather than here: it needs the
+    /// file's syntax tree, which the picker knows nothing about.
+    ///
+    /// `None` means nobody has looked yet; `Some` of an empty list means
+    /// there was nothing to find, so it is not looked at twice.
+    pub colours: Option<Vec<Colouring>>,
     /// What sort of thing the label names, if the row is about one.
     ///
     /// A colour rather than a word: an outline is a list of names, and the
@@ -166,6 +182,15 @@ pub struct Picker {
     tabs: Vec<String>,
     /// Which tab is showing.
     tab: usize,
+    /// Whether the tabs are scopes: rows that come from three different
+    /// places rather than three groups of one list.
+    scopes: bool,
+    /// Whether this list is a search, whose rows are refilled as the query
+    /// and the tab move.
+    searching: bool,
+    /// Whether the empty reason is about the world rather than about there
+    /// being nothing to list, and so wins over "no match".
+    explains: bool,
     /// What to say when there is nothing to list.
     ///
     /// Per picker, because the reason differs: an empty file list and an
@@ -215,6 +240,9 @@ impl Picker {
             outline: Option::None,
             tabs: Vec::new(),
             tab: 0,
+            scopes: false,
+            searching: false,
+            explains: false,
             empty: "nothing to choose from".to_string(),
             prefer: None,
             layout,
@@ -235,6 +263,40 @@ impl Picker {
             .chain(names.iter().map(|name| (*name).to_string()))
             .collect();
         self.refilter();
+    }
+
+    /// Gives the picker a row of tabs that are *scopes* rather than groups.
+    ///
+    /// No "all" tab, and the rows are not filtered by which tab is showing:
+    /// the caller swaps the rows when the tab moves, because each scope's
+    /// rows come from somewhere else -- the file in memory, a walk of the
+    /// tree, a language server. A synthetic "all" would promise a list that
+    /// nothing can produce.
+    pub fn with_scopes(&mut self, names: &[&str]) {
+        self.tabs = names.iter().map(|name| (*name).to_string()).collect();
+        self.scopes = true;
+        self.refilter();
+    }
+
+    /// Shows a particular tab, for a key that opens the list at one.
+    pub fn go_to_tab(&mut self, tab: usize) {
+        if tab < self.tabs.len() {
+            self.tab = tab;
+            self.selected = 0;
+            self.refilter();
+        }
+    }
+
+    /// Says this list is a search, whose rows the application refills as the
+    /// query and the tab move.
+    pub const fn searches(&mut self) {
+        self.searching = true;
+    }
+
+    /// Whether this list is a search.
+    #[must_use]
+    pub const fn is_searching(&self) -> bool {
+        self.searching
     }
 
     /// The tab names, empty for a picker without tabs.
@@ -317,6 +379,20 @@ impl Picker {
     /// query, and the view says that itself.
     pub fn when_empty(&mut self, reason: &str) {
         self.empty = reason.to_string();
+        self.explains = false;
+    }
+
+    /// Sets what the list says when it is empty, whether or not something
+    /// has been typed.
+    ///
+    /// For a search: with a query in the prompt and no rows, "no match" is
+    /// only true once something has looked. While nothing has been asked
+    /// yet, while a walk is still running, or when there is no server to
+    /// ask, the fact about the world is the true answer and the query is
+    /// beside the point.
+    pub fn while_empty(&mut self, reason: &str) {
+        self.empty = reason.to_string();
+        self.explains = true;
     }
 
     /// What to show instead of rows, if anything.
@@ -327,11 +403,38 @@ impl Picker {
         if self.match_count() > 0 {
             return None;
         }
-        Some(if self.query.is_empty() {
+        Some(if self.query.is_empty() || self.explains {
             &self.empty
         } else {
             "no match"
         })
+    }
+
+    /// Which rows are on screen, as indexes into the whole list.
+    ///
+    /// For work only the application can do and only for what is visible:
+    /// a search of a project can hold two thousand rows, and the ten being
+    /// looked at are the ten worth spending anything on.
+    #[must_use]
+    pub fn visible(&self, height: u16) -> Vec<usize> {
+        let first = self.first_visible(height);
+        self.matched
+            .iter()
+            .skip(first)
+            .take(usize::from(height))
+            .map(|(index, _)| *index)
+            .collect()
+    }
+
+    /// One row, by its index in the whole list.
+    #[must_use]
+    pub fn rows_at(&self, index: usize) -> Option<&PickerItem> {
+        self.items.get(index)
+    }
+
+    /// One row, to fill in what only the application can work out.
+    pub fn row_mut(&mut self, index: usize) -> Option<&mut PickerItem> {
+        self.items.get_mut(index)
     }
 
     /// Asks for a row to be selected once the list holds one with this label.
@@ -391,6 +494,16 @@ impl Picker {
     pub fn selected_item(&self) -> Option<&PickerItem> {
         let (index, _) = self.matched.get(self.selected)?;
         self.items.get(*index)
+    }
+
+    /// How many rows there are, before the query narrows them.
+    ///
+    /// Distinct from [`Picker::match_count`]: a search fills its rows when
+    /// there is a question to answer and clears them when there is not, and
+    /// "has this been filled" is not the same as "does the query match".
+    #[must_use]
+    pub fn row_count(&self) -> usize {
+        self.items.len()
     }
 
     /// How many rows match.
@@ -602,11 +715,14 @@ impl Picker {
     fn refilter(&mut self) {
         self.matched.clear();
 
-        // The first tab is every row; any other one is its own.
+        // The first tab is every row; any other one is its own. Scope tabs
+        // do not filter at all -- every row in the list belongs to the scope
+        // that fetched it.
         let tab = self.tab;
-        let showing = move |item: &PickerItem| match (tab, item.tab) {
-            (0, _) | (_, None) => true,
-            (tab, Some(of)) => tab == of,
+        let scopes = self.scopes;
+        let showing = move |item: &PickerItem| match (scopes, tab, item.tab) {
+            (true, _, _) | (_, 0, _) | (_, _, None) => true,
+            (_, tab, Some(of)) => tab == of,
         };
 
         if self.query.is_empty() {

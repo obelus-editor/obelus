@@ -23,6 +23,7 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
             detail: None,
             trailing: None,
             value: PickerValue::File(label.into()),
+            colours: None,
             status: None,
             depth: 0,
             kind: None,
@@ -50,6 +51,7 @@ fn many(count: usize) -> Vec<PickerItem> {
             detail: None,
             trailing: None,
             value: PickerValue::File(format!("item-{index:03}").into()),
+            colours: None,
             status: None,
             depth: 0,
             kind: None,
@@ -110,22 +112,21 @@ fn typing_narrows_the_palette_and_the_count_follows() {
     assert!(support::text_block(&narrowed).contains("theme.select"));
 }
 
-/// The matched characters of the selected row get their own colour, which is
-/// the only thing that says *why* a row matched a query it does not contain
-/// literally.
+/// The matched characters of the selected row get a background of their
+/// own, which is the only thing that says *why* a row matched a query it
+/// does not contain literally.
 ///
-/// Through a full-area picker, not the palette: `picker_match` and the colour
-/// of a function name are the same in the dark theme, and the palette leaves
-/// the code visible above it, so the assertion would pass on `main` and
-/// `println!` whether or not anything was marked as matched.
+/// A background rather than a colour: a row can be a line of code, carrying
+/// the file's own syntax colours, and a match painted over those would be
+/// one more hue among seven.
 #[test]
 fn the_matched_characters_of_the_selected_row_are_coloured() {
     let mut app = app();
     press_control(&mut app, 'e');
     let unmatched = support::render(&mut app, 60, 12);
     assert!(
-        !support::legend_block(&unmatched).contains("#60a5fa"),
-        "the match colour is on screen before anything has been typed:\n{unmatched}"
+        !support::legend_block(&unmatched).contains("#38577f"),
+        "the match background is on screen before anything has been typed:\n{unmatched}"
     );
 
     // A fuzzy query: the label is `tests/fixtures/sample.rs` and contains
@@ -139,7 +140,7 @@ fn the_matched_characters_of_the_selected_row_are_coloured() {
         "the fuzzy query matched nothing:\n{dump}"
     );
     assert!(
-        support::legend_block(&dump).contains("#60a5fa"),
+        support::legend_block(&dump).contains("bg=#38577f"),
         "no characters were marked as matched:\n{dump}"
     );
 }
@@ -150,12 +151,12 @@ fn the_matched_characters_of_the_selected_row_are_coloured() {
 /// asked of the rows the reader is comparing -- which is all of them.
 #[test]
 fn the_matched_characters_of_every_visible_row_are_coloured() {
-    // Two legend letters, because the match colour appears on the selected
-    // row's background as well as the ordinary one.
+    // The match background, wherever it appears: on the selected row and on
+    // an ordinary one, whatever colour the characters themselves have.
     fn match_letters(dump: &str) -> Vec<char> {
         support::legend_block(dump)
             .lines()
-            .filter(|line| line.contains("fg=#60a5fa"))
+            .filter(|line| line.contains("bg=#38577f"))
             .filter_map(|line| line.trim().chars().next())
             .collect()
     }
@@ -558,8 +559,8 @@ fn a_query_matches_the_name_and_not_the_glyph() {
     let dump = support::render(&mut app, 40, 8);
     assert!(support::text_block(&dump).contains("src/app.rs"), "{dump}");
     assert!(
-        support::legend_block(&dump).contains("#60a5fa"),
-        "the name's matched characters lost their colour:\n{dump}"
+        support::legend_block(&dump).contains("bg=#38577f"),
+        "the name's matched characters lost their background:\n{dump}"
     );
 
     // And a query of the glyph itself matches nothing.
@@ -677,8 +678,8 @@ fn truncation_does_not_move_the_matched_characters() {
     let dump = support::render(&mut app, 30, 6);
     assert!(support::text_block(&dump).contains("the_file.rs"), "{dump}");
     assert!(
-        support::legend_block(&dump).contains("#60a5fa"),
-        "the tail's matched characters were not coloured:\n{dump}"
+        support::legend_block(&dump).contains("bg=#38577f"),
+        "the tail's matched characters were not marked:\n{dump}"
     );
 }
 
@@ -703,8 +704,8 @@ fn a_match_in_the_cut_away_head_colours_nothing() {
         "the head is still on screen:\n{dump}"
     );
     assert!(
-        !support::legend_block(&dump).contains("#60a5fa"),
-        "characters outside the match were coloured:\n{dump}"
+        !support::legend_block(&dump).contains("bg=#38577f"),
+        "characters outside the match were marked:\n{dump}"
     );
 }
 
@@ -1279,6 +1280,7 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
                 end_line: 1,
                 end_character: 11,
             },
+            colours: None,
             status: None,
             depth: 0,
             kind: None,
@@ -1432,6 +1434,7 @@ fn moving_the_selection_forgets_the_scrolling() {
             end_line: line,
             end_character: 17,
         },
+        colours: None,
         status: None,
         depth: 0,
         kind: None,
@@ -1520,6 +1523,7 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
                 end_line: 30,
                 end_character: 17,
             },
+            colours: None,
             status: None,
             depth: 0,
             kind: None,

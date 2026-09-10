@@ -132,6 +132,13 @@ pub fn for_command(name: &str) -> char {
         // is.
         // A number, which is what this one asks for.
         // The branching lines every git tool uses for itself.
+        // One view at three radii, so the glyphs say *where* rather than
+        // repeating "search": the plain magnifier for the file in front of
+        // the reader, folders for the tree, and a name in code for what a
+        // server knows.
+        "search.file" => '\u{f0349}',
+        "search.project" => '\u{f0253}',
+        "search.symbols" => '\u{f0871}',
         "git.hunk" => '\u{f02a2}',
         // Arrows, because these two move the reader: the diff is what they
         // step through, and the git glyph is already on the command that

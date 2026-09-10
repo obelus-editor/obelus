@@ -32,7 +32,7 @@ pub const DARK: Theme = Theme {
     status_foreground: Color::Rgb(212, 212, 216),
     status_stale: Color::Rgb(248, 113, 113),
     picker_selected_background: Color::Rgb(39, 39, 42),
-    picker_match: Color::Rgb(96, 165, 250),
+    picker_match_background: tint(DARK_PAGE, Color::Rgb(96, 165, 250), 45),
     marked_background: Color::Rgb(30, 58, 95),
     selection_background: Color::Rgb(49, 46, 129),
     // Grey rather than a hue: it sits under whatever colour the bracket
@@ -82,7 +82,7 @@ pub const LIGHT: Theme = Theme {
     status_foreground: Color::Rgb(39, 39, 42),
     status_stale: Color::Rgb(185, 28, 28),
     picker_selected_background: Color::Rgb(228, 228, 231),
-    picker_match: Color::Rgb(29, 78, 216),
+    picker_match_background: tint(LIGHT_PAGE, Color::Rgb(29, 78, 216), 25),
     marked_background: Color::Rgb(191, 219, 254),
     selection_background: Color::Rgb(224, 231, 255),
     change_added: LIGHT_ADDED,

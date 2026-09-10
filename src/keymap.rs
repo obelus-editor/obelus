@@ -216,6 +216,31 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('d'), KeyModifiers::ALT),
                 },
+                // `ctrl+f` for find, and `alt` for the same question asked
+                // wider: `alt+f` over every file, `alt+s` over the names a
+                // server knows. Which is also why one view holds all three
+                // -- the reader's question is the same and only its radius
+                // changed, so the tabs carry the query between them.
+                //
+                // `ctrl+f` was left unbound for this from the beginning.
+                // `ctrl+s` is not used for the project because it is XOFF on
+                // a terminal that has not turned flow control off, and a key
+                // that freezes the display on some machines is not a key.
+                Binding {
+                    command: Command::SearchFile,
+                    context: Context::Normal,
+                    chord: control('f'),
+                },
+                Binding {
+                    command: Command::SearchProject,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('f'), KeyModifiers::ALT),
+                },
+                Binding {
+                    command: Command::SearchSymbols,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('s'), KeyModifiers::ALT),
+                },
                 // The arrows under `alt`, because stepping between changes
                 // is the arrows' own motion at the scale of the diff rather
                 // than the line -- and because `alt` is already what asks

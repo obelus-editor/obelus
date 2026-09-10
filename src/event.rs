@@ -45,6 +45,18 @@ pub enum Event {
         /// The paths, relative to the walk's root.
         paths: Vec<PathBuf>,
     },
+    /// A batch of matching lines from a search of the tree.
+    Matches {
+        /// Which search these came from, so answers to a query the reader
+        /// has already typed past can be dropped.
+        generation: u64,
+        /// The matches, in the order the walk found them.
+        hits: Vec<crate::search::Hit>,
+        /// Whether this is the last batch. With a query typed and nothing
+        /// found, "still looking" and "not there" are different facts, and
+        /// only the scan knows which one to show.
+        done: bool,
+    },
     /// A message from a language server.
     Lsp {
         /// Which server it came from.

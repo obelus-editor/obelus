@@ -5,7 +5,7 @@
 //! handled here.
 #![warn(clippy::wildcard_enum_match_arm)]
 
-use crate::{app::App, command::Command};
+use crate::{app::App, command::Command, search::Scope};
 
 /// Runs `command` against the application state.
 pub fn dispatch(app: &mut App, command: Command) {
@@ -24,6 +24,9 @@ pub fn dispatch(app: &mut App, command: Command) {
         | Command::SymbolTypeDefinition
         | Command::SymbolImplementation
         | Command::SymbolReferences => app.ask_about_symbol(command),
+        Command::SearchFile => app.open_search(Scope::File),
+        Command::SearchProject => app.open_search(Scope::Project),
+        Command::SearchSymbols => app.open_search(Scope::Symbols),
         Command::GoLine => app.open_line_prompt(),
         Command::GoBracket => app.go_to_bracket(),
         Command::GitHunk => app.toggle_hunk(),

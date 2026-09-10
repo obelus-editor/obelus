@@ -42,6 +42,12 @@ pub enum Command {
     SymbolImplementation,
     /// Everywhere it is used.
     SymbolReferences,
+    /// Search the file being read.
+    SearchFile,
+    /// Search every file under the working directory.
+    SearchProject,
+    /// Search the names the language server knows.
+    SearchSymbols,
     /// Go to a line by number.
     GoLine,
     /// Go to the bracket that matches the one under the cursor.
@@ -235,6 +241,21 @@ pub const ALL: &[CommandSpec] = &[
         title: "Find references",
     },
     CommandSpec {
+        command: Command::SearchFile,
+        name: "search.file",
+        title: "Search this file",
+    },
+    CommandSpec {
+        command: Command::SearchProject,
+        name: "search.project",
+        title: "Search every file",
+    },
+    CommandSpec {
+        command: Command::SearchSymbols,
+        name: "search.symbols",
+        title: "Search the project's symbols",
+    },
+    CommandSpec {
         command: Command::GoLine,
         name: "go.line",
         title: "Go to a line by number",
@@ -322,6 +343,9 @@ impl Command {
             | Self::SymbolTypeDefinition
             | Self::SymbolImplementation
             | Self::SymbolReferences
+            | Self::SearchFile
+            | Self::SearchProject
+            | Self::SearchSymbols
             | Self::GoLine
             | Self::GoBracket
             | Self::GitHunk
@@ -368,6 +392,13 @@ impl Command {
             // off again for one already showing as markdown.
             Self::MarkdownPreview => Requires::AMarkdownFile,
             Self::GoBracket => Requires::ABracket,
+            // One scope needs a file, one needs nothing but the tree, and
+            // one needs a server -- but all three open the same view, whose
+            // other tabs are a left or a right away. What each key requires
+            // is what the tab it lands on can answer.
+            Self::SearchFile => Requires::AFileOpen,
+            Self::SearchProject => Requires::Nothing,
+            Self::SearchSymbols => Requires::ARunningServer,
             Self::GitHunk => Requires::AHunk,
             Self::GitPrevious => Requires::AHunkBefore,
             Self::GitNext => Requires::AHunkAfter,
@@ -431,6 +462,9 @@ mod tests {
             Command::SymbolTypeDefinition,
             Command::SymbolImplementation,
             Command::SymbolReferences,
+            Command::SearchFile,
+            Command::SearchProject,
+            Command::SearchSymbols,
             Command::GoLine,
             Command::GoBracket,
             Command::GitHunk,
