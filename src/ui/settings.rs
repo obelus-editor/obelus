@@ -128,14 +128,38 @@ impl Widget for SettingsView<'_> {
             return;
         }
 
-        let top = area.y + 2;
-        let control_at = area.x + area.width.saturating_sub(CONTROL_WIDTH + 1);
-        for (index, setting) in rows.iter().enumerate() {
-            let Ok(offset) = u16::try_from(index) else {
+        // The rows the window leaves, and the same bar every other list
+        // has when there is more of it than there is screen.
+        let region = Rect {
+            y: area.y + 2,
+            height: area.height.saturating_sub(2),
+            ..area
+        };
+        let window = self.settings.window();
+        let scrolling = window.scrollable(region.height);
+        if scrolling {
+            crate::ui::scrollbar(cells, region, window.top(), rows.len(), self.theme);
+        }
+        let room = match scrolling {
+            true => region
+                .width
+                .saturating_sub(crate::ui::editor::SCROLLBAR_WIDTH),
+            false => region.width,
+        };
+        let control_at = area.x + room.saturating_sub(CONTROL_WIDTH + 1);
+        let showing = window.visible(region.height);
+        for (offset, (index, setting)) in rows
+            .iter()
+            .enumerate()
+            .skip(showing.start)
+            .take(showing.len())
+            .enumerate()
+        {
+            let Ok(offset) = u16::try_from(offset) else {
                 break;
             };
-            let y = top + offset;
-            if y >= area.bottom() {
+            let y = region.y + offset;
+            if y >= region.bottom() {
                 break;
             }
             let focused = index == self.settings.focus();
@@ -147,6 +171,7 @@ impl Widget for SettingsView<'_> {
             let row = Rect {
                 y,
                 height: 1,
+                width: room,
                 ..area
             };
             fill(cells, row, plain.bg(background));

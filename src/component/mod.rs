@@ -9,3 +9,4 @@ pub mod composer;
 pub mod picker;
 pub mod prompt;
 pub mod settings;
+pub mod window;

@@ -14,7 +14,12 @@ use nucleo_matcher::{
     pattern::{CaseMatching, Normalization, Pattern},
 };
 
-use crate::{buffer::BufferId, command::Command, theme::Theme};
+use crate::{
+    buffer::BufferId,
+    command::Command,
+    component::window::{Window, Wrap},
+    theme::Theme,
+};
 
 /// What accepting an item means.
 #[derive(Clone, Debug)]
@@ -187,15 +192,6 @@ pub enum PickerOutcome {
     Cancelled,
 }
 
-/// Whether a move off the end comes back round.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Wrap {
-    /// Off the end and round to the other.
-    Yes,
-    /// Stop at the end.
-    No,
-}
-
 /// A prompt and a filtered list.
 pub struct Picker {
     items: Vec<PickerItem>,
@@ -215,7 +211,16 @@ pub struct Picker {
     /// Also reused, so the inner allocations survive a keystroke that leaves
     /// something typed.
     indices: Vec<(usize, Vec<u32>)>,
-    selected: usize,
+    /// Which matching row is selected, and which is on the top row.
+    ///
+    /// The same window every list in obelus has, and the reason it is state
+    /// rather than worked out from the selection: it moves only when the
+    /// selection would leave it, so walking down the list moves a cursor
+    /// through rows that stay still, and the rows only slide once the
+    /// cursor is against an edge. Deriving the top from the selection --
+    /// keeping it near the middle, say -- means every single step scrolls
+    /// the whole list under a cursor that never moves.
+    window: Window,
     /// The file this list is the outline of, if that is what it is.
     ///
     /// A language server answers `documentSymbol` a moment after being
@@ -233,11 +238,6 @@ pub struct Picker {
     tabs: Vec<String>,
     /// Which tab is showing.
     tab: usize,
-    /// Which match is on the top row.
-    ///
-    /// The window, and it is state: it moves only when the selection would
-    /// leave it. See [`Picker::first_visible`].
-    top: usize,
     /// Whether the tabs are scopes: rows that come from three different
     /// places rather than three groups of one list.
     scopes: bool,
@@ -282,7 +282,7 @@ impl std::fmt::Debug for Picker {
             .field("query", &self.query)
             .field("items", &self.items.len())
             .field("matched", &self.matched.len())
-            .field("selected", &self.selected)
+            .field("selected", &self.window.focus())
             .field("layout", &self.layout)
             .finish_non_exhaustive()
     }
@@ -297,11 +297,10 @@ impl Picker {
             query: String::new(),
             matched: Vec::new(),
             indices: Vec::new(),
-            selected: 0,
+            window: Window::new(),
             outline: Option::None,
             tabs: Vec::new(),
             tab: 0,
-            top: 0,
             scopes: false,
             searching: false,
             listing: false,
@@ -346,7 +345,7 @@ impl Picker {
     pub fn go_to_tab(&mut self, tab: usize) {
         if tab < self.tabs.len() {
             self.tab = tab;
-            self.selected = 0;
+            self.window.set_focus(0);
             self.refilter();
         }
     }
@@ -406,7 +405,7 @@ impl Picker {
             (false, at) => at - 1,
         };
         // A different list, so the old selection means nothing.
-        self.selected = 0;
+        self.window.set_focus(0);
         self.refilter();
     }
 
@@ -428,7 +427,7 @@ impl Picker {
     /// where the selection was means nothing.
     pub fn replace(&mut self, items: Vec<PickerItem>) {
         self.items = items;
-        self.selected = 0;
+        self.window.set_focus(0);
         self.refilter();
     }
 
@@ -612,7 +611,7 @@ impl Picker {
     /// The selected row, if there is one.
     #[must_use]
     pub fn selected_item(&self) -> Option<&PickerItem> {
-        let (index, _) = self.matched.get(self.selected)?;
+        let (index, _) = self.matched.get(self.window.focus())?;
         self.items.get(*index)
     }
 
@@ -635,7 +634,14 @@ impl Picker {
     /// Which matching row is selected.
     #[must_use]
     pub const fn selected(&self) -> usize {
-        self.selected
+        self.window.focus()
+    }
+
+    /// The window itself, for the view: what is on screen, and whether
+    /// there is more of it than there is screen.
+    #[must_use]
+    pub const fn window(&self) -> &Window {
+        &self.window
     }
 
     /// The character positions of one visible row that the query matched.
@@ -652,40 +658,12 @@ impl Picker {
 
     /// Which match is on the top row of a window `height` rows tall.
     ///
-    /// Remembered rather than worked out from the selection: the window
-    /// moves only when the selection would leave it, so walking down the
-    /// list moves a cursor through rows that stay still, and the rows only
-    /// slide once the cursor is against an edge. Deriving the top from the
-    /// selection -- keeping it near the middle, say -- means every single
-    /// step scrolls the whole list under a cursor that never moves, and a
-    /// reader loses track of where they are in it.
-    ///
-    /// A pure reader: the window is put right by [`Picker::settle`], which
-    /// runs once a frame before anything is drawn, and having two places
-    /// clamp it would leave neither of them responsible.
+    /// A pure reader: the window is put right by the window's own settling,
+    /// which runs once a frame before anything is drawn, and having two
+    /// places clamp it would leave neither of them responsible.
     #[must_use]
     pub const fn first_visible(&self, _height: u16) -> usize {
-        self.top
-    }
-
-    /// Moves the window if the selection has left it, and no further.
-    ///
-    /// One row at a time at the edges, and a whole window's worth when the
-    /// selection arrived by paging: either way the answer is "the least that
-    /// puts the selection back on screen".
-    ///
-    /// A list that shrinks under the window needs no case of its own, which
-    /// is worth saying because one was written first: a window past the end
-    /// of the list has the selection *above* it -- the selection is clamped
-    /// to the last row when the rows go away -- so the first rule below
-    /// pulls the window back down to it.
-    fn settle(&mut self, height: u16) {
-        let height = usize::from(height).max(1);
-        if self.selected < self.top {
-            self.top = self.selected;
-        } else if self.selected >= self.top + height {
-            self.top = self.selected + 1 - height;
-        }
+        self.window.top()
     }
 
     /// Works out which characters matched, for the rows about to be drawn.
@@ -698,7 +676,7 @@ impl Picker {
         // The window first: which rows are about to be drawn is the question
         // the matched characters are worked out for, and the height is only
         // known here.
-        self.settle(height);
+        self.window.settle(height);
 
         // Reuse the allocations: `indices` holds one vector per row, and the
         // rows are the same rows on the next keystroke.
@@ -785,7 +763,7 @@ impl Picker {
             KeyCode::Esc if bare => PickerOutcome::Cancelled,
             KeyCode::Enter if bare => self
                 .matched
-                .get(self.selected)
+                .get(self.window.focus())
                 .map(|(index, _)| &self.items[*index])
                 .filter(|item| item.enabled)
                 .map_or(PickerOutcome::Consumed, |item| {
@@ -848,26 +826,24 @@ impl Picker {
         let row = row.min(self.matched.len().saturating_sub(1));
         // Onwards from where it was asked for, so `ctrl+home` lands on the
         // first row that can be chosen rather than on the first row.
-        self.selected = self.choosable(row, true).unwrap_or(row);
+        self.window
+            .set_focus(self.choosable(row, true).unwrap_or(row));
     }
 
+    /// Moves the selection, skipping what cannot be chosen.
+    ///
+    /// The moving is the window's, which is what makes a list here walk the
+    /// way a page of settings and a list of cards walk. What is this
+    /// list's own is the skipping: a picker has rows that are there to be
+    /// read rather than pressed.
     fn move_selection(&mut self, by: isize, wrap: Wrap) {
-        if self.matched.is_empty() {
-            self.selected = 0;
-            return;
-        }
-        let last = self.matched.len() - 1;
-        let landed = match wrap {
-            // Wrapping, because the other end of a list is faster to reach
-            // than to scroll back through.
-            Wrap::Yes if by > 0 && self.selected >= last => 0,
-            Wrap::Yes if by < 0 && self.selected == 0 => last,
-            _ => self.selected.saturating_add_signed(by).min(last),
-        };
+        let landed = self.window.step(by, wrap);
         // Carried on in the direction of travel: stepping down into a run of
         // rows that cannot be chosen comes out of the bottom of it, which is
         // where the reader was going.
-        self.selected = self.choosable(landed, by >= 0).unwrap_or(self.selected);
+        if let Some(choosable) = self.choosable(landed, by >= 0) {
+            self.window.set_focus(choosable);
+        }
     }
 
     fn refilter(&mut self) {
@@ -910,11 +886,13 @@ impl Picker {
                 .sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
         }
 
-        self.selected = self.selected.min(self.matched.len().saturating_sub(1));
+        self.window.set_count(self.matched.len());
         // A query can narrow the list to rows that cannot be chosen, or move
         // one under the selection: whatever else happens, the selection is
         // on a row a reader can press Enter on if there is one.
-        self.selected = self.choosable(self.selected, true).unwrap_or(self.selected);
+        if let Some(choosable) = self.choosable(self.window.focus(), true) {
+            self.window.set_focus(choosable);
+        }
 
         // Last, because it is the strongest claim about which row to start
         // on: it beats both the order the items came in and where the
@@ -926,7 +904,7 @@ impl Picker {
                 .position(|(index, _)| self.items[*index].label == label)
             && self.can_choose(row)
         {
-            self.selected = row;
+            self.window.set_focus(row);
         }
     }
 }

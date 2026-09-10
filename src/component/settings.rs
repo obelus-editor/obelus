@@ -15,6 +15,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::{
     agent::Status,
     app::agents::Listed as Agent,
+    component::window::{Window, Wrap},
     config::{self, Config, Group, Kind, Setting, Value},
 };
 
@@ -56,17 +57,13 @@ pub struct Settings {
     query: String,
     /// Which group's tab is showing.
     group: usize,
-    /// Which of the showing rows has the focus.
-    focus: usize,
-    /// Which card the agents page draws first.
+    /// Which row has the focus and which is on top -- of the settings, or
+    /// of the cards, whichever page is showing.
     ///
-    /// Kept rather than worked out from the focus each frame. Worked out,
-    /// the focused card ends up as low on the screen as it will go, so
-    /// every step *up* scrolls -- and a list that moves under a reader who
-    /// has not reached its edge is a list they have to watch instead of
-    /// read. Only the cards need it: a group of settings is a dozen rows
-    /// and they all fit.
-    top: usize,
+    /// The same window every other list in obelus has, which is what makes
+    /// this page scroll the way they do: by the least that puts the focused
+    /// row back on screen, and no further.
+    window: Window,
 }
 
 impl Default for Settings {
@@ -82,8 +79,7 @@ impl Settings {
         Self {
             query: String::new(),
             group: 0,
-            focus: 0,
-            top: 0,
+            window: Window::new(),
         }
     }
 
@@ -121,13 +117,20 @@ impl Settings {
     /// Which row has the focus.
     #[must_use]
     pub const fn focus(&self) -> usize {
-        self.focus
+        self.window.focus()
     }
 
     /// Which card the agents page draws first.
     #[must_use]
     pub const fn top(&self) -> usize {
-        self.top
+        self.window.top()
+    }
+
+    /// The window itself, for the view: what is on screen, and whether
+    /// there is more of it than there is screen.
+    #[must_use]
+    pub const fn window(&self) -> &Window {
+        &self.window
     }
 
     /// The settings on show: this group's, narrowed by what has been typed.
@@ -211,7 +214,7 @@ impl Settings {
         let listed = self.agents(agents);
         let mut taken = 0;
         let mut fits = 0;
-        for agent in listed.iter().skip(self.focus.min(listed.len())) {
+        for agent in listed.iter().skip(self.window.focus().min(listed.len())) {
             let card = self.card_rows(agent, width) + 1;
             if taken + card > height && fits > 0 {
                 break;
@@ -310,41 +313,40 @@ impl Settings {
         } else {
             usize::from(room.1.saturating_sub(2)).max(1)
         };
+        // How many rows there are, before any of them is moved between:
+        // the count comes from the page rather than from the last frame,
+        // because a key can arrive before the first one is drawn.
+        self.window.set_count(count);
 
         match key.code {
             KeyCode::Esc if bare => SettingsOutcome::Cancelled,
             // The ends, with and without control: the same keys reach the
             // ends of a document, a list and a rendering, and a key should
             // not mean one thing in one view and nothing in the next.
+            // Every one of these is the window's, which is why they read
+            // the same here as they do in a picker.
             KeyCode::Home if count > 0 => {
-                self.focus = 0;
+                self.window.home();
                 SettingsOutcome::Consumed
             }
             KeyCode::End if count > 0 => {
-                self.focus = count - 1;
+                self.window.end();
                 SettingsOutcome::Consumed
             }
-            // Clamped rather than wrapped, unlike a single step: paging is
-            // how you get to the end of a long list, and a page that wraps
-            // past it overshoots what you were reaching for.
             KeyCode::PageDown if count > 0 => {
-                self.focus = (self.focus + page).min(count - 1);
+                self.window.page(1, u16::try_from(page).unwrap_or(1));
                 SettingsOutcome::Consumed
             }
             KeyCode::PageUp if count > 0 => {
-                self.focus = self.focus.saturating_sub(page);
+                self.window.page(-1, u16::try_from(page).unwrap_or(1));
                 SettingsOutcome::Consumed
             }
             KeyCode::Down if bare && count > 0 => {
-                self.focus = (self.focus + 1) % count;
+                self.window.step(1, Wrap::Yes);
                 SettingsOutcome::Consumed
             }
             KeyCode::Up if bare && count > 0 => {
-                self.focus = if self.focus == 0 {
-                    count - 1
-                } else {
-                    self.focus - 1
-                };
+                self.window.step(-1, Wrap::Yes);
                 SettingsOutcome::Consumed
             }
             // The arrows walk the tabs, as they do in every other view with
@@ -366,7 +368,7 @@ impl Settings {
             // button while there is one, and the choice of which agent to
             // talk to once there is something to talk to.
             KeyCode::Enter if bare && self.on_agents() => {
-                match self.agents(agents).get(self.focus) {
+                match self.agents(agents).get(self.window.focus()) {
                     Some(listed) => match &listed.status {
                         Status::Missing | Status::Failed(_) | Status::Outdated { .. } => {
                             SettingsOutcome::Install(listed.agent.id.clone())
@@ -380,7 +382,7 @@ impl Settings {
                     None => SettingsOutcome::Consumed,
                 }
             }
-            KeyCode::Enter if bare => match rows.get(self.focus) {
+            KeyCode::Enter if bare => match rows.get(self.window.focus()) {
                 Some(setting) => match setting.kind {
                     Kind::Switch => {
                         let on = matches!(Self::value_of(setting, config), Value::Switch(true));
@@ -429,9 +431,8 @@ impl Settings {
     /// And the window back to the top, because the rows a query leaves are
     /// not the rows the window was scrolled through.
     fn settle(&mut self) {
-        let rows = self.rows().len();
-        self.focus = self.focus.min(rows.saturating_sub(1));
-        self.top = 0;
+        self.window.set_count(self.rows().len());
+        self.window.home();
     }
 
     /// Moves the window of cards if the focused one has left it, and no
@@ -448,30 +449,18 @@ impl Settings {
     /// screen.
     pub fn settle_cards(&mut self, agents: &[Agent], room: (u16, u16)) {
         let listed = self.agents(agents);
-        if listed.is_empty() {
-            self.top = 0;
-            return;
-        }
-        self.focus = self.focus.min(listed.len() - 1);
-        // Above the window, and when a narrowed list has left the window
-        // past the end of it: either way the window comes to the focus.
-        self.top = self.top.min(self.focus);
-
         let width = room.0.saturating_sub(7);
-        let height = room.1.saturating_sub(2).max(1);
         let heights: Vec<u16> = listed
             .iter()
             .map(|agent| self.card_rows(agent, width) + 1)
             .collect();
-        // Forward a card at a time until the focused card's last row is on
-        // screen. A focused card taller than the whole page stops here with
-        // itself at the top, which is the most of it that can be shown.
-        while self.top < self.focus {
-            let taken: u16 = heights[self.top..=self.focus].iter().sum();
-            if taken <= height {
-                break;
-            }
-            self.top += 1;
-        }
+        self.window
+            .settle_by_height(&heights, room.1.saturating_sub(2));
+    }
+
+    /// And the same for a page of settings, whose rows are one row each.
+    pub fn settle_rows(&mut self, room: u16) {
+        self.window.set_count(self.rows().len());
+        self.window.settle(room);
     }
 }

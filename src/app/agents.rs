@@ -174,13 +174,21 @@ impl App {
     /// is a fact about the screen, which the reader can resize without
     /// pressing anything.
     pub(super) fn settle_agents(&mut self, editor_area: Rect) {
-        if !self.settings.as_ref().is_some_and(Settings::on_agents) {
+        if self.settings.is_none() {
             return;
         }
+        let cards = self.settings.as_ref().is_some_and(Settings::on_agents);
         let listed = self.listed_agents();
         let room = (editor_area.width, editor_area.height);
         if let Some(settings) = self.settings.as_mut() {
-            settings.settle_cards(&listed, room);
+            match cards {
+                true => settings.settle_cards(&listed, room),
+                // A group of settings is a dozen rows and they all fit
+                // today. It has a window anyway: a group that grows past
+                // the screen should scroll rather than lose its last rows
+                // silently.
+                false => settings.settle_rows(room.1.saturating_sub(2)),
+            }
         }
     }
 

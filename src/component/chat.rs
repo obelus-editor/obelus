@@ -13,7 +13,10 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::{acp::Order, component::composer::Composer};
+use crate::{
+    acp::Order,
+    component::{composer::Composer, window::Window},
+};
 
 /// Who said something.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,14 +99,14 @@ pub struct Chat {
     said: Vec<Said>,
     /// What is being written.
     input: Composer,
-    /// The first row of the transcript on screen.
-    top: usize,
-    /// Whether the view is following the end of the transcript.
+    /// Which rows of the transcript are on screen.
     ///
-    /// On until the reader scrolls up, and on again when they come back
-    /// down. Without it a streaming answer either drags the view around
-    /// while it is being read, or arrives off screen with nothing to say so.
-    following: bool,
+    /// The same window every list in obelus has, in its following form: it
+    /// sits at the end until the reader scrolls up, and goes back to
+    /// following when they come back down. Without that a streaming answer
+    /// either drags the view around while it is being read, or arrives off
+    /// screen with nothing to say so.
+    window: Window,
 }
 
 impl Chat {
@@ -113,8 +116,7 @@ impl Chat {
         Self {
             said: Vec::new(),
             input: Composer::new(),
-            top: 0,
-            following: true,
+            window: Window::following(),
         }
     }
 
@@ -164,7 +166,14 @@ impl Chat {
     /// The first transcript row on screen.
     #[must_use]
     pub const fn top(&self) -> usize {
-        self.top
+        self.window.top()
+    }
+
+    /// The window itself, for the view: what is on screen, and whether
+    /// there is more of it than there is screen.
+    #[must_use]
+    pub const fn window(&self) -> &Window {
+        &self.window
     }
 
     /// Adds a line of the reader's own.
@@ -256,17 +265,8 @@ impl Chat {
     /// follows them. A reader who has scrolled up keeps their place, and the
     /// window is only pulled back if the transcript shrank under it.
     pub fn settle(&mut self, rows: usize, room: u16) {
-        let room = usize::from(room).max(1);
-        let last = rows.saturating_sub(room);
-        if self.following {
-            self.top = last;
-        } else {
-            self.top = self.top.min(last);
-            // Scrolled back down to the end, so it follows again. Worked
-            // out here rather than by the key, because where the end is
-            // depends on the width and the room and a key knows neither.
-            self.following = self.top >= last;
-        }
+        self.window.set_count(rows);
+        self.window.settle(room);
     }
 
     /// Scrolls the transcript, for the wheel.
@@ -373,8 +373,19 @@ impl Chat {
                 self.input.home(room.writing);
                 ChatOutcome::Consumed
             }
+            // Shift and home is the transcript's, because the box's home is
+            // the row it is on: a reader who wants the top of a long answer
+            // has nowhere else to ask for it.
+            KeyCode::Home => {
+                self.window.home();
+                ChatOutcome::Consumed
+            }
             KeyCode::End if bare => {
                 self.input.end(room.writing);
+                ChatOutcome::Consumed
+            }
+            KeyCode::End => {
+                self.window.end();
                 ChatOutcome::Consumed
             }
             KeyCode::Char(character) => {
@@ -410,17 +421,8 @@ impl Chat {
     }
 
     /// Scrolls by rows.
-    ///
-    /// Up leaves the end, which is the whole of what "following" means.
-    /// Down does not say it has arrived: where the end is depends on the
-    /// width and the room, so `settle` decides that on the next frame.
     fn scroll_by(&mut self, rows: isize) {
-        if rows < 0 {
-            self.top = self.top.saturating_sub(usize::try_from(-rows).unwrap_or(1));
-            self.following = false;
-        } else {
-            self.top = self.top.saturating_add(usize::try_from(rows).unwrap_or(1));
-        }
+        self.window.scroll(rows);
     }
 }
 
