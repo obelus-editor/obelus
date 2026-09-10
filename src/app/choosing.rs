@@ -174,21 +174,19 @@ impl App {
     }
 
     pub(super) fn accept(&mut self, value: PickerValue) {
-        // Where the query matched in the selected row, for a list that is a
-        // search. Worked out here rather than read from the last frame,
-        // because a key can arrive before one has been drawn -- and asked
-        // before the picker is closed, because it is the picker that knows.
-        let matched = self
-            .picker
-            .as_mut()
-            .filter(|picker| picker.is_searching())
-            .and_then(|picker| {
-                let row = picker.selected();
-                picker
-                    .matched_columns(row)
-                    .first()
-                    .map(|column| *column as usize)
-            });
+        // Where the query matched in the selected row, for a list whose
+        // rows are the lines they name. Worked out here rather than read
+        // from the last frame, because a key can arrive before one has been
+        // drawn -- and asked before the picker is closed, because it is the
+        // picker that knows.
+        let lines = self.rows_are_lines();
+        let matched = self.picker.as_mut().filter(|_| lines).and_then(|picker| {
+            let row = picker.selected();
+            picker
+                .matched_columns(row)
+                .first()
+                .map(|column| *column as usize)
+        });
         self.picker = None;
         match value {
             PickerValue::Command(command) => dispatch::dispatch(self, command),

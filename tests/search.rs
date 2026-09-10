@@ -882,3 +882,48 @@ fn choosing_a_row_lands_on_the_match() {
         .collect::<String>();
     assert_eq!(landed, "eti", "the cursor is not on the match: {line:?}");
 }
+
+/// Only a row that *is* a line carries a column of that line.
+///
+/// The file and project scopes list lines, so the characters a query
+/// matched are characters of the code, and both the mark and the cursor go
+/// to them. The symbols scope lists *names*: a column of a name means
+/// nothing in the file, and using it landed the cursor short of the symbol
+/// -- on the `pub` in front of it.
+#[test]
+fn a_row_that_is_a_name_keeps_the_place_it_was_given() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 16);
+
+    // No search open: nothing is a line.
+    assert!(!app.rows_are_lines_for_test());
+
+    support::press_control(&mut app, 'f');
+    support::type_text(&mut app, "greet");
+    assert!(
+        app.rows_are_lines_for_test(),
+        "the file scope's rows are the lines it lists"
+    );
+
+    // The project scope, which lists lines too.
+    support::press(&mut app, KeyCode::Right);
+    assert!(
+        app.rows_are_lines_for_test(),
+        "the project scope's rows are the lines it lists"
+    );
+
+    // And with the search closed, nothing again: a list that is not a
+    // search lists names or paths.
+    support::press(&mut app, KeyCode::Esc);
+    assert!(!app.rows_are_lines_for_test());
+
+    // The rule itself, per scope, because the symbols scope needs a server
+    // to be reachable through the view -- and it is the one that was wrong.
+    use obelus::search::Scope;
+    assert!(Scope::File.lists_lines());
+    assert!(Scope::Project.lists_lines());
+    assert!(
+        !Scope::Symbols.lists_lines(),
+        "a symbol row is a name, not the line it is on"
+    );
+}

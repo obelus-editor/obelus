@@ -38,6 +38,26 @@ impl Scope {
     /// list it built.
     pub const ALL: [Self; 3] = [Self::File, Self::Project, Self::Symbols];
 
+    /// Whether this scope's rows *are* the lines they name.
+    ///
+    /// A search of a file or of the project lists lines, trimmed of their
+    /// indentation: a column of such a row is a column of the code, so the
+    /// characters a query matched are characters of the file -- which is
+    /// what the preview marks and where choosing the row lands.
+    ///
+    /// A symbol search lists *names*. A column of a name means nothing in
+    /// the file, and treating one as if it did landed the cursor short of
+    /// the symbol, on whatever was in front of it.
+    ///
+    /// A `match` without a wildcard, so a scope added later has to say
+    /// which kind it is.
+    pub const fn lists_lines(self) -> bool {
+        match self {
+            Self::File | Self::Project => true,
+            Self::Symbols => false,
+        }
+    }
+
     /// The tab's name.
     pub const fn label(self) -> &'static str {
         match self {

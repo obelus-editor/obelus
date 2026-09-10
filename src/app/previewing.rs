@@ -199,10 +199,13 @@ impl App {
     fn preview_target(&self) -> Option<(PathBuf, Marked)> {
         let picker = self.picker.as_ref()?;
         let item = picker.selected_item()?;
-        // A row of a search is there because the query matched some of its
-        // characters, and those are what the preview marks: the list has
-        // already said which they are, and marking anything else -- the
-        // whole line, as this did -- answers a question nobody asked.
+        // A row that *is* the line it names is there because the query
+        // matched some of its characters, and those are what the preview
+        // marks: the list has already said which they are, and marking
+        // anything else -- the whole line, as this did -- answers a
+        // question nobody asked. A row that is a name rather than a line --
+        // a symbol -- keeps the span whoever named it gave.
+        let lines = self.rows_are_lines();
         let matched = |line: u32| Marked::Matched {
             line,
             columns: picker.indices_at(picker.selected()).to_vec(),
@@ -216,9 +219,7 @@ impl App {
                 .get(id.get())
                 .and_then(Option::as_ref)
                 .map(|buffer| (buffer.path().to_path_buf(), Marked::top())),
-            PickerValue::Place { path, line, .. } if picker.is_searching() => {
-                Some((path.clone(), matched(*line)))
-            }
+            PickerValue::Place { path, line, .. } if lines => Some((path.clone(), matched(*line))),
             PickerValue::Place {
                 path,
                 line,

@@ -69,6 +69,25 @@ impl App {
         self.searching.get(picker.tab()).copied()
     }
 
+    /// Whether a row of the list on screen *is* the line it names.
+    ///
+    /// True of a search of a file and of the project: the row is that line,
+    /// trimmed of its indentation, so a column of the row is a column of
+    /// the line and the characters the query matched are characters of the
+    /// code. False of everything else -- a symbol search's rows are names,
+    /// an outline's are names, a file list's are paths -- and there a
+    /// column of the row means nothing in the file.
+    pub(super) fn rows_are_lines(&self) -> bool {
+        self.searching().is_some_and(Scope::lists_lines)
+    }
+
+    /// The same, for a test: which list is showing is not otherwise
+    /// visible, and this is a rule about two views agreeing.
+    #[must_use]
+    pub fn rows_are_lines_for_test(&self) -> bool {
+        self.rows_are_lines()
+    }
+
     /// How many files the search has parsed to colour its rows.
     ///
     /// Bounded by the rows that have been on screen, which is the rule worth
