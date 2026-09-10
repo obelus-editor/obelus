@@ -174,6 +174,21 @@ impl App {
     }
 
     pub(super) fn accept(&mut self, value: PickerValue) {
+        // Where the query matched in the selected row, for a list that is a
+        // search. Worked out here rather than read from the last frame,
+        // because a key can arrive before one has been drawn -- and asked
+        // before the picker is closed, because it is the picker that knows.
+        let matched = self
+            .picker
+            .as_mut()
+            .filter(|picker| picker.is_searching())
+            .and_then(|picker| {
+                let row = picker.selected();
+                picker
+                    .matched_columns(row)
+                    .first()
+                    .map(|column| *column as usize)
+            });
         self.picker = None;
         match value {
             PickerValue::Command(command) => dispatch::dispatch(self, command),
@@ -204,7 +219,14 @@ impl App {
                 line,
                 character,
                 ..
-            } => self.go_to(&path, line, character),
+            } => match matched {
+                // A row of a search: land on what the query matched, which
+                // is where the reader is looking. The list knows which
+                // characters those are -- it marked them -- and the first
+                // of them is the place.
+                Some(column) => self.go_to_match(&path, line, column),
+                None => self.go_to(&path, line, character),
+            },
             PickerValue::Setting { key, word } => {
                 self.change_setting(key, &crate::config::Value::Choice(word));
             }

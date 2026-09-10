@@ -644,6 +644,29 @@ impl Picker {
         &self.window
     }
 
+    /// Where the query matched in one row, worked out now.
+    ///
+    /// [`Picker::indices_at`] answers the same question from what the last
+    /// frame worked out, which is right for drawing -- the rows on screen
+    /// are the rows being drawn -- and wrong for anything that happens on a
+    /// key: a key can arrive before the first frame, and then the answer
+    /// would be "nothing matched".
+    pub fn matched_columns(&mut self, row: usize) -> Vec<u32> {
+        if self.query.is_empty() {
+            return Vec::new();
+        }
+        let Some((index, _)) = self.matched.get(row).copied() else {
+            return Vec::new();
+        };
+        let pattern = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
+        let mut indices = Vec::new();
+        let haystack = Utf32Str::new(&self.items[index].label, &mut self.haystack);
+        pattern.indices(haystack, &mut self.matcher, &mut indices);
+        indices.sort_unstable();
+        indices.dedup();
+        indices
+    }
+
     /// The character positions of one visible row that the query matched.
     ///
     /// Empty for a row outside the window [`Picker::refresh_indices`] was last

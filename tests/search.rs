@@ -855,3 +855,30 @@ fn the_preview_marks_what_the_query_matched() {
         .collect();
     assert_eq!(letters, "lgn", "the marks are not on what matched:\n{dump}");
 }
+
+/// Choosing a row lands on what the query matched, not on the line.
+///
+/// The row is a line and the reader typed three letters: the cursor goes to
+/// the letters. It used to go to column one, which is the same answer for
+/// every row of a list a query has narrowed to one.
+#[test]
+fn choosing_a_row_lands_on_the_match() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 20);
+    support::press_control(&mut app, 'f');
+    support::type_text(&mut app, "eti");
+    support::press(&mut app, KeyCode::Enter);
+
+    let buffer = app.current_buffer().expect("the file");
+    let cursor = buffer.cursor();
+    // `    let greeting = "..."`: the second line, and the match is inside
+    // the word rather than at the start of the line.
+    assert_eq!(cursor.line.get(), 1, "not the line that matched");
+    let line = buffer.text().line(cursor.line).to_string();
+    let landed: String = line
+        .chars()
+        .skip(cursor.column.get())
+        .take(3)
+        .collect::<String>();
+    assert_eq!(landed, "eti", "the cursor is not on the match: {line:?}");
+}

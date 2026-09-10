@@ -6,6 +6,15 @@
 
 use super::*;
 
+/// Which column of a line to land on.
+enum Column {
+    /// The one somebody named, in whichever units they agreed to -- a
+    /// language server's answer, or a line number a reader typed.
+    Named(u32),
+    /// A column of a list's row, which is the line without its indentation.
+    InRow(usize),
+}
+
 impl App {
     /// Goes to a place a server named, recording where the reader was.
     ///
@@ -13,6 +22,19 @@ impl App {
     /// because converting it needs the target file's text and that file may
     /// never have been opened.
     pub(super) fn go_to(&mut self, path: &Path, line: u32, character: u32) {
+        self.go_to_place(path, line, Column::Named(character));
+    }
+
+    /// The same, landing where a row's own text matched.
+    ///
+    /// A search's rows are lines with their indentation trimmed off, so what
+    /// the list knows is a column of the *row*: the file's column is that
+    /// much further along, and the indent only still exists in the file.
+    pub(super) fn go_to_match(&mut self, path: &Path, line: u32, column: usize) {
+        self.go_to_place(path, line, Column::InRow(column));
+    }
+
+    fn go_to_place(&mut self, path: &Path, line: u32, column: Column) {
         let from = self.here();
         self.open(path);
 
@@ -23,14 +45,31 @@ impl App {
         let Some(buffer) = self.buffers.get_mut(id.get()).and_then(Option::as_mut) else {
             return;
         };
-        let encoding = buffer
-            .language()
-            .and_then(|language| self.servers.get(&language))
-            .map_or(lsp_types::PositionEncodingKind::UTF16, |client| {
-                client.encoding().clone()
-            });
-        let at = lsp_types::Position { line, character };
-        let (line, column) = position::from_lsp(buffer.text(), at, &encoding);
+        let (line, column) = match column {
+            Column::Named(character) => {
+                let encoding = buffer
+                    .language()
+                    .and_then(|language| self.servers.get(&language))
+                    .map_or(lsp_types::PositionEncodingKind::UTF16, |client| {
+                        client.encoding().clone()
+                    });
+                let at = lsp_types::Position { line, character };
+                position::from_lsp(buffer.text(), at, &encoding)
+            }
+            Column::InRow(column) => {
+                let text = buffer.text();
+                let line = text.clamp_line(LineNumber::new(line as usize));
+                let indent = text
+                    .line(line)
+                    .chars()
+                    .take_while(|character| character.is_whitespace())
+                    .count();
+                (
+                    line,
+                    text.clamp_column(line, CharColumn::new(indent + column)),
+                )
+            }
+        };
         buffer.place_cursor(line, column);
         buffer.center_on_cursor(area);
 
