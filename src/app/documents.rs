@@ -181,6 +181,13 @@ impl App {
         let mut picker = Picker::new(items, PickerLayout::FullArea);
         // Reachable with nothing open at all, which is how obelus starts.
         picker.when_empty("no file is open");
+        // Opened on the file being read, like the file list: the rows are in
+        // most-visited order, so the one the reader is *in* is not
+        // necessarily first, and a list that starts somewhere arbitrary
+        // makes them find their own file before they can leave it.
+        if let Some(buffer) = self.current_buffer() {
+            picker.prefer(relative(buffer.path(), &self.working_directory));
+        }
         self.picker = Some(picker);
     }
 

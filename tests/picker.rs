@@ -2858,3 +2858,47 @@ fn a_key_opens_the_changed_files_directly() {
         vec!["src/changed.rs".to_string()]
     );
 }
+
+/// The list of open files opens on the file being read.
+///
+/// The rows are in most-visited order, so the file the reader is in is not
+/// necessarily the first of them: two files visited once each are listed in
+/// the order they were opened, whichever one is being read. A list that
+/// starts somewhere arbitrary makes the reader find their own file before
+/// they can leave it.
+#[test]
+fn the_buffer_list_opens_on_the_current_file() {
+    let mut app = App::new(vec![
+        support::open_fixture("sample.rs"),
+        support::open_fixture("many_lines.rs"),
+    ]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 60, 20);
+
+    // Visit the first, then the second: both have been visited once, so
+    // they are listed in the order they were opened -- and the one being
+    // read is the second of them.
+    press_control(&mut app, 'e');
+    press(&mut app, KeyCode::Enter);
+    press_control(&mut app, 'e');
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+
+    press_control(&mut app, 'e');
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the list")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert!(
+        rows.first().is_some_and(|row| row.contains("sample.rs")),
+        "the file being read is first anyway, so this proves nothing: {rows:?}"
+    );
+    assert!(
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .is_some_and(|item| item.label.contains("many_lines.rs")),
+        "the list did not open on the file being read: {rows:?}"
+    );
+}
