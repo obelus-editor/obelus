@@ -184,6 +184,26 @@ impl Repository {
     fn write(&self, contents: &str) {
         std::fs::write(self.path(), contents).expect("rewriting the file");
     }
+
+    /// Commits whatever the file now holds, for a test that needs a
+    /// history rather than a single commit.
+    fn commit(&self, message: &str) {
+        let git = |arguments: &[&str]| {
+            let outcome = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&self.directory)
+                .args(arguments)
+                .env("GIT_AUTHOR_NAME", "obelus")
+                .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+                .env("GIT_COMMITTER_NAME", "obelus")
+                .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+                .output()
+                .expect("running git");
+            assert!(outcome.status.success(), "git {arguments:?} failed");
+        };
+        git(&["add", "file.rs"]);
+        git(&["commit", "--quiet", "-m", message]);
+    }
 }
 
 impl Drop for Repository {
@@ -699,4 +719,253 @@ fn a_list_of_files_says_which_have_changed() {
     // And a directory that is not a repository has nothing to say, rather
     // than failing.
     assert!(statuses(std::path::Path::new("/")).is_empty());
+}
+
+/// Who last changed the line the cursor is on, at the end of that line.
+///
+/// One line rather than all of them: on every line it is a wall of grey
+/// beside the code, and a reader who wants the name for a line can put the
+/// cursor on it -- which is where their attention already is.
+#[test]
+fn the_blame_sits_at_the_end_of_the_cursor_line() {
+    use obelus::{app::App, buffer::Buffer, event::Event, git::Blamed};
+
+    let repository = Repository::new("blame", "short\nshort\n");
+    let buffer = Buffer::open(&repository.path()).expect("opening it");
+    let path = buffer.path().to_path_buf();
+    let mut app = App::new(vec![buffer]);
+    support::lay_out(&mut app, 44, 8);
+
+    let bare = support::render(&mut app, 44, 8);
+    assert!(
+        !support::text_block(&bare).contains("Ada"),
+        "a name before anything answered:\n{bare}"
+    );
+
+    let long_ago = 1;
+    app.handle(Event::Blamed {
+        path,
+        lines: vec![
+            Some(Blamed {
+                who: "Ada".to_string(),
+                when: long_ago,
+            }),
+            None,
+        ],
+    });
+    let dump = support::render(&mut app, 44, 8);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    assert!(
+        rows[0].contains("Ada \u{b7} ") && rows[0].contains("ago"),
+        "no note on the cursor's line:\n{dump}"
+    );
+    // Right-aligned: the note ends a column short of the bar rather than
+    // hanging off the text, so it does not move as the cursor goes down the
+    // file.
+    let note = rows[0].find("Ada").expect("the note");
+    let bar = rows[0]
+        .rfind('\u{2588}')
+        .or_else(|| rows[0].rfind('\u{2502}'))
+        .expect("the bar");
+    assert!(bar > note, "the note is not left of the bar:\n{dump}");
+    let ends = rows[0].find("short").expect("the line") + "short".len();
+    assert!(
+        note > ends + 2,
+        "the note is hung off the text rather than right-aligned:\n{dump}"
+    );
+
+    // And nowhere else: the second line has a name in the blame and no note
+    // on screen, because the cursor is not on it.
+    assert!(
+        !rows[1].contains("Ada"),
+        "a line the cursor is not on has a note:\n{dump}"
+    );
+
+    // Moved onto a line no commit accounts for, there is nothing to say --
+    // rather than the name from the line above it.
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    let moved = support::render(&mut app, 44, 8);
+    assert!(
+        !support::text_block(&moved).contains("Ada"),
+        "a line with no commit borrowed a name:\n{moved}"
+    );
+}
+
+/// The blame is about the committed file, so the lines a reader has changed
+/// have to be mapped out of the way. Without that, one uncommitted line
+/// above shifts every name below it by one -- an answer that is confidently
+/// wrong rather than absent.
+#[test]
+fn a_line_the_reader_changed_has_no_name() {
+    use obelus::{app::App, buffer::Buffer, event::Event, git::Blamed};
+
+    // Committed: three lines. Working tree: a fourth inserted in the
+    // *middle*, so the lines below it have moved down by one -- and in the
+    // middle rather than at the top on purpose, because an insertion at the
+    // top maps to a line before the first one and would be caught by the
+    // arithmetic whether or not the rule that drops changed lines exists.
+    let repository = Repository::new("mapped", "one\ntwo\nthree\n");
+    repository.write("one\ninserted\ntwo\nthree\n");
+    let buffer = Buffer::open(&repository.path()).expect("opening it");
+    let path = buffer.path().to_path_buf();
+    let mut app = App::new(vec![buffer]);
+    support::lay_out(&mut app, 44, 8);
+
+    let who = |name: &str| {
+        Some(Blamed {
+            who: name.to_string(),
+            when: 1,
+        })
+    };
+    app.handle(Event::Blamed {
+        path,
+        lines: vec![who("Ada"), who("Bob"), who("Cai")],
+    });
+
+    // The cursor walks down, because the note is only ever on its line.
+    let note = |app: &mut App| {
+        let dump = support::render(app, 44, 8);
+        support::text_block(&dump)
+            .lines()
+            .find(|row| row.contains('\u{b7}'))
+            .map(str::to_string)
+    };
+
+    let first = note(&mut app).unwrap_or_default();
+    assert!(
+        first.contains("one") && first.contains("Ada"),
+        "the first line is not blamed on Ada: {first:?}"
+    );
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    assert_eq!(
+        note(&mut app),
+        None,
+        "the inserted line took a name from the committed file"
+    );
+    for (text, name) in [("two", "Bob"), ("three", "Cai")] {
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        let row = note(&mut app).unwrap_or_default();
+        assert!(
+            row.contains(text) && row.contains(name),
+            "line {text:?} is not blamed on {name}: {row:?}"
+        );
+    }
+}
+
+/// A long line keeps its own space: the note is dropped rather than written
+/// over the code it is about.
+#[test]
+fn a_line_too_long_for_a_note_keeps_its_code() {
+    use obelus::{app::App, buffer::Buffer, event::Event, git::Blamed};
+
+    let long = format!("// {}\n", "x".repeat(60));
+    let repository = Repository::new("long", &long);
+    let buffer = Buffer::open(&repository.path()).expect("opening it");
+    let path = buffer.path().to_path_buf();
+    let mut app = App::new(vec![buffer]);
+    support::lay_out(&mut app, 44, 8);
+    app.handle(Event::Blamed {
+        path,
+        lines: vec![Some(Blamed {
+            who: "Ada".to_string(),
+            when: 1,
+        })],
+    });
+
+    let dump = support::render(&mut app, 44, 8);
+    let text = support::text_block(&dump);
+    assert!(
+        !text.contains("Ada"),
+        "the note was written over the line:\n{dump}"
+    );
+    assert_eq!(
+        text.matches('x').count(),
+        60,
+        "the line lost characters to a note about it:\n{dump}"
+    );
+}
+
+/// `git.blame` turns the names off and on again, because on a narrow screen
+/// or in a file being read closely they are the noisiest thing obelus draws.
+#[test]
+fn the_names_can_be_turned_off() {
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+        event::Event,
+        git::Blamed,
+    };
+
+    let repository = Repository::new("off", "short\n");
+    let buffer = Buffer::open(&repository.path()).expect("opening it");
+    let path = buffer.path().to_path_buf();
+    let mut app = App::new(vec![buffer]);
+    support::lay_out(&mut app, 44, 8);
+    app.handle(Event::Blamed {
+        path,
+        lines: vec![Some(Blamed {
+            who: "Ada".to_string(),
+            when: 1,
+        })],
+    });
+    assert!(support::text_block(&support::render(&mut app, 44, 8)).contains("Ada"));
+
+    dispatch::dispatch(&mut app, Command::GitBlame);
+    let off = support::render(&mut app, 44, 8);
+    assert!(
+        !support::text_block(&off).contains("Ada"),
+        "the names are still there:\n{off}"
+    );
+    assert_eq!(app.note(), Some("not showing who changed each line"));
+
+    // And back on without asking again: the answer is still in hand.
+    dispatch::dispatch(&mut app, Command::GitBlame);
+    assert!(
+        support::text_block(&support::render(&mut app, 44, 8)).contains("Ada"),
+        "the names did not come back"
+    );
+}
+
+/// The blame comes from `gix`, against a repository built for the test: a
+/// real walk of a real history, which is the only thing that says the
+/// library is being used correctly.
+#[test]
+fn a_real_repository_gives_a_real_blame() {
+    let repository = Repository::new("history", "first\nsecond\n");
+    // A second commit that changes only the second line.
+    repository.write("first\nchanged\n");
+    repository.commit("the second commit");
+
+    let lines = obelus::git::blame::lines_of(&repository.path()).expect("a blame");
+    assert_eq!(lines.len(), 2, "not one entry per line");
+    let who: Vec<Option<String>> = lines
+        .iter()
+        .map(|line| line.as_ref().map(|blamed| blamed.who.clone()))
+        .collect();
+    assert_eq!(
+        who,
+        vec![Some("obelus".to_string()), Some("obelus".to_string())],
+        "not the author the commits were made by"
+    );
+
+    // The two lines came from two different commits, and the times say so:
+    // the second is not older than the first.
+    let times: Vec<i64> = lines
+        .iter()
+        .map(|line| line.as_ref().map_or(0, |blamed| blamed.when))
+        .collect();
+    assert!(
+        times[1] >= times[0],
+        "the later commit is dated before the earlier one: {times:?}"
+    );
+
+    // And a file git has never seen has no blame at all, which is a
+    // different thing from an empty one.
+    let stranger = repository.directory.join("unknown.rs");
+    std::fs::write(&stranger, "nothing\n").expect("writing");
+    assert!(obelus::git::blame::lines_of(&stranger).is_none());
 }

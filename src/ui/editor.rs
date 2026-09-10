@@ -17,7 +17,7 @@ use crate::{
     app::App,
     buffer::Buffer,
     coordinates::{ByteOffset, CharColumn, LineNumber, Span},
-    git::{Changes, Marker},
+    git::{self, Changes, Marker},
     syntax::{brackets, highlight::Highlights},
     text::WrapRow,
     theme::Theme,
@@ -85,6 +85,9 @@ pub struct EditorView<'a> {
     changes: Option<&'a Changes>,
     /// The hunk the reader has opened, if any.
     opened: Option<LineNumber>,
+    /// Who last changed each line of the committed file, if obelus has been
+    /// told and the reader wants to see it.
+    blame: Option<&'a [Option<git::Blamed>]>,
 }
 
 impl EditorView<'_> {
@@ -127,6 +130,24 @@ impl EditorView<'_> {
         }
     }
 
+    /// What to write after a line: who changed it and how long ago.
+    ///
+    /// Nothing for a line the reader has changed since the last commit --
+    /// the committed file has no such line, so no commit can be named for
+    /// it, and a name from the line that used to be here would be a lie
+    /// about the line that is.
+    fn blame_at(&self, line: LineNumber, now: std::time::SystemTime) -> Option<String> {
+        let blame = self.blame?;
+        // Through the working-tree changes, because the blame is about the
+        // committed file: without this every uncommitted line above shifts
+        // every name below it.
+        let at = match self.changes {
+            Some(changes) => changes.committed_line(line)?,
+            None => line,
+        };
+        git::blame::label(blame.get(at.get())?.as_ref(), now)
+    }
+
     /// The colour a marker is drawn in, wherever it is drawn.
     const fn marker_colour(&self, marker: Marker) -> Color {
         match marker {
@@ -158,6 +179,7 @@ impl<'a> EditorView<'a> {
             selection: app.current_buffer().and_then(Buffer::selection),
             changes: app.changes(),
             opened: app.opened_hunk(),
+            blame: app.blame(),
         }
     }
 
@@ -189,6 +211,9 @@ impl<'a> EditorView<'a> {
             // question nobody asked.
             changes: None,
             opened: None,
+            // Nor is a preview the place for names: it is a few lines of
+            // somewhere else, shown to answer where a symbol is.
+            blame: None,
         }
     }
 }
@@ -266,6 +291,11 @@ impl Widget for EditorView<'_> {
                 .and_then(|changes| changes.hunk_at(anchor))
                 .map(|hunk| (hunk, self.marker_background(hunk.marker())))
         });
+
+        // One clock reading for the frame, taken here rather than where it
+        // is used: a frame is a moment, and "how long ago" is measured from
+        // it rather than from whenever each row happened to be drawn.
+        let now = std::time::SystemTime::now();
 
         let mut screen_row = 0u16;
         let mut line = viewport.top;
@@ -396,7 +426,7 @@ impl Widget for EditorView<'_> {
                     width,
                     row: wrap,
                 };
-                draw_row(
+                let ended = draw_row(
                     placement,
                     buffer,
                     line,
@@ -409,6 +439,28 @@ impl Widget for EditorView<'_> {
                         brackets,
                     },
                 );
+
+                // The cursor's line only, and only after the *last* row of
+                // it: the note is about the line the reader is on. On every
+                // line it is a wall of grey beside the code -- it is on
+                // screen more often than any other text obelus draws -- and
+                // a reader who wants the name for a line can put the cursor
+                // on it, which is where their attention already is.
+                let last_row = index + 1 == text.row_count(line, width);
+                if line == cursor.line
+                    && last_row
+                    && let Some(label) = self.blame_at(line, now)
+                {
+                    draw_blame(
+                        area.x + margin + gutter,
+                        y,
+                        width,
+                        ended,
+                        &label,
+                        self.theme.gutter,
+                        cells,
+                    );
+                }
                 screen_row += 1;
             }
             skip = 0;
@@ -505,17 +557,22 @@ struct Painting<'a> {
     brackets: Option<(ByteOffset, ByteOffset)>,
 }
 
+/// Draws one visual row of a line, and says which column it ended at.
+///
+/// The column is what the blame at the end of the line needs: "after the
+/// text" is only knowable by whoever drew the text.
 fn draw_row(
     placement: Placement,
     buffer: &Buffer,
     line: LineNumber,
     cells: &mut CellBuffer,
     painting: &Painting<'_>,
-) {
+) -> u16 {
     let Placement { x, y, width, row } = placement;
     let text = buffer.text();
     let start = usize::from(text.display_column(line, row.first).get());
     let indent = usize::from(row.indent);
+    let mut ended = indent.try_into().unwrap_or(u16::MAX);
 
     for (column, glyph) in text.glyphs(line).enumerate() {
         if glyph.first_cell < start {
@@ -564,12 +621,51 @@ fn draw_row(
             for cell in 0..glyph.cells.min(usize::from(width - offset)) {
                 let Ok(cell) = u16::try_from(cell) else { break };
                 put(cells, x + offset + cell, y, ' ', style);
+                ended = offset + cell + 1;
             }
             continue;
         }
 
         put(cells, x + offset, y, glyph.character, style);
+        ended = offset + u16::try_from(glyph.cells).unwrap_or(1);
     }
+    ended
+}
+
+/// Writes who last changed a line, right-aligned at the end of its row.
+///
+/// Right-aligned rather than two columns after the text: the note is on
+/// whichever line the cursor is on, so hung off the text it would jump left
+/// and right as the reader moves down the file, and a thing that moves is a
+/// thing the eye follows. At the right-hand edge it stays where it was and
+/// the reader can look at it or not.
+///
+/// No column is reserved for it, so a line long enough to reach it keeps its
+/// own space and loses the note. Code is never written over to make room for
+/// a note about code.
+fn draw_blame(
+    x: u16,
+    y: u16,
+    width: u16,
+    text_ends: u16,
+    label: &str,
+    colour: Color,
+    cells: &mut CellBuffer,
+) {
+    let Ok(label_width) = u16::try_from(crate::ui::text_width(label)) else {
+        return;
+    };
+    // One column short of the edge, because the bar is the next cell and
+    // grey text touching it reads as part of it.
+    let Some(offset) = width.checked_sub(label_width + 1) else {
+        return;
+    };
+    // Two columns of gap at least, so it reads as a note rather than as
+    // more code -- and so a line that reaches this far keeps its own space.
+    if offset < text_ends + 2 {
+        return;
+    }
+    crate::ui::write(cells, x + offset, y, label, Style::new().fg(colour));
 }
 
 #[cfg(test)]

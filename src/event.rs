@@ -57,6 +57,15 @@ pub enum Event {
         /// only the scan knows which one to show.
         done: bool,
     },
+    /// Who last changed each line of a file.
+    Blamed {
+        /// Which file it is about: a blame is a walk of history, and the
+        /// reader may be looking at something else by the time it lands.
+        path: std::path::PathBuf,
+        /// One entry per line of the *committed* file, from its first.
+        /// `None` for a line no commit accounts for.
+        lines: Vec<Option<crate::git::Blamed>>,
+    },
     /// A message from a language server.
     Lsp {
         /// Which server it came from.

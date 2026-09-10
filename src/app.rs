@@ -161,6 +161,18 @@ pub struct App {
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
     statuses: std::collections::HashMap<PathBuf, git::FileStatus>,
+    /// Who last changed each line, per file that has been asked about.
+    ///
+    /// Kept rather than replaced, because a reader goes back and forth
+    /// between two files and a blame is a walk of history: asking again for
+    /// one they left a moment ago would spend that walk twice. Bounded by
+    /// the files opened in a session, which is tens of them.
+    blames: std::collections::HashMap<PathBuf, Vec<Option<git::Blamed>>>,
+    /// Which files have been asked about and have not answered yet, so a
+    /// frame does not start a second walk of the same history.
+    asking_blame: std::collections::HashSet<PathBuf>,
+    /// Whether to show it at all.
+    showing_blame: bool,
     /// Files parsed only to colour a search's rows.
     ///
     /// A search of a project answers with lines from files that are not
@@ -234,6 +246,9 @@ impl App {
             changes: None,
             opened: None,
             statuses: std::collections::HashMap::new(),
+            blames: std::collections::HashMap::new(),
+            asking_blame: std::collections::HashSet::new(),
+            showing_blame: true,
             row_syntax: std::collections::HashMap::new(),
             searched: None,
             search_generation: std::sync::Arc::default(),
@@ -1523,6 +1538,50 @@ impl App {
         }
     }
 
+    /// Who last changed each line of the file being read, if the answer has
+    /// arrived and the reader wants to see it.
+    ///
+    /// One entry per line of the *committed* file: the caller maps a line of
+    /// the working tree onto it, because the two are not the same file once
+    /// the reader has changed anything.
+    #[must_use]
+    pub fn blame(&self) -> Option<&[Option<git::Blamed>]> {
+        if !self.showing_blame {
+            return None;
+        }
+        let path = self.current_buffer()?.path();
+        self.blames.get(path).map(Vec::as_slice)
+    }
+
+    /// Shows or stops showing who changed each line.
+    pub fn toggle_blame(&mut self) {
+        self.showing_blame = !self.showing_blame;
+        if self.showing_blame {
+            self.refresh_blame();
+        } else {
+            self.note = Some("not showing who changed each line".to_string());
+        }
+    }
+
+    /// Starts a walk of history for the file being read, once per file.
+    fn refresh_blame(&mut self) {
+        if !self.showing_blame {
+            return;
+        }
+        let Some(path) = self
+            .current_buffer()
+            .map(|buffer| buffer.path().to_path_buf())
+        else {
+            return;
+        };
+        if self.blames.contains_key(&path) || !self.asking_blame.insert(path.clone()) {
+            return;
+        }
+        if let Some(sender) = self.events.clone() {
+            git::blame::spawn_blame(&path, sender);
+        }
+    }
+
     /// Asks git what has changed, if it has not already been asked about
     /// this version of this file.
     fn refresh_changes(&mut self) {
@@ -2452,6 +2511,7 @@ impl App {
         let area = self.text_area();
         self.refresh_markdown(editor_area.width);
         self.refresh_changes();
+        self.refresh_blame();
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.scroll_into_view(area);
         }
@@ -2722,6 +2782,13 @@ impl App {
                 hits,
                 done,
             } => self.on_matches(generation, hits, done),
+            Event::Blamed { path, lines } => {
+                // Kept whether or not the reader is still looking at that
+                // file: they walked away from it while a walk of its history
+                // was running, and they will walk back.
+                self.asking_blame.remove(&path);
+                self.blames.insert(path, lines);
+            }
             Event::FilesFound { generation, paths } => {
                 // A batch from a walk whose picker is gone, or from one
                 // superseded by a later open.

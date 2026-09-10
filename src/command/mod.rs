@@ -54,6 +54,8 @@ pub enum Command {
     GoBracket,
     /// Open what changed here, in place, or close it again.
     GitHunk,
+    /// Show who last changed each line, or stop.
+    GitBlame,
     /// Go to the change above the cursor.
     GitPrevious,
     /// Go to the change below the cursor.
@@ -271,6 +273,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Show what changed here",
     },
     CommandSpec {
+        command: Command::GitBlame,
+        name: "git.blame",
+        title: "Show who changed each line",
+    },
+    CommandSpec {
         command: Command::GitPrevious,
         name: "git.previous",
         title: "Go to the previous change",
@@ -349,6 +356,7 @@ impl Command {
             | Self::GoLine
             | Self::GoBracket
             | Self::GitHunk
+            | Self::GitBlame
             | Self::GitPrevious
             | Self::GitNext
             | Self::SelectionCopy
@@ -399,6 +407,11 @@ impl Command {
             Self::SearchFile => Requires::AFileOpen,
             Self::SearchProject => Requires::Nothing,
             Self::SearchSymbols => Requires::ARunningServer,
+            // Both ways, and it needs only a file: turning the names off
+            // is exactly what a reader with no repository does not need to
+            // do, but a file in one that has never been committed still
+            // gets an empty blame, which is an answer.
+            Self::GitBlame => Requires::AFileOpen,
             Self::GitHunk => Requires::AHunk,
             Self::GitPrevious => Requires::AHunkBefore,
             Self::GitNext => Requires::AHunkAfter,
@@ -468,6 +481,7 @@ mod tests {
             Command::GoLine,
             Command::GoBracket,
             Command::GitHunk,
+            Command::GitBlame,
             Command::GitPrevious,
             Command::GitNext,
             Command::SelectionCopy,

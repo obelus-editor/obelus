@@ -133,6 +133,39 @@ impl Changes {
         self.hunks.iter().find(|hunk| hunk.covers(line))
     }
 
+    /// Where a line of the working tree sits in the committed file, or
+    /// `None` for a line that is not in the committed file at all.
+    ///
+    /// The smallest possible version of the map between two texts, and it
+    /// exists because a blame is about the committed file while a reader is
+    /// looking at this one: without it, every uncommitted line above the
+    /// cursor would shift every name below it by one, and the answer would
+    /// be confidently wrong rather than absent.
+    ///
+    /// A line inside an added or modified run has no committed counterpart,
+    /// which is the honest `None`. A deletion shifts what follows it and
+    /// makes no line uncommitted, so it needs no case of its own.
+    #[must_use]
+    pub fn committed_line(&self, line: LineNumber) -> Option<LineNumber> {
+        let at = line.get();
+        let mut offset: isize = 0;
+        for hunk in &self.hunks {
+            let start = hunk.line.get();
+            if start > at {
+                break;
+            }
+            if hunk.lines > 0 && at < start + hunk.lines {
+                return None;
+            }
+            let removed = isize::try_from(hunk.removed.len()).unwrap_or(isize::MAX);
+            let added = isize::try_from(hunk.lines).unwrap_or(isize::MAX);
+            offset += removed - added;
+        }
+        usize::try_from(isize::try_from(at).unwrap_or(isize::MAX) + offset)
+            .ok()
+            .map(LineNumber::new)
+    }
+
     /// The next change below a line, for stepping through them.
     ///
     /// Strictly below where it *starts*, so a cursor somewhere inside a

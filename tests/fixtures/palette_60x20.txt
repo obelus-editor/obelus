@@ -15,11 +15,11 @@ screen 60x20  editor 60x19  status 60x1
 12| 󰮘 buffer.close  Close this file                       󰘴 w █
 13| 󰏘 theme.select  Change the colours                        █
 14| 󰆍 command.palette  Run a command by name              󰘴 p █
-15| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘴 g █
+15| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘴 g │
 16| 󰉹 symbol.outline  Everything this file defines        󰘴 t │
 17| 󰍉 search.file  Search this file                       󰘴 f │
 18| 󰉓 search.project  Search every file                   󰘵 f │
-19| 󰍉                                                       14 
+19| 󰍉                                                       15 
 -- style --
  0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
  1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaba
@@ -36,7 +36,7 @@ screen 60x20  editor 60x19  status 60x1
 12|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeab
 13|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaab
 14|aaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaeeeab
-15|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeab
+15|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeae
 16|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaeeeae
 17|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeae
 18|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaeeeae

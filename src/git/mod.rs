@@ -1,4 +1,4 @@
-//! What has changed in a file since the last commit.
+//! What has changed in a file since the last commit, and who changed it.
 //!
 //! Through `gix` rather than by running `git`: obelus reads a repository
 //! while the reader is reading a file in it, and shelling out means a
@@ -13,6 +13,7 @@
 //! file outside a repository, a repository with no commits yet, a file git
 //! has never seen.
 
+pub mod blame;
 pub mod change;
 
 use std::{
@@ -20,6 +21,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub use blame::Blamed;
 pub use change::{Changes, Hunk, Marker};
 
 /// Where a file sits inside its repository, which is how git addresses it.
