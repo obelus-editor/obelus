@@ -108,6 +108,18 @@ pub fn root() -> Option<PathBuf> {
     Some(dirs::data_dir()?.join("obelus").join("agents"))
 }
 
+/// Where one agent's install goes.
+///
+/// A directory of its own, whatever it is made of. `npm` wants a prefix and
+/// writes a `node_modules`, a `package.json` and a lock file into it; an
+/// archive unpacks into one. Two agents sharing a directory would share
+/// those three files, so installing the second would rewrite the first's
+/// manifest and removing either would be impossible to do cleanly.
+#[must_use]
+pub fn home(id: &str, root: &std::path::Path) -> PathBuf {
+    root.join(id)
+}
+
 /// Which version of an agent is installed, if one is.
 ///
 /// From what the install left behind rather than remembered: a node package
@@ -118,7 +130,7 @@ pub fn root() -> Option<PathBuf> {
 pub fn installed_version(agent: &Agent, root: &std::path::Path) -> Option<String> {
     match &agent.distribution {
         Distribution::Node { package, .. } => {
-            let manifest = root
+            let manifest = home(&agent.id, root)
                 .join("node_modules")
                 .join(package_name(package))
                 .join("package.json");
@@ -127,7 +139,7 @@ pub fn installed_version(agent: &Agent, root: &std::path::Path) -> Option<String
             Some(manifest.get("version")?.as_str()?.to_string())
         }
         Distribution::Archive { .. } => {
-            let stamp = root.join(&agent.id).join(STAMP);
+            let stamp = home(&agent.id, root).join(STAMP);
             std::fs::read_to_string(stamp)
                 .ok()
                 .map(|version| version.trim().to_string())
@@ -234,11 +246,12 @@ pub fn command_for(agent: &Agent, root: &std::path::Path) -> Option<(PathBuf, Ve
     match &agent.distribution {
         Distribution::Node { package, arguments } => {
             let name = package_name(package);
-            let manifest = root.join("node_modules").join(&name).join("package.json");
+            let home = home(&agent.id, root);
+            let manifest = home.join("node_modules").join(&name).join("package.json");
             let text = std::fs::read_to_string(manifest).ok()?;
             let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
             let binary = binary_name(&manifest, &name)?;
-            let command = root.join("node_modules").join(".bin").join(binary);
+            let command = home.join("node_modules").join(".bin").join(binary);
             command.exists().then(|| (command, arguments.clone()))
         }
         // `uvx` fetches on demand and caches for itself, so the command is
@@ -251,7 +264,7 @@ pub fn command_for(agent: &Agent, root: &std::path::Path) -> Option<(PathBuf, Ve
         Distribution::Archive {
             command, arguments, ..
         } => {
-            let path = root.join(&agent.id).join(command.trim_start_matches("./"));
+            let path = home(&agent.id, root).join(command.trim_start_matches("./"));
             path.exists().then(|| (path, arguments.clone()))
         }
     }
@@ -289,7 +302,71 @@ fn binary_name(manifest: &serde_json::Value, package: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{binary_name, package_name};
+    use super::{Agent, Distribution, binary_name, command_for, package_name};
+
+    /// Every agent installs into a directory of its own.
+    ///
+    /// `npm` writes a `node_modules`, a manifest and a lock file into
+    /// whatever prefix it is given, so two agents sharing a prefix would
+    /// share all three: installing the second would rewrite the first's
+    /// answer to what is installed there, and neither could be removed
+    /// without taking the other with it.
+    #[test]
+    fn a_node_agent_lives_under_its_own_id() {
+        let root = std::env::temp_dir().join(format!("obelus-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let agent = Agent {
+            id: "someone".to_string(),
+            name: "Someone".to_string(),
+            version: "1.0.0".to_string(),
+            description: String::new(),
+            authors: Vec::new(),
+            license: String::new(),
+            website: None,
+            icon: None,
+            distribution: Distribution::Node {
+                package: "thing@1.0.0".to_string(),
+                arguments: Vec::new(),
+            },
+        };
+        // What npm leaves behind, in the place obelus now asks it to work.
+        let install = |prefix: &std::path::Path| {
+            let package = prefix.join("node_modules").join("thing");
+            std::fs::create_dir_all(&package).expect("a directory");
+            std::fs::write(
+                package.join("package.json"),
+                "{\"version\":\"1.0.0\",\"bin\":\"thing.js\"}",
+            )
+            .expect("a manifest");
+            let binaries = prefix.join("node_modules").join(".bin");
+            std::fs::create_dir_all(&binaries).expect("a directory");
+            std::fs::write(binaries.join("thing"), "").expect("a binary");
+        };
+
+        // Installed at the top of the agents directory, as it used to be:
+        // not this agent's install, and not found.
+        install(&root);
+        assert!(
+            command_for(&agent, &root).is_none(),
+            "an install nobody owns was taken for this agent's"
+        );
+
+        install(&super::home(&agent.id, &root));
+        let (command, _) = command_for(&agent, &root).expect("the command");
+        assert_eq!(
+            command,
+            root.join("someone")
+                .join("node_modules")
+                .join(".bin")
+                .join("thing")
+        );
+        assert_eq!(
+            super::installed_version(&agent, &root).as_deref(),
+            Some("1.0.0"),
+            "the version came from the wrong manifest"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// The registry pins a version onto the package name, and a scoped
     /// package has an `@` of its own: taking the wrong one asks npm for a

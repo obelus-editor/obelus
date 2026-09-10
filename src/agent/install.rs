@@ -84,7 +84,7 @@ pub fn spawn(agent: &Agent, root: &Path, sender: Sender<Event>) {
         .spawn(move || {
             let started = Instant::now();
             let outcome = match &agent.distribution {
-                Distribution::Node { package, .. } => node(package, &root),
+                Distribution::Node { package, .. } => node(package, &super::home(&agent.id, &root)),
                 Distribution::Python { .. } => Ok(()),
                 Distribution::Archive {
                     archive,
@@ -112,16 +112,19 @@ pub fn spawn(agent: &Agent, root: &Path, sender: Sender<Event>) {
     }
 }
 
-/// Asks `npm` for a package, into obelus's own prefix.
+/// Asks `npm` for a package, into this agent's own directory.
 ///
 /// `--prefix` and nothing global: obelus installing into a place the reader
 /// shares with everything else on the machine is obelus deciding for them.
-fn node(package: &str, root: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(root).map_err(|error| format!("{root:?}: {error}"))?;
+/// And a prefix per agent, because the prefix is where npm keeps the
+/// manifest -- one shared between agents would be rewritten by whichever
+/// was installed last.
+fn node(package: &str, home: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(home).map_err(|error| format!("{home:?}: {error}"))?;
     let outcome = std::process::Command::new("npm")
         .arg("install")
         .arg("--prefix")
-        .arg(root)
+        .arg(home)
         .arg("--no-fund")
         .arg("--no-audit")
         .arg(package)
@@ -213,7 +216,7 @@ fn download(
         tracing::debug!(id, "the registry gave no checksum for this one");
     }
 
-    let into = root.join(id);
+    let into = super::home(id, root);
     let _ = std::fs::remove_dir_all(&into);
     std::fs::create_dir_all(&into).map_err(|error| format!("{into:?}: {error}"))?;
     unpack(&bytes, archive, &into)?;
