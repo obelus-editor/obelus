@@ -41,6 +41,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::AgentOpen => app.open_agent(),
         Command::AgentSettings => app.open_agent_settings(),
         Command::ConfigOpen => app.open_settings(),
+        Command::ConfigFile => app.open_config_file(),
         Command::LogOpen => app.open_log(),
         Command::LspRestart => app.restart_server(),
         Command::LspStop => app.stop_server(),

@@ -906,3 +906,34 @@ fn delete_takes_a_key_away() {
         "the key taken away is not in the file:\n{written}"
     );
 }
+
+/// The settings file opens as a file, and is written first if it is not
+/// there yet.
+///
+/// A reader sent to a path that does not exist has been told nothing. The
+/// file obelus would write is the answer to "what are the settings", and it
+/// is what they need in front of them to change one by hand.
+#[test]
+fn the_settings_file_itself_can_be_read() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let file = temporary("file");
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 66, 12);
+    assert!(!file.exists(), "the file is there before anything asked");
+
+    dispatch::dispatch(&mut app, Command::ConfigFile);
+    assert!(file.exists(), "nothing was written to open");
+    assert_eq!(
+        app.current_buffer()
+            .map(|buffer| buffer.path().to_path_buf()),
+        Some(file.clone()),
+        "the file being read is not the settings file"
+    );
+    // And what is on screen is the file, settings and all.
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("theme"),
+        "the settings are not on screen:\n{dump}"
+    );
+}

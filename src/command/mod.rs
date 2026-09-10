@@ -74,6 +74,8 @@ pub enum Command {
     AgentOpen,
     /// Change how the agent it is talking to is working.
     AgentSettings,
+    /// Read the settings file itself.
+    ConfigFile,
     /// Open the settings.
     ConfigOpen,
     /// Open the file obelus logs to.
@@ -338,6 +340,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Change obelus's settings",
     },
     CommandSpec {
+        command: Command::ConfigFile,
+        name: "config.file",
+        title: "Open the settings file",
+    },
+    CommandSpec {
         command: Command::LogOpen,
         name: "log.open",
         title: "Open obelus's own log",
@@ -399,6 +406,7 @@ impl Command {
             | Self::AgentOpen
             | Self::AgentSettings
             | Self::ConfigOpen
+            | Self::ConfigFile
             | Self::LogOpen
             | Self::ThemeSelect
             | Self::CommandPalette
@@ -471,6 +479,7 @@ impl Command {
             | Self::SymbolMenu
             | Self::AgentOpen
             | Self::ConfigOpen
+            | Self::ConfigFile
             | Self::LogOpen
             | Self::LspRestart
             | Self::Quit => Requires::Nothing,
@@ -546,6 +555,7 @@ mod tests {
             Command::GoBack,
             Command::GoForward,
             Command::ConfigOpen,
+            Command::ConfigFile,
             Command::LogOpen,
             Command::LspRestart,
             Command::LspStop,

@@ -89,6 +89,33 @@ impl App {
         }
     }
 
+    /// Opens the settings file itself, for a reader who would rather see
+    /// them all at once -- or edit one obelus has no control for.
+    ///
+    /// Written first if it is not there yet, because the file obelus would
+    /// write is the answer to "what are the settings": a reader sent to a
+    /// path that does not exist has been told nothing, and the file with
+    /// every default in it is what they need in front of them to change one
+    /// by hand.
+    ///
+    /// Read, not applied. Obelus reads this file when it starts and writes
+    /// it when the reader changes something on the settings page; a change
+    /// made in it by hand is picked up the next time obelus starts.
+    pub fn open_config_file(&mut self) {
+        let Some(path) = self.config_path.clone() else {
+            self.note = Some("this system has nowhere for a settings file".to_string());
+            return;
+        };
+        if !path.exists()
+            && let Err(error) = crate::config::save_to(&path, &self.config)
+        {
+            tracing::warn!(%error, "not writing the configuration");
+            self.note = Some(format!("no settings file, and none written: {error}"));
+            return;
+        }
+        self.open(&path);
+    }
+
     /// Moves a command onto a key, or takes its key away, and writes the
     /// file.
     ///

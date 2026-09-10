@@ -211,6 +211,9 @@ pub fn for_command(name: &str) -> char {
         // family obelus knows and two rows with the same picture say less
         // than one.
         "config.open" => '\u{f062e}',
+        // A file with a cog on it: the settings themselves, as the file
+        // they are kept in.
+        "config.file" => '\u{f107b}',
         "agent.open" => ui::AGENT,
         // A conversation with a cog on it: this changes how the agent is
         // working, not how obelus is, and the sliders above already mean
