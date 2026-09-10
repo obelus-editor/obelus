@@ -770,19 +770,31 @@ fn the_blame_sits_at_the_end_of_the_cursor_line() {
         rows[0].contains("Ada \u{b7} ") && rows[0].contains("ago"),
         "no note on the cursor's line:\n{dump}"
     );
-    // Right-aligned: the note ends a column short of the bar rather than
-    // hanging off the text, so it does not move as the cursor goes down the
-    // file.
+    // Right-aligned rather than hung off the text, which is what keeps it
+    // from moving left and right as the cursor goes down the file. Said by
+    // widening the screen: the note moves with the right-hand edge and the
+    // line's own text does not move at all.
     let note = rows[0].find("Ada").expect("the note");
-    let bar = rows[0]
-        .rfind('\u{2588}')
-        .or_else(|| rows[0].rfind('\u{2502}'))
-        .expect("the bar");
-    assert!(bar > note, "the note is not left of the bar:\n{dump}");
     let ends = rows[0].find("short").expect("the line") + "short".len();
     assert!(
         note > ends + 2,
         "the note is hung off the text rather than right-aligned:\n{dump}"
+    );
+    let wider = support::render(&mut app, 48, 8);
+    let row = support::text_block(&wider)
+        .lines()
+        .find(|row| row.contains("Ada"))
+        .expect("the note at the wider size")
+        .to_string();
+    assert_eq!(
+        row.find("Ada").expect("the note"),
+        note + 4,
+        "the note did not move with the right-hand edge:\n{wider}"
+    );
+    assert_eq!(
+        row.find("short").expect("the line"),
+        ends - "short".len(),
+        "the line moved:\n{wider}"
     );
 
     // And nowhere else: the second line has a name in the blame and no note

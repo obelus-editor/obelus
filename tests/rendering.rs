@@ -1410,3 +1410,78 @@ fn escape_stops_selecting() {
     press(&mut app, KeyCode::Esc);
     assert!(app.picker().is_none(), "escape did not close the palette");
 }
+
+/// The same rule in the rendered view: a rendering that fits has no bar.
+#[test]
+fn a_rendering_with_nowhere_to_scroll_draws_no_bar() {
+    use obelus::command::{Command, dispatch};
+
+    // The last column of each row, because a rendered table draws the same
+    // box-drawing character in the middle of a row.
+    let bar = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| matches!(row.chars().last(), Some('\u{2502}' | '\u{2588}')))
+            .count()
+    };
+
+    // A tall screen: the whole rendering is on it.
+    let mut app = App::new(vec![support::open_fixture("sample.md")]);
+    support::lay_out(&mut app, 60, 30);
+    dispatch::dispatch(&mut app, Command::MarkdownPreview);
+    let whole = support::render(&mut app, 60, 30);
+    assert!(
+        support::text_block(&whole).contains("Title"),
+        "not the rendering:\n{whole}"
+    );
+    assert_eq!(bar(&whole), 0, "a bar with nowhere to scroll:\n{whole}");
+
+    // And a short one: the same rendering, now taller than the screen.
+    support::lay_out(&mut app, 60, 8);
+    let cut = support::render(&mut app, 60, 8);
+    assert!(
+        bar(&cut) > 0,
+        "no bar for a rendering that does not fit:\n{cut}"
+    );
+}
+
+/// A file that fits has nowhere to scroll, so no bar is drawn: a track with
+/// no thumb on it is a control that does not work. The column stays
+/// reserved either way, because handing it back would change the width of
+/// the text -- and with wrapping on, that rewraps every line the moment a
+/// file turns out to be one row too long.
+#[test]
+fn a_view_with_nowhere_to_scroll_draws_no_bar() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 46, 8);
+    let fits = support::render(&mut app, 46, 8);
+    let bar = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| matches!(row.trim_end().chars().last(), Some('\u{2502}' | '\u{2588}')))
+            .count()
+    };
+    assert_eq!(bar(&fits), 0, "a bar with nowhere to scroll:\n{fits}");
+
+    // The columns are still there: the text ends where it ended.
+    let ends = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .find(|row| row.contains("fn main"))
+            .map(|row| row.trim_end().chars().count())
+            .expect("the first line")
+    };
+
+    let mut long = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut long, 46, 8);
+    let spills = support::render(&mut long, 46, 8);
+    assert!(
+        bar(&spills) > 0,
+        "no bar for a file that does not fit:\n{spills}"
+    );
+    assert_eq!(
+        ends(&fits),
+        ends(&support::render(&mut app, 46, 8)),
+        "the text moved when the bar went away"
+    );
+}

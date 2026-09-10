@@ -1,29 +1,29 @@
 screen 60x12  editor 60x11  status 60x1
 -- text --
- 0|    1 fn main() {                                         █ 
- 1|    2     let greeting = "你好";                          █ 
- 2|    3     println!("{greeting} world");                   █ 
- 3|    4 }                                                   █ 
- 4|    5                                                     █ 
- 5|                                                          █ 
- 6|                                                          █ 
- 7|                                                          █ 
+ 0|    1 fn main() {                                           
+ 1|    2     let greeting = "你好";                            
+ 2|    3     println!("{greeting} world");                     
+ 3|    4 }                                                     
+ 4|    5                                                       
+ 5|                                                            
+ 6|                                                            
+ 7|                                                            
  8|────────────────────────────────────────────────────────────
- 9| 󰏘 dark                                                    █
-10| 󰏘 light                                                   █
+ 9| 󰏘 dark                                                     
+10| 󰏘 light                                                    
 11| 󰍉                                                        2 
 -- style --
- 0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
- 1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaba
- 2|aaaaeaaaaaddddddddbffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaba
- 3|aaaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
- 4|aaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
- 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
- 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
- 7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
+ 0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaaaeaaaaaddddddddbffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaaa
+ 3|aaaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  8|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
- 9|gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggb
-10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 9|ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggga
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 11|hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhih
 -- legend --
 a fg=#e4e4e7 bg=#18181b

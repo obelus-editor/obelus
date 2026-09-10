@@ -1,57 +1,57 @@
 screen 60x22  editor 60x21  status 60x1
 -- text --
- 0| long.rs:2:7                                               █
- 1|                                                           █
- 2|                                                           █
- 3|                                                           █
- 4|                                                           █
- 5|                                                           █
- 6|                                                           █
- 7|                                                           █
- 8|                                                           █
- 9|                                                           █
+ 0| long.rs:2:7                                                
+ 1|                                                            
+ 2|                                                            
+ 3|                                                            
+ 4|                                                            
+ 5|                                                            
+ 6|                                                            
+ 7|                                                            
+ 8|                                                            
+ 9|                                                            
 10|────────────────────────────────────────────────────────────
-11|   1 fn before() {}                                        █
-12|   2 const NAMES: [&str; 12] = ["item-00", "item-01",      █
-13|     "item-02", "item-03", "item-04", "item-05",           █
-14|     "item-06", "item-07", "item-08", "item-09",           █
-15|     "item-10", "item-11"];                                █
-16|   3 fn after() {}                                         █
-17|   4                                                       █
-18|                                                           █
-19|                                                           █
-20|                                                           █
+11|   1 fn before() {}                                         
+12|   2 const NAMES: [&str; 12] = ["item-00", "item-01",       
+13|     "item-02", "item-03", "item-04", "item-05",            
+14|     "item-06", "item-07", "item-08", "item-09",            
+15|     "item-10", "item-11"];                                 
+16|   3 fn after() {}                                          
+17|   4                                                        
+18|                                                            
+19|                                                            
+20|                                                            
 21| 󰍉                                                        1 
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
- 1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 2|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 4|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
-10|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-11|cccdceecffffffbbcbbccccccccccccccccccccccccccccccccccccccccb
-12|cccbceeeeecgggggbcbbhhhbciibcccbjjjjjjjjjbcjjjjjjjjjbccccccb
-13|cccccjjjjjjjjjbcjjjjjjjjjbcjjjjjjjjjbcjjjjjjjjjbcccccccccccb
-14|cccccjjjjjjjjjbcjjjjjjjjjbcjjjjjjjjjbcjjjjjjjjjbcccccccccccb
-15|cccccjjjjjjjjjbcjjjjjjjjjbbccccccccccccccccccccccccccccccccb
-16|cccdceecfffffbbcbbcccccccccccccccccccccccccccccccccccccccccb
-17|cccdcccccccccccccccccccccccccccccccccccccccccccccccccccccccb
-18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
-19|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
-20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 2|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 5|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 7|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+11|bbbcbddbeeeeeeffbffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+12|bbbfbdddddbgggggfbffhhhfbiifbbbfjjjjjjjjjfbjjjjjjjjjfbbbbbbb
+13|bbbbbjjjjjjjjjfbjjjjjjjjjfbjjjjjjjjjfbjjjjjjjjjfbbbbbbbbbbbb
+14|bbbbbjjjjjjjjjfbjjjjjjjjjfbjjjjjjjjjfbjjjjjjjjjfbbbbbbbbbbbb
+15|bbbbbjjjjjjjjjfbjjjjjjjjjffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+16|bbbcbddbeeeeeffbffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+17|bbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+18|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+19|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+20|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 21|kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklk
 -- legend --
 a fg=#e4e4e7 bg=#27272a
-b fg=#a1a1aa bg=#18181b
-c fg=#e4e4e7 bg=#18181b
-d fg=#52525b bg=#18181b
-e fg=#c084fc bg=#18181b
-f fg=#60a5fa bg=#18181b
+b fg=#e4e4e7 bg=#18181b
+c fg=#52525b bg=#18181b
+d fg=#c084fc bg=#18181b
+e fg=#60a5fa bg=#18181b
+f fg=#a1a1aa bg=#18181b
 g fg=#fbbf24 bg=#1e3a5f
 h fg=#fbbf24 bg=#18181b
 i fg=#f472b6 bg=#18181b

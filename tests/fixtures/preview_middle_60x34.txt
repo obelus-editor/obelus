@@ -1,15 +1,15 @@
 screen 60x34  editor 60x33  status 60x1
 -- text --
- 0| many_lines.rs:31                                          █
- 1|                                                           █
- 2|                                                           █
- 3|                                                           █
- 4|                                                           █
- 5|                                                           █
- 6|                                                           █
- 7|                                                           █
- 8|                                                           █
- 9|                                                           █
+ 0| many_lines.rs:31                                           
+ 1|                                                            
+ 2|                                                            
+ 3|                                                            
+ 4|                                                            
+ 5|                                                            
+ 6|                                                            
+ 7|                                                            
+ 8|                                                            
+ 9|                                                            
 10|────────────────────────────────────────────────────────────
 11|  20 pub const LINE_19: u32 = 19;                          │
 12|  21 pub const LINE_20: u32 = 20;                          │
@@ -36,46 +36,46 @@ screen 60x34  editor 60x33  status 60x1
 33| 󰍉                                                        1 
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
- 1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 2|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 4|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
- 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
-10|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-11|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccd
-12|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccd
-13|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccd
-14|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccd
-15|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccd
-16|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccd
-17|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccd
-18|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccd
-19|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccd
-20|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccd
-21|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccb
-22|ccbbceeeceeeeechhhhhhhbcfffcccggbccccccccccccccccccccccccccb
-23|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccb
-24|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccb
-25|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccb
-26|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccb
-27|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccb
-28|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccb
-29|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccb
-30|ccddceeeceeeeecfffffffbcfffcccggbccccccccccccccccccccccccccb
-31|ccddcccccccccccccccccccccccccccccccccccccccccccccccccccccccb
-32|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+ 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 2|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 5|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 7|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+11|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
+12|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
+13|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
+14|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
+15|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
+16|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
+17|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
+18|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
+19|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
+20|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbc
+21|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
+22|bbffbdddbdddddbhhhhhhhfbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
+23|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
+24|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
+25|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
+26|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
+27|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
+28|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
+29|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
+30|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
+31|bbccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbf
+32|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbf
 33|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiji
 -- legend --
 a fg=#e4e4e7 bg=#27272a
-b fg=#a1a1aa bg=#18181b
-c fg=#e4e4e7 bg=#18181b
-d fg=#52525b bg=#18181b
-e fg=#c084fc bg=#18181b
-f fg=#fbbf24 bg=#18181b
+b fg=#e4e4e7 bg=#18181b
+c fg=#52525b bg=#18181b
+d fg=#c084fc bg=#18181b
+e fg=#fbbf24 bg=#18181b
+f fg=#a1a1aa bg=#18181b
 g fg=#f472b6 bg=#18181b
 h fg=#fbbf24 bg=#1e3a5f
 i fg=#d4d4d8 bg=#27272a

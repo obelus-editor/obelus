@@ -31,7 +31,10 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, rows: &[Row], top: usize, theme:
 
     let bar = crate::ui::editor::SCROLLBAR_WIDTH.min(area.width);
     let width = area.width - bar;
-    scrollbar(cells, area, top, rows.len(), theme);
+    // One row of the rendering per row of the screen, so this is exact.
+    if rows.len() > usize::from(area.height) {
+        scrollbar(cells, area, top, rows.len(), theme);
+    }
 
     for (offset, row) in rows
         .iter()

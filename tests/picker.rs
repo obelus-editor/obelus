@@ -750,16 +750,14 @@ fn a_truncated_row_keeps_the_padding_on_its_right() {
             usize::from(width),
             "the dump should be one character per cell at width {width}"
         );
-        // The last column is the scrollbar's, so the row's own reserved
-        // column is the one before it.
-        assert!(
-            drawn.ends_with("\u{2502}") || drawn.ends_with('\u{2588}'),
-            "the scrollbar is not on the right at width {width}:\n{dump}"
-        );
-        let inside: String = drawn.chars().take(usize::from(width) - 1).collect();
-        assert!(
-            inside.ends_with(' '),
-            "the reserved column on the right was written into at width {width}:\n{dump}"
+        // The last column is the scrollbar's, and this list of one row has
+        // nowhere to scroll so nothing is drawn on it -- but the column is
+        // still reserved, and so is the one before it, which is the row's
+        // own padding.
+        let reserved: String = drawn.chars().skip(usize::from(width) - 2).collect();
+        assert_eq!(
+            reserved, "  ",
+            "the two reserved columns on the right were written into at width {width}:\n{dump}"
         );
     }
 }

@@ -164,7 +164,12 @@ impl Widget for PickerView<'_> {
             width: list.width.saturating_sub(SCROLLBAR_WIDTH),
             ..list
         };
-        crate::ui::scrollbar(cells, list, first, self.picker.match_count(), self.theme);
+        // Only when the matches do not fit: one row per match, so the count
+        // answers it exactly.
+        let matched = self.picker.match_count();
+        if matched > usize::from(list.height) {
+            crate::ui::scrollbar(cells, list, first, matched, self.theme);
+        }
 
         let selected = self.picker.selected();
         for (row, (index, item)) in self

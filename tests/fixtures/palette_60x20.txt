@@ -1,11 +1,11 @@
 screen 60x20  editor 60x19  status 60x1
 -- text --
- 0|    1 fn main() {                                         █ 
- 1|    2     let greeting = "你好";                          █ 
- 2|    3     println!("{greeting} world");                   █ 
- 3|    4 }                                                   █ 
- 4|    5                                                     █ 
- 5|                                                          █ 
+ 0|    1 fn main() {                                           
+ 1|    2     let greeting = "你好";                            
+ 2|    3     println!("{greeting} world");                     
+ 3|    4 }                                                     
+ 4|    5                                                       
+ 5|                                                            
  6|────────────────────────────────────────────────────────────
  7|  all  files  code  obelus                              ← → 
  8|────────────────────────────────────────────────────────────
@@ -21,12 +21,12 @@ screen 60x20  editor 60x19  status 60x1
 18| 󰉹 symbol.outline  Everything this file defines        󰘴 t │
 19| 󰍉                                                       31 
 -- style --
- 0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
- 1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaba
- 2|aaaaeaaaaaddddddddbffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaba
- 3|aaaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
- 4|aaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
- 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
+ 0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaaaeaaaaaddddddddbffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaaa
+ 3|aaaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  6|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
  7|egggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
  8|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee

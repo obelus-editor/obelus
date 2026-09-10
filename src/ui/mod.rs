@@ -208,8 +208,18 @@ pub(crate) fn rule(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
 /// implementations would answer it in two shapes.
 ///
 /// `total` is how many rows the whole thing has and `top` which of them is
-/// on the first row. A `total` that fits leaves the track empty, which is
-/// itself an answer: what you see is all there is.
+/// on the first row.
+///
+/// Called only when there *is* somewhere to scroll -- a track with no thumb
+/// on it is a control that does not work, and what is on screen being all
+/// there is says itself. Whether there is somewhere is left to the caller
+/// because only the caller can answer it: a list of rows fits when it has
+/// fewer rows than the screen, while a file of wrapped lines can spill off
+/// the bottom with a tenth of the screen's worth of lines in it.
+///
+/// The column stays reserved either way. Handing it back would change the
+/// width of the text -- and with wrapping on, that means every line rewraps
+/// when a file turns out to be one row too long.
 pub(crate) fn scrollbar(
     cells: &mut CellBuffer,
     area: Rect,

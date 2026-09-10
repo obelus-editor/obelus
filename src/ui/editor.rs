@@ -253,19 +253,6 @@ impl Widget for EditorView<'_> {
         if width == 0 {
             return;
         }
-        if bar > 0 {
-            let track = Rect {
-                width: area.width - map,
-                ..area
-            };
-            crate::ui::scrollbar(
-                cells,
-                track,
-                buffer.viewport().top.get(),
-                text.line_count(),
-                self.theme,
-            );
-        }
         if map > 0 {
             let column = Rect {
                 x: area.right() - map,
@@ -465,6 +452,27 @@ impl Widget for EditorView<'_> {
             }
             skip = 0;
             line = line.saturating_add(1);
+        }
+
+        // The bar last, because whether there is anywhere to scroll is a
+        // question only the loop above can answer: the file can run out
+        // before the screen does, or the screen before the file, and with
+        // wrapping on neither follows from the number of lines. A track
+        // with no thumb on it is a control that does not work.
+        let more_below = line.get() < text.line_count();
+        let scrolled = viewport.top.get() > 0 || viewport.top_row > 0;
+        if bar > 0 && (more_below || scrolled) {
+            let track = Rect {
+                width: area.width - map,
+                ..area
+            };
+            crate::ui::scrollbar(
+                cells,
+                track,
+                viewport.top.get(),
+                text.line_count(),
+                self.theme,
+            );
         }
     }
 }
