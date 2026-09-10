@@ -563,3 +563,36 @@ impl Text {
         })
     }
 }
+
+/// Breaks prose into the rows it takes at this width.
+///
+/// The same word-breaking the editor wraps with, over something that is not
+/// a document: an agent's answer, a card's description. Newlines in it are
+/// its own, so each is a row of its own -- prose with a blank line in it has
+/// a blank row, because that is what the writer meant by it.
+///
+/// The rows come back as owned strings because what asks for them is a view
+/// drawing them once, not a document keeping them.
+#[must_use]
+pub fn wrapped(prose: &str, width: u16) -> Vec<String> {
+    let width = width.max(1);
+    let mut rows = Vec::new();
+    for paragraph in prose.split('\n') {
+        if paragraph.is_empty() {
+            rows.push(String::new());
+            continue;
+        }
+        let text = Text::from_string(paragraph);
+        let line = LineNumber::new(0);
+        let characters: Vec<char> = text.line(line).chars().collect();
+        for row in text.wrap_rows(line, width) {
+            let words: String = characters
+                .iter()
+                .take(row.end.get())
+                .skip(row.first.get())
+                .collect();
+            rows.push(words.trim_end().to_string());
+        }
+    }
+    rows
+}

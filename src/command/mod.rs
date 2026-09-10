@@ -70,6 +70,8 @@ pub enum Command {
     GoBack,
     /// Undo a jump back.
     GoForward,
+    /// Talk to the active agent.
+    AgentOpen,
     /// Open the settings.
     ConfigOpen,
     /// Open the file obelus logs to.
@@ -317,6 +319,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Go forward again",
     },
     CommandSpec {
+        command: Command::AgentOpen,
+        name: "agent.open",
+        title: "Talk to the active agent",
+    },
+    CommandSpec {
         command: Command::ConfigOpen,
         name: "config.open",
         title: "Change obelus's settings",
@@ -380,6 +387,7 @@ impl Command {
             | Self::GoForward => Group::Code,
             Self::LspRestart
             | Self::LspStop
+            | Self::AgentOpen
             | Self::ConfigOpen
             | Self::LogOpen
             | Self::ThemeSelect
@@ -450,6 +458,7 @@ impl Command {
             | Self::ThemeSelect
             | Self::CommandPalette
             | Self::SymbolMenu
+            | Self::AgentOpen
             | Self::ConfigOpen
             | Self::LogOpen
             | Self::LspRestart

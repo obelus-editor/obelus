@@ -297,11 +297,25 @@ impl App {
     /// One at a time. Two would mean every question having to say which
     /// agent it was for, and a reader having to know.
     pub(super) fn activate_agent(&mut self, id: &str) {
+        // How to start it, written down now: this is the moment the
+        // registry's entry is in hand, and a conversation started next week
+        // should not need the network to find out what to run.
+        if let Some(root) = agent::root()
+            && let Some(agent) = self.registry.iter().find(|agent| agent.id == id)
+            && let Some((command, arguments)) = agent::command_for(agent, &root)
+        {
+            agent::remember(id, &command, &arguments, &root);
+        }
         self.change_setting("agent", &crate::config::Value::Choice(id.to_string()));
     }
 
     /// Stops talking to whichever agent was active.
+    ///
+    /// And stops the process, if one is running: an agent nobody has chosen
+    /// is an agent nobody is talking to, and leaving it alive would leave a
+    /// node process holding a session obelus can no longer reach.
     pub(super) fn deactivate_agent(&mut self) {
+        self.stop_agent();
         self.change_setting("agent", &crate::config::Value::Choice(String::new()));
     }
 }

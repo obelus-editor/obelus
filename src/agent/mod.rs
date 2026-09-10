@@ -141,6 +141,65 @@ pub fn installed_version(agent: &Agent, root: &std::path::Path) -> Option<String
 /// The file an archive install leaves saying which version it unpacked.
 pub const STAMP: &str = ".obelus-version";
 
+/// Writes down how to start an agent, so that later sessions need not ask
+/// the registry.
+///
+/// [`command_for`] needs the registry's entry -- which package, which
+/// archive -- and the registry is fetched when a reader opens the agents
+/// page, which is not something they do before every conversation. So the
+/// answer is written beside the install at the moment it is known, and
+/// talking to an agent afterwards is a local matter.
+pub fn remember(id: &str, command: &std::path::Path, arguments: &[String], root: &std::path::Path) {
+    let Some(path) = start_file(id, root) else {
+        return;
+    };
+    let record = serde_json::json!({ "command": command, "arguments": arguments });
+    if let Some(directory) = path.parent() {
+        let _ = std::fs::create_dir_all(directory);
+    }
+    if let Err(error) = std::fs::write(&path, record.to_string()) {
+        tracing::debug!(%error, id, "not remembering how to start an agent");
+    }
+}
+
+/// How to start an agent, from what [`remember`] wrote down.
+#[must_use]
+pub fn remembered(id: &str, root: &std::path::Path) -> Option<(PathBuf, Vec<String>)> {
+    let text = std::fs::read_to_string(start_file(id, root)?).ok()?;
+    let record: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let command = PathBuf::from(record.get("command")?.as_str()?);
+    let arguments = record
+        .get("arguments")
+        .and_then(serde_json::Value::as_array)
+        .map(|arguments| {
+            arguments
+                .iter()
+                .filter_map(|argument| argument.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    // Gone from disk since it was written -- the reader removed the
+    // directory, or npm did. Nothing to start.
+    let here = command.is_absolute();
+    (!here || command.exists()).then_some((command, arguments))
+}
+
+/// Where that record lives.
+///
+/// The id is somebody else's string and it is a path segment here, so it is
+/// checked the same way an icon's name is.
+fn start_file(id: &str, root: &std::path::Path) -> Option<PathBuf> {
+    if id.is_empty()
+        || id.starts_with('.')
+        || !id.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_' || byte == b'.'
+        })
+    {
+        return None;
+    }
+    Some(root.join(format!("{id}.start.json")))
+}
+
 /// What obelus knows about one agent locally.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {

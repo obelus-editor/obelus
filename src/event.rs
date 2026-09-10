@@ -105,6 +105,12 @@ pub enum Event {
         /// Why it did not work, or `None` because it did.
         failure: Option<String>,
     },
+    /// A message from the agent obelus is talking to.
+    ///
+    /// Still as JSON, like the language server's: what a message means
+    /// depends on what was asked for, and that is not the transport's
+    /// business.
+    Acp(serde_json::Value),
     /// A message from a language server.
     Lsp {
         /// Which server it came from.

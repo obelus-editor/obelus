@@ -55,6 +55,11 @@ pub enum PickerValue {
         /// And how far along that one.
         end_character: u32,
     },
+    /// Answer an agent's permission request with this option.
+    ///
+    /// The agent's own id for it, which is what the answer names -- not the
+    /// words on the row, which are the agent's and can be anything.
+    Permission(String),
     /// Nothing. A row that is there to say why the list is short.
     Nothing,
 }
@@ -245,6 +250,8 @@ pub struct Picker {
     /// Whether the empty reason is about the world rather than about there
     /// being nothing to list, and so wins over "no match".
     explains: bool,
+    /// A question this list is the answer to, shown in front of the prompt.
+    question: Option<String>,
     /// What to say when there is nothing to list.
     ///
     /// Per picker, because the reason differs: an empty file list and an
@@ -299,6 +306,7 @@ impl Picker {
             searching: false,
             listing: false,
             explains: false,
+            question: None,
             empty: "nothing to choose from".to_string(),
             prefer: None,
             layout,
@@ -438,6 +446,22 @@ impl Picker {
     pub fn set_query(&mut self, query: &str) {
         self.query = query.to_string();
         self.refilter();
+    }
+
+    /// Puts a question in front of the prompt.
+    ///
+    /// For a list that is an answer to something rather than a way of
+    /// finding something: an agent asking to run a command is a question,
+    /// and a bare list of three options is that question with the words
+    /// missing.
+    pub fn ask(&mut self, question: &str) {
+        self.question = Some(question.to_string());
+    }
+
+    /// The question this list is answering, if it is answering one.
+    #[must_use]
+    pub fn question(&self) -> Option<&str> {
+        self.question.as_deref()
     }
 
     /// Sets what the list says when it is empty.

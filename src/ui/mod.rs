@@ -5,6 +5,7 @@
 //! stdout; adding slow work to it is the mistake that actually happens, rather
 //! than the write itself being slow.
 
+pub mod chat;
 pub mod editor;
 pub mod image;
 pub mod markdown;
@@ -95,6 +96,17 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
         });
     }
 
+    // The conversation is typed into as well, on the same row: after the
+    // picker, because an agent's own question is a list opened over it and
+    // that list is what the reader is typing into.
+    if let Some(chat) = app.chat() {
+        let column = status::chat_caret(chat);
+        return (column < regions.status.width).then(|| Position {
+            x: regions.status.x + column,
+            y: regions.status.y,
+        });
+    }
+
     // The settings filter by typing too, so the caret goes where the typing
     // does. After the picker, because a list opened over them is what the
     // reader is typing into.
@@ -147,6 +159,31 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
             markdown::draw(cells, regions.editor, rows, top, app.theme());
         }
         None => editor::EditorView::new(app).render(regions.editor, cells),
+    }
+    // The conversation takes the whole region for the same reason the
+    // settings do: it is its own screen with its own typing, and the file
+    // behind it is not what is being read.
+    if let Some(view) = chat::ChatView::new(app) {
+        view.render(regions.editor, cells);
+        // A list opened over it is the agent's own question: it draws where
+        // any compact list draws, with the conversation behind it.
+        if let Some(list) = picker::PickerView::new(app) {
+            let region = list.region(regions.editor);
+            list.render(region, cells);
+            if region.y > regions.editor.y {
+                rule(
+                    cells,
+                    Rect {
+                        y: region.y - 1,
+                        height: 1,
+                        ..region
+                    },
+                    app.theme(),
+                );
+            }
+        }
+        status::StatusView::new(app).render(regions.status, cells);
+        return;
     }
     // The settings take the whole region: they are their own screen, with
     // their own typing, and nothing under them is being read.

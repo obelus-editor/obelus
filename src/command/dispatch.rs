@@ -38,6 +38,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::SelectionClear => app.clear_selection(),
         Command::GoBack => app.go_back(),
         Command::GoForward => app.go_forward(),
+        Command::AgentOpen => app.open_agent(),
         Command::ConfigOpen => app.open_settings(),
         Command::LogOpen => app.open_log(),
         Command::LspRestart => app.restart_server(),

@@ -88,7 +88,8 @@ src/
   lsp/            transport, client, actions, positions, outline
   git/            gix: head text, statuses, hunks, blame
   agent/          the ACP registry, installing an agent, its marks
-  ui/             editor, status bar, picker, settings, welcome,
+  acp/            the protocol itself: framing, one client, nine methods
+  ui/             editor, status bar, picker, settings, chat, welcome,
                   images, shared cell writers
 tests/            integration tests plus tests/fixtures/*.txt golden grids
 ```
@@ -108,6 +109,19 @@ can is asked once, before the alternate screen** (`Images::detect`, from
 answer. Everything else gets the glyph: half-blocks are for photographs and
 obelus has none. So a test, a pipe and most terminals draw the glyph path,
 which is why the fixtures never contain pixels.
+
+The agent is a real process in the tests. `tests/fixtures/fake-agent.sh`
+speaks the protocol -- handshake, session, streamed answer, a file read back
+through obelus, a permission request -- and `tests/agent.rs` drives obelus at
+it by keys and reads the screen. It is `sh` on purpose: a fake agent written
+in python, node, or a second Rust binary is a test that stops running on
+somebody else's machine.
+
+**The agents page's buttons touch the real data directory.** `install` runs
+`npm` and `activate` writes a start record under `dirs::data_dir()`, neither
+of which has a test hook -- so a test must not press enter on an agent card.
+Everything about talking to one goes through `App::talk_to`, which takes the
+command directly and needs no registry, no install and no network.
 
 Golden fixtures dump every cell's symbol, foreground and background, plus the
 cursor position. Colours are in them because highlighting, themes and the

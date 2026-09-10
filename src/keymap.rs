@@ -337,6 +337,15 @@ impl Keymap {
                     context: Context::Normal,
                     chord: control('c'),
                 },
+                // The conversation with an agent, on the alt family with
+                // the rest of the second tier. `ctrl+a` would be the
+                // mnemonic, and it is the one chord a reader's shell,
+                // tmux and screen all want for themselves.
+                Binding {
+                    command: Command::AgentOpen,
+                    context: Context::Always,
+                    chord: KeyChord::new(KeyCode::Char('a'), KeyModifiers::ALT),
+                },
                 Binding {
                     command: Command::Quit,
                     context: Context::Always,

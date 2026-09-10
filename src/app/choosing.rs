@@ -208,6 +208,7 @@ impl App {
             PickerValue::Setting { key, word } => {
                 self.change_setting(key, &crate::config::Value::Choice(word));
             }
+            PickerValue::Permission(option) => self.allow(&option),
             PickerValue::Nothing => {}
         }
     }

@@ -23,6 +23,7 @@ mod preferences;
 mod previewing;
 mod searching;
 mod semantics;
+pub mod talking;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -47,6 +48,7 @@ use crate::{
     buffer::{Buffer, BufferId, Cursor, Mode, Motion, TextArea},
     command::{Command, Requires, dispatch},
     component::{
+        chat::ChatOutcome,
         picker::{
             Colouring, Listing, Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files,
         },
@@ -199,6 +201,23 @@ pub struct App {
     asked_registry: bool,
     /// Why the registry could not be fetched, until it is tried again.
     registry_failure: Option<String>,
+    /// The conversation with an agent, whether or not it is on screen.
+    ///
+    /// Kept rather than opened: the view is a region the reader shows and
+    /// hides, and a conversation that started again every time it was
+    /// closed would be a conversation nobody could leave for a minute.
+    chat: crate::component::chat::Chat,
+    /// Whether the conversation is what the editor region is showing.
+    showing_chat: bool,
+    /// The agent obelus is talking to, once something has needed it.
+    talker: Option<crate::acp::Client>,
+    /// The permission request waiting on the reader, by its JSON-RPC id.
+    permission: Option<serde_json::Value>,
+    /// Whether the transcript has already said the agent died.
+    ///
+    /// The check runs once a frame, so without this the news would be in
+    /// the transcript once per frame for as long as the view is open.
+    said_it_died: bool,
     /// Each agent's own mark, as SVG, by the registry's id for it.
     icons: HashMap<String, String>,
     /// Whether the marks have been asked for.
@@ -318,6 +337,11 @@ impl App {
             registry: Vec::new(),
             asked_registry: false,
             registry_failure: None,
+            chat: crate::component::chat::Chat::new(),
+            showing_chat: false,
+            talker: None,
+            permission: None,
+            said_it_died: false,
             icons: HashMap::new(),
             asked_icons: false,
             images: crate::ui::image::Images::none(),
@@ -433,6 +457,15 @@ impl App {
         for index in 0..self.buffers.len() {
             self.serve(index);
         }
+    }
+
+    /// Gives the application the loop's channel and nothing else.
+    ///
+    /// Separate from [`App::start`] so that a test can have the parts that
+    /// need a channel -- an agent, a file walk -- without a watcher, a
+    /// ticker and a language server per open file.
+    pub fn events_for_test(&mut self, sender: std::sync::mpsc::Sender<Event>) {
+        self.events = Some(sender);
     }
 
     /// Starts watching every open file for changes on disk.
@@ -574,6 +607,7 @@ impl App {
 
         self.settle_agents(editor_area);
         self.prepare_icons();
+        self.settle_chat(editor_area);
 
         let area = self.text_area();
         self.refresh_markdown(editor_area.width);
@@ -649,6 +683,7 @@ impl App {
                 hits,
                 done,
             } => self.on_matches(generation, hits, done),
+            Event::Acp(message) => self.on_acp(message),
             Event::Registry { agents, failure } => self.on_registry(agents, failure),
             Event::Icon { id, svg } => self.on_icon(id, svg),
             Event::Installing { id, progress } => self.on_installing(id, progress),
@@ -726,6 +761,14 @@ impl App {
                 }
                 PickerOutcome::Cancelled => {
                     self.picker = None;
+                    // A list that was an agent's question has to be
+                    // answered even when the reader walks away from it: an
+                    // agent whose permission request goes unanswered waits
+                    // for ever.
+                    if self.is_asking_permission() {
+                        self.refuse_permission();
+                    }
+
                     // A theme previewed but not chosen. Nothing else a picker
                     // shows changes the application while it is open, so
                     // nothing else has to be put back.
@@ -784,6 +827,35 @@ impl App {
                     return;
                 }
                 SettingsOutcome::Ignored => {}
+            }
+        }
+
+        // The conversation takes what the settings did not: it is the whole
+        // editor region while it is showing, and every printable character
+        // goes into what is being typed. After the picker, because a list
+        // opened over it -- an agent's own question -- is what the reader is
+        // answering.
+        if self.showing_chat {
+            let thinking = self.talking() == talking::Talking::Thinking;
+            // The rows the transcript actually has, from the same function
+            // the view lays it out with: a page of movement is the page on
+            // screen.
+            let room = ui::chat::transcript(self.editor_area).height;
+            match self.chat.handle_key(&key, thinking, room) {
+                ChatOutcome::Consumed => return,
+                ChatOutcome::Cancelled => {
+                    self.close_chat();
+                    return;
+                }
+                ChatOutcome::Send(text) => {
+                    self.send_to_agent(&text);
+                    return;
+                }
+                ChatOutcome::Interrupt => {
+                    self.interrupt_agent();
+                    return;
+                }
+                ChatOutcome::Ignored => {}
             }
         }
 

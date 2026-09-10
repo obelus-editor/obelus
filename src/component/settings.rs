@@ -186,27 +186,17 @@ impl Settings {
     /// A sentence, broken into the rows it takes.
     ///
     /// Through the same word-breaking the editor uses -- a description is
-    /// prose, and prose broken at the column is prose nobody reads twice.
+    /// prose, and prose broken at the column is prose nobody reads twice --
+    /// and capped, so that one verbose entry cannot push every other card
+    /// off the screen.
     #[must_use]
     pub fn wrapped(&self, sentence: &str, width: u16) -> Vec<String> {
         if sentence.is_empty() {
             return Vec::new();
         }
-        let text = crate::text::Text::from_string(sentence);
-        let line = crate::coordinates::LineNumber::new(0);
-        text.wrap_rows(line, width.max(8))
-            .into_iter()
-            .map(|row| {
-                text.line(line)
-                    .chars()
-                    .take(row.end.get())
-                    .skip(row.first.get())
-                    .collect::<String>()
-                    .trim_end()
-                    .to_string()
-            })
-            .take(MOST_DESCRIPTION_ROWS)
-            .collect()
+        let mut rows = crate::text::wrapped(sentence, width.max(8));
+        rows.truncate(MOST_DESCRIPTION_ROWS);
+        rows
     }
 
     /// How many cards fit in the room the page has.

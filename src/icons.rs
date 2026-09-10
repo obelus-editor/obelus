@@ -97,6 +97,12 @@ pub mod ui {
     /// A prompt. Every picker filters by typing, so all of them get this
     /// one -- a magnifier, because what typing does there is *find*.
     pub const PROMPT: char = '\u{f0349}';
+    /// The row a message to an agent is typed on.
+    ///
+    /// Not the magnifier: typing here is not looking for anything, it is
+    /// saying something. A chevron is what a line you are about to send has
+    /// in front of it everywhere else.
+    pub const SAY: char = '\u{f0142}';
     /// A language server that has answered its handshake.
     pub const SERVER_READY: char = '\u{f0318}';
     /// One that has been started and has not answered yet.
@@ -107,6 +113,42 @@ pub mod ui {
     pub const STALE: char = '\u{f0a4b}';
     /// A set of colours.
     pub const THEME: char = '\u{f03d8}';
+    /// The reader, in a conversation with an agent.
+    pub const READER: char = '\u{f0013}';
+    /// The agent answering.
+    pub const AGENT: char = '\u{f06a9}';
+    /// The agent thinking, which agents send apart from their answer.
+    pub const THOUGHT: char = '\u{f07f7}';
+    /// The agent using a tool.
+    pub const TOOL: char = '\u{f05b7}';
+    /// obelus's own remark in a conversation.
+    pub const NOTE: char = '\u{f02fd}';
+    /// A tool call that has not started.
+    pub const WAITING: char = '\u{f01d8}';
+    /// One that is running.
+    pub const RUNNING: char = '\u{f0772}';
+    /// One that finished.
+    pub const DONE: char = '\u{f012c}';
+    /// One that did not.
+    pub const BROKEN: char = '\u{f0159}';
+}
+
+/// The glyph for one answer to a permission request.
+///
+/// By the protocol's own four kinds rather than by the agent's name for the
+/// option: the name is the agent's words and can be anything, and what a
+/// reader is looking for in that list is which one is the yes.
+#[must_use]
+pub fn for_permission(kind: &str) -> char {
+    match kind {
+        "allow_once" => '\u{f012c}',
+        "allow_always" => '\u{f05e0}',
+        "reject_once" => '\u{f0156}',
+        "reject_always" => '\u{f0159}',
+        // A kind obelus has not heard of. The name says what it does; the
+        // glyph says only that it is an answer.
+        _ => '\u{f0450}',
+    }
 }
 
 /// The glyph for a command.
@@ -169,6 +211,7 @@ pub fn for_command(name: &str) -> char {
         // family obelus knows and two rows with the same picture say less
         // than one.
         "config.open" => '\u{f062e}',
+        "agent.open" => ui::AGENT,
         "log.open" => '\u{f09ed}',
         "lsp.restart" => '\u{f0709}',
         "lsp.stop" => '\u{f04db}',
