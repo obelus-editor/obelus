@@ -33,6 +33,24 @@ fn open(file: &std::path::Path) -> App {
     app
 }
 
+/// The settings are a dialog: nothing of obelus's own opens over them.
+#[test]
+fn nothing_of_obeluss_own_opens_over_the_settings() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let mut app = open(&temporary("modal"));
+    let page = support::render(&mut app, 66, 12);
+    for key in ['o', 'e', 'p', 'q'] {
+        support::press_control(&mut app, key);
+    }
+    assert!(app.picker().is_none(), "a list opened over the settings");
+    assert!(!app.should_quit(), "ctrl+q reached the key table");
+    assert_eq!(
+        support::text_block(&page),
+        support::text_block(&support::render(&mut app, 66, 12)),
+        "something opened over the settings"
+    );
+}
+
 /// A switch changes the setting, the running program, and the file -- in
 /// that order and all at once. A setting that took effect on restart would
 /// be a setting nobody can tell they have changed.

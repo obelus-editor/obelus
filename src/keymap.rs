@@ -146,15 +146,33 @@ impl KeyChord {
 
 /// Which set of bindings applies.
 ///
-/// Only two so far. The fallback to [`Context::Always`] looks redundant at two
-/// contexts, but the diff view and the reference panel each add one, and the
-/// lookup path should not have to change then.
+/// The reader is either reading a file or inside something -- a list, the
+/// settings, a conversation -- and those are different worlds as far as the
+/// keys go. What is bound everywhere applies to the first and not to the
+/// second: a dialog takes the keys it is given here and nothing else, so
+/// obelus's own commands cannot put a second dialog over the first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Context {
-    /// Applies whatever obelus is showing.
+    /// Applies whatever obelus is showing -- as long as that is a file.
     Always,
-    /// Reading a file, with no picker open.
+    /// Reading a file, with nothing over it.
     Normal,
+    /// The list of open files: the one dialog with a command of its own,
+    /// which is the command that closes a file.
+    Buffers,
+    /// Any other dialog. Nothing is bound here, and that is the point.
+    Dialog,
+}
+
+impl Context {
+    /// Whether what is bound everywhere is bound here.
+    ///
+    /// Only where a file is what is showing. A global key that reached a
+    /// dialog would be a global key opening a second one over it.
+    #[must_use]
+    pub const fn has_global_keys(self) -> bool {
+        matches!(self, Self::Normal)
+    }
 }
 
 /// One key bound to one command in one context.
@@ -201,6 +219,16 @@ impl Keymap {
                 Binding {
                     command: Command::BufferClose,
                     context: Context::Normal,
+                    chord: control('w'),
+                },
+                // And the same key in the list of open files, where it
+                // closes the one on the row. One key that means "close
+                // this" everywhere beats a second key that works in one
+                // place -- and the list is a dialog, so it has to be bound
+                // in it to reach it.
+                Binding {
+                    command: Command::BufferClose,
+                    context: Context::Buffers,
                     chord: control('w'),
                 },
                 Binding {
@@ -358,14 +386,15 @@ impl Keymap {
     /// The command a key event runs in `context`, if any.
     ///
     /// The specific context wins over [`Context::Always`], so a view can
-    /// shadow a global binding.
+    /// shadow a global binding -- and a dialog's context does not reach the
+    /// global bindings at all, which is what makes a dialog a dialog.
     #[must_use]
     pub fn lookup(&self, event: &KeyEvent, context: Context) -> Option<Command> {
         let chord = KeyChord::from_event(event)?;
         if let Some(command) = self.find(chord, context) {
             return Some(command);
         }
-        if context == Context::Always {
+        if !context.has_global_keys() {
             return None;
         }
         self.find(chord, Context::Always)

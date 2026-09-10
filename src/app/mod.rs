@@ -498,6 +498,41 @@ impl App {
         self.picker.as_ref()
     }
 
+    /// Which set of key bindings a key is looked up in.
+    ///
+    /// What the reader is in, rather than what they are doing: a dialog
+    /// takes the keys bound in it and no others, so obelus's own commands
+    /// cannot open a second dialog over the first -- `ctrl+o` in a
+    /// conversation used to put a file list on top of it, which then took
+    /// two escapes to leave and gave no way to tell which of the two a key
+    /// would reach.
+    pub(super) fn context(&self) -> Context {
+        // A list whose rows are open files is the list of open files, and
+        // that one has a command of its own.
+        if self.selected_buffer().is_some() {
+            return Context::Buffers;
+        }
+        if self.is_showing_dialog() {
+            return Context::Dialog;
+        }
+        Context::Normal
+    }
+
+    /// Whether something is showing that the reader is *in*.
+    ///
+    /// A list, the settings, or a conversation with an agent: each takes
+    /// the keys itself, each is left with escape, and none of them is a
+    /// file being read. Obelus's own commands do not run from inside one,
+    /// so the only way to a second one is to leave the first.
+    ///
+    /// The question on the status bar is not one of these. It is a row
+    /// rather than a screen, what it is asking about is still visible
+    /// behind it, and it says its own answer to escape.
+    #[must_use]
+    pub const fn is_showing_dialog(&self) -> bool {
+        self.picker.is_some() || self.settings.is_some() || self.showing_chat
+    }
+
     /// How far along the welcome screen's colours have travelled, in ticks.
     ///
     /// Zero until something ticks, so a screen drawn without a running

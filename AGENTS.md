@@ -79,6 +79,17 @@ picker's selection keys belong to whichever component owns the state they move.
 `App`, so anything that displays a key reads that table and a rebind changes
 every display of it.
 
+**What is showing owns the keys.** A list, the settings page and a
+conversation are dialogs: each takes the keys bound *in* its context and
+nothing else, so `Keymap::lookup` reaches the everywhere bindings only from
+`Context::Normal`. Before that a global key worked inside them, which is how
+`ctrl+o` in a conversation put a file list on top of it -- two things on
+screen, two escapes to leave, and nothing saying which one a key would
+reach. The one exception is `Context::Buffers`: the list of open files binds
+the key that closes a file, because the thing to close is the row. So a new
+dialog gets a context, and a key it should keep gets a binding in it -- not a
+fall-through.
+
 **Modifiers are judged exactly, in one place.** `keymap::modifiers_of` is the
 only judge; `SUPER`/`HYPER`/`META` disqualify a key rather than being masked
 away. Masking meant `ctrl+super+q` quit.

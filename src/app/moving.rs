@@ -134,11 +134,6 @@ impl App {
         }
     }
 
-    /// Which context key lookup happens in.
-    pub(super) const fn context(&self) -> Context {
-        Context::Normal
-    }
-
     /// Goes to the bracket that matches the one under the cursor.
     ///
     /// Over the whole file rather than what is on screen: the partner being

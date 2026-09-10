@@ -232,7 +232,7 @@ impl App {
     }
 
     /// The buffer the open picker's selection names, if that is what it is.
-    fn selected_buffer(&self) -> Option<BufferId> {
+    pub(super) fn selected_buffer(&self) -> Option<BufferId> {
         match self.picker.as_ref()?.selected_item()?.value {
             PickerValue::Buffer(id) => Some(id),
             _ => None,

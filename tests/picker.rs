@@ -266,16 +266,48 @@ fn choosing_a_theme_changes_the_colours() {
     assert_ne!(support::legend_block(&dark), support::legend_block(&light));
 }
 
-/// A key the picker does not want has to reach the key table, or there would
-/// be no way out of one but Escape.
+/// A list is a dialog: it takes its own keys and nothing else.
+///
+/// A key the list does not want has nowhere else to go, because the key
+/// table reached from inside a list is a way to put a second list on top of
+/// the first -- and then two escapes to leave, with nothing on screen to
+/// say which of the two a key would reach. The way out is escape, and the
+/// key works again after it.
 #[test]
-fn a_key_the_picker_ignores_falls_through_to_the_key_table() {
+fn a_key_the_picker_does_not_want_goes_nowhere() {
     let mut app = app();
     press_control(&mut app, 'p');
+    let palette = support::render(&mut app, 60, 12);
     assert!(!app.should_quit());
 
     press_control(&mut app, 'q');
-    assert!(app.should_quit(), "ctrl+q was swallowed by the picker");
+    assert!(
+        !app.should_quit(),
+        "ctrl+q reached the key table from inside a list"
+    );
+    press_control(&mut app, 'o');
+    let after = support::render(&mut app, 60, 12);
+    assert_eq!(
+        support::text_block(&palette),
+        support::text_block(&after),
+        "a second list opened over the first"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    press_control(&mut app, 'q');
+    assert!(app.should_quit(), "escape did not give the key table back");
+}
+
+/// The one key the list of open files adds does not bring the others.
+#[test]
+fn the_buffer_list_takes_its_own_key_and_not_the_global_ones() {
+    let mut app = app();
+    press_control(&mut app, 'e');
+    press_control(&mut app, 'q');
+    assert!(
+        !app.should_quit(),
+        "the list of open files reached the global keys"
+    );
 }
 
 /// Arrow keys move the selection, not the cursor, while a picker is open.

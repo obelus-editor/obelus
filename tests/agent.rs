@@ -690,3 +690,38 @@ fn a_command_that_names_a_setting_offers_its_values() {
         "the model it moved itself to is not shown:\n{text}"
     );
 }
+
+/// The conversation is a dialog: nothing of obelus's own opens over it.
+///
+/// It is the whole region and it has its own keys, so a command that put a
+/// list on top of it would leave two things on screen with one caret and no
+/// way to tell which was listening. Escape closes the conversation, and the
+/// keys are obelus's again after that.
+#[test]
+fn nothing_of_obeluss_own_opens_over_the_conversation() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let conversation = screen(&mut app);
+    for key in ['o', 'e', 'p', 'q'] {
+        support::press_control(&mut app, key);
+    }
+    assert!(
+        app.picker().is_none(),
+        "a list opened over the conversation"
+    );
+    assert!(!app.should_quit(), "ctrl+q reached the key table");
+    assert_eq!(
+        screen(&mut app),
+        conversation,
+        "something opened over the conversation"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    support::press_control(&mut app, 'e');
+    assert!(
+        app.picker().is_some(),
+        "escape did not give the key table back"
+    );
+}
