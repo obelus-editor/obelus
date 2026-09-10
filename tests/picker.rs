@@ -777,6 +777,42 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     );
 }
 
+/// The right-aligned text never takes more than half a row. It used to take
+/// whatever it needed and let the label have the rest, which was right while
+/// it held a key hint or a line number -- but a search row's trailing is a
+/// path, and one longer than the row left the label with no columns at all:
+/// a list of icons with nothing beside them.
+#[test]
+fn a_long_trailing_does_not_eat_the_label() {
+    let long = "src/component/picker/very/deep/place/of/its/own/mod.rs:132";
+    let mut rows = items(&["pub fn spawn_scan(root: &Path) {"]);
+    rows[0].trailing = Some(long.to_string());
+    rows[0].icon = Some('\u{f0349}');
+    let mut app = app();
+    app.open_picker_for_test(rows, PickerLayout::FullArea);
+
+    let dump = support::render(&mut app, 60, 8);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains('\u{f0349}'))
+        .unwrap_or_else(|| panic!("no row:\n{dump}"))
+        .to_string();
+    assert!(
+        row.contains("spawn_scan"),
+        "the label was squeezed out by the path:\n{dump}"
+    );
+    // And the path loses its head, not its tail: the file name and the line
+    // are the part that says where to go.
+    assert!(
+        row.contains("own/mod.rs:132"),
+        "the path lost the end that matters:\n{dump}"
+    );
+    assert!(
+        !row.contains("src/component"),
+        "a path longer than half the row was drawn whole:\n{dump}"
+    );
+}
+
 /// Right-aligned, so the keys form a column rather than trailing each
 /// description at whatever length it happens to be.
 #[test]

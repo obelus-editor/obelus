@@ -278,14 +278,18 @@ impl PickerView<'_> {
         }
 
         // What the right-aligned text needs, plus a gap, comes out of
-        // everything else's room first: it is the one part of a row that
-        // never gets cut.
+        // everything else's room first -- but never more than half the row.
+        // It used to be the one part that never got cut, which was right
+        // while it held a key hint or a line number; a search row's trailing
+        // is a path, and a path longer than the row left the label with no
+        // columns at all: a list of icons with nothing beside them.
         let trailing = item.trailing.as_deref().unwrap_or_default();
-        let reserved = if trailing.is_empty() {
+        let wanted = if trailing.is_empty() {
             0
         } else {
             u16::try_from(text_width(trailing) + 2).unwrap_or(u16::MAX)
         };
+        let reserved = wanted.min(area.width / 2);
         let limit = area.width.saturating_sub(1).saturating_sub(reserved);
         let inner = Rect {
             width: limit,
@@ -332,12 +336,27 @@ impl PickerView<'_> {
             );
         }
 
-        if !trailing.is_empty()
-            && let Ok(offset) =
-                u16::try_from(usize::from(area.width).saturating_sub(text_width(trailing) + 1))
-            && offset >= column
-        {
-            write(cells, area, offset, y, trailing, dim, None, 0);
+        if !trailing.is_empty() {
+            // Cut from the left, like a label: the end of a path is the file
+            // name and the line, which is the part that says where to go.
+            let room = usize::from(reserved.saturating_sub(2));
+            let dropped = drop_from_left(trailing, room);
+            let shown = trailing.chars().count().saturating_sub(dropped);
+            if shown > 0
+                && let Ok(offset) =
+                    u16::try_from(usize::from(area.width).saturating_sub(text_width(trailing) + 1))
+                        .map(|offset| {
+                            offset.max(area.width.saturating_sub(reserved).saturating_add(1))
+                        })
+                && offset >= column
+            {
+                if dropped > 0 {
+                    write(cells, area, offset, y, "\u{2026}", dim, None, 0);
+                    write(cells, area, offset + 1, y, trailing, dim, None, dropped + 1);
+                } else {
+                    write(cells, area, offset, y, trailing, dim, None, 0);
+                }
+            }
         }
     }
 }
