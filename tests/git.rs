@@ -407,6 +407,131 @@ fn a_hunk_opens_in_place_and_closes_again() {
     );
 }
 
+/// The caret comes down with the file the hunk pushed down.
+///
+/// Opening a hunk puts what its lines replaced above them, which moves every
+/// line from there on down the screen. The caret is on one of those lines,
+/// so it moves too -- and when it did not, it was drawn among the removed
+/// lines while the cursor was somewhere else entirely: five steps down
+/// walked out of a five-line hunk while the caret still looked as though it
+/// were on the first line of it, and the key that closes the hunk answered
+/// "nothing changed here".
+#[test]
+fn the_caret_walks_the_lines_of_an_opened_hunk() {
+    use obelus::{app::App, buffer::Buffer, command::Command};
+
+    let repository = Repository::new("walk", "one\nold a\nold b\nold c\nold d\nold e\nlast\n");
+    repository.write("one\nnew a\nnew b\nnew c\nnew d\nnew e\nlast\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 16);
+    // Onto the first changed line, and open it: five removed lines above
+    // five changed ones.
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+
+    // The caret is on the row its own line is drawn on, not on one of the
+    // rows the removed lines took.
+    let on = |dump: &str, text: &str| {
+        support::text_block(dump)
+            .lines()
+            .position(|row| row.contains(text))
+            .unwrap_or_else(|| panic!("no {text} on screen:\n{dump}"))
+            .saturating_sub(1)
+    };
+    let caret_row = |dump: &str| {
+        support::cursor_line(dump)
+            .split(',')
+            .nth(1)
+            .and_then(|row| row.parse::<usize>().ok())
+            .expect("the caret's row")
+    };
+    let dump = support::render(&mut app, 40, 16);
+    assert_eq!(
+        caret_row(&dump),
+        on(&dump, "new a"),
+        "the caret is not on the line it is on:\n{dump}"
+    );
+
+    // Down to the last line of the hunk: four steps, four rows.
+    for _ in 0..4 {
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+    }
+    let dump = support::render(&mut app, 40, 16);
+    assert_eq!(
+        caret_row(&dump),
+        on(&dump, "new e"),
+        "the caret did not walk the lines of the hunk:\n{dump}"
+    );
+
+    // And from there the same key closes it, because that is still inside
+    // the hunk.
+    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    assert!(
+        app.opened_hunk().is_none(),
+        "the last line of the hunk would not close it"
+    );
+    let closed = support::render(&mut app, 40, 16);
+    assert!(
+        !support::text_block(&closed).contains("old a"),
+        "it would not close:\n{closed}"
+    );
+}
+
+/// A hunk scrolled off the top pushes nothing, so the caret moves with the
+/// text again.
+///
+/// The removed lines are drawn when the drawing reaches the line they belong
+/// to, so a hunk left open above the top of the screen takes no rows at all
+/// -- and a caret shifted down for rows nobody drew would be as wrong as one
+/// not shifted for rows that were.
+#[test]
+fn a_hunk_above_the_screen_does_not_move_the_caret() {
+    use obelus::{app::App, buffer::Buffer, command::Command};
+
+    let tail: String = (1..=40).map(|line| format!("keep {line:02}\n")).collect();
+    let repository = Repository::new(
+        "scrolled",
+        &format!("one\nold a\nold b\nold c\nold d\nold e\n{tail}"),
+    );
+    repository.write(&format!("one\nnew a\nnew b\nnew c\nnew d\nnew e\n{tail}"));
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 12);
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    // Down the file until the hunk is off the top of the screen.
+    for _ in 0..30 {
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+    }
+
+    let dump = support::render(&mut app, 40, 12);
+    assert!(
+        !support::text_block(&dump).contains("old a"),
+        "the hunk is still on screen, so this proves nothing:\n{dump}"
+    );
+    let line = app.current_buffer().expect("a buffer").cursor().line.get() + 1;
+    let gutter = support::text_block(&dump)
+        .lines()
+        .position(|row| {
+            row.split('|')
+                .nth(1)
+                .and_then(|drawn| drawn.split_whitespace().next())
+                .is_some_and(|number| number == line.to_string())
+        })
+        .unwrap_or_else(|| panic!("line {line} is not on screen:\n{dump}"))
+        .saturating_sub(1);
+    let caret = support::cursor_line(&dump)
+        .split(',')
+        .nth(1)
+        .and_then(|row| row.parse::<usize>().ok())
+        .expect("the caret's row");
+    assert_eq!(
+        caret, gutter,
+        "the caret moved for rows nothing drew:\n{dump}"
+    );
+}
+
 /// A run of added lines opens too, though it has nothing to show above
 /// itself: opening a hunk is what puts the change type behind its lines, and
 /// "which lines exactly are new here" is what the margin's one column is too

@@ -672,8 +672,26 @@ impl App {
         self.refresh_markdown(editor_area.width);
         self.refresh_changes();
         self.refresh_blame();
+        // Scrolled in the room the text really has: an opened hunk above the
+        // cursor spends rows on lines that are not in the file, and a cursor
+        // kept on screen by the text's own arithmetic would be drawn below
+        // the last row.
+        let pushed = self.current_buffer().map_or(0, |buffer| {
+            let viewport = buffer.viewport();
+            ui::editor::hunk_rows_above(
+                self.changes(),
+                self.opened,
+                viewport.top,
+                viewport.top_row,
+                buffer.cursor().line,
+            )
+        });
+        let room = TextArea {
+            height: area.height.saturating_sub(pushed),
+            ..area
+        };
         if let Some(buffer) = self.current_buffer_mut() {
-            buffer.scroll_into_view(area);
+            buffer.scroll_into_view(room);
         }
 
         self.refresh_preview(editor_area);

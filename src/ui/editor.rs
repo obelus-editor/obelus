@@ -53,6 +53,38 @@ pub fn text_offset(lines: usize, changes: bool) -> u16 {
     margin.saturating_add(gutter_width(lines))
 }
 
+/// How many rows an opened hunk draws above a line.
+///
+/// Opening a hunk pushes the file down to make room for what its lines
+/// replaced, so everything from that line onwards is drawn lower than the
+/// text alone would put it -- the caret included. Without this the caret
+/// sat on a row belonging to text that is not in the file, and the reader
+/// walked out of the hunk while it still looked as though they were in it.
+///
+/// The same rule the drawing follows, said once: the removed lines appear
+/// when the loop reaches the line they belong to, so they are drawn only
+/// while that line is on screen and starts on a row of its own.
+#[must_use]
+pub fn hunk_rows_above(
+    changes: Option<&crate::git::Changes>,
+    opened: Option<LineNumber>,
+    top: LineNumber,
+    top_row: usize,
+    line: LineNumber,
+) -> u16 {
+    let Some(anchor) = opened else {
+        return 0;
+    };
+    if anchor > line || anchor < top || (anchor == top && top_row > 0) {
+        return 0;
+    }
+    changes
+        .and_then(|changes| changes.hunk_at(anchor))
+        .map_or(0, |hunk| {
+            u16::try_from(hunk.removed.len()).unwrap_or(u16::MAX)
+        })
+}
+
 /// The column the change map takes, right of the scrollbar.
 ///
 /// One column, the same width as the margin on the other side, and drawn
