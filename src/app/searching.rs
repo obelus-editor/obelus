@@ -1,0 +1,473 @@
+//! Searching, at its three scopes.
+//!
+//! The view is [`crate::component::picker`] and the scanning is
+//! [`crate::search`]; what is here is which of them to ask, what to do with
+//! what comes back, and how a row of a result is coloured.
+
+use super::*;
+
+impl App {
+    /// Opens the search, at one of its three scopes.
+    ///
+    /// One view with three tabs rather than three views: the question is
+    /// "where is this", and only its radius changes. The query survives a
+    /// walk between the tabs, which is the whole point -- a reader who does
+    /// not find it in this file looks in the project without retyping it.
+    pub fn open_search(&mut self, scope: Scope) {
+        // Only the scopes that can answer. A tab that says "no file open"
+        // whenever it is walked onto is a tab in the way of the two that
+        // work, and the tabs are how a reader moves between them.
+        let scopes = self.searchable();
+        let Some(tab) = scopes.iter().position(|shown| *shown == scope) else {
+            self.note = Some(match scope {
+                Scope::File => "no file open".to_string(),
+                Scope::Symbols => "no language server to ask".to_string(),
+                Scope::Project => "nowhere to search".to_string(),
+            });
+            return;
+        };
+
+        let names: Vec<&str> = scopes.iter().map(|scope| scope.label()).collect();
+        let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
+        picker.with_scopes(&names);
+        picker.searches();
+        picker.go_to_tab(tab);
+        self.searching = scopes;
+        self.picker = Some(picker);
+        self.refresh_search(true);
+    }
+
+    /// Which scopes have something to search, in the order their tabs sit
+    /// in.
+    ///
+    /// Settled when the search opens rather than watched while it is open: a
+    /// server starts when a file does, so by the time a reader is searching
+    /// there either is one or there is not -- and tabs appearing under the
+    /// arrow keys would move the ground while they walk it.
+    fn searchable(&self) -> Vec<Scope> {
+        Scope::ALL
+            .into_iter()
+            .filter(|scope| match scope {
+                Scope::File => self.current_buffer().is_some(),
+                // Somewhere to walk is all this one needs, and there always
+                // is: obelus is started in a directory.
+                Scope::Project => true,
+                Scope::Symbols => self
+                    .current_buffer()
+                    .and_then(Buffer::language)
+                    .is_some_and(|language| self.servers.contains_key(&language)),
+            })
+            .collect()
+    }
+
+    /// Which scope the search is showing, if a search is open.
+    pub(super) fn searching(&self) -> Option<Scope> {
+        let picker = self.picker.as_ref()?;
+        if !picker.is_searching() {
+            return None;
+        }
+        self.searching.get(picker.tab()).copied()
+    }
+
+    /// How many files the search has parsed to colour its rows.
+    ///
+    /// Bounded by the rows that have been on screen, which is the rule worth
+    /// stating: a project search can hold two thousand rows, and parsing
+    /// every one of their files would be a search that takes as long as
+    /// reading the project.
+    #[must_use]
+    pub fn files_parsed_for_rows(&self) -> usize {
+        self.row_syntax.len()
+    }
+
+    /// Which search the rows arriving belong to.
+    ///
+    /// A reader types faster than a tree can be walked, so every batch
+    /// carries the generation it was asked under and anything older is
+    /// dropped. Public because the scan is started from outside the loop in
+    /// tests, which have to say which search they are answering.
+    #[must_use]
+    pub fn search_generation(&self) -> u64 {
+        self.search_generation
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Says that what is being asked has changed, and returns the generation
+    /// the answers must now carry. Every earlier scan learns from this that
+    /// it can stop.
+    fn ask_again(&mut self) -> u64 {
+        self.search_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1
+    }
+
+    /// Works out what the characters of the rows on screen *are*.
+    ///
+    /// A search result is a line of code, and it reads like one only if it
+    /// is coloured like one. Only the rows on screen, and only once each:
+    /// a project search can hold two thousand of them, and the query for
+    /// one line's worth of a tree is small but not free.
+    pub(super) fn colour_visible_rows(&mut self, height: u16) {
+        if self.picker.is_none() {
+            // Nothing is listing files any more, so nothing needs the trees
+            // that were parsed to colour them.
+            self.row_syntax.clear();
+            return;
+        }
+        let Some(picker) = self.picker.as_ref() else {
+            return;
+        };
+        if !picker.is_searching() {
+            return;
+        }
+        let wanted: Vec<(usize, PathBuf, u32)> = picker
+            .visible(height)
+            .into_iter()
+            .filter_map(|index| {
+                let item = picker.rows_at(index)?;
+                if item.colours.is_some() {
+                    return None;
+                }
+                match &item.value {
+                    PickerValue::Place { path, line, .. } => Some((index, path.clone(), *line)),
+                    _ => None,
+                }
+            })
+            .collect();
+
+        for (index, path, line) in wanted {
+            let colours = self.colours_of(&path, line);
+            if let Some(picker) = self.picker.as_mut()
+                && let Some(item) = picker.row_mut(index)
+            {
+                item.colours = Some(colours);
+            }
+        }
+    }
+
+    /// The kinds of the characters of one line of one file.
+    ///
+    /// Relative to the row's label, which starts at the line's first
+    /// character that is not a space: the label is the line trimmed, and
+    /// both ends of that trim are the same rule wherever a row is built.
+    ///
+    /// An empty list for a file obelus cannot parse or cannot read, which is
+    /// an answer rather than a miss: the row is not asked about again.
+    fn colours_of(&mut self, path: &Path, line: u32) -> Vec<Colouring> {
+        // The file being read is already parsed, and its tree is the one
+        // that matches what the reader is looking at.
+        let open = self
+            .buffers
+            .iter()
+            .flatten()
+            .find(|buffer| buffer.path() == path);
+        let buffer = match open {
+            Some(buffer) => buffer,
+            None => {
+                if !self.row_syntax.contains_key(path) {
+                    // Only as many as the rows that have been on screen, and
+                    // dropped with the list. A file that will not open is
+                    // not retried, because the row remembers the answer.
+                    match Buffer::open(path) {
+                        Ok(buffer) => {
+                            self.row_syntax.insert(path.to_path_buf(), buffer);
+                        }
+                        Err(error) => {
+                            tracing::debug!(%error, "no colours for a row");
+                            return Vec::new();
+                        }
+                    }
+                }
+                match self.row_syntax.get(path) {
+                    Some(buffer) => buffer,
+                    None => return Vec::new(),
+                }
+            }
+        };
+
+        let Some(state) = buffer.syntax() else {
+            return Vec::new();
+        };
+        let text = buffer.text();
+        let line = LineNumber::new(line as usize);
+        if line.get() >= text.line_count() {
+            return Vec::new();
+        }
+        let start = text.line_start_byte(line);
+        let end = text.line_start_byte(line.saturating_add(1));
+        let mut highlights = Highlights::default();
+        highlights.refresh(state, text, start..end);
+
+        // The label starts at the first character that is not a space, and
+        // its characters are counted from there.
+        let contents = text.line(line).to_string();
+        let indent = contents.chars().take_while(|c| c.is_whitespace()).count();
+        let mut runs: Vec<Colouring> = Vec::new();
+        let mut byte = start.get() + contents.char_indices().nth(indent).map_or(0, |(at, _)| at);
+        for (column, character) in contents.chars().skip(indent).enumerate() {
+            let kind = highlights.kind_at(ByteOffset::new(byte));
+            byte += character.len_utf8();
+            let Ok(column) = u16::try_from(column) else {
+                break;
+            };
+            match (kind, runs.last_mut()) {
+                (Some(kind), Some(last)) if last.2 == kind && last.1 == column => last.1 += 1,
+                (Some(kind), _) => runs.push((column, column + 1, kind)),
+                (None, _) => {}
+            }
+        }
+        runs
+    }
+
+    /// Fills the search with the rows of whichever scope is showing.
+    ///
+    /// `moved` says the tab changed, as against only the query: the file's
+    /// rows are every line of it and are filtered by the picker itself, so
+    /// they are gathered once per visit rather than once per keystroke.
+    pub(super) fn refresh_search(&mut self, moved: bool) {
+        let Some(picker) = self.picker.as_ref() else {
+            return;
+        };
+        let Some(scope) = self.searching.get(picker.tab()).copied() else {
+            return;
+        };
+        match scope {
+            Scope::File => {
+                let empty = picker.query().is_empty();
+                // The rows are the lines of one version of one file, so
+                // that is what says whether they are still the right rows:
+                // a file an agent rewrites while the search is open must not
+                // go on being listed as it was.
+                let stale = self.searched
+                    != self
+                        .current_buffer()
+                        .map(|buffer| (buffer.path().to_path_buf(), buffer.version()));
+                let filled = picker.row_count() > 0;
+                if empty {
+                    // Every line of the file is not an answer to no
+                    // question -- the reader is looking at the file already,
+                    // and a list of it says nothing they cannot see. With no
+                    // file at all the reason is that, which is a fact about
+                    // the world rather than an invitation to type.
+                    let reason = if self.current_buffer().is_some() {
+                        "type to search this file"
+                    } else {
+                        "no file open"
+                    };
+                    self.searched = None;
+                    if let Some(picker) = self.picker.as_mut() {
+                        picker.replace(Vec::new());
+                        picker.while_empty(reason);
+                    }
+                } else if moved || !filled || stale {
+                    // Gathered on the way in from an empty query rather than
+                    // per keystroke: the rows are the file's lines, which do
+                    // not depend on what has been typed. The picker narrows
+                    // them from there, and re-gathering per keystroke would
+                    // also throw away the row the reader had moved to.
+                    self.search_this_file();
+                }
+            }
+            Scope::Project => self.search_the_project(),
+            Scope::Symbols => self.search_the_symbols(),
+        }
+    }
+
+    /// Every line of the file being read, for the picker to narrow.
+    ///
+    /// The rows are the lines rather than the matches, because the picker is
+    /// already a matcher: it scores the query against every row, highlights
+    /// what it matched and keeps the best first. A search that filtered the
+    /// lines itself would be a second, worse matcher beside it.
+    pub(super) fn search_this_file(&mut self) {
+        let Some(buffer) = self.current_buffer() else {
+            if let Some(picker) = self.picker.as_mut() {
+                picker.replace(Vec::new());
+                picker.when_empty("no file open");
+            }
+            return;
+        };
+        let path = buffer.path().to_path_buf();
+        let version = buffer.version();
+        let text = buffer.text();
+        // The file's own encoding if a server is attached to it, because the
+        // row's position is handed back through the same door a server's
+        // answer goes through.
+        let encoding = buffer
+            .syntax()
+            .map(SyntaxState::language)
+            .map_or(lsp_types::PositionEncodingKind::UTF16, |language| {
+                self.encoding_for(language)
+            });
+
+        let items: Vec<PickerItem> = (0..text.line_count())
+            .map(|number| {
+                let line = LineNumber::new(number);
+                let at = position::to_lsp(text, line, CharColumn::new(0), &encoding);
+                let end = position::to_lsp(text, line, text.line_length(line), &encoding);
+                PickerItem {
+                    icon: None,
+                    enabled: true,
+                    colours: None,
+                    status: None,
+                    depth: 0,
+                    kind: None,
+                    // Trimmed at the front: the indentation is the same on
+                    // every row of a block, so matching it finds nothing and
+                    // showing it spends the width where the answer is.
+                    label: text
+                        .line(line)
+                        .to_string()
+                        .trim_end()
+                        .trim_start()
+                        .to_string(),
+                    detail: None,
+                    trailing: Some(format!("{}", number + 1)),
+                    value: PickerValue::Place {
+                        path: path.clone(),
+                        line: at.line,
+                        character: at.character,
+                        end_line: end.line,
+                        end_character: end.character,
+                    },
+                    tab: None,
+                }
+            })
+            .collect();
+
+        self.searched = Some((path, version));
+        if let Some(picker) = self.picker.as_mut() {
+            picker.replace(items);
+            picker.when_empty("this file is empty");
+        }
+    }
+
+    /// Starts a walk of the tree looking for the query.
+    ///
+    /// A thread per query, and the answers carry the generation they were
+    /// asked under: a reader types faster than a tree can be walked, so the
+    /// rows for "sc" must not land in a list that is now asking about
+    /// "scope".
+    fn search_the_project(&mut self) {
+        let query = self
+            .picker
+            .as_ref()
+            .map(|picker| picker.query().to_string());
+        let Some(query) = query else { return };
+
+        // Only the empty query is not a search: it matches every line of
+        // every file, which is the tree rather than an answer. One letter is
+        // a real question -- and the cheapest one there is, because it fills
+        // the row limit in the first few files and stops.
+        let generation = self.ask_again();
+        if query.is_empty() {
+            if let Some(picker) = self.picker.as_mut() {
+                picker.replace(Vec::new());
+                picker.while_empty("type to search every file");
+            }
+            return;
+        }
+
+        if let Some(picker) = self.picker.as_mut() {
+            picker.replace(Vec::new());
+            picker.while_empty("searching\u{2026}");
+        }
+        if let Some(sender) = self.events.clone() {
+            search::spawn_scan(
+                &self.working_directory,
+                &query,
+                generation,
+                &self.search_generation,
+                sender,
+            );
+        }
+    }
+
+    /// Puts a batch of matching lines into the list waiting for them.
+    pub(super) fn on_matches(&mut self, generation: u64, hits: Vec<search::Hit>, done: bool) {
+        if generation != self.search_generation() {
+            tracing::debug!(
+                generation,
+                "dropping matches for a query already typed past"
+            );
+            return;
+        }
+        let root = self.working_directory.clone();
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        if self.searching.get(picker.tab()) != Some(&Scope::Project) {
+            return;
+        }
+        picker.extend(hits.into_iter().map(|hit| PickerItem {
+            icon: None,
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            kind: None,
+            label: hit.text,
+            detail: None,
+            trailing: Some(format!("{}:{}", hit.path.display(), hit.line + 1)),
+            // The line, not the column: the file is not open, so its text --
+            // which is what a column in the protocol's units is counted
+            // against -- is not here to count with. The row highlights what
+            // matched, which is where the reader is looking anyway.
+            value: PickerValue::Place {
+                path: root.join(&hit.path),
+                line: u32::try_from(hit.line).unwrap_or(u32::MAX),
+                character: 0,
+                end_line: u32::try_from(hit.line).unwrap_or(u32::MAX),
+                end_character: 0,
+            },
+            tab: None,
+        }));
+        if done {
+            // Now it is true that there is no match, and the row count says
+            // it about the *project* rather than about the list: the picker's
+            // own "no match" is about a query against rows it was given, and
+            // here the rows never existed.
+            picker.while_empty("no match in the project");
+        }
+    }
+
+    /// Asks the language server for the names it knows across the project.
+    fn search_the_symbols(&mut self) {
+        let query = self
+            .picker
+            .as_ref()
+            .map(|picker| picker.query().to_string());
+        let Some(query) = query else { return };
+
+        let language = self.current_buffer().and_then(Buffer::language);
+        let Some(language) = language.filter(|language| self.servers.contains_key(language)) else {
+            if let Some(picker) = self.picker.as_mut() {
+                picker.replace(Vec::new());
+                // The server is per language, and the language comes from
+                // the file being read: with nothing open there is nobody to
+                // ask, which is a different thing from an empty answer.
+                picker.while_empty("no language server to ask");
+            }
+            return;
+        };
+        // An empty query asks a server for every name it knows, which is
+        // its whole index; the protocol allows it and no server means it.
+        if query.is_empty() {
+            if let Some(picker) = self.picker.as_mut() {
+                picker.replace(Vec::new());
+                picker.while_empty("type to search the project's symbols");
+            }
+            return;
+        }
+
+        let asked = self.ask_workspace_symbols(language, &query);
+        if let Some(picker) = self.picker.as_mut() {
+            picker.replace(Vec::new());
+            picker.while_empty(if asked {
+                "asking the language server\u{2026}"
+            } else {
+                "the language server would not answer"
+            });
+        }
+    }
+}

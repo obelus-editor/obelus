@@ -1,0 +1,214 @@
+//! The lists obelus offers, and what choosing from one does.
+//!
+//! The list itself is [`crate::component::picker`]; what is here is which
+//! rows go in it and what a chosen row means.
+
+use super::{documents::is_markdown, *};
+
+impl App {
+    /// Opens a picker over rows the caller built.
+    ///
+    /// The only way to reach a list of places without a language server
+    /// answering first, which is what a test of the preview needs.
+    pub fn open_picker_for_test(&mut self, items: Vec<PickerItem>, layout: PickerLayout) {
+        self.picker = Some(Picker::new(items, layout));
+    }
+
+    /// Offers the built-in themes.
+    pub fn open_theme_picker(&mut self) {
+        self.theme_before = Some(self.theme);
+        let items = builtin::ALL
+            .iter()
+            .map(|theme| PickerItem {
+                // The same glyph on every row, which is the honest one: what
+                // distinguishes two themes is the colours, and the row's own
+                // name is what says which.
+                icon: icons::enabled().then_some(icons::ui::THEME),
+                label: theme.name.to_string(),
+                detail: None,
+                trailing: None,
+                value: PickerValue::Theme(theme),
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                kind: None,
+                tab: None,
+            })
+            .collect();
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.when_empty("no theme is built in");
+        // Open on the one that is on, so the list starts by saying which
+        // theme this is rather than making the reader work it out.
+        picker.prefer(self.theme.name.to_string());
+        self.picker = Some(picker);
+    }
+
+    /// Offers every command by name.
+    pub fn open_command_palette(&mut self) {
+        // Every command, and what it can do *here* said by whether its row
+        // can be chosen. Leaving out what cannot run makes the palette a
+        // list nobody can learn from -- a reader who never sees `git.hunk`
+        // does not find out obelus has it -- while a row that runs and then
+        // reports why it did nothing is a row nobody trusts. Dim and
+        // unselectable is both answers at once.
+        let items = crate::command::ALL
+            .iter()
+            .map(|spec| PickerItem {
+                icon: icons::enabled().then(|| icons::for_command(spec.name)),
+                enabled: self.offers(spec.command),
+                colours: None,
+                status: None,
+                depth: 0,
+                kind: None,
+                label: spec.name.to_string(),
+                // The tab it lives under. One past its position in the list
+                // of groups, because the picker's own first tab is "all".
+                tab: crate::command::Group::ALL
+                    .iter()
+                    .position(|group| *group == spec.command.group())
+                    .map(|at| at + 1),
+                detail: Some(spec.title.to_string()),
+                // The key it is bound to, if it is bound to one. A command
+                // with nothing here is one the palette is the only way to
+                // reach, which is worth being able to see.
+                trailing: self.keymap.chord_for(spec.command).map(KeyChord::label),
+                value: PickerValue::Command(spec.command),
+            })
+            .collect();
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        // It holds every command, so it is only ever empty for a query that
+        // matches none of them -- which the picker says itself.
+        picker.when_empty("no command by that name");
+        // Tabs over one long list. Fourteen commands is already more than a
+        // compact list shows at once, and the groups are what a reader is
+        // choosing between when they do not already know the name.
+        let names: Vec<&str> = crate::command::Group::ALL
+            .iter()
+            .map(|group| group.name())
+            .collect();
+        picker.with_tabs(&names);
+        self.picker = Some(picker);
+    }
+
+    /// Opens the log, as a file like any other.
+    ///
+    /// A reader is what obelus is, so the log needs no viewer of its own: it
+    /// becomes a buffer, the watcher on its directory reloads it as it grows,
+    /// and the cursor stays where it was put. What is in it that no screen
+    /// shows is a server's own words -- its stderr, its handshake, and the
+    /// requests obelus sent it.
+    pub fn open_log(&mut self) {
+        match crate::logging::current_file() {
+            Some(path) => self.open(&path),
+            // Logging is allowed to fail without stopping obelus starting, so
+            // there may genuinely be no file.
+            None => self.note = Some("no log file".to_string()),
+        }
+    }
+
+    /// Whether a command can do its job right now.
+    ///
+    /// One exhaustive match over the conditions rather than a test per
+    /// command: what each command needs is declared beside it in
+    /// [`crate::command::Command::requires`], and this is the one place that
+    /// turns a condition into a yes or no from the application's own state.
+    /// A row that silently fails is worse than a row that is not there.
+    #[must_use]
+    pub fn offers(&self, command: Command) -> bool {
+        let buffer = self.current_buffer();
+        match command.requires() {
+            Requires::Nothing => true,
+            Requires::AFileOpen => buffer.is_some(),
+            Requires::AKnownLanguage => buffer.and_then(Buffer::language).is_some(),
+            Requires::AMarkdownFile => buffer.is_some_and(|buffer| {
+                is_markdown(buffer.path()) || buffer.mode() == Mode::Markdown
+            }),
+            // The character under the cursor, not the scan the command does.
+            // The scan needs the whole file highlighted to know a bracket in
+            // a string from one in code, and deciding whether to *list* a
+            // row is not worth a pass over the file; a bracket inside a
+            // string is then offered and answers "no bracket here", which is
+            // a reason rather than a silence.
+            Requires::ABracket => buffer.is_some_and(|buffer| {
+                let cursor = buffer.cursor();
+                let text = buffer.text();
+                let at = text.byte_of_char(text.char_offset(cursor.line, cursor.column));
+                text.rope()
+                    .byte_slice(at.get()..)
+                    .chars()
+                    .next()
+                    .is_some_and(|character| matches!(character, '(' | ')' | '[' | ']' | '{' | '}'))
+            }),
+            Requires::ASelection => buffer.and_then(Buffer::selection).is_some(),
+            // Something that changed *and* has something to show: a run of
+            // added lines changed nothing that is not already on screen.
+            Requires::AHunk => buffer.is_some_and(|buffer| {
+                self.changes()
+                    .and_then(|changes| changes.hunk_at(buffer.cursor().line))
+                    .is_some()
+            }),
+            Requires::AHunkBefore => buffer.is_some_and(|buffer| {
+                self.changes()
+                    .and_then(|changes| changes.hunk_before(buffer.cursor().line))
+                    .is_some()
+            }),
+            Requires::AHunkAfter => buffer.is_some_and(|buffer| {
+                self.changes()
+                    .and_then(|changes| changes.hunk_after(buffer.cursor().line))
+                    .is_some()
+            }),
+            Requires::SomewhereBack => self.jumps.can_go_back(),
+            Requires::SomewhereForward => self.jumps.can_go_forward(),
+            Requires::ARunningServer => buffer
+                .and_then(Buffer::language)
+                .is_some_and(|language| self.servers.contains_key(&language)),
+            // Per command: a server may answer one of these questions and
+            // not another, and the menu is built from the same list.
+            Requires::AnAnswer => self
+                .symbol_actions()
+                .unwrap_or_default()
+                .iter()
+                .any(|action| action.command() == command),
+        }
+    }
+
+    pub(super) fn accept(&mut self, value: PickerValue) {
+        self.picker = None;
+        match value {
+            PickerValue::Command(command) => dispatch::dispatch(self, command),
+            PickerValue::File(path) => self.open(&self.working_directory.join(path)),
+            PickerValue::Buffer(id) => {
+                if self.current != Some(id) {
+                    let from = self.here();
+                    self.record(from);
+                }
+                if id.get() < self.buffers.len() {
+                    self.go_to_buffer(id);
+                }
+            }
+            PickerValue::Theme(theme) => {
+                // Kept, now that there is somewhere to keep it: a reader who
+                // picks a theme and finds the old one back tomorrow has been
+                // given a preview rather than a choice.
+                self.change_setting(
+                    "theme",
+                    &crate::config::Value::Choice(theme.name.to_string()),
+                );
+                // Chosen, so there is nothing to go back to.
+                self.theme_before = None;
+                self.set_theme(theme);
+            }
+            PickerValue::Place {
+                path,
+                line,
+                character,
+                ..
+            } => self.go_to(&path, line, character),
+            PickerValue::Setting { key, word } => {
+                self.change_setting(key, &crate::config::Value::Choice(word));
+            }
+            PickerValue::Nothing => {}
+        }
+    }
+}

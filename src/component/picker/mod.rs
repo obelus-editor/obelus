@@ -59,6 +59,33 @@ pub enum PickerValue {
     Nothing,
 }
 
+/// Which files a file list is showing.
+///
+/// Two, because "which file do I want" and "what have I been working on"
+/// are different questions with different answers, and a reader coming back
+/// to a project asks the second one first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Listing {
+    /// Everything under the working directory.
+    All,
+    /// Only the files git says have changed since the last commit.
+    Changed,
+}
+
+impl Listing {
+    /// Both, in the order their tabs sit in.
+    pub const ALL: [Self; 2] = [Self::All, Self::Changed];
+
+    /// The tab's name.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Changed => "changed",
+        }
+    }
+}
+
 /// One run of a row's characters, and what to draw them in.
 ///
 /// Char offsets into the label, not bytes and not screen columns: the label
