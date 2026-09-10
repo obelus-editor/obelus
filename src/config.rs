@@ -25,6 +25,8 @@ pub struct Config {
     pub icons: bool,
     /// Whether to say who last changed the line the cursor is on.
     pub blame: bool,
+    /// Whether a line too long for the screen continues on the next row.
+    pub wrap: bool,
 }
 
 impl Default for Config {
@@ -33,6 +35,12 @@ impl Default for Config {
             theme: crate::theme::builtin::DARK.name.to_string(),
             icons: true,
             blame: true,
+            // Off, so a line is a line: a reader counting rows, comparing
+            // two files side by side, or looking at a table in a comment is
+            // reading something the screen has not rearranged. The reader
+            // who wants it can say so, and then it is a line's own choice
+            // no longer.
+            wrap: false,
         }
     }
 }
@@ -118,6 +126,12 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Switch,
     },
     Setting {
+        key: "wrap",
+        label: "Wrap a line too long for the screen onto the next row",
+        group: Group::Reading,
+        kind: Kind::Switch,
+    },
+    Setting {
         key: "blame",
         label: "Who last changed the line the cursor is on",
         group: Group::Reading,
@@ -136,6 +150,7 @@ impl Config {
             "theme" => Some(Value::Choice(self.theme.clone())),
             "icons" => Some(Value::Switch(self.icons)),
             "blame" => Some(Value::Switch(self.blame)),
+            "wrap" => Some(Value::Switch(self.wrap)),
             _ => None,
         }
     }
@@ -146,6 +161,7 @@ impl Config {
             ("theme", Value::Choice(word)) => self.theme = word.clone(),
             ("icons", Value::Switch(on)) => self.icons = *on,
             ("blame", Value::Switch(on)) => self.blame = *on,
+            ("wrap", Value::Switch(on)) => self.wrap = *on,
             _ => tracing::debug!(key, ?value, "a setting that does not take this"),
         }
     }
@@ -193,6 +209,9 @@ pub fn from_toml(text: &str) -> Config {
     if let Some(on) = table.get("blame").and_then(toml::Value::as_bool) {
         config.blame = on;
     }
+    if let Some(on) = table.get("wrap").and_then(toml::Value::as_bool) {
+        config.wrap = on;
+    }
     config
 }
 
@@ -203,6 +222,7 @@ pub fn to_toml(config: &Config) -> String {
     table.insert("theme".to_string(), config.theme.clone().into());
     table.insert("icons".to_string(), config.icons.into());
     table.insert("blame".to_string(), config.blame.into());
+    table.insert("wrap".to_string(), config.wrap.into());
     toml::to_string(&table).unwrap_or_default()
 }
 
@@ -231,6 +251,7 @@ mod tests {
             theme: "light".to_string(),
             icons: false,
             blame: false,
+            wrap: true,
         };
         assert_eq!(from_toml(&to_toml(&config)), config);
         assert_eq!(

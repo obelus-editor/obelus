@@ -88,6 +88,8 @@ pub struct EditorView<'a> {
     /// Who last changed each line of the committed file, if obelus has been
     /// told and the reader wants to see it.
     blame: Option<&'a [Option<git::Blamed>]>,
+    /// Whether a line too long for the width continues on the next row.
+    wrap: bool,
 }
 
 impl EditorView<'_> {
@@ -180,6 +182,7 @@ impl<'a> EditorView<'a> {
             changes: app.changes(),
             opened: app.opened_hunk(),
             blame: app.blame(),
+            wrap: app.config().wrap,
         }
     }
 
@@ -214,6 +217,9 @@ impl<'a> EditorView<'a> {
             // Nor is a preview the place for names: it is a few lines of
             // somewhere else, shown to answer where a symbol is.
             blame: None,
+            // A preview always wraps: a line running off its edge with no
+            // way to scroll it would be a line nobody can read.
+            wrap: true,
         }
     }
 }
@@ -350,7 +356,8 @@ impl Widget for EditorView<'_> {
                 }
             }
 
-            for (index, wrap) in text.wrap_rows(line, width).into_iter().enumerate() {
+            let wrap_width = if self.wrap { width } else { u16::MAX };
+            for (index, wrap) in text.wrap_rows(line, wrap_width).into_iter().enumerate() {
                 if index < skip {
                     continue;
                 }
@@ -412,6 +419,9 @@ impl Widget for EditorView<'_> {
                     y,
                     width,
                     row: wrap,
+                    // How much of the line is off the left-hand edge, which
+                    // is only ever more than nothing when lines do not wrap.
+                    left: if self.wrap { 0 } else { viewport.left },
                 };
                 let ended = draw_row(
                     placement,
@@ -433,7 +443,7 @@ impl Widget for EditorView<'_> {
                 // screen more often than any other text obelus draws -- and
                 // a reader who wants the name for a line can put the cursor
                 // on it, which is where their attention already is.
-                let last_row = index + 1 == text.row_count(line, width);
+                let last_row = index + 1 == text.row_count(line, wrap_width);
                 if line == cursor.line
                     && last_row
                     && let Some(label) = self.blame_at(line, now)
@@ -517,14 +527,10 @@ struct Placement {
     width: u16,
     /// Which slice of the line this row shows.
     row: WrapRow,
+    /// How many cells of the line are off the left-hand edge.
+    left: usize,
 }
 
-/// Writes one visual row of a line.
-///
-/// No clipping and no scroll offset: with wrapping, the row is by construction
-/// exactly the characters that fit, so every glyph on it is fully on screen.
-/// The one case that needed care — a two-cell glyph cut in half by an edge —
-/// is gone, because the wrapping refuses to put one there.
 /// One cell of margin or map, saying what happened to a line.
 ///
 /// A bar for a line that is there and differs; a mark hugging the top edge
@@ -576,13 +582,32 @@ fn draw_row(
     cells: &mut CellBuffer,
     painting: &Painting<'_>,
 ) -> u16 {
-    let Placement { x, y, width, row } = placement;
+    let Placement {
+        x,
+        y,
+        width,
+        row,
+        left,
+    } = placement;
     let text = buffer.text();
-    let start = usize::from(text.display_column(line, row.first).get());
+    // Where this row's characters begin, plus whatever is scrolled off the
+    // side. With wrapping the second is always zero, by construction: the
+    // row is exactly the characters that fit.
+    let start = usize::from(text.display_column(line, row.first).get()) + left;
     let indent = usize::from(row.indent);
     let mut ended = indent.try_into().unwrap_or(u16::MAX);
 
     for (column, glyph) in text.glyphs(line).enumerate() {
+        // A glyph the left-hand edge has cut in half leaves its cell blank:
+        // half of a wide character is not that character, and drawing it
+        // would put the rest of the row a column out of place. This is the
+        // case that could not happen while everything wrapped -- wrapping
+        // refuses to put a wide glyph across an edge -- and it comes back
+        // with the sideways scrolling.
+        if glyph.first_cell < start && glyph.first_cell + glyph.cells.max(1) > start {
+            put(cells, x + indent as u16, y, ' ', Style::new());
+            continue;
+        }
         if glyph.first_cell < start {
             continue;
         }

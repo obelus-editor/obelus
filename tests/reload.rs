@@ -50,6 +50,7 @@ impl Drop for Scratch {
 const AREA: TextArea = TextArea {
     width: 80,
     height: 10,
+    wrap: true,
 };
 
 const BEFORE: &str = "fn main() {\n    let a = 1;\n    let b = 2;\n}\n";

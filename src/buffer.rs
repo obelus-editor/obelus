@@ -138,19 +138,47 @@ pub struct Viewport {
     pub top: LineNumber,
     /// Which visual row of `top` the screen starts on.
     pub top_row: usize,
+    /// How many cells of each line are off the left-hand edge.
+    ///
+    /// Always zero while lines wrap: there is nothing off to the side, by
+    /// construction. Without wrapping this is how a reader gets to the end
+    /// of a long line.
+    pub left: usize,
 }
 
-/// The room the text has.
+/// The room the text has, and whether it wraps in it.
 ///
-/// Both numbers together, because with wrapping neither is useful alone: the
+/// The numbers together, because with wrapping neither is useful alone: the
 /// width decides where lines break and so how many rows they take, and the
-/// height decides how many of those rows fit.
+/// height decides how many of those rows fit. And the flag with them,
+/// because every one of those answers changes when lines do not wrap.
 #[derive(Clone, Copy, Debug)]
 pub struct TextArea {
     /// Cells across, once the gutter has taken its columns.
     pub width: u16,
     /// Rows down.
     pub height: u16,
+    /// Whether a line too long for the width continues on the next row.
+    ///
+    /// With this off a line is one row however long it is, and the view
+    /// scrolls sideways to follow the cursor along it.
+    pub wrap: bool,
+}
+
+impl TextArea {
+    /// The width lines are broken at.
+    ///
+    /// Effectively no limit when wrapping is off, which is how one set of
+    /// rules serves both: every line is then one row, its cells are its
+    /// display columns, and nothing above has to ask which mode it is in.
+    #[must_use]
+    pub const fn wrap_width(self) -> u16 {
+        if self.wrap {
+            if self.width == 0 { 1 } else { self.width }
+        } else {
+            u16::MAX
+        }
+    }
 }
 
 /// An open document.
@@ -242,6 +270,7 @@ impl Buffer {
             selection_anchor: None,
             detached: false,
             viewport: Viewport {
+                left: 0,
                 top: LineNumber::new(0),
                 top_row: 0,
             },
@@ -446,7 +475,7 @@ impl Buffer {
         } else {
             self.selection_anchor = None;
         }
-        let width = area.width.max(1);
+        let width = area.wrap_width();
         // Where on the screen the cursor is now, which is what has to hold.
         // Off screen -- after a wheel scroll -- counts as the top row: the
         // reader has no visible place for it to keep.
@@ -505,7 +534,7 @@ impl Buffer {
         // at the last *line*, which for a reader means a page too far: a
         // screen holding one line of text and ten of nothing, with nothing
         // saying which way is back.
-        let width = area.width.max(1);
+        let width = area.wrap_width();
         let last = self.text.last_line();
         let last_row = self.text.row_count(last, width).saturating_sub(1);
         let back = isize::try_from(usize::from(area.height.max(1)) - 1).unwrap_or(isize::MAX);
@@ -558,7 +587,7 @@ impl Buffer {
             self.center_on_cursor(area);
             return;
         }
-        let width = area.width.max(1);
+        let width = area.wrap_width();
         let (row, _) = self
             .text
             .visual_position(self.cursor.line, self.cursor.column, width);
@@ -665,7 +694,7 @@ impl Buffer {
     /// [`Buffer::scroll_into_view`] means the text area has no room at all.
     #[must_use]
     pub fn cursor_screen_cell(&self, area: TextArea) -> Option<(u16, u16)> {
-        let width = area.width.max(1);
+        let width = area.wrap_width();
         let (cursor_row, cell) =
             self.text
                 .visual_position(self.cursor.line, self.cursor.column, width);
@@ -696,7 +725,7 @@ impl Buffer {
     /// stops at the first row, so the screen is not padded with blank rows to
     /// put line one in the middle.
     pub fn center_on_cursor(&mut self, area: TextArea) {
-        let width = area.width.max(1);
+        let width = area.wrap_width();
         let (cursor_row, _) =
             self.text
                 .visual_position(self.cursor.line, self.cursor.column, width);
@@ -715,7 +744,7 @@ impl Buffer {
     /// times at the top of a file means pressing page-down ten times before
     /// anything moves.
     pub fn scroll_rows(&mut self, rows: isize, area: TextArea) -> isize {
-        let width = area.width.max(1);
+        let width = area.wrap_width();
         let step = if rows > 0 { 1 } else { -1 };
         let mut at = (self.viewport.top, self.viewport.top_row);
         let mut moved = 0;
@@ -732,11 +761,37 @@ impl Buffer {
         moved
     }
 
+    /// Follows the cursor along a line that is not wrapped.
+    ///
+    /// The least that puts it back on screen, the same rule the vertical
+    /// window follows: one cell at an edge rather than a leap that loses the
+    /// reader's place. Zero while lines wrap, because then there is nothing
+    /// off to the side.
+    fn scroll_sideways(&mut self, area: TextArea) {
+        if area.wrap {
+            self.viewport.left = 0;
+            return;
+        }
+        let width = usize::from(area.width).max(1);
+        let (_, cell) =
+            self.text
+                .visual_position(self.cursor.line, self.cursor.column, area.wrap_width());
+        let cell = usize::from(cell.get());
+        if cell < self.viewport.left {
+            self.viewport.left = cell;
+        } else if cell >= self.viewport.left + width {
+            self.viewport.left = cell + 1 - width;
+        }
+    }
+
     /// Scrolls the least amount that brings the cursor on screen, unless the
     /// reader has paged away on purpose.
     pub fn scroll_into_view(&mut self, area: TextArea) {
-        let width = area.width.max(1);
+        let width = area.wrap_width();
         let height = usize::from(area.height).max(1);
+        // Sideways first and unconditionally: it is about the cursor's
+        // column, which the vertical window has no opinion about.
+        self.scroll_sideways(area);
 
         // A reload or a resize can leave the anchor past the end of its line.
         self.viewport.top = self.text.clamp_line(self.viewport.top);

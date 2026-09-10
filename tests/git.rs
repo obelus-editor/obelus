@@ -901,10 +901,16 @@ fn a_line_too_long_for_a_note_keeps_its_code() {
         !text.contains("Ada"),
         "the note was written over the line:\n{dump}"
     );
-    assert_eq!(
-        text.matches('x').count(),
-        60,
-        "the line lost characters to a note about it:\n{dump}"
+    // Every column the line has on this screen is the line's own: without
+    // wrapping the rest of it is off to the right, and nothing has been
+    // taken off the end of what is showing to make room for a note.
+    let row = text
+        .lines()
+        .find(|row| row.contains("//"))
+        .expect("the line");
+    assert!(
+        row.trim_end().ends_with('x'),
+        "the line lost its last columns to a note about it:\n{dump}"
     );
 }
 

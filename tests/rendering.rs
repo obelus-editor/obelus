@@ -19,6 +19,18 @@ fn app() -> App {
     App::new(vec![support::open_fixture("sample.rs")])
 }
 
+/// Turns wrapping on, for a test that is about wrapping.
+///
+/// Off is the default -- a line is a line, and a reader counting rows or
+/// looking at a table in a comment is reading something the screen has not
+/// rearranged -- so a test of what wrapping does has to ask for it.
+fn wrapping(app: &mut App) {
+    app.configure(obelus::config::Config {
+        wrap: true,
+        ..obelus::config::Config::default()
+    });
+}
+
 /// An application whose geometry is already known.
 ///
 /// The loop draws before it waits for a key, so the geometry always exists by
@@ -316,7 +328,10 @@ fn shift_home_end_and_paging_adjust_the_selection() {
             .line_length(LineNumber::new(0))
     );
 
+    // Wrapped, so the one long line is taller than the screen and there is
+    // a page to move by.
     let mut page = App::new(vec![support::open_fixture("long.rs")]);
+    wrapping(&mut page);
     support::lay_out(&mut page, 40, 6);
     press_shift(&mut page, KeyCode::PageDown);
     let selected = page
@@ -326,6 +341,7 @@ fn shift_home_end_and_paging_adjust_the_selection() {
     assert!(selected.end_line > selected.line, "{selected:?}");
 
     let mut page_up = App::new(vec![support::open_fixture("long.rs")]);
+    wrapping(&mut page_up);
     support::lay_out(&mut page_up, 40, 6);
     press(&mut page_up, KeyCode::PageDown);
     press_shift(&mut page_up, KeyCode::PageUp);
@@ -439,6 +455,7 @@ fn end_then_down_keeps_the_end_column_it_landed_on() {
 #[test]
 fn a_long_line_continues_on_the_next_row() {
     let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    wrapping(&mut app);
     support::check("long_40x10", &support::render(&mut app, 40, 10));
 }
 
@@ -491,6 +508,7 @@ fn continuation_rows_have_no_line_number() {
 #[test]
 fn down_moves_by_one_visual_row_inside_a_wrapped_line() {
     let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    wrapping(&mut app);
     support::lay_out(&mut app, 40, 10);
 
     press(&mut app, KeyCode::Down);
@@ -516,6 +534,7 @@ fn down_moves_by_one_visual_row_inside_a_wrapped_line() {
 #[test]
 fn a_line_taller_than_the_screen_can_be_scrolled_through() {
     let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    wrapping(&mut app);
     // Four rows of text, and the long line takes more than that.
     support::lay_out(&mut app, 20, 5);
 
@@ -547,6 +566,7 @@ fn a_line_taller_than_the_screen_can_be_scrolled_through() {
 #[test]
 fn continuation_rows_keep_the_lines_indentation() {
     let mut app = App::new(vec![support::open_fixture("indented.rs")]);
+    wrapping(&mut app);
     support::check("indented_46x8", &support::render(&mut app, 46, 8));
 }
 
@@ -593,6 +613,8 @@ fn plain_home_and_end_stay_on_the_line() {
 #[test]
 fn the_end_of_the_file_is_on_screen_after_control_end() {
     let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    // Wrapped, so there is more of this three-line file than fits.
+    wrapping(&mut app);
     support::lay_out(&mut app, 40, 6);
 
     support::press_control_key(&mut app, KeyCode::End);
@@ -1472,7 +1494,7 @@ fn a_view_with_nowhere_to_scroll_draws_no_bar() {
             .expect("the first line")
     };
 
-    let mut long = App::new(vec![support::open_fixture("long.rs")]);
+    let mut long = App::new(vec![support::open_fixture("many_lines.rs")]);
     support::lay_out(&mut long, 46, 8);
     let spills = support::render(&mut long, 46, 8);
     assert!(
@@ -1483,5 +1505,130 @@ fn a_view_with_nowhere_to_scroll_draws_no_bar() {
         ends(&fits),
         ends(&support::render(&mut app, 46, 8)),
         "the text moved when the bar went away"
+    );
+}
+
+/// Without wrapping, a line runs off the right-hand edge and the view
+/// follows the cursor along it -- one cell at a time, the least that puts
+/// the cursor back on screen, which is the rule the vertical window follows
+/// too.
+#[test]
+fn the_view_follows_the_cursor_along_a_long_line() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    support::lay_out(&mut app, 30, 6);
+
+    // Onto the long line, and along it to the end.
+    press(&mut app, KeyCode::Down);
+    let first = support::render(&mut app, 30, 6);
+    let row = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .find(|row| row.contains("NAMES") || row.contains("item-"))
+            .expect("the long line")
+            .to_string()
+    };
+    assert!(
+        row(&first).contains("const NAMES"),
+        "not the start of the line:\n{first}"
+    );
+
+    press(&mut app, KeyCode::End);
+    let end = support::render(&mut app, 30, 6);
+    assert!(
+        row(&end).contains("item-11\"];"),
+        "the end of the line is not on screen:\n{end}"
+    );
+    assert!(
+        !row(&end).contains("const NAMES"),
+        "the start of the line is still on screen:\n{end}"
+    );
+
+    // And back: Home brings the view with it.
+    press(&mut app, KeyCode::Home);
+    let home = support::render(&mut app, 30, 6);
+    assert!(
+        row(&home).contains("const NAMES"),
+        "the view did not come back:\n{home}"
+    );
+
+    // One cell at a time at the edge, not a leap: walking right from the
+    // first column, the view stays put until the cursor reaches the last
+    // column and then moves by exactly one.
+    let left = |app: &App| app.current_buffer().expect("a buffer").viewport().left;
+    assert_eq!(left(&app), 0, "Home left the view somewhere else");
+    // Rendered after each step, because the window follows the cursor when
+    // the frame is prepared: a key moves the cursor, and drawing is what
+    // moves the window to it.
+    let width = usize::from(app.text_area().width);
+    for _ in 0..width - 1 {
+        press(&mut app, KeyCode::Right);
+    }
+    let _ = support::render(&mut app, 30, 6);
+    assert_eq!(
+        left(&app),
+        0,
+        "the view moved before the cursor reached the edge"
+    );
+    press(&mut app, KeyCode::Right);
+    let _ = support::render(&mut app, 30, 6);
+    assert_eq!(left(&app), 1, "the view did not move by one cell");
+    press(&mut app, KeyCode::Right);
+    let _ = support::render(&mut app, 30, 6);
+    assert_eq!(left(&app), 2, "the view did not keep up");
+    press(&mut app, KeyCode::Left);
+    let _ = support::render(&mut app, 30, 6);
+    assert_eq!(
+        left(&app),
+        2,
+        "the view moved while the cursor was still on screen"
+    );
+}
+
+/// A wide glyph the left-hand edge cuts in half leaves its cell blank: half
+/// of a wide character is not that character, and drawing it would put the
+/// rest of the row a column out of place. Wrapping never allowed this --
+/// it refuses to break a wide glyph across an edge -- and scrolling
+/// sideways brings the case back.
+#[test]
+fn a_wide_glyph_cut_by_the_edge_leaves_its_cell_blank() {
+    // A wide character early in a long line, so that scrolling along the
+    // line passes over it: in a line that ends soon after one, the edge
+    // never gets that far.
+    let mut app = App::new(vec![support::open_fixture("wide.rs")]);
+    support::lay_out(&mut app, 22, 6);
+    press(&mut app, KeyCode::Down);
+
+    // Walk along the line one column at a time. At one of these positions
+    // the left-hand edge falls between the two cells of the first wide
+    // character, and then that cell is blank and the *second* character is
+    // what follows it -- rather than half of the first.
+    let mut cut = false;
+    for _ in 0..30 {
+        press(&mut app, KeyCode::Right);
+        let dump = support::render(&mut app, 22, 6);
+        let Some(row) = support::text_block(&dump)
+            .lines()
+            .find(|row| row.contains('\u{5b57}'))
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        let characters: Vec<char> = row.chars().collect();
+        let at = characters
+            .iter()
+            .position(|character| *character == '\u{5b57}')
+            .expect("the second wide character");
+        if characters.get(at.wrapping_sub(1)) == Some(&' ') {
+            // The first one is gone rather than half-drawn.
+            assert!(
+                !row.contains('\u{540d}'),
+                "half of a wide character was drawn:\n{dump}"
+            );
+            cut = true;
+        }
+    }
+    assert!(
+        cut,
+        "the edge never fell inside the wide character, so nothing was tested"
     );
 }

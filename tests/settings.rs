@@ -193,7 +193,13 @@ fn the_tabs_are_the_groups() {
     support::press(&mut app, KeyCode::Down);
     assert_eq!(app.settings().expect("the settings").focus(), 1);
     support::press(&mut app, KeyCode::Right);
-    assert_eq!(rows(&app), ["Who last changed the line the cursor is on"]);
+    assert_eq!(
+        rows(&app),
+        [
+            "Wrap a line too long for the screen onto the next row",
+            "Who last changed the line the cursor is on"
+        ]
+    );
     assert!(
         app.settings().expect("the settings").focus() < 2,
         "the focus is on a row this tab does not have"
@@ -209,12 +215,24 @@ fn the_tabs_are_the_groups() {
         ]
     );
     support::press(&mut app, KeyCode::Left);
-    assert_eq!(rows(&app), ["Who last changed the line the cursor is on"]);
+    assert_eq!(
+        rows(&app),
+        [
+            "Wrap a line too long for the screen onto the next row",
+            "Who last changed the line the cursor is on"
+        ]
+    );
 
     // Tab is not one of them: one way to walk them is the way every other
     // tabbed view here works.
     support::press(&mut app, KeyCode::Tab);
-    assert_eq!(rows(&app), ["Who last changed the line the cursor is on"]);
+    assert_eq!(
+        rows(&app),
+        [
+            "Wrap a line too long for the screen onto the next row",
+            "Who last changed the line the cursor is on"
+        ]
+    );
 }
 
 /// Typing narrows the rows, and the count on the status bar says how many

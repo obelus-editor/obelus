@@ -1708,6 +1708,7 @@ impl App {
             TextArea {
                 width: 1,
                 height: 1,
+                wrap: true,
             },
         );
     }
@@ -2796,6 +2797,7 @@ impl App {
         TextArea {
             width,
             height: self.editor_area.height,
+            wrap: self.config.wrap,
         }
     }
 
@@ -2955,6 +2957,10 @@ impl App {
                 .saturating_sub(ui::editor::gutter_width(preview.buffer.text().line_count()))
                 .saturating_sub(ui::editor::SCROLLBAR_WIDTH),
             height: area.height,
+            // A preview always wraps: it is a few lines of somewhere else,
+            // and a line running off its right-hand edge with no way to
+            // scroll it would be a line nobody can read.
+            wrap: true,
         };
         preview.buffer.place_cursor(target, CharColumn::new(0));
         preview.buffer.center_on_cursor(text);
