@@ -1,4 +1,4 @@
-screen 40x10  editor 40x9  status 40x1
+screen 40x10  editor 40x8  status 40x1
 -- text --
  0|    1 fn before() {}                  █ 
  1|    2 const NAMES: [&str; 12] =       █ 
@@ -8,7 +8,7 @@ screen 40x10  editor 40x9  status 40x1
  5|      "item-06", "item-07",           █ 
  6|      "item-08", "item-09",           █ 
  7|      "item-10", "item-11"];          █ 
- 8|    3 fn after() {}                   █ 
+ 8|────────────────────────────────────────
  9|   tests/fixtures/long.rs          1:1 
 -- style --
  0|aaaabaccaddddddbbabbaaaaaaaaaaaaaaaaaaba
@@ -19,7 +19,7 @@ screen 40x10  editor 40x9  status 40x1
  5|aaaaaahhhhhhhhhbahhhhhhhhhbaaaaaaaaaaaba
  6|aaaaaahhhhhhhhhbahhhhhhhhhbaaaaaaaaaaaba
  7|aaaaaahhhhhhhhhbahhhhhhhhhbbaaaaaaaaaaba
- 8|aaaaeaccadddddbbabbaaaaaaaaaaaaaaaaaaaba
+ 8|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
  9|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --
 a fg=#e4e4e7 bg=#18181b

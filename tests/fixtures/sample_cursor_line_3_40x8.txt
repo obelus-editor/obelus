@@ -1,4 +1,4 @@
-screen 40x8  editor 40x7  status 40x1
+screen 40x8  editor 40x6  status 40x1
 -- text --
  0|    1 fn main() {                       
  1|    2     let greeting = "你好";        
@@ -6,7 +6,7 @@ screen 40x8  editor 40x7  status 40x1
  3|    4 }                                 
  4|    5                                   
  5|                                        
- 6|                                        
+ 6|────────────────────────────────────────
  7|   tests/fixtures/sample.rs        3:1 
 -- style --
  0|aaaabaccaddddeeaeaaaaaaaaaaaaaaaaaaaaaaa
@@ -15,7 +15,7 @@ screen 40x8  editor 40x7  status 40x1
  3|aaaabaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  4|aaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
  7|gggggggggggggggggggggggggggggggggggggggg
 -- legend --
 a fg=#e4e4e7 bg=#18181b

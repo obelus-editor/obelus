@@ -40,8 +40,6 @@ pub struct StatusView<'a> {
     picker: Option<&'a Picker>,
     /// And when the settings are open, the row is what narrows them.
     settings: Option<&'a crate::component::settings::Settings>,
-    /// The agents, for counting how many the filter leaves.
-    agents: Vec<crate::app::agents::Listed>,
     /// And when a question is being asked, the row is the question.
     prompt: Option<&'a crate::component::prompt::Prompt>,
     theme: &'a Theme,
@@ -59,7 +57,6 @@ impl<'a> StatusView<'a> {
             server: app.server_state(),
             picker: app.picker(),
             settings: app.settings(),
-            agents: app.listed_agents(),
             prompt: app.prompt(),
             theme: app.theme(),
             working_directory: app.working_directory(),
@@ -83,27 +80,15 @@ impl Widget for StatusView<'_> {
 
         if let Some(settings) = self.settings {
             // The same shape a picker's prompt has, because it is the same
-            // thing: what has been typed narrows what is above it.
-            // What this page shows, which on the agents page is agents:
-            // the number beside a filter is the answer to "how much did
-            // that narrow it", whatever the page is made of.
-            let count = if settings.on_agents() {
-                settings.agents(&self.agents).len()
-            } else {
-                settings.rows().len()
-            };
+            // thing: what has been typed narrows what is above it. And
+            // nothing else on the row -- what narrowing did is on the
+            // screen above it, in the rows themselves.
             let line = if icons::enabled() {
                 format!("{}  {}", icons::ui::PROMPT, settings.query())
             } else {
                 format!("> {}", settings.query())
             };
             write(cells, area.x + 1, area.y, &line, style);
-            let tally = count.to_string();
-            if let Ok(offset) =
-                u16::try_from(usize::from(area.width).saturating_sub(text_width(&tally) + 1))
-            {
-                write(cells, area.x + offset, area.y, &tally, style);
-            }
             return;
         }
         if let Some(prompt) = self.prompt {
@@ -325,27 +310,15 @@ impl StatusView<'_> {
         }
     }
 
-    /// The prompt: what has been typed.
+    /// The prompt: what has been typed, and nothing else.
+    ///
+    /// There was a tally of the matches on the right of it. What it
+    /// answered -- how much did that narrow it -- is answered better by the
+    /// rows above: a reader can see whether the list is long, and a number
+    /// on the row they are typing into is a number in the corner of their
+    /// eye.
     fn render_prompt(&self, picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style) {
-        let prompt = prompt_text(picker);
-        write(cells, area.x + 1, area.y, &prompt, style);
-        let caret = usize::from(prompt_caret(picker));
-
-        let count = format!("{}", picker.match_count());
-        let start = usize::from(area.width)
-            .saturating_sub(text_width(&count))
-            .saturating_sub(1);
-        if let Ok(offset) = u16::try_from(start)
-            && usize::from(offset) > caret
-        {
-            write(
-                cells,
-                area.x + offset,
-                area.y,
-                &count,
-                style.fg(self.theme.gutter),
-            );
-        }
+        write(cells, area.x + 1, area.y, &prompt_text(picker), style);
     }
 }
 

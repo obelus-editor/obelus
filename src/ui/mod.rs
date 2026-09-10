@@ -29,6 +29,11 @@ use crate::{app::App, theme::Theme};
 pub struct Regions {
     /// The gutter and the text.
     pub editor: Rect,
+    /// The rule between them.
+    ///
+    /// Empty on a screen with no room for it, which is a screen with
+    /// nothing but a status bar on it.
+    pub edge: Rect,
     /// The one-line status bar.
     pub status: Rect,
 }
@@ -41,14 +46,26 @@ pub struct Regions {
 #[must_use]
 pub fn regions(area: Rect) -> Regions {
     let status_height = area.height.min(1);
-    let editor_height = area.height - status_height;
+    // A rule between the two, which is what every other boundary in obelus
+    // has. The status bar has a band of its own and so did not need one to
+    // be read as a different thing; what it needed one for is the row above
+    // it, which is a picker's list, a page of settings or the box a message
+    // to an agent is written in -- all of them things a reader is working
+    // in, and all of them ending in a row that was touching the bar.
+    let edge_height = area.height.saturating_sub(status_height).min(1);
+    let editor_height = area.height - status_height - edge_height;
     Regions {
         editor: Rect {
             height: editor_height,
             ..area
         },
-        status: Rect {
+        edge: Rect {
             y: area.y + editor_height,
+            height: edge_height,
+            ..area
+        },
+        status: Rect {
+            y: area.y + editor_height + edge_height,
             height: status_height,
             ..area
         },
@@ -145,6 +162,9 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
 /// nothing painted.
 pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     let regions = regions(area);
+    // Under whatever the region holds and over the status bar, once, for
+    // every view: what is above it changes and the boundary does not.
+    rule(cells, regions.edge, app.theme());
     // A buffer being shown some other way is shown that way. The editor view
     // draws the file's own bytes, which in this mode is not what is on
     // screen.

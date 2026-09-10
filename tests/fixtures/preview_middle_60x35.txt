@@ -1,4 +1,4 @@
-screen 60x34  editor 60x33  status 60x1
+screen 60x35  editor 60x33  status 60x1
 -- text --
  0| many_lines.rs:31                                           
  1|                                                            
@@ -33,7 +33,8 @@ screen 60x34  editor 60x33  status 60x1
 30|  39 pub const LINE_38: u32 = 38;                          █
 31|  40                                                       █
 32|                                                           █
-33| 󰍉                                                        1 
+33|────────────────────────────────────────────────────────────
+34| 󰍉                                                          
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -68,7 +69,8 @@ screen 60x34  editor 60x33  status 60x1
 30|bbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbbf
 31|bbccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbf
 32|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbf
-33|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiji
+33|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+34|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --
 a fg=#e4e4e7 bg=#27272a
 b fg=#e4e4e7 bg=#18181b
@@ -79,6 +81,5 @@ f fg=#a1a1aa bg=#18181b
 g fg=#f472b6 bg=#18181b
 h fg=#fbbf24 bg=#1e3a5f
 i fg=#d4d4d8 bg=#27272a
-j fg=#52525b bg=#27272a
 -- cursor --
-4,33
+4,34

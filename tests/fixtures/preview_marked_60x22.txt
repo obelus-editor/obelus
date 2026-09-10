@@ -1,4 +1,4 @@
-screen 60x22  editor 60x21  status 60x1
+screen 60x22  editor 60x20  status 60x1
 -- text --
  0| long.rs:2:7                                                
  1|                                                            
@@ -20,8 +20,8 @@ screen 60x22  editor 60x21  status 60x1
 17|   4                                                        
 18|                                                            
 19|                                                            
-20|                                                            
-21| 󰍉                                                        1 
+20|────────────────────────────────────────────────────────────
+21| 󰍉                                                          
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -43,8 +43,8 @@ screen 60x22  editor 60x21  status 60x1
 17|bbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 18|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 19|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-20|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-21|kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklk
+20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+21|kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
 -- legend --
 a fg=#e4e4e7 bg=#27272a
 b fg=#e4e4e7 bg=#18181b
@@ -57,6 +57,5 @@ h fg=#fbbf24 bg=#18181b
 i fg=#f472b6 bg=#18181b
 j fg=#a3e635 bg=#18181b
 k fg=#d4d4d8 bg=#27272a
-l fg=#52525b bg=#27272a
 -- cursor --
 4,21

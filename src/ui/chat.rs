@@ -100,9 +100,11 @@ pub fn regions(area: Rect, needed: usize) -> Regions {
         width: area.width,
         height,
     };
-    // The header and three rules: four rows that are there whatever is
-    // written.
-    let fixed = 4;
+    // The header and two rules: three rows that are there whatever is
+    // written. The box needs no rule under it -- the screen keeps one
+    // between whatever is showing and the status bar, and that one is
+    // directly under the box.
+    let fixed = 3;
     let writing = u16::try_from(needed)
         .unwrap_or(MOST_WRITING)
         .clamp(1, MOST_WRITING)
@@ -176,9 +178,9 @@ impl Widget for ChatView<'_> {
             .bg(self.theme.background);
         let dim = plain.fg(self.theme.gutter);
         fill(cells, area, plain);
-        // Three bands and three rules do not fit in less than that, and a
+        // Three bands and two rules do not fit in less than that, and a
         // region this small is a terminal nobody is reading in.
-        if area.height < 6 || area.width < 20 {
+        if area.height < 5 || area.width < 20 {
             return;
         }
 
@@ -187,11 +189,7 @@ impl Widget for ChatView<'_> {
         let regions = regions(area, rows.len());
 
         self.header(cells, regions.header, plain, dim);
-        for y in [
-            regions.header.bottom(),
-            regions.writing.y - 1,
-            regions.writing.bottom(),
-        ] {
+        for y in [regions.header.bottom(), regions.writing.y - 1] {
             rule(
                 cells,
                 Rect {

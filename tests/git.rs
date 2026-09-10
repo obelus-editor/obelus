@@ -645,24 +645,24 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
 
     assert!(
         rows.iter()
-            .take(11)
+            .take(10)
             .all(|row| matches!(cell(row, 2), '\u{2502}' | '\u{2588}')),
         "the bar is not the column before last:\n{dump}"
     );
     assert!(
-        rows.iter().take(11).any(|row| cell(row, 2) == '\u{2588}'),
+        rows.iter().take(10).any(|row| cell(row, 2) == '\u{2588}'),
         "the thumb is not on the bar:\n{dump}"
     );
 
-    // The change is fifty lines down a sixty-line file, so it belongs nine
-    // rows down an eleven-row column -- and nowhere else, on a screen where
+    // The change is fifty lines down a sixty-line file, so it belongs eight
+    // rows down a ten-row column -- and nowhere else, on a screen where
     // nothing visible has changed at all.
-    let marked: Vec<usize> = (0..11)
+    let marked: Vec<usize> = (0..10)
         .filter(|row| cell(&rows[*row], 1) == '\u{2590}')
         .collect();
     assert_eq!(
         marked,
-        vec![9],
+        vec![8],
         "the map is not showing the change:\n{dump}"
     );
 
@@ -682,12 +682,12 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
         .filter(|row| !row.is_empty())
         .map(|row| row.chars().collect())
         .collect();
-    let marked: Vec<usize> = (0..11)
+    let marked: Vec<usize> = (0..10)
         .filter(|row| cell(&rows[*row], 1) == '\u{2590}')
         .collect();
     assert_eq!(
         marked,
-        vec![3, 4, 5, 6, 7],
+        vec![3, 4, 5, 6],
         "a twenty-line change did not take the rows it covers:\n{dump}"
     );
 }

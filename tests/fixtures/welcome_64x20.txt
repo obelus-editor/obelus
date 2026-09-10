@@ -1,4 +1,4 @@
-screen 64x20  editor 64x19  status 64x1
+screen 64x20  editor 64x18  status 64x1
 -- text --
  0|                                                                
  1|                                                                
@@ -18,7 +18,7 @@ screen 64x20  editor 64x19  status 64x1
 15|                                                                
 16|         ~/Work/obelus                           v0.1.0         
 17|                                                                
-18|                                                                
+18|────────────────────────────────────────────────────────────────
 19|                                                                
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -39,7 +39,7 @@ screen 64x20  editor 64x19  status 64x1
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 16|aaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaajjjjjjaaaaaaaaa
 17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+18|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 19|llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll
 -- legend --
 a fg=#e4e4e7 bg=#18181b

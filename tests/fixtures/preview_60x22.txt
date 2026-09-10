@@ -1,4 +1,4 @@
-screen 60x22  editor 60x21  status 60x1
+screen 60x22  editor 60x20  status 60x1
 -- text --
  0|  tests/fixtures/sample.rs                                 
  1|  tests/fixtures/long.rs                                   
@@ -20,8 +20,8 @@ screen 60x22  editor 60x21  status 60x1
 17|                                                            
 18|                                                            
 19|                                                            
-20|                                                            
-21| 󰍉                                                        2 
+20|────────────────────────────────────────────────────────────
+21| 󰍉                                                          
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -43,8 +43,8 @@ screen 60x22  editor 60x21  status 60x1
 17|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 18|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 19|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-20|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-21|hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhih
+20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+21|hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
 -- legend --
 a fg=#e4e4e7 bg=#27272a
 b fg=#e4e4e7 bg=#18181b
@@ -54,6 +54,5 @@ e fg=#c084fc bg=#18181b
 f fg=#60a5fa bg=#18181b
 g fg=#a3e635 bg=#18181b
 h fg=#d4d4d8 bg=#27272a
-i fg=#52525b bg=#27272a
 -- cursor --
 4,21

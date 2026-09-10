@@ -1,16 +1,17 @@
-screen 20x4  editor 20x3  status 20x1
+screen 20x4  editor 20x2  status 20x1
 -- text --
  0|                    
  1|                    
- 2|                    
+ 2|────────────────────
  3|                    
 -- style --
  0|aaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaa
- 2|aaaaaaaaaaaaaaaaaaaa
- 3|bbbbbbbbbbbbbbbbbbbb
+ 2|bbbbbbbbbbbbbbbbbbbb
+ 3|cccccccccccccccccccc
 -- legend --
 a fg=#e4e4e7 bg=#18181b
-b fg=#d4d4d8 bg=#27272a
+b fg=#52525b bg=#18181b
+c fg=#d4d4d8 bg=#27272a
 -- cursor --
 none

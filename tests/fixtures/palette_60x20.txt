@@ -1,46 +1,46 @@
-screen 60x20  editor 60x19  status 60x1
+screen 60x20  editor 60x18  status 60x1
 -- text --
  0|    1 fn main() {                                           
  1|    2     let greeting = "你好";                            
  2|    3     println!("{greeting} world");                     
  3|    4 }                                                     
  4|    5                                                       
- 5|                                                            
- 6|────────────────────────────────────────────────────────────
- 7|  all  files  code  obelus                              ← → 
- 8|────────────────────────────────────────────────────────────
- 9| 󰈞 file.open  Open a file                              󰘴 o █
-10| 󰣞 file.changed  Open a file that has changed          󰘴 d █
-11| 󰑐 file.reload  Re-read this file from disk            󰘴 r █
-12| 󰈢 buffer.list  Switch to an open file                 󰘴 e │
-13| 󰮘 buffer.close  Close this file                       󰘴 w │
-14| 󰍔 markdown.preview  Show this file rendered, or stop      │
-15| 󰏘 theme.select  Change the colours                        │
-16| 󰆍 command.palette  Run a command by name              󰘴 p │
-17| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘴 g │
-18| 󰉹 symbol.outline  Everything this file defines        󰘴 t │
-19| 󰍉                                                       33 
+ 5|────────────────────────────────────────────────────────────
+ 6|  all  files  code  obelus                              ← → 
+ 7|────────────────────────────────────────────────────────────
+ 8| 󰈞 file.open  Open a file                              󰘴 o █
+ 9| 󰣞 file.changed  Open a file that has changed          󰘴 d █
+10| 󰑐 file.reload  Re-read this file from disk            󰘴 r █
+11| 󰈢 buffer.list  Switch to an open file                 󰘴 e │
+12| 󰮘 buffer.close  Close this file                       󰘴 w │
+13| 󰍔 markdown.preview  Show this file rendered, or stop      │
+14| 󰏘 theme.select  Change the colours                        │
+15| 󰆍 command.palette  Run a command by name              󰘴 p │
+16| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘴 g │
+17| 󰉹 symbol.outline  Everything this file defines        󰘴 t │
+18|────────────────────────────────────────────────────────────
+19| 󰍉                                                          
 -- style --
  0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  2|aaaaeaaaaaddddddddbffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaaa
  3|aaaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  4|aaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 6|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
- 7|egggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
- 8|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
- 9|gggggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggghhhgb
-10|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaeeeab
-11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeab
-12|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaeeeae
-13|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeae
-14|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-15|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaae
-16|aaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaeeeae
-17|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeae
-18|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaeeeae
-19|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhi
+ 5|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 6|egggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 7|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 8|gggggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggghhhgb
+ 9|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaeeeab
+10|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeab
+11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaeeeae
+12|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeae
+13|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+14|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaae
+15|aaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaeeeae
+16|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeae
+17|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaeeeae
+18|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+19|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#a1a1aa bg=#18181b

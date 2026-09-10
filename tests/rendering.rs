@@ -973,8 +973,9 @@ fn paging_keeps_the_cursor_on_the_same_row_of_the_screen() {
         line,
         line_of(&app)
     );
-    // A screenful further down the file, which is what a page is.
-    assert_eq!(line_of(&app) - line, 11, "not a screenful");
+    // A screenful further down the file, which is what a page is: the
+    // twelve rows of the screen less the status bar and the rule over it.
+    assert_eq!(line_of(&app) - line, 10, "not a screenful");
 
     // And back, to exactly where it was: a page down and a page up is
     // nowhere.
@@ -1043,7 +1044,8 @@ fn the_scrollbar_reaches_both_ends() {
         "the thumb is not at the top of the track:\n{top}"
     );
 
-    // The editor is eleven rows tall, so the last of them is row ten.
+    // The editor is ten rows tall -- twelve less the status bar and the
+    // rule over it -- so the last of them is row nine.
     for _ in 0..10 {
         press(&mut app, KeyCode::PageDown);
     }
@@ -1055,7 +1057,7 @@ fn the_scrollbar_reaches_both_ends() {
     );
     assert_eq!(
         at_bottom.last(),
-        Some(&10),
+        Some(&9),
         "the thumb stopped short of the bottom:\n{bottom}"
     );
 }

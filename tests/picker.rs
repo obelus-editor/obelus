@@ -682,7 +682,9 @@ fn a_query_matches_the_name_and_not_the_glyph() {
 fn the_command_palette_has_no_glyphs() {
     let mut app = app();
     press_control(&mut app, 'p');
-    let dump = support::render(&mut app, 60, 12);
+    // One row taller than the list needs, because the screen keeps one for
+    // the rule over the status bar.
+    let dump = support::render(&mut app, 60, 13);
     let text = support::text_block(&dump);
     assert!(
         !text
@@ -919,7 +921,9 @@ fn a_long_trailing_does_not_eat_the_label() {
 fn the_keys_line_up_in_a_column() {
     let mut app = app();
     press_control(&mut app, 'p');
-    let dump = support::render(&mut app, 60, 12);
+    // One row taller than the list needs, because the screen keeps one for
+    // the rule over the status bar.
+    let dump = support::render(&mut app, 60, 13);
     let text = support::text_block(&dump);
 
     // Where the key starts on the row, whatever a key looks like.
@@ -1402,7 +1406,7 @@ fn the_preview_follows_the_selection() {
 fn the_palette_has_an_edge_above_it_and_no_preview_below() {
     let mut app = app();
     press_control(&mut app, 'p');
-    let dump = support::render(&mut app, 60, 22);
+    let dump = support::render(&mut app, 60, 23);
     let rows: Vec<&str> = support::text_block(&dump)
         .lines()
         .filter(|row| !row.is_empty())
@@ -1414,10 +1418,12 @@ fn the_palette_has_an_edge_above_it_and_no_preview_below() {
         .filter(|(_, row)| row.contains('\u{2500}'))
         .map(|(index, _)| index)
         .collect();
-    // Two: the edge of the whole block, and the one under the tabs. What
-    // there is not is a third one below the list, which would be a border
-    // round a preview that does not exist.
-    assert_eq!(rules.len(), 2, "not the two expected rules:\n{dump}");
+    // Three: the edge of the whole block, the one under the tabs, and the
+    // one over the row the reader types in -- which is the screen's own,
+    // between whatever is showing and the status bar. What there is not is
+    // a fourth, below the list, which would be a border round a preview
+    // that does not exist.
+    assert_eq!(rules.len(), 3, "not the three expected rules:\n{dump}");
 
     let rule = rules[0];
     assert!(
@@ -1769,8 +1775,9 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
     );
 
     // Ten rows of list, a rule, and twenty-two rows of preview, so the
-    // eleventh of them is the middle.
-    let dump = support::render(&mut app, 60, 34);
+    // eleventh of them is the middle. One row taller than the arithmetic
+    // needs, because the screen keeps one for the rule over the status bar.
+    let dump = support::render(&mut app, 60, 35);
     let rows: Vec<&str> = support::text_block(&dump)
         .lines()
         .filter(|row| !row.is_empty())
@@ -1783,7 +1790,7 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
         rows[11].contains("LINE_19"),
         "what leads up to it is not there:\n{dump}"
     );
-    support::check("preview_middle_60x34", &dump);
+    support::check("preview_middle_60x35", &dump);
 
     // Up from the middle of a file: the only case that pins the direction
     // down. Reaching the top of the file leaves the offset at zero, and an
