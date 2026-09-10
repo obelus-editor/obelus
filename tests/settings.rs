@@ -670,3 +670,83 @@ fn the_cards_scroll_only_at_an_edge() {
     assert_eq!(top, 0, "the window did not follow the focus up:\n{dump}");
     assert!(support::text_block(&dump).contains("Agent 0"));
 }
+
+/// The first agent to install is the one obelus talks to, and the next one
+/// does not take its place.
+///
+/// The reader pressed the button on a machine with nothing active, so what
+/// they want is that agent; a second install is not a request to be
+/// switched over, and only one can be active at a time.
+///
+/// Driven by the event the installing thread sends rather than by pressing
+/// the button, because pressing it runs `npm`.
+#[test]
+fn the_first_agent_installed_is_the_one_in_use() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let file = temporary("installed");
+    let mut app = open(&file);
+
+    // Node packages on purpose: activating one writes down how to start it,
+    // and for a node package that means reading a manifest which is not
+    // there -- so nothing here touches the real data directory.
+    let agents: Vec<obelus::agent::Agent> = (0..2)
+        .map(|index| obelus::agent::Agent {
+            id: format!("agent-{index}"),
+            name: format!("Agent {index}"),
+            version: "1.0.0".to_string(),
+            description: "One of two".to_string(),
+            authors: vec!["Somebody".to_string()],
+            license: "MIT".to_string(),
+            website: None,
+            icon: None,
+            distribution: obelus::agent::Distribution::Node {
+                package: format!("agent-{index}@1.0.0"),
+                arguments: Vec::new(),
+            },
+        })
+        .collect();
+    app.handle(Event::Registry {
+        agents,
+        failure: None,
+    });
+    assert_eq!(
+        app.config().agent,
+        None,
+        "one was active before any install"
+    );
+
+    // An install that failed activates nothing. There is nothing to talk
+    // to, and a card that says both "failed" and "active" says nothing.
+    app.handle(Event::Installed {
+        id: "agent-0".to_string(),
+        failure: Some("npm is not on the path".to_string()),
+    });
+    assert_eq!(app.config().agent, None, "a failed install was activated");
+
+    // The first one that works becomes the one in use, and the file says so
+    // -- a choice that is gone tomorrow was a preview rather than a choice.
+    app.handle(Event::Installed {
+        id: "agent-0".to_string(),
+        failure: None,
+    });
+    assert_eq!(app.config().agent.as_deref(), Some("agent-0"));
+    assert_eq!(
+        config::from_toml(&std::fs::read_to_string(&file).expect("the file"))
+            .agent
+            .as_deref(),
+        Some("agent-0"),
+    );
+
+    // And the next one does not take over.
+    app.handle(Event::Installed {
+        id: "agent-1".to_string(),
+        failure: None,
+    });
+    assert_eq!(
+        app.config().agent.as_deref(),
+        Some("agent-0"),
+        "the second install took over"
+    );
+}
