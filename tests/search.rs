@@ -19,32 +19,52 @@ fn each_key_opens_the_same_view_at_its_own_tab() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
 
-    for (press, expected) in [
-        (KeyCode::Char('f'), Scope::File),
-        (KeyCode::Char('f'), Scope::Project),
-        (KeyCode::Char('s'), Scope::Symbols),
-    ] {
-        // The first is control, the two after it are alt, which is how the
-        // key table has them: the same letter asked wider.
-        if expected == Scope::File {
-            support::press_control(&mut app, 'f');
-        } else {
-            support::press_alt_key(&mut app, press);
-        }
-        let picker = app.picker().expect("the search");
-        assert_eq!(
-            picker.tabs(),
-            ["file", "project", "symbols"],
-            "not the three scopes"
-        );
-        assert_eq!(
-            picker.tab(),
-            expected.tab(),
-            "{expected:?} did not open its own tab"
-        );
-        assert!(picker.is_searching(), "not marked as a search");
-        support::press(&mut app, KeyCode::Esc);
-    }
+    // A file is open and no language server is running, so those are the
+    // two scopes that can answer anything.
+    support::press_control(&mut app, 'f');
+    let picker = app.picker().expect("the search");
+    assert_eq!(
+        picker.tabs(),
+        ["file", "project"],
+        "not the scopes that can answer"
+    );
+    assert_eq!(picker.tab(), 0, "ctrl+f did not open the file's own tab");
+    assert!(picker.is_searching(), "not marked as a search");
+    support::press(&mut app, KeyCode::Esc);
+
+    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.tab(), 1, "alt+f did not open the project's tab");
+    support::press(&mut app, KeyCode::Esc);
+}
+
+/// A scope with nothing to answer gets no tab. A tab that says "no file
+/// open" whenever it is walked onto is a tab in the way of the ones that
+/// work, and the tabs are how a reader moves between the scopes.
+#[test]
+fn a_scope_with_nothing_to_say_has_no_tab() {
+    // Nothing open: the file's own lines are not a scope, and there is no
+    // language server either, so the project is all that is left.
+    let mut app = App::new(Vec::new());
+    support::lay_out(&mut app, 60, 16);
+    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.tabs(), ["project"], "not just the project");
+    assert_eq!(picker.tab(), 0);
+
+    // And the arrows have nowhere to go, which is what one tab means.
+    support::press(&mut app, KeyCode::Right);
+    assert_eq!(app.picker().expect("the search").tab(), 0);
+    support::press(&mut app, KeyCode::Esc);
+
+    // With a file open, its lines are a scope again.
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 16);
+    support::press_control(&mut app, 'f');
+    assert_eq!(
+        app.picker().expect("the search").tabs(),
+        ["file", "project"]
+    );
 }
 
 /// The file's rows are its lines, and the picker narrows them. The rows are
@@ -342,7 +362,11 @@ fn the_query_walks_between_the_tabs() {
 
     support::press(&mut app, KeyCode::Right);
     let picker = app.picker().expect("the search");
-    assert_eq!(picker.tab(), Scope::Project.tab());
+    assert_eq!(
+        picker.tabs()[picker.tab()],
+        Scope::Project.label(),
+        "the right arrow did not reach the project"
+    );
     assert_eq!(picker.query(), "greeting", "the query did not come along");
 
     // Nothing has come back yet, so the list says what it is doing rather
@@ -353,7 +377,11 @@ fn the_query_walks_between_the_tabs() {
     // And back again, onto the file's own lines, still narrowed.
     support::press(&mut app, KeyCode::Left);
     let picker = app.picker().expect("the search");
-    assert_eq!(picker.tab(), Scope::File.tab());
+    assert_eq!(
+        picker.tabs()[picker.tab()],
+        Scope::File.label(),
+        "the left arrow did not come back to the file"
+    );
     assert_eq!(picker.query(), "greeting");
     assert_eq!(picker.match_count(), 2, "the file's rows did not come back");
 }
@@ -559,23 +587,21 @@ fn a_finished_walk_that_found_nothing_says_so() {
 }
 
 /// The symbols come from a server, and with no server there is nobody to
-/// ask -- which is a different fact from an empty answer, and the reader's
-/// next move differs.
+/// ask -- so there is no tab for them, and the key that would land on it
+/// says why instead.
 #[test]
-fn the_symbols_scope_says_when_there_is_nobody_to_ask() {
+fn the_symbols_scope_needs_a_server() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
     support::press_alt_key(&mut app, KeyCode::Char('s'));
-    support::type_text(&mut app, "main");
-
-    assert_eq!(
-        app.picker().expect("the search").nothing_to_show(),
-        Some("no language server to ask")
+    assert!(
+        app.picker().is_none(),
+        "a search opened on a scope with nobody to ask"
     );
+    assert_eq!(app.note(), Some("no language server to ask"));
 
-    // And the palette does not offer the key that lands there, for the same
-    // reason.
-    support::press(&mut app, KeyCode::Esc);
+    // And the palette does not offer it, for the same reason -- while the
+    // project's search needs nothing and is offered.
     support::press_control(&mut app, 'p');
     let offered: Vec<String> = app
         .picker()
@@ -593,17 +619,19 @@ fn the_symbols_scope_says_when_there_is_nobody_to_ask() {
     );
 }
 
-/// A file with nothing open to search: the key is not offered, and the
-/// command run by name says why rather than opening an empty list.
+/// With nothing open there is nothing to search in a file, and the command
+/// run by name says so rather than opening a view whose one useful tab is
+/// somewhere else.
 #[test]
 fn searching_a_file_needs_a_file() {
     let mut app = App::new(Vec::new());
     support::lay_out(&mut app, 60, 16);
     dispatch::dispatch(&mut app, Command::SearchFile);
-    assert_eq!(
-        app.picker().expect("the search").nothing_to_show(),
-        Some("no file open")
+    assert!(
+        app.picker().is_none(),
+        "a search opened with nothing to search"
     );
+    assert_eq!(app.note(), Some("no file open"));
 }
 
 /// The scan itself, against a real tree: what it finds, what it skips, and

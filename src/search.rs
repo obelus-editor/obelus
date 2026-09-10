@@ -31,6 +31,11 @@ pub enum Scope {
 
 impl Scope {
     /// Every scope, in the order their tabs sit in.
+    ///
+    /// Which of them a search *shows* is a question about the state of the
+    /// world -- whether a file is open, whether a server is running -- so
+    /// the tab a scope sits on is not fixed and the application keeps the
+    /// list it built.
     pub const ALL: [Self; 3] = [Self::File, Self::Project, Self::Symbols];
 
     /// The tab's name.
@@ -40,21 +45,6 @@ impl Scope {
             Self::Project => "project",
             Self::Symbols => "symbols",
         }
-    }
-
-    /// Which tab shows this scope.
-    #[must_use]
-    pub fn tab(self) -> usize {
-        Self::ALL
-            .iter()
-            .position(|scope| *scope == self)
-            .unwrap_or(0)
-    }
-
-    /// The scope a tab shows, or [`Scope::File`] for a tab that is not one.
-    #[must_use]
-    pub fn of_tab(tab: usize) -> Self {
-        Self::ALL.get(tab).copied().unwrap_or(Self::File)
     }
 }
 

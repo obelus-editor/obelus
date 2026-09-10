@@ -161,6 +161,11 @@ pub struct App {
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
     statuses: std::collections::HashMap<PathBuf, git::FileStatus>,
+    /// Which scopes the open search is showing, in tab order.
+    ///
+    /// The tabs are only the scopes that can answer, so which tab is which
+    /// scope is not a fixed mapping and has to be remembered.
+    searching: Vec<Scope>,
     /// Who last changed each line, per file that has been asked about.
     ///
     /// Kept rather than replaced, because a reader goes back and forth
@@ -246,6 +251,7 @@ impl App {
             changes: None,
             opened: None,
             statuses: std::collections::HashMap::new(),
+            searching: Vec::new(),
             blames: std::collections::HashMap::new(),
             asking_blame: std::collections::HashSet::new(),
             showing_blame: true,
@@ -1701,13 +1707,59 @@ impl App {
     /// walk between the tabs, which is the whole point -- a reader who does
     /// not find it in this file looks in the project without retyping it.
     pub fn open_search(&mut self, scope: Scope) {
-        let names: Vec<&str> = Scope::ALL.iter().map(|scope| scope.label()).collect();
+        // Only the scopes that can answer. A tab that says "no file open"
+        // whenever it is walked onto is a tab in the way of the two that
+        // work, and the tabs are how a reader moves between them.
+        let scopes = self.searchable();
+        let Some(tab) = scopes.iter().position(|shown| *shown == scope) else {
+            self.note = Some(match scope {
+                Scope::File => "no file open".to_string(),
+                Scope::Symbols => "no language server to ask".to_string(),
+                Scope::Project => "nowhere to search".to_string(),
+            });
+            return;
+        };
+
+        let names: Vec<&str> = scopes.iter().map(|scope| scope.label()).collect();
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
         picker.with_scopes(&names);
         picker.searches();
-        picker.go_to_tab(scope.tab());
+        picker.go_to_tab(tab);
+        self.searching = scopes;
         self.picker = Some(picker);
         self.refresh_search(true);
+    }
+
+    /// Which scopes have something to search, in the order their tabs sit
+    /// in.
+    ///
+    /// Settled when the search opens rather than watched while it is open: a
+    /// server starts when a file does, so by the time a reader is searching
+    /// there either is one or there is not -- and tabs appearing under the
+    /// arrow keys would move the ground while they walk it.
+    fn searchable(&self) -> Vec<Scope> {
+        Scope::ALL
+            .into_iter()
+            .filter(|scope| match scope {
+                Scope::File => self.current_buffer().is_some(),
+                // Somewhere to walk is all this one needs, and there always
+                // is: obelus is started in a directory.
+                Scope::Project => true,
+                Scope::Symbols => self
+                    .current_buffer()
+                    .and_then(Buffer::language)
+                    .is_some_and(|language| self.servers.contains_key(&language)),
+            })
+            .collect()
+    }
+
+    /// Which scope the search is showing, if a search is open.
+    fn searching(&self) -> Option<Scope> {
+        let picker = self.picker.as_ref()?;
+        if !picker.is_searching() {
+            return None;
+        }
+        self.searching.get(picker.tab()).copied()
     }
 
     /// How many files the search has parsed to colour its rows.
@@ -1869,7 +1921,9 @@ impl App {
         let Some(picker) = self.picker.as_ref() else {
             return;
         };
-        let scope = Scope::of_tab(picker.tab());
+        let Some(scope) = self.searching.get(picker.tab()).copied() else {
+            return;
+        };
         match scope {
             Scope::File => {
                 let empty = picker.query().is_empty();
@@ -2034,7 +2088,7 @@ impl App {
         let Some(picker) = self.picker.as_mut() else {
             return;
         };
-        if !picker.is_searching() || Scope::of_tab(picker.tab()) != Scope::Project {
+        if self.searching.get(picker.tab()) != Some(&Scope::Project) {
             return;
         }
         picker.extend(hits.into_iter().map(|hit| PickerItem {
@@ -2151,7 +2205,7 @@ impl App {
         let Some(picker) = self.picker.as_mut() else {
             return;
         };
-        if !picker.is_searching() || Scope::of_tab(picker.tab()) != Scope::Symbols {
+        if self.searching.get(picker.tab()) != Some(&Scope::Symbols) {
             tracing::debug!("symbols with nothing waiting for them");
             return;
         }
@@ -2499,7 +2553,7 @@ impl App {
             .picker
             .as_ref()
             .is_some_and(|picker| picker.is_searching() && picker.row_count() > 0)
-            && Scope::of_tab(self.picker.as_ref().map_or(0, Picker::tab)) == Scope::File
+            && self.searching() == Some(Scope::File)
             && self.searched
                 != self
                     .current_buffer()
