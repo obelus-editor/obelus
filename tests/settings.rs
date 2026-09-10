@@ -768,3 +768,141 @@ fn the_first_agent_installed_is_the_one_in_use() {
         "the second install took over"
     );
 }
+
+/// A command's key is moved on the keys page, and the table it changes is
+/// the one obelus is running on.
+#[test]
+fn a_command_can_be_put_on_another_key() {
+    use crossterm::event::KeyModifiers;
+    use obelus::{command::Command, keymap::KeyChord};
+
+    let _taken = SETTINGS.lock().expect("the lock");
+    let file = temporary("bind");
+    let mut app = open(&file);
+    // The keys tab: appearance, reading, keys, agents.
+    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Right);
+    support::type_text(&mut app, "theme.select");
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("theme.select"),
+        "the keys page does not list the commands:\n{dump}"
+    );
+    // It has no key at all, which is what makes it worth binding.
+    assert_eq!(app.keymap().chord_for(Command::ThemeSelect), None);
+
+    support::press(&mut app, KeyCode::Enter);
+    let asking = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&asking).contains("press a key"),
+        "the row does not say what it is waiting for:\n{asking}"
+    );
+
+    support::press_alt_key(&mut app, KeyCode::Char('j'));
+    assert_eq!(
+        app.keymap().chord_for(Command::ThemeSelect),
+        Some(KeyChord::new(KeyCode::Char('j'), KeyModifiers::ALT)),
+        "the command is not on the key that was pressed"
+    );
+    // Written down, so it is still bound tomorrow.
+    let written = std::fs::read_to_string(&file).expect("the file");
+    assert!(
+        written.contains("theme.select") && written.contains("alt+j"),
+        "the binding is not in the file:\n{written}"
+    );
+    // And the row says so where it said "press a key".
+    let bound = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&bound).contains("Change the colours"),
+        "the row did not go back to saying what the command does:\n{bound}"
+    );
+
+    // Live, not merely stored: the key runs the command now.
+    support::press(&mut app, KeyCode::Esc);
+    support::press_alt_key(&mut app, KeyCode::Char('j'));
+    assert!(
+        app.picker()
+            .is_some_and(|picker| picker.matches().any(|item| item.label.contains("dark"))),
+        "the new key did not run the command"
+    );
+}
+
+/// A key that already means something keeps meaning it, and the row says
+/// what has it.
+#[test]
+fn a_key_that_is_taken_says_so_on_the_row() {
+    use crossterm::event::KeyModifiers;
+    use obelus::command::Command;
+
+    let _taken = SETTINGS.lock().expect("the lock");
+    let mut app = open(&temporary("taken"));
+    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Right);
+    support::type_text(&mut app, "theme.select");
+    support::press(&mut app, KeyCode::Enter);
+
+    // `ctrl+p` is the palette's, and it stays the palette's.
+    support::press_control(&mut app, 'p');
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("command.palette"),
+        "the row does not say what has the key:\n{dump}"
+    );
+    assert_eq!(app.keymap().chord_for(Command::ThemeSelect), None);
+    assert_eq!(
+        app.keymap().chord_for(Command::CommandPalette),
+        Some(obelus::keymap::KeyChord::new(
+            KeyCode::Char('p'),
+            KeyModifiers::CONTROL
+        )),
+        "the key was taken from the command that had it"
+    );
+    // Still waiting, so the reader can press another one.
+    assert!(
+        app.settings()
+            .is_some_and(|settings| settings.binding() == Some(Command::ThemeSelect)),
+        "the row gave up on the reader"
+    );
+
+    // Escape gives up on the row and not on the page: the nearest thing
+    // first, like everywhere else.
+    support::press(&mut app, KeyCode::Esc);
+    assert!(
+        app.settings()
+            .is_some_and(|settings| settings.binding().is_none()),
+        "escape did not leave the row"
+    );
+    assert!(app.settings().is_some(), "escape closed the whole page");
+}
+
+/// Delete takes a command's key away, which is a decision like any other.
+#[test]
+fn delete_takes_a_key_away() {
+    use obelus::command::Command;
+
+    let _taken = SETTINGS.lock().expect("the lock");
+    let file = temporary("unbind");
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Right);
+    support::type_text(&mut app, "buffer.close");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Delete);
+
+    assert_eq!(app.keymap().chord_for(Command::BufferClose), None);
+    // Both of its bindings: the same command in the list of open files
+    // closes the file on the row, and a reader who took its key away meant
+    // both.
+    assert!(
+        !app.keymap()
+            .bindings()
+            .iter()
+            .any(|binding| binding.command == Command::BufferClose),
+        "one of the command's keys survived"
+    );
+    let written = std::fs::read_to_string(&file).expect("the file");
+    assert!(
+        written.contains("buffer.close"),
+        "the key taken away is not in the file:\n{written}"
+    );
+}

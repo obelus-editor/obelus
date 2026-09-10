@@ -15,8 +15,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::{
     agent::Status,
     app::agents::Listed as Agent,
+    command::Command,
     component::window::{Move, Window, Wrap},
     config::{self, Config, Group, Kind, Setting, Value},
+    keymap::{KeyChord, Keymap},
 };
 
 /// What a key did to the settings view.
@@ -40,6 +42,12 @@ pub enum SettingsOutcome {
     /// The list itself is the ordinary picker, opened by the application
     /// over this view. This one asks; it does not draw a list of its own.
     Choose(&'static str, &'static [&'static str], String),
+    /// A command should be on this key from now on, or on none.
+    ///
+    /// Only ever a key nothing else is on: what is taken is said on the row
+    /// and asked again, because the reader is looking at the row and it is
+    /// that binding the answer is about.
+    Bind(Command, Option<KeyChord>),
     /// The reader is done with the view.
     Cancelled,
 }
@@ -55,6 +63,19 @@ const MOST_DESCRIPTION_ROWS: usize = 3;
 pub struct Settings {
     /// What has been typed, which narrows the rows.
     query: String,
+    /// Which command's key is being pressed, while one is.
+    ///
+    /// The page is in no mode otherwise: a key means what it means here
+    /// until the reader says "this row's key is the next thing I press",
+    /// and from then until they press it every key belongs to that row.
+    binding: Option<Command>,
+    /// The chord that would not do, and what already has it.
+    ///
+    /// On the row, because that is where the reader is looking and it is
+    /// that binding the answer is about -- not on the status row, which is
+    /// this page's filter, and not as a passing note, which the next
+    /// keystroke would clear before it had been read.
+    taken: Option<(KeyChord, Command)>,
     /// Which group's tab is showing.
     group: usize,
     /// Which row has the focus and which is on top -- of the settings, or
@@ -78,6 +99,8 @@ impl Settings {
     pub const fn new() -> Self {
         Self {
             query: String::new(),
+            binding: None,
+            taken: None,
             group: 0,
             window: Window::new(),
         }
@@ -92,14 +115,84 @@ impl Settings {
     #[must_use]
     pub fn tabs() -> Vec<&'static str> {
         let mut tabs: Vec<&'static str> = Group::ALL.iter().map(|group| group.label()).collect();
+        tabs.push("keys");
         tabs.push("agents");
         tabs
+    }
+
+    /// Whether the page showing is the keys rather than settings.
+    #[must_use]
+    pub fn on_keys(&self) -> bool {
+        self.group == Group::ALL.len()
     }
 
     /// Whether the page showing is the agents rather than settings.
     #[must_use]
     pub fn on_agents(&self) -> bool {
-        self.group >= Group::ALL.len()
+        self.group > Group::ALL.len()
+    }
+
+    /// The commands on show, with the key each is on: this page's rows.
+    ///
+    /// Every command, whether or not it has a key -- a reader looking for
+    /// something to bind is looking for the ones that have none, and a page
+    /// that hid them could not be used for that.
+    #[must_use]
+    pub fn keys(&self, keymap: &Keymap) -> Vec<(Command, Option<KeyChord>)> {
+        self.key_rows()
+            .into_iter()
+            .map(|command| (command, keymap.chord_for(command)))
+            .collect()
+    }
+
+    /// The commands this page lists, without the keys they are on.
+    ///
+    /// What the filter leaves, which is what the focus moves over and how
+    /// far the window can scroll. Split from [`Settings::keys`] because
+    /// counting the rows does not need the table and the callers that
+    /// count do not have it.
+    #[must_use]
+    pub fn key_rows(&self) -> Vec<Command> {
+        if !self.on_keys() {
+            return Vec::new();
+        }
+        let query = self.query.to_lowercase();
+        crate::command::ALL
+            .iter()
+            .filter(|spec| {
+                query.is_empty()
+                    || spec.name.to_lowercase().contains(&query)
+                    || spec.title.to_lowercase().contains(&query)
+            })
+            .map(|spec| spec.command)
+            .collect()
+    }
+
+    /// How many rows the page showing has.
+    ///
+    /// One answer for the settings and for the keys, because everything
+    /// that moves the focus or scrolls the window needs it and two of them
+    /// disagreed: the keys page counted the settings of a group that does
+    /// not exist, which is none -- so its window had nothing in it and the
+    /// page drew nothing at all.
+    #[must_use]
+    pub fn row_count(&self) -> usize {
+        match self.on_keys() {
+            true => self.key_rows().len(),
+            false => self.rows().len(),
+        }
+    }
+
+    /// Which command's key is being pressed, if one is.
+    #[must_use]
+    pub const fn binding(&self) -> Option<Command> {
+        self.binding
+    }
+
+    /// The key that would not do, and what already has it.
+    #[must_use]
+    pub const fn taken(&self) -> Option<(KeyChord, Command)> {
+        self.taken
     }
 
     /// Which tab is showing.
@@ -284,9 +377,51 @@ impl Settings {
         &mut self,
         key: &KeyEvent,
         config: &Config,
+        keymap: &Keymap,
         agents: &[Agent],
         room: (u16, u16),
     ) -> SettingsOutcome {
+        // A row waiting for a key takes the next one, whatever it is: that
+        // is what the reader asked for by pressing enter on it, and a
+        // modifier is half of most chords worth binding. Escape is the way
+        // out, because escape is the way out of everything -- and it gives
+        // up on the nearest thing first, which is this row rather than the
+        // page.
+        if let Some(command) = self.binding {
+            if key.code == KeyCode::Esc && key.modifiers.is_empty() {
+                self.binding = None;
+                self.taken = None;
+                return SettingsOutcome::Consumed;
+            }
+            // Taking the key away is a decision a reader can make, and
+            // there is nowhere else on the page to make it.
+            if matches!(key.code, KeyCode::Delete | KeyCode::Backspace) && key.modifiers.is_empty()
+            {
+                self.binding = None;
+                self.taken = None;
+                return SettingsOutcome::Bind(command, None);
+            }
+            let Some(chord) = KeyChord::from_event(key) else {
+                // A release, or a modifier obelus cannot bind. Nothing to
+                // say about it: the row is still waiting.
+                return SettingsOutcome::Consumed;
+            };
+            // A key already spoken for stays where it is. One key, one
+            // meaning, is a rule a reader can hold in their head -- and
+            // the row says which command has it and goes on waiting.
+            match keymap.command_on(chord) {
+                Some(taken) if taken != command => {
+                    self.taken = Some((chord, taken));
+                    return SettingsOutcome::Consumed;
+                }
+                _ => {
+                    self.binding = None;
+                    self.taken = None;
+                    return SettingsOutcome::Bind(command, Some(chord));
+                }
+            }
+        }
+
         // The same rule every other view follows: a modifier obelus has no
         // meaning for disqualifies the key rather than being ignored.
         let Some(modifiers) = crate::keymap::modifiers_of(key) else {
@@ -297,12 +432,12 @@ impl Settings {
         }
         let bare = modifiers == KeyModifiers::NONE;
         let rows = self.rows();
-        // How many things the focus can be on: the settings of this group,
-        // or the agents that the query leaves.
-        let count = if self.on_agents() {
-            self.agents(agents).len()
-        } else {
-            rows.len()
+        let keys = self.keys(keymap);
+        // How many things the focus can be on: the rows of the page, or the
+        // agents that the query leaves.
+        let count = match self.on_agents() {
+            true => self.agents(agents).len(),
+            false => self.row_count(),
         };
 
         // How far a page moves: the rows a group shows, or however many
@@ -369,6 +504,13 @@ impl Settings {
                     None => SettingsOutcome::Consumed,
                 }
             }
+            // On the keys page, enter is the reader saying "the next key I
+            // press is this command's".
+            KeyCode::Enter if bare && self.on_keys() => {
+                self.binding = keys.get(self.window.focus()).map(|(command, _)| *command);
+                self.taken = None;
+                SettingsOutcome::Consumed
+            }
             KeyCode::Enter if bare => match rows.get(self.window.focus()) {
                 Some(setting) => match setting.kind {
                     Kind::Switch => {
@@ -418,7 +560,7 @@ impl Settings {
     /// And the window back to the top, because the rows a query leaves are
     /// not the rows the window was scrolled through.
     fn settle(&mut self) {
-        self.window.set_count(self.rows().len());
+        self.window.set_count(self.row_count());
         self.window.home();
     }
 
@@ -447,7 +589,7 @@ impl Settings {
 
     /// And the same for a page of settings, whose rows are one row each.
     pub fn settle_rows(&mut self, room: u16) {
-        self.window.set_count(self.rows().len());
+        self.window.set_count(self.row_count());
         self.window.settle(room);
     }
 }

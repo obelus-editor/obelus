@@ -199,3 +199,100 @@ fn a_chord_is_written_with_glyphs_or_spelled_out() {
     // `label` is one of the two, and which one is the switch's business.
     assert_eq!(control_f.label(), control_f.label_in(icons::enabled()));
 }
+
+/// A chord written down reads back as itself.
+///
+/// The file is the only place a rebinding survives, so a chord that does not
+/// survive being written and read is a key the reader binds twice.
+#[test]
+fn a_chord_survives_being_written_down() {
+    for chord in [
+        KeyChord::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+        KeyChord::new(KeyCode::Char('a'), KeyModifiers::ALT),
+        KeyChord::new(KeyCode::Enter, KeyModifiers::ALT),
+        KeyChord::new(KeyCode::Char('A'), KeyModifiers::SHIFT),
+        KeyChord::new(KeyCode::PageDown, KeyModifiers::NONE),
+        KeyChord::new(KeyCode::F(7), KeyModifiers::CONTROL),
+        KeyChord::new(KeyCode::Up, KeyModifiers::NONE),
+        KeyChord::new(KeyCode::Char(' '), KeyModifiers::NONE),
+    ] {
+        let written = chord.label_in(false);
+        assert_eq!(
+            KeyChord::parse(&written),
+            Some(chord),
+            "{written:?} did not read back as itself"
+        );
+    }
+    // And what a reader is likely to type by hand.
+    assert_eq!(
+        KeyChord::parse("Ctrl+P"),
+        Some(KeyChord::new(KeyCode::Char('P'), KeyModifiers::CONTROL)),
+        "a chord has to be readable however it is capitalised"
+    );
+    assert_eq!(
+        KeyChord::parse("alt+left"),
+        Some(KeyChord::new(KeyCode::Left, KeyModifiers::ALT))
+    );
+    assert_eq!(KeyChord::parse("ctrl+"), None, "half a chord is not one");
+    assert_eq!(KeyChord::parse("wat"), None, "a word is not a key");
+}
+
+/// A rebinding moves every one of a command's keys, and the file's
+/// bindings are changes over the defaults rather than the whole table.
+#[test]
+fn the_readers_own_bindings_go_over_the_defaults() {
+    use obelus::keymap::Context;
+
+    let moved: std::collections::BTreeMap<String, String> = [
+        ("buffer.close".to_string(), "alt+w".to_string()),
+        ("theme.select".to_string(), "alt+t".to_string()),
+        ("file.open".to_string(), String::new()),
+        ("nonsense.command".to_string(), "ctrl+z".to_string()),
+        ("git.blame".to_string(), "not a key".to_string()),
+    ]
+    .into_iter()
+    .collect();
+    let keymap = Keymap::with(&moved);
+
+    // Both of `buffer.close`'s bindings moved: it is one command with one
+    // key, bound in two contexts so that it reaches the list of open files.
+    let closes: Vec<_> = keymap
+        .bindings()
+        .iter()
+        .filter(|binding| binding.command == Command::BufferClose)
+        .map(|binding| (binding.context, binding.chord))
+        .collect();
+    assert_eq!(closes.len(), 2, "a context lost the command: {closes:?}");
+    assert!(
+        closes
+            .iter()
+            .all(|(_, chord)| *chord == KeyChord::new(KeyCode::Char('w'), KeyModifiers::ALT)),
+        "one of the bindings kept the old key: {closes:?}"
+    );
+
+    // A command that had no key gets one where the reader is reading.
+    assert_eq!(
+        keymap.lookup(
+            &press(KeyCode::Char('t'), KeyModifiers::ALT),
+            Context::Normal
+        ),
+        Some(Command::ThemeSelect)
+    );
+    // A key taken away is taken away.
+    assert_eq!(
+        keymap.chord_for(Command::FileOpen),
+        None,
+        "the key the reader removed is still bound"
+    );
+    // And everything else is the default, including the two the file got
+    // wrong: a typo leaves the reader with obelus, not with holes.
+    assert_eq!(
+        keymap.chord_for(Command::CommandPalette),
+        Keymap::new().chord_for(Command::CommandPalette)
+    );
+    assert_eq!(
+        keymap.chord_for(Command::GitBlame),
+        Keymap::new().chord_for(Command::GitBlame),
+        "a chord the file spelled wrong took the default with it"
+    );
+}

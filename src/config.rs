@@ -32,6 +32,12 @@ pub struct Config {
     /// One, or none. Two would mean every question having to say which
     /// agent it was for, and a reader having to know.
     pub agent: Option<String>,
+    /// The keys the reader has moved, by the command's own name.
+    ///
+    /// Changes rather than the whole table: a reader who rebinds one key
+    /// should be given the new default for everything they said nothing
+    /// about. An empty chord is a key taken away, which is also a decision.
+    pub keys: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for Config {
@@ -49,6 +55,8 @@ impl Default for Config {
             // None until the reader installs one: obelus does not choose an
             // agent for anybody.
             agent: None,
+            // Nothing moved: the table obelus ships with.
+            keys: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -229,6 +237,16 @@ pub fn from_toml(text: &str) -> Config {
     if let Some(word) = table.get("agent").and_then(toml::Value::as_str) {
         config.agent = (!word.is_empty()).then(|| word.to_string());
     }
+    if let Some(keys) = table.get("keys").and_then(toml::Value::as_table) {
+        // Whatever is a string. A command obelus has never heard of and a
+        // chord it cannot read are dealt with where the table is built,
+        // which is the one place that knows what either of those is.
+        for (name, chord) in keys {
+            if let Some(chord) = chord.as_str() {
+                config.keys.insert(name.clone(), chord.to_string());
+            }
+        }
+    }
     config
 }
 
@@ -246,6 +264,15 @@ pub fn to_toml(config: &Config) -> String {
         "agent".to_string(),
         config.agent.clone().unwrap_or_default().into(),
     );
+    // Only when the reader has moved something: an empty table in the file
+    // says obelus was thinking about keys, which it was not.
+    if !config.keys.is_empty() {
+        let mut keys = toml::Table::new();
+        for (name, chord) in &config.keys {
+            keys.insert(name.clone(), chord.clone().into());
+        }
+        table.insert("keys".to_string(), keys.into());
+    }
     toml::to_string(&table).unwrap_or_default()
 }
 
@@ -276,6 +303,15 @@ mod tests {
             blame: false,
             wrap: true,
             agent: Some("claude-acp".to_string()),
+            // A key moved and a key taken away: both are decisions, and
+            // both have to survive the file or the reader makes them again
+            // every time obelus starts.
+            keys: [
+                ("file.open".to_string(), "alt+o".to_string()),
+                ("buffer.close".to_string(), String::new()),
+            ]
+            .into_iter()
+            .collect(),
         };
         assert_eq!(from_toml(&to_toml(&config)), config);
         assert_eq!(

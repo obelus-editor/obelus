@@ -89,6 +89,27 @@ impl App {
         }
     }
 
+    /// Moves a command onto a key, or takes its key away, and writes the
+    /// file.
+    ///
+    /// The same shape as changing a setting -- applied first, saved second
+    /// -- and through the same table: what is written down is the command's
+    /// name and the chord spelled out, because a table full of enum
+    /// spellings and keycodes would be obelus's own business rather than
+    /// something a reader can edit.
+    pub(super) fn rebind(&mut self, command: crate::command::Command, chord: Option<KeyChord>) {
+        let written = chord.map(|chord| chord.label_in(false)).unwrap_or_default();
+        self.config.keys.insert(command.name().to_string(), written);
+        self.keymap.rebind(command, chord);
+        let Some(path) = self.config_path.clone() else {
+            return;
+        };
+        if let Err(error) = crate::config::save_to(&path, &self.config) {
+            tracing::warn!(%error, "not saving the configuration");
+            self.note = Some(format!("not saved: {error}"));
+        }
+    }
+
     /// Makes the running program match the configuration.
     ///
     /// One place, called at startup and after every change, so a setting
@@ -102,6 +123,12 @@ impl App {
         }
         icons::use_glyphs(self.config.icons);
         self.showing_blame = self.config.blame;
+        // The table the reader's own bindings leave. Built rather than
+        // patched: what is in the file is a list of changes over the
+        // defaults, and applying them to a table that has already had them
+        // applied would leave a rebind that was undone in the file still in
+        // force.
+        self.keymap = crate::keymap::Keymap::with(&self.config.keys);
     }
 
     /// Reads the configuration file and applies it.

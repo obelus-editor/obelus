@@ -497,6 +497,18 @@ impl Command {
     }
 }
 
+/// The command a name names, if it names one.
+///
+/// The other direction of [`Command::name`], for the config file: what is
+/// written down is the name, because a number would break the moment the
+/// table was reordered and an enum's spelling is not the reader's business.
+#[must_use]
+pub fn by_name(name: &str) -> Option<Command> {
+    ALL.iter()
+        .find(|spec| spec.name == name)
+        .map(|spec| spec.command)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

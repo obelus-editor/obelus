@@ -93,6 +93,13 @@ impl KeyChord {
             KeyCode::Tab => Some(("tab", icons::key::TAB)),
             _ => None,
         };
+        // A function key is written the way its keycap is, in both forms:
+        // there is no glyph for one, and `F(1)` is the compiler's word for
+        // it rather than anybody's.
+        if let KeyCode::F(number) = self.code {
+            label.push_str(&format!("f{number}"));
+            return label;
+        }
         match (named, self.code) {
             (Some((_, glyph)), _) if glyphs => label.push(glyph),
             (Some((name, _)), _) => label.push_str(name),
@@ -124,6 +131,73 @@ impl KeyChord {
             },
             _ => Self { code, modifiers },
         }
+    }
+
+    /// The chord some text names, or `None` if it names none.
+    ///
+    /// The other direction of [`KeyChord::label_in`] with the glyphs off, so
+    /// a chord written into the config file reads back as itself. Spelled
+    /// rather than drawn: a file is typed into by hand, and `ctrl+p` is
+    /// something a reader can type where a private-use codepoint is not.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        let mut modifiers = KeyModifiers::NONE;
+        let mut rest = text.trim();
+        loop {
+            let (modifier, tail) = match rest {
+                _ if rest.len() > 5 && rest[..5].eq_ignore_ascii_case("ctrl+") => {
+                    (KeyModifiers::CONTROL, &rest[5..])
+                }
+                _ if rest.len() > 4 && rest[..4].eq_ignore_ascii_case("alt+") => {
+                    (KeyModifiers::ALT, &rest[4..])
+                }
+                _ if rest.len() > 6 && rest[..6].eq_ignore_ascii_case("shift+") => {
+                    (KeyModifiers::SHIFT, &rest[6..])
+                }
+                _ => break,
+            };
+            modifiers |= modifier;
+            rest = tail;
+        }
+        let code = match rest.to_ascii_lowercase().as_str() {
+            "space" => KeyCode::Char(' '),
+            "enter" => KeyCode::Enter,
+            "esc" => KeyCode::Esc,
+            "home" => KeyCode::Home,
+            "end" => KeyCode::End,
+            "pageup" => KeyCode::PageUp,
+            "pagedown" => KeyCode::PageDown,
+            "backspace" => KeyCode::Backspace,
+            "delete" => KeyCode::Delete,
+            "tab" => KeyCode::Tab,
+            "backtab" => KeyCode::BackTab,
+            // Both ways of writing an arrow: the drawn one is what obelus
+            // writes, and the word is what somebody typing the file by hand
+            // reaches for.
+            "left" | "\u{2190}" => KeyCode::Left,
+            "up" | "\u{2191}" => KeyCode::Up,
+            "right" | "\u{2192}" => KeyCode::Right,
+            "down" | "\u{2193}" => KeyCode::Down,
+            other => match other
+                .strip_prefix('f')
+                .and_then(|number| number.parse().ok())
+            {
+                Some(number) => KeyCode::F(number),
+                // The character as it was written, not as it was matched
+                // on: a shifted letter *is* the capital -- that is how a
+                // chord with shift on a letter is normalised -- so reading
+                // the lowercased form back would turn `A` into `a`.
+                None => {
+                    let mut characters = rest.chars();
+                    let character = characters.next()?;
+                    if characters.next().is_some() {
+                        return None;
+                    }
+                    KeyCode::Char(character)
+                }
+            },
+        };
+        Some(Self::new(code, modifiers))
     }
 
     /// The chord a key event stands for, or `None` if there is not one.
@@ -414,6 +488,83 @@ impl Keymap {
     #[must_use]
     pub fn from_bindings(bindings: Vec<Binding>) -> Self {
         Self { bindings }
+    }
+
+    /// Which command a chord runs, wherever it is bound.
+    ///
+    /// For the page that binds keys: what makes a chord unavailable is that
+    /// it already means something *somewhere*, whatever context that is.
+    /// One key, one meaning, is a rule a reader can hold in their head.
+    #[must_use]
+    pub fn command_on(&self, chord: KeyChord) -> Option<Command> {
+        self.bindings
+            .iter()
+            .find(|binding| binding.chord == chord)
+            .map(|binding| binding.command)
+    }
+
+    /// Moves a command onto another key, or takes its key away.
+    ///
+    /// Every binding of it, because a command bound in two contexts is one
+    /// command with one key: `buffer.close` closes the file being read and
+    /// the file on the row of a list, and a reader who rebinds it means
+    /// both. A command that had no key gets one where the reader is
+    /// reading, which is where a key they press belongs.
+    pub fn rebind(&mut self, command: Command, chord: Option<KeyChord>) {
+        let contexts: Vec<Context> = self
+            .bindings
+            .iter()
+            .filter(|binding| binding.command == command)
+            .map(|binding| binding.context)
+            .collect();
+        self.bindings.retain(|binding| binding.command != command);
+        let Some(chord) = chord else {
+            return;
+        };
+        let contexts = match contexts.is_empty() {
+            true => vec![Context::Normal],
+            false => contexts,
+        };
+        for context in contexts {
+            self.bindings.push(Binding {
+                command,
+                context,
+                chord,
+            });
+        }
+    }
+
+    /// The table with the reader's own bindings applied over the defaults.
+    ///
+    /// What is in the file is a list of changes, not the whole table: a
+    /// reader who rebinds one key should still be given the new default for
+    /// everything they said nothing about.
+    ///
+    /// Anything the file names that obelus does not -- a command that has
+    /// been renamed, a chord it cannot read -- is skipped with a word in the
+    /// log. A config file with a typo in it should leave a reader with
+    /// obelus, not with a table full of holes.
+    #[must_use]
+    pub fn with(bindings: &std::collections::BTreeMap<String, String>) -> Self {
+        let mut keymap = Self::new();
+        for (name, text) in bindings {
+            let Some(command) = crate::command::by_name(name) else {
+                tracing::warn!(name, "no command by that name to bind");
+                continue;
+            };
+            // An empty chord is the reader having taken the key away, which
+            // is a decision and not a mistake.
+            if text.is_empty() {
+                keymap.rebind(command, None);
+                continue;
+            }
+            let Some(chord) = KeyChord::parse(text) else {
+                tracing::warn!(name, text, "not a key obelus can read");
+                continue;
+            };
+            keymap.rebind(command, Some(chord));
+        }
+        keymap
     }
 
     /// The key bound to a command, if one is.

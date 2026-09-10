@@ -79,6 +79,21 @@ picker's selection keys belong to whichever component owns the state they move.
 `App`, so anything that displays a key reads that table and a rebind changes
 every display of it.
 
+**Keys are rebound on the keys page, and the file holds the changes.** The
+table is data on `App`, so a rebinding is `Keymap::rebind` plus a line in
+the config's `[keys]` -- command *name* to chord spelled out (`ctrl+p`),
+because an enum's spelling and a keycode are obelus's business rather than
+the reader's. What is in the file is a list of changes over the defaults, so
+a reader who moved one key still gets the new default for everything else,
+and a name or a chord obelus cannot read is skipped with a word in the log.
+Rebinding moves *every* binding of the command -- `buffer.close` is bound in
+`Normal` and in `Buffers` and is still one command with one key -- and a
+command that had none gets one in `Normal`, which is where a key a reader
+presses belongs. A chord already spoken for is refused on the row that asked
+for it, with what has it: the row is where the reader is looking, the status
+row there is the page's own filter, and a passing note would be cleared by
+the very next keystroke.
+
 **What is showing owns the keys.** A list, the settings page and a
 conversation are dialogs: each takes the keys bound *in* its context and
 nothing else, so `Keymap::lookup` reaches the everywhere bindings only from

@@ -882,11 +882,15 @@ impl App {
             // component is borrowed: it needs them to know what enter
             // means on a card, and it is not the thing that knows them.
             let listed = self.listed_agents();
+            // Cloned for the same reason: the page needs the table to say
+            // which key each command is on, and it is the application that
+            // owns it.
+            let keymap = self.keymap.clone();
             let Some(settings) = self.settings.as_mut() else {
                 return;
             };
             let room = (self.editor_area.width, self.editor_area.height);
-            let outcome = settings.handle_key(&key, &self.config, &listed, room);
+            let outcome = settings.handle_key(&key, &self.config, &keymap, &listed, room);
             match outcome {
                 SettingsOutcome::Consumed => return,
                 SettingsOutcome::Cancelled => {
@@ -895,6 +899,10 @@ impl App {
                 }
                 SettingsOutcome::Changed(key, value) => {
                     self.change_setting(key, &value);
+                    return;
+                }
+                SettingsOutcome::Bind(command, chord) => {
+                    self.rebind(command, chord);
                     return;
                 }
                 SettingsOutcome::Choose(key, choices, word) => {

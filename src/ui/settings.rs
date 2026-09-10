@@ -45,6 +45,8 @@ pub struct SettingsView<'a> {
     failure: Option<&'a str>,
     /// The agents' own marks, for a terminal that can draw one.
     images: &'a crate::ui::image::Images,
+    /// Every command and the key it is on, for the keys page.
+    keys: Vec<(crate::command::Command, Option<crate::keymap::KeyChord>)>,
 }
 
 impl<'a> SettingsView<'a> {
@@ -58,6 +60,7 @@ impl<'a> SettingsView<'a> {
             agents: app.listed_agents(),
             failure: app.registry_failure(),
             images: app.images(),
+            keys: app.settings()?.keys(app.keymap()),
         })
     }
 }
@@ -74,10 +77,6 @@ impl Widget for SettingsView<'_> {
         if area.height < 3 || area.width < CONTROL_WIDTH + 4 {
             return;
         }
-
-        let plain = Style::new()
-            .fg(self.theme.foreground)
-            .bg(self.theme.background);
 
         // The tabs, through the same function every other tab row goes
         // through: what a tab looks like is not this page's business.
@@ -113,28 +112,87 @@ impl Widget for SettingsView<'_> {
             return;
         }
 
-        let rows = self.settings.rows();
-        if rows.is_empty() {
-            crate::ui::nothing(
-                cells,
-                Rect {
-                    y: area.y + 2,
-                    height: 1,
-                    ..area
-                },
-                "no setting by that name",
-                self.theme,
-            );
-            return;
-        }
-
-        // The rows the window leaves, and the same bar every other list
-        // has when there is more of it than there is screen.
         let region = Rect {
             y: area.y + 2,
             height: area.height.saturating_sub(2),
             ..area
         };
+
+        // The keys are a column of the same rows: a command, what it does,
+        // and the key it is on -- with the row the reader is binding saying
+        // so where its description was.
+        if self.settings.on_keys() {
+            let rows: Vec<Row> = self
+                .keys
+                .iter()
+                .map(|(command, chord)| Row {
+                    label: command.name().to_string(),
+                    matched: self.settings.matched_in(command.name()),
+                    detail: self.saying(*command),
+                    aside: Aside::Words(chord.map(|chord| chord.label()).unwrap_or_default()),
+                })
+                .collect();
+            self.column(cells, region, &rows, "no command by that name");
+            return;
+        }
+
+        let settings = self.settings.rows();
+        let rows: Vec<Row> = settings
+            .iter()
+            .map(|setting| Row {
+                label: setting.label.to_string(),
+                matched: self.settings.matched(setting),
+                detail: None,
+                aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
+            })
+            .collect();
+        self.column(cells, region, &rows, "no setting by that name");
+    }
+}
+
+/// One row of a page: what it is called, which of its characters the query
+/// matched, what it is, and what sits on the right.
+struct Row {
+    label: String,
+    matched: Option<std::ops::Range<usize>>,
+    detail: Option<(String, ratatui::style::Color)>,
+    aside: Aside,
+}
+
+/// What a row shows on the right.
+enum Aside {
+    /// A setting's control: a switch, or the word it is set to.
+    Control(Kind, Value),
+    /// Words -- the key a command is on, and nothing when it is on none.
+    Words(String),
+}
+
+impl SettingsView<'_> {
+    /// A page's rows, drawn one to a row.
+    ///
+    /// One loop for the settings and for the keys, because they are the
+    /// same row: something named on the left, something to the right of it,
+    /// and the characters the query matched marked the way every list marks
+    /// them. What differs is what the two halves hold.
+    fn column(&self, cells: &mut CellBuffer, region: Rect, rows: &[Row], empty: &str) {
+        let plain = Style::new()
+            .fg(self.theme.foreground)
+            .bg(self.theme.background);
+        if rows.is_empty() {
+            crate::ui::nothing(
+                cells,
+                Rect {
+                    height: 1,
+                    ..region
+                },
+                empty,
+                self.theme,
+            );
+            return;
+        }
+
+        // The same bar every other list has when there is more of it than
+        // there is screen.
         let window = self.settings.window();
         let scrolling = window.scrollable(region.height);
         if scrolling {
@@ -146,9 +204,9 @@ impl Widget for SettingsView<'_> {
                 .saturating_sub(crate::ui::editor::SCROLLBAR_WIDTH),
             false => region.width,
         };
-        let control_at = area.x + room.saturating_sub(CONTROL_WIDTH + 1);
+        let aside_at = region.x + room.saturating_sub(CONTROL_WIDTH + 1);
         let showing = window.visible(region.height);
-        for (offset, (index, setting)) in rows
+        for (offset, (index, row)) in rows
             .iter()
             .enumerate()
             .skip(showing.start)
@@ -168,41 +226,84 @@ impl Widget for SettingsView<'_> {
             } else {
                 self.theme.background
             };
-            let row = Rect {
+            let area = Rect {
                 y,
                 height: 1,
                 width: room,
-                ..area
+                ..region
             };
-            fill(cells, row, plain.bg(background));
+            fill(cells, area, plain.bg(background));
 
-            // Cut to what is left before the control's column: a line
-            // running under the controls reads as part of them.
-            let label = clipped(setting.label, control_at.saturating_sub(area.x + 2));
+            // Cut to what is left before the right-hand column: a line
+            // running under it reads as part of it.
+            let width = aside_at.saturating_sub(region.x + 2);
+            let label = clipped(&row.label, width);
             // Through the shared writer, so the characters the query
             // matched carry the background every other list marks a match
             // with: a row in a narrowed list has to say why it is in it.
-            write_marked(
+            let after = write_marked(
                 cells,
-                row,
-                area.x + 1,
+                area,
+                region.x + 1,
                 y,
                 &label,
                 plain.bg(background),
                 &Marked::matched(
-                    run_of(self.settings.matched(setting)),
+                    run_of(row.matched.clone()),
                     self.theme.picker_match_background,
                 ),
             );
-            draw_control(
-                cells,
-                control_at,
-                y,
-                setting.kind,
-                &Settings::value_of(setting, self.config),
-                self.theme,
-                background,
-            );
+            if let Some((detail, colour)) = row.detail.as_ref() {
+                // Two columns after the name, which is the gap the palette
+                // leaves between a name and what it does: one reads as a
+                // single phrase.
+                let at = after + 2;
+                let left = aside_at.saturating_sub(at);
+                write(
+                    cells,
+                    at,
+                    y,
+                    &clipped(detail, left),
+                    plain.fg(*colour).bg(background),
+                );
+            }
+            match &row.aside {
+                Aside::Control(kind, value) => {
+                    draw_control(cells, aside_at, y, *kind, value, self.theme, background)
+                }
+                Aside::Words(words) => {
+                    write(
+                        cells,
+                        aside_at,
+                        y,
+                        &clipped(words, CONTROL_WIDTH),
+                        plain.fg(self.theme.foreground).bg(background),
+                    );
+                }
+            }
+        }
+    }
+
+    /// What a command's row says beside its name.
+    ///
+    /// What it does, unless the reader is binding it: then it is what the
+    /// page is waiting for, or why the key they pressed will not do. On the
+    /// row because that is where they are looking and it is that binding
+    /// the answer is about -- the status row here is the page's filter, and
+    /// a passing note would be cleared by the very next keystroke.
+    fn saying(&self, command: crate::command::Command) -> Option<(String, ratatui::style::Color)> {
+        if self.settings.binding() != Some(command) {
+            return Some((command.spec().title.to_string(), self.theme.gutter));
+        }
+        match self.settings.taken() {
+            Some((chord, taken)) => Some((
+                format!("{} is {}", chord.label(), taken.name()),
+                self.theme.change_removed,
+            )),
+            None => Some((
+                "press a key, or delete to unbind".to_string(),
+                self.theme.change_modified,
+            )),
         }
     }
 }
