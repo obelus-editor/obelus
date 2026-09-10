@@ -78,7 +78,17 @@ impl Widget for StatusView<'_> {
         // text floating on the code's background.
         fill(cells, area, style);
 
-        if let Some(settings) = self.settings {
+        // A list first, whatever it is over. It is the thing taking the
+        // keys and the thing the caret is in, and a row belonging to what
+        // is behind it would be a prompt with somebody else's words in it.
+        if let Some(picker) = self.picker {
+            self.render_prompt(picker, area, cells, style);
+        } else if let Some(prompt) = self.prompt {
+            // The whole row is the question. Nothing else on it: a file name
+            // beside a half-typed line number is two things asking to be
+            // read at once.
+            write(cells, area.x + 1, area.y, &prompt.line(), style);
+        } else if let Some(settings) = self.settings {
             // The same shape a picker's prompt has, because it is the same
             // thing: what has been typed narrows what is above it. And
             // nothing else on the row -- what narrowing did is on the
@@ -90,15 +100,6 @@ impl Widget for StatusView<'_> {
                 &typed(None, settings.query()),
                 style,
             );
-            return;
-        }
-        if let Some(prompt) = self.prompt {
-            // The whole row is the question. Nothing else on it: a file name
-            // beside a half-typed line number is two things asking to be
-            // read at once.
-            write(cells, area.x + 1, area.y, &prompt.line(), style);
-        } else if let Some(picker) = self.picker {
-            self.render_prompt(picker, area, cells, style);
         } else if let Some(buffer) = self.buffer {
             self.render_file(buffer, area, cells, style);
         }

@@ -184,8 +184,14 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // behind it is not what is being read.
     if let Some(view) = chat::ChatView::new(app) {
         // The conversation's status row is obelus's own: one bar, at the
-        // foot of the screen.
-        view.status(cells, regions.status);
+        // foot of the screen. Unless a list is open over it, in which case
+        // the row is that list's prompt -- the keys are going there and so
+        // is the caret, and a row about the conversation under a list
+        // nobody is typing in is two things asking to be read at once.
+        match app.picker() {
+            Some(_) => status::StatusView::new(app).render(regions.status, cells),
+            None => view.status(cells, regions.status),
+        }
         view.render(regions.editor, cells);
         // A list opened over it is the agent's own question, or the
         // commands it takes: both draw where any compact list draws, with

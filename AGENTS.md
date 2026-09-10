@@ -205,6 +205,12 @@ the turn and reports back whether it was refused. Both assertions are in
 boolean one is only offered to a client that said in the handshake that it
 can show a switch.
 
+**A list open over anything owns the status row.** It is the thing taking
+the keys and holding the caret, so `StatusView` draws its prompt before the
+settings' filter or the conversation's own row. A row belonging to what is
+behind the list is a prompt with somebody else's words in it, and the caret
+sitting in it says the words are being typed there.
+
 **`/model` is not a question the agent can ask.** An agent's slash commands
 are names it takes in a prompt, and the ones that would open a dialog cannot:
 Copilot answers `/model` with "the model-picker dialog is only available in

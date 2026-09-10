@@ -164,7 +164,13 @@ fn a_whole_turn_of_conversation() {
         text.contains("and it refused to write"),
         "obelus wrote a file for an agent:\n{text}"
     );
-    // The question is a list, which is what every choice in obelus is.
+    // The question is a list, which is what every choice in obelus is --
+    // and the question itself is on the row at the foot, because that row
+    // belongs to whatever is taking the keys.
+    assert!(
+        text.contains("Run the tests"),
+        "the question is not on the row:\n{text}"
+    );
     assert!(text.contains("Allow once"), "no options:\n{text}");
     assert!(text.contains("Reject"), "no options:\n{text}");
 
