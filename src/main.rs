@@ -52,6 +52,9 @@ fn main() -> Result<()> {
     // thing a reader does with a mouse far more often.
     let mouse = enable_mouse();
     let mut app = App::new(buffers);
+    // Read here rather than in `App::new`, so that a test gets the defaults
+    // rather than whatever the machine it runs on has in `~/.config`.
+    app.load_config();
     let outcome = app::run(&mut terminal, &mut app);
     if mouse {
         let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);

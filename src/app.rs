@@ -23,6 +23,7 @@ use crate::{
             files::Listing,
         },
         prompt::{Prompt, PromptKind, PromptOutcome},
+        settings::{Settings, SettingsOutcome},
     },
     coordinates::{ByteOffset, CharColumn, LineNumber, Span},
     event::{self, Event, Ticker},
@@ -164,6 +165,14 @@ pub struct App {
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
     statuses: std::collections::HashMap<PathBuf, git::FileStatus>,
+    /// What the reader has decided, as read from the file at startup.
+    config: crate::config::Config,
+    /// Where to write it back, or `None` for an application that was never
+    /// told -- which is every test, and is why a test cannot write over the
+    /// reader's real settings.
+    config_path: Option<PathBuf>,
+    /// The settings view, while it is open.
+    settings: Option<Settings>,
     /// What a test said git would say, instead of asking it.
     given_statuses: Option<HashMap<PathBuf, git::FileStatus>>,
     /// Which listings the open file list is showing, in tab order.
@@ -261,6 +270,9 @@ impl App {
             changes: None,
             opened: None,
             statuses: std::collections::HashMap::new(),
+            config: crate::config::Config::default(),
+            config_path: None,
+            settings: None,
             given_statuses: None,
             listing: Vec::new(),
             searching: Vec::new(),
@@ -1092,6 +1104,124 @@ impl App {
         // theme this is rather than making the reader work it out.
         picker.prefer(self.theme.name.to_string());
         self.picker = Some(picker);
+    }
+
+    /// What the reader has decided.
+    #[must_use]
+    pub const fn config(&self) -> &crate::config::Config {
+        &self.config
+    }
+
+    /// The settings view, while it is open.
+    #[must_use]
+    pub const fn settings(&self) -> Option<&Settings> {
+        self.settings.as_ref()
+    }
+
+    /// Opens the settings.
+    pub fn open_settings(&mut self) {
+        // Nothing else can be open under it: it is a full-screen view with
+        // its own typing, and two of those would take the same keys.
+        self.picker = None;
+        self.prompt = None;
+        self.settings = Some(Settings::new());
+    }
+
+    /// Offers a setting's choices, as the ordinary compact list.
+    ///
+    /// The same list the symbol menu is, for the same reasons: it filters by
+    /// typing, it scrolls, it knows what a selected row looks like, and a
+    /// droplist of its own would be a second answer to all three.
+    fn open_choices(&mut self, key: &'static str, choices: &'static [&'static str], word: &str) {
+        let items: Vec<PickerItem> = choices
+            .iter()
+            .map(|choice| PickerItem {
+                icon: None,
+                label: (*choice).to_string(),
+                detail: None,
+                trailing: None,
+                value: PickerValue::Setting {
+                    key,
+                    word: (*choice).to_string(),
+                },
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                kind: None,
+                tab: None,
+            })
+            .collect();
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.when_empty("this setting has no choices");
+        // Opened on the one in force, so the list starts by saying which
+        // that is.
+        picker.prefer(word.to_string());
+        self.picker = Some(picker);
+    }
+
+    /// Applies a setting the settings view changed, and writes the file.
+    ///
+    /// Applied first and saved second, so a file that cannot be written
+    /// still leaves the reader with the setting they asked for until they
+    /// restart -- and with a note saying it will not last.
+    fn change_setting(&mut self, key: &'static str, value: &crate::config::Value) {
+        self.config.set(key, value);
+        self.apply_config();
+        let Some(path) = self.config_path.clone() else {
+            // Nobody said where the file is, so there is nothing to write
+            // to: an application that never read one does not write one.
+            return;
+        };
+        if let Err(error) = crate::config::save_to(&path, &self.config) {
+            tracing::warn!(%error, "not saving the configuration");
+            self.note = Some(format!("not saved: {error}"));
+        }
+    }
+
+    /// Makes the running program match the configuration.
+    ///
+    /// One place, called at startup and after every change, so a setting
+    /// cannot mean one thing on the way in and another when it is edited.
+    fn apply_config(&mut self) {
+        if let Some(theme) = builtin::ALL
+            .iter()
+            .find(|theme| theme.name == self.config.theme)
+        {
+            self.theme = theme;
+        }
+        icons::use_glyphs(self.config.icons);
+        self.showing_blame = self.config.blame;
+    }
+
+    /// Reads the configuration file and applies it.
+    ///
+    /// Separate from [`App::new`] so that a test gets the defaults rather
+    /// than whatever the machine it runs on has in `~/.config`.
+    pub fn load_config(&mut self) {
+        self.config_path = crate::config::path();
+        self.configure(crate::config::load());
+    }
+
+    /// Uses a configuration without reading a file.
+    ///
+    /// The way in for anything that has settings from somewhere else -- a
+    /// test that needs wrapping on, a file that has already been read.
+    /// Nothing is written back unless a path has been named as well.
+    pub fn configure(&mut self, config: crate::config::Config) {
+        self.config = config;
+        self.apply_config();
+    }
+
+    /// Reads and writes settings at a path of the caller's choosing.
+    ///
+    /// For a test: the reader's own file is not something a test may write
+    /// to, and a test of "does changing this save it" has to have a file.
+    pub fn config_file_for_test(&mut self, path: PathBuf) {
+        self.configure(crate::config::from_toml(
+            &std::fs::read_to_string(&path).unwrap_or_default(),
+        ));
+        self.config_path = Some(path);
     }
 
     /// Offers every command by name.
@@ -2564,6 +2694,13 @@ impl App {
                 }
             }
             PickerValue::Theme(theme) => {
+                // Kept, now that there is somewhere to keep it: a reader who
+                // picks a theme and finds the old one back tomorrow has been
+                // given a preview rather than a choice.
+                self.change_setting(
+                    "theme",
+                    &crate::config::Value::Choice(theme.name.to_string()),
+                );
                 // Chosen, so there is nothing to go back to.
                 self.theme_before = None;
                 self.set_theme(theme);
@@ -2574,6 +2711,9 @@ impl App {
                 character,
                 ..
             } => self.go_to(&path, line, character),
+            PickerValue::Setting { key, word } => {
+                self.change_setting(key, &crate::config::Value::Choice(word));
+            }
             PickerValue::Nothing => {}
         }
     }
@@ -2629,7 +2769,11 @@ impl App {
     }
 
     /// The room the text has, once the gutter has taken its columns.
-    pub(crate) fn text_area(&self) -> TextArea {
+    ///
+    /// Public because a test of what the view does when the cursor reaches
+    /// the right-hand edge has to know where that edge is, and working it
+    /// out again in the test would be the same arithmetic twice.
+    pub fn text_area(&self) -> TextArea {
         let width = match self.current_buffer() {
             Some(buffer) => {
                 let gutter = ui::editor::gutter_width(buffer.text().line_count());
@@ -2900,7 +3044,10 @@ impl App {
                     end_character: *end_character,
                 },
             )),
-            PickerValue::Command(_) | PickerValue::Theme(_) | PickerValue::Nothing => None,
+            PickerValue::Command(_)
+            | PickerValue::Theme(_)
+            | PickerValue::Setting { .. }
+            | PickerValue::Nothing => None,
         }
     }
 
@@ -3060,6 +3207,31 @@ impl App {
                     return;
                 }
                 PickerOutcome::Ignored => {}
+            }
+        }
+
+        // The settings take what the picker did not: they are the whole
+        // screen while they are open, and every printable character is
+        // theirs to filter with. After the picker, because a list opened
+        // over them -- a setting's choices -- is what the reader is
+        // looking at.
+        if let Some(settings) = self.settings.as_mut() {
+            let outcome = settings.handle_key(&key, &self.config);
+            match outcome {
+                SettingsOutcome::Consumed => return,
+                SettingsOutcome::Cancelled => {
+                    self.settings = None;
+                    return;
+                }
+                SettingsOutcome::Changed(key, value) => {
+                    self.change_setting(key, &value);
+                    return;
+                }
+                SettingsOutcome::Choose(key, choices, word) => {
+                    self.open_choices(key, choices, &word);
+                    return;
+                }
+                SettingsOutcome::Ignored => {}
             }
         }
 

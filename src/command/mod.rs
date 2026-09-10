@@ -70,6 +70,8 @@ pub enum Command {
     GoBack,
     /// Undo a jump back.
     GoForward,
+    /// Open the settings.
+    ConfigOpen,
     /// Open the file obelus logs to.
     LogOpen,
     /// Stop the language server for this file and start it again.
@@ -315,6 +317,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Go forward again",
     },
     CommandSpec {
+        command: Command::ConfigOpen,
+        name: "config.open",
+        title: "Change obelus's settings",
+    },
+    CommandSpec {
         command: Command::LogOpen,
         name: "log.open",
         title: "Open obelus's own log",
@@ -373,6 +380,7 @@ impl Command {
             | Self::GoForward => Group::Code,
             Self::LspRestart
             | Self::LspStop
+            | Self::ConfigOpen
             | Self::LogOpen
             | Self::ThemeSelect
             | Self::CommandPalette
@@ -442,6 +450,7 @@ impl Command {
             | Self::ThemeSelect
             | Self::CommandPalette
             | Self::SymbolMenu
+            | Self::ConfigOpen
             | Self::LogOpen
             | Self::LspRestart
             | Self::Quit => Requires::Nothing,
@@ -504,6 +513,7 @@ mod tests {
             Command::SelectionClear,
             Command::GoBack,
             Command::GoForward,
+            Command::ConfigOpen,
             Command::LogOpen,
             Command::LspRestart,
             Command::LspStop,

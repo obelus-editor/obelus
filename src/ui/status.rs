@@ -38,6 +38,8 @@ pub struct StatusView<'a> {
     server: Option<(&'static str, ServerState)>,
     /// When a picker is open the row is its prompt instead.
     picker: Option<&'a Picker>,
+    /// And when the settings are open, the row is what narrows them.
+    settings: Option<&'a crate::component::settings::Settings>,
     /// And when a question is being asked, the row is the question.
     prompt: Option<&'a crate::component::prompt::Prompt>,
     theme: &'a Theme,
@@ -54,6 +56,7 @@ impl<'a> StatusView<'a> {
             rows: app.markdown().map(<[_]>::len),
             server: app.server_state(),
             picker: app.picker(),
+            settings: app.settings(),
             prompt: app.prompt(),
             theme: app.theme(),
             working_directory: app.working_directory(),
@@ -75,6 +78,24 @@ impl Widget for StatusView<'_> {
         // text floating on the code's background.
         fill(cells, area, style);
 
+        if let Some(settings) = self.settings {
+            // The same shape a picker's prompt has, because it is the same
+            // thing: what has been typed narrows what is above it.
+            let count = settings.rows().len();
+            let line = if icons::enabled() {
+                format!("{}  {}", icons::ui::PROMPT, settings.query())
+            } else {
+                format!("> {}", settings.query())
+            };
+            write(cells, area.x + 1, area.y, &line, style);
+            let tally = count.to_string();
+            if let Ok(offset) =
+                u16::try_from(usize::from(area.width).saturating_sub(text_width(&tally) + 1))
+            {
+                write(cells, area.x + offset, area.y, &tally, style);
+            }
+            return;
+        }
         if let Some(prompt) = self.prompt {
             // The whole row is the question. Nothing else on it: a file name
             // beside a half-typed line number is two things asking to be
@@ -128,6 +149,19 @@ fn prompt_text(picker: &Picker) -> String {
     } else {
         format!("> {}", picker.query())
     }
+}
+
+/// Which column the caret belongs in after a filter's text.
+///
+/// Shared with the renderer, like the picker's, so the text and the caret
+/// cannot disagree about where what has been typed ends.
+#[must_use]
+pub fn filter_caret(query: &str) -> u16 {
+    let glyph = if icons::enabled() { 3 } else { 2 };
+    let caret = 1usize
+        .saturating_add(glyph)
+        .saturating_add(text_width(query));
+    u16::try_from(caret).unwrap_or(u16::MAX)
 }
 
 /// Which column the caret belongs in while a question is being asked.

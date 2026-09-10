@@ -13,6 +13,7 @@ pub mod buffer;
 pub mod clipboard;
 pub mod command;
 pub mod component;
+pub mod config;
 pub mod coordinates;
 pub mod event;
 pub mod git;

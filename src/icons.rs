@@ -32,15 +32,25 @@ use std::path::Path;
 
 /// Whether obelus may draw glyphs from a Nerd Font.
 ///
-/// A constant rather than a setting because there is nowhere yet to put a
-/// setting. It exists as one name anyway: turning it off is one edit rather
-/// than a hunt through the views, and every reader of it has a fallback.
-pub const NERD_FONT: bool = true;
+/// One switch for the whole program, because whether the font has them is a
+/// fact about the reader's terminal rather than about any one view -- and
+/// every reader of it has a fallback that reads correctly without one.
+///
+/// Global state, which is unlike the rest of obelus: the alternative is
+/// threading a flag into every function that draws a glyph, including the
+/// pure ones that turn a name into a character. It is written once at
+/// startup and once per change of the setting, and read while drawing.
+static NERD_FONT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Turns the glyphs on or off.
+pub fn use_glyphs(on: bool) {
+    NERD_FONT.store(on, std::sync::atomic::Ordering::Relaxed);
+}
 
 /// Whether glyphs are in use.
 #[must_use]
-pub const fn enabled() -> bool {
-    NERD_FONT
+pub fn enabled() -> bool {
+    NERD_FONT.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// The glyphs for keys, for whatever shows a binding.
@@ -154,6 +164,10 @@ pub fn for_command(name: &str) -> char {
         "selection.clear" => '\u{f0156}',
         "go.back" => '\u{f17b3}',
         "go.forward" => '\u{f17b7}',
+        // Sliders, because a cog is the fallback for a command in no
+        // family obelus knows and two rows with the same picture say less
+        // than one.
+        "config.open" => '\u{f062e}',
         "log.open" => '\u{f09ed}',
         "lsp.restart" => '\u{f0709}',
         "lsp.stop" => '\u{f04db}',

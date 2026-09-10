@@ -95,6 +95,14 @@ imara-diff = "0.2"
 # Git itself, as a library. The alternative is running `git` and parsing what
 # it prints for people, which means a process per question and a program that
 # has to be installed for obelus to be able to see a repository at all.
+# Where a configuration file goes, which is a different answer on every
+# platform and one it is not worth being wrong about: a file the reader
+# cannot find is a setting that does not exist.
+dirs = "7"
+# The file's format. Hand-rolling a parser for something that looks like toml
+# invites the question "why doesn't a section work", and the answer to
+# "is this valid" is not obelus's to own.
+toml = "1"
 gix = { version = "0.87.1", default-features = false, features = ["blame", "status", "revision", "max-performance-safe", "sha1"] }
 
 [dev-dependencies]

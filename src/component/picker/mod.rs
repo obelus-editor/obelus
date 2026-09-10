@@ -27,6 +27,17 @@ pub enum PickerValue {
     Buffer(BufferId),
     /// Switch theme.
     Theme(&'static Theme),
+    /// Set a setting to one of its choices.
+    ///
+    /// The settings view's droplist is this picker, opened over it: a list
+    /// of its own would be a second list with its own filtering, its own
+    /// scrolling and its own idea of what a selected row looks like.
+    Setting {
+        /// Which setting, by the name it has in the file.
+        key: &'static str,
+        /// Which of its choices.
+        word: String,
+    },
     /// Go to a place a language server named.
     ///
     /// The position is in the protocol's own units and is converted when the

@@ -19,7 +19,7 @@ screen 60x20  editor 60x19  status 60x1
 16| 󰆍 command.palette  Run a command by name              󰘴 p │
 17| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘴 g │
 18| 󰉹 symbol.outline  Everything this file defines        󰘴 t │
-19| 󰍉                                                       31 
+19| 󰍉                                                       32 
 -- style --
  0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaa

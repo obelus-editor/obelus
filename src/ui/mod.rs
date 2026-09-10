@@ -8,6 +8,7 @@
 pub mod editor;
 pub mod markdown;
 pub mod picker;
+pub mod settings;
 pub mod status;
 pub mod welcome;
 
@@ -93,6 +94,17 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
         });
     }
 
+    // The settings filter by typing too, so the caret goes where the typing
+    // does. After the picker, because a list opened over them is what the
+    // reader is typing into.
+    if let Some(settings) = app.settings() {
+        let column = status::filter_caret(settings.query());
+        return (column < regions.status.width).then(|| Position {
+            x: regions.status.x + column,
+            y: regions.status.y,
+        });
+    }
+
     let buffer = app.current_buffer()?;
     // No cursor over a rendering. The rows are not the file's lines, so
     // there is nowhere in them the cursor honestly is.
@@ -134,6 +146,30 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
             markdown::draw(cells, regions.editor, rows, top, app.theme());
         }
         None => editor::EditorView::new(app).render(regions.editor, cells),
+    }
+    // The settings take the whole region: they are their own screen, with
+    // their own typing, and nothing under them is being read.
+    if let Some(view) = settings::SettingsView::new(app) {
+        view.render(regions.editor, cells);
+        // A list opened over them is a setting's choices: it draws where any
+        // compact list draws, and the settings are what is behind it.
+        if let Some(list) = picker::PickerView::new(app) {
+            let region = list.region(regions.editor);
+            list.render(region, cells);
+            if region.y > regions.editor.y {
+                rule(
+                    cells,
+                    Rect {
+                        y: region.y - 1,
+                        height: 1,
+                        ..region
+                    },
+                    app.theme(),
+                );
+            }
+        }
+        status::StatusView::new(app).render(regions.status, cells);
+        return;
     }
     // Nothing open: the editor region has been painted and is otherwise
     // empty, which is the one moment a reader needs telling what the keys are.
