@@ -756,3 +756,102 @@ fn temporary(name: &str) -> std::path::PathBuf {
     std::fs::create_dir_all(&root).expect("a directory");
     root
 }
+
+/// The preview marks the characters the query matched, and nothing else.
+///
+/// It used to mark the whole line: a row of the file scope carried the
+/// line's own span -- column zero to the end of it -- and the preview
+/// marked what the row said it was about. Which is the line, and a reader
+/// who typed three letters is looking for those three letters.
+#[test]
+fn the_preview_marks_what_the_query_matched() {
+    /// The columns of the preview's row for `line` that wear the marked
+    /// background.
+    fn marked(dump: &str, line: &str) -> Vec<usize> {
+        // The preview is under the list, so the row wanted is the *last*
+        // one holding that text: the list holds it too.
+        let rows: Vec<usize> = support::text_block(dump)
+            .lines()
+            .enumerate()
+            .filter(|(_, row)| row.contains(line))
+            .map(|(at, _)| at)
+            .collect();
+        let at = rows
+            .last()
+            .copied()
+            .unwrap_or_else(|| panic!("no preview of {line:?}:\n{dump}"));
+        let marked = support::legend_block(dump)
+            .lines()
+            .filter(|entry| entry.contains("bg=#1e3a5f"))
+            .map(|entry| entry.trim_start().chars().next().expect("a letter"))
+            .collect::<Vec<char>>();
+        support::style_block(dump)
+            .lines()
+            .nth(at)
+            .expect("the styles of the row")
+            .chars()
+            .enumerate()
+            .filter(|(_, letter)| marked.contains(letter))
+            .map(|(column, _)| column)
+            .collect()
+    }
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 20);
+    support::press_control(&mut app, 'f');
+    // Three letters that are next to each other in one line of the file:
+    // `let greeting = "..."`.
+    support::type_text(&mut app, "eti");
+
+    let dump = support::render(&mut app, 60, 20);
+    let columns = marked(&dump, "let greeting");
+    assert!(
+        !columns.is_empty(),
+        "the query matched nothing in the preview:\n{dump}"
+    );
+    assert_eq!(
+        columns.len(),
+        3,
+        "not the three characters that matched:\n{dump}"
+    );
+
+    // And they are the characters themselves: the row's text at those
+    // columns is what was typed.
+    let rows: Vec<String> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains("let greeting"))
+        .map(str::to_string)
+        .collect();
+    let row = rows.last().expect("the preview's row").clone();
+    let letters: String = columns
+        .iter()
+        .filter_map(|column| row.chars().nth(*column))
+        .collect();
+    assert_eq!(letters, "eti", "the marks are not on what matched:\n{dump}");
+
+    // And a query whose characters are *not* next to each other is marked
+    // where they are, rather than as one run from the first to the last: a
+    // fuzzy match is scattered by nature.
+    for _ in 0.."eti".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "lgn");
+    let dump = support::render(&mut app, 60, 20);
+    let columns = marked(&dump, "let greeting");
+    assert_eq!(
+        columns.len(),
+        3,
+        "a scattered match was marked as one run:\n{dump}"
+    );
+    let rows: Vec<String> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains("let greeting"))
+        .map(str::to_string)
+        .collect();
+    let row = rows.last().expect("the preview's row").clone();
+    let letters: String = columns
+        .iter()
+        .filter_map(|column| row.chars().nth(*column))
+        .collect();
+    assert_eq!(letters, "lgn", "the marks are not on what matched:\n{dump}");
+}

@@ -74,8 +74,13 @@ pub struct EditorView<'a> {
     buffer: Option<&'a Buffer>,
     highlights: &'a Highlights,
     theme: &'a Theme,
-    /// A run of characters to mark, for a preview of somewhere in particular.
-    marked: Option<Span>,
+    /// The runs of characters to mark, for a preview of somewhere in
+    /// particular.
+    ///
+    /// A list rather than one: a language server names one run, and a
+    /// search names whatever characters the query matched, which is as many
+    /// runs as the match is scattered over.
+    marked: &'a [Span],
     /// The characters selected in the file being read.
     selection: Option<Span>,
     /// What has changed since the last commit, if obelus knows.
@@ -199,7 +204,7 @@ impl<'a> EditorView<'a> {
             buffer: app.current_buffer(),
             highlights: app.highlights(),
             theme: app.theme(),
-            marked: None,
+            marked: &[],
             selection: app.current_buffer().and_then(Buffer::selection),
             changes: app.changes(),
             opened: app.opened_hunk(),
@@ -229,7 +234,7 @@ impl<'a> EditorView<'a> {
         buffer: &'a Buffer,
         highlights: &'a Highlights,
         theme: &'a Theme,
-        marked: Option<Span>,
+        marked: &'a [Span],
         changes: Option<&'a Changes>,
     ) -> Self {
         Self {
@@ -597,7 +602,7 @@ struct Painting<'a> {
     highlights: &'a Highlights,
     theme: &'a Theme,
     /// The run a preview is about.
-    marked: Option<Span>,
+    marked: &'a [Span],
     /// The characters the reader selected in the file being read.
     selection: Option<Span>,
     /// The bracket under the cursor and its partner.
@@ -662,7 +667,8 @@ fn draw_row(
         let mut style = Style::new().fg(colour);
         if painting
             .marked
-            .is_some_and(|marked| marked.contains(line, CharColumn::new(column)))
+            .iter()
+            .any(|marked| marked.contains(line, CharColumn::new(column)))
         {
             style = style.bg(painting.theme.marked_background);
         }

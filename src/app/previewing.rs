@@ -16,8 +16,12 @@ pub struct Previewed<'a> {
     pub buffer: &'a Buffer,
     /// Its syntax, refreshed for the rows on screen.
     pub highlights: &'a Highlights,
-    /// The run of characters the preview is about, once converted.
-    pub marked: Option<Span>,
+    /// The runs of characters the preview is about, once converted.
+    ///
+    /// A list rather than one: a language server names one run, and a
+    /// search names whatever characters the query matched, which is as
+    /// many runs as the match is scattered over.
+    pub marked: &'a [Span],
     /// What git says about the file.
     pub changes: Option<&'a crate::git::Changes>,
 }
@@ -31,7 +35,7 @@ impl App {
         Some(Previewed {
             buffer: &preview.buffer,
             highlights: &preview.highlights,
-            marked: preview.marked,
+            marked: &preview.marked,
             changes: preview.changes.as_ref(),
         })
     }
@@ -73,8 +77,8 @@ impl App {
                     }),
                     buffer,
                     highlights: Highlights::default(),
-                    marked: None,
-                    target: (marked.line, marked.character),
+                    marked: Vec::new(),
+                    target: marked.at(),
                     scrolled: 0,
                 }),
                 // A file that has gone, or one this reader cannot read. No
@@ -103,8 +107,8 @@ impl App {
         };
         // A different row is a different subject, so whatever the reader had
         // scrolled to is about the row they have left.
-        if preview.target != (marked.line, marked.character) {
-            preview.target = (marked.line, marked.character);
+        if preview.target != marked.at() {
+            preview.target = marked.at();
             preview.scrolled = 0;
         }
 
@@ -112,7 +116,7 @@ impl App {
         // jumping, and then wherever the reader has scrolled to. A preview is
         // read for the context around a line, so putting the line at the top
         // spends half the room on the half that was not asked for.
-        let target = LineNumber::new(marked.line as usize);
+        let target = LineNumber::new(marked.line() as usize);
         let text = TextArea {
             width: area
                 .width
@@ -193,7 +197,16 @@ impl App {
 
     /// The file, and the part of it, the picker's selection is about.
     fn preview_target(&self) -> Option<(PathBuf, Marked)> {
-        let item = self.picker.as_ref()?.selected_item()?;
+        let picker = self.picker.as_ref()?;
+        let item = picker.selected_item()?;
+        // A row of a search is there because the query matched some of its
+        // characters, and those are what the preview marks: the list has
+        // already said which they are, and marking anything else -- the
+        // whole line, as this did -- answers a question nobody asked.
+        let matched = |line: u32| Marked::Matched {
+            line,
+            columns: picker.indices_at(picker.selected()).to_vec(),
+        };
         match &item.value {
             // A file has no symbol in it to mark, so the preview starts at
             // the top with nothing highlighted.
@@ -203,6 +216,9 @@ impl App {
                 .get(id.get())
                 .and_then(Option::as_ref)
                 .map(|buffer| (buffer.path().to_path_buf(), Marked::top())),
+            PickerValue::Place { path, line, .. } if picker.is_searching() => {
+                Some((path.clone(), matched(*line)))
+            }
             PickerValue::Place {
                 path,
                 line,
@@ -211,7 +227,7 @@ impl App {
                 end_character,
             } => Some((
                 path.clone(),
-                Marked {
+                Marked::Span {
                     line: *line,
                     character: *character,
                     end_line: *end_line,
@@ -240,8 +256,8 @@ pub(super) struct Preview {
     /// somewhere else, and the diff of a file nobody is editing does not
     /// change while it is being looked at.
     changes: Option<crate::git::Changes>,
-    /// The part of it the selection is about, once converted.
-    marked: Option<Span>,
+    /// The parts of it the selection is about, once converted.
+    marked: Vec<Span>,
     /// Which part of the file the selection is about, as it arrived.
     ///
     /// Kept so that moving to a different row can be told from redrawing the
@@ -262,47 +278,133 @@ impl Preview {
 }
 
 /// The part of a file a selection is about, in the protocol's units.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct Marked {
-    line: u32,
-    character: u32,
-    end_line: u32,
-    end_character: u32,
+#[derive(Clone, Debug)]
+pub(super) enum Marked {
+    /// A run a language server named, in whichever units it agreed to.
+    Span {
+        /// Where it starts.
+        line: u32,
+        /// And how far along.
+        character: u32,
+        /// Where it ends.
+        end_line: u32,
+        /// And how far along that.
+        end_character: u32,
+    },
+    /// The characters a query matched, as columns of the row's own text.
+    ///
+    /// Which is not the same as columns of the line: a row is the line
+    /// trimmed of its indentation, because the indentation is the same on
+    /// every row of a block. What the indent was is worked out from the
+    /// file, which is the only place it still exists.
+    Matched {
+        /// Which line of the file the row was.
+        line: u32,
+        /// Which characters of the row matched.
+        columns: Vec<u32>,
+    },
+    /// Nothing to mark: a file has no symbol in it, and a preview of one
+    /// starts at the top.
+    Nothing,
 }
 
 impl Marked {
     /// The top of a file, with nothing to mark.
     const fn top() -> Self {
-        Self {
-            line: 0,
-            character: 0,
-            end_line: 0,
-            end_character: 0,
+        Self::Nothing
+    }
+
+    /// Which place in the file this is about, as it arrived.
+    ///
+    /// What tells one row from another: a preview that cannot tell them
+    /// apart forgets the reader's scrolling on every redraw, or never.
+    fn at(&self) -> (u32, u32) {
+        match self {
+            Self::Span {
+                line, character, ..
+            } => (*line, *character),
+            Self::Matched { line, columns } => (*line, columns.first().copied().unwrap_or(0)),
+            Self::Nothing => (0, 0),
         }
     }
 
-    /// The same span in obelus's own coordinates, or nothing when it is empty.
+    /// Which line of the file the preview should be looking at.
+    const fn line(&self) -> u32 {
+        match self {
+            Self::Span { line, .. } | Self::Matched { line, .. } => *line,
+            Self::Nothing => 0,
+        }
+    }
+
+    /// The runs to mark, in obelus's own coordinates.
     fn resolve(
-        self,
+        &self,
         text: &crate::text::Text,
         encoding: &lsp_types::PositionEncodingKind,
-    ) -> Option<Span> {
-        let at = |line, character| {
-            position::from_lsp(text, lsp_types::Position { line, character }, encoding)
-        };
-        let (line, column) = at(self.line, self.character);
-        let (end_line, end_column) = at(self.end_line, self.end_character);
-        // An empty span marks nothing: a file preview has no symbol in it.
-        if (line, column) == (end_line, end_column) {
-            return None;
+    ) -> Vec<Span> {
+        match self {
+            Self::Nothing => Vec::new(),
+            Self::Span {
+                line,
+                character,
+                end_line,
+                end_character,
+            } => {
+                let at = |line, character| {
+                    position::from_lsp(text, lsp_types::Position { line, character }, encoding)
+                };
+                let (line, column) = at(*line, *character);
+                let (end_line, end_column) = at(*end_line, *end_character);
+                // An empty span marks nothing: a file preview has no symbol
+                // in it.
+                if (line, column) == (end_line, end_column) {
+                    return Vec::new();
+                }
+                vec![Span {
+                    line,
+                    column,
+                    end_line,
+                    end_column,
+                }]
+            }
+            Self::Matched { line, columns } => {
+                let line = text.clamp_line(LineNumber::new(*line as usize));
+                // The row was the line without its indentation, so the
+                // columns are that much further along the line itself.
+                let indent = text
+                    .line(line)
+                    .chars()
+                    .take_while(|character| character.is_whitespace())
+                    .count();
+                runs(columns)
+                    .into_iter()
+                    .map(|(first, end)| Span {
+                        line,
+                        column: CharColumn::new(indent + first),
+                        end_line: line,
+                        end_column: CharColumn::new(indent + end),
+                    })
+                    .collect()
+            }
         }
-        Some(Span {
-            line,
-            column,
-            end_line,
-            end_column,
-        })
     }
+}
+
+/// The runs of consecutive columns in a sorted list of them.
+///
+/// A fuzzy match lands on scattered characters, and a run of them is one
+/// mark rather than one per character: the marking is a background, and
+/// three adjacent backgrounds are one shape anyway.
+fn runs(columns: &[u32]) -> Vec<(usize, usize)> {
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    for column in columns {
+        let column = *column as usize;
+        match runs.last_mut() {
+            Some(last) if last.1 == column => last.1 = column + 1,
+            _ => runs.push((column, column + 1)),
+        }
+    }
+    runs
 }
 
 /// How many screenfuls a key scrolls the preview by.
