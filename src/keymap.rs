@@ -208,6 +208,14 @@ impl Keymap {
                     context: Context::Normal,
                     chord: control('p'),
                 },
+                // `alt+d` for diff, beside `alt+m` for match: both are
+                // questions about the line under the cursor rather than
+                // things that move the reader.
+                Binding {
+                    command: Command::GitHunk,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('d'), KeyModifiers::ALT),
+                },
                 // `alt+m` for match, which is what this is called
                 // everywhere. Not `%`: obelus binds no bare keys, because
                 // the day it takes typed text is the day every one of them

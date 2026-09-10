@@ -131,6 +131,8 @@ pub fn for_command(name: &str) -> char {
         // The hooked arrows every browser uses, which is what the jump list
         // is.
         // A number, which is what this one asks for.
+        // The branching lines every git tool uses for itself.
+        "git.hunk" => '\u{f02a2}',
         "go.line" => '\u{f03a0}',
         "go.bracket" => '\u{f0172}',
         "selection.clear" => '\u{f0156}',
@@ -174,6 +176,7 @@ fn by_family(name: &str) -> char {
         Some(("go", _)) => '\u{f02da}',
         Some(("log", _)) => '\u{f09ed}',
         Some(("lsp", _)) => '\u{f048b}',
+        Some(("git", _)) => '\u{f02a2}',
         // Something in no family obelus knows. A cog says "a thing obelus
         // does" without claiming to know which.
         Some(("app", _)) | None | Some(_) => '\u{f0493}',

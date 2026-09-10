@@ -1,17 +1,17 @@
 screen 24x6  editor 24x5  status 24x1
 -- text --
- 0|   1 fn main() {       █
- 1|   2     let greeting  █
- 2|         = "你好";     █
- 3|   3     println!      █
- 4|         ("{greeting}  █
+ 0|    1 fn main() {     █ 
+ 1|    2     let         █ 
+ 2|          greeting =  █ 
+ 3|          "你好";     █ 
+ 4|    3     println!    █ 
  5| …ixtures/sample.rs 1:1 
 -- style --
- 0|aaabaccaddddbbabaaaaaaab
- 1|aaaeaaaaacccaaaaaaaaaaab
- 2|aaaaaaaaaaaffffffbaaaaab
- 3|aaaeaaaaaddddddddaaaaaab
- 4|aaaaaaaaabffffffffffffab
+ 0|aaaabaccaddddbbabaaaaaba
+ 1|aaaaeaaaaacccaaaaaaaaaba
+ 2|aaaaaaaaaaaaaaaaaaaaaaba
+ 3|aaaaaaaaaaffffffbaaaaaba
+ 4|aaaaeaaaaaddddddddaaaaba
  5|gggggggggggggggggggggggg
 -- legend --
 a fg=#e4e4e7 bg=#18181b

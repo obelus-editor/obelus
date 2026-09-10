@@ -1,21 +1,21 @@
 screen 40x8  editor 40x7  status 40x1
 -- text --
- 0|   1 fn main() {                       █
- 1|   2     let greeting = "你好";        █
- 2|   3     println!("{greeting} world"); █
- 3|   4 }                                 █
- 4|   5                                   █
- 5|                                       █
- 6|                                       █
+ 0|    1 fn main() {                     █ 
+ 1|    2     let greeting = "你好";      █ 
+ 2|    3     println!("{greeting}        █ 
+ 3|          world");                    █ 
+ 4|    4 }                               █ 
+ 5|    5                                 █ 
+ 6|                                      █ 
  7|   tests/fixtures/sample.rs        3:1 
 -- style --
- 0|aaabaccaddddeeaeaaaaaaaaaaaaaaaaaaaaaaae
- 1|aaabaaaaacccaaaaaaaaaaaaffffffeaaaaaaaae
- 2|aaaeaaaaaddddddddeffffffffffffffffffeeae
- 3|aaabaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaae
- 4|aaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaae
- 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaae
- 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaae
+ 0|aaaabaccaddddeeaeaaaaaaaaaaaaaaaaaaaaaea
+ 1|aaaabaaaaacccaaaaaaaaaaaaffffffeaaaaaaea
+ 2|aaaaeaaaaaddddddddeffffffffffffaaaaaaaea
+ 3|aaaaaaaaaaffffffeeaaaaaaaaaaaaaaaaaaaaea
+ 4|aaaabaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaea
+ 5|aaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaea
+ 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaea
  7|gggggggggggggggggggggggggggggggggggggggg
 -- legend --
 a fg=#e4e4e7 bg=#18181b

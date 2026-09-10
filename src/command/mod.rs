@@ -46,6 +46,8 @@ pub enum Command {
     GoLine,
     /// Go to the bracket that matches the one under the cursor.
     GoBracket,
+    /// Open what changed here, in place, or close it again.
+    GitHunk,
     /// Copy the selected text to the system clipboard.
     SelectionCopy,
     /// Stop selecting.
@@ -123,6 +125,9 @@ pub enum Requires {
     AMarkdownFile,
     /// The cursor has to be on a bracket.
     ABracket,
+    /// The cursor has to be in something that changed since the last
+    /// commit.
+    AHunk,
     /// Something has to be selected.
     ASelection,
     /// The history has to have somewhere behind the reader.
@@ -228,6 +233,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Go to the matching bracket",
     },
     CommandSpec {
+        command: Command::GitHunk,
+        name: "git.hunk",
+        title: "Show what changed here",
+    },
+    CommandSpec {
         command: Command::SelectionCopy,
         name: "selection.copy",
         title: "Copy the selected text",
@@ -292,6 +302,7 @@ impl Command {
             | Self::SymbolReferences
             | Self::GoLine
             | Self::GoBracket
+            | Self::GitHunk
             | Self::SelectionCopy
             | Self::SelectionClear
             | Self::GoBack
@@ -333,6 +344,7 @@ impl Command {
             // off again for one already showing as markdown.
             Self::MarkdownPreview => Requires::AMarkdownFile,
             Self::GoBracket => Requires::ABracket,
+            Self::GitHunk => Requires::AHunk,
             Self::SelectionCopy | Self::SelectionClear => Requires::ASelection,
             Self::GoBack => Requires::SomewhereBack,
             Self::GoForward => Requires::SomewhereForward,
@@ -395,6 +407,7 @@ mod tests {
             Command::SymbolReferences,
             Command::GoLine,
             Command::GoBracket,
+            Command::GitHunk,
             Command::SelectionCopy,
             Command::SelectionClear,
             Command::GoBack,

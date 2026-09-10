@@ -1,25 +1,25 @@
 screen 40x10  editor 40x9  status 40x1
 -- text --
- 0|   1 fn before() {}                    █
- 1|   2 const NAMES: [&str; 12] =         █
- 2|     ["item-00", "item-01", "item-02", █
- 3|     "item-03", "item-04", "item-05",  █
- 4|     "item-06", "item-07", "item-08",  █
- 5|     "item-09", "item-10", "item-11"]; █
- 6|   3 fn after() {}                     █
- 7|   4                                   █
- 8|                                       █
+ 0|    1 fn before() {}                  █ 
+ 1|    2 const NAMES: [&str; 12] =       █ 
+ 2|      ["item-00", "item-01",          █ 
+ 3|      "item-02", "item-03",           █ 
+ 4|      "item-04", "item-05",           █ 
+ 5|      "item-06", "item-07",           █ 
+ 6|      "item-08", "item-09",           █ 
+ 7|      "item-10", "item-11"];          █ 
+ 8|    3 fn after() {}                   █ 
  9|   tests/fixtures/long.rs          1:1 
 -- style --
- 0|aaabaccaddddddbbabbaaaaaaaaaaaaaaaaaaaab
- 1|aaaeacccccafffffbabbfffbaggbaaaaaaaaaaab
- 2|aaaaabhhhhhhhhhbahhhhhhhhhbahhhhhhhhhbab
- 3|aaaaahhhhhhhhhbahhhhhhhhhbahhhhhhhhhbaab
- 4|aaaaahhhhhhhhhbahhhhhhhhhbahhhhhhhhhbaab
- 5|aaaaahhhhhhhhhbahhhhhhhhhbahhhhhhhhhbbab
- 6|aaaeaccadddddbbabbaaaaaaaaaaaaaaaaaaaaab
- 7|aaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
- 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 0|aaaabaccaddddddbbabbaaaaaaaaaaaaaaaaaaba
+ 1|aaaaeacccccafffffbabbfffbaggbaaaaaaaaaba
+ 2|aaaaaabhhhhhhhhhbahhhhhhhhhbaaaaaaaaaaba
+ 3|aaaaaahhhhhhhhhbahhhhhhhhhbaaaaaaaaaaaba
+ 4|aaaaaahhhhhhhhhbahhhhhhhhhbaaaaaaaaaaaba
+ 5|aaaaaahhhhhhhhhbahhhhhhhhhbaaaaaaaaaaaba
+ 6|aaaaaahhhhhhhhhbahhhhhhhhhbaaaaaaaaaaaba
+ 7|aaaaaahhhhhhhhhbahhhhhhhhhbbaaaaaaaaaaba
+ 8|aaaaeaccadddddbbabbaaaaaaaaaaaaaaaaaaaba
  9|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --
 a fg=#e4e4e7 bg=#18181b

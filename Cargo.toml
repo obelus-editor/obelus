@@ -87,6 +87,11 @@ tree-sitter-md = "0.5.3"
 # above, so there is still one crossterm in the tree.
 termimad = "0.35"
 base64 = "0.23.1"
+# Line diffs whose hunks agree with git's, because it implements the same
+# histogram algorithm. What "changed since HEAD" means has to be the same
+# answer `git diff` gives, or the markers in the margin are obelus's opinion
+# rather than the repository's.
+imara-diff = "0.2"
 
 [dev-dependencies]
 serde_json = "1"

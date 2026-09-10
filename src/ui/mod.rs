@@ -248,6 +248,17 @@ pub(crate) fn scrollbar(
     }
 }
 
+/// Which row of a bar `area.height` rows tall a line of `total` falls on.
+///
+/// Shared by the bar and the change map beside it so that a change is level
+/// with the part of the bar it belongs to; two roundings would put them a
+/// row apart on tall files, which is exactly where anyone would notice.
+pub(crate) fn bar_row(line: usize, total: usize, height: u16) -> u16 {
+    let height = usize::from(height);
+    let row = line * height / total.max(1);
+    u16::try_from(row.min(height.saturating_sub(1))).unwrap_or(0)
+}
+
 /// Paints every cell of a region in one style, blanking whatever was there.
 pub fn fill(cells: &mut CellBuffer, area: Rect, style: Style) {
     for y in area.top()..area.bottom() {

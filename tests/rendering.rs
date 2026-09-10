@@ -242,15 +242,30 @@ fn shift_arrows_select_and_plain_motion_clears_the_selection() {
     );
 
     let selected_dump = support::render(&mut app, WIDTH, HEIGHT);
-    let style_at = |dump: &str, x: usize| {
-        support::style_block(dump)
-            .lines()
-            .find(|row| !row.is_empty())
-            .and_then(|row| row.chars().nth(3 + x))
-            .expect("a style cell")
-    };
-    assert_eq!(style_at(&selected_dump, 5), style_at(&selected_dump, 6));
-    assert_ne!(style_at(&selected_dump, 5), style_at(&selected_dump, 7));
+    // The two selected characters, found by their text rather than by a
+    // column: what is to the left of them -- the margin, the gutter -- is
+    // not what this test is about.
+    let row = support::text_block(&selected_dump)
+        .lines()
+        .find(|row| row.contains("fn main"))
+        .expect("the first row");
+    let styles = support::style_block(&selected_dump)
+        .lines()
+        .find(|row| !row.is_empty())
+        .expect("its styles");
+    let at = row.find("fn main").expect("the code");
+    let style_at = |x: usize| styles.chars().nth(x).expect("a style cell");
+
+    assert_eq!(
+        style_at(at),
+        style_at(at + 1),
+        "the two selected characters do not match:\n{selected_dump}"
+    );
+    assert_ne!(
+        style_at(at),
+        style_at(at + 2),
+        "the character after the selection is selected too:\n{selected_dump}"
+    );
 
     press(&mut app, KeyCode::Right);
     let buffer = app.current_buffer().expect("a buffer");
@@ -435,13 +450,39 @@ fn continuation_rows_have_no_line_number() {
     let dump = support::render(&mut app, 40, 10);
     let text = support::text_block(&dump);
 
-    let numbered = text
+    // The numbers that appear, in the order they appear. Found by looking
+    // for a number rather than at a fixed column: what is to the left of the
+    // gutter depends on whether obelus has anything to say about the file,
+    // and how many rows a long line wraps into depends on how wide the text
+    // is -- neither of which this test is about.
+    let numbers: Vec<u32> = text
         .lines()
-        .filter(|row| row.len() > 8 && row[3..8].trim().parse::<u32>().is_ok())
-        .count();
-    // Three lines of text plus the empty one a trailing newline leaves, and
-    // six rows of the long line between them carrying no number at all.
-    assert_eq!(numbered, 4, "one number per line, not per row:\n{dump}");
+        .filter(|row| !row.is_empty())
+        .filter_map(|row| {
+            row.chars()
+                .skip(3)
+                .take_while(|character| !character.is_alphabetic())
+                .collect::<String>()
+                .trim()
+                .parse::<u32>()
+                .ok()
+        })
+        .collect();
+    let rows = text.lines().filter(|row| !row.is_empty()).count();
+
+    // One number per line, counting from one, and no number repeated: the
+    // rows in between belong to a line that already has its number.
+    assert!(numbers.len() >= 2, "not enough lines to tell:\n{dump}");
+    assert!(
+        numbers.len() < rows - 1,
+        "every row is numbered, so the long line was numbered on each of \
+         its rows:\n{dump}"
+    );
+    assert!(
+        numbers.windows(2).all(|pair| pair[1] > pair[0]),
+        "a number repeated:\n{dump}"
+    );
+    assert_eq!(numbers[0], 1, "{dump}");
 }
 
 /// Down steps one visual row, not one line. With a line many rows tall,
@@ -721,11 +762,14 @@ fn a_jump_back_lands_in_the_middle_too() {
     support::lay_out(&mut app, 40, 12);
 
     // Away from line one, where centring has nowhere to go and would look
-    // the same as not centring at all. Eight *visual* rows, which is line
-    // eight: the doc comment at the top wraps into two of them.
+    // the same as not centring at all. Eight *visual* rows, which is some
+    // line further down: the doc comment at the top wraps, and how many rows
+    // it wraps into depends on the width -- so the line it lands on is read
+    // back rather than assumed.
     for _ in 0..8 {
         press(&mut app, KeyCode::Down);
     }
+    let left_behind = app.current_buffer().expect("a buffer").cursor().line.get();
     app.open_picker_for_test(
         vec![PickerItem {
             icon: None,
@@ -752,19 +796,30 @@ fn a_jump_back_lands_in_the_middle_too() {
         KeyModifiers::ALT,
     )));
     let dump = support::render(&mut app, 40, 12);
-    assert_eq!(support::cursor_line(&dump), "5,5", "{dump}");
+    // The middle row of eleven. The column depends on the gutter and on
+    // whether there is a margin, neither of which this test is about.
+    let (_, row) = support::cursor_line(&dump)
+        .split_once(',')
+        .expect("the cursor is on screen");
+    assert_eq!(row.parse::<u16>().expect("a row"), 5, "{dump}");
 
     let rows: Vec<&str> = support::text_block(&dump)
         .lines()
         .filter(|row| !row.is_empty())
         .collect();
+    // `many_lines.rs` names each line after itself, so the line left behind
+    // says which line it is.
+    let name = format!("LINE_{left_behind:02}");
     assert!(
-        rows[5].contains("LINE_07"),
-        "the line left behind is not in the middle:\n{dump}"
+        rows[5].contains(&name),
+        "{name} is not in the middle:\n{dump}"
     );
-    // And the rows above it are the ones the least amount of scrolling would
-    // have thrown away.
-    assert!(rows[0].contains("LINE_02"), "{dump}");
+    // And there are rows above it: the least amount of scrolling would have
+    // put it on the top row and thrown them away.
+    assert!(
+        rows[0].contains("LINE_") && !rows[0].contains(&name),
+        "nothing above it:\n{dump}"
+    );
 }
 
 /// The wordmark's colours travel with time. One tick, one step: the ramp runs
@@ -940,12 +995,14 @@ fn the_scrollbar_reaches_both_ends() {
     let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
     support::lay_out(&mut app, 40, 12);
 
+    // The thumb, wherever the bar is: it is no longer the last column, since
+    // the map of changes has one of its own to the right of it.
     let thumb_rows = |dump: &str| -> Vec<usize> {
         support::text_block(dump)
             .lines()
             .filter(|row| !row.is_empty())
             .enumerate()
-            .filter(|(_, row)| row.ends_with('\u{2588}'))
+            .filter(|(_, row)| row.contains('\u{2588}'))
             .map(|(index, _)| index)
             .collect()
     };

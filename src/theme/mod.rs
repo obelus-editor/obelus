@@ -182,6 +182,34 @@ impl SyntaxTheme {
     }
 }
 
+/// A wash of `hue` over `base`: the mark's colour at `percent` strength.
+///
+/// Hand-picked tints drift away from the mark they belong to -- a green that
+/// is not quite the margin's green reads as a third colour rather than as the
+/// same claim said louder. Mixing keeps the hue exactly and lets the page
+/// keep its own cast, which is what makes a wash look like part of the editor
+/// instead of a highlighter pen.
+///
+/// Only [`Color::Rgb`] mixes; anything else has no components to mix and is
+/// returned unchanged. The built-in themes are all RGB, and a terminal that
+/// cannot do RGB cannot show a wash either.
+#[must_use]
+pub const fn tint(base: Color, hue: Color, percent: u32) -> Color {
+    let (Color::Rgb(base_red, base_green, base_blue), Color::Rgb(red, green, blue)) = (base, hue)
+    else {
+        return base;
+    };
+    const fn mix(base: u8, hue: u8, percent: u32) -> u8 {
+        let mixed = (base as u32 * (100 - percent) + hue as u32 * percent) / 100;
+        mixed as u8
+    }
+    Color::Rgb(
+        mix(base_red, red, percent),
+        mix(base_green, green, percent),
+        mix(base_blue, blue, percent),
+    )
+}
+
 /// A complete set of colours.
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {
@@ -210,6 +238,32 @@ pub struct Theme {
     pub marked_background: Color,
     /// Behind the characters selected by the reader.
     pub selection_background: Color,
+    /// The margin's mark beside a line that is new since the last commit.
+    pub change_added: Color,
+    /// Beside a line that replaced something.
+    pub change_modified: Color,
+    /// At the seam where lines were removed.
+    ///
+    /// Three colours rather than one: the margin is making three different
+    /// claims about the file, and a reader who cannot tell them apart has to
+    /// open every mark to find out which it was.
+    pub change_removed: Color,
+    /// Behind an opened hunk's lines: the same three claims again, said by
+    /// the whole row instead of by one column.
+    ///
+    /// Built with [`tint`] from the mark's own colour, so the row and the
+    /// mark beside it are the same hue and a reader does not have to learn
+    /// two palettes.
+    ///
+    /// An opened hunk is being *read*, not glanced at, and the margin's mark
+    /// is too small to answer "which of these lines am I looking at" while
+    /// the removed ones sit among them. Tints rather than the mark's own
+    /// colour: text has to stay readable on top of it.
+    pub change_added_background: Color,
+    /// Behind the lines of an opened hunk that replaced something.
+    pub change_modified_background: Color,
+    /// Behind the removed lines an opened hunk shows.
+    pub change_removed_background: Color,
     /// Behind the bracket under the cursor and the one that closes it.
     ///
     /// Its own colour rather than [`Theme::marked_background`]: one appears
@@ -234,7 +288,42 @@ impl Theme {
 
 #[cfg(test)]
 mod tests {
-    use super::SyntaxKind;
+    use ratatui::style::Color;
+
+    use super::{SyntaxKind, tint};
+
+    /// A wash has to be a wash: nearer the page it is drawn on than the mark
+    /// it is made from. Code is read on top of it, and a row in the mark's
+    /// own colour would be a stripe with text lost in it -- while a row that
+    /// is exactly the page says nothing at all.
+    #[test]
+    fn a_wash_stays_close_to_the_page() {
+        let page = Color::Rgb(24, 24, 27);
+        let mark = Color::Rgb(34, 197, 94);
+        let Color::Rgb(red, green, blue) = tint(page, mark, 18) else {
+            panic!("a wash of two RGB colours is RGB");
+        };
+        assert_ne!((red, green, blue), (24, 24, 27), "the wash is the page");
+        assert_ne!((red, green, blue), (34, 197, 94), "the wash is the mark");
+        // The green channel is where the two differ most, so it is where a
+        // wash that had drifted towards the mark would show.
+        assert!(
+            i32::from(green) - 24 < 197 - i32::from(green),
+            "the wash is nearer the mark than the page: {green}"
+        );
+    }
+
+    /// A terminal that cannot do RGB cannot show a wash either, and a theme
+    /// built on named colours should get its page back rather than a colour
+    /// invented for it.
+    #[test]
+    fn a_wash_of_something_unmixable_is_the_page() {
+        assert_eq!(tint(Color::Black, Color::Red, 50), Color::Black);
+        assert_eq!(
+            tint(Color::Rgb(1, 2, 3), Color::Red, 50),
+            Color::Rgb(1, 2, 3)
+        );
+    }
 
     #[test]
     fn a_capture_name_falls_back_along_its_dots() {

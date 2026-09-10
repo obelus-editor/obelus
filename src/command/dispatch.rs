@@ -26,6 +26,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         | Command::SymbolReferences => app.ask_about_symbol(command),
         Command::GoLine => app.open_line_prompt(),
         Command::GoBracket => app.go_to_bracket(),
+        Command::GitHunk => app.toggle_hunk(),
         Command::SelectionCopy => app.copy_selection(),
         Command::SelectionClear => app.clear_selection(),
         Command::GoBack => app.go_back(),

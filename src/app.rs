@@ -23,7 +23,7 @@ use crate::{
     },
     coordinates::{ByteOffset, CharColumn, LineNumber, Span},
     event::{self, Event, Ticker},
-    icons,
+    git, icons,
     jump::{Jump, JumpList},
     keymap::{self, Context, KeyChord, Keymap},
     lsp::{
@@ -120,6 +120,21 @@ pub struct App {
     /// picker to ask for a line number puts a region of screen over the code
     /// to hold one row that says "type a line number".
     prompt: Option<Prompt>,
+    /// What has changed in the current file since the last commit.
+    ///
+    /// Kept here rather than in the buffer for the same reason the
+    /// highlights are: it is a function of the file's text and nothing else,
+    /// and re-deriving it when the text changes is simpler than keeping a
+    /// buffer's copy of it right. Re-derived means asking git again, so it
+    /// happens when a file is opened or reloaded -- which is exactly when
+    /// what changed can have changed -- and not per frame.
+    changes: Option<Changed>,
+    /// The hunk the reader has opened in place, if any.
+    ///
+    /// The line it is anchored to. Held here rather than in the buffer
+    /// because it is about a *view* of the file, like the markdown
+    /// rendering, and closing it must not need the file.
+    opened: Option<LineNumber>,
     /// The current file laid out as markdown, if it is being shown that way.
     ///
     /// Kept here rather than in the buffer for the same reason the
@@ -188,6 +203,8 @@ impl App {
             phase: 0,
             ticker: None,
             prompt: None,
+            changes: None,
+            opened: None,
             markdown: None,
             theme_before: None,
             note: None,
@@ -1350,6 +1367,74 @@ impl App {
         );
     }
 
+    /// What has changed in the current file, if obelus can tell.
+    #[must_use]
+    pub fn changes(&self) -> Option<&git::Changes> {
+        self.changes.as_ref().map(|changed| &changed.changes)
+    }
+
+    /// The hunk the reader has opened in place, if any.
+    #[must_use]
+    pub const fn opened_hunk(&self) -> Option<LineNumber> {
+        self.opened
+    }
+
+    /// Opens what changed at the cursor, in place, or closes it again.
+    ///
+    /// In place rather than in a panel: what a changed line means is what it
+    /// replaced, and the two belong next to each other. The removed lines
+    /// push the file's lines down while they are open, which is what makes
+    /// it obvious they are not part of the file.
+    pub fn toggle_hunk(&mut self) {
+        let Some(line) = self.current_buffer().map(|buffer| buffer.cursor().line) else {
+            self.note = Some("no file open".to_string());
+            return;
+        };
+        let Some(hunk) = self.changes().and_then(|changes| changes.hunk_at(line)) else {
+            self.note = Some("nothing changed here".to_string());
+            return;
+        };
+        // Every hunk opens, including one that replaced nothing: opening it
+        // is what puts the change type behind the lines, and "which lines
+        // exactly are new here" is a question the margin's one column cannot
+        // answer. An added hunk simply has nothing to show above itself.
+        let anchor = hunk.line;
+        self.opened = if self.opened == Some(anchor) {
+            None
+        } else {
+            Some(anchor)
+        };
+    }
+
+    /// Asks git what has changed, if it has not already been asked about
+    /// this version of this file.
+    fn refresh_changes(&mut self) {
+        let Some(buffer) = self.current_buffer() else {
+            self.changes = None;
+            return;
+        };
+        let at = (buffer.path().to_path_buf(), buffer.version());
+        if self
+            .changes
+            .as_ref()
+            .is_some_and(|changed| changed.at == at)
+        {
+            return;
+        }
+
+        // No committed text is every way this can have no answer -- not a
+        // repository, a file git has never heard of, no commits yet -- and
+        // they all mean the same thing in the margin: nothing to say.
+        self.changes = git::head_text(buffer.path()).map(|committed| Changed {
+            changes: git::Changes::between(&committed, &buffer.text().rope().to_string()),
+            at,
+        });
+        // A hunk that was open belonged to the diff that has just been
+        // replaced. Leaving it open would show removed lines that are no
+        // longer removed anywhere.
+        self.opened = None;
+    }
+
     /// The rendering on screen, if the current file is being shown as one.
     #[must_use]
     pub fn markdown(&self) -> Option<&[markdown::Row]> {
@@ -1566,6 +1651,13 @@ impl App {
                     .is_some_and(|character| matches!(character, '(' | ')' | '[' | ']' | '{' | '}'))
             }),
             Requires::ASelection => buffer.and_then(Buffer::selection).is_some(),
+            // Something that changed *and* has something to show: a run of
+            // added lines changed nothing that is not already on screen.
+            Requires::AHunk => buffer.is_some_and(|buffer| {
+                self.changes()
+                    .and_then(|changes| changes.hunk_at(buffer.cursor().line))
+                    .is_some()
+            }),
             Requires::SomewhereBack => self.jumps.can_go_back(),
             Requires::SomewhereForward => self.jumps.can_go_forward(),
             Requires::ARunningServer => buffer
@@ -1665,8 +1757,17 @@ impl App {
         let width = match self.current_buffer() {
             Some(buffer) => {
                 let gutter = ui::editor::gutter_width(buffer.text().line_count());
+                // The margin on the left and the change map on the right
+                // both appear only for a file in a repository, and they
+                // appear together: they are the same answer at two scales.
+                let margins = if self.changes.is_some() {
+                    ui::editor::MARGIN_WIDTH + ui::editor::CHANGE_MAP_WIDTH
+                } else {
+                    0
+                };
                 self.editor_area
                     .width
+                    .saturating_sub(margins)
                     .saturating_sub(gutter)
                     .saturating_sub(ui::editor::SCROLLBAR_WIDTH)
             }
@@ -1705,6 +1806,7 @@ impl App {
 
         let area = self.text_area();
         self.refresh_markdown(editor_area.width);
+        self.refresh_changes();
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.scroll_into_view(area);
         }
@@ -2199,6 +2301,13 @@ enum Asked {
     Symbol(SymbolAction),
     /// Everything the file defines.
     Outline,
+}
+
+/// A file's changes, and which version of which file they are about.
+#[derive(Debug)]
+struct Changed {
+    changes: git::Changes,
+    at: (PathBuf, i32),
 }
 
 /// A markdown rendering, and what it was made from.

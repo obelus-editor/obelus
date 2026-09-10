@@ -15,6 +15,7 @@ pub mod command;
 pub mod component;
 pub mod coordinates;
 pub mod event;
+pub mod git;
 pub mod icons;
 pub mod jump;
 pub mod keymap;

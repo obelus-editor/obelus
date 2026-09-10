@@ -7,12 +7,24 @@
 
 use ratatui::style::Color;
 
-use crate::theme::{SyntaxTheme, Theme};
+use crate::theme::{SyntaxTheme, Theme, tint};
+
+/// The dark theme's page, named because its three change tints are washes
+/// of it.
+const DARK_PAGE: Color = Color::Rgb(24, 24, 27);
+/// Green, amber, red: what every diff has used since diffs were printed.
+const DARK_ADDED: Color = Color::Rgb(34, 197, 94);
+const DARK_MODIFIED: Color = Color::Rgb(234, 179, 8);
+const DARK_REMOVED: Color = Color::Rgb(239, 68, 68);
+/// How much of the mark's colour a wash carries. Low: the code on top of it
+/// keeps its own colours, and a whole block of rows at this strength should
+/// read as tinted paper rather than as a highlighter.
+const WASH: u32 = 18;
 
 /// The default.
 pub const DARK: Theme = Theme {
     name: "dark",
-    background: Color::Rgb(24, 24, 27),
+    background: DARK_PAGE,
     foreground: Color::Rgb(228, 228, 231),
     gutter: Color::Rgb(82, 82, 91),
     gutter_current: Color::Rgb(161, 161, 170),
@@ -26,6 +38,12 @@ pub const DARK: Theme = Theme {
     // Grey rather than a hue: it sits under whatever colour the bracket
     // already has, and a coloured background under a coloured glyph is two
     // hues fighting.
+    change_added: DARK_ADDED,
+    change_modified: DARK_MODIFIED,
+    change_removed: DARK_REMOVED,
+    change_added_background: tint(DARK_PAGE, DARK_ADDED, WASH),
+    change_modified_background: tint(DARK_PAGE, DARK_MODIFIED, WASH),
+    change_removed_background: tint(DARK_PAGE, DARK_REMOVED, WASH),
     bracket_background: Color::Rgb(63, 63, 70),
     syntax: SyntaxTheme {
         attribute: Color::Rgb(251, 146, 60),
@@ -47,10 +65,16 @@ pub const DARK: Theme = Theme {
     },
 };
 
+/// The light theme's page and its three change colours, for the same reason.
+const LIGHT_PAGE: Color = Color::Rgb(250, 250, 250);
+const LIGHT_ADDED: Color = Color::Rgb(22, 163, 74);
+const LIGHT_MODIFIED: Color = Color::Rgb(180, 130, 6);
+const LIGHT_REMOVED: Color = Color::Rgb(220, 38, 38);
+
 /// The same design with the ends of the scale swapped.
 pub const LIGHT: Theme = Theme {
     name: "light",
-    background: Color::Rgb(250, 250, 250),
+    background: LIGHT_PAGE,
     foreground: Color::Rgb(24, 24, 27),
     gutter: Color::Rgb(161, 161, 170),
     gutter_current: Color::Rgb(82, 82, 91),
@@ -61,6 +85,12 @@ pub const LIGHT: Theme = Theme {
     picker_match: Color::Rgb(29, 78, 216),
     marked_background: Color::Rgb(191, 219, 254),
     selection_background: Color::Rgb(224, 231, 255),
+    change_added: LIGHT_ADDED,
+    change_modified: LIGHT_MODIFIED,
+    change_removed: LIGHT_REMOVED,
+    change_added_background: tint(LIGHT_PAGE, LIGHT_ADDED, WASH),
+    change_modified_background: tint(LIGHT_PAGE, LIGHT_MODIFIED, WASH),
+    change_removed_background: tint(LIGHT_PAGE, LIGHT_REMOVED, WASH),
     bracket_background: Color::Rgb(212, 212, 216),
     syntax: SyntaxTheme {
         attribute: Color::Rgb(194, 65, 12),

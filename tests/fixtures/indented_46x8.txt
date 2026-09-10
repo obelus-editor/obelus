@@ -1,21 +1,21 @@
 screen 46x8  editor 46x7  status 46x1
 -- text --
- 0|   1 fn outer() {                            █
- 1|   2     if condition {                      █
- 2|   3         println!("{} {} {} {}", alpha,  █
- 3|             beta, gamma, delta, epsilon,    █
- 4|             zeta);                          █
- 5|   4     }                                   █
- 6|   5 }                                       █
+ 0|    1 fn outer() {                          █ 
+ 1|    2     if condition {                    █ 
+ 2|    3         println!("{} {} {} {}",       █ 
+ 3|              alpha, beta, gamma, delta,    █ 
+ 4|              epsilon, zeta);               █ 
+ 5|    4     }                                 █ 
+ 6|    5 }                                     █ 
  7|   tests/fixtures/indented.rs            1:1 
 -- style --
- 0|aaabaccadddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaab
- 1|aaaeaaaaaccaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaab
- 2|aaaeaaaaaaaaaddddddddbfffffffffffffbaaaaaabaab
- 3|aaaaaaaaaaaaaaaaabaaaaaabaaaaaabaaaaaaaabaaaab
- 4|aaaaaaaaaaaaaaaaabbaaaaaaaaaaaaaaaaaaaaaaaaaab
- 5|aaaeaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
- 6|aaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 0|aaaabaccadddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaba
+ 1|aaaaeaaaaaccaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaba
+ 2|aaaaeaaaaaaaaaddddddddbfffffffffffffbaaaaaaaba
+ 3|aaaaaaaaaaaaaaaaaaabaaaaabaaaaaabaaaaaabaaaaba
+ 4|aaaaaaaaaaaaaaaaaaaaabaaaaabbaaaaaaaaaaaaaaaba
+ 5|aaaaeaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
+ 6|aaaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
  7|gggggggggggggggggggggggggggggggggggggggggggggg
 -- legend --
 a fg=#e4e4e7 bg=#18181b
