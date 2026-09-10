@@ -15,6 +15,7 @@ use ratatui::{
 use crate::{
     app::App,
     component::picker::{Picker, PickerItem, PickerLayout},
+    git::FileStatus,
     theme::Theme,
     ui::{drop_from_left, editor::SCROLLBAR_WIDTH, fill, put, text_width},
 };
@@ -242,9 +243,14 @@ impl PickerView<'_> {
         // its own words, and reading it should feel like reading the file.
         // The matched characters still win over this -- why a row is in the
         // list beats what the row is.
-        let label_style = match item.kind {
-            Some(kind) => style.fg(self.theme.syntax.colour(kind)),
-            None => style,
+        let label_style = match (item.status, item.kind) {
+            // What git says wins over what the syntax layer says: a list of
+            // a project's files is mostly files nobody has touched, and the
+            // few that have been are what a reader is looking for.
+            (Some(FileStatus::Changed), _) => style.fg(self.theme.change_modified),
+            (Some(FileStatus::New), _) => style.fg(self.theme.change_added),
+            (None, Some(kind)) => style.fg(self.theme.syntax.colour(kind)),
+            (None, None) => style,
         };
         fill(
             cells,

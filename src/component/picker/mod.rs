@@ -74,6 +74,12 @@ pub struct PickerItem {
     /// Not part of the label, so the query never matches the indentation and
     /// the score never depends on how deeply nested a symbol is.
     pub depth: u16,
+    /// What git says about the file the row names, if it says anything.
+    ///
+    /// Colours the row. A list of a project's files is mostly a list of
+    /// files nobody has touched, and the few that have been are what a
+    /// reader is usually looking for.
+    pub status: Option<crate::git::FileStatus>,
     /// What sort of thing the label names, if the row is about one.
     ///
     /// A colour rather than a word: an outline is a list of names, and the

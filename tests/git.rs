@@ -562,3 +562,40 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
         "a twenty-line change did not take the rows it covers:\n{dump}"
     );
 }
+
+/// A list of files says which of them have been touched. A project's file
+/// list is mostly files nobody has changed, and the few that have been are
+/// what a reader is usually looking for.
+#[test]
+fn a_list_of_files_says_which_have_changed() {
+    use obelus::git::{FileStatus, statuses};
+
+    let repository = Repository::new("statuses", "one\n");
+    repository.write("one\ntwo\n");
+    std::fs::write(repository.directory.join("new.rs"), "fn new() {}\n").expect("a new file");
+
+    let found = statuses(&repository.directory);
+    assert_eq!(
+        found.get(&repository.path()).copied(),
+        Some(FileStatus::Changed),
+        "a tracked file that differs: {found:?}"
+    );
+    assert_eq!(
+        found.get(&repository.directory.join("new.rs")).copied(),
+        Some(FileStatus::New),
+        "a file git has never seen: {found:?}"
+    );
+
+    // Keyed by absolute path, because git reports paths relative to the
+    // repository root and obelus knows files by where they are: a map keyed
+    // by one and read with the other silently matches nothing.
+    assert!(
+        found.keys().all(|path| path.is_absolute()),
+        "{:?}",
+        found.keys().collect::<Vec<_>>()
+    );
+
+    // And a directory that is not a repository has nothing to say, rather
+    // than failing.
+    assert!(statuses(std::path::Path::new("/")).is_empty());
+}

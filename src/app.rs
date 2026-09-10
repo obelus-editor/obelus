@@ -154,6 +154,12 @@ pub struct App {
     /// Held so that dropping it stops the animation. There is nothing to
     /// animate once a file is open, and nothing over a network at all.
     ticker: Option<Ticker>,
+    /// What git says about the files in the tree, while a list of them is
+    /// open.
+    ///
+    /// Gathered when a list opens and kept until the next one, because it is
+    /// a walk of the whole tree and the rows arrive in batches afterwards.
+    statuses: std::collections::HashMap<PathBuf, git::FileStatus>,
     /// Something to tell the reader, until the next key.
     ///
     /// Half of what a language server does is answer with nothing, and
@@ -205,6 +211,7 @@ impl App {
             prompt: None,
             changes: None,
             opened: None,
+            statuses: std::collections::HashMap::new(),
             markdown: None,
             theme_before: None,
             note: None,
@@ -530,6 +537,7 @@ impl App {
                     detail: Some(command.spec().title.to_string()),
                     trailing: self.keymap.chord_for(command).map(KeyChord::label),
                     value: PickerValue::Command(command),
+                    status: None,
                     depth: 0,
                     kind: None,
                     tab: None,
@@ -705,6 +713,7 @@ impl App {
                             end_line: place.end_line,
                             end_character: place.end_character,
                         },
+                        status: None,
                         depth: 0,
                         kind: None,
                         tab: None,
@@ -812,6 +821,10 @@ impl App {
     /// Offers every file under the working directory.
     pub fn open_file_picker(&mut self) {
         self.walk_generation += 1;
+        // Asked once, here, rather than per row: `git status` walks the tree
+        // and applies every ignore rule on the way, and a list of ten
+        // thousand files would ask ten thousand times.
+        self.statuses = git::statuses(&self.working_directory);
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
         // Shown for the moment before the first batch arrives as well as for
         // a tree with nothing in it, which is why it is about the search
@@ -845,6 +858,8 @@ impl App {
         // only other thing obelus knows about them.
         open.sort_by_key(|(index, buffer)| (std::cmp::Reverse(buffer.activations()), *index));
 
+        self.statuses = git::statuses(&self.working_directory);
+        let statuses = &self.statuses;
         let items = open
             .into_iter()
             .map(|(index, buffer)| PickerItem {
@@ -853,6 +868,7 @@ impl App {
                 detail: None,
                 trailing: None,
                 value: PickerValue::Buffer(BufferId::new(index)),
+                status: statuses.get(buffer.path()).copied(),
                 depth: 0,
                 kind: None,
                 tab: None,
@@ -878,6 +894,7 @@ impl App {
                 detail: None,
                 trailing: None,
                 value: PickerValue::Theme(theme),
+                status: None,
                 depth: 0,
                 kind: None,
                 tab: None,
@@ -900,6 +917,7 @@ impl App {
             .filter(|spec| self.offers(spec.command))
             .map(|spec| PickerItem {
                 icon: icons::enabled().then(|| icons::for_command(spec.name)),
+                status: None,
                 depth: 0,
                 kind: None,
                 label: spec.name.to_string(),
@@ -1189,6 +1207,7 @@ impl App {
                 let end_character = end.character;
                 PickerItem {
                     icon: icons::enabled().then(|| icons::for_kind(symbol.kind)),
+                    status: None,
                     depth: u16::try_from(symbol.depth).unwrap_or(u16::MAX),
                     kind: Some(symbol.kind),
                     label: symbol.name.clone(),
@@ -1291,6 +1310,7 @@ impl App {
             .iter()
             .map(|symbol| PickerItem {
                 icon: icons::enabled().then(|| icons::for_kind(symbol.kind)),
+                status: None,
                 depth: u16::try_from(symbol.depth).unwrap_or(u16::MAX),
                 kind: Some(symbol.kind),
                 label: symbol.name.clone(),
@@ -2079,12 +2099,15 @@ impl App {
                     return;
                 }
                 if let Some(picker) = self.picker.as_mut() {
+                    let statuses = &self.statuses;
+                    let root = &self.working_directory;
                     picker.extend(paths.into_iter().map(|path| PickerItem {
                         icon: Some(icons::for_path(&path)),
                         label: path.display().to_string(),
                         detail: None,
                         trailing: None,
-                        value: PickerValue::File(path),
+                        value: PickerValue::File(path.clone()),
+                        status: statuses.get(&root.join(&path)).copied(),
                         depth: 0,
                         kind: None,
                         tab: None,
