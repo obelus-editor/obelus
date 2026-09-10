@@ -237,7 +237,14 @@ impl PickerView<'_> {
         } else {
             self.theme.background
         };
-        let style = Style::new().fg(self.theme.foreground).bg(background);
+        // A row that cannot be chosen is drawn in the colour the gutter uses
+        // -- present, and plainly not for now. Its own colours are dropped
+        // with it: a dim row with a bright name in it reads as available.
+        let style = if item.enabled {
+            Style::new().fg(self.theme.foreground).bg(background)
+        } else {
+            Style::new().fg(self.theme.gutter).bg(background)
+        };
         // A row that names a thing is coloured by what it names, in the same
         // colours the code itself uses: an outline of a file is a list of
         // its own words, and reading it should feel like reading the file.

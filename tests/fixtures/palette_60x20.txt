@@ -12,14 +12,14 @@ screen 60x20  editor 60x19  status 60x1
  9| 󰈞 file.open  Open a file                              󰘴 o █
 10| 󰑐 file.reload  Re-read this file from disk            󰘴 r █
 11| 󰈢 buffer.list  Switch to an open file                 󰘴 e █
-12| 󰮘 buffer.close  Close this file                       󰘴 w █
-13| 󰏘 theme.select  Change the colours                        █
-14| 󰆍 command.palette  Run a command by name              󰘴 p █
-15| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘴 g │
-16| 󰉹 symbol.outline  Everything this file defines        󰘴 t │
-17| 󰍉 search.file  Search this file                       󰘴 f │
-18| 󰉓 search.project  Search every file                   󰘵 f │
-19| 󰍉                                                       15 
+12| 󰮘 buffer.close  Close this file                       󰘴 w │
+13| 󰍔 markdown.preview  Show this file rendered, or stop      │
+14| 󰏘 theme.select  Change the colours                        │
+15| 󰆍 command.palette  Run a command by name              󰘴 p │
+16| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘴 g │
+17| 󰉹 symbol.outline  Everything this file defines        󰘴 t │
+18| 󰓾 symbol.definition  Go to definition                     │
+19| 󰍉                                                       30 
 -- style --
  0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaba
  1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaba
@@ -33,13 +33,13 @@ screen 60x20  editor 60x19  status 60x1
  9|gggggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggghhhgb
 10|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeab
 11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaeeeab
-12|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeab
-13|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaab
-14|aaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaeeeab
-15|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeae
-16|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaeeeae
-17|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeae
-18|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaeeeae
+12|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeae
+13|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+14|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaae
+15|aaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaeeeae
+16|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeae
+17|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaeeeae
+18|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 19|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhi
 -- legend --
 a fg=#e4e4e7 bg=#18181b

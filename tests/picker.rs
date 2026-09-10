@@ -8,7 +8,7 @@ use obelus::{
     component::picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue},
     event::Event,
 };
-use support::{press, press_control, type_text};
+use support::{press, press_control, press_control_key, type_text};
 
 fn app() -> App {
     App::new(vec![support::open_fixture("sample.rs")])
@@ -23,6 +23,7 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
             detail: None,
             trailing: None,
             value: PickerValue::File(label.into()),
+            enabled: true,
             colours: None,
             status: None,
             depth: 0,
@@ -51,6 +52,7 @@ fn many(count: usize) -> Vec<PickerItem> {
             detail: None,
             trailing: None,
             value: PickerValue::File(format!("item-{index:03}").into()),
+            enabled: true,
             colours: None,
             status: None,
             depth: 0,
@@ -1023,11 +1025,12 @@ fn the_theme_picker_leaves_the_code_visible() {
     support::check("themes_60x12", &dump);
 }
 
-/// A question no server can answer is left out even when it is bound to a
-/// key. A row with a key beside it is the strongest claim the palette makes
-/// that something will happen.
+/// A question no server can answer is dim rather than gone, and keeps the
+/// key it is bound to. The row is plainly unavailable, so the key reads as
+/// "this is how, when there is a server" -- which is what a reader wants to
+/// know before there is one.
 #[test]
-fn a_question_bound_to_a_key_is_still_left_out_without_a_server() {
+fn a_question_with_no_server_is_dim_and_keeps_its_key() {
     use crossterm::event::KeyModifiers;
     use obelus::{
         command::Command,
@@ -1053,35 +1056,60 @@ fn a_question_bound_to_a_key_is_still_left_out_without_a_server() {
     press_control(&mut app, 'p');
     type_text(&mut app, "definition");
     let palette = support::render(&mut app, 60, 12);
-    let text = support::text_block(&palette);
-    assert!(
-        !text.contains("symbol.definition"),
-        "a question with no server to answer it was offered:\n{palette}"
-    );
-    assert!(
-        !text.contains("alt+d"),
-        "its key was shown, which is a promise:\n{palette}"
-    );
-}
-
-/// The whole rule, in one place: a command is offered when it can do its job
-/// and left out when it cannot. A row that silently fails is worse than a row
-/// that is not there, and a list of twenty commands of which six do nothing
-/// here is a list nobody trusts.
-///
-/// With a plain Rust file open and no server, so what goes is everything
-/// needing a server, a selection, a bracket, a history, or markdown.
-#[test]
-fn the_palette_offers_exactly_what_can_run() {
-    let mut app = app();
-    support::lay_out(&mut app, 60, 12);
-    press_control(&mut app, 'p');
-    let listed: Vec<String> = app
+    let row = app
         .picker()
         .expect("the palette is open")
         .matches()
-        .map(|item| item.label.clone())
+        .find(|item| item.label == "symbol.definition")
+        .expect("the row is listed whether or not it can run");
+    assert!(
+        !row.enabled,
+        "a question with no server to answer it can be chosen:\n{palette}"
+    );
+    // Its key is still shown: the row is plainly dim, so the key reads as
+    // "this is how, when there is a server" rather than as a promise.
+    assert_eq!(
+        row.trailing.as_deref(),
+        Some(
+            obelus::keymap::KeyChord::new(KeyCode::Char('d'), KeyModifiers::ALT)
+                .label()
+                .as_str()
+        ),
+        "the key it is bound to is not shown:\n{palette}"
+    );
+}
+
+/// The whole rule, in one place: every command is listed, and one that
+/// cannot do its job here is dim and cannot be chosen. A row that silently
+/// fails is worse than no row at all -- but a list that hides what it cannot
+/// do cannot be learned from, and a reader who never sees `git.hunk` does
+/// not find out obelus has it.
+///
+/// With a plain Rust file open and no server, so what is dim is everything
+/// needing a server, a selection, a bracket, a history, or markdown.
+#[test]
+fn the_palette_lists_everything_and_dims_what_cannot_run() {
+    let mut app = app();
+    support::lay_out(&mut app, 60, 12);
+    press_control(&mut app, 'p');
+    let rows: Vec<(String, bool)> = app
+        .picker()
+        .expect("the palette is open")
+        .matches()
+        .map(|item| (item.label.clone(), item.enabled))
         .collect();
+    let listed = |name: &str| {
+        rows.iter()
+            .find(|(label, _)| label == name)
+            .map(|(_, enabled)| *enabled)
+    };
+
+    // Every command obelus has, whatever it can do here.
+    assert_eq!(
+        rows.len(),
+        obelus::command::ALL.len(),
+        "the palette is not the whole command table: {rows:?}"
+    );
 
     // Named here rather than taken from `requires`, which is the rule under
     // test: asking the rule what it expects makes the assertion agree with
@@ -1099,14 +1127,15 @@ fn the_palette_offers_exactly_what_can_run() {
         "go.forward",
         "markdown.preview",
     ] {
-        assert!(
-            !listed.contains(&name.to_string()),
-            "{name} was offered with nothing for it to do: {listed:?}"
+        assert_eq!(
+            listed(name),
+            Some(false),
+            "{name} can be chosen with nothing for it to do"
         );
     }
 
-    // And everything else is there, including the two that are worth
-    // pressing precisely when nothing is running.
+    // And everything else can be, including the two that are worth pressing
+    // precisely when nothing is running.
     for name in [
         "file.open",
         "file.reload",
@@ -1120,11 +1149,81 @@ fn the_palette_offers_exactly_what_can_run() {
         "lsp.restart",
         "app.quit",
     ] {
-        assert!(
-            listed.contains(&name.to_string()),
-            "{name} is missing: {listed:?}"
-        );
+        assert_eq!(listed(name), Some(true), "{name} cannot be chosen");
     }
+}
+
+/// The selection walks past what cannot be chosen, and Enter on a dim row
+/// does nothing: the rows are there to be read, not pressed.
+#[test]
+fn the_selection_walks_past_what_cannot_be_chosen() {
+    let mut app = App::new(Vec::new());
+    support::lay_out(&mut app, 60, 14);
+    press_control(&mut app, 'p');
+
+    // With nothing open, `file.reload` is the second row and cannot run, so
+    // the selection has to be somewhere else.
+    let chosen = |app: &App| {
+        app.picker()
+            .expect("the palette")
+            .selected_item()
+            .map(|item| (item.label.clone(), item.enabled))
+    };
+    assert_eq!(chosen(&app), Some(("file.open".to_string(), true)));
+    press(&mut app, KeyCode::Down);
+    let (label, enabled) = chosen(&app).expect("a row");
+    assert!(enabled, "the selection landed on {label}, which cannot run");
+    assert_ne!(label, "file.reload", "the selection stopped on a dim row");
+
+    // Every row it walks through, going down and coming back, can be chosen.
+    for _ in 0..30 {
+        press(&mut app, KeyCode::Down);
+        assert!(chosen(&app).expect("a row").1, "walked onto a dim row");
+    }
+    for _ in 0..30 {
+        press(&mut app, KeyCode::Up);
+        assert!(chosen(&app).expect("a row").1, "walked onto a dim row");
+    }
+
+    // A query narrows the list under the selection, and the selection comes
+    // to rest on a row that can be chosen: "sel" matches two selection
+    // commands that cannot run and one theme picker that can.
+    type_text(&mut app, "sel");
+    assert_eq!(
+        chosen(&app),
+        Some(("theme.select".to_string(), true)),
+        "the selection stayed on a row that cannot be chosen"
+    );
+    // Both ends of the narrowed list are dim rows, and neither end key
+    // lands on one.
+    press_control_key(&mut app, KeyCode::Home);
+    assert_eq!(chosen(&app), Some(("theme.select".to_string(), true)));
+    press_control_key(&mut app, KeyCode::End);
+    assert_eq!(chosen(&app), Some(("theme.select".to_string(), true)));
+    for _ in 0.."sel".len() {
+        press(&mut app, KeyCode::Backspace);
+    }
+
+    // And a query that leaves only dim rows: Enter does nothing rather than
+    // running something that reports why it could not.
+    type_text(&mut app, "selection");
+    let only_dim: Vec<String> = app
+        .picker()
+        .expect("the palette")
+        .matches()
+        .filter(|item| !item.enabled)
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        only_dim.len(),
+        2,
+        "not the two selection commands: {only_dim:?}"
+    );
+    press(&mut app, KeyCode::Enter);
+    assert!(
+        app.picker().is_some(),
+        "Enter chose a row that cannot be chosen"
+    );
 }
 
 /// And each condition turns its command back on when it is met. The palette
@@ -1136,7 +1235,7 @@ fn a_condition_met_puts_its_command_back() {
         app.picker()
             .expect("the palette is open")
             .matches()
-            .any(|item| item.label == name)
+            .any(|item| item.label == name && item.enabled)
     };
 
     // Something selected.
@@ -1410,6 +1509,7 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
                 end_line: 1,
                 end_character: 11,
             },
+            enabled: true,
             colours: None,
             status: None,
             depth: 0,
@@ -1564,6 +1664,7 @@ fn moving_the_selection_forgets_the_scrolling() {
             end_line: line,
             end_character: 17,
         },
+        enabled: true,
         colours: None,
         status: None,
         depth: 0,
@@ -1653,6 +1754,7 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
                 end_line: 30,
                 end_character: 17,
             },
+            enabled: true,
             colours: None,
             status: None,
             depth: 0,

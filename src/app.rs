@@ -583,6 +583,7 @@ impl App {
                     detail: Some(command.spec().title.to_string()),
                     trailing: self.keymap.chord_for(command).map(KeyChord::label),
                     value: PickerValue::Command(command),
+                    enabled: true,
                     colours: None,
                     status: None,
                     depth: 0,
@@ -767,6 +768,7 @@ impl App {
                             end_line: place.end_line,
                             end_character: place.end_character,
                         },
+                        enabled: true,
                         colours: None,
                         status: None,
                         depth: 0,
@@ -923,6 +925,7 @@ impl App {
                 detail: None,
                 trailing: None,
                 value: PickerValue::Buffer(BufferId::new(index)),
+                enabled: true,
                 colours: None,
                 status: statuses.get(buffer.path()).copied(),
                 depth: 0,
@@ -950,6 +953,7 @@ impl App {
                 detail: None,
                 trailing: None,
                 value: PickerValue::Theme(theme),
+                enabled: true,
                 colours: None,
                 status: None,
                 depth: 0,
@@ -967,13 +971,17 @@ impl App {
 
     /// Offers every command by name.
     pub fn open_command_palette(&mut self) {
-        // What a server would answer right now, so the palette offers a
-        // question only when there is something to answer it.
+        // Every command, and what it can do *here* said by whether its row
+        // can be chosen. Leaving out what cannot run makes the palette a
+        // list nobody can learn from -- a reader who never sees `git.hunk`
+        // does not find out obelus has it -- while a row that runs and then
+        // reports why it did nothing is a row nobody trusts. Dim and
+        // unselectable is both answers at once.
         let items = crate::command::ALL
             .iter()
-            .filter(|spec| self.offers(spec.command))
             .map(|spec| PickerItem {
                 icon: icons::enabled().then(|| icons::for_command(spec.name)),
+                enabled: self.offers(spec.command),
                 colours: None,
                 status: None,
                 depth: 0,
@@ -994,9 +1002,9 @@ impl App {
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        // The palette leaves out what cannot run, so it can come up empty --
-        // and an empty palette with no explanation reads as a broken key.
-        picker.when_empty("no command can run here");
+        // It holds every command, so it is only ever empty for a query that
+        // matches none of them -- which the picker says itself.
+        picker.when_empty("no command by that name");
         // Tabs over one long list. Fourteen commands is already more than a
         // compact list shows at once, and the groups are what a reader is
         // choosing between when they do not already know the name.
@@ -1265,6 +1273,7 @@ impl App {
                 let end_character = end.character;
                 PickerItem {
                     icon: icons::enabled().then(|| icons::for_kind(symbol.kind)),
+                    enabled: true,
                     colours: None,
                     status: None,
                     depth: u16::try_from(symbol.depth).unwrap_or(u16::MAX),
@@ -1369,6 +1378,7 @@ impl App {
             .iter()
             .map(|symbol| PickerItem {
                 icon: icons::enabled().then(|| icons::for_kind(symbol.kind)),
+                enabled: true,
                 colours: None,
                 status: None,
                 depth: u16::try_from(symbol.depth).unwrap_or(u16::MAX),
@@ -2000,6 +2010,7 @@ impl App {
                 let end = position::to_lsp(text, line, text.line_length(line), &encoding);
                 PickerItem {
                     icon: None,
+                    enabled: true,
                     colours: None,
                     status: None,
                     depth: 0,
@@ -2093,6 +2104,7 @@ impl App {
         }
         picker.extend(hits.into_iter().map(|hit| PickerItem {
             icon: None,
+            enabled: true,
             colours: None,
             status: None,
             depth: 0,
@@ -2213,6 +2225,7 @@ impl App {
             .iter()
             .map(|symbol| PickerItem {
                 icon: icons::enabled().then(|| icons::for_kind(symbol.kind)),
+                enabled: true,
                 colours: None,
                 status: None,
                 depth: 0,
@@ -2858,6 +2871,7 @@ impl App {
                         detail: None,
                         trailing: None,
                         value: PickerValue::File(path.clone()),
+                        enabled: true,
                         colours: None,
                         status: statuses.get(&root.join(&path)).copied(),
                         depth: 0,

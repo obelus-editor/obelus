@@ -86,6 +86,14 @@ pub struct PickerItem {
     /// files nobody has touched, and the few that have been are what a
     /// reader is usually looking for.
     pub status: Option<crate::git::FileStatus>,
+    /// Whether the row can be chosen.
+    ///
+    /// A row that cannot is drawn dim and the selection walks past it. Shown
+    /// rather than left out, because a list that hides what it cannot do
+    /// cannot be learned from: a reader who never sees `git.hunk` does not
+    /// find out that obelus has it. What they see instead is that it is
+    /// there and not available *here*.
+    pub enabled: bool,
     /// What the label's characters *are*, for a row that is a line of code.
     ///
     /// Char ranges into the label and the kind to draw each in, so a search
@@ -432,6 +440,34 @@ impl Picker {
             .collect()
     }
 
+    /// Whether the row on a matched position can be chosen.
+    fn can_choose(&self, row: usize) -> bool {
+        self.matched
+            .get(row)
+            .and_then(|(index, _)| self.items.get(*index))
+            .is_some_and(|item| item.enabled)
+    }
+
+    /// The nearest row that can be chosen, looking `forward` first.
+    ///
+    /// Both ways, because the rows that cannot be chosen come in runs: a
+    /// reader stepping down into a run of them should come out the bottom of
+    /// it, and one that reaches the end of the list should not be left
+    /// pointing at nothing.
+    fn choosable(&self, from: usize, forward: bool) -> Option<usize> {
+        let rows = self.matched.len();
+        if rows == 0 {
+            return None;
+        }
+        let from = from.min(rows - 1);
+        let ahead = if forward {
+            (from..rows).chain(0..from).collect::<Vec<_>>()
+        } else {
+            (0..=from).rev().chain((from..rows).rev()).collect()
+        };
+        ahead.into_iter().find(|row| self.can_choose(*row))
+    }
+
     /// One row, by its index in the whole list.
     #[must_use]
     pub fn rows_at(&self, index: usize) -> Option<&PickerItem> {
@@ -672,8 +708,10 @@ impl Picker {
             KeyCode::Enter if bare => self
                 .matched
                 .get(self.selected)
-                .map_or(PickerOutcome::Consumed, |(index, _)| {
-                    PickerOutcome::Accepted(self.items[*index].value.clone())
+                .map(|(index, _)| &self.items[*index])
+                .filter(|item| item.enabled)
+                .map_or(PickerOutcome::Consumed, |item| {
+                    PickerOutcome::Accepted(item.value.clone())
                 }),
             KeyCode::Down if bare => {
                 self.move_selection(1, Wrap::Yes);
@@ -729,7 +767,10 @@ impl Picker {
 
     /// Selects a row outright.
     fn select(&mut self, row: usize) {
-        self.selected = row.min(self.matched.len().saturating_sub(1));
+        let row = row.min(self.matched.len().saturating_sub(1));
+        // Onwards from where it was asked for, so `ctrl+home` lands on the
+        // first row that can be chosen rather than on the first row.
+        self.selected = self.choosable(row, true).unwrap_or(row);
     }
 
     fn move_selection(&mut self, by: isize, wrap: Wrap) {
@@ -738,13 +779,17 @@ impl Picker {
             return;
         }
         let last = self.matched.len() - 1;
-        self.selected = match wrap {
+        let landed = match wrap {
             // Wrapping, because the other end of a list is faster to reach
             // than to scroll back through.
             Wrap::Yes if by > 0 && self.selected >= last => 0,
             Wrap::Yes if by < 0 && self.selected == 0 => last,
             _ => self.selected.saturating_add_signed(by).min(last),
         };
+        // Carried on in the direction of travel: stepping down into a run of
+        // rows that cannot be chosen comes out of the bottom of it, which is
+        // where the reader was going.
+        self.selected = self.choosable(landed, by >= 0).unwrap_or(self.selected);
     }
 
     fn refilter(&mut self) {
@@ -788,6 +833,10 @@ impl Picker {
         }
 
         self.selected = self.selected.min(self.matched.len().saturating_sub(1));
+        // A query can narrow the list to rows that cannot be chosen, or move
+        // one under the selection: whatever else happens, the selection is
+        // on a row a reader can press Enter on if there is one.
+        self.selected = self.choosable(self.selected, true).unwrap_or(self.selected);
 
         // Last, because it is the strongest claim about which row to start
         // on: it beats both the order the items came in and where the
@@ -797,6 +846,7 @@ impl Picker {
                 .matched
                 .iter()
                 .position(|(index, _)| self.items[*index].label == label)
+            && self.can_choose(row)
         {
             self.selected = row;
         }

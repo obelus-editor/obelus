@@ -422,14 +422,14 @@ fn added_lines_open_onto_their_own_colour() {
     support::lay_out(&mut app, 40, 8);
     support::press(&mut app, crossterm::event::KeyCode::Down);
 
-    // The palette offers it, and it opens.
+    // The palette lets it be chosen, and it opens.
     support::press_control(&mut app, 'p');
     assert!(
         app.picker()
             .expect("the palette")
             .matches()
-            .any(|item| item.label == "git.hunk"),
-        "not offered on an added line"
+            .any(|item| item.label == "git.hunk" && item.enabled),
+        "not available on an added line"
     );
     support::press(&mut app, crossterm::event::KeyCode::Esc);
 
@@ -545,22 +545,30 @@ fn the_changes_can_be_stepped_through() {
     support::press_alt_key(&mut app, KeyCode::Down);
     assert_eq!(line(&app), 50, "it wrapped around");
     assert_eq!(app.note(), Some("no change below here"));
-    // Which is also why the palette does not offer it here.
+    // Which is also why the palette shows it dim: it is there to be found,
+    // and it cannot be chosen from here.
     support::press_control(&mut app, 'p');
-    let offered: Vec<String> = app
+    let rows: Vec<(String, bool)> = app
         .picker()
         .expect("the palette")
         .matches()
-        .map(|item| item.label.clone())
+        .map(|item| (item.label.clone(), item.enabled))
         .collect();
     support::press(&mut app, KeyCode::Esc);
-    assert!(
-        offered.iter().any(|label| label == "git.previous"),
-        "not offered with changes above: {offered:?}"
+    let listed = |name: &str| {
+        rows.iter()
+            .find(|(label, _)| label == name)
+            .map(|(_, enabled)| *enabled)
+    };
+    assert_eq!(
+        listed("git.previous"),
+        Some(true),
+        "not available with changes above: {rows:?}"
     );
-    assert!(
-        !offered.iter().any(|label| label == "git.next"),
-        "offered with nothing below: {offered:?}"
+    assert_eq!(
+        listed("git.next"),
+        Some(false),
+        "available with nothing below: {rows:?}"
     );
 
     // Up, and from inside a long change: to the top of that change first,

@@ -600,22 +600,29 @@ fn the_symbols_scope_needs_a_server() {
     );
     assert_eq!(app.note(), Some("no language server to ask"));
 
-    // And the palette does not offer it, for the same reason -- while the
-    // project's search needs nothing and is offered.
+    // And the palette shows it dim -- findable, so a reader learns obelus
+    // can do it, and not choosable, because right now it cannot.
     support::press_control(&mut app, 'p');
-    let offered: Vec<String> = app
+    let rows: Vec<(String, bool)> = app
         .picker()
         .expect("the palette")
         .matches()
-        .map(|item| item.label.clone())
+        .map(|item| (item.label.clone(), item.enabled))
         .collect();
-    assert!(
-        offered.iter().any(|label| label == "search.project"),
-        "the project search needs nothing and was not offered: {offered:?}"
+    let listed = |name: &str| {
+        rows.iter()
+            .find(|(label, _)| label == name)
+            .map(|(_, enabled)| *enabled)
+    };
+    assert_eq!(
+        listed("search.project"),
+        Some(true),
+        "the project search needs nothing and cannot be chosen: {rows:?}"
     );
-    assert!(
-        !offered.iter().any(|label| label == "search.symbols"),
-        "offered with no server to ask: {offered:?}"
+    assert_eq!(
+        listed("search.symbols"),
+        Some(false),
+        "choosable with no server to ask: {rows:?}"
     );
 }
 
