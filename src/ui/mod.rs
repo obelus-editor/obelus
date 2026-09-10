@@ -198,7 +198,10 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
                     .map(|slash| picker::PickerView::over(slash, app.theme()))
             });
         if let Some(list) = over {
-            let region = list.region(regions.editor);
+            let room = app.chat().map_or(regions.editor, |chat| {
+                chat::above_writing(regions.editor, chat)
+            });
+            let region = list.region(room);
             list.render(region, cells);
             if region.y > regions.editor.y {
                 rule(

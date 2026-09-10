@@ -77,6 +77,18 @@ fn rows(dump: &str) -> Vec<&str> {
         .collect()
 }
 
+/// Which screen row a dump's text is on, by its own row numbers.
+fn row_of(dump: &str, needle: &str) -> u16 {
+    rows(dump)
+        .into_iter()
+        .find(|row| row.contains(needle))
+        .unwrap_or_else(|| panic!("no {needle} on screen:\n{dump}"))
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number")
+}
+
 /// The transcript's text, as it is on screen.
 fn screen(app: &mut App) -> String {
     let dump = support::render(app, WIDTH, HEIGHT);
@@ -465,8 +477,37 @@ fn a_slash_is_a_command_and_anything_else_is_a_message() {
         support::press(&mut app, KeyCode::Backspace);
     }
     support::type_text(&mut app, "/co");
-    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(app.slash().is_some(), "no list while a name is typed");
+    // Above the box, not over it. The list is a list of what is being
+    // typed, so the one row it must not cover is the row being typed on --
+    // which is the row the caret is on.
+    let caret = support::cursor_line(&dump);
+    let typing: u16 = caret
+        .split(',')
+        .nth(1)
+        .and_then(|row| row.parse().ok())
+        .expect("the caret's row");
+    assert!(
+        rows(&dump)[usize::from(typing)].contains("/co"),
+        "what is being typed is covered:\n{dump}"
+    );
+    for word in ["/compact", "/cost"] {
+        assert!(
+            row_of(&dump, word) < typing,
+            "{word} is drawn on or below the box:\n{dump}"
+        );
+    }
+    // And the rule over the box is still there, so the list has one under
+    // it as well as over it rather than sitting straight on the box.
+    let over = rows(&dump)[usize::from(typing) - 1]
+        .split_once('|')
+        .expect("a row")
+        .1;
+    assert!(
+        over.chars().all(|drawn| drawn == '\u{2500}'),
+        "the rule over the box is gone:\n{dump}"
+    );
     for _ in 0.."/co".len() {
         support::press(&mut app, KeyCode::Backspace);
     }

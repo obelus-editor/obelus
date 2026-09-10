@@ -91,6 +91,23 @@ pub fn writing_width(area: Rect) -> u16 {
     area.width.saturating_sub(MARGIN + INDENT + 1).max(1)
 }
 
+/// The room a list opened over the conversation has.
+///
+/// Everything above the box and the rule over it. A compact list draws
+/// against the foot of whatever it is given, and the foot of the whole
+/// region is what is being written -- which for the list of commands is
+/// the one row that must stay visible, because the list is a list of what
+/// is being typed there.
+#[must_use]
+pub fn above_writing(area: Rect, chat: &Chat) -> Rect {
+    let rows = chat.writing().rows(writing_width(area)).len();
+    let writing = regions(area, rows).writing;
+    Rect {
+        height: writing.y.saturating_sub(area.y + 1),
+        ..area
+    }
+}
+
 /// Where the four bands go, given how many rows the box needs.
 #[must_use]
 pub fn regions(area: Rect, needed: usize) -> Regions {
