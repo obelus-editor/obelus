@@ -111,16 +111,13 @@ impl App {
         self.talker.as_ref().and_then(acp::Talk::info).or(chosen)
     }
 
-    /// Which way of working the agent is in, if it offers any.
+    /// The way of working the agent is in, if it offers one.
+    ///
+    /// A setting like the others -- the one the agent said is the mode --
+    /// named apart because one key steps it.
     #[must_use]
-    pub fn agent_mode(&self) -> Option<&acp::Mode> {
+    pub fn agent_mode(&self) -> Option<&acp::Setting> {
         self.talker.as_ref()?.mode()
-    }
-
-    /// The ways of working it offers.
-    #[must_use]
-    pub fn agent_modes(&self) -> &[acp::Mode] {
-        self.talker.as_ref().map_or(&[], acp::Talk::modes)
     }
 
     /// The commands it says it takes.
@@ -222,10 +219,7 @@ impl App {
             return;
         };
         let (name, told) = (known.name.clone(), what_to_say(known, value));
-        let chosen = match known.switch {
-            true => acp::Chosen::Switch(value == "on"),
-            false => acp::Chosen::Value(value.to_string()),
-        };
+        let chosen = acp::Chosen::of(known, value);
         talker.set(setting, chosen);
         // In the transcript, because it is a thing the reader did to the
         // conversation: what the agent answers with is the whole set of

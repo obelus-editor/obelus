@@ -35,9 +35,9 @@ use agent_client_protocol::{
             Implementation, InitializeRequest, NewSessionRequest, PermissionOptionId,
             PromptRequest, ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
             RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-            SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionValue,
-            SessionConfigOptionsCapabilities, SessionConfigSelectOption,
-            SessionConfigSelectOptions, SessionNotification, SessionUpdate,
+            SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
+            SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionConfigSelectOption,
+            SessionConfigSelectOptions, SessionModeState, SessionNotification, SessionUpdate,
             SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent,
             WriteTextFileRequest,
         },
@@ -85,6 +85,22 @@ pub enum Chosen {
     Switch(bool),
 }
 
+impl Chosen {
+    /// What putting a setting on one of its values means over the wire.
+    ///
+    /// A switch takes a boolean and a list takes an id, and which one a
+    /// setting takes is the setting's own business -- so it is answered
+    /// here, where what obelus calls the two sides of a switch is also
+    /// written down.
+    #[must_use]
+    pub fn of(setting: &Setting, value: &str) -> Self {
+        match setting.kind {
+            Kind::Switch => Self::Switch(value == ON),
+            Kind::Select => Self::Value(value.to_string()),
+        }
+    }
+}
+
 /// How obelus answers something the agent asked.
 ///
 /// One value, once. `None` is a refusal: no option chosen, or no text to
@@ -96,12 +112,12 @@ pub type Answer<T> = oneshot::Sender<T>;
 pub enum Incoming {
     /// The handshake finished. What it calls itself, if it said.
     Ready(Option<String>),
-    /// There is a session, and these are the ways of working it offers.
+    /// There is a session to talk in.
     Started {
-        /// Every mode it has.
-        modes: Vec<Mode>,
-        /// Which one is on.
-        current: Option<String>,
+        /// The mode it offers through the dedicated methods, if it offers
+        /// one that way -- read into a setting like any other, and dropped
+        /// if the settings turn out to carry the mode themselves.
+        mode: Option<Setting>,
     },
     /// Something to show.
     Update(Update),
@@ -188,9 +204,55 @@ pub struct Setting {
     pub values: Vec<Value>,
     /// Which value is on, by its id.
     pub current: String,
-    /// Whether it is a switch, which is set with a boolean rather than an
-    /// id and so is offered as two values of obelus's own making.
-    pub switch: bool,
+    /// Which of the two shapes it is, which decides both how it is drawn
+    /// and what happens when a reader presses enter on it.
+    pub kind: Kind,
+    /// What sort of thing it is about, as the agent itself says.
+    pub category: Category,
+    /// Set with `session/set_mode` rather than `session/set_config_option`.
+    ///
+    /// True only of the mode an agent offers through the older, dedicated
+    /// methods, which obelus reads into a setting like any other. The
+    /// protocol is dropping those methods; this is the one field that
+    /// remembers which door a setting goes back out of, and when they are
+    /// gone it is the only thing to delete.
+    pub legacy: bool,
+}
+
+/// Which of the two shapes a [`Setting`] is.
+///
+/// The protocol has exactly these two, and the difference is not
+/// decoration: a list of choices is a list to open, and a switch has
+/// nothing to open because there is nowhere else for it to go.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// One value out of several.
+    Select,
+    /// On or off, which obelus offers as two values of its own making.
+    Switch,
+}
+
+/// What a setting is about, in the protocol's own words.
+///
+/// `category` exists for exactly this -- the spec's own list of what a
+/// client may do with it is "keyboard shortcuts, icons, placement" -- and
+/// it says a client must work without it. So obelus uses it for a glyph,
+/// for which setting `shift+tab` steps, and for nothing that would be
+/// wrong if an agent said nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Category {
+    /// The way of working: what the dedicated mode methods used to carry.
+    Mode,
+    /// Which model answers.
+    Model,
+    /// Something about the model.
+    ModelConfig,
+    /// How hard it thinks.
+    ThoughtLevel,
+    /// Something else, or nothing said. Every unknown category is this
+    /// one: the name of a category obelus has never heard of tells it no
+    /// more than silence does.
+    Other,
 }
 
 /// One value a [`Setting`] can be put on.
@@ -213,15 +275,6 @@ impl Setting {
             .find(|value| value.id == self.current)
             .map(|value| value.name.as_str())
     }
-}
-
-/// One way of working the agent offers.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Mode {
-    /// The agent's id for it, which is what a change names.
-    pub id: String,
-    /// What to call it on screen.
-    pub name: String,
 }
 
 /// One command the agent offers, of the kind typed with a slash.
@@ -508,21 +561,11 @@ async fn talk(
                     .block_task()
                     .await?;
                 let session = opened.session_id.clone();
-                let (modes, current) = match opened.modes {
-                    Some(state) => (
-                        state
-                            .available_modes
-                            .iter()
-                            .map(|mode| Mode {
-                                id: mode.id.0.to_string(),
-                                name: mode.name.clone(),
-                            })
-                            .collect(),
-                        Some(state.current_mode_id.0.to_string()),
-                    ),
-                    None => (Vec::new(), None),
-                };
-                let _ = events.send(Event::Acp(Incoming::Started { modes, current }));
+                // The old mode methods, read into a setting at the edge --
+                // and kept only until the settings say they carry the mode
+                // themselves, which is what replaces them.
+                let mode = opened.modes.as_ref().map(mode_setting);
+                let _ = events.send(Event::Acp(Incoming::Started { mode }));
                 if let Some(options) = opened.config_options.as_ref() {
                     let settings = options.iter().filter_map(setting_of).collect();
                     let _ = events.send(Event::Acp(Incoming::Update(Update::Settings(settings))));
@@ -855,11 +898,11 @@ fn content_of(
 /// values obelus cannot list is a row that would do nothing when chosen,
 /// and the agent's own dialog for it is not obelus's to open.
 fn setting_of(option: &SessionConfigOption) -> Option<Setting> {
-    let (values, current, switch) = match &option.kind {
+    let (values, current, kind) = match &option.kind {
         SessionConfigKind::Select(select) => (
             values_of(&select.options),
             select.current_value.0.to_string(),
-            false,
+            Kind::Select,
         ),
         SessionConfigKind::Boolean(boolean) => (
             vec![
@@ -878,7 +921,7 @@ fn setting_of(option: &SessionConfigOption) -> Option<Setting> {
                 true => ON.to_string(),
                 false => OFF.to_string(),
             },
-            true,
+            Kind::Switch,
         ),
         other => {
             tracing::debug!(?other, "a setting obelus cannot show");
@@ -891,9 +934,71 @@ fn setting_of(option: &SessionConfigOption) -> Option<Setting> {
         about: said_twice(option.description.as_deref(), &option.name),
         values,
         current,
-        switch,
+        kind,
+        category: category_of(option.category.as_ref()),
+        legacy: false,
     })
 }
+
+/// What the agent said a setting is about, as one of the few obelus can do
+/// something with.
+///
+/// A category obelus has never heard of is [`Category::Other`], which is
+/// also what nothing said means: the spec reserves the unprefixed names for
+/// itself and tells clients to handle the rest gracefully, and the graceful
+/// thing is to show the setting and claim nothing about it.
+fn category_of(category: Option<&SessionConfigOptionCategory>) -> Category {
+    match category {
+        Some(SessionConfigOptionCategory::Mode) => Category::Mode,
+        Some(SessionConfigOptionCategory::Model) => Category::Model,
+        Some(SessionConfigOptionCategory::ModelConfig) => Category::ModelConfig,
+        Some(SessionConfigOptionCategory::ThoughtLevel) => Category::ThoughtLevel,
+        Some(SessionConfigOptionCategory::Other(name)) => {
+            tracing::debug!(name, "a category obelus has never heard of");
+            Category::Other
+        }
+        None | Some(_) => Category::Other,
+    }
+}
+
+/// The mode an agent offers through the dedicated methods, as a setting
+/// like any other.
+///
+/// The protocol is dropping those methods: "Dedicated session mode methods
+/// will be removed in a future version of the protocol", and the option
+/// with `category: "mode"` is what replaces them -- so an agent in the
+/// middle of that change offers both, to be understood by clients on either
+/// side of it. obelus reads the old shape into the new one here, at the
+/// edge, so that everything above this has one kind of thing to draw, walk
+/// and set. What is left of the old way is [`Setting::legacy`] and the one
+/// branch that reads it.
+fn mode_setting(state: &SessionModeState) -> Setting {
+    Setting {
+        id: MODE.to_string(),
+        name: "Mode".to_string(),
+        about: None,
+        values: state
+            .available_modes
+            .iter()
+            .map(|mode| Value {
+                id: mode.id.0.to_string(),
+                name: mode.name.clone(),
+                about: said_twice(mode.description.as_deref(), &mode.name),
+            })
+            .collect(),
+        current: state.current_mode_id.0.to_string(),
+        kind: Kind::Select,
+        category: Category::Mode,
+        legacy: true,
+    }
+}
+
+/// What obelus calls the setting it makes out of the old mode methods.
+///
+/// Only obelus's own name for it -- the agent never sees it, because a
+/// change to this one goes out as `session/set_mode` and names a mode
+/// rather than a setting.
+pub const MODE: &str = "mode";
 
 /// What obelus calls the two sides of a switch.
 const ON: &str = "on";

@@ -39,12 +39,15 @@ fn wired() -> (App, Receiver<Event>) {
 
 /// Starts the fake agent and opens the conversation on it.
 fn talking() -> (App, Receiver<Event>) {
+    playing(&[])
+}
+
+/// The same, with the agent told to play a different shape.
+fn playing(how: &[&str]) -> (App, Receiver<Event>) {
     let (mut app, events) = wired();
-    app.talk_to(
-        "fake",
-        Path::new("sh"),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-    );
+    let mut arguments = vec!["tests/fixtures/fake-agent.sh".to_string()];
+    arguments.extend(how.iter().map(|word| (*word).to_string()));
+    app.talk_to("fake", Path::new("sh"), &arguments);
     app.open_agent();
     (app, events)
 }
@@ -370,10 +373,10 @@ fn the_box_takes_a_paragraph() {
 fn shift_and_tab_walk_the_agents_modes() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the modes", |app| {
-        !app.agent_modes().is_empty()
+        app.agent_mode().is_some()
     });
     assert_eq!(
-        app.agent_mode().map(|mode| mode.name.as_str()),
+        app.agent_mode().and_then(|mode| mode.current_name()),
         Some("ask first")
     );
     let dump = support::render(&mut app, WIDTH, HEIGHT);
@@ -388,14 +391,14 @@ fn shift_and_tab_walk_the_agents_modes() {
 
     support::press_shift(&mut app, KeyCode::BackTab);
     assert_eq!(
-        app.agent_mode().map(|mode| mode.name.as_str()),
+        app.agent_mode().and_then(|mode| mode.current_name()),
         Some("write code"),
         "shift+tab did not walk the modes"
     );
     // And round, because there are two of them.
     support::press_shift(&mut app, KeyCode::BackTab);
     assert_eq!(
-        app.agent_mode().map(|mode| mode.name.as_str()),
+        app.agent_mode().and_then(|mode| mode.current_name()),
         Some("ask first")
     );
 }
@@ -548,6 +551,111 @@ fn a_slash_is_a_command_and_anything_else_is_a_message() {
     );
 }
 
+/// The mode is a setting like the others, and there is only ever one of it.
+///
+/// The protocol is dropping the dedicated mode methods in favour of a config
+/// option with `category: "mode"`, so an agent part-way through that change
+/// offers both at once -- to be understood by clients on either side of it.
+/// A client that showed both would show the same choice twice, and one that
+/// took the old one would be using the door that is being closed. Which one
+/// it is comes from what the agent said the option is *about*, not from
+/// obelus recognising a name.
+#[test]
+fn a_mode_offered_both_ways_is_one_setting() {
+    // The old way only, which is what the ordinary fake agent plays: the
+    // mode comes from `session/new`'s own field, and obelus reads it into a
+    // setting called what obelus calls it.
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.id == "model")
+    });
+    let old: Vec<&str> = app
+        .agent_settings()
+        .iter()
+        .map(|setting| setting.name.as_str())
+        .collect();
+    assert_eq!(old, ["Mode", "Model", "Allow everything"]);
+    assert_eq!(
+        app.agent_mode().map(|mode| mode.name.as_str()),
+        Some("Mode"),
+        "the old mode methods did not become the mode"
+    );
+    assert!(
+        app.agent_mode().is_some_and(|mode| mode.legacy),
+        "a mode from the old methods is not marked as going out the old door"
+    );
+
+    // Both ways at once: the option wins, the old one is left out, and it
+    // is the agent's own name for it that shows.
+    let (mut app, events) = playing(&["mode-as-option"]);
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.id == "model")
+    });
+    let named: Vec<&str> = app
+        .agent_settings()
+        .iter()
+        .map(|setting| setting.name.as_str())
+        .collect();
+    assert_eq!(
+        named,
+        ["Way of working", "Model", "Allow everything"],
+        "the mode is in the list twice, or not the agent's own"
+    );
+    let mode = app.agent_mode().expect("a mode");
+    assert_eq!(mode.id, "way");
+    assert!(!mode.legacy, "the option was taken for the old methods");
+    assert_eq!(mode.current_name(), Some("ask first"));
+
+    // And stepping it goes out as a change to that option -- which answers
+    // with the whole set again, so what is shown is what the agent took.
+    support::press_shift(&mut app, KeyCode::BackTab);
+    pump(&mut app, &events, "the mode to move", |app| {
+        app.agent_mode()
+            .is_some_and(|mode| mode.current_name() == Some("write code"))
+    });
+}
+
+/// A mode the agent will not take is taken back off the screen.
+///
+/// `session/set_mode` answers with nothing at all -- there is no room in
+/// that answer for the mode it is now in -- so obelus shows the new one the
+/// moment the key is pressed, which is the only way that key can feel like
+/// anything. That guess has to be given up if the agent refuses, or the row
+/// goes on naming a way of working the agent is not in. (The other door
+/// needs none of this: a config option's answer *is* the whole set of them
+/// again.)
+#[test]
+fn a_mode_the_agent_refuses_goes_back() {
+    let (mut app, events) = playing(&["refuse-mode"]);
+    pump(&mut app, &events, "the mode", |app| {
+        app.agent_mode().is_some()
+    });
+    assert_eq!(
+        app.agent_mode().and_then(|mode| mode.current_name()),
+        Some("ask first")
+    );
+
+    support::press_shift(&mut app, KeyCode::BackTab);
+    assert_eq!(
+        app.agent_mode().and_then(|mode| mode.current_name()),
+        Some("write code"),
+        "the key did nothing while the agent was being asked"
+    );
+
+    pump(&mut app, &events, "the refusal", |app| {
+        app.agent_mode().and_then(|mode| mode.current_name()) == Some("ask first")
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("changing the mode"),
+        "nothing said why it went back:\n{text}"
+    );
+}
+
 /// The reader types `/model`, and obelus answers with the model list.
 ///
 /// Not the agent: the choice is one of the session's settings, and the
@@ -558,16 +666,20 @@ fn a_slash_is_a_command_and_anything_else_is_a_message() {
 fn a_command_that_names_a_setting_offers_its_values() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the settings", |app| {
-        !app.agent_settings().is_empty()
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.id == "model")
     });
-    // Both of them. The switch is only there because obelus said in the
-    // handshake that it can show one, so this is that promise as well.
+    // The mode first -- this agent offers it the old way, and obelus reads
+    // it into a setting like any other -- then both config options. The
+    // switch is only there because obelus said in the handshake that it can
+    // show one, so this is that promise as well.
     let named: Vec<&str> = app
         .agent_settings()
         .iter()
         .map(|setting| setting.name.as_str())
         .collect();
-    assert_eq!(named, ["Model", "Allow everything"], "the settings");
+    assert_eq!(named, ["Mode", "Model", "Allow everything"], "the settings");
 
     // Typed as a command, because that is what the agent calls it and what
     // its own list of commands offers -- so the list of commands is what
@@ -644,7 +756,9 @@ fn a_command_that_names_a_setting_offers_its_values() {
 
     // The switch is two rows of the same list, opened on the side it is on
     // -- and set with a boolean rather than a value id, which is what the
-    // agent reads it back as.
+    // agent reads it back as. Two rows down, because the mode is first and
+    // the model after it.
+    support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     let sides: Vec<String> = app

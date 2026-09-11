@@ -31,7 +31,8 @@ use std::path::Path;
 
 use futures::channel::mpsc;
 pub use link::{
-    Answer, Ask, Choice, Chosen, Field, Incoming, Mode, Order, Reply, Setting, Takes, Update, Value,
+    Answer, Ask, Category, Choice, Chosen, Field, Incoming, Kind, Order, Reply, Setting, Takes,
+    Update, Value,
 };
 
 /// One running agent: how to ask it things, and what it has said about
@@ -54,14 +55,27 @@ pub struct Talk {
     thinking: bool,
     /// Whether the conversation has ended, and why.
     gone: Option<Option<String>>,
-    /// The ways of working it offers.
-    modes: Vec<Mode>,
-    /// Which one is on, by its id.
-    mode: Option<String>,
     /// The commands it says it takes.
     orders: Vec<Order>,
-    /// The settings it lets the reader change.
+    /// The settings it lets the reader change, as the agent's own list of
+    /// config options.
+    options: Vec<Setting>,
+    /// The mode it offers through the older, dedicated methods, if it does.
+    ///
+    /// Kept apart from the others so that it can be dropped when the
+    /// options turn out to carry the mode themselves: an agent in the
+    /// middle of that change offers both, and a reader must see one.
+    legacy_mode: Option<Setting>,
+    /// Both of those, merged: what everything above this reads.
     settings: Vec<Setting>,
+    /// What a mode was before the reader stepped it, while the agent has
+    /// not answered.
+    ///
+    /// `session/set_mode` answers with nothing at all, so what is shown
+    /// after that key is obelus's own guess -- and a guess has to be taken
+    /// back if the agent refuses, or the row goes on naming a mode the
+    /// agent is not in.
+    guessed: Option<(String, String)>,
     /// A prompt typed before there was a session to send it in.
     ///
     /// The ordinary case for the first thing said: opening the view starts
@@ -76,7 +90,7 @@ impl std::fmt::Debug for Talk {
             .field("id", &self.id)
             .field("session", &self.session)
             .field("thinking", &self.thinking)
-            .field("mode", &self.mode)
+            .field("settings", &self.settings.len())
             .finish_non_exhaustive()
     }
 }
@@ -98,10 +112,11 @@ impl Talk {
             session: false,
             thinking: false,
             gone: None,
-            modes: Vec::new(),
-            mode: None,
             orders: Vec::new(),
+            options: Vec::new(),
+            legacy_mode: None,
             settings: Vec::new(),
+            guessed: None,
             held: None,
         }
     }
@@ -136,17 +151,16 @@ impl Talk {
         self.gone.is_some()
     }
 
-    /// The ways of working it offers.
+    /// The way of working, if the agent offers one.
+    ///
+    /// Which is a setting like the rest of them -- the protocol's own
+    /// `category: "mode"` says which -- and is only named apart because one
+    /// key steps it and it is drawn first.
     #[must_use]
-    pub fn modes(&self) -> &[Mode] {
-        &self.modes
-    }
-
-    /// Which one is on.
-    #[must_use]
-    pub fn mode(&self) -> Option<&Mode> {
-        let id = self.mode.as_deref()?;
-        self.modes.iter().find(|mode| mode.id == id)
+    pub fn mode(&self) -> Option<&Setting> {
+        self.settings
+            .iter()
+            .find(|setting| setting.category == Category::Mode)
     }
 
     /// The commands it says it takes.
@@ -169,15 +183,77 @@ impl Talk {
 
     /// Puts one of them on one of its values.
     ///
-    /// What is shown does not change here: the agent answers with the whole
-    /// set of them again, because one setting's value can change what
-    /// another offers. So a chosen value appears when the agent has taken
-    /// it, which is the honest thing for a list to show.
+    /// Two doors, and this is the only thing that knows there are two: a
+    /// setting the agent offered as a config option goes back as one, and
+    /// the mode an agent offers the old way goes back as a mode. When the
+    /// old methods leave the protocol, the second branch leaves with them.
+    ///
+    /// What is shown does not change for a config option: the agent answers
+    /// with the whole set of them again, because one setting's value can
+    /// change what another offers, so a chosen value appears when the agent
+    /// has taken it. `session/set_mode` answers with nothing, so there the
+    /// value is put on now and taken back if the agent refuses.
     pub fn set(&mut self, setting: &str, chosen: Chosen) {
-        let _ = self.asks.unbounded_send(Ask::Set {
-            setting: setting.to_string(),
-            chosen,
-        });
+        let ask = match (
+            self.setting(setting).is_some_and(|known| known.legacy),
+            &chosen,
+        ) {
+            (true, Chosen::Value(mode)) => {
+                self.guess(setting, mode);
+                Ask::Mode(mode.clone())
+            }
+            _ => Ask::Set {
+                setting: setting.to_string(),
+                chosen,
+            },
+        };
+        let _ = self.asks.unbounded_send(ask);
+    }
+
+    /// Shows a mode as on before the agent has said so.
+    fn guess(&mut self, setting: &str, value: &str) {
+        if let Some(mode) = self.legacy_mode.as_mut().filter(|mode| mode.id == setting) {
+            self.guessed = Some((setting.to_string(), mode.current.clone()));
+            mode.current = value.to_string();
+            self.merge();
+        }
+    }
+
+    /// Takes that guess back.
+    fn unguess(&mut self) {
+        let Some((setting, was)) = self.guessed.take() else {
+            return;
+        };
+        if let Some(mode) = self.legacy_mode.as_mut().filter(|mode| mode.id == setting) {
+            mode.current = was;
+            self.merge();
+        }
+    }
+
+    /// Works out the one list everything above this reads.
+    ///
+    /// The agent's own order, which is the only order that means anything:
+    /// the spec asks a client to place options by it, and an agent puts its
+    /// mode where a reader looks for it. Nothing is sorted here -- the mode
+    /// is first because the agent says so, not because obelus moved it.
+    ///
+    /// The one thing obelus has to place is a mode from the older, dedicated
+    /// methods: it is not in that array at all, so it goes in front of it,
+    /// which is where the old methods drew it.
+    ///
+    /// And the mode is only in the list once. An agent part-way through the
+    /// protocol's change offers it both ways at the same time, so the option
+    /// wins and the old one is left out -- decided by what the agent said
+    /// the option is *about*, not by obelus recognising a name.
+    fn merge(&mut self) {
+        let carried = self
+            .options
+            .iter()
+            .any(|option| option.category == Category::Mode);
+        let mut settings: Vec<Setting> = Vec::with_capacity(self.options.len() + 1);
+        settings.extend(self.legacy_mode.clone().filter(|_| !carried));
+        settings.extend(self.options.iter().cloned());
+        self.settings = settings;
     }
 
     /// Sends a prompt, or holds it until there is a session to send it in.
@@ -212,21 +288,30 @@ impl Talk {
     ///
     /// Walked rather than chosen from a list: there are two or three of
     /// these and they are a cycle in the agent's own order, which is what a
-    /// key that steps through them means. What is shown changes here, and
-    /// the agent's own update -- if it sends one -- says the same thing
-    /// again.
+    /// key that steps through them means. It goes out through [`Talk::set`]
+    /// like every other change, because it *is* one -- the mode is a
+    /// setting, whichever way the agent offers it.
     pub fn step_mode(&mut self) {
-        if self.modes.len() < 2 {
+        let Some(mode) = self.mode() else {
+            return;
+        };
+        if mode.values.len() < 2 {
             return;
         }
-        let at = self
-            .mode
-            .as_deref()
-            .and_then(|id| self.modes.iter().position(|mode| mode.id == id))
+        let at = mode
+            .values
+            .iter()
+            .position(|value| value.id == mode.current)
             .unwrap_or(0);
-        let next = self.modes[(at + 1) % self.modes.len()].id.clone();
-        self.mode = Some(next.clone());
-        let _ = self.asks.unbounded_send(Ask::Mode(next));
+        let (id, next) = (
+            mode.id.clone(),
+            mode.values[(at + 1) % mode.values.len()].id.clone(),
+        );
+        let chosen = self
+            .setting(&id)
+            .map(|setting| Chosen::of(setting, &next))
+            .unwrap_or(Chosen::Value(next));
+        self.set(&id, chosen);
     }
 
     /// Stops talking, which ends the conversation and the process with it.
@@ -259,25 +344,33 @@ impl Talk {
                 self.info = named;
                 None
             }
-            Incoming::Started { modes, current } => {
+            Incoming::Started { mode } => {
                 self.session = true;
-                self.modes = modes;
-                self.mode = current;
+                self.legacy_mode = mode;
+                self.merge();
                 if let Some(held) = self.held.take() {
                     self.say(&held);
                 }
                 None
             }
             Incoming::Update(Update::Mode(id)) => {
-                self.mode = Some(id);
+                // The agent has spoken, so there is no guess left to take
+                // back -- whether it moved because the reader asked or on
+                // its own.
+                self.guessed = None;
+                if let Some(mode) = self.legacy_mode.as_mut() {
+                    mode.current = id;
+                }
+                self.merge();
                 None
             }
             Incoming::Update(Update::Orders(orders)) => {
                 self.orders = orders;
                 None
             }
-            Incoming::Update(Update::Settings(settings)) => {
-                self.settings = settings;
+            Incoming::Update(Update::Settings(options)) => {
+                self.options = options;
+                self.merge();
                 None
             }
             Incoming::Ended(reason) => {
@@ -286,6 +379,8 @@ impl Talk {
             }
             Incoming::Failed(what, why) => {
                 self.thinking = false;
+                // A mode obelus showed as on that the agent would not take.
+                self.unguess();
                 Some(Incoming::Failed(what, why))
             }
             Incoming::Gone(why) => {

@@ -10,7 +10,10 @@
 #   initialize            -> what it is, and protocol version 1
 #   session/new           -> a session, two modes, a dozen slash commands (more
 #                            than the list of them is tall) and two
-#                            settings
+#                            settings. Run it with `mode-as-option` and it
+#                            offers its mode both ways at once, the way an
+#                            agent part-way through the protocol's change
+#                            does.
 #   session/set_mode      -> taken
 #   session/set_config_option
 #                         -> taken, and every setting again with the new value
@@ -41,11 +44,32 @@ id_of() {
 turn=''
 forms=''
 
+# Whether it offers its mode the new way as well as the old.
+#
+# A real agent part-way through the protocol's change does exactly this: a
+# config option with `category: "mode"`, *and* the `modes` field the
+# dedicated methods use, so that clients on either side of the change
+# understand it. Asked for with an argument, because both shapes have to be
+# tested and an agent is only ever one of them.
+both_ways=''
+# Whether it refuses to change its mode. An agent that says no to
+# `session/set_mode` says it with an error and nothing else -- there is no
+# answer to that request to carry the mode it is in -- so a client that
+# showed the new one before asking has to take it back.
+refuses=''
+for word in "$@"; do
+    case "$word" in
+        mode-as-option) both_ways='yes' ;;
+        refuse-mode) refuses='yes' ;;
+    esac
+done
+
 # What its settings are on. Changed by `session/set_config_option` and read
 # back out by `options`: an agent's settings are state, and a client that
 # sets one and is told the old value back has been lied to.
 model='fast'
 allow='false'
+way='ask'
 switches=''
 
 # Every setting it offers, as the protocol's own list.
@@ -55,7 +79,13 @@ switches=''
 # handshake, and a client that stops promising it stops being offered the
 # row.
 options() {
-    printf '[{"id":"model","name":"Model","description":"Which model it thinks with","type":"select","currentValue":"%s","options":[{"value":"fast","name":"Fast","description":"Fast"},{"value":"careful","name":"Careful","description":"Slower, and better"}]}' "$model"
+    printf '['
+    if [ -n "$both_ways" ]; then
+        # First in the list as well, because an agent puts the mode where a
+        # reader looks for it -- and the client is asked to keep the order.
+        printf '{"id":"way","name":"Way of working","category":"mode","type":"select","currentValue":"%s","options":[{"value":"ask","name":"ask first"},{"value":"code","name":"write code"}]},' "$way"
+    fi
+    printf '{"id":"model","name":"Model","description":"Which model it thinks with","type":"select","currentValue":"%s","options":[{"value":"fast","name":"Fast","description":"Fast"},{"value":"careful","name":"Careful","description":"Slower, and better"}]}' "$model"
     if [ -n "$switches" ]; then
         printf ',{"id":"allow_all","name":"Allow everything","type":"boolean","currentValue":%s}' "$allow"
     fi
@@ -101,11 +131,16 @@ while IFS= read -r line; do
             case "$which" in
                 model) model=$(printf '%s' "$got" | tr -d '"') ;;
                 allow_all) allow="$got" ;;
+                way) way=$(printf '%s' "$got" | tr -d '"') ;;
             esac
             printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             ;;
         *'"method":"session/set_mode"'*)
-            printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$(id_of "$line")"
+            if [ -n "$refuses" ]; then
+                printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"not that one"}}\n' "$(id_of "$line")"
+            else
+                printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$(id_of "$line")"
+            fi
             ;;
         *'"method":"session/prompt"'*'"text":"/ask'*)
             turn=$(id_of "$line")

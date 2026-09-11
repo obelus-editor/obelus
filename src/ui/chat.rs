@@ -19,6 +19,7 @@
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
 use crate::{
+    acp,
     app::{App, talking::Talking},
     component::chat::{Chat, Speaker},
     icons,
@@ -143,10 +144,10 @@ pub struct ChatView<'a> {
     state: Talking,
     /// What to call it.
     name: Option<&'a str>,
-    /// Which way of working is on, and how many there are to walk.
+    /// Which way of working is on, by the name of the value it is on.
     mode: Option<&'a str>,
-    /// How many ways of working there are, which is what says whether
-    /// there is anything to switch.
+    /// How many ways of working there are to walk, which is what says
+    /// whether the key that walks them is worth naming.
     modes: usize,
 }
 
@@ -160,8 +161,8 @@ impl<'a> ChatView<'a> {
             theme: app.theme(),
             state: app.talking(),
             name: app.agent_name(),
-            mode: app.agent_mode().map(|mode| mode.name.as_str()),
-            modes: app.agent_modes().len(),
+            mode: app.agent_mode().and_then(acp::Setting::current_name),
+            modes: app.agent_mode().map_or(0, |mode| mode.values.len()),
         })
     }
 
