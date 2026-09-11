@@ -67,6 +67,52 @@ fn a_scope_with_nothing_to_say_has_no_tab() {
     );
 }
 
+/// With nothing typed yet, the preview is the file being read, at the place
+/// it is being read. A blank half-screen under an empty list is the search
+/// having taken the reader's file away before they have asked it anything;
+/// the file, still there under the list, reads as the list having pushed it
+/// down the screen.
+#[test]
+fn an_empty_search_previews_the_file_being_read() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    support::lay_out(&mut app, 60, 30);
+    // Somewhere down the file, so the top of it is not the answer to every
+    // question about where the reader is.
+    for _ in 0..24 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let reading = support::render(&mut app, 60, 30);
+    assert!(
+        support::text_block(&reading).contains("LINE_24"),
+        "the cursor is not down the file:\n{reading}"
+    );
+
+    support::press_function(&mut app, 5);
+    let searching = support::render(&mut app, 60, 30);
+    let text = support::text_block(&searching);
+    assert!(
+        text.contains("type to search this file"),
+        "not the empty search:\n{searching}"
+    );
+    assert!(
+        text.contains("LINE_24"),
+        "the search is showing nothing where the file was:\n{searching}"
+    );
+    assert!(
+        !text.contains("LINE_01"),
+        "the preview went back to the top of the file:\n{searching}"
+    );
+
+    // And typing gives the rows the preview back: the file under an empty
+    // search is what there is to show, not a row of its own.
+    support::type_text(&mut app, "LINE_03");
+    let narrowed = support::render(&mut app, 60, 30);
+    assert!(
+        support::text_block(&narrowed).contains("LINE_03"),
+        "the rows did not take the preview over:\n{narrowed}"
+    );
+}
+
 /// The file's rows are its lines, and the picker narrows them. The rows are
 /// lines rather than matches because the picker is already a matcher: a
 /// search that filtered the lines itself would be a second, worse one beside

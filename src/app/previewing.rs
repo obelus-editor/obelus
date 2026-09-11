@@ -209,7 +209,15 @@ impl App {
     /// The file, and the part of it, the picker's selection is about.
     fn preview_target(&self) -> Option<(PathBuf, Marked)> {
         let picker = self.picker.as_ref()?;
-        let item = picker.selected_item()?;
+        // Nothing chosen, because there is nothing to choose: a search with
+        // nothing typed into it yet, or a query that matches none of the
+        // rows. The preview is then the file being read, where it is being
+        // read -- the list has pushed the editor down the screen rather
+        // than replaced it with a blank, and what was under the reader's
+        // eyes a moment ago is still there to look at.
+        let Some(item) = picker.selected_item() else {
+            return self.reading_now();
+        };
         // A row that *is* the line it names is there because the query
         // matched some of its characters, and those are what the preview
         // marks: the list has already said which they are, and marking
@@ -225,11 +233,15 @@ impl App {
             // A file has no symbol in it to mark, so the preview starts at
             // the top with nothing highlighted.
             PickerValue::File(path) => Some((self.working_directory.join(path), Marked::top())),
+            // A file already open is being read somewhere, and that is the
+            // part of it to show: choosing the row takes the reader back to
+            // exactly this, so the list reads as something folded over the
+            // file rather than as a way to somewhere new.
             PickerValue::Buffer(id) => self
                 .buffers
                 .get(id.get())
                 .and_then(Option::as_ref)
-                .map(|buffer| (buffer.path().to_path_buf(), Marked::top())),
+                .map(|buffer| (buffer.path().to_path_buf(), Marked::on(&buffer.cursor()))),
             PickerValue::Place { path, line, .. } if lines => Some((path.clone(), matched(*line))),
             PickerValue::Place {
                 path,
@@ -255,6 +267,15 @@ impl App {
             | PickerValue::AgentValue { .. }
             | PickerValue::Nothing => None,
         }
+    }
+}
+
+impl App {
+    /// The file being read and the line it is being read at, as a preview's
+    /// subject.
+    fn reading_now(&self) -> Option<(PathBuf, Marked)> {
+        let buffer = self.current_buffer()?;
+        Some((buffer.path().to_path_buf(), Marked::on(&buffer.cursor())))
     }
 }
 
@@ -318,15 +339,27 @@ pub(super) enum Marked {
         /// Which characters of the row matched.
         columns: Vec<u32>,
     },
-    /// Nothing to mark: a file has no symbol in it, and a preview of one
-    /// starts at the top.
-    Nothing,
+    /// A line, with nothing on it to mark.
+    ///
+    /// Which is what a row that names a whole file is about: the top of one
+    /// obelus has never opened, and wherever the reader is in one it has.
+    At {
+        /// Which line of the file, counted from zero.
+        line: u32,
+    },
 }
 
 impl Marked {
     /// The top of a file, with nothing to mark.
     const fn top() -> Self {
-        Self::Nothing
+        Self::At { line: 0 }
+    }
+
+    /// The line a cursor is on, with nothing to mark.
+    fn on(cursor: &crate::buffer::Cursor) -> Self {
+        Self::At {
+            line: u32::try_from(cursor.line.get()).unwrap_or(u32::MAX),
+        }
     }
 
     /// Which place in the file this is about, as it arrived.
@@ -339,15 +372,14 @@ impl Marked {
                 line, character, ..
             } => (*line, *character),
             Self::Matched { line, columns } => (*line, columns.first().copied().unwrap_or(0)),
-            Self::Nothing => (0, 0),
+            Self::At { line } => (*line, 0),
         }
     }
 
     /// Which line of the file the preview should be looking at.
     const fn line(&self) -> u32 {
         match self {
-            Self::Span { line, .. } | Self::Matched { line, .. } => *line,
-            Self::Nothing => 0,
+            Self::Span { line, .. } | Self::Matched { line, .. } | Self::At { line } => *line,
         }
     }
 
@@ -358,7 +390,7 @@ impl Marked {
         encoding: &lsp_types::PositionEncodingKind,
     ) -> Vec<Span> {
         match self {
-            Self::Nothing => Vec::new(),
+            Self::At { .. } => Vec::new(),
             Self::Span {
                 line,
                 character,

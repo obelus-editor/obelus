@@ -2790,6 +2790,67 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
     );
 }
 
+/// And the preview shows each file where it is being read, not at its top.
+/// Choosing the row takes the reader back to exactly that, so the list reads
+/// as something folded over the open files rather than as a way to somewhere
+/// new -- and a file's own place in it is the thing a reader remembers it by.
+#[test]
+fn the_buffer_list_previews_each_file_where_it_was_left() {
+    let mut app = App::new(vec![
+        support::open_fixture("many_lines.rs"),
+        support::open_fixture("sample.rs"),
+    ]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 60, 30);
+
+    // Down the first file, then away to the second, so the place in the
+    // first is somewhere only the buffer remembers.
+    for _ in 0..24 {
+        press(&mut app, KeyCode::Down);
+    }
+    press_function(&mut app, 2);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    assert!(
+        app.current_buffer()
+            .expect("a buffer")
+            .path()
+            .ends_with("sample.rs"),
+        "the second file was not switched to"
+    );
+
+    // The list, opened on the file being read: its preview is that file.
+    press_function(&mut app, 2);
+    let sample = support::render(&mut app, 60, 30);
+    assert!(
+        support::text_block(&sample).contains("greeting"),
+        "the preview is not the file being read:\n{sample}"
+    );
+
+    // And the row for the file that was left previews it there, twenty-odd
+    // lines in.
+    press(&mut app, KeyCode::Up);
+    let other = support::render(&mut app, 60, 30);
+    let text = support::text_block(&other);
+    assert!(
+        text.contains("LINE_24"),
+        "the preview is not where the file was left:\n{other}"
+    );
+    assert!(
+        !text.contains("LINE_01"),
+        "the preview went back to the top of the file:\n{other}"
+    );
+
+    // Which is what choosing the row shows, so nothing moves under the
+    // reader as the list closes.
+    press(&mut app, KeyCode::Enter);
+    let chosen = support::render(&mut app, 60, 30);
+    assert!(
+        support::text_block(&chosen).contains("LINE_24"),
+        "the file opened somewhere else than its preview said:\n{chosen}"
+    );
+}
+
 /// The file list gets a tab for the files that have changed, and only when
 /// some have: "which file do I want" and "what have I been working on" are
 /// different questions, and a reader coming back to a project asks the
