@@ -35,7 +35,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use documents::Rendered;
 use history::Changed;
 use keys::{editor_paging, motion_for, view_step};
-use previewing::{Preview, preview_paging};
+use previewing::Preview;
 use ratatui::{
     Terminal,
     backend::Backend,
@@ -834,6 +834,13 @@ impl App {
         let page = ui::picker::PickerView::new(self).map_or(1, |view| {
             view.rows_region(view.region(self.picker_room())).height
         });
+        // Except the paging keys, while a preview is on screen: a screenful
+        // is what the thing being *read* is moved by, and the list above it
+        // is ten rows with its ends a keypress away. With control they page
+        // the list, which is the other half of the same swap.
+        if self.page_preview(&key) {
+            return;
+        }
         if let Some(picker) = self.picker.as_mut() {
             // What a search is asking, before and after the key. The picker
             // owns the query and the tab and knows nothing about where rows
@@ -1011,15 +1018,6 @@ impl App {
                 // `ctrl+q` and the rest still reach the key table.
                 PromptOutcome::Ignored => {}
             }
-        }
-
-        // A key the picker did not want, while one is open: the only thing
-        // left that a key can move is the preview.
-        if self.picker.is_some()
-            && let Some(pages) = preview_paging(&key)
-        {
-            self.scroll_preview(pages);
-            return;
         }
 
         // A rendering scrolls by rows. Its rows are not the file's lines, so

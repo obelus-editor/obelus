@@ -79,6 +79,16 @@ picker's selection keys belong to whichever component owns the state they move.
 `App`, so anything that displays a key reads that table and a rebind changes
 every display of it.
 
+**The paging keys belong to whatever is being read, not to the list.** A
+list with a preview under it is two things on screen, and only one of them
+is read a screenful at a time: the list is ten rows walked one at a time
+with `ctrl+home` and `ctrl+end` a keypress from either end, while the
+preview is a file. So `App::page_preview` is asked before the list is, and
+answers no when there is nothing to page -- a compact list, or a terminal
+too short for a preview -- where the bare keys page the list as before. The
+same keys with `ctrl` always page the list, which is the other half of the
+swap and the only way through a long one.
+
 **Two modes, and two is enough: `Edit` and `Preview`.** The bytes, or a
 reading of them -- and *which* reading is the file's own business, not the
 mode's: markdown is laid out as prose, a log is put in columns, and a third

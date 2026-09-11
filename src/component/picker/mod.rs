@@ -774,6 +774,12 @@ impl Picker {
         };
         let control = modifiers == KeyModifiers::CONTROL;
         let bare = modifiers.is_empty();
+        // The paging keys are the two the list does not have to itself:
+        // bare, they belong to whatever the list is showing underneath --
+        // a preview is read a screenful at a time -- and the application
+        // takes them for it before the list is asked. So they page the
+        // list with control held, and bare only where nothing took them.
+        let paging = matches!(key.code, KeyCode::PageUp | KeyCode::PageDown);
 
         let outcome = match key.code {
             // The same keys the editor uses to reach the ends of a document,
@@ -813,7 +819,9 @@ impl Picker {
             // row that cannot be chosen is stepped over rather than landed
             // on, so the moving goes through `move_selection` rather than
             // straight to the window.
-            code if bare && let Some(movement) = Move::of(code) => {
+            code if (bare || (control && paging))
+                && let Some(movement) = Move::of(code) =>
+            {
                 match movement {
                     Move::Up => self.move_selection(-1, Wrap::Yes),
                     Move::Down => self.move_selection(1, Wrap::Yes),

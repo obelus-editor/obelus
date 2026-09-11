@@ -189,6 +189,26 @@ impl App {
         }
     }
 
+    /// Pages the preview, if that is what the key does and there is one to
+    /// page.
+    ///
+    /// Answered here rather than where keys are sorted, because what decides
+    /// it is whether a preview is on screen -- and that is this module's own
+    /// question. A list with nothing under it says no, and the key goes on
+    /// to the list, where the bare paging keys still page: a key that
+    /// stopped working in a terminal too short for a preview would be worse
+    /// than either arrangement.
+    pub(super) fn page_preview(&mut self, key: &KeyEvent) -> bool {
+        let Some(pages) = preview_paging(key) else {
+            return false;
+        };
+        if self.preview.is_none() {
+            return false;
+        }
+        self.scroll_preview(pages);
+        true
+    }
+
     /// Scrolls the preview, without moving the selection.
     ///
     /// Not a command: it is navigation, and navigation belongs to whatever
@@ -456,11 +476,13 @@ fn runs(columns: &[u32]) -> Vec<(usize, usize)> {
 
 /// How many screenfuls a key scrolls the preview by.
 ///
-/// The plain keys page the list, so these are the same keys with control
-/// held. Reading a candidate and choosing between candidates are different
-/// jobs, and a list of references is read by doing both at once.
-pub(super) fn preview_paging(key: &KeyEvent) -> Option<isize> {
-    if keymap::modifiers_of(key)? != KeyModifiers::CONTROL {
+/// The bare keys, because a screenful at a time is what a *reading* is
+/// paged by and the preview is the thing on screen being read: the list
+/// above it is ten rows walked one at a time, and its ends are a keypress
+/// away. The same keys with control page the list, for a reader in a list
+/// long enough to need it.
+fn preview_paging(key: &KeyEvent) -> Option<isize> {
+    if !keymap::modifiers_of(key)?.is_empty() {
         return None;
     }
     match key.code {
