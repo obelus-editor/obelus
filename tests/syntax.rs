@@ -434,3 +434,47 @@ const NAMED: u32 = 1;
     let state = SyntaxState::new(LanguageId::Yaml, &yaml).expect("parsing");
     assert!(tags::outline(&state, &yaml).is_empty());
 }
+
+/// A range with nothing in it colours nothing, and does not panic.
+///
+/// An empty byte range is not a restriction as far as tree-sitter is
+/// concerned: the query answers with captures from the whole document, and
+/// every one of them is outside the nothing there is to write them into. It
+/// is reachable two ways -- a screen with no room for the text at all, and a
+/// viewport sitting on the empty last line a file ending in a newline has --
+/// and it took obelus down with an out-of-range slice.
+#[test]
+fn an_empty_range_colours_nothing() {
+    let (text, state) = parsed(SOURCE);
+    let mut highlights = Highlights::default();
+
+    // At the beginning, which is the case that took obelus down: a range
+    // of `0..0` is indistinguishable from never having set one, so the
+    // query answers for the whole document.
+    let none = ByteOffset::new(0);
+    highlights.refresh(&state, &text, none..none);
+    assert_eq!(
+        highlights.kind_at(none),
+        None,
+        "an empty range coloured something"
+    );
+
+    // And in the middle, where there is plenty to capture either way.
+    let middle = ByteOffset::new(text.byte_length().get() / 2);
+    highlights.refresh(&state, &text, middle..middle);
+    assert_eq!(highlights.kind_at(middle), None);
+
+    // And at the end, which is where a file ending in a newline puts it.
+    let end = text.byte_length();
+    highlights.refresh(&state, &text, end..end);
+    assert_eq!(highlights.kind_at(end), None);
+
+    // Then a real range again, to say the reuse still works: the allocation
+    // is kept between calls and a bad one must not have left it wrong.
+    highlights.refresh(&state, &text, ByteOffset::new(0)..text.byte_length());
+    assert!(
+        (0..text.byte_length().get())
+            .any(|byte| highlights.kind_at(ByteOffset::new(byte)).is_some()),
+        "nothing was coloured after an empty range"
+    );
+}

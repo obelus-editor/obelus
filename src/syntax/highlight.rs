@@ -33,6 +33,18 @@ impl Highlights {
         self.start = start;
         self.kinds.clear();
         self.kinds.resize(end - start, None);
+        // Nothing visible, so nothing to colour -- and asking anyway is not
+        // harmless: an empty byte range is no restriction as far as
+        // tree-sitter is concerned, so the query would answer with captures
+        // from the whole document and every one of them would be outside
+        // the nothing there is to write them into.
+        //
+        // Reachable two ways: a screen with no room for the text at all,
+        // and a viewport whose top line is the empty one a file ending in a
+        // newline has.
+        if self.kinds.is_empty() {
+            return;
+        }
 
         let grammar = crate::syntax::grammar(state.language());
         let mut cursor = QueryCursor::new();
@@ -53,9 +65,16 @@ impl Highlights {
                 continue;
             };
             let node = capture.node.byte_range();
-            let from = node.start.max(start);
-            let to = node.end.min(end);
-            for slot in &mut self.kinds[from - start..to.saturating_sub(start)] {
+            // Clipped to what is on screen, and dropped if that leaves
+            // nothing: a capture can begin past the end of the range or
+            // finish before its start, and either way the slice it names
+            // does not exist.
+            let from = node.start.max(start) - start;
+            let to = node.end.min(end).saturating_sub(start);
+            if from >= to {
+                continue;
+            }
+            for slot in &mut self.kinds[from..to] {
                 *slot = Some(kind);
             }
         }

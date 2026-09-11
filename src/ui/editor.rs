@@ -333,10 +333,14 @@ impl Widget for EditorView<'_> {
             0
         };
         // The same total the caret's position is worked out from, which is
-        // what keeps the two agreeing.
-        debug_assert_eq!(
-            text_offset(text.line_count(), self.changes.is_some()),
-            margin + gutter_width(text.line_count()),
+        // what keeps the two agreeing -- checked only where the caret is
+        // drawn at all. A screen too narrow for the margin and the gutter
+        // clamps them away, and `cursor_position` draws nothing there: what
+        // the two would disagree about is a caret neither of them puts on
+        // the screen.
+        let before = text_offset(text.line_count(), self.changes.is_some());
+        debug_assert!(
+            before >= area.width || before == margin + gutter_width(text.line_count()),
             "the caret and the text disagree about what comes before the text"
         );
         let gutter = gutter_width(text.line_count()).min(area.width - margin);

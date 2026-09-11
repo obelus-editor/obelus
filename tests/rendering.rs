@@ -1915,3 +1915,32 @@ fn control_a_selects_the_whole_file() {
     );
     let _ = std::fs::remove_file(&path);
 }
+
+/// A screen with no room for the text at all still draws.
+///
+/// One row is all status bar, which leaves the editor none -- and nothing
+/// visible means an empty byte range, which is not a restriction as far as
+/// tree-sitter is concerned: the highlighter asked for a screenful of
+/// nothing and was answered with the whole document, then wrote it into a
+/// slice of length zero. That is a panic at the first frame in a terminal
+/// one row tall.
+#[test]
+fn a_screen_with_no_room_for_the_text_still_draws() {
+    // Narrow as well as short: a screen too narrow for the margin and the
+    // gutter clamps them away, and the caret's own arithmetic does not --
+    // which the editor asserts about, so the disagreement is a panic in a
+    // debug build rather than a caret one cell out in a release one.
+    for (width, height) in [(40, 1), (40, 2), (40, 3), (1, 1), (1, 8), (6, 8), (0, 8)] {
+        let mut app = app();
+        support::lay_out(&mut app, width, height);
+        let dump = support::render(&mut app, width, height);
+        // A screen with no columns has nothing to say about what is on it;
+        // what matters is that asking did not take obelus down.
+        if width > 0 {
+            assert!(
+                !support::text_block(&dump).is_empty(),
+                "{width}x{height} drew nothing at all"
+            );
+        }
+    }
+}
