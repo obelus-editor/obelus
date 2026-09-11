@@ -189,6 +189,16 @@ to compile until it is handled. Same idea in `theme`: only fields with readers.
 **Nothing writes to stdout.** stdout is the drawing surface; `tracing` goes to
 a file. A stray `println!` lands in the middle of a frame and stays there.
 
+**Two logs, split by module.** `obelus.log` is what obelus says about itself
+and `lsp.log` is what the language servers say -- a handshake, every request,
+and whatever they write to their stderr, at a volume that would bury the
+dozen lines obelus has of its own. `logging::is_server` decides by the
+event's target, which `tracing` takes from the module it came from, so a
+call site needs to know nothing and a module moved into `lsp` takes its
+lines with it. `log.obelus` and `log.servers` open them; both are ordinary
+buffers, because obelus is a reader.
+
+
 **No async runtime.** One `std::sync::mpsc` channel, one producer thread per
 event source (keyboard, file walk, watcher, each server's stdout), the main
 loop blocking on `recv()` and draining with `try_recv()`. Writing to a server's

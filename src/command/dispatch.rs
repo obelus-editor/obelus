@@ -43,6 +43,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::ConfigOpen => app.open_settings(),
         Command::ConfigFile => app.open_config_file(),
         Command::LogOpen => app.open_log(),
+        Command::LogServers => app.open_server_log(),
         Command::LspRestart => app.restart_server(),
         Command::LspStop => app.stop_server(),
         Command::Quit => app.request_quit(),

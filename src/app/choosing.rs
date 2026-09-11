@@ -99,11 +99,25 @@ impl App {
     /// shows is a server's own words -- its stderr, its handshake, and the
     /// requests obelus sent it.
     pub fn open_log(&mut self) {
-        match crate::logging::current_file() {
+        self.open_log_file(crate::logging::OBELUS, "no log file");
+    }
+
+    /// And the language servers' own, which is the other half of the same
+    /// idea: a server's handshake and every request obelus sent it, in a
+    /// file of its own because it is somebody else's program talking at a
+    /// volume that would bury the dozen lines obelus has to say.
+    pub fn open_server_log(&mut self) {
+        self.open_log_file(crate::logging::SERVERS, "no server log file");
+    }
+
+    /// Opens whichever log, or says there is none.
+    fn open_log_file(&mut self, prefix: &str, missing: &str) {
+        match crate::logging::current_file(prefix) {
             Some(path) => self.open(&path),
             // Logging is allowed to fail without stopping obelus starting, so
-            // there may genuinely be no file.
-            None => self.note = Some("no log file".to_string()),
+            // there may genuinely be no file -- and a server log exists only
+            // once a server has said something.
+            None => self.note = Some(missing.to_string()),
         }
     }
 

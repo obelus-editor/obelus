@@ -81,6 +81,8 @@ pub enum Command {
     ConfigOpen,
     /// Open the file obelus logs to.
     LogOpen,
+    /// Open the file the language servers' side is logged to.
+    LogServers,
     /// Stop the language server for this file and start it again.
     LspRestart,
     /// Stop the language server for this file and leave it stopped.
@@ -347,8 +349,13 @@ pub const ALL: &[CommandSpec] = &[
     },
     CommandSpec {
         command: Command::LogOpen,
-        name: "log.open",
+        name: "log.obelus",
         title: "Open obelus's own log",
+    },
+    CommandSpec {
+        command: Command::LogServers,
+        name: "log.servers",
+        title: "Open the language servers' log",
     },
     CommandSpec {
         command: Command::LspRestart,
@@ -409,6 +416,7 @@ impl Command {
             | Self::ConfigOpen
             | Self::ConfigFile
             | Self::LogOpen
+            | Self::LogServers
             | Self::ThemeSelect
             | Self::CommandPalette
             | Self::Quit => Group::Obelus,
@@ -484,6 +492,7 @@ impl Command {
             | Self::ConfigOpen
             | Self::ConfigFile
             | Self::LogOpen
+            | Self::LogServers
             | Self::LspRestart
             | Self::Quit => Requires::Nothing,
         }
@@ -560,6 +569,7 @@ mod tests {
             Command::ConfigOpen,
             Command::ConfigFile,
             Command::LogOpen,
+            Command::LogServers,
             Command::LspRestart,
             Command::LspStop,
             Command::Quit,

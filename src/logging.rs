@@ -10,41 +10,94 @@ use tracing_appender::{
     non_blocking::WorkerGuard,
     rolling::{RollingFileAppender, Rotation},
 };
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{
+    EnvFilter, Layer, layer::SubscriberExt as _, util::SubscriberInitExt as _,
+};
 
-/// Installs the file subscriber and returns its flush guard.
+/// What obelus writes about itself.
+pub const OBELUS: &str = "obelus";
+
+/// What the language servers say, and what obelus said to them.
 ///
-/// The guard must be held for as long as logging is wanted: dropping it flushes
-/// and shuts down the writer thread.
+/// Its own file because it is somebody else's program talking: a handshake,
+/// a stream of requests and whatever the server writes to its stderr, at a
+/// volume that would bury the dozen lines obelus has to say about itself.
+/// Two files, two commands, and each of them is readable.
+pub const SERVERS: &str = "lsp";
+
+/// Whether an event belongs to the servers' log rather than obelus's own.
+///
+/// By the module it came from, which `tracing` uses as an event's target
+/// unless one is given -- so nothing at the call sites has to know which
+/// file it is writing to, and a module moved into `lsp` moves its lines
+/// with it.
+#[must_use]
+pub fn is_server(target: &str) -> bool {
+    target == "obelus::lsp" || target.starts_with("obelus::lsp::")
+}
+
+/// Installs the file subscriber and returns its flush guards.
+///
+/// The guards must be held for as long as logging is wanted: dropping them
+/// flushes and shuts down the writer threads.
 ///
 /// Verbosity comes from `RUST_LOG`, which is `tracing-subscriber`'s own
 /// convention rather than a setting obelus invents.
 #[must_use]
-pub fn install() -> Option<WorkerGuard> {
+pub fn install() -> Option<(WorkerGuard, WorkerGuard)> {
     let directory = log_directory()?;
     std::fs::create_dir_all(&directory).ok()?;
 
-    let appender = RollingFileAppender::builder()
-        .rotation(Rotation::DAILY)
-        .filename_prefix("obelus")
-        .filename_suffix("log")
-        .max_log_files(5)
-        .build(&directory)
-        .ok()?;
-    let (writer, guard) = tracing_appender::non_blocking(appender);
+    let (ours, kept) = writer(&directory, OBELUS)?;
+    let (theirs, also_kept) = writer(&directory, SERVERS)?;
 
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,obelus=info"));
 
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(writer)
-        // No escape sequences: this is a file, and a pager should not have to
-        // strip colour out of it.
+    // Two layers over one registry, each taking the events the other does
+    // not: the split is by target, so an event goes to exactly one file and
+    // neither file has to be read with the other in mind.
+    //
+    // Boxed into a list because a per-layer filter fixes the subscriber it
+    // belongs to at the moment it is built, so two of them cannot be
+    // stacked one after the other -- they go on together or not at all.
+    let ours = tracing_subscriber::fmt::layer()
+        // No escape sequences: this is a file, and a pager should not have
+        // to strip colour out of it.
         .with_ansi(false)
+        .with_writer(ours)
+        .with_filter(tracing_subscriber::filter::filter_fn(|event| {
+            !is_server(event.target())
+        }))
+        .boxed();
+    let theirs = tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_writer(theirs)
+        .with_filter(tracing_subscriber::filter::filter_fn(|event| {
+            is_server(event.target())
+        }))
+        .boxed();
+    tracing_subscriber::registry()
+        .with(vec![ours, theirs])
+        .with(filter)
         .init();
 
-    Some(guard)
+    Some((kept, also_kept))
+}
+
+/// One day-rotated file, and the guard that flushes it.
+fn writer(
+    directory: &Path,
+    prefix: &str,
+) -> Option<(tracing_appender::non_blocking::NonBlocking, WorkerGuard)> {
+    let appender = RollingFileAppender::builder()
+        .rotation(Rotation::DAILY)
+        .filename_prefix(prefix)
+        .filename_suffix("log")
+        .max_log_files(5)
+        .build(directory)
+        .ok()?;
+    Some(tracing_appender::non_blocking(appender))
 }
 
 /// The log file being written now, if there is one.
@@ -54,8 +107,8 @@ pub fn install() -> Option<WorkerGuard> {
 /// second copy of its convention here would be wrong on the first day it
 /// changed. Newest wins, which is today's file.
 #[must_use]
-pub fn current_file() -> Option<PathBuf> {
-    newest_log(&log_directory()?)
+pub fn current_file(prefix: &str) -> Option<PathBuf> {
+    newest_log(&log_directory()?, prefix)
 }
 
 /// The newest log file in a directory.
@@ -64,14 +117,15 @@ pub fn current_file() -> Option<PathBuf> {
 /// that exists: the two rules in it -- which names count, and which of them
 /// wins -- are both quiet when wrong, and a wrong answer here opens the wrong
 /// file or none.
-fn newest_log(directory: &Path) -> Option<PathBuf> {
+fn newest_log(directory: &Path, prefix: &str) -> Option<PathBuf> {
+    let start = format!("{prefix}.");
     std::fs::read_dir(directory)
         .ok()?
         .filter_map(Result::ok)
         .filter(|entry| {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            name.starts_with("obelus.") && name.ends_with(".log")
+            name.starts_with(&start) && name.ends_with(".log")
         })
         .filter_map(|entry| {
             let modified = entry.metadata().ok()?.modified().ok()?;
@@ -92,13 +146,30 @@ fn log_directory() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    /// Which file an event goes to, by the module it came from. The split
+    /// is the whole point of having two, and it is silent when wrong: a
+    /// server's stream in obelus's own log buries it, and obelus's lines in
+    /// the servers' log are lost in it.
+    #[test]
+    fn the_servers_lines_are_told_apart_by_their_module() {
+        assert!(super::is_server("obelus::lsp"));
+        assert!(super::is_server("obelus::lsp::client"));
+        assert!(super::is_server("obelus::lsp::outline"));
+        assert!(!super::is_server("obelus::app"));
+        assert!(!super::is_server("obelus::app::semantics"));
+        assert!(!super::is_server("obelus"));
+        // A module whose name starts the same way and is not it.
+        assert!(!super::is_server("obelus::lspish"));
+    }
+
     use std::{fs, time::Duration};
 
     use super::*;
 
     /// The appender's own naming decides which files are logs, and the newest
     /// is the one being written now. Both are read off the directory rather
-    /// than rebuilt here, so both are worth pinning down.
+    /// than rebuilt here, so both are worth pinning down -- and so is which
+    /// of the two logs a name belongs to, because they share a directory.
     #[test]
     fn the_newest_log_wins_and_only_logs_count() {
         let directory =
@@ -107,6 +178,9 @@ mod tests {
         fs::create_dir_all(&directory).expect("a directory to test in");
 
         fs::write(directory.join("obelus.2026-01-01.log"), "old").expect("the old log");
+        // The servers' log shares the directory, and is not obelus's own.
+        std::thread::sleep(Duration::from_millis(20));
+        fs::write(directory.join("lsp.2026-01-03.log"), "theirs").expect("the server log");
         // Written second, so it is the newer of the two whatever the clock
         // does with the names.
         std::thread::sleep(Duration::from_millis(20));
@@ -117,14 +191,19 @@ mod tests {
         fs::write(directory.join("notes.log"), "not ours").expect("another decoy");
 
         assert_eq!(
-            newest_log(&directory),
-            Some(directory.join("obelus.2026-01-02.log"))
+            newest_log(&directory, OBELUS),
+            Some(directory.join("obelus.2026-01-02.log")),
+            "the servers' log, or the older one, was taken for obelus's own"
+        );
+        assert_eq!(
+            newest_log(&directory, SERVERS),
+            Some(directory.join("lsp.2026-01-03.log"))
         );
 
         let empty = directory.join("empty");
         fs::create_dir_all(&empty).expect("an empty directory");
-        assert_eq!(newest_log(&empty), None);
-        assert_eq!(newest_log(&directory.join("gone")), None);
+        assert_eq!(newest_log(&empty, OBELUS), None);
+        assert_eq!(newest_log(&directory.join("gone"), OBELUS), None);
 
         let _ = fs::remove_dir_all(&directory);
     }

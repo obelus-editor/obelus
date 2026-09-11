@@ -236,7 +236,11 @@ pub fn for_command(name: &str) -> char {
         // working, not how obelus is, and the sliders above already mean
         // that.
         "agent.settings" => '\u{f06f1}',
-        "log.open" => '\u{f09ed}',
+        "log.obelus" => '\u{f09ed}',
+        // A server on a wire, because that is whose words are in that one
+        // and how they arrive: the handshake, the requests, and whatever it
+        // wrote to its stderr.
+        "log.servers" => '\u{f048d}',
         "lsp.restart" => '\u{f0709}',
         "lsp.stop" => '\u{f04db}',
         // Leaving obelus, not switching a machine off.

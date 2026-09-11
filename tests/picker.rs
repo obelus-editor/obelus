@@ -891,7 +891,7 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     type_text(&mut app, "log");
     let narrowed = support::render(&mut app, 60, 26);
     assert!(
-        row(support::text_block(&narrowed), "log.open")
+        row(support::text_block(&narrowed), "log.obelus")
             .trim_end_matches(['\u{2502}', '\u{2588}', ' '])
             .ends_with("log"),
         "a command bound to nothing showed a key:\n{narrowed}"
@@ -1195,7 +1195,8 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
         "symbol.menu",
         "symbol.outline",
         "go.line",
-        "log.open",
+        "log.obelus",
+        "log.servers",
         "lsp.restart",
         "app.quit",
     ] {
