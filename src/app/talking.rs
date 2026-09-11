@@ -140,36 +140,11 @@ impl App {
         self.talker.as_ref().map_or(&[], acp::Talk::settings)
     }
 
-    /// Puts the agent's settings up as a list.
+    /// One setting's values, as the ordinary compact list.
     ///
-    /// The compact list, over the conversation, like every other choice:
-    /// each row is one setting and what it is on now, and choosing one
-    /// opens its values.
-    pub fn open_agent_settings(&mut self) {
-        let items = self
-            .agent_settings()
-            .iter()
-            .map(|setting| PickerItem {
-                icon: None,
-                label: setting.name.clone(),
-                detail: setting.about.clone(),
-                trailing: setting.current_name().map(str::to_string),
-                value: PickerValue::AgentSetting(setting.id.clone()),
-                enabled: true,
-                colours: None,
-                status: None,
-                depth: 0,
-                kind: None,
-                tab: None,
-            })
-            .collect();
-        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.ask("how it works");
-        picker.when_empty("this agent has nothing to change");
-        self.picker = Some(picker);
-    }
-
-    /// And one setting's values, once one has been chosen.
+    /// What enter on the conversation's own row opens, for a setting whose
+    /// values are a list. A switch never comes here: it has two sides and
+    /// is flipped where it stands.
     pub(super) fn open_agent_setting(&mut self, id: &str) {
         let Some(setting) = self.talker.as_ref().and_then(|talker| talker.setting(id)) else {
             return;
@@ -247,27 +222,6 @@ impl App {
         self.chat.note(&format!("{name}: {told}"));
     }
 
-    /// The setting a typed command names, if it names one.
-    ///
-    /// `/model` is the reason this exists. An agent's own answer to it is a
-    /// dialog it cannot open -- Copilot says as much, in words, in the
-    /// middle of the conversation -- while the same choice is already on
-    /// offer as a setting. So a command that is the name of a setting opens
-    /// that setting's list instead of being sent.
-    fn setting_named(&self, name: &str) -> Option<String> {
-        let name = name.to_lowercase();
-        let settings = self.agent_settings();
-        settings
-            .iter()
-            .find(|setting| setting.id.to_lowercase() == name)
-            .or_else(|| {
-                settings
-                    .iter()
-                    .find(|setting| setting.name.to_lowercase() == name)
-            })
-            .map(|setting| setting.id.clone())
-    }
-
     /// Sends what the reader typed.
     pub(super) fn send_to_agent(&mut self, text: &str) {
         // Unless a field of a form is waiting for it: the agent asked for
@@ -275,15 +229,6 @@ impl App {
         // rather than out as a message.
         if self.is_answering() {
             self.answer_typed(text);
-            return;
-        }
-        // A command that is a setting's name is a choice to be made here,
-        // not a message: nothing goes in the transcript and nothing is sent.
-        if let Some(name) = text.trim().strip_prefix('/')
-            && !name.contains(char::is_whitespace)
-            && let Some(id) = self.setting_named(name)
-        {
-            self.open_agent_setting(&id);
             return;
         }
         self.chat.asked(text);
@@ -440,16 +385,6 @@ impl App {
             KeyCode::Tab | KeyCode::Enter => {
                 let chosen = slash.selected_item().map(|item| item.label.clone());
                 if let Some(name) = chosen {
-                    // A command that names a setting is that setting's
-                    // list: the reader means the choice, and making them
-                    // press enter twice to reach it is obelus being
-                    // pedantic about which of its own lists they are in.
-                    if let Some(id) = self.setting_named(name.trim_start_matches('/')) {
-                        self.chat.put("");
-                        self.slash = None;
-                        self.open_agent_setting(&id);
-                        return true;
-                    }
                     // The name and a blank after it: the blank is what
                     // settles the name, so the list is done and whatever
                     // the command takes is typed next.

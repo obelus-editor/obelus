@@ -904,43 +904,78 @@ fn a_mode_the_agent_refuses_goes_back() {
     );
 }
 
-/// The reader types `/model`, and obelus answers with the model list.
+/// A command named like one of the session's settings is still the agent's
+/// command, and still goes to the agent.
 ///
-/// Not the agent: the choice is one of the session's settings, and the
-/// agent's own answer to that command is a dialog it cannot open down a
-/// pipe. So the command is never sent, and what opens is the ordinary
-/// compact list of what the setting can be.
+/// obelus used to take `/model` for itself and open that setting's values
+/// instead of sending it. The names matched, and Copilot's own answer to
+/// that command is a dialog it cannot open down a pipe, so the interception
+/// looked like a kindness -- but it was a guess about somebody else's
+/// namespace. A command and a config option are two different things in the
+/// protocol: one is a name the agent takes in a prompt, the other is a
+/// choice the client is meant to draw itself, and nothing promises that the
+/// same word means the same thing in both. The settings have a door of their
+/// own now, which is the row under the box.
 #[test]
-fn a_command_that_names_a_setting_offers_its_values() {
+fn a_command_named_like_a_setting_still_goes_to_the_agent() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+            && app
+                .agent_settings()
+                .iter()
+                .any(|setting| setting.id == "model")
+    });
+    // The agent offers `/model` and obelus also has a `model` setting, so
+    // this is the case that used to be taken.
+    assert!(
+        app.agent_orders().iter().any(|order| order.name == "model"),
+        "the agent does not offer that command, so this tests nothing"
+    );
+    assert!(
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.id == "model"),
+        "there is no setting of that name, so this tests nothing"
+    );
+
+    support::type_text(&mut app, "/model");
+    // The list of the agent's commands follows what is typed, and it is a
+    // frame that settles it.
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    // The first enter settles the name in the box, the way it does for any
+    // other command -- rather than obelus taking the row for itself.
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.chat().expect("the chat").writing().text(), "/model ");
+    assert!(app.picker().is_none(), "obelus opened a list of its own");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the agent to run it", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("ran model"),
+        "the command did not reach the agent:\n{text}"
+    );
+}
+
+/// One setting's values, as the list the row opens: what each is called,
+/// what it is, which one is on -- and the agent's own account of itself
+/// afterwards, whichever side asked for the change.
+#[test]
+fn a_settings_values_are_a_list_and_the_agent_answers_with_all_of_them() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the settings", |app| {
         app.agent_settings()
             .iter()
             .any(|setting| setting.id == "model")
     });
-    // The mode first -- this agent offers it the old way, and obelus reads
-    // it into a setting like any other -- then both config options. The
-    // switch is only there because obelus said in the handshake that it can
-    // show one, so this is that promise as well.
-    let named: Vec<&str> = app
-        .agent_settings()
-        .iter()
-        .map(|setting| setting.name.as_str())
-        .collect();
-    assert_eq!(named, ["Mode", "Model", "Allow everything"], "the settings");
 
-    // Typed as a command, because that is what the agent calls it and what
-    // its own list of commands offers -- so the list of commands is what
-    // the reader sees first, and choosing the row is choosing the setting.
-    support::type_text(&mut app, "/model");
-    let text = screen(&mut app);
-    assert!(
-        text.contains("/model"),
-        "the command is not offered:\n{text}"
-    );
+    // Down to the row, along to the model, and open it.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Enter);
     let text = screen(&mut app);
-    // The list, with what it is on now marked as such.
     assert!(text.contains("Careful"), "no list of models:\n{text}");
     assert!(
         text.contains("Slower, and better"),
@@ -949,17 +984,6 @@ fn a_command_that_names_a_setting_offers_its_values() {
     assert!(
         text.contains("current"),
         "nothing says which one is on:\n{text}"
-    );
-    // And nothing was said: the command was a choice, not a message. Which
-    // also means the box it was typed in is empty again.
-    assert!(
-        !text.contains("/model"),
-        "the command went into the conversation:\n{text}"
-    );
-    assert_eq!(
-        app.chat().expect("the chat").writing().text(),
-        "",
-        "what was typed is still in the box"
     );
     // A row says what it is only when that is not its name again: agents
     // fill both in for every row whether they have anything to add or not.
@@ -976,7 +1000,8 @@ fn a_command_that_names_a_setting_offers_its_values() {
 
     // Chosen the way every list is chosen from, and taken by the agent:
     // what comes back is its own account of its settings, which is what
-    // obelus then shows.
+    // obelus then shows -- and what the reader did is in the transcript,
+    // because it is a thing they did to the conversation.
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the agent to take it", |app| {
@@ -990,49 +1015,8 @@ fn a_command_that_names_a_setting_offers_its_values() {
         "the change is not in the conversation:\n{text}"
     );
 
-    // The whole list of them is a command of obelus's own, and it says
-    // what each setting is on.
-    assert!(
-        app.offers(obelus::command::Command::AgentSettings),
-        "the settings are not offered while an agent is offering some"
-    );
-    app.open_agent_settings();
-    let text = screen(&mut app);
-    for word in ["Model", "Careful", "Allow everything", "off"] {
-        assert!(text.contains(word), "no {word} in the settings:\n{text}");
-    }
-
-    // The switch is two rows of the same list, opened on the side it is on
-    // -- and set with a boolean rather than a value id, which is what the
-    // agent reads it back as. Two rows down, because the mode is first and
-    // the model after it.
-    support::press(&mut app, KeyCode::Down);
-    support::press(&mut app, KeyCode::Down);
-    support::press(&mut app, KeyCode::Enter);
-    let sides: Vec<String> = app
-        .picker()
-        .expect("the list")
-        .matches()
-        .map(|item| item.label.clone())
-        .collect();
-    assert_eq!(sides, ["on", "off"], "the switch has other sides");
-    assert_eq!(
-        app.picker()
-            .and_then(|picker| picker.selected_item())
-            .map(|item| item.label.as_str()),
-        Some("off"),
-        "the list did not open on the side it is on"
-    );
-    support::press(&mut app, KeyCode::Up);
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the switch to go on", |app| {
-        app.agent_settings()
-            .iter()
-            .any(|setting| setting.id == "allow_all" && setting.current == "on")
-    });
-
     // And it runs the other way too: an agent that puts itself on another
-    // model says so, and what obelus shows is what the agent last said.
+    // model says so, and the row shows what the agent last said.
     support::type_text(&mut app, "answer this one quickly");
     support::press(&mut app, KeyCode::Enter);
     pump(
@@ -1045,11 +1029,11 @@ fn a_command_that_names_a_setting_offers_its_values() {
                 .any(|setting| setting.id == "model" && setting.current == "fast")
         },
     );
-    app.open_agent_settings();
-    let text = screen(&mut app);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
     assert!(
-        text.contains("Fast"),
-        "the model it moved itself to is not shown:\n{text}"
+        screen[screen.len() - 1].contains("Fast"),
+        "the model it moved itself to is not on the row:\n{dump}"
     );
 }
 

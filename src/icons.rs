@@ -231,10 +231,6 @@ pub fn for_command(command: crate::command::Command) -> char {
         Command::GoBack => '\u{f17b3}',
         Command::GoForward => '\u{f17b7}',
         Command::AgentOpen => ui::AGENT,
-        // A conversation with a cog on it: this changes how the agent is
-        // working, not how obelus is, and the sliders below already mean
-        // that.
-        Command::AgentSettings => '\u{f06f1}',
         // Sliders, because a cog is what everything else in this list would
         // fall back to and two rows with the same picture say less than one.
         Command::ConfigOpen => '\u{f062e}',

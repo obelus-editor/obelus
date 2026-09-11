@@ -39,7 +39,6 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::GoBack => app.go_back(),
         Command::GoForward => app.go_forward(),
         Command::AgentOpen => app.open_agent(),
-        Command::AgentSettings => app.open_agent_settings(),
         Command::ConfigOpen => app.open_settings(),
         Command::ConfigFile => app.open_config_file(),
         Command::LogOpen => app.open_log(),

@@ -72,8 +72,6 @@ pub enum Command {
     GoForward,
     /// Talk to the active agent.
     AgentOpen,
-    /// Change how the agent it is talking to is working.
-    AgentSettings,
     /// Read the settings file itself.
     ConfigFile,
     /// Open the settings.
@@ -170,8 +168,6 @@ pub enum Requires {
     ARunningServer,
     /// The running server has to say it answers this question.
     AnAnswer,
-    /// The agent being talked to has to offer something to change.
-    AnAgentSetting,
 }
 
 /// A command's name and description, for the palette to list and match on.
@@ -341,11 +337,6 @@ pub const ALL: &[CommandSpec] = &[
         title: "Talk to the active agent",
     },
     CommandSpec {
-        command: Command::AgentSettings,
-        name: "configure-agent",
-        title: "Change how the agent is working",
-    },
-    CommandSpec {
         command: Command::ConfigOpen,
         name: "open-settings",
         title: "Change obelus's settings",
@@ -419,7 +410,6 @@ impl Command {
             Self::LspRestart
             | Self::LspStop
             | Self::AgentOpen
-            | Self::AgentSettings
             | Self::ConfigOpen
             | Self::ConfigFile
             | Self::LogOpen
@@ -485,7 +475,6 @@ impl Command {
             Self::SelectionAll => Requires::AFileOpen,
             Self::GoBack => Requires::SomewhereBack,
             Self::GoForward => Requires::SomewhereForward,
-            Self::AgentSettings => Requires::AnAgentSetting,
             // `ask-about-symbol` needs nothing: with no server it is the thing
             // that says why there is none. Nor does `restart-server`, which is
             // how a stopped or dead server is started. `open-file`,

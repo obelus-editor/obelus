@@ -378,20 +378,35 @@ settings' filter or the conversation's own row. A row belonging to what is
 behind the list is a prompt with somebody else's words in it, and the caret
 sitting in it says the words are being typed there.
 
-**`/model` is not a question the agent can ask.** An agent's slash commands
-are names it takes in a prompt, and the ones that would open a dialog cannot:
-Copilot answers `/model` with "the model-picker dialog is only available in
-the interactive CLI". The same choice is already on offer as a *session
-config option* -- `session/new` and `session/update` carry the whole set,
-`session/set_config_option` changes one, and the answer to that is the whole
-set again because one value can change what another offers. So obelus lists
-them (`configure-agent`) and, when a typed command is the name of one, opens
-that setting's values instead of sending it. Copilot's own list is `mode`,
-`model`, `reasoning_effort` and `allow_all`; it does not elicit for
-`/model` either -- probed with `elicitation.form` advertised, 1.0.83 still
-answers in words; its mode ids are URLs and most
-of its rows describe themselves with their own name, which is why a
-description that repeats the name is dropped.
+**A command is the agent's namespace; a setting is obelus's to draw.** Two
+things in the protocol, and they must not be mistaken for each other. An
+agent's slash commands are names it takes *in a prompt* -- a client offers
+them and sends the text, and that is all. Session *config options* are the
+other kind: `session/new` and `session/update` carry the whole set,
+`session/set_config_option` changes one, the answer is the whole set again
+because one value can change what another offers, and the client draws them
+itself (a boolean one only if it advertised
+`session.configOptions.boolean`). So the conversation's status row is every
+option with its current value, walked and changed there -- not a command,
+because the keys that move what is on a screen belong to that screen, the
+way `shift+tab` always has.
+
+obelus used to take `/model` for itself: the agent's command and obelus's
+setting had the same name, and Copilot's own answer to that command is "the
+model-picker dialog is only available in the interactive CLI", so opening
+the setting's values instead looked like a kindness. It was a guess about
+somebody else's namespace -- nothing promises that a command means what an
+option of the same name means -- and it is gone. `/model` goes to the agent,
+whose answer is its own business; the same choice is one key away on the row.
+
+What Copilot offers, probed at 1.0.83: `mode`, `model`, `reasoning_effort`
+and `allow_all`. It does not elicit for `/model` either -- with
+`elicitation.form` advertised it still answers in words. Its mode ids are
+URLs, and most of its rows describe themselves with their own name, which is
+why a description that repeats the name is dropped. What kind each of those
+options is declared as, obelus now writes to the log as it arrives: how an
+agent declares one decides how it is drawn and what enter does to it, so
+that line is where "why is this one drawn like that" is answered.
 
 **An agent is installed when the install says so, in writing.** The last
 thing `install::spawn` does is write `agents/<id>/installed.json` -- the
