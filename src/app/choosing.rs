@@ -207,6 +207,11 @@ impl App {
                 .map(|column| *column as usize)
         });
         self.picker = None;
+        // A theme worn while walking a list is the reader's choice now,
+        // whichever list it was, so there is nothing left to put back. Here
+        // rather than on the theme's own arm because the settings page
+        // reaches the same choice through a setting's value.
+        self.theme_before = None;
         match value {
             PickerValue::Command(command) => dispatch::dispatch(self, command),
             PickerValue::File(path) => self.open(&self.working_directory.join(path)),
@@ -227,8 +232,6 @@ impl App {
                     "theme",
                     &crate::config::Value::Choice(theme.name.to_string()),
                 );
-                // Chosen, so there is nothing to go back to.
-                self.theme_before = None;
                 self.set_theme(theme);
             }
             PickerValue::Place {

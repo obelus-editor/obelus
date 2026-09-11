@@ -67,6 +67,12 @@ impl App {
         // Opened on the one in force, so the list starts by saying which
         // that is.
         picker.prefer(word.to_string());
+        // What the theme was, for the same reason the theme list keeps it:
+        // walking this list wears each colour in turn, and the one that was
+        // on is only in the running program.
+        if key == "theme" {
+            self.theme_before = Some(self.theme);
+        }
         self.picker = Some(picker);
     }
 
@@ -142,10 +148,7 @@ impl App {
     /// One place, called at startup and after every change, so a setting
     /// cannot mean one thing on the way in and another when it is edited.
     fn apply_config(&mut self) {
-        if let Some(theme) = builtin::ALL
-            .iter()
-            .find(|theme| theme.name == self.config.theme)
-        {
+        if let Some(theme) = builtin::by_name(&self.config.theme) {
             self.theme = theme;
         }
         icons::use_glyphs(self.config.icons);

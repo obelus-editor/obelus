@@ -51,7 +51,17 @@ impl App {
             .as_ref()
             .and_then(Picker::selected_item)
             .map(|item| item.value.clone());
-        if let Some(PickerValue::Theme(theme)) = selected {
+        let theme = match &selected {
+            Some(PickerValue::Theme(theme)) => Some(*theme),
+            // The same list reached from the settings page, where a theme
+            // is one setting's value rather than a thing of its own. It is
+            // the same choice and it needs the same answer: a droplist of
+            // colours a reader can walk without seeing any of them is one
+            // they have to choose from blind.
+            Some(PickerValue::Setting { key: "theme", word }) => builtin::by_name(word),
+            _ => None,
+        };
+        if let Some(theme) = theme {
             self.theme = theme;
         }
     }

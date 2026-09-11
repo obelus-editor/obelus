@@ -118,3 +118,12 @@ pub const LIGHT: Theme = Theme {
 
 /// Every theme, in the order the picker lists them.
 pub const ALL: &[&Theme] = &[&DARK, &LIGHT];
+
+/// The theme a name names, if it names one.
+///
+/// The way in from anything written down -- the settings file, and a row of
+/// a list whose value is a word rather than a theme.
+#[must_use]
+pub fn by_name(name: &str) -> Option<&'static Theme> {
+    ALL.iter().copied().find(|theme| theme.name == name)
+}

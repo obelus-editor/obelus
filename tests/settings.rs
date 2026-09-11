@@ -147,6 +147,76 @@ fn a_choice_opens_the_list_every_other_choice_uses() {
     assert!(app.settings().is_some(), "escape closed the view as well");
 }
 
+/// And walking that list wears each theme as it goes, the same as the theme
+/// list does. The colours *are* the choice: a list of two words a reader has
+/// to pick between blind says nothing that the two words did not.
+#[test]
+fn walking_the_theme_list_wears_each_one() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let file = temporary("theme-droplist");
+    let mut app = open(&file);
+
+    // The page as it stands, to come back to.
+    let closed = support::render(&mut app, 66, 12);
+
+    // The theme is the first row, and its list opens on the one in force.
+    support::press(&mut app, KeyCode::Enter);
+    let dark = support::render(&mut app, 66, 12);
+    assert_eq!(
+        app.theme().name,
+        "dark",
+        "the list did not open on this one"
+    );
+
+    // The next row is the other theme, and the screen is wearing it before
+    // anything has been chosen.
+    support::press(&mut app, KeyCode::Down);
+    let light = support::render(&mut app, 66, 12);
+    assert_eq!(
+        app.theme().name,
+        "light",
+        "the row moved and nothing changed"
+    );
+    assert_ne!(
+        support::style_block(&light),
+        support::style_block(&dark),
+        "the screen is wearing the same colours:\n{light}"
+    );
+
+    // And walking away puts back the one that was on. Nothing was chosen,
+    // so nothing was decided.
+    support::press(&mut app, KeyCode::Esc);
+    let after = support::render(&mut app, 66, 12);
+    assert_eq!(app.theme().name, "dark", "the preview stuck");
+    assert!(
+        !file.exists(),
+        "a theme nobody chose was written to the settings file"
+    );
+    assert_eq!(
+        support::style_block(&after),
+        support::style_block(&closed),
+        "the colours did not come back:\n{after}"
+    );
+
+    // And a theme that *was* chosen stays chosen: what the list put back is
+    // the theme nobody picked, and the next escape anywhere in obelus has
+    // nothing to do with it.
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.theme().name, "light", "the choice did not take");
+    support::press(&mut app, KeyCode::Esc);
+    support::press_function(&mut app, 1);
+    support::press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        app.theme().name,
+        "light",
+        "escaping a later list put back a theme the reader had chosen"
+    );
+}
+
 /// A switch is a slider, and enter flips it: the knob moves to the other
 /// end. The arrows are not it -- they walk the tabs, as they do in every
 /// other view with tabs on it.
