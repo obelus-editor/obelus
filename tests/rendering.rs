@@ -1944,3 +1944,153 @@ fn a_screen_with_no_room_for_the_text_still_draws() {
         }
     }
 }
+
+/// A log opens as a log: columns, and the levels in colour.
+///
+/// The reading is what the file is for -- a screenful of a log is skimmed,
+/// not read -- so a file that has one opens in it, and `f10` is how to see
+/// the bytes instead.
+#[test]
+fn a_log_opens_in_its_own_reading() {
+    let path = std::env::temp_dir().join(format!("obelus-reading-{}.log", std::process::id()));
+    std::fs::write(
+        &path,
+        "2026-09-11T02:49:00.854699Z  INFO ob: starting files=1\n\
+         2026-09-11T02:49:02.893231Z  WARN obelus::app: watching path=/tmp\n\
+         2026-09-11T02:49:03.001000Z ERROR obelus::logging: panicked\n\
+         \x20 left: 6\n",
+    )
+    .expect("a log");
+    let mut app = App::new(vec![
+        obelus::buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    // The settings decide, and the default is to show a reading.
+    app.configure(obelus::config::Config::default());
+    support::lay_out(&mut app, 76, 10);
+
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus::buffer::Mode::Preview,
+        "a log opened as its bytes"
+    );
+    let dump = support::render(&mut app, 76, 10);
+    let rows: Vec<&str> = support::text_block(&dump).lines().skip(1).collect();
+    // The clock, without the date: a column of the same date is a column of
+    // noise, and the levels are words of one width.
+    assert!(
+        rows[0].contains("02:49:00.854 info"),
+        "the columns are not there:\n{dump}"
+    );
+    // Every message starts in the same column, which is the whole point.
+    let message = |row: &str| row.find("starting").or_else(|| row.find("watching"));
+    assert_eq!(message(rows[0]), message(rows[1]), "{dump}");
+    // What ran on sits under the message it belongs to.
+    assert_eq!(
+        rows[3].find("left: 6"),
+        rows[2].find("panicked"),
+        "what ran on is not under its message:\n{dump}"
+    );
+    // And the level is in the colour of how much it matters.
+    let theme = obelus::theme::builtin::DARK;
+    let written = |colour: ratatui::style::Color| match colour {
+        ratatui::style::Color::Rgb(red, green, blue) => {
+            format!("fg=#{red:02x}{green:02x}{blue:02x}")
+        }
+        other => panic!("{other:?}"),
+    };
+    let colour_at = |row: usize, word: &str| {
+        let at = rows[row].find(word).expect("the word");
+        let letter = support::style_block(&dump)
+            .lines()
+            .nth(row + 1)
+            .and_then(|styles| styles.chars().nth(at))
+            .expect("a style cell");
+        support::legend_block(&dump)
+            .lines()
+            .find(|line| line.trim_start().starts_with(letter))
+            .and_then(|line| line.split_whitespace().nth(1))
+            .map(str::to_string)
+            .expect("a colour")
+    };
+    assert_eq!(colour_at(2, "error"), written(theme.syntax.error), "{dump}");
+    assert_eq!(
+        colour_at(1, "warn"),
+        written(theme.syntax.warning),
+        "{dump}"
+    );
+    // No cursor in a reading: the rows are not the file's lines.
+    assert_eq!(support::cursor_line(&dump), "none", "{dump}");
+
+    // And `f10` puts the bytes back, with the caret in them.
+    support::press_function(&mut app, 10);
+    let text = support::render(&mut app, 76, 10);
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus::buffer::Mode::Edit
+    );
+    assert!(
+        support::text_block(&text).contains("2026-09-11T02:49:00.854699Z"),
+        "the bytes did not come back:\n{text}"
+    );
+    assert_ne!(support::cursor_line(&text), "none", "{text}");
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// And a file with no reading opens as its bytes, whatever its name.
+#[test]
+fn a_file_with_no_reading_opens_as_itself() {
+    let path = std::env::temp_dir().join(format!("obelus-plain-{}.log", std::process::id()));
+    std::fs::write(&path, "fn main() {\n    println!(\"hi\");\n}\n").expect("a file");
+    let mut app = App::new(vec![
+        obelus::buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.configure(obelus::config::Config::default());
+    support::lay_out(&mut app, 60, 8);
+
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus::buffer::Mode::Edit,
+        "a file that is not a log was read as one because of its name"
+    );
+    // And the command says so rather than doing something.
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::PreviewToggle);
+    assert_eq!(app.note(), Some("nothing to preview in this file"));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The setting turns the default off, and the command still works.
+#[test]
+fn the_reading_can_be_left_off_by_default() {
+    let path = std::env::temp_dir().join(format!("obelus-off-{}.log", std::process::id()));
+    std::fs::write(
+        &path,
+        "2026-09-11T02:49:00.854699Z  INFO ob: starting files=1\n\
+         2026-09-11T02:49:02.893231Z  WARN obelus::app: watching path=/tmp\n",
+    )
+    .expect("a log");
+    let mut app = App::new(vec![
+        obelus::buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.configure(obelus::config::Config {
+        preview: false,
+        ..obelus::config::Config::default()
+    });
+    support::lay_out(&mut app, 76, 8);
+
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus::buffer::Mode::Edit,
+        "the reading was shown to a reader who asked for the bytes"
+    );
+    // Asked for, it is still there: the setting is about what happens
+    // without being asked.
+    support::press_function(&mut app, 10);
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
+        obelus::buffer::Mode::Preview
+    );
+
+    let _ = std::fs::remove_file(&path);
+}

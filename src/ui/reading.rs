@@ -90,6 +90,10 @@ fn style_of(ink: Ink, bold: bool, italic: bool, theme: &Theme) -> Style {
         Ink::Code => style.fg(theme.syntax.string),
         Ink::Aside => style.fg(theme.syntax.comment),
         Ink::Mark => style.fg(theme.gutter),
+        Ink::Name => style.fg(theme.syntax.type_name),
+        Ink::Key => style.fg(theme.syntax.property),
+        Ink::Wrong => style.fg(theme.syntax.error),
+        Ink::Doubtful => style.fg(theme.syntax.warning),
     };
     if bold {
         style = style.add_modifier(Modifier::BOLD);

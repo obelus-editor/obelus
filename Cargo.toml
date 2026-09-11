@@ -142,6 +142,7 @@ futures = "0.3.34"
 # nothing else: the transport brings its own IO, and a reader talking to one
 # agent has no use for a work-stealing pool or a timer wheel.
 tokio = { version = "1.53.1", default-features = false, features = ["rt"] }
+access_log_parser = "0.11"
 
 [dev-dependencies]
 serde_json = "1"

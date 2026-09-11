@@ -51,6 +51,16 @@ pub enum SyntaxKind {
     Type,
     /// A variable, parameter or `self`.
     Variable,
+    /// A log's `ERROR`.
+    ///
+    /// Not something a grammar's captures produce: a log has no grammar,
+    /// and the reading in [`crate::syntax::log`] is the only thing that
+    /// says a line is one. Here rather than beside the change colours
+    /// because this is the one place a kind becomes a colour, and a second
+    /// place would be a second answer.
+    Error,
+    /// A log's `WARN`.
+    Warning,
 }
 
 impl SyntaxKind {
@@ -155,6 +165,14 @@ pub struct SyntaxTheme {
     pub type_name: Color,
     /// See [`SyntaxKind::Variable`].
     pub variable: Color,
+    /// See [`SyntaxKind::Error`].
+    ///
+    /// Red, and its own field rather than the change colours' red: what a
+    /// mark in the margin means and what a level in a log means are two
+    /// different things, and a colour that says both says neither.
+    pub error: Color,
+    /// See [`SyntaxKind::Warning`].
+    pub warning: Color,
 }
 
 impl SyntaxTheme {
@@ -178,6 +196,8 @@ impl SyntaxTheme {
             SyntaxKind::String => self.string,
             SyntaxKind::Type => self.type_name,
             SyntaxKind::Variable => self.variable,
+            SyntaxKind::Error => self.error,
+            SyntaxKind::Warning => self.warning,
         }
     }
 }

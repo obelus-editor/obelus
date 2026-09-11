@@ -62,6 +62,8 @@ pub const DARK: Theme = Theme {
         string: Color::Rgb(163, 230, 53),
         type_name: Color::Rgb(251, 191, 36),
         variable: Color::Rgb(228, 228, 231),
+        error: DARK_REMOVED,
+        warning: DARK_MODIFIED,
     },
 };
 
@@ -109,6 +111,8 @@ pub const LIGHT: Theme = Theme {
         string: Color::Rgb(63, 98, 18),
         type_name: Color::Rgb(161, 98, 7),
         variable: Color::Rgb(24, 24, 27),
+        error: LIGHT_REMOVED,
+        warning: LIGHT_MODIFIED,
     },
 };
 

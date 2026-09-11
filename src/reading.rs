@@ -33,6 +33,14 @@ pub enum Ink {
     /// A mark the reading added rather than the author's words: a bullet, a
     /// table's border, the blanks that hold a column open.
     Mark,
+    /// Who said it: a module, a host, a program.
+    Name,
+    /// What a value is called.
+    Key,
+    /// Something is wrong.
+    Wrong,
+    /// Something might be.
+    Doubtful,
 }
 
 /// A run of text with one look.
@@ -83,15 +91,34 @@ impl Row {
 pub enum Reading {
     /// Markdown, laid out as prose.
     Markdown,
+    /// A log, put in columns.
+    Log,
 }
+
+/// How many lines of a file are read to decide whether it is a log.
+///
+/// Enough to be sure and few enough to do while a file is being opened.
+const HEAD_LINES: usize = 20;
 
 /// The reading a buffer's bytes have, if they have one.
 ///
 /// Markdown by its extension, because markdown looks like the text it came
-/// from and sniffing it would be guessing.
+/// from and sniffing it would be guessing. A log by its *lines*, because a
+/// log file is called `syslog` or `access.log` or anything else at all, and
+/// the format is the only thing that can say.
 #[must_use]
 pub fn of(buffer: &Buffer) -> Option<Reading> {
-    is_markdown(buffer.path()).then_some(Reading::Markdown)
+    if is_markdown(buffer.path()) {
+        return Some(Reading::Markdown);
+    }
+    let head: String = buffer
+        .text()
+        .rope()
+        .lines()
+        .take(HEAD_LINES)
+        .map(|line| line.to_string())
+        .collect();
+    crate::log::format_of(&head).map(|_| Reading::Log)
 }
 
 /// Lays a reading out for a width.
@@ -103,6 +130,7 @@ pub fn of(buffer: &Buffer) -> Option<Reading> {
 pub fn render(reading: Reading, source: &str, width: u16) -> Vec<Row> {
     match reading {
         Reading::Markdown => crate::markdown::render(source, width),
+        Reading::Log => crate::log::render(source, width),
     }
 }
 
