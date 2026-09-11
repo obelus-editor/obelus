@@ -255,7 +255,7 @@ fn closing_it_keeps_what_was_said() {
     support::press(&mut app, KeyCode::Esc);
     assert!(app.chat().is_none(), "escape did not close it");
 
-    support::press_alt_key(&mut app, KeyCode::Char('a'));
+    support::press_function(&mut app, 4);
     let text = screen(&mut app);
     assert!(
         text.contains("remember this"),
@@ -719,7 +719,7 @@ fn nothing_of_obeluss_own_opens_over_the_conversation() {
     );
 
     support::press(&mut app, KeyCode::Esc);
-    support::press_control(&mut app, 'e');
+    support::press_function(&mut app, 2);
     assert!(
         app.picker().is_some(),
         "escape did not give the key table back"

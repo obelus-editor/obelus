@@ -21,7 +21,7 @@ fn each_key_opens_the_same_view_at_its_own_tab() {
 
     // A file is open and no language server is running, so those are the
     // two scopes that can answer anything.
-    support::press_control(&mut app, 'f');
+    support::press_function(&mut app, 5);
     let picker = app.picker().expect("the search");
     assert_eq!(
         picker.tabs(),
@@ -32,7 +32,7 @@ fn each_key_opens_the_same_view_at_its_own_tab() {
     assert!(picker.is_searching(), "not marked as a search");
     support::press(&mut app, KeyCode::Esc);
 
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    support::press_function(&mut app, 6);
     let picker = app.picker().expect("the search");
     assert_eq!(picker.tab(), 1, "alt+f did not open the project's tab");
     support::press(&mut app, KeyCode::Esc);
@@ -47,7 +47,7 @@ fn a_scope_with_nothing_to_say_has_no_tab() {
     // language server either, so the project is all that is left.
     let mut app = App::new(Vec::new());
     support::lay_out(&mut app, 60, 16);
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    support::press_function(&mut app, 6);
     let picker = app.picker().expect("the search");
     assert_eq!(picker.tabs(), ["project"], "not just the project");
     assert_eq!(picker.tab(), 0);
@@ -60,7 +60,7 @@ fn a_scope_with_nothing_to_say_has_no_tab() {
     // With a file open, its lines are a scope again.
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
-    support::press_control(&mut app, 'f');
+    support::press_function(&mut app, 5);
     assert_eq!(
         app.picker().expect("the search").tabs(),
         ["file", "project"]
@@ -75,7 +75,7 @@ fn a_scope_with_nothing_to_say_has_no_tab() {
 fn the_file_scope_lists_its_lines_and_narrows_to_the_query() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
-    support::press_control(&mut app, 'f');
+    support::press_function(&mut app, 5);
 
     // Nothing typed, nothing listed: the reader is looking at the file
     // already, and a list of every line of it says nothing they cannot see.
@@ -152,7 +152,7 @@ fn the_rows_follow_the_file_when_it_changes() {
     std::fs::write(&path, "fn alpha() {}\n").expect("writing");
     let mut app = App::new(vec![obelus::buffer::Buffer::open(&path).expect("opening")]);
     support::lay_out(&mut app, 60, 16);
-    support::press_control(&mut app, 'f');
+    support::press_function(&mut app, 5);
     support::type_text(&mut app, "n");
     assert_eq!(
         app.picker()
@@ -242,7 +242,7 @@ fn the_rows_are_coloured_like_the_code_they_are() {
     support::lay_out(&mut app, 60, 16);
     let keyword = hex(app.theme().syntax.keyword);
     let string = hex(app.theme().syntax.string);
-    support::press_control(&mut app, 'f');
+    support::press_function(&mut app, 5);
     support::type_text(&mut app, "greeting");
     let dump = support::render(&mut app, 60, 16);
     assert_eq!(
@@ -260,7 +260,7 @@ fn the_rows_are_coloured_like_the_code_they_are() {
     // this one names the fixture by its path under the working directory.
     let mut app = App::new(Vec::new());
     support::lay_out(&mut app, 60, 16);
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    support::press_function(&mut app, 6);
     support::type_text(&mut app, "greeting");
     app.handle(Event::Matches {
         generation: app.search_generation(),
@@ -305,7 +305,7 @@ fn only_the_rows_on_screen_cost_anything() {
 
     let mut app = App::new(Vec::new());
     support::lay_out(&mut app, 60, 16);
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    support::press_function(&mut app, 6);
     support::type_text(&mut app, "use");
     app.handle(Event::Matches {
         generation: app.search_generation(),
@@ -357,7 +357,7 @@ fn only_the_rows_on_screen_cost_anything() {
 fn the_query_walks_between_the_tabs() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
-    support::press_control(&mut app, 'f');
+    support::press_function(&mut app, 5);
     support::type_text(&mut app, "greeting");
 
     support::press(&mut app, KeyCode::Right);
@@ -394,7 +394,7 @@ fn the_query_walks_between_the_tabs() {
 fn one_letter_is_a_search_and_nothing_is_not() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    support::press_function(&mut app, 6);
 
     assert_eq!(
         app.picker().expect("the search").nothing_to_show(),
@@ -471,7 +471,7 @@ fn a_scan_that_has_been_typed_past_stops() {
 fn matches_for_an_older_query_are_dropped() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    support::press_function(&mut app, 6);
     support::type_text(&mut app, "greeting");
 
     // Text the query matches, because the picker filters what the scan
@@ -524,7 +524,7 @@ fn matches_do_not_land_in_a_list_that_did_not_ask() {
     // Asked for in the project, and then the reader walks back to the file.
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    support::press_function(&mut app, 6);
     support::type_text(&mut app, "greeting");
     let generation = app.search_generation();
     support::press(&mut app, KeyCode::Left);
@@ -547,7 +547,7 @@ fn matches_do_not_land_in_a_list_that_did_not_ask() {
     // And with the search closed and another list open in its place.
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    support::press_function(&mut app, 6);
     support::type_text(&mut app, "greeting");
     let generation = app.search_generation();
     support::press(&mut app, KeyCode::Esc);
@@ -572,7 +572,7 @@ fn matches_do_not_land_in_a_list_that_did_not_ask() {
 fn a_finished_walk_that_found_nothing_says_so() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    support::press_function(&mut app, 6);
     support::type_text(&mut app, "greeting");
 
     app.handle(Event::Matches {
@@ -593,7 +593,7 @@ fn a_finished_walk_that_found_nothing_says_so() {
 fn the_symbols_scope_needs_a_server() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 16);
-    support::press_alt_key(&mut app, KeyCode::Char('s'));
+    support::press_function(&mut app, 8);
     assert!(
         app.picker().is_none(),
         "a search opened on a scope with nobody to ask"
@@ -798,7 +798,7 @@ fn the_preview_marks_what_the_query_matched() {
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 20);
-    support::press_control(&mut app, 'f');
+    support::press_function(&mut app, 5);
     // Three letters that are next to each other in one line of the file:
     // `let greeting = "..."`.
     support::type_text(&mut app, "eti");
@@ -865,7 +865,7 @@ fn the_preview_marks_what_the_query_matched() {
 fn choosing_a_row_lands_on_the_match() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 20);
-    support::press_control(&mut app, 'f');
+    support::press_function(&mut app, 5);
     support::type_text(&mut app, "eti");
     support::press(&mut app, KeyCode::Enter);
 
@@ -898,7 +898,7 @@ fn a_row_that_is_a_name_keeps_the_place_it_was_given() {
     // No search open: nothing is a line.
     assert!(!app.rows_are_lines_for_test());
 
-    support::press_control(&mut app, 'f');
+    support::press_function(&mut app, 5);
     support::type_text(&mut app, "greet");
     assert!(
         app.rows_are_lines_for_test(),

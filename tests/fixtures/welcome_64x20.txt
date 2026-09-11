@@ -12,7 +12,7 @@ screen 64x20  editor 64x18  status 64x1
  9|                                                                
 10|         ──────────────────────────────────────────────         
 11|                                                                
-12|          󰘴 o   open a file                                     
+12|           f1   open a file                                     
 13|          󰘴 p   run a command by name                           
 14|          󰘴 q   leave obelus                                    
 15|                                                                
@@ -33,7 +33,7 @@ screen 64x20  editor 64x18  status 64x1
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 10|aaaaaaaaajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjaaaaaaaaa
 11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-12|aaaaaaaaakkkkkaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+12|aaaaaaaaaakkkkaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|aaaaaaaaakkkkkaajjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaa
 14|aaaaaaaaakkkkkaajjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

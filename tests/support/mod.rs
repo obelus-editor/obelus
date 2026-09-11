@@ -64,6 +64,14 @@ pub fn press_control_key(app: &mut App, code: KeyCode) {
     app.handle(Event::Key(KeyEvent::new(code, KeyModifiers::CONTROL)));
 }
 
+/// Sends a function key, which is how the most used commands are reached.
+pub fn press_function(app: &mut App, number: u8) {
+    app.handle(Event::Key(KeyEvent::new(
+        KeyCode::F(number),
+        KeyModifiers::NONE,
+    )));
+}
+
 /// Sends a key with alt held.
 pub fn press_alt_key(app: &mut App, code: KeyCode) {
     app.handle(Event::Key(KeyEvent::new(code, KeyModifiers::ALT)));

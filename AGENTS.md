@@ -79,6 +79,37 @@ picker's selection keys belong to whichever component owns the state they move.
 `App`, so anything that displays a key reads that table and a rebind changes
 every display of it.
 
+**The key table has three families, and the family is the memorable part.**
+
+* **A function key opens something to look at.** Two banks of four, which is
+  how they sit on the keyboard: `f1`-`f4` are the things to read (a file, an
+  open file, a changed file, the agent) and `f5`-`f8` are finding, which is
+  one question at four radii -- this file or every file, its text or its
+  names. Bare, never with a modifier: one terminal reports `shift+f5` and
+  the next reports `f17` for the same press, so a modified function key is a
+  binding that works on one machine and not the next. `f9`-`f12` are empty
+  on purpose, for the views that will earn them -- a diff, a commit log, a
+  panel of references, a patch to review.
+* **Control does something to the file in front of you**, on the letter of
+  the word: `p` the palette, `w` close, `r` re-read, `l` a line number, `c`
+  copy, `q` leave.
+* **Alt asks about the cursor, or walks what was found**: `alt+enter` the
+  symbol under it (an IDE's context actions, and alt is the escape prefix so
+  it arrives everywhere), `alt+d` its diff, `alt+b` its blame, `alt+m` its
+  matching bracket, and the arrows -- up and down between changes, left and
+  right through the places the reader has been.
+* **Shift never names a command.** It only extends (`shift` plus an arrow)
+  or reverses (`shift+tab`), which leaves it meaning one thing everywhere.
+  **Escape always gives up on the nearest thing**, and everything else is
+  reached from the palette: a chord for every command is how a key table
+  stops being memorable.
+
+Six control chords can never be bound -- `ctrl` plus `i`, `m`, `j`, `h`, `[`
+or space *are* tab, enter, newline, backspace, escape and NUL on the wire --
+and `ctrl+a` and `ctrl+b` belong to screen and tmux. Two unit tests in
+`keymap` hold the table to all of this, so a binding outside the families
+fails a test rather than quietly joining the table.
+
 **Keys are rebound on the keys page, and the file holds the changes.** The
 table is data on `App`, so a rebinding is `Keymap::rebind` plus a line in
 the config's `[keys]` -- command *name* to chord spelled out (`ctrl+p`),

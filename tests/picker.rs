@@ -8,7 +8,7 @@ use obelus::{
     component::picker::{Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue},
     event::Event,
 };
-use support::{press, press_control, press_control_key, type_text};
+use support::{press, press_alt_key, press_control, press_control_key, press_function, type_text};
 
 fn app() -> App {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -82,7 +82,7 @@ fn the_command_palette_hugs_the_status_bar_and_leaves_the_code_visible() {
 #[test]
 fn a_full_area_picker_covers_the_code() {
     let mut app = app();
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
     support::check("buffers_60x12", &support::render(&mut app, 60, 12));
 }
 
@@ -92,7 +92,7 @@ fn a_full_area_picker_covers_the_code() {
 #[test]
 fn a_full_area_picker_with_one_item_still_covers_the_code() {
     let mut app = app();
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
     let dump = support::render(&mut app, 60, 12);
     let text = support::text_block(&dump);
 
@@ -130,7 +130,7 @@ fn typing_narrows_the_palette_and_the_count_follows() {
 #[test]
 fn the_matched_characters_of_the_selected_row_are_coloured() {
     let mut app = app();
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
     let unmatched = support::render(&mut app, 60, 12);
     assert!(
         !support::legend_block(&unmatched).contains("#38577f"),
@@ -170,7 +170,7 @@ fn the_matched_characters_of_every_visible_row_are_coloured() {
     }
 
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec![
@@ -285,7 +285,7 @@ fn a_key_the_picker_does_not_want_goes_nowhere() {
         !app.should_quit(),
         "ctrl+q reached the key table from inside a list"
     );
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     let after = support::render(&mut app, 60, 12);
     assert_eq!(
         support::text_block(&palette),
@@ -302,7 +302,7 @@ fn a_key_the_picker_does_not_want_goes_nowhere() {
 #[test]
 fn the_buffer_list_takes_its_own_key_and_not_the_global_ones() {
     let mut app = app();
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
     press_control(&mut app, 'q');
     assert!(
         !app.should_quit(),
@@ -330,9 +330,9 @@ fn arrows_move_the_selection_rather_than_the_cursor() {
 #[test]
 fn paths_from_a_superseded_walk_are_dropped() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     press(&mut app, KeyCode::Esc);
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
 
     // Generation one belongs to the first open; the second bumped it.
     app.handle(Event::FilesFound {
@@ -350,7 +350,7 @@ fn paths_from_a_superseded_walk_are_dropped() {
 #[test]
 fn paths_from_the_current_walk_are_listed() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/somewhere.rs".into()],
@@ -507,7 +507,7 @@ fn a_page_is_the_number_of_rows_on_screen() {
 #[test]
 fn the_list_moves_only_when_the_cursor_reaches_an_edge() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: (0..40)
@@ -597,7 +597,7 @@ fn the_list_moves_only_when_the_cursor_reaches_an_edge() {
 #[test]
 fn paging_scrolls_the_window() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: (0..40)
@@ -659,7 +659,7 @@ fn control_home_and_end_do_not_panic_on_an_empty_list() {
 #[test]
 fn the_file_picker_shows_a_glyph_for_each_file() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec![
@@ -683,7 +683,7 @@ fn the_file_picker_shows_a_glyph_for_each_file() {
 #[test]
 fn a_query_matches_the_name_and_not_the_glyph() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/app.rs".into()],
@@ -732,7 +732,7 @@ fn the_command_palette_has_no_glyphs() {
 #[test]
 fn a_long_path_keeps_its_end_and_marks_the_cut() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
@@ -759,7 +759,7 @@ fn a_long_path_keeps_its_end_and_marks_the_cut() {
 #[test]
 fn a_truncated_row_keeps_the_padding_on_its_right() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
@@ -801,7 +801,7 @@ fn a_truncated_row_keeps_the_padding_on_its_right() {
 #[test]
 fn truncation_does_not_move_the_matched_characters() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
@@ -822,7 +822,7 @@ fn truncation_does_not_move_the_matched_characters() {
 #[test]
 fn a_match_in_the_cut_away_head_colours_nothing() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["averydeepdirectory/tree/leading/to/x.rs".into()],
@@ -949,8 +949,17 @@ fn a_long_trailing_does_not_eat_the_label() {
 
 /// Right-aligned, so the keys form a column rather than trailing each
 /// description at whatever length it happens to be.
+///
+/// Their *right* edges, which is what right-aligned means and what the
+/// table now makes visible: `f1` is two columns and `ctrl+p` is three, so a
+/// list that lined their left edges up would leave the column ragged.
 #[test]
 fn the_keys_line_up_in_a_column() {
+    use obelus::{
+        command::Command,
+        keymap::{KeyChord, Keymap},
+    };
+
     let mut app = app();
     press_control(&mut app, 'p');
     // One row taller than the list needs, because the screen keeps one for
@@ -958,30 +967,31 @@ fn the_keys_line_up_in_a_column() {
     let dump = support::render(&mut app, 60, 13);
     let text = support::text_block(&dump);
 
-    // Where the key starts on the row, whatever a key looks like.
-    let key = obelus::keymap::Keymap::new()
-        .chord_for(obelus::command::Command::FileOpen)
-        .map(obelus::keymap::KeyChord::label)
-        .expect("file.open is bound");
-    // In characters rather than bytes: a glyph is four bytes and one column.
-    let column_of = |needle: &str| {
+    // Where the row's own key ends, in characters: a glyph is four bytes
+    // and one column.
+    let ends_at = |name: &str, command: Command| {
+        let key = Keymap::new()
+            .chord_for(command)
+            .map(KeyChord::label)
+            .unwrap_or_else(|| panic!("{name} is not bound"));
         text.lines()
-            .find(|row| row.contains(needle))
+            .find(|row| row.contains(name))
             .and_then(|row| {
-                row.rfind(key.split_whitespace().next().unwrap_or(&key))
-                    .map(|byte| row[..byte].chars().count())
+                row.rfind(&key)
+                    .map(|byte| row[..byte].chars().count() + key.chars().count())
             })
-            .unwrap_or_else(|| panic!("no key on the {needle:?} row:\n{dump}"))
+            .unwrap_or_else(|| panic!("no {key:?} on the {name:?} row:\n{dump}"))
     };
 
+    let file = ends_at("file.open", Command::FileOpen);
     assert_eq!(
-        column_of("file.open"),
-        column_of("command.palette"),
-        "{dump}"
+        file,
+        ends_at("command.palette", Command::CommandPalette),
+        "a function key and a chord do not end in the same column:\n{dump}"
     );
     // Rows within the compact list's ten. There are more commands than that
     // now, and the ones past it are reached by typing rather than scrolling.
-    assert_eq!(column_of("file.open"), column_of("symbol.menu"), "{dump}");
+    assert_eq!(file, ends_at("file.reload", Command::FileReload), "{dump}");
 }
 
 /// The keys come from the key table, like the welcome screen's. A rebound key
@@ -1337,7 +1347,7 @@ fn a_condition_met_puts_its_command_back() {
 fn nothing_to_ask_means_a_note_and_no_menu() {
     let mut app = app();
     support::lay_out(&mut app, 60, 12);
-    press_control(&mut app, 'g');
+    press_alt_key(&mut app, KeyCode::Enter);
 
     assert!(
         app.picker().is_none(),
@@ -1366,7 +1376,7 @@ fn the_menu_refuses_a_cursor_that_is_not_on_a_name() {
     support::lay_out(&mut brace, 60, 12);
     // `sample.rs` line one is `fn main() {`; the end of it is the brace.
     press(&mut brace, KeyCode::End);
-    press_control(&mut brace, 'g');
+    press_alt_key(&mut brace, KeyCode::Enter);
 
     assert!(brace.picker().is_none());
     assert_eq!(
@@ -1383,7 +1393,7 @@ fn the_menu_refuses_a_cursor_that_is_not_on_a_name() {
     for _ in 0..4 {
         press(&mut blank, KeyCode::Down);
     }
-    press_control(&mut blank, 'g');
+    press_alt_key(&mut blank, KeyCode::Enter);
     assert!(blank.picker().is_none());
     assert_eq!(blank.note(), Some("no symbol here"), "on a blank line");
 }
@@ -1393,7 +1403,7 @@ fn the_menu_refuses_a_cursor_that_is_not_on_a_name() {
 #[test]
 fn the_file_picker_previews_the_selected_file() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec![
@@ -1410,7 +1420,7 @@ fn the_file_picker_previews_the_selected_file() {
 #[test]
 fn the_preview_follows_the_selection() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec![
@@ -1482,7 +1492,7 @@ fn the_palette_has_an_edge_above_it_and_no_preview_below() {
 #[test]
 fn a_short_screen_gets_the_list_and_no_preview() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/sample.rs".into()],
@@ -1507,7 +1517,7 @@ fn a_short_screen_gets_the_list_and_no_preview() {
 #[test]
 fn a_file_is_previewed_from_its_first_line() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     // Neither of these is the file being read, so the row that starts
     // selected is the first one rather than the one the picker opens on.
     app.handle(Event::FilesFound {
@@ -1575,7 +1585,7 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
 #[test]
 fn a_taller_screen_gives_the_extra_rows_to_the_preview() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     // More names than either list has room for, and the first of them is a
     // file with more lines than either preview has room for: both counts
     // are then the room rather than what there is to show.
@@ -1633,7 +1643,7 @@ fn a_list_with_tabs_still_walks_ten_rows() {
         .into_iter()
         .collect(),
     );
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     let mut paths: Vec<std::path::PathBuf> = vec!["tests/fixtures/many_lines.rs".into()];
     paths.extend((1..=30).map(|number| format!("src/other{number:02}.rs").into()));
     app.handle(Event::FilesFound {
@@ -1700,7 +1710,7 @@ fn a_list_with_tabs_still_walks_ten_rows() {
 #[test]
 fn control_paging_scrolls_the_preview_and_not_the_list() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/many_lines.rs".into()],
@@ -1745,7 +1755,7 @@ fn control_paging_scrolls_the_preview_and_not_the_list() {
 #[test]
 fn the_preview_stops_at_the_top_of_the_file() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/many_lines.rs".into()],
@@ -1987,7 +1997,7 @@ fn every_compact_list_has_an_edge_above_it() {
 #[test]
 fn the_file_picker_opens_on_the_file_being_read() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
 
     // The walk arrives in batches and the current file is in the second of
     // them, which is the case a picker that only looked once would miss.
@@ -2028,7 +2038,7 @@ fn the_file_picker_opens_on_the_file_being_read() {
 #[test]
 fn a_late_batch_does_not_move_a_selection_the_reader_has_touched() {
     let mut app = app();
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/one.rs".into(), "src/two.rs".into()],
@@ -2237,7 +2247,7 @@ fn a_list_with_nothing_in_it_says_why() {
     // No file open, so the buffer list is empty for a reason worth stating.
     let mut empty = App::new(Vec::new());
     support::lay_out(&mut empty, 50, 8);
-    press_control(&mut empty, 'e');
+    press_function(&mut empty, 2);
     let dump = support::render(&mut empty, 50, 8);
     assert!(
         support::text_block(&dump).contains("no file is open"),
@@ -2268,7 +2278,7 @@ fn the_buffer_list_closes_the_selected_file_with_the_same_key() {
         support::open_fixture("long.rs"),
     ]);
     support::lay_out(&mut app, 60, 12);
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
 
     // The second row, to prove it closes what is *selected* and not what was
     // being read.
@@ -2348,7 +2358,7 @@ fn the_outline_lists_what_a_file_defines_and_colours_it() {
     for _ in 0..30 {
         press(&mut app, KeyCode::Down);
     }
-    press_control(&mut app, 't');
+    press_function(&mut app, 7);
     let here = app
         .picker()
         .and_then(|picker| picker.selected_item())
@@ -2434,7 +2444,7 @@ fn the_outline_lists_what_a_file_defines_and_colours_it() {
 fn a_language_with_no_tags_says_so_rather_than_looking_empty() {
     let mut app = App::new(vec![support::open_fixture("sample.toml")]);
     support::lay_out(&mut app, 60, 12);
-    press_control(&mut app, 't');
+    press_function(&mut app, 7);
 
     let dump = support::render(&mut app, 60, 12);
     assert!(
@@ -2463,7 +2473,7 @@ fn the_buffer_list_puts_the_most_visited_first() {
             .collect()
     };
     let visit = |app: &mut App, needle: &str| {
-        press_control(app, 'e');
+        press_function(app, 2);
         type_text(app, needle);
         press(app, KeyCode::Enter);
     };
@@ -2473,7 +2483,7 @@ fn the_buffer_list_puts_the_most_visited_first() {
     visit(&mut app, "long");
     visit(&mut app, "indented");
 
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
     let order = listed(&app);
     let at = |needle: &str| {
         order
@@ -2637,7 +2647,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
     let first = app.current_buffer().expect("a buffer").path().to_path_buf();
 
     // Somewhere else, through the file picker.
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/long.rs".into()],
@@ -2659,7 +2669,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
 
     // The file picker choosing a file that is *already* open is the same
     // leap by a different route, and goes through a different branch.
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 2,
         paths: vec!["tests/fixtures/long.rs".into()],
@@ -2680,7 +2690,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
     );
 
     // The buffer list is the same kind of leap.
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
     type_text(&mut app, "long");
     press(&mut app, KeyCode::Enter);
     assert!(
@@ -2700,7 +2710,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
     // history would fill with the place the reader never left.
     let before = app.picker().is_none();
     assert!(before);
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
     type_text(&mut app, "many_lines");
     press(&mut app, KeyCode::Enter);
     obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoForward);
@@ -2728,7 +2738,7 @@ fn the_file_list_has_a_tab_for_what_has_changed() {
     // of tabs with one tab on it says there is somewhere else to go.
     let mut clean = app();
     support::lay_out(&mut clean, 60, 12);
-    press_control(&mut clean, 'o');
+    press_function(&mut clean, 1);
     assert!(
         clean.picker().expect("the file list").tabs().is_empty(),
         "a tab row with nowhere to go"
@@ -2753,7 +2763,7 @@ fn the_file_list_has_a_tab_for_what_has_changed() {
         .collect(),
     );
     support::lay_out(&mut dirty, 60, 12);
-    press_control(&mut dirty, 'o');
+    press_function(&mut dirty, 1);
     let picker = dirty.picker().expect("the file list");
     assert_eq!(picker.tabs(), ["all", "changed"], "not the two listings");
     assert_eq!(picker.tab(), 0, "ctrl+o did not open the whole tree");
@@ -2805,7 +2815,7 @@ fn a_walk_in_flight_does_not_land_in_the_changed_listing() {
             .collect(),
     );
     support::lay_out(&mut app, 60, 12);
-    press_control(&mut app, 'o');
+    press_function(&mut app, 1);
     // The walk that opening the list started is the first one.
     app.handle(Event::FilesFound {
         generation: 1,
@@ -2845,7 +2855,7 @@ fn a_key_opens_the_changed_files_directly() {
             .collect(),
     );
     support::lay_out(&mut app, 60, 12);
-    press_control(&mut app, 'd');
+    press_function(&mut app, 3);
 
     let picker = app.picker().expect("the file list");
     assert_eq!(picker.tabs(), ["all", "changed"]);
@@ -2878,13 +2888,13 @@ fn the_buffer_list_opens_on_the_current_file() {
     // Visit the first, then the second: both have been visited once, so
     // they are listed in the order they were opened -- and the one being
     // read is the second of them.
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
     press(&mut app, KeyCode::Enter);
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Enter);
 
-    press_control(&mut app, 'e');
+    press_function(&mut app, 2);
     let rows: Vec<String> = app
         .picker()
         .expect("the list")

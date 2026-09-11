@@ -124,8 +124,8 @@ fn a_narrow_screen_gets_the_keys_without_the_wordmark() {
     let mut app = App::new(Vec::new());
     let dump = support::render(&mut app, 34, 10);
 
-    let control_o = obelus::keymap::control('o').label();
-    assert!(support::text_block(&dump).contains(&control_o), "{dump}");
+    let open = obelus::keymap::function(1).label();
+    assert!(support::text_block(&dump).contains(&open), "{dump}");
     assert!(
         !support::text_block(&dump).contains('\u{2588}'),
         "the wordmark was drawn into a screen too narrow for it:\n{dump}"
@@ -145,8 +145,8 @@ fn the_welcome_screen_reads_the_key_table() {
 
     let mut app = App::new(Vec::new());
     let shown = support::render(&mut app, 64, 20);
-    let control_o = KeyChord::new(KeyCode::Char('o'), KeyModifiers::CONTROL).label();
-    assert!(support::text_block(&shown).contains(&control_o), "{shown}");
+    let open = obelus::keymap::function(1).label();
+    assert!(support::text_block(&shown).contains(&open), "{shown}");
 
     app.set_keymap(Keymap::from_bindings(vec![Binding {
         command: Command::FileOpen,
@@ -161,7 +161,7 @@ fn the_welcome_screen_reads_the_key_table() {
         "the rebound key is not shown:\n{rebound}"
     );
     assert!(
-        !text.contains(&control_o),
+        !text.contains(&open),
         "the old key is still being offered:\n{rebound}"
     );
     assert!(
