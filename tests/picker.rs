@@ -678,6 +678,71 @@ fn the_file_picker_shows_a_glyph_for_each_file() {
     assert!(text.contains('\u{f15b}'), "no generic glyph:\n{dump}");
 }
 
+/// And the glyph wears the name's colour. The icon is part of the name: a
+/// file git says has changed is a changed file picture and all, and a glyph
+/// left in the plain foreground reads as a second thing on the row.
+#[test]
+fn a_glyph_is_the_colour_of_the_name_beside_it() {
+    use obelus::git::FileStatus;
+
+    let mut app = app();
+    let root = app.working_directory().to_path_buf();
+    // Two statuses, so the colours are two: a test where every row is the
+    // same colour cannot tell the name's colour from the plain one.
+    app.statuses_for_test(
+        [
+            (root.join("new.rs"), FileStatus::New),
+            (root.join("old.rs"), FileStatus::Changed),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    support::lay_out(&mut app, 60, 12);
+    press_function(&mut app, 1);
+    // The changed listing, which is the one whose rows git has coloured.
+    press(&mut app, KeyCode::Right);
+
+    let dump = support::render(&mut app, 60, 12);
+    let text: Vec<&str> = support::text_block(&dump).lines().collect();
+    let styles: Vec<&str> = support::style_block(&dump).lines().collect();
+
+    // Where the glyph is and where the name starts, read off the row itself
+    // rather than counted out here: what this is about is the two wearing
+    // one colour, not which column either is in.
+    let colours = |name: &str| {
+        let row = text
+            .iter()
+            .position(|row| row.contains(name))
+            .unwrap_or_else(|| panic!("no row for {name}:\n{dump}"));
+        let glyph = text[row]
+            .char_indices()
+            .find(|(_, character)| ('\u{e000}'..='\u{f8ff}').contains(character))
+            .map(|(index, _)| text[row][..index].chars().count())
+            .unwrap_or_else(|| panic!("no glyph on the row for {name}:\n{dump}"));
+        let label = text[row]
+            .find(name)
+            .map(|index| text[row][..index].chars().count())
+            .expect("the name");
+        let at = |column: usize| styles[row].chars().nth(column).unwrap_or(' ');
+        (at(glyph), at(label))
+    };
+
+    let (new_glyph, new_label) = colours("new.rs");
+    let (old_glyph, old_label) = colours("old.rs");
+    assert_eq!(
+        new_glyph, new_label,
+        "the glyph is not the colour of the name beside it:\n{dump}"
+    );
+    assert_eq!(
+        old_glyph, old_label,
+        "the glyph is not the colour of the name beside it:\n{dump}"
+    );
+    assert_ne!(
+        new_glyph, old_glyph,
+        "both glyphs are one colour, so neither is the name's:\n{dump}"
+    );
+}
+
 /// The glyph is not in the haystack. Nothing a reader types is a private-use
 /// codepoint, and having one in there would only skew the scores.
 #[test]

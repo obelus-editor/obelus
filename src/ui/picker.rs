@@ -286,7 +286,19 @@ impl PickerView<'_> {
         if let Some(icon) = item.icon {
             let mut glyph = String::new();
             glyph.push(icon);
-            column = at(cells, area, column, y, &glyph, style, &Marked::plain());
+            // In the label's own colour, because the glyph is part of the
+            // name: a file git says has changed is a changed file picture
+            // and all, and an icon left in the plain foreground reads as a
+            // second thing on the row with a colour of its own.
+            column = at(
+                cells,
+                area,
+                column,
+                y,
+                &glyph,
+                label_style,
+                &Marked::plain(),
+            );
             // One blank column after it, always. The terminal allocates one
             // cell for a private-use codepoint, and the icons in a Nerd
             // Font's non-`Mono` variant are drawn two cells wide, so the
