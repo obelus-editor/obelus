@@ -137,6 +137,9 @@ impl App {
             // and a line running off its right-hand edge with no way to
             // scroll it would be a line nobody can read.
             wrap: true,
+            // Nothing is opened in a preview: a hunk is a thing the reader
+            // opens in the file they are reading.
+            inserted: crate::buffer::Inserted::none(),
         };
         preview.buffer.place_cursor(target, CharColumn::new(0));
         preview.buffer.center_on_cursor(text);

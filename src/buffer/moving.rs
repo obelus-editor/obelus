@@ -125,8 +125,19 @@ impl Buffer {
         let rows = isize::try_from(area.height.max(1)).unwrap_or(isize::MAX);
         self.move_viewport(pages.saturating_mul(rows), area);
 
-        let (line, row) =
-            self.step_rows(self.viewport.top, self.viewport.top_row, screen_row, width);
+        let landed =
+            self.step_screen_rows((self.viewport.top, self.viewport.top_row), screen_row, area);
+        // The row it landed on is one the view drew and the text does not
+        // have -- inside a hunk the reader has opened. There is nowhere for
+        // the cursor to go that would keep its place on the screen, so it
+        // keeps its place in the *file* instead and the page is a scroll:
+        // the way through a deletion taller than the screen, and the same
+        // thing the wheel does. The next cursor move brings the screen back
+        // to it, as it does after any scroll.
+        let Some((line, row)) = self.text_row_at(landed, area) else {
+            self.detached = true;
+            return;
+        };
         self.cursor.line = line;
         // The remembered cell, like a vertical move: paging is one.
         self.cursor.column = self
@@ -179,11 +190,10 @@ impl Buffer {
         // at the last *line*, which for a reader means a page too far: a
         // screen holding one line of text and ten of nothing, with nothing
         // saying which way is back.
-        let width = area.wrap_width();
         let last = self.text.last_line();
-        let last_row = self.text.row_count(last, width).saturating_sub(1);
+        let last_row = self.screen_rows_of(last, area).saturating_sub(1);
         let back = isize::try_from(usize::from(area.height.max(1)) - 1).unwrap_or(isize::MAX);
-        let limit = self.step_rows(last, last_row, -back, width);
+        let limit = self.step_screen_rows((last, last_row), -back, area);
         if (self.viewport.top, self.viewport.top_row) > limit {
             self.viewport.top = limit.0;
             self.viewport.top_row = limit.1;
@@ -300,6 +310,81 @@ impl Buffer {
         self.cursor.remembered_cell = cell;
     }
 
+    /// How many rows of the screen a line takes: the rows the view draws
+    /// above it, then its own.
+    ///
+    /// The other count is [`crate::text::Text::row_count`], which is the
+    /// rows the *text* has. Two counts because there are two questions: a
+    /// cursor moves through the text, and a viewport is a window on the
+    /// screen -- and one function answering both is what let an opened hunk
+    /// be drawn where the viewport could not reach it.
+    fn screen_rows_of(&self, line: LineNumber, area: TextArea) -> usize {
+        area.inserted.rows_above(line) + self.text.row_count(line, area.wrap_width())
+    }
+
+    /// The row of the screen `rows` away, crossing line boundaries and
+    /// stopping at either end of the document.
+    ///
+    /// A position here is a line and a row *within its screen rows*, so a
+    /// row below the inserted ones is the line's own first row. Everything
+    /// that moves the viewport counts with this.
+    fn step_screen_rows(
+        &self,
+        at: (LineNumber, usize),
+        rows: isize,
+        area: TextArea,
+    ) -> (LineNumber, usize) {
+        let (mut line, mut row) = at;
+        let last = self.text.last_line();
+        for _ in 0..rows.unsigned_abs() {
+            if rows > 0 {
+                if row + 1 < self.screen_rows_of(line, area) {
+                    row += 1;
+                } else if line < last {
+                    line = line.saturating_add(1);
+                    row = 0;
+                } else {
+                    break;
+                }
+            } else if row > 0 {
+                row -= 1;
+            } else if line.get() > 0 {
+                line = line.saturating_sub(1);
+                row = self.screen_rows_of(line, area).saturating_sub(1);
+            } else {
+                break;
+            }
+        }
+        (line, row)
+    }
+
+    /// Where the cursor is, as a row of the screen.
+    ///
+    /// The rows drawn above its line are between the top of that line and
+    /// the cursor, so they count -- which is the whole of what the caret
+    /// and the scrolling had wrong.
+    fn cursor_screen_row(&self, area: TextArea) -> (LineNumber, usize) {
+        let (row, _) =
+            self.text
+                .visual_position(self.cursor.line, self.cursor.column, area.wrap_width());
+        (
+            self.cursor.line,
+            area.inserted.rows_above(self.cursor.line) + row,
+        )
+    }
+
+    /// The place in the *text* a row of the screen is on, or `None` for a
+    /// row the view inserted.
+    ///
+    /// `None` rather than the nearest text row, because the two answers are
+    /// what a caller has to tell apart: a cursor cannot be put on a row the
+    /// file does not have, and the first row of the block is not the first
+    /// row of the line.
+    fn text_row_at(&self, at: (LineNumber, usize), area: TextArea) -> Option<(LineNumber, usize)> {
+        let above = area.inserted.rows_above(at.0);
+        (at.1 >= above).then(|| (at.0, at.1 - above))
+    }
+
     /// The visual row `rows` away, crossing line boundaries and stopping at
     /// either end of the document.
     fn step_rows(
@@ -340,10 +425,10 @@ impl Buffer {
     #[must_use]
     pub fn cursor_screen_cell(&self, area: TextArea) -> Option<(u16, u16)> {
         let width = area.wrap_width();
-        let (cursor_row, cell) =
-            self.text
-                .visual_position(self.cursor.line, self.cursor.column, width);
-        let cursor = (self.cursor.line, cursor_row);
+        let (_, cell) = self
+            .text
+            .visual_position(self.cursor.line, self.cursor.column, width);
+        let cursor = self.cursor_screen_row(area);
 
         // The cell the cursor is in, counted from the left edge of what is
         // on screen rather than from the start of the line. With wrapping
@@ -364,7 +449,7 @@ impl Buffer {
             if at == cursor {
                 return Some((row, cell));
             }
-            let next = self.step_rows(at.0, at.1, 1, width);
+            let next = self.step_screen_rows(at, 1, area);
             if next == at {
                 return None;
             }
@@ -384,12 +469,8 @@ impl Buffer {
     /// stops at the first row, so the screen is not padded with blank rows to
     /// put line one in the middle.
     pub fn center_on_cursor(&mut self, area: TextArea) {
-        let width = area.wrap_width();
-        let (cursor_row, _) =
-            self.text
-                .visual_position(self.cursor.line, self.cursor.column, width);
         let above = isize::try_from(area.height / 2).unwrap_or(isize::MAX);
-        let (top, top_row) = self.step_rows(self.cursor.line, cursor_row, -above, width);
+        let (top, top_row) = self.step_screen_rows(self.cursor_screen_row(area), -above, area);
         self.viewport.top = top;
         self.viewport.top_row = top_row;
     }
@@ -403,12 +484,11 @@ impl Buffer {
     /// times at the top of a file means pressing page-down ten times before
     /// anything moves.
     pub fn scroll_rows(&mut self, rows: isize, area: TextArea) -> isize {
-        let width = area.wrap_width();
         let step = if rows > 0 { 1 } else { -1 };
         let mut at = (self.viewport.top, self.viewport.top_row);
         let mut moved = 0;
         for _ in 0..rows.unsigned_abs() {
-            let next = self.step_rows(at.0, at.1, step, width);
+            let next = self.step_screen_rows(at, step, area);
             if next == at {
                 break;
             }
@@ -446,7 +526,6 @@ impl Buffer {
     /// Scrolls the least amount that brings the cursor on screen, unless the
     /// reader has paged away on purpose.
     pub fn scroll_into_view(&mut self, area: TextArea) {
-        let width = area.wrap_width();
         let height = usize::from(area.height).max(1);
         // Sideways first and unconditionally: it is about the cursor's
         // column, which the vertical window has no opinion about.
@@ -455,8 +534,7 @@ impl Buffer {
         // A reload or a resize can leave the anchor past the end of its line.
         self.viewport.top = self.text.clamp_line(self.viewport.top);
         self.viewport.top_row = self.viewport.top_row.min(
-            self.text
-                .row_count(self.viewport.top, width)
+            self.screen_rows_of(self.viewport.top, area)
                 .saturating_sub(1),
         );
 
@@ -467,15 +545,12 @@ impl Buffer {
             return;
         }
 
-        let (cursor_row, _) =
-            self.text
-                .visual_position(self.cursor.line, self.cursor.column, width);
-        let cursor = (self.cursor.line, cursor_row);
+        let cursor = self.cursor_screen_row(area);
         let mut at = (self.viewport.top, self.viewport.top_row);
 
         if cursor < at {
-            self.viewport.top = self.cursor.line;
-            self.viewport.top_row = cursor_row;
+            self.viewport.top = cursor.0;
+            self.viewport.top_row = cursor.1;
             return;
         }
 
@@ -486,7 +561,7 @@ impl Buffer {
             if at == cursor {
                 return;
             }
-            let next = self.step_rows(at.0, at.1, 1, width);
+            let next = self.step_screen_rows(at, 1, area);
             if next == at {
                 // The end of the document, so the cursor is on screen.
                 return;
@@ -495,7 +570,7 @@ impl Buffer {
         }
 
         let back = isize::try_from(height - 1).unwrap_or(isize::MAX);
-        let (top, top_row) = self.step_rows(cursor.0, cursor.1, -back, width);
+        let (top, top_row) = self.step_screen_rows(cursor, -back, area);
         self.viewport.top = top;
         self.viewport.top_row = top_row;
     }

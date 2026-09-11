@@ -148,6 +148,25 @@ Which makes a condition worth a walk: `AChangedFile` asks git what has
 changed in the tree, once when the palette opens and once per press of the
 key. This repository answers in two milliseconds.
 
+**The text's rows and the screen's rows are two counts.** A cursor moves
+through the text; a viewport is a window on the screen, and the screen can
+hold rows the file does not have -- an opened hunk draws the lines it
+replaced above the line that replaced them. So `Text::row_count` is the
+text's count and `Buffer::screen_rows_of` is the screen's, and every path
+that moves the *viewport* uses the second (`step_screen_rows`,
+`cursor_screen_row`), while the cursor's own stepping keeps the first.
+`TextArea::inserted` is how the view says what it added, filled in one place
+(`App::inserted_rows`).
+
+One function answering both is how a deletion taller than the screen became
+unreadable: the block was drawn only from its first row, the viewport could
+not express being inside it, and two patches -- a row count re-derived in
+`ui::editor` for the caret, and a height shrunk in `App::prepare` for the
+scrolling -- kept the caret honest without making the rows reachable. Both
+are gone. A page that lands on a row the text does not have keeps the cursor
+and scrolls instead, which is how the paging keys walk through a block of any
+size and why nothing new had to be invented for them.
+
 **A command does something; a preference is a setting.** A switch that
 should outlive the session is a setting and nothing else -- the only key to
 it is the one that opens the settings. A command may *change* a setting, as

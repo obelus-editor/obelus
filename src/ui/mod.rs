@@ -144,17 +144,10 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
     if offset >= regions.editor.width {
         return None;
     }
+    // The rows an opened hunk draws are counted by the arithmetic that
+    // answers this, so the caret comes back on the row it is really drawn
+    // on: the text area knows what the view inserted.
     let (row, cell) = buffer.cursor_screen_cell(app.text_area())?;
-    // And the rows an opened hunk pushed the file down by, because the caret
-    // belongs to a line and that line has moved down the screen with it.
-    let viewport = buffer.viewport();
-    let row = row.saturating_add(editor::hunk_rows_above(
-        app.changes(),
-        app.opened_hunk(),
-        viewport.top,
-        viewport.top_row,
-        buffer.cursor().line,
-    ));
     if row >= regions.editor.height || cell >= regions.editor.width - offset {
         return None;
     }

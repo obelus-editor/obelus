@@ -407,6 +407,91 @@ fn a_hunk_opens_in_place_and_closes_again() {
     );
 }
 
+/// A deletion taller than the screen can be read all the way through.
+///
+/// The rows an opened hunk draws are rows of the *screen*, so the viewport
+/// can be inside them -- which is what the paging keys then walk through.
+/// Before that, the block was only ever drawn from its first row, and its
+/// first screenful was the whole of what a reader could see: with the cursor
+/// on the line that replaced it the arithmetic put that line off the bottom
+/// of the screen, so nothing moved at all and the way out was to close the
+/// hunk.
+#[test]
+fn a_deletion_taller_than_the_screen_can_be_read() {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    // Eighty lines replaced by one, on a screen with ten rows of text.
+    let mut committed = String::new();
+    for line in 0..80 {
+        committed.push_str(&format!("gone {line}\n"));
+    }
+    committed.push_str("kept\n");
+    let repository = Repository::new("tall", &committed);
+    repository.write("kept\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 30, 12);
+    dispatch::dispatch(&mut app, Command::GitHunk);
+
+    let screen = |app: &mut App| support::text_block(&support::render(app, 30, 12)).to_string();
+
+    // The end of what was removed, next to the line that replaced it: the
+    // cursor is on that line, and the rows above it are what it replaced.
+    let opened = screen(&mut app);
+    assert!(
+        opened.contains("gone 79") && opened.contains("kept"),
+        "not the end of the deletion beside the line that replaced it:\n{opened}"
+    );
+
+    // Eight pages up reaches the first line of it, one page at a time --
+    // and stops there rather than snapping back to the cursor.
+    for _ in 0..8 {
+        support::press(&mut app, KeyCode::PageUp);
+    }
+    let top = screen(&mut app);
+    assert!(
+        top.contains("gone 0") && top.contains("gone 9"),
+        "the top of the deletion is out of reach:\n{top}"
+    );
+    support::press(&mut app, KeyCode::PageUp);
+    assert_eq!(
+        screen(&mut app),
+        top,
+        "the top of the deletion is not where it stopped"
+    );
+
+    // And the middle, which is the part that had no way of being seen: a
+    // page down from the top lands in it.
+    support::press(&mut app, KeyCode::PageDown);
+    let middle = screen(&mut app);
+    assert!(
+        middle.contains("gone 10") && middle.contains("gone 19"),
+        "a page down from the top did not land in the middle:\n{middle}"
+    );
+    assert!(
+        !middle.contains("kept"),
+        "the file is on screen, so this is not the middle of the block:\n{middle}"
+    );
+
+    // The cursor never left the line it was on -- the block is not text and
+    // has no place for it -- so any move brings the screen back to it.
+    assert_eq!(
+        app.current_buffer().expect("a file").cursor().line.get(),
+        0,
+        "paging through the block moved the cursor into it"
+    );
+    support::press(&mut app, KeyCode::Down);
+    assert!(
+        screen(&mut app).contains("kept"),
+        "a cursor move did not bring the screen back to the cursor"
+    );
+}
+
 /// The caret comes down with the file the hunk pushed down.
 ///
 /// Opening a hunk puts what its lines replaced above them, which moves every

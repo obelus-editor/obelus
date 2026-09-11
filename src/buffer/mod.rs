@@ -151,7 +151,48 @@ pub struct Viewport {
     pub left: usize,
 }
 
-/// The room the text has, and whether it wraps in it.
+/// Rows the view draws that the text does not have, and which line they
+/// are drawn above.
+///
+/// An opened hunk is the one thing that does this: the lines it replaced
+/// are drawn above the line that replaced them, pushing the file down.
+/// They are rows of the *screen* and not lines of the file -- the cursor
+/// cannot be on one and they have no line numbers -- and the viewport's
+/// arithmetic is about the screen, which is why it has to be told.
+///
+/// One anchor, because one hunk is open at a time. A second thing that
+/// draws rows of its own is what would make this a list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Inserted {
+    /// The line they are drawn above.
+    pub above: Option<LineNumber>,
+    /// How many of them there are.
+    pub rows: usize,
+}
+
+impl Inserted {
+    /// Nothing inserted, which is every view but the one showing an opened
+    /// hunk.
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            above: None,
+            rows: 0,
+        }
+    }
+
+    /// How many rows are drawn above a line.
+    #[must_use]
+    pub fn rows_above(self, line: LineNumber) -> usize {
+        match self.above == Some(line) {
+            true => self.rows,
+            false => 0,
+        }
+    }
+}
+
+/// The room the text has, whether it wraps in it, and what else is drawn in
+/// it.
 ///
 /// The numbers together, because with wrapping neither is useful alone: the
 /// width decides where lines break and so how many rows they take, and the
@@ -168,6 +209,8 @@ pub struct TextArea {
     /// With this off a line is one row however long it is, and the view
     /// scrolls sideways to follow the cursor along it.
     pub wrap: bool,
+    /// Rows the view draws between the lines of the text.
+    pub inserted: Inserted,
 }
 
 impl TextArea {
@@ -324,6 +367,7 @@ impl Buffer {
                 width: 1,
                 height: 1,
                 wrap: true,
+                inserted: Inserted::none(),
             },
         );
     }

@@ -521,6 +521,27 @@ impl App {
         }
     }
 
+    /// The rows the view draws that the file does not have.
+    ///
+    /// One thing does that today: a hunk the reader has opened, whose
+    /// removed lines are drawn above the line that replaced them. The
+    /// viewport's arithmetic counts rows of the *screen*, so it is told
+    /// here rather than finding out from the drawing -- which is what it
+    /// used to do, twice, in two places that could disagree.
+    fn inserted_rows(&self) -> crate::buffer::Inserted {
+        let Some(above) = self.opened else {
+            return crate::buffer::Inserted::none();
+        };
+        let rows = self
+            .changes()
+            .and_then(|changes| changes.hunk_at(above))
+            .map_or(0, |hunk| hunk.removed.len());
+        crate::buffer::Inserted {
+            above: Some(above),
+            rows,
+        }
+    }
+
     /// Which set of key bindings a key is looked up in.
     ///
     /// What the reader is in, rather than what they are doing: a dialog
@@ -622,6 +643,7 @@ impl App {
             width,
             height: self.editor_area.height,
             wrap: self.config.wrap,
+            inserted: self.inserted_rows(),
         }
     }
 
@@ -677,28 +699,13 @@ impl App {
         self.settle_chat(editor_area);
         self.refresh_slash();
 
-        let area = self.text_area();
         self.refresh_rendering(editor_area.width);
         self.refresh_changes();
         self.refresh_blame();
-        // Scrolled in the room the text really has: an opened hunk above the
-        // cursor spends rows on lines that are not in the file, and a cursor
-        // kept on screen by the text's own arithmetic would be drawn below
-        // the last row.
-        let pushed = self.current_buffer().map_or(0, |buffer| {
-            let viewport = buffer.viewport();
-            ui::editor::hunk_rows_above(
-                self.changes(),
-                self.opened,
-                viewport.top,
-                viewport.top_row,
-                buffer.cursor().line,
-            )
-        });
-        let room = TextArea {
-            height: area.height.saturating_sub(pushed),
-            ..area
-        };
+        // After the changes, because the room the text has includes the
+        // rows an opened hunk draws: the arithmetic counts them, so nothing
+        // here has to make up for them.
+        let area = self.text_area();
         // Only where the viewport is a place in the *text*. While a reading
         // is showing, the viewport's top is a row of that reading -- and a
         // reading has more rows than the file has lines, because it wraps
@@ -709,7 +716,7 @@ impl App {
             .current_buffer_mut()
             .filter(|buffer| buffer.mode() == crate::buffer::Mode::Edit)
         {
-            buffer.scroll_into_view(room);
+            buffer.scroll_into_view(area);
         }
 
         self.refresh_preview(editor_area);
