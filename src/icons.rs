@@ -212,8 +212,6 @@ pub fn for_command(name: &str) -> char {
         "search.project" => '\u{f0253}',
         "search.symbols" => '\u{f0871}',
         "git.hunk" => '\u{f02a2}',
-        // A person, because that is the question this one answers.
-        "git.blame" => '\u{f0013}',
         // Arrows, because these two move the reader: the diff is what they
         // step through, and the git glyph is already on the command that
         // opens one.

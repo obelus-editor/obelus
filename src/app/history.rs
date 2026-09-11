@@ -109,28 +109,23 @@ impl App {
     /// One entry per line of the *committed* file: the caller maps a line of
     /// the working tree onto it, because the two are not the same file once
     /// the reader has changed anything.
+    /// Read straight from the setting, which is the only thing that says
+    /// whether the names are wanted. It was a field here as well, set from
+    /// the setting at startup and flipped by a command -- so the command's
+    /// answer lasted until the next time anything on the settings page
+    /// changed, and then went back without a word.
     #[must_use]
     pub fn blame(&self) -> Option<&[Option<git::Blamed>]> {
-        if !self.showing_blame {
+        if !self.config.blame {
             return None;
         }
         let path = self.current_buffer()?.path();
         self.blames.get(path).map(Vec::as_slice)
     }
 
-    /// Shows or stops showing who changed each line.
-    pub fn toggle_blame(&mut self) {
-        self.showing_blame = !self.showing_blame;
-        if self.showing_blame {
-            self.refresh_blame();
-        } else {
-            self.note = Some("not showing who changed each line".to_string());
-        }
-    }
-
     /// Starts a walk of history for the file being read, once per file.
     pub(super) fn refresh_blame(&mut self) {
-        if !self.showing_blame {
+        if !self.config.blame {
             return;
         }
         let Some(path) = self

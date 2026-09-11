@@ -266,7 +266,7 @@ fn the_readers_own_bindings_go_over_the_defaults() {
         ("theme.select".to_string(), "alt+t".to_string()),
         ("file.open".to_string(), String::new()),
         ("nonsense.command".to_string(), "ctrl+z".to_string()),
-        ("git.blame".to_string(), "not a key".to_string()),
+        ("git.hunk".to_string(), "not a key".to_string()),
     ]
     .into_iter()
     .collect();
@@ -309,8 +309,8 @@ fn the_readers_own_bindings_go_over_the_defaults() {
         Keymap::new().chord_for(Command::CommandPalette)
     );
     assert_eq!(
-        keymap.chord_for(Command::GitBlame),
-        Keymap::new().chord_for(Command::GitBlame),
+        keymap.chord_for(Command::GitHunk),
+        Keymap::new().chord_for(Command::GitHunk),
         "a chord the file spelled wrong took the default with it"
     );
 }

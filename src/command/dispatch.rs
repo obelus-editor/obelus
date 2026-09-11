@@ -31,7 +31,6 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::GoLine => app.open_line_prompt(),
         Command::GoBracket => app.go_to_bracket(),
         Command::GitHunk => app.toggle_hunk(),
-        Command::GitBlame => app.toggle_blame(),
         Command::GitPrevious => app.go_to_previous_change(),
         Command::GitNext => app.go_to_next_change(),
         Command::SelectionCopy => app.copy_selection(),

@@ -149,7 +149,6 @@ impl App {
             self.theme = theme;
         }
         icons::use_glyphs(self.config.icons);
-        self.showing_blame = self.config.blame;
         // The table the reader's own bindings leave. Built rather than
         // patched: what is in the file is a list of changes over the
         // defaults, and applying them to a table that has already had them

@@ -293,9 +293,9 @@ impl Keymap {
     /// number, copying, leaving.
     ///
     /// **Alt asks about the cursor, or walks what was found**: the symbol
-    /// under it, the change under it, who wrote the line under it, the
-    /// bracket that matches it -- and the arrows, which step between
-    /// changes and through the places the reader has been.
+    /// under it, the change under it, the bracket that matches it -- and
+    /// the arrows, which step between changes and through the places the
+    /// reader has been.
     ///
     /// Shift never names a command. It only ever extends (`shift` plus an
     /// arrow, in the editor) or reverses (`shift+tab`, in the
@@ -427,18 +427,14 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Enter, KeyModifiers::ALT),
                 },
-                // `alt+d` for the diff of this line and `alt+b` for its
-                // blame: two questions about the line under the cursor,
-                // asked with the first letter of the answer.
+                // `alt+d` for the diff of this line: a question about the
+                // line under the cursor, asked with the first letter of the
+                // answer. Who wrote it is not here -- that is a setting,
+                // because it is on until the reader says otherwise.
                 Binding {
                     command: Command::GitHunk,
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('d'), KeyModifiers::ALT),
-                },
-                Binding {
-                    command: Command::GitBlame,
-                    context: Context::Normal,
-                    chord: KeyChord::new(KeyCode::Char('b'), KeyModifiers::ALT),
                 },
                 // `alt+m` for match, which is what this is called
                 // everywhere. Not `%`: obelus binds no bare keys, because

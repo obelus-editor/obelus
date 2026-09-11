@@ -79,6 +79,16 @@ picker's selection keys belong to whichever component owns the state they move.
 `App`, so anything that displays a key reads that table and a rebind changes
 every display of it.
 
+**A command does something; a preference is a setting.** A switch that
+should outlive the session is a setting and nothing else -- the only key to
+it is the one that opens the settings. A command may *change* a setting, as
+`theme.select` does by writing it, but no command may own a bit a setting
+owns as well: showing who wrote each line was both `config.blame` and a
+`git.blame` command flipping a field of `App`, so turning the names off with
+the key lasted until the next time anything on the settings page changed --
+`apply_config` put the field back from the setting, without a word. The
+command is gone and `App::blame` reads the setting.
+
 **The key table has three families, and the family is the memorable part.**
 
 * **A function key opens something to look at.** Two banks of four, which is

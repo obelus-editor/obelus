@@ -1039,17 +1039,16 @@ fn a_line_too_long_for_a_note_keeps_its_code() {
     );
 }
 
-/// `git.blame` turns the names off and on again, because on a narrow screen
-/// or in a file being read closely they are the noisiest thing obelus draws.
+/// The names can be turned off, because on a narrow screen or in a file
+/// being read closely they are the noisiest thing obelus draws.
+///
+/// The setting is what turns them off, and there is no command for it: a
+/// switch that should outlive the session is a setting, and one a key owned
+/// as well went back on by itself the next time anything on the settings
+/// page changed.
 #[test]
 fn the_names_can_be_turned_off() {
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-        event::Event,
-        git::Blamed,
-    };
+    use obelus::{app::App, buffer::Buffer, config::Config, event::Event, git::Blamed};
 
     let repository = Repository::new("off", "short\n");
     let buffer = Buffer::open(&repository.path()).expect("opening it");
@@ -1065,16 +1064,18 @@ fn the_names_can_be_turned_off() {
     });
     assert!(support::text_block(&support::render(&mut app, 44, 8)).contains("Ada"));
 
-    dispatch::dispatch(&mut app, Command::GitBlame);
+    app.configure(Config {
+        blame: false,
+        ..Config::default()
+    });
     let off = support::render(&mut app, 44, 8);
     assert!(
         !support::text_block(&off).contains("Ada"),
         "the names are still there:\n{off}"
     );
-    assert_eq!(app.note(), Some("not showing who changed each line"));
 
     // And back on without asking again: the answer is still in hand.
-    dispatch::dispatch(&mut app, Command::GitBlame);
+    app.configure(Config::default());
     assert!(
         support::text_block(&support::render(&mut app, 44, 8)).contains("Ada"),
         "the names did not come back"

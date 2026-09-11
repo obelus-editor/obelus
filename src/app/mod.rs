@@ -267,8 +267,6 @@ pub struct App {
     /// Which files have been asked about and have not answered yet, so a
     /// frame does not start a second walk of the same history.
     asking_blame: std::collections::HashSet<PathBuf>,
-    /// Whether to show it at all.
-    showing_blame: bool,
     /// Files parsed only to colour a search's rows.
     ///
     /// A search of a project answers with lines from files that are not
@@ -365,7 +363,6 @@ impl App {
             searching: Vec::new(),
             blames: std::collections::HashMap::new(),
             asking_blame: std::collections::HashSet::new(),
-            showing_blame: true,
             row_syntax: std::collections::HashMap::new(),
             searched: None,
             search_generation: std::sync::Arc::default(),
