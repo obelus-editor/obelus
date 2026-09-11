@@ -91,8 +91,8 @@ every display of it.
   on purpose, for the views that will earn them -- a diff, a commit log, a
   panel of references, a patch to review.
 * **Control does something to the file in front of you**, on the letter of
-  the word: `p` the palette, `w` close, `r` re-read, `l` a line number, `c`
-  copy, `q` leave.
+  the word: `p` the palette, `w` close, `r` re-read, `l` a line number, `a`
+  all of it, `c` copy, `q` leave.
 * **Alt asks about the cursor, or walks what was found**: `alt+enter` the
   symbol under it (an IDE's context actions, and alt is the escape prefix so
   it arrives everywhere), `alt+d` its diff, `alt+b` its blame, `alt+m` its
@@ -106,7 +106,9 @@ every display of it.
 
 Six control chords can never be bound -- `ctrl` plus `i`, `m`, `j`, `h`, `[`
 or space *are* tab, enter, newline, backspace, escape and NUL on the wire --
-and `ctrl+a` and `ctrl+b` belong to screen and tmux. Two unit tests in
+and `ctrl+b` belongs to tmux. `ctrl+a` is screen's prefix and is bound
+anyway, because "all of it" is what that key means in every program with a
+selection; a reader inside a multiplexer rebinds it. Two unit tests in
 `keymap` hold the table to all of this, so a binding outside the families
 fails a test rather than quietly joining the table.
 

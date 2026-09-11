@@ -1236,8 +1236,9 @@ fn the_selection_walks_past_what_cannot_be_chosen() {
     }
 
     // A query narrows the list under the selection, and the selection comes
-    // to rest on a row that can be chosen: "sel" matches two selection
-    // commands that cannot run and one theme picker that can.
+    // to rest on a row that can be chosen: "sel" matches the selection
+    // commands, none of which can run with nothing open, and one theme
+    // picker that can.
     type_text(&mut app, "sel");
     assert_eq!(
         chosen(&app),
@@ -1266,8 +1267,8 @@ fn the_selection_walks_past_what_cannot_be_chosen() {
         .collect();
     assert_eq!(
         only_dim.len(),
-        2,
-        "not the two selection commands: {only_dim:?}"
+        3,
+        "not the three selection commands: {only_dim:?}"
     );
     press(&mut app, KeyCode::Enter);
     assert!(

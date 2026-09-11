@@ -222,6 +222,8 @@ pub fn for_command(name: &str) -> char {
         "go.line" => '\u{f03a0}',
         "go.bracket" => '\u{f0172}',
         "selection.clear" => '\u{f0156}',
+        // The dotted rectangle every program draws for "all of it".
+        "selection.all" => '\u{f0486}',
         "go.back" => '\u{f17b3}',
         "go.forward" => '\u{f17b7}',
         // Sliders, because a cog is the fallback for a command in no

@@ -206,6 +206,19 @@ impl App {
         }
     }
 
+    /// Selects the whole file.
+    ///
+    /// The cursor lands at the end of it, because the cursor is one end of
+    /// a selection -- and the view follows, which is the frame's own job:
+    /// what the reader has just taken all of ends there.
+    pub fn select_all(&mut self) {
+        let Some(buffer) = self.current_buffer_mut() else {
+            self.note = Some("no file open".to_string());
+            return;
+        };
+        buffer.select_all();
+    }
+
     /// Copies the selected text to the system clipboard.
     pub fn copy_selection(&mut self) {
         let Some(text) = self.current_buffer().and_then(Buffer::selected_text) else {

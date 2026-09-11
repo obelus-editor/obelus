@@ -19,6 +19,27 @@ impl Buffer {
         self.selection_anchor = None;
     }
 
+    /// Selects the whole file: the anchor at the first character, the
+    /// cursor at the last.
+    ///
+    /// The cursor goes to the end rather than staying where it was, because
+    /// the cursor is one end of a selection here -- and the end is where a
+    /// reader who has just taken all of it is looking.
+    pub fn select_all(&mut self) {
+        // Through the ordinary way of arriving somewhere, which clamps into
+        // the document and keeps the remembered cell honest. The anchor is
+        // set between the two arrivals because arriving clears it: the first
+        // call puts the cursor on the first character, and the second takes
+        // it to the last with the anchor left behind.
+        let last = LineNumber::new(self.text.line_count().saturating_sub(1));
+        let end = self.text.line_length(last);
+        self.place_cursor(LineNumber::new(0), CharColumn::new(0));
+        self.selection_anchor = Some(self.cursor);
+        let anchor = self.selection_anchor;
+        self.place_cursor(last, end);
+        self.selection_anchor = anchor;
+    }
+
     /// The selected characters, if the cursor has moved away from its anchor.
     #[must_use]
     pub fn selection(&self) -> Option<Span> {

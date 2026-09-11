@@ -66,6 +66,8 @@ pub enum Command {
     SelectionCopy,
     /// Stop selecting.
     SelectionClear,
+    /// Select the whole file.
+    SelectionAll,
     /// Return to where the last jump was made from.
     GoBack,
     /// Undo a jump back.
@@ -310,6 +312,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Copy the selected text",
     },
     CommandSpec {
+        command: Command::SelectionAll,
+        name: "selection.all",
+        title: "Select the whole file",
+    },
+    CommandSpec {
         command: Command::SelectionClear,
         name: "selection.clear",
         title: "Stop selecting",
@@ -399,6 +406,7 @@ impl Command {
             | Self::GitNext
             | Self::SelectionCopy
             | Self::SelectionClear
+            | Self::SelectionAll
             | Self::GoBack
             | Self::GoForward => Group::Code,
             Self::LspRestart
@@ -465,6 +473,9 @@ impl Command {
             Self::GitPrevious => Requires::AHunkBefore,
             Self::GitNext => Requires::AHunkAfter,
             Self::SelectionCopy | Self::SelectionClear => Requires::ASelection,
+            // Not a selection: this is how one is made. A file, though --
+            // there is nothing to take all of otherwise.
+            Self::SelectionAll => Requires::AFileOpen,
             Self::GoBack => Requires::SomewhereBack,
             Self::GoForward => Requires::SomewhereForward,
             Self::AgentSettings => Requires::AnAgentSetting,
@@ -552,6 +563,7 @@ mod tests {
             Command::GitNext,
             Command::SelectionCopy,
             Command::SelectionClear,
+            Command::SelectionAll,
             Command::GoBack,
             Command::GoForward,
             Command::ConfigOpen,

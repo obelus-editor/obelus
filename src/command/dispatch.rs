@@ -36,6 +36,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::GitNext => app.go_to_next_change(),
         Command::SelectionCopy => app.copy_selection(),
         Command::SelectionClear => app.clear_selection(),
+        Command::SelectionAll => app.select_all(),
         Command::GoBack => app.go_back(),
         Command::GoForward => app.go_forward(),
         Command::AgentOpen => app.open_agent(),

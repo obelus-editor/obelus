@@ -1870,3 +1870,48 @@ fn the_caret_follows_a_line_scrolled_sideways() {
         "the caret is not just after the last character of the line:\n{dump}"
     );
 }
+
+/// `ctrl+a` takes the whole file, and what it takes is what gets copied.
+///
+/// A file whose last line has text on it, written for this: almost every
+/// file ends in a newline, which leaves an empty last line -- and a
+/// selection that stopped at the start of that line would look right on
+/// every one of them.
+#[test]
+fn control_a_selects_the_whole_file() {
+    let path = std::env::temp_dir().join(format!("obelus-all-{}.rs", std::process::id()));
+    std::fs::write(&path, "fn one() {}\nfn two() {}").expect("a file");
+    let mut app = App::new(vec![
+        obelus::buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    support::lay_out(&mut app, 40, 8);
+    support::press_control(&mut app, 'a');
+    let buffer = app.current_buffer().expect("a file");
+    let selected = buffer.selected_text().expect("a selection");
+    let whole = buffer.text().rope().to_string();
+    assert_eq!(selected, whole, "the selection is not the whole file");
+    // The cursor is the far end of it, which is where a reader who has just
+    // taken all of it is looking.
+    assert_eq!(
+        buffer.cursor().line.get(),
+        buffer.text().line_count() - 1,
+        "the cursor is not at the end of what it selected"
+    );
+    // And the selection is on screen, in the colour every selection has.
+    let dump = support::render(&mut app, 40, 8);
+    let legend = support::legend_block(&dump);
+    let first = support::style_block(&dump)
+        .lines()
+        .nth(1)
+        .and_then(|row| row.split('|').nth(1))
+        .and_then(|cells| cells.chars().nth(6))
+        .expect("a style cell");
+    assert!(
+        legend
+            .lines()
+            .find(|line| line.trim_start().starts_with(first))
+            .is_some_and(|line| !line.contains("bg=#18181b")),
+        "the first line is not drawn as selected:\n{dump}"
+    );
+    let _ = std::fs::remove_file(&path);
+}

@@ -402,6 +402,15 @@ impl Keymap {
                     context: Context::Normal,
                     chord: control('c'),
                 },
+                // `ctrl+a` for all of it, as in every program with a
+                // selection. It is also screen's prefix and tmux's other
+                // one: a reader inside either of those has to rebind it,
+                // and the keys page is where.
+                Binding {
+                    command: Command::SelectionAll,
+                    context: Context::Normal,
+                    chord: control('a'),
+                },
                 Binding {
                     command: Command::Quit,
                     context: Context::Always,
@@ -647,8 +656,10 @@ mod tests {
     ///   `shift+F5` and the next as `F17`;
     /// * `ctrl` plus `i`, `m`, `j`, `h`, `[` or space, which the wire cannot
     ///   tell from tab, enter, newline, backspace, escape and NUL;
-    /// * `ctrl+a` or `ctrl+b`, which screen and tmux take before obelus is
-    ///   asked;
+    /// * `ctrl+b`, which tmux takes before obelus is asked -- `ctrl+a` is
+    ///   screen's prefix and tmux's other one, and is bound anyway because "all
+    ///   of it" is what that key means in every program with a selection; a
+    ///   reader inside a multiplexer rebinds it;
     /// * `shift` naming a command of its own, when everywhere else it only
     ///   extends or reverses what another key does.
     #[test]
@@ -669,7 +680,7 @@ mod tests {
                     panic!("{name} is on f{number} with {modifiers:?} held, which is two keys")
                 }
                 (KeyCode::Char(character), KeyModifiers::CONTROL) => assert!(
-                    !"imjh[ ab2".contains(character),
+                    !"imjh[ b2".contains(character),
                     "ctrl+{character} is not a key obelus can be given"
                 ),
                 (KeyCode::Char(_) | KeyCode::Enter, KeyModifiers::ALT)
