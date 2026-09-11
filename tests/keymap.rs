@@ -182,6 +182,24 @@ fn a_chord_is_written_with_glyphs_or_spelled_out() {
     // thirteen.
     assert!(page.label_in(true).chars().count() < page.label_in(false).chars().count());
 
+    // A function key has a keycap of its own, which is one column where
+    // `f10` is three -- and the twelve of them are the first keys a reader
+    // looks for.
+    let function = obelus::keymap::function(10);
+    assert_eq!(function.label_in(false), "f10");
+    assert_eq!(
+        function.label_in(true),
+        icons::key::function(10).expect("a keycap").to_string()
+    );
+    assert_eq!(
+        icons::key::function(13),
+        None,
+        "a keycap was invented for a key most keyboards do not have"
+    );
+    // Which still reads back as itself: the file is written in the spelled
+    // form, and it is the form a reader types by hand.
+    assert_eq!(KeyChord::parse("f10"), Some(function));
+
     // An arrow is a symbol in any font, so it is an arrow either way.
     let jump = KeyChord::new(KeyCode::Left, KeyModifiers::ALT);
     assert_eq!(jump.label_in(false), "alt+\u{2190}");

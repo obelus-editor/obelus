@@ -8,16 +8,16 @@ screen 60x20  editor 60x18  status 60x1
  5|────────────────────────────────────────────────────────────
  6|  all  files  code  obelus                              ← → 
  7|────────────────────────────────────────────────────────────
- 8| 󰈞 file.open  Open a file                               f1 █
- 9| 󰣞 file.changed  Open a file that has changed           f3 █
+ 8| 󰈞 file.open  Open a file                                󱊫 █
+ 9| 󰣞 file.changed  Open a file that has changed            󱊭 █
 10| 󰑐 file.reload  Re-read this file from disk            󰘴 r │
-11| 󰈢 buffer.list  Switch to an open file                  f2 │
+11| 󰈢 buffer.list  Switch to an open file                   󱊬 │
 12| 󰮘 buffer.close  Close this file                       󰘴 w │
 13| 󰍔 markdown.preview  Show this file rendered, or stop      │
 14| 󰏘 theme.select  Change the colours                        │
 15| 󰆍 command.palette  Run a command by name              󰘴 p │
 16| 󰅴 symbol.menu  Ask about the symbol under the cursor  󰘵 󰌑 │
-17| 󰉹 symbol.outline  Everything this file defines         f7 │
+17| 󰉹 symbol.outline  Everything this file defines          󱊱 │
 18|────────────────────────────────────────────────────────────
 19| 󰍉                                                          
 -- style --
@@ -29,16 +29,16 @@ screen 60x20  editor 60x18  status 60x1
  5|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
  6|egggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
  7|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
- 8|gggggggggggggghhhhhhhhhhhggggggggggggggggggggggggggggggghhgb
- 9|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaeeab
+ 8|gggggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggggghgb
+ 9|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeab
 10|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeae
-11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaeeae
+11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaeae
 12|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaeeeae
 13|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 14|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaae
 15|aaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaeeeae
 16|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeae
-17|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaeeae
+17|aaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaeae
 18|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 19|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --

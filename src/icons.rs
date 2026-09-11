@@ -90,6 +90,23 @@ pub mod key {
     pub const HOME: char = '\u{f0600}';
     /// `end`.
     pub const END: char = '\u{f0601}';
+
+    /// `f1`, and the eleven after it in order.
+    ///
+    /// One keycap glyph each, which is what a function key deserves: the
+    /// twelve of them are the first thing a reader's eye goes to in a list
+    /// of keys, and `f10` spelled out is three columns of text among
+    /// one-column pictures.
+    const FIRST_FUNCTION: u32 = 0xf12ab;
+
+    /// The keycap for a function key, if it is one a keyboard has.
+    #[must_use]
+    pub fn function(number: u8) -> Option<char> {
+        (1..=12)
+            .contains(&number)
+            .then(|| char::from_u32(FIRST_FUNCTION + u32::from(number) - 1))
+            .flatten()
+    }
 }
 
 /// The glyphs the views use for things that are not files.

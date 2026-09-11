@@ -93,11 +93,14 @@ impl KeyChord {
             KeyCode::Tab => Some(("tab", icons::key::TAB)),
             _ => None,
         };
-        // A function key is written the way its keycap is said, in both
-        // forms: `F(1)` is the compiler's word for it rather than
-        // anybody's.
+        // A function key gets its own keycap, which a patched font has one
+        // of for each of the twelve. Spelled out otherwise -- `F(1)` is the
+        // compiler's word for it rather than anybody's.
         if let KeyCode::F(number) = self.code {
-            label.push_str(&format!("f{number}"));
+            match icons::key::function(number).filter(|_| glyphs) {
+                Some(keycap) => label.push(keycap),
+                None => label.push_str(&format!("f{number}")),
+            }
             return label;
         }
         match (named, self.code) {
