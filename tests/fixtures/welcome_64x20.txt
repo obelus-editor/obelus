@@ -53,6 +53,6 @@ h fg=#789cfa bg=#18181b
 i fg=#6ca0fa bg=#18181b
 j fg=#52525b bg=#18181b
 k fg=#e4e4e7 bg=#27272a
-l fg=#d4d4d8 bg=#27272a
+l fg=#d4d4d8 bg=#18181b
 -- cursor --
 none

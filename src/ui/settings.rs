@@ -606,7 +606,7 @@ fn draw_control(
                     width: TRACK_WIDTH,
                     height: 1,
                 },
-                style.bg(theme.status_background),
+                style.bg(theme.control_background),
             );
             // Bright when on and dim when off, rather than a colour: the
             // knob's *position* already says which way it is, so a hue
@@ -624,7 +624,7 @@ fn draw_control(
                     at + cell,
                     y,
                     '\u{25a0}',
-                    Style::new().fg(colour).bg(theme.status_background),
+                    Style::new().fg(colour).bg(theme.control_background),
                 );
             }
         }

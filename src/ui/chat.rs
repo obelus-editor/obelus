@@ -294,12 +294,9 @@ impl ChatView<'_> {
     /// conversation's, so that there is one status bar on the screen and it
     /// is at the foot of it.
     pub fn status(&self, cells: &mut CellBuffer, area: Rect) {
-        // No band. Everywhere else in obelus the status row is a solid
-        // strip because it is a different subject from the code above it;
-        // here the row above it is the box a message is written in, and the
-        // rule between them has already said where one stops. A strip as
-        // well would be the only heavy thing on a screen that is otherwise
-        // all text.
+        // The page's own colour, like every other status row: the rule
+        // above it has already said the row is a different subject from
+        // what is above it.
         let plain = Style::new()
             .bg(self.theme.background)
             .fg(self.theme.foreground);

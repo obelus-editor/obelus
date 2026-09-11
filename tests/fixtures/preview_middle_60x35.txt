@@ -82,6 +82,6 @@ g fg=#fbbf24 bg=#18181b
 h fg=#a1a1aa bg=#18181b
 i fg=#f472b6 bg=#18181b
 j fg=#fbbf24 bg=#1e3a5f
-k fg=#d4d4d8 bg=#27272a
+k fg=#d4d4d8 bg=#18181b
 -- cursor --
 4,34

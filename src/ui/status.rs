@@ -70,12 +70,16 @@ impl Widget for StatusView<'_> {
             return;
         }
         let style = Style::new()
-            .bg(self.theme.status_background)
+            .bg(self.theme.background)
             .fg(self.theme.status_foreground);
 
-        // The whole row, including the padding at both ends and the gap in the
-        // middle, so the bar reads as one solid band rather than as coloured
-        // text floating on the code's background.
+        // The whole row, so nothing of whatever was there before shows
+        // through the gaps. The page's own colour, not a band of its own:
+        // the rule above the row already says the row is a different
+        // subject from the file, and saying it twice makes the heaviest
+        // thing on the screen out of the smallest part of it. The
+        // conversation's row had been drawn this way for a while, which is
+        // what made the difference visible.
         fill(cells, area, style);
 
         // A list first, whatever it is over. It is the thing taking the

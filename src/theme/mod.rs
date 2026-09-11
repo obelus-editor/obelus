@@ -223,8 +223,14 @@ pub struct Theme {
     pub gutter: Color,
     /// The cursor's line number.
     pub gutter_current: Color,
-    /// Behind the status line, across its whole width.
-    pub status_background: Color,
+    /// Behind a control that is a surface rather than words: the track a
+    /// switch's knob slides along.
+    ///
+    /// A shade off the page, which is all a surface has to be. It was the
+    /// status line's own band until the rule above the line made the band a
+    /// second answer to the same question -- and a strip of colour is the
+    /// heaviest thing obelus draws, on a screen that is otherwise text.
+    pub control_background: Color,
     /// The status line's text.
     pub status_foreground: Color,
     /// The status line's marker for a file that can no longer be read.

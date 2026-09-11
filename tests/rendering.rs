@@ -49,6 +49,50 @@ fn a_file_renders_with_a_gutter_and_a_status_bar() {
     support::check("sample_40x8", &support::render(&mut app, 40, 8));
 }
 
+/// The status row sits on the page, not on a band of its own.
+///
+/// It has the rule above it to say it is a different subject from the file,
+/// and saying that twice makes a strip of colour -- the heaviest thing
+/// obelus draws -- out of the smallest part of the screen. What tells the
+/// row apart is the rule and the words on it.
+#[test]
+fn the_status_row_is_the_pages_own_colour() {
+    let mut app = app();
+    let dump = support::render(&mut app, 40, 8);
+    let rows: Vec<&str> = support::style_block(&dump).lines().skip(1).collect();
+    let behind = |row: &str, cell: usize| {
+        let letter = row
+            .split('|')
+            .nth(1)
+            .and_then(|cells| cells.chars().nth(cell))
+            .expect("a style cell");
+        support::legend_block(&dump)
+            .lines()
+            .find(|line| line.trim_start().starts_with(letter))
+            .and_then(|line| line.split("bg=").nth(1))
+            .map(str::to_string)
+            .expect("a background")
+    };
+    let status = rows.last().expect("a status row");
+    let code = rows.first().expect("a row of code");
+    assert_eq!(
+        behind(status, 0),
+        behind(code, 0),
+        "the status row is on a band of its own:\n{dump}"
+    );
+    // And the rule above it is what says where the file stops.
+    let text: Vec<&str> = support::text_block(&dump).lines().skip(1).collect();
+    let over = text
+        .get(text.len().saturating_sub(2))
+        .expect("the row above the status row");
+    assert!(
+        over.split('|')
+            .nth(1)
+            .is_some_and(|drawn| drawn.chars().all(|glyph| glyph == '\u{2500}')),
+        "there is no rule over the status row:\n{dump}"
+    );
+}
+
 #[test]
 fn the_cursor_line_number_is_brighter_than_the_others() {
     let mut app = app_on_screen(WIDTH, HEIGHT);

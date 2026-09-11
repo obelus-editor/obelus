@@ -58,6 +58,6 @@ i fg=#fbbf24 bg=#1e3a5f
 j fg=#fbbf24 bg=#18181b
 k fg=#f472b6 bg=#18181b
 l fg=#a3e635 bg=#18181b
-m fg=#d4d4d8 bg=#27272a
+m fg=#d4d4d8 bg=#18181b
 -- cursor --
 4,21

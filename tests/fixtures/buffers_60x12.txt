@@ -29,6 +29,6 @@ screen 60x12  editor 60x10  status 60x1
 a fg=#e4e4e7 bg=#27272a
 b fg=#e4e4e7 bg=#18181b
 c fg=#52525b bg=#18181b
-d fg=#d4d4d8 bg=#27272a
+d fg=#d4d4d8 bg=#18181b
 -- cursor --
 4,11

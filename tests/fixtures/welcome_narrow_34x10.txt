@@ -24,6 +24,6 @@ screen 34x10  editor 34x8  status 34x1
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#52525b bg=#18181b
-c fg=#d4d4d8 bg=#27272a
+c fg=#d4d4d8 bg=#18181b
 -- cursor --
 none

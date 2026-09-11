@@ -50,6 +50,6 @@ e fg=#52525b bg=#18181b
 f fg=#a3e635 bg=#18181b
 g fg=#e4e4e7 bg=#27272a
 h fg=#52525b bg=#27272a
-i fg=#d4d4d8 bg=#27272a
+i fg=#d4d4d8 bg=#18181b
 -- cursor --
 4,19

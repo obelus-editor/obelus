@@ -24,6 +24,6 @@ c fg=#c084fc bg=#18181b
 d fg=#60a5fa bg=#18181b
 e fg=#52525b bg=#18181b
 f fg=#a3e635 bg=#18181b
-g fg=#d4d4d8 bg=#27272a
+g fg=#d4d4d8 bg=#18181b
 -- cursor --
 6,0

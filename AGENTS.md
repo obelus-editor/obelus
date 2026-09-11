@@ -263,9 +263,16 @@ Everything about talking to one goes through `App::talk_to`, which takes the
 command directly and needs no registry, no install and no network.
 
 Golden fixtures dump every cell's symbol, foreground and background, plus the
-cursor position. Colours are in them because highlighting, themes and the
-status bar's background are otherwise not asserted at all: a list of file names
+cursor position. Colours are in them because highlighting, themes and the tints
+behind an opened hunk are otherwise not asserted at all: a list of file names
 can render perfectly and show nothing.
+
+**Nothing draws a band of colour across a row.** The status row is the page's
+own colour, like the conversation's row below the box: it has a rule above it
+saying it is a different subject from the file, and saying that twice makes a
+strip -- the heaviest thing obelus draws -- out of the smallest part of the
+screen. What is left of that band is `control_background`, one shade off the
+page, behind the track a switch's knob slides along.
 
 A preview's margin comes from git, so a fixture that shows one depends on
 the fixture file being *committed*: edit `tests/fixtures/long.rs` without

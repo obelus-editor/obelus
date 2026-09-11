@@ -24,6 +24,6 @@ c fg=#7e22ce bg=#fafafa
 d fg=#1d4ed8 bg=#fafafa
 e fg=#a1a1aa bg=#fafafa
 f fg=#3f6212 bg=#fafafa
-g fg=#27272a bg=#e4e4e7
+g fg=#27272a bg=#fafafa
 -- cursor --
 6,0
