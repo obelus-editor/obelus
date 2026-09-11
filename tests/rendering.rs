@@ -2094,3 +2094,61 @@ fn the_reading_can_be_left_off_by_default() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+/// The end of a reading is its last screenful, and it can be reached.
+///
+/// A reading has more rows than the file has lines, because it wraps -- and
+/// the viewport's top is a *row* of it while it is showing. The frame used
+/// to run the text's own scrolling over that top and clamp it to the line
+/// count, which put every row past the last line out of reach. What is at
+/// the end is the last screenful rather than the last row alone: a reading
+/// has no cursor to be at the end of, and blank rows under the last one are
+/// a screen saying there is more to come.
+#[test]
+fn the_end_of_a_reading_is_its_last_screenful() {
+    let path = std::env::temp_dir().join(format!("obelus-end-{}.log", std::process::id()));
+    let lines: String = (1..=6)
+        .map(|number| {
+            format!(
+                "2026-09-11T02:49:{number:02}.000000Z  INFO obelus::app: entry {number} with a \
+                 message long enough to wrap path=/one/two/three/four\n"
+            )
+        })
+        .collect();
+    std::fs::write(&path, lines).expect("a log");
+    let mut app = App::new(vec![
+        obelus::buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.configure(obelus::config::Config::default());
+    support::lay_out(&mut app, 60, 8);
+
+    // The premise: more rows than lines, which is what made the end
+    // unreachable.
+    let lines = app.current_buffer().expect("a buffer").text().line_count();
+    let rows = app.rendered_rows().expect("a reading");
+    assert!(rows > lines, "{rows} rows and {lines} lines proves nothing");
+
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 60, 8);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("entry 6"),
+        "the last entry is not on screen:\n{dump}"
+    );
+    // And the screen is full: the rows above the last one are drawn too,
+    // rather than blanks under a single row.
+    assert!(
+        text.contains("entry 5"),
+        "the end left the screen mostly empty:\n{dump}"
+    );
+
+    // The way back is the same key the other way.
+    support::press_control_key(&mut app, KeyCode::Home);
+    let top = support::render(&mut app, 60, 8);
+    assert!(
+        support::text_block(&top).contains("entry 1"),
+        "the beginning is not reachable either:\n{top}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}

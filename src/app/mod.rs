@@ -695,7 +695,16 @@ impl App {
             height: area.height.saturating_sub(pushed),
             ..area
         };
-        if let Some(buffer) = self.current_buffer_mut() {
+        // Only where the viewport is a place in the *text*. While a reading
+        // is showing, the viewport's top is a row of that reading -- and a
+        // reading has more rows than the file has lines, because it wraps
+        // -- so the text's own arithmetic would clamp the top to the line
+        // count and put the last rows out of reach. The reading's own
+        // scrolling is what keeps it in bounds there.
+        if let Some(buffer) = self
+            .current_buffer_mut()
+            .filter(|buffer| buffer.mode() == crate::buffer::Mode::Edit)
+        {
             buffer.scroll_into_view(room);
         }
 
@@ -1020,8 +1029,9 @@ impl App {
             && let Some(rows) = self.rendered_rows()
             && let Some(step) = view_step(&key, self.editor_area.height)
         {
+            let height = self.editor_area.height;
             if let Some(buffer) = self.current_buffer_mut() {
-                buffer.scroll_rendering(step, rows);
+                buffer.scroll_rendering(step, rows, height);
             }
             return;
         }

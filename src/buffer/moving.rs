@@ -142,8 +142,14 @@ impl Buffer {
     /// than [`Mode::Edit`] is on. Reusing it rather than adding a second
     /// offset keeps one answer to "where is this buffer scrolled to", which
     /// is what the status bar and the scrollbar both ask.
-    pub fn scroll_rendering(&mut self, rows: isize, total: usize) {
-        let last = total.saturating_sub(1);
+    ///
+    /// It stops with the last row on screen rather than at the top of it. A
+    /// reading has no cursor, so there is nothing to be at the end *of*
+    /// except the rows -- and blank rows under the last one are a screen
+    /// saying there is more to come when there is not. The text does it the
+    /// other way because there the cursor is the thing at the end.
+    pub fn scroll_rendering(&mut self, rows: isize, total: usize, height: u16) {
+        let last = total.saturating_sub(usize::from(height).max(1));
         let top = self.viewport.top.get();
         let moved = if rows >= 0 {
             top.saturating_add(rows.unsigned_abs())

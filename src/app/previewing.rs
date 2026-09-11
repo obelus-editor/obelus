@@ -166,10 +166,11 @@ impl App {
             self.chat.scroll(rows);
             return;
         }
+        let height = self.editor_area.height;
         if let Some(rows_in_view) = self.rendered_rows()
             && let Some(buffer) = self.current_buffer_mut()
         {
-            buffer.scroll_rendering(rows, rows_in_view);
+            buffer.scroll_rendering(rows, rows_in_view, height);
             return;
         }
         let area = self.text_area();
