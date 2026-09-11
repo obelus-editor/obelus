@@ -9,7 +9,7 @@ use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets:
 
 use crate::{
     app::{App, agents::Listed},
-    component::settings::Settings,
+    component::settings::{Refused, Settings},
     config::{Config, Kind, Value},
     theme::Theme,
     ui::{Marked, Matched, fill, put, rule, text_width, write, write_marked},
@@ -295,9 +295,13 @@ impl SettingsView<'_> {
         if self.settings.binding() != Some(command) {
             return Some((command.spec().title.to_string(), self.theme.gutter));
         }
-        match self.settings.taken() {
-            Some((chord, taken)) => Some((
+        match self.settings.refused() {
+            Some((chord, Refused::Taken(taken))) => Some((
                 format!("{} is {}", chord.label(), taken.name()),
+                self.theme.change_removed,
+            )),
+            Some((chord, Refused::Never(why))) => Some((
+                format!("{}: {why}", chord.label()),
                 self.theme.change_removed,
             )),
             None => Some((

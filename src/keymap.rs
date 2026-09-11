@@ -594,6 +594,13 @@ impl Keymap {
                 tracing::warn!(name, text, "not a key obelus can read");
                 continue;
             };
+            // The same judgement the page that binds keys makes. A chord
+            // that cannot fire is worse in a file than on a page: there is
+            // nothing on screen to say why the key does nothing.
+            if let Some(why) = why_not(chord) {
+                tracing::warn!(name, text, why, "not a key obelus can be given");
+                continue;
+            }
             keymap.rebind(command, Some(chord));
         }
         keymap
@@ -621,6 +628,84 @@ impl Default for Keymap {
     }
 }
 
+/// Why a chord cannot be bound to a command, or `None` if it can.
+///
+/// One judgement, used by the page that binds keys, by the table read out of
+/// the config file, and by the test that holds the shipped table to the same
+/// rule. The three families are the whole of what is allowed:
+///
+/// * a bare function key, which is what the most used commands are on;
+/// * `ctrl` and a character, which is what does something to the file;
+/// * `alt` and a character, an arrow or enter, which is what asks about the
+///   cursor.
+///
+/// Everything else is refused with the reason, because every one of them is
+/// a key that would do nothing -- or would do nothing *here*, or nothing on
+/// the next machine -- and a binding that silently never fires is worse
+/// than a key the reader cannot have.
+#[must_use]
+pub fn why_not(chord: KeyChord) -> Option<&'static str> {
+    let alone = chord.modifiers.is_empty();
+    let control = chord.modifiers == KeyModifiers::CONTROL;
+    let alt = chord.modifiers == KeyModifiers::ALT;
+
+    // Two of them, or shift with another: shift extends and reverses and
+    // names nothing, and a second modifier is either the desktop's
+    // (`ctrl+alt`) or something only a terminal speaking the keyboard
+    // protocol can report (`ctrl+shift`).
+    if !alone && !control && !alt {
+        return Some("shift extends, and two modifiers is the desktop's");
+    }
+
+    match chord.code {
+        // The keys that move about a file. The editor takes them before the
+        // table is reached -- bare and with shift -- and the rest are
+        // spoken for: `ctrl` and an arrow is the word motion obelus does
+        // not have yet, and `ctrl` and a paging key is the previous and
+        // next buffer.
+        KeyCode::Up
+        | KeyCode::Down
+        | KeyCode::Left
+        | KeyCode::Right
+        | KeyCode::Home
+        | KeyCode::End
+        | KeyCode::PageUp
+        | KeyCode::PageDown
+            if !alt =>
+        {
+            Some("the editor's own, for moving about a file")
+        }
+        KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => None,
+        // A function key, which is the one family that wants nothing held.
+        KeyCode::F(_) if alone => None,
+        KeyCode::F(_) => Some("a function key is bare, or it is two keys on the next terminal"),
+        // Enter under alt is the only one of these that is a chord: the
+        // rest are what a dialog takes and what typing will mean.
+        KeyCode::Enter if alt => None,
+        KeyCode::Enter | KeyCode::Tab | KeyCode::BackTab | KeyCode::Backspace | KeyCode::Delete => {
+            Some("every list and box takes this one itself")
+        }
+        // Escape has one meaning everywhere: give up on the nearest thing.
+        KeyCode::Esc => Some("escape always backs out of the nearest thing"),
+        KeyCode::Char(_) if alone => Some("typing, not a command"),
+        // `ctrl+shift+p` folds onto `ctrl+P`, and a control byte cannot
+        // carry a letter's case: only a terminal speaking the keyboard
+        // protocol tells the two apart, so the binding would work on this
+        // machine and not the next. Alt is different -- it is the escape
+        // prefix, so `alt+P` really is the shifted letter.
+        KeyCode::Char(character) if control && character.is_ascii_uppercase() => {
+            Some("a control byte cannot say which case the letter was")
+        }
+        // The six the wire cannot tell from tab, enter, newline, backspace,
+        // escape and NUL, whatever the reader pressed.
+        KeyCode::Char(character) if control && "imjh[ 2".contains(character) => {
+            Some("the terminal sends another key for this")
+        }
+        KeyCode::Char(_) => None,
+        _ => Some("not a key obelus can be given"),
+    }
+}
+
 /// A chord for a function key, with nothing held.
 ///
 /// Bare is the whole point: `F5` is the same press on every terminal, while
@@ -642,55 +727,123 @@ mod tests {
 
     use super::{Context, KeyChord, Keymap};
 
-    /// Every binding obelus ships with belongs to one of the three families.
+    /// Every binding obelus ships with is one a reader could have made.
     ///
-    /// The families are the whole of what makes the table memorable, so a
-    /// binding outside them is a key nobody will guess -- and each of the
-    /// ways out of them is a key that does not work somewhere:
-    ///
-    /// * a function key with a modifier, which one terminal reports as
-    ///   `shift+F5` and the next as `F17`;
-    /// * `ctrl` plus `i`, `m`, `j`, `h`, `[` or space, which the wire cannot
-    ///   tell from tab, enter, newline, backspace, escape and NUL;
-    /// * `ctrl+b`, which tmux takes before obelus is asked -- `ctrl+a` is
-    ///   screen's prefix and tmux's other one, and is bound anyway because "all
-    ///   of it" is what that key means in every program with a selection; a
-    ///   reader inside a multiplexer rebinds it;
-    /// * `shift` naming a command of its own, when everywhere else it only
-    ///   extends or reverses what another key does.
+    /// The shipped table and the page that binds keys answer to the same
+    /// function, so a default outside the families would be a key obelus
+    /// gives itself and refuses to the reader.
     #[test]
-    fn every_default_binding_belongs_to_a_family() {
+    fn every_default_binding_is_one_the_reader_could_make() {
         for binding in Keymap::new().bindings() {
             let chord = binding.chord;
-            let name = binding.command.name();
-            assert!(
-                !chord.modifiers.contains(KeyModifiers::SHIFT),
-                "{name} is on a shifted key, and shift names no commands"
-            );
-            match (chord.code, chord.modifiers) {
-                (KeyCode::F(number), KeyModifiers::NONE) => assert!(
-                    (1..=12).contains(&number),
-                    "{name} is on f{number}, which not every keyboard has"
-                ),
-                (KeyCode::F(number), modifiers) => {
-                    panic!("{name} is on f{number} with {modifiers:?} held, which is two keys")
-                }
-                (KeyCode::Char(character), KeyModifiers::CONTROL) => assert!(
-                    !"imjh[ b2".contains(character),
-                    "ctrl+{character} is not a key obelus can be given"
-                ),
-                (KeyCode::Char(_) | KeyCode::Enter, KeyModifiers::ALT)
-                | (
-                    KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right,
-                    KeyModifiers::ALT,
-                ) => {}
-                // Escape, and nothing else, is bound bare: every other bare
-                // key is a character the day obelus takes typed text.
-                (KeyCode::Esc, KeyModifiers::NONE) => {}
-                (code, modifiers) => {
-                    panic!("{name} is on {code:?} with {modifiers:?}, which is no family")
-                }
+            // Escape is the one key obelus keeps and a reader cannot have:
+            // the rule is about what may be *taken*, and what escape means
+            // -- give up on the nearest thing -- is not negotiable.
+            if chord.code == KeyCode::Esc {
+                continue;
             }
+            assert_eq!(
+                super::why_not(chord),
+                None,
+                "{} is on {}, which obelus would not let a reader bind",
+                binding.command.name(),
+                chord.label_in(false)
+            );
+            // And on a key every terminal has: a function key past the
+            // twelfth is one a reader's keyboard may send and a default
+            // cannot assume.
+            if let KeyCode::F(number) = chord.code {
+                assert!(
+                    (1..=12).contains(&number),
+                    "{} is on f{number}, which not every keyboard has",
+                    binding.command.name()
+                );
+            }
+            // `ctrl+b` is tmux's prefix, so obelus does not ship it --
+            // though a reader outside tmux may have it.
+            assert_ne!(
+                chord,
+                super::control('b'),
+                "{} is on tmux's prefix",
+                binding.command.name()
+            );
+        }
+    }
+
+    /// Each way out of the families is refused, and with a reason.
+    ///
+    /// Every one of these is a key that would do nothing, or nothing here,
+    /// or nothing on the next machine -- which is the same as a binding
+    /// that silently never fires.
+    #[test]
+    fn the_keys_that_cannot_be_bound_are_refused() {
+        let refused = [
+            // What the editor takes before the table is reached, and what
+            // it has said it wants next.
+            (KeyCode::Up, KeyModifiers::NONE),
+            (KeyCode::Left, KeyModifiers::SHIFT),
+            (KeyCode::Home, KeyModifiers::NONE),
+            (KeyCode::End, KeyModifiers::CONTROL),
+            (KeyCode::PageDown, KeyModifiers::NONE),
+            (KeyCode::PageUp, KeyModifiers::CONTROL),
+            (KeyCode::Right, KeyModifiers::CONTROL),
+            // Typing, and the keys every list and box takes itself.
+            (KeyCode::Char('x'), KeyModifiers::NONE),
+            (KeyCode::Enter, KeyModifiers::NONE),
+            (KeyCode::Tab, KeyModifiers::NONE),
+            (KeyCode::Backspace, KeyModifiers::NONE),
+            (KeyCode::Delete, KeyModifiers::NONE),
+            (KeyCode::Esc, KeyModifiers::NONE),
+            // Two keys on the next terminal.
+            (KeyCode::F(5), KeyModifiers::SHIFT),
+            (
+                KeyCode::Char('p'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            (
+                KeyCode::Char('x'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
+            // The six the wire cannot tell from another key.
+            (KeyCode::Char('i'), KeyModifiers::CONTROL),
+            (KeyCode::Char('m'), KeyModifiers::CONTROL),
+            (KeyCode::Char('j'), KeyModifiers::CONTROL),
+            (KeyCode::Char('h'), KeyModifiers::CONTROL),
+            (KeyCode::Char('['), KeyModifiers::CONTROL),
+            (KeyCode::Char(' '), KeyModifiers::CONTROL),
+        ];
+        for (code, modifiers) in refused {
+            let chord = KeyChord::new(code, modifiers);
+            assert!(
+                super::why_not(chord).is_some(),
+                "{} is offered, and it would never fire",
+                chord.label_in(false)
+            );
+        }
+
+        // And the families themselves are not refused, including the two
+        // the editor leaves alone: a function key past the twelfth is one
+        // the reader's own terminal sends, and alt with an arrow is how
+        // changes and history are walked.
+        let allowed = [
+            (KeyCode::F(1), KeyModifiers::NONE),
+            (KeyCode::F(12), KeyModifiers::NONE),
+            (KeyCode::F(13), KeyModifiers::NONE),
+            (KeyCode::Char('x'), KeyModifiers::CONTROL),
+            (KeyCode::Char('b'), KeyModifiers::CONTROL),
+            (KeyCode::Char('x'), KeyModifiers::ALT),
+            (KeyCode::Enter, KeyModifiers::ALT),
+            (KeyCode::Up, KeyModifiers::ALT),
+            (KeyCode::Left, KeyModifiers::ALT),
+        ];
+        for (code, modifiers) in allowed {
+            let chord = KeyChord::new(code, modifiers);
+            assert_eq!(
+                super::why_not(chord),
+                None,
+                "{} is refused, and it is one of the families",
+                chord.label_in(false)
+            );
         }
     }
 

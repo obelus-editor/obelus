@@ -267,6 +267,9 @@ fn the_readers_own_bindings_go_over_the_defaults() {
         ("file.open".to_string(), String::new()),
         ("nonsense.command".to_string(), "ctrl+z".to_string()),
         ("git.hunk".to_string(), "not a key".to_string()),
+        // A key obelus can read and can never be given: the editor takes
+        // the arrows before the table is reached.
+        ("go.line".to_string(), "up".to_string()),
     ]
     .into_iter()
     .collect();
@@ -312,5 +315,10 @@ fn the_readers_own_bindings_go_over_the_defaults() {
         keymap.chord_for(Command::GitHunk),
         Keymap::new().chord_for(Command::GitHunk),
         "a chord the file spelled wrong took the default with it"
+    );
+    assert_eq!(
+        keymap.chord_for(Command::GoLine),
+        Keymap::new().chord_for(Command::GoLine),
+        "a key that could never fire was taken out of the file and bound"
     );
 }

@@ -52,6 +52,15 @@ pub enum SettingsOutcome {
     Cancelled,
 }
 
+/// Why the key a reader pressed would not do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Refused {
+    /// Another command has it.
+    Taken(Command),
+    /// It could never fire, and this is why.
+    Never(&'static str),
+}
+
 /// How many rows of a description a card will show.
 ///
 /// Three: enough for the longest in the registry, and a limit so that one
@@ -69,13 +78,13 @@ pub struct Settings {
     /// until the reader says "this row's key is the next thing I press",
     /// and from then until they press it every key belongs to that row.
     binding: Option<Command>,
-    /// The chord that would not do, and what already has it.
+    /// The chord that would not do, and why it would not.
     ///
     /// On the row, because that is where the reader is looking and it is
     /// that binding the answer is about -- not on the status row, which is
     /// this page's filter, and not as a passing note, which the next
     /// keystroke would clear before it had been read.
-    taken: Option<(KeyChord, Command)>,
+    refused: Option<(KeyChord, Refused)>,
     /// Which group's tab is showing.
     group: usize,
     /// Which row has the focus and which is on top -- of the settings, or
@@ -100,7 +109,7 @@ impl Settings {
         Self {
             query: String::new(),
             binding: None,
-            taken: None,
+            refused: None,
             group: 0,
             window: Window::new(),
         }
@@ -189,10 +198,10 @@ impl Settings {
         self.binding
     }
 
-    /// The key that would not do, and what already has it.
+    /// The key that would not do, and why.
     #[must_use]
-    pub const fn taken(&self) -> Option<(KeyChord, Command)> {
-        self.taken
+    pub const fn refused(&self) -> Option<(KeyChord, Refused)> {
+        self.refused
     }
 
     /// Which tab is showing.
@@ -390,7 +399,7 @@ impl Settings {
         if let Some(command) = self.binding {
             if key.code == KeyCode::Esc && key.modifiers.is_empty() {
                 self.binding = None;
-                self.taken = None;
+                self.refused = None;
                 return SettingsOutcome::Consumed;
             }
             // Taking the key away is a decision a reader can make, and
@@ -398,7 +407,7 @@ impl Settings {
             if matches!(key.code, KeyCode::Delete | KeyCode::Backspace) && key.modifiers.is_empty()
             {
                 self.binding = None;
-                self.taken = None;
+                self.refused = None;
                 return SettingsOutcome::Bind(command, None);
             }
             let Some(chord) = KeyChord::from_event(key) else {
@@ -406,17 +415,26 @@ impl Settings {
                 // say about it: the row is still waiting.
                 return SettingsOutcome::Consumed;
             };
-            // A key already spoken for stays where it is. One key, one
-            // meaning, is a rule a reader can hold in their head -- and
-            // the row says which command has it and goes on waiting.
+            // A key that could never fire is not offered, whatever the
+            // reader pressed: the editor's own keys never reach the table,
+            // the terminal sends another key for some chords, and some work
+            // on this machine and not the next. The row says which of those
+            // it is and goes on waiting.
+            if let Some(why) = crate::keymap::why_not(chord) {
+                self.refused = Some((chord, Refused::Never(why)));
+                return SettingsOutcome::Consumed;
+            }
+            // And a key already spoken for stays where it is. One key, one
+            // meaning, is a rule a reader can hold in their head -- and the
+            // row says which command has it.
             match keymap.command_on(chord) {
                 Some(taken) if taken != command => {
-                    self.taken = Some((chord, taken));
+                    self.refused = Some((chord, Refused::Taken(taken)));
                     return SettingsOutcome::Consumed;
                 }
                 _ => {
                     self.binding = None;
-                    self.taken = None;
+                    self.refused = None;
                     return SettingsOutcome::Bind(command, Some(chord));
                 }
             }
@@ -508,7 +526,7 @@ impl Settings {
             // press is this command's".
             KeyCode::Enter if bare && self.on_keys() => {
                 self.binding = keys.get(self.window.focus()).map(|(command, _)| *command);
-                self.taken = None;
+                self.refused = None;
                 SettingsOutcome::Consumed
             }
             KeyCode::Enter if bare => match rows.get(self.window.focus()) {

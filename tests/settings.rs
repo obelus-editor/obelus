@@ -875,6 +875,60 @@ fn a_key_that_is_taken_says_so_on_the_row() {
     assert!(app.settings().is_some(), "escape closed the whole page");
 }
 
+/// A key that could never fire is refused on the row, and the row goes on
+/// waiting.
+///
+/// Every one of these would leave the reader with a binding that does
+/// nothing: the arrows never reach the key table at all -- the editor takes
+/// them -- the terminal sends tab for `ctrl+i` whatever was pressed, and a
+/// bare letter is what typing will mean.
+#[test]
+fn a_key_that_could_never_fire_is_refused() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    use obelus::{command::Command, event::Event};
+
+    let _taken = SETTINGS.lock().expect("the lock");
+    let mut app = open(&temporary("never"));
+    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Right);
+    support::type_text(&mut app, "theme.select");
+    support::press(&mut app, KeyCode::Enter);
+
+    for (code, modifiers, why) in [
+        (KeyCode::Up, KeyModifiers::NONE, "editor"),
+        (KeyCode::PageDown, KeyModifiers::NONE, "editor"),
+        (KeyCode::Char('i'), KeyModifiers::CONTROL, "terminal"),
+        (KeyCode::Char('z'), KeyModifiers::NONE, "Typing"),
+        (KeyCode::Tab, KeyModifiers::NONE, "takes this one"),
+    ] {
+        app.handle(Event::Key(KeyEvent::new(code, modifiers)));
+        let dump = support::render(&mut app, 66, 12);
+        let said = support::text_block(&dump).to_lowercase();
+        assert!(
+            said.contains(&why.to_lowercase()),
+            "the row does not say why {code:?} will not do:\n{dump}"
+        );
+        assert_eq!(
+            app.keymap().chord_for(Command::ThemeSelect),
+            None,
+            "{code:?} was bound, and it could never fire"
+        );
+        assert!(
+            app.settings()
+                .is_some_and(|settings| settings.binding() == Some(Command::ThemeSelect)),
+            "the row gave up on the reader after {code:?}"
+        );
+    }
+
+    // And a key from one of the families is taken, from the same row: the
+    // refusals did not leave it in a state where nothing works.
+    support::press_function(&mut app, 9);
+    assert!(
+        app.keymap().chord_for(Command::ThemeSelect).is_some(),
+        "the row would not take a key it should"
+    );
+}
+
 /// Delete takes a command's key away, which is a decision like any other.
 #[test]
 fn delete_takes_a_key_away() {

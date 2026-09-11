@@ -114,13 +114,36 @@ command is gone and `App::blame` reads the setting.
   reached from the palette: a chord for every command is how a key table
   stops being memorable.
 
-Six control chords can never be bound -- `ctrl` plus `i`, `m`, `j`, `h`, `[`
-or space *are* tab, enter, newline, backspace, escape and NUL on the wire --
-and `ctrl+b` belongs to tmux. `ctrl+a` is screen's prefix and is bound
-anyway, because "all of it" is what that key means in every program with a
-selection; a reader inside a multiplexer rebinds it. Two unit tests in
-`keymap` hold the table to all of this, so a binding outside the families
-fails a test rather than quietly joining the table.
+**`keymap::why_not` is the one judgement of what may be bound**, and the
+three families are the whole of it. It is asked by the page that binds keys,
+by the table read out of the config file, and by the test that holds the
+shipped table to the same rule -- so obelus cannot give itself a key it
+refuses the reader, and a reason is written once. What it refuses, and why
+each of them would be a binding that silently never fires:
+
+* the arrows, `home`, `end` and the paging keys, bare or with `ctrl` or
+  `shift` -- the editor takes those before the table is reached, and the
+  ones it does not take it has said it wants (`ctrl` and an arrow is a word
+  motion, `ctrl` and a paging key is the previous and next buffer). `alt`
+  and an arrow is the exception, which is how changes and history are
+  walked;
+* `ctrl` plus `i`, `m`, `j`, `h`, `[`, space or `2`, which *are* tab, enter,
+  newline, backspace, escape and NUL on the wire, whatever the reader
+  pressed;
+* a bare character, `enter`, `tab`, `backspace`, `delete` -- typing, and the
+  keys every list and box takes itself;
+* `escape`, which obelus keeps: give up on the nearest thing is not
+  negotiable, and it is the one default a reader cannot move;
+* anything with two modifiers, and `ctrl` with a capital letter -- a control
+  byte cannot say which case the letter was, so `ctrl+shift+p` works only on
+  a terminal speaking the keyboard protocol. `alt+P` is fine, because alt is
+  the escape prefix and really does carry the shifted letter;
+* a function key with anything held, for the same reason.
+
+`ctrl+b` belongs to tmux, so obelus does not ship it -- a reader outside
+tmux may still have it. `ctrl+a` is screen's prefix and is shipped anyway,
+because "all of it" is what that key means in every program with a
+selection.
 
 **Keys are rebound on the keys page, and the file holds the changes.** The
 table is data on `App`, so a rebinding is `Keymap::rebind` plus a line in
