@@ -245,6 +245,9 @@ pub struct App {
     installing: HashMap<String, crate::agent::install::Progress>,
     /// Why an install did not work, per agent, until it is tried again.
     install_failures: HashMap<String, String>,
+    /// Where installed agents live, for a test that would rather not use
+    /// the reader's own data directory. `None` is that directory.
+    agents_root: Option<PathBuf>,
     /// What the reader has decided, as read from the file at startup.
     config: crate::config::Config,
     /// Where to write it back, or `None` for an application that was never
@@ -363,6 +366,7 @@ impl App {
             images: crate::ui::image::Images::none(),
             installing: HashMap::new(),
             install_failures: HashMap::new(),
+            agents_root: None,
             config: crate::config::Config::default(),
             config_path: None,
             settings: None,

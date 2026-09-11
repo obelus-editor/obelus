@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::{
-    agent::{self, Agent, Distribution, Status, install::Progress},
+    agent::{self, Agent, Status, install::Progress},
     ui::image::{Images, Palette},
 };
 
@@ -33,31 +33,31 @@ impl App {
     /// of them that has to be refreshed is a fourth thing to get wrong.
     #[must_use]
     pub fn listed_agents(&self) -> Vec<Listed> {
-        let root = agent::root();
+        let root = self.agents_root();
         self.registry
             .iter()
             .map(|agent| {
-                let status = if let Some(progress) = self.installing.get(&agent.id) {
-                    let _ = progress;
+                // What the install wrote down when it finished, which is the
+                // only thing that says an agent is installed. Never npm's
+                // own tree: it is built in an order of its own, so a run
+                // that was killed leaves a directory that looks finished.
+                let installed = root
+                    .as_deref()
+                    .and_then(|root| agent::installation(&agent.id, root));
+                let status = if self.installing.contains_key(&agent.id) {
                     Status::Installing
                 } else if let Some(failure) = self.install_failures.get(&agent.id) {
                     Status::Failed(failure.clone())
-                } else if root
-                    .as_deref()
-                    .and_then(|root| agent::command_for(agent, root))
-                    .is_some()
-                {
-                    match root
-                        .as_deref()
-                        .and_then(|root| agent::installed_version(agent, root))
-                    {
-                        // The registry moves versions hourly, so this is
-                        // the ordinary case for an agent installed a week
-                        // ago -- and the only place a reader would find out.
-                        Some(installed) if installed != agent.version => {
-                            Status::Outdated { installed }
+                } else if let Some(installed) = installed {
+                    // The registry moves versions hourly, so this is the
+                    // ordinary case for an agent installed a week ago --
+                    // and the only place a reader would find out.
+                    if installed.version == agent.version {
+                        Status::Installed
+                    } else {
+                        Status::Outdated {
+                            installed: installed.version,
                         }
-                        _ => Status::Installed,
                     }
                 } else if agent.distribution.installable() {
                     Status::Missing
@@ -65,13 +65,34 @@ impl App {
                     Status::Unavailable("nothing for this machine")
                 };
                 Listed {
-                    active: self.config().agent.as_deref() == Some(agent.id.as_str()),
+                    // In use *and* here. An agent the settings name and the
+                    // machine does not have is not something obelus can
+                    // talk to, and a card saying "active" over a button
+                    // that offers to install it says two things at once.
+                    active: self.config().agent.as_deref() == Some(agent.id.as_str())
+                        && matches!(status, Status::Installed | Status::Outdated { .. }),
                     progress: self.installing.get(&agent.id).copied(),
                     status,
                     agent: agent.clone(),
                 }
             })
             .collect()
+    }
+
+    /// Where obelus keeps the agents it installs.
+    ///
+    /// The reader's data directory, or wherever a test has pointed it: what
+    /// is under here is written by installing things and read to find out
+    /// whether they are installed, so a test of either would otherwise have
+    /// to use the reader's own.
+    #[must_use]
+    pub(super) fn agents_root(&self) -> Option<PathBuf> {
+        self.agents_root.clone().or_else(agent::root)
+    }
+
+    /// Keeps installed agents somewhere else, for a test.
+    pub fn agents_root_for_test(&mut self, root: PathBuf) {
+        self.agents_root = Some(root);
     }
 
     /// Fetches the registry, showing whatever was cached while it runs.
@@ -260,7 +281,6 @@ impl App {
         self.installing.remove(&id);
         match failure {
             Some(why) => {
-                tracing::warn!(id, why, "an agent did not install");
                 self.install_failures.insert(id, why);
             }
             None => {
@@ -282,34 +302,24 @@ impl App {
         if self.installing.contains_key(id) {
             return;
         }
-        let Some(root) = agent::root() else {
+        let Some(root) = self.agents_root() else {
             self.note = Some("this system has nowhere to install to".to_string());
             return;
         };
-        if let Distribution::Archive { .. } = agent.distribution {
-            // The archive route reports bytes, so the page can say how far
-            // through it is. Nothing to say yet, but the row has to stop
-            // offering a button the moment it is pressed.
-            self.installing.insert(
-                agent.id.clone(),
-                Progress {
-                    done: 0,
-                    total: None,
-                    elapsed: std::time::Duration::ZERO,
-                },
-            );
-        } else {
-            self.installing.insert(
-                agent.id.clone(),
-                Progress {
-                    done: 0,
-                    total: None,
-                    elapsed: std::time::Duration::ZERO,
-                },
-            );
-        }
+        // Nothing to report yet -- a download says how far through it is
+        // once bytes arrive, and a package manager never does -- but the
+        // row has to stop offering a button the moment it is pressed.
+        self.installing.insert(
+            agent.id.clone(),
+            Progress {
+                done: 0,
+                total: None,
+                elapsed: std::time::Duration::ZERO,
+            },
+        );
         self.install_failures.remove(id);
         if let Some(sender) = self.events.clone() {
+            tracing::info!(id, root = %root.display(), "installing an agent");
             agent::install::spawn(&agent, &root, sender);
         }
     }
@@ -318,15 +328,21 @@ impl App {
     ///
     /// One at a time. Two would mean every question having to say which
     /// agent it was for, and a reader having to know.
+    ///
+    /// Only one that is installed. The setting is written to a file and read
+    /// back on every start, so writing it for an agent that is not here
+    /// leaves a card reading "active" that nothing can talk to -- which the
+    /// reader can only get out of by noticing that turning it off and on
+    /// again is what fixes it.
     pub(super) fn activate_agent(&mut self, id: &str) {
-        // How to start it, written down now: this is the moment the
-        // registry's entry is in hand, and a conversation started next week
-        // should not need the network to find out what to run.
-        if let Some(root) = agent::root()
-            && let Some(agent) = self.registry.iter().find(|agent| agent.id == id)
-            && let Some((command, arguments)) = agent::command_for(agent, &root)
+        if self
+            .agents_root()
+            .and_then(|root| agent::installation(id, &root))
+            .is_none()
         {
-            agent::remember(id, &command, &arguments, &root);
+            tracing::warn!(id, "not using an agent that is not installed");
+            self.note = Some(format!("{id} is not installed"));
+            return;
         }
         self.change_setting("agent", &crate::config::Value::Choice(id.to_string()));
     }

@@ -776,10 +776,9 @@ fn the_first_agent_installed_is_the_one_in_use() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let file = temporary("installed");
     let mut app = open(&file);
+    let root = file.with_file_name("agents");
+    app.agents_root_for_test(root.clone());
 
-    // Node packages on purpose: activating one writes down how to start it,
-    // and for a node package that means reading a manifest which is not
-    // there -- so nothing here touches the real data directory.
     let agents: Vec<obelus::agent::Agent> = (0..2)
         .map(|index| obelus::agent::Agent {
             id: format!("agent-{index}"),
@@ -814,8 +813,23 @@ fn the_first_agent_installed_is_the_one_in_use() {
     });
     assert_eq!(app.config().agent, None, "a failed install was activated");
 
+    // Nor does one that says it worked and left no record behind. The
+    // record is the proof, and this is the state a reader was stuck in
+    // once: the settings named an agent, the card said "active", and
+    // nothing could be started.
+    app.handle(Event::Installed {
+        id: "agent-0".to_string(),
+        failure: None,
+    });
+    assert_eq!(
+        app.config().agent,
+        None,
+        "an agent with nothing installed under its name was activated"
+    );
+
     // The first one that works becomes the one in use, and the file says so
     // -- a choice that is gone tomorrow was a preview rather than a choice.
+    installed(&root, "agent-0", "1.0.0");
     app.handle(Event::Installed {
         id: "agent-0".to_string(),
         failure: None,
@@ -829,6 +843,7 @@ fn the_first_agent_installed_is_the_one_in_use() {
     );
 
     // And the next one does not take over.
+    installed(&root, "agent-1", "1.0.0");
     app.handle(Event::Installed {
         id: "agent-1".to_string(),
         failure: None,
@@ -837,6 +852,90 @@ fn the_first_agent_installed_is_the_one_in_use() {
         app.config().agent.as_deref(),
         Some("agent-0"),
         "the second install took over"
+    );
+}
+
+/// What a finished install leaves behind: something to run, and the record
+/// that says so.
+fn installed(root: &std::path::Path, id: &str, version: &str) {
+    let home = obelus::agent::home(id, root).expect("a directory for it");
+    std::fs::create_dir_all(&home).expect("a directory");
+    let program = home.join("run-me");
+    std::fs::write(&program, "").expect("a program");
+    obelus::agent::remember(id, &program, &[], version, root).expect("the record");
+}
+
+/// An agent the settings name and the machine does not have is not active,
+/// whatever the settings say: the card offers to install it.
+///
+/// The state a reader was stuck in. obelus decided an agent was installed by
+/// looking at what `npm` had left lying about, and npm builds its tree in an
+/// order of its own -- so a run that was killed halfway left a directory
+/// that looked finished. The card then read "active" over an agent nothing
+/// could start, and the only button on it was the one that turned it off.
+#[test]
+fn an_agent_that_is_not_installed_is_not_in_use() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let file = temporary("stuck");
+    // The settings say an agent is in use, from some earlier session.
+    std::fs::write(&file, "agent = \"agent-0\"\n").expect("the file");
+    let mut app = open(&file);
+    let root = file.with_file_name("agents");
+    app.agents_root_for_test(root.clone());
+    assert_eq!(app.config().agent.as_deref(), Some("agent-0"));
+
+    // And npm's tree is all there, exactly as an interrupted install leaves
+    // it -- a manifest, and the link to the program.
+    let home = obelus::agent::home("agent-0", &root).expect("a directory for it");
+    let package = home.join("node_modules").join("agent-0");
+    std::fs::create_dir_all(&package).expect("a directory");
+    std::fs::write(
+        package.join("package.json"),
+        "{\"version\":\"1.0.0\",\"bin\":\"agent.js\"}",
+    )
+    .expect("a manifest");
+    let binaries = home.join("node_modules").join(".bin");
+    std::fs::create_dir_all(&binaries).expect("a directory");
+    std::fs::write(binaries.join("agent-0"), "").expect("a program");
+
+    support::press(&mut app, KeyCode::Left);
+    app.handle(Event::Registry {
+        agents: vec![obelus::agent::Agent {
+            id: "agent-0".to_string(),
+            name: "Agent 0".to_string(),
+            version: "1.0.0".to_string(),
+            description: "The one that got away".to_string(),
+            authors: Vec::new(),
+            license: String::new(),
+            website: None,
+            icon: None,
+            distribution: obelus::agent::Distribution::Node {
+                package: "agent-0@1.0.0".to_string(),
+                arguments: Vec::new(),
+            },
+        }],
+        failure: None,
+    });
+
+    let dump = support::render(&mut app, 76, 16);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("install"),
+        "the card does not offer to install it:\n{dump}"
+    );
+    assert!(
+        !text.contains("active"),
+        "the card says it is in use:\n{dump}"
+    );
+
+    // And once the record is there, it is what it always said it was.
+    installed(&root, "agent-0", "1.0.0");
+    let dump = support::render(&mut app, 76, 16);
+    assert!(
+        support::text_block(&dump).contains("active"),
+        "a finished install is not in use:\n{dump}"
     );
 }
 

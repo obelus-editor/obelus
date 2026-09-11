@@ -115,92 +115,12 @@ pub fn root() -> Option<PathBuf> {
 /// archive unpacks into one. Two agents sharing a directory would share
 /// those three files, so installing the second would rewrite the first's
 /// manifest and removing either would be impossible to do cleanly.
-#[must_use]
-pub fn home(id: &str, root: &std::path::Path) -> PathBuf {
-    root.join(id)
-}
-
-/// Which version of an agent is installed, if one is.
 ///
-/// From what the install left behind rather than remembered: a node package
-/// says its version in its own manifest, and an archive gets a file written
-/// beside it saying which one it was -- because an archive says nothing
-/// about itself once it is unpacked.
+/// `None` for a name obelus will not make a directory of. This is the one
+/// place an id from the registry -- somebody else's string -- becomes a
+/// path, so it is the one place that has to check.
 #[must_use]
-pub fn installed_version(agent: &Agent, root: &std::path::Path) -> Option<String> {
-    match &agent.distribution {
-        Distribution::Node { package, .. } => {
-            let manifest = home(&agent.id, root)
-                .join("node_modules")
-                .join(package_name(package))
-                .join("package.json");
-            let text = std::fs::read_to_string(manifest).ok()?;
-            let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
-            Some(manifest.get("version")?.as_str()?.to_string())
-        }
-        Distribution::Archive { .. } => {
-            let stamp = home(&agent.id, root).join(STAMP);
-            std::fs::read_to_string(stamp)
-                .ok()
-                .map(|version| version.trim().to_string())
-        }
-        // `uvx` fetches the pinned version each time it runs, so what is
-        // installed is whatever the registry last said.
-        Distribution::Python { .. } => Some(agent.version.clone()),
-    }
-}
-
-/// The file an archive install leaves saying which version it unpacked.
-pub const STAMP: &str = ".obelus-version";
-
-/// Writes down how to start an agent, so that later sessions need not ask
-/// the registry.
-///
-/// [`command_for`] needs the registry's entry -- which package, which
-/// archive -- and the registry is fetched when a reader opens the agents
-/// page, which is not something they do before every conversation. So the
-/// answer is written beside the install at the moment it is known, and
-/// talking to an agent afterwards is a local matter.
-pub fn remember(id: &str, command: &std::path::Path, arguments: &[String], root: &std::path::Path) {
-    let Some(path) = start_file(id, root) else {
-        return;
-    };
-    let record = serde_json::json!({ "command": command, "arguments": arguments });
-    if let Some(directory) = path.parent() {
-        let _ = std::fs::create_dir_all(directory);
-    }
-    if let Err(error) = std::fs::write(&path, record.to_string()) {
-        tracing::debug!(%error, id, "not remembering how to start an agent");
-    }
-}
-
-/// How to start an agent, from what [`remember`] wrote down.
-#[must_use]
-pub fn remembered(id: &str, root: &std::path::Path) -> Option<(PathBuf, Vec<String>)> {
-    let text = std::fs::read_to_string(start_file(id, root)?).ok()?;
-    let record: serde_json::Value = serde_json::from_str(&text).ok()?;
-    let command = PathBuf::from(record.get("command")?.as_str()?);
-    let arguments = record
-        .get("arguments")
-        .and_then(serde_json::Value::as_array)
-        .map(|arguments| {
-            arguments
-                .iter()
-                .filter_map(|argument| argument.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    // Gone from disk since it was written -- the reader removed the
-    // directory, or npm did. Nothing to start.
-    let here = command.is_absolute();
-    (!here || command.exists()).then_some((command, arguments))
-}
-
-/// Where that record lives.
-///
-/// The id is somebody else's string and it is a path segment here, so it is
-/// checked the same way an icon's name is.
-fn start_file(id: &str, root: &std::path::Path) -> Option<PathBuf> {
+pub fn home(id: &str, root: &std::path::Path) -> Option<PathBuf> {
     if id.is_empty()
         || id.starts_with('.')
         || !id.bytes().all(|byte| {
@@ -209,7 +129,101 @@ fn start_file(id: &str, root: &std::path::Path) -> Option<PathBuf> {
     {
         return None;
     }
-    Some(root.join(format!("{id}.start.json")))
+    Some(root.join(id))
+}
+
+/// What an install left behind: how to start the agent, and what it was.
+///
+/// Written by the install as its last act and read by everything else, which
+/// is the point of it. What is on disk otherwise cannot be trusted to answer
+/// "is this installed": `npm` builds its tree in an order of its own -- the
+/// package's manifest first, the `node_modules/.bin` link after it -- so an
+/// install killed halfway through leaves a directory that looks exactly like
+/// a finished one. This file exists only where obelus saw the install finish
+/// *and* could work out what to run, so an interrupted install is simply not
+/// an install, and the card offers to do it again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Installation {
+    /// The program to run.
+    pub command: PathBuf,
+    /// And what to pass it.
+    pub arguments: Vec<String>,
+    /// Which version was installed.
+    ///
+    /// Recorded rather than read back off the install: an archive says
+    /// nothing about itself once it is a directory, and a reader whose
+    /// version obelus cannot name can never be told there is a newer one.
+    pub version: String,
+}
+
+/// What that file is called, inside the agent's own directory.
+///
+/// Inside it, so that removing an agent is removing a directory and the
+/// record cannot outlive the thing it describes.
+pub const RECORD: &str = "installed.json";
+
+/// Writes down that an agent is installed, and how to start it.
+///
+/// [`command_for`] needs the registry's entry -- which package, which
+/// archive -- and the registry is fetched when a reader opens the agents
+/// page, which is not something they do before every conversation. So the
+/// answer is written at the moment it is known, and talking to an agent
+/// afterwards is a local matter.
+pub fn remember(
+    id: &str,
+    command: &std::path::Path,
+    arguments: &[String],
+    version: &str,
+    root: &std::path::Path,
+) -> Result<(), String> {
+    let Some(home) = home(id, root) else {
+        return Err(format!("{id} is not a name obelus can keep a directory of"));
+    };
+    let record = serde_json::json!({
+        "command": command,
+        "arguments": arguments,
+        "version": version,
+    });
+    std::fs::create_dir_all(&home).map_err(|error| format!("{home:?}: {error}"))?;
+    std::fs::write(home.join(RECORD), record.to_string())
+        .map_err(|error| format!("{:?}: {error}", home.join(RECORD)))
+}
+
+/// What an agent's install left behind, if it left anything.
+///
+/// The one answer to "is this installed, which version, and how is it
+/// started": three questions with one answer, because an install that can
+/// only answer two of them is not one a reader can use.
+#[must_use]
+pub fn installation(id: &str, root: &std::path::Path) -> Option<Installation> {
+    let text = std::fs::read_to_string(home(id, root)?.join(RECORD)).ok()?;
+    let record: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let command = PathBuf::from(record.get("command")?.as_str()?);
+    // Gone from disk since it was written -- the reader removed the
+    // directory, or npm did. Nothing to start, so nothing is installed.
+    // A relative command is somebody on the path (`uvx`), which is not
+    // obelus's to check.
+    if command.is_absolute() && !command.exists() {
+        return None;
+    }
+    Some(Installation {
+        arguments: record
+            .get("arguments")
+            .and_then(serde_json::Value::as_array)
+            .map(|arguments| {
+                arguments
+                    .iter()
+                    .filter_map(|argument| argument.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        version: record
+            .get("version")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        command,
+    })
 }
 
 /// What obelus knows about one agent locally.
@@ -236,17 +250,21 @@ pub enum Status {
     Unavailable(&'static str),
 }
 
-/// The command that starts an installed agent, if it is installed.
+/// What to run for an agent that has just been installed.
 ///
 /// Read from what the install left behind rather than guessed from the
 /// package's name: a node package says in its own manifest what its
 /// executable is called, and the name of the package is often not it.
+///
+/// Asked once, by the install, and the answer written down as the
+/// [`Installation`] -- so the question needs the registry's entry and
+/// everything afterwards does not.
 #[must_use]
 pub fn command_for(agent: &Agent, root: &std::path::Path) -> Option<(PathBuf, Vec<String>)> {
     match &agent.distribution {
         Distribution::Node { package, arguments } => {
             let name = package_name(package);
-            let home = home(&agent.id, root);
+            let home = home(&agent.id, root)?;
             let manifest = home.join("node_modules").join(&name).join("package.json");
             let text = std::fs::read_to_string(manifest).ok()?;
             let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
@@ -264,7 +282,7 @@ pub fn command_for(agent: &Agent, root: &std::path::Path) -> Option<(PathBuf, Ve
         Distribution::Archive {
             command, arguments, ..
         } => {
-            let path = home(&agent.id, root).join(command.trim_start_matches("./"));
+            let path = home(&agent.id, root)?.join(command.trim_start_matches("./"));
             path.exists().then(|| (path, arguments.clone()))
         }
     }
@@ -351,7 +369,8 @@ mod tests {
             "an install nobody owns was taken for this agent's"
         );
 
-        install(&super::home(&agent.id, &root));
+        let home = super::home(&agent.id, &root).expect("a directory for it");
+        install(&home);
         let (command, _) = command_for(&agent, &root).expect("the command");
         assert_eq!(
             command,
@@ -360,10 +379,67 @@ mod tests {
                 .join(".bin")
                 .join("thing")
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An id is a path segment, and it comes from somebody else's file. The
+    /// one place it becomes a path is the one place that has to check.
+    #[test]
+    fn a_name_obelus_would_not_make_a_directory_of_is_refused() {
+        let root = std::path::Path::new("/tmp/agents");
+        for id in [
+            "",
+            ".",
+            "..",
+            ".hidden",
+            "../escape",
+            "with/slash",
+            "sp ace",
+        ] {
+            assert!(
+                super::home(id, root).is_none(),
+                "{id:?} was taken for a directory name"
+            );
+        }
         assert_eq!(
-            super::installed_version(&agent, &root).as_deref(),
-            Some("1.0.0"),
-            "the version came from the wrong manifest"
+            super::home("claude-acp", root),
+            Some(root.join("claude-acp"))
+        );
+    }
+
+    /// The install's record is the one answer to "is this installed": what
+    /// it was, and how to start it. And it is only an answer while the
+    /// thing it names is there -- a reader who removed the directory has
+    /// removed the agent.
+    #[test]
+    fn the_record_says_what_was_installed_and_how_to_start_it() {
+        let root = std::env::temp_dir().join(format!("obelus-record-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = super::home("someone", &root).expect("a directory for it");
+        std::fs::create_dir_all(&home).expect("a directory");
+        let program = home.join("run-me");
+        std::fs::write(&program, "").expect("a program");
+
+        assert_eq!(
+            super::installation("someone", &root),
+            None,
+            "an agent with no record read as installed"
+        );
+
+        super::remember("someone", &program, &["--acp".to_string()], "1.2.3", &root)
+            .expect("writing the record");
+        let installed = super::installation("someone", &root).expect("the record");
+        assert_eq!(installed.command, program);
+        assert_eq!(installed.arguments, ["--acp"]);
+        assert_eq!(installed.version, "1.2.3");
+
+        // The program taken away: the record is still there and describes
+        // nothing, which is not an install.
+        std::fs::remove_file(&program).expect("removing it");
+        assert_eq!(
+            super::installation("someone", &root),
+            None,
+            "a record whose program is gone read as installed"
         );
         let _ = std::fs::remove_dir_all(&root);
     }

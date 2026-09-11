@@ -393,9 +393,29 @@ answers in words; its mode ids are URLs and most
 of its rows describe themselves with their own name, which is why a
 description that repeats the name is dropped.
 
-**The agents page's buttons touch the real data directory.** `install` runs
-`npm` and `activate` writes a start record under `dirs::data_dir()`, neither
-of which has a test hook -- so a test must not press enter on an agent card.
+**An agent is installed when the install says so, in writing.** The last
+thing `install::spawn` does is write `agents/<id>/installed.json` -- the
+command, its arguments, and the version -- and every later question reads
+that one file: is it installed, which version, how is it started. Nothing
+infers an install from the files a package manager left, because that cannot
+be done: `npm` writes a package's manifest before it links the executable,
+so a run killed halfway leaves a directory shaped exactly like a finished
+one. It did read them once, and the cost was a reader whose obelus was shut
+mid-install and who then had a card reading "active" over an agent nothing
+could start, with no button on it but the one that turned it off.
+Working out what to run happens *inside* the install, where the registry's
+entry is in hand: an install that cannot say how to start what it installed
+has failed. So an interrupted install is simply not an install, `activate`
+refuses an agent with no record, and a card says "active" only for one that
+is really there.
+
+`agent::home` is the one place an id from the registry becomes a path, so it
+is the one place that checks the name, and it returns `None` for one it will
+not make a directory of.
+
+**Pressing install still runs `npm`, so a test must not press it.** The root
+has a hook (`App::agents_root_for_test`), which is what lets a test write
+the record a finished install would leave and then drive `Event::Installed`.
 Everything about talking to one goes through `App::talk_to`, which takes the
 command directly and needs no registry, no install and no network.
 

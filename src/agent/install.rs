@@ -76,6 +76,15 @@ impl Progress {
 /// download, checksum, unpack, or the package manager's own run -- because
 /// a half-installed agent is not something the loop should have to reason
 /// about.
+///
+/// And the last thing it does is write the record that says an agent is
+/// installed: the files a package manager leaves behind are not an answer
+/// to that -- `npm` writes a package's manifest before it links the
+/// executable, so a run that was killed halfway leaves a directory shaped
+/// exactly like a finished one. Working out what to run is part of
+/// finishing, not something to be attempted later: an install that cannot
+/// say how to start the thing it installed has failed, and says so where a
+/// reader is looking.
 pub fn spawn(agent: &Agent, root: &Path, sender: Sender<Event>) {
     let agent = agent.clone();
     let root = root.to_path_buf();
@@ -83,25 +92,11 @@ pub fn spawn(agent: &Agent, root: &Path, sender: Sender<Event>) {
         .name(format!("obelus-install-{}", agent.id))
         .spawn(move || {
             let started = Instant::now();
-            let outcome = match &agent.distribution {
-                Distribution::Node { package, .. } => node(package, &super::home(&agent.id, &root)),
-                Distribution::Python { .. } => Ok(()),
-                Distribution::Archive {
-                    archive,
-                    sha256,
-                    command,
-                    ..
-                } => download(
-                    &agent.id,
-                    &agent.version,
-                    archive,
-                    sha256.as_deref(),
-                    command,
-                    &root,
-                    started,
-                    &sender,
-                ),
-            };
+            let outcome = install(&agent, &root, started, &sender);
+            match &outcome {
+                Ok(()) => tracing::info!(id = agent.id, "installed an agent"),
+                Err(why) => tracing::warn!(id = agent.id, why, "an agent did not install"),
+            }
             let _ = sender.send(Event::Installed {
                 id: agent.id,
                 failure: outcome.err(),
@@ -110,6 +105,47 @@ pub fn spawn(agent: &Agent, root: &Path, sender: Sender<Event>) {
     if let Err(error) = outcome {
         tracing::warn!(%error, "not installing");
     }
+}
+
+/// The whole job, on the thread: fetch it, then write down what there is.
+fn install(
+    agent: &Agent,
+    root: &Path,
+    started: Instant,
+    sender: &Sender<Event>,
+) -> Result<(), String> {
+    let Some(home) = super::home(&agent.id, root) else {
+        return Err(format!(
+            "{} is not a name obelus can keep a directory of",
+            agent.id
+        ));
+    };
+    match &agent.distribution {
+        Distribution::Node { package, .. } => node(package, &home)?,
+        // `uvx` fetches the pinned version the first time it runs and
+        // caches it for itself, so there is nothing to fetch here -- only
+        // the record to write, which is the reader having asked for it.
+        Distribution::Python { .. } => {}
+        Distribution::Archive {
+            archive,
+            sha256,
+            command,
+            ..
+        } => download(
+            archive,
+            sha256.as_deref(),
+            command,
+            &home,
+            started,
+            &agent.id,
+            sender,
+        )?,
+    }
+
+    let Some((command, arguments)) = super::command_for(agent, root) else {
+        return Err("it installed, but obelus cannot tell what to run".to_string());
+    };
+    super::remember(&agent.id, &command, &arguments, &agent.version, root)
 }
 
 /// Asks `npm` for a package, into this agent's own directory.
@@ -150,18 +186,13 @@ fn node(package: &str, home: &Path) -> Result<(), String> {
 }
 
 /// Fetches an archive, checks it, and unpacks it.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "one job's worth of facts: what to fetch, what to check it against, where to put it, and who to tell"
-)]
 fn download(
-    id: &str,
-    version: &str,
     archive: &str,
     sha256: Option<&str>,
     command: &str,
-    root: &Path,
+    into: &Path,
     started: Instant,
+    id: &str,
     sender: &Sender<Event>,
 ) -> Result<(), String> {
     let http = ureq::Agent::config_builder()
@@ -216,10 +247,11 @@ fn download(
         tracing::debug!(id, "the registry gave no checksum for this one");
     }
 
-    let into = super::home(id, root);
-    let _ = std::fs::remove_dir_all(&into);
-    std::fs::create_dir_all(&into).map_err(|error| format!("{into:?}: {error}"))?;
-    unpack(&bytes, archive, &into)?;
+    // Whatever was there before, gone: an archive unpacked over an older
+    // one leaves both, and the older one's files are not this version.
+    let _ = std::fs::remove_dir_all(into);
+    std::fs::create_dir_all(into).map_err(|error| format!("{into:?}: {error}"))?;
+    unpack(&bytes, archive, into)?;
 
     // Unpacked, and the thing to run has to be there and be runnable: an
     // archive that unpacked to something else is a failure now rather than
@@ -229,13 +261,6 @@ fn download(
         return Err(format!("no {command} in the archive"));
     }
     make_runnable(&program);
-    // What was unpacked, written down: an archive says nothing about its
-    // own version once it is a directory, and without this obelus could
-    // never tell the reader that there is a newer one.
-    let stamp = into.join(super::STAMP);
-    if let Err(error) = std::fs::write(&stamp, version) {
-        tracing::debug!(%error, "not recording which version was installed");
-    }
     Ok(())
 }
 
@@ -284,7 +309,90 @@ fn make_runnable(program: &PathBuf) {
 mod tests {
     use std::time::Duration;
 
-    use super::Progress;
+    use super::{Agent, Distribution, Progress};
+
+    /// An install's last act is the record that says it finished, and until
+    /// it is written nothing is installed. A python one, because `uvx`
+    /// fetches when it runs: there is nothing to download here, so what the
+    /// test is left with is exactly the bookkeeping.
+    #[test]
+    fn an_install_finishes_by_writing_down_what_it_installed() {
+        let root = std::env::temp_dir().join(format!("obelus-install-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let agent = Agent {
+            id: "py-agent".to_string(),
+            name: "Python one".to_string(),
+            version: "2.0.0".to_string(),
+            description: String::new(),
+            authors: Vec::new(),
+            license: String::new(),
+            website: None,
+            icon: None,
+            distribution: Distribution::Python {
+                package: "py-agent==2.0.0".to_string(),
+                arguments: vec!["serve".to_string()],
+            },
+        };
+
+        assert_eq!(
+            crate::agent::installation(&agent.id, &root),
+            None,
+            "installed before anything ran"
+        );
+
+        let (sender, events) = std::sync::mpsc::channel();
+        super::spawn(&agent, &root, sender);
+        let event = events
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the install to say something");
+        assert!(
+            matches!(&event, crate::event::Event::Installed { id, failure: None } if id == "py-agent"),
+            "not a finished install: {event:?}"
+        );
+
+        let installed = crate::agent::installation(&agent.id, &root).expect("the record");
+        assert_eq!(installed.command, std::path::PathBuf::from("uvx"));
+        assert_eq!(installed.arguments, ["py-agent==2.0.0", "serve"]);
+        assert_eq!(installed.version, "2.0.0");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A name obelus would not make a directory of is an install that fails
+    /// rather than one that writes somewhere else.
+    #[test]
+    fn an_install_under_an_impossible_name_fails() {
+        let root = std::env::temp_dir().join(format!("obelus-escape-{}", std::process::id()));
+        let agent = Agent {
+            id: "../escape".to_string(),
+            name: "Sneaky".to_string(),
+            version: "1.0.0".to_string(),
+            description: String::new(),
+            authors: Vec::new(),
+            license: String::new(),
+            website: None,
+            icon: None,
+            distribution: Distribution::Python {
+                package: "escape==1.0.0".to_string(),
+                arguments: Vec::new(),
+            },
+        };
+        let (sender, events) = std::sync::mpsc::channel();
+        super::spawn(&agent, &root, sender);
+        let event = events
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the install to say something");
+        assert!(
+            matches!(
+                &event,
+                crate::event::Event::Installed {
+                    failure: Some(_),
+                    ..
+                }
+            ),
+            "an install under that name did not fail: {event:?}"
+        );
+        assert!(!root.exists(), "it wrote something anyway");
+    }
 
     /// How much longer, from the rate so far -- and nothing at all when
     /// there is no length to divide by, which is exactly when a package

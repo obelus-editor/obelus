@@ -789,18 +789,26 @@ impl App {
         let Some(id) = self.config.agent.clone().filter(|id| !id.is_empty()) else {
             return;
         };
-        let Some(root) = crate::agent::root() else {
+        let Some(root) = self.agents_root() else {
             self.chat
                 .note("this system has nowhere for obelus to keep an agent");
             return;
         };
-        let Some((command, arguments)) = crate::agent::remembered(&id, &root) else {
+        // What the install wrote down when it finished. Nothing here means
+        // no install finished -- the reader removed it, or obelus was shut
+        // while one was running -- and the agents page is where that is
+        // fixed, so that is where they are sent.
+        let Some(installed) = crate::agent::installation(&id, &root) else {
+            tracing::warn!(
+                id,
+                "no agent to talk to: nothing is installed under that name"
+            );
             self.chat.note(&format!(
-                "{id} is not installed here any more \u{2014} open the settings and install it again"
+                "{id} is not installed \u{2014} open the settings and install it"
             ));
             return;
         };
-        self.talk_to(&id, &command, &arguments);
+        self.talk_to(&id, &installed.command, &installed.arguments);
     }
 
     /// Puts a permission request to the reader, as a list.
