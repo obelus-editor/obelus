@@ -974,7 +974,12 @@ impl App {
             if self.slash_key(&key) {
                 return;
             }
-            match self.chat.handle_key(&key, thinking, room) {
+            // What the agent lets the reader change, which is what the row
+            // under the box is showing -- so the keys that walk it need it
+            // as much as the view does. Cloned because the box is about to
+            // be borrowed to take the key.
+            let settings = self.agent_settings().to_vec();
+            match self.chat.handle_key(&key, thinking, room, &settings) {
                 ChatOutcome::Consumed => return,
                 ChatOutcome::Cancelled => {
                     // Escape gives up on the nearest thing first, and a
@@ -993,6 +998,14 @@ impl App {
                 }
                 ChatOutcome::Interrupt => {
                     self.interrupt_agent();
+                    return;
+                }
+                ChatOutcome::Choose(id) => {
+                    self.open_agent_setting(&id);
+                    return;
+                }
+                ChatOutcome::Toggle(id) => {
+                    self.flip_agent_setting(&id);
                     return;
                 }
                 ChatOutcome::StepMode => {

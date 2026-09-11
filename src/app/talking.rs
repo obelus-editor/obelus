@@ -210,6 +210,26 @@ impl App {
         self.picker = Some(picker);
     }
 
+    /// Flips one of the agent's switches to its other side.
+    ///
+    /// Which is the whole of what a switch can be asked: the list of two
+    /// values obelus makes for it is what the settings page needs, and on
+    /// the conversation's own row a list of two is a list nobody wants.
+    pub(super) fn flip_agent_setting(&mut self, id: &str) {
+        let Some(other) = self
+            .talker
+            .as_ref()
+            .and_then(|talker| talker.setting(id))
+            .map(|setting| match setting.current == "on" {
+                true => "off",
+                false => "on",
+            })
+        else {
+            return;
+        };
+        self.set_agent_setting(id, other);
+    }
+
     /// Asks for one of them to be put on one of its values.
     pub(super) fn set_agent_setting(&mut self, setting: &str, value: &str) {
         let Some(talker) = self.talker.as_mut() else {
@@ -684,6 +704,12 @@ impl App {
         let region = crate::ui::chat::regions(editor_area, needed).transcript;
         let rows = self.chat.rows(region.width.saturating_sub(4)).len();
         self.chat.settle(rows, region.height);
+        // And the focus on the row under the box, against the settings
+        // that are really there: they are the agent's, and it can take one
+        // away in the middle of a sentence -- a model with no thinking
+        // levels does exactly that.
+        let settings = self.agent_settings().len();
+        self.chat.settle_focus(settings);
     }
 
     /// Takes one message from the agent.

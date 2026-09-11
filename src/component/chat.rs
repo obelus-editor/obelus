@@ -85,8 +85,26 @@ pub enum ChatOutcome {
     Interrupt,
     /// Move to the agent's next way of working.
     StepMode,
+    /// Open the values of one of the agent's settings, by its id.
+    Choose(String),
+    /// Flip one of its switches, by its id.
+    Toggle(String),
     /// Close the view, keeping what is in it.
     Cancelled,
+}
+
+/// What the conversation's keys are moving.
+///
+/// Two things are typed into or walked on this screen: the box, and the row
+/// of what the session is set to. A key means one thing or the other
+/// depending on which of them the reader is in, and there is no third.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Focus {
+    /// The box. What is typed goes in it, and the caret is in it.
+    #[default]
+    Writing,
+    /// One of the settings on the status row, by its place in the list.
+    Settings(usize),
 }
 
 /// A conversation.
@@ -104,6 +122,8 @@ pub struct Chat {
     /// either drags the view around while it is being read, or arrives off
     /// screen with nothing to say so.
     window: Window,
+    /// Which of the two things on this screen the keys are moving.
+    focus: Focus,
 }
 
 impl Chat {
@@ -114,6 +134,28 @@ impl Chat {
             said: Vec::new(),
             input: Composer::new(),
             window: Window::following(),
+            focus: Focus::Writing,
+        }
+    }
+
+    /// Which of the two things on this screen the keys are moving.
+    #[must_use]
+    pub const fn focus(&self) -> Focus {
+        self.focus
+    }
+
+    /// Keeps the focus on something that is still there.
+    ///
+    /// The settings are the agent's and it can change them mid-sentence --
+    /// a model with no thinking levels takes that row away -- so the place
+    /// the focus names has to be checked against the list that is really
+    /// there, once a frame, like every other window in obelus.
+    pub fn settle_focus(&mut self, settings: usize) {
+        if let Focus::Settings(at) = self.focus {
+            self.focus = match settings {
+                0 => Focus::Writing,
+                count => Focus::Settings(at.min(count - 1)),
+            };
         }
     }
 
@@ -265,7 +307,13 @@ impl Chat {
     /// stops the agent, and otherwise it closes the view. One key, and the
     /// thing it does is always "stop what is happening" -- which is what
     /// escape means everywhere else in obelus.
-    pub fn handle_key(&mut self, key: &KeyEvent, thinking: bool, room: Room) -> ChatOutcome {
+    pub fn handle_key(
+        &mut self,
+        key: &KeyEvent,
+        thinking: bool,
+        room: Room,
+        settings: &[crate::acp::Setting],
+    ) -> ChatOutcome {
         let Some(modifiers) = crate::keymap::modifiers_of(key) else {
             return ChatOutcome::Ignored;
         };
@@ -274,6 +322,7 @@ impl Chat {
         // protocol to arrive at all -- alt is the escape prefix, which is
         // as old as terminals.
         if key.code == KeyCode::Enter && modifiers == KeyModifiers::ALT {
+            self.focus = Focus::Writing;
             self.input.newline();
             return ChatOutcome::Consumed;
         }
@@ -282,6 +331,16 @@ impl Chat {
         }
         let bare = modifiers == KeyModifiers::NONE;
         let page = usize::from(room.transcript).max(1);
+
+        // The row of settings, while that is what the reader is in. What it
+        // does not take falls through to the box below -- and the keys that
+        // are the box's own take the focus back with them, because a reader
+        // who starts typing means to type.
+        if let Focus::Settings(at) = self.focus
+            && let Some(outcome) = self.on_settings(key, bare, at, settings)
+        {
+            return outcome;
+        }
 
         match key.code {
             KeyCode::Esc if bare && thinking => ChatOutcome::Interrupt,
@@ -329,10 +388,23 @@ impl Chat {
                 ChatOutcome::Consumed
             }
             KeyCode::Down if bare => {
-                if !self.input.down(room.writing) {
+                // Down the box, then down the transcript, then out of the
+                // box altogether: one key, walking whatever is still able
+                // to move, in the order the things are on screen. The row
+                // of settings is under the box, so it is last -- and only
+                // once the transcript has nothing left to scroll, or the
+                // way back down from having scrolled up would be gone.
+                if self.input.down(room.writing) {
+                    ChatOutcome::Consumed
+                } else if self.window.at_the_end() {
+                    if !settings.is_empty() {
+                        self.focus = Focus::Settings(0);
+                    }
+                    ChatOutcome::Consumed
+                } else {
                     self.scroll_by(1);
+                    ChatOutcome::Consumed
                 }
-                ChatOutcome::Consumed
             }
             KeyCode::PageUp => {
                 self.scroll_by(-isize::try_from(page).unwrap_or(1));
@@ -366,6 +438,61 @@ impl Chat {
                 ChatOutcome::Consumed
             }
             _ => ChatOutcome::Ignored,
+        }
+    }
+
+    /// What a key does while the row of settings is what the reader is in.
+    ///
+    /// `None` means the key is not this row's: the box below gets it, and
+    /// for the keys that are the box's own -- typing, and the two that
+    /// delete -- the focus goes back there first.
+    fn on_settings(
+        &mut self,
+        key: &KeyEvent,
+        bare: bool,
+        at: usize,
+        settings: &[crate::acp::Setting],
+    ) -> Option<ChatOutcome> {
+        match key.code {
+            // Along the row, and round: it is a short cycle, and a reader
+            // walking off one end means the other end.
+            KeyCode::Left if bare && !settings.is_empty() => {
+                let last = settings.len() - 1;
+                self.focus = Focus::Settings(if at == 0 { last } else { at - 1 });
+                Some(ChatOutcome::Consumed)
+            }
+            KeyCode::Right if bare && !settings.is_empty() => {
+                self.focus = Focus::Settings((at + 1) % settings.len());
+                Some(ChatOutcome::Consumed)
+            }
+            // Whatever the setting under the focus is: a list of values is
+            // a list to open, and a switch has nowhere to go, so it flips.
+            // The same judgement the row's drawing makes.
+            KeyCode::Enter if bare => Some(settings.get(at).map_or(
+                ChatOutcome::Consumed,
+                |setting| match setting.kind {
+                    crate::acp::Kind::Select => ChatOutcome::Choose(setting.id.clone()),
+                    crate::acp::Kind::Switch => ChatOutcome::Toggle(setting.id.clone()),
+                },
+            )),
+            // Back to the box. Escape as well, because escape gives up on
+            // the nearest thing first, and the nearest thing is being here
+            // rather than the whole conversation.
+            KeyCode::Up | KeyCode::Esc if bare => {
+                self.focus = Focus::Writing;
+                Some(ChatOutcome::Consumed)
+            }
+            // Nothing is under this row.
+            KeyCode::Down if bare => Some(ChatOutcome::Consumed),
+            // The box's own keys, which take the focus back with them.
+            KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter => {
+                self.focus = Focus::Writing;
+                None
+            }
+            // Everything else -- the paging keys, the ends of the
+            // transcript -- goes on meaning what it means, and the focus
+            // stays where the reader put it.
+            _ => None,
         }
     }
 
@@ -493,7 +620,7 @@ mod tests {
 
         // Up, and it stays where it is put -- including when something new
         // arrives, which is the whole point.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
         chat.settle(rows, 10);
         assert_eq!(chat.top(), 28);
         chat.note("something new");
@@ -503,7 +630,7 @@ mod tests {
 
         // Back down to the end, and it follows again.
         for _ in 0..5 {
-            chat.handle_key(&key(KeyCode::Down), false, ROOM);
+            chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
         }
         chat.settle(rows, 10);
         assert_eq!(chat.top(), rows - 10);
@@ -519,11 +646,11 @@ mod tests {
     fn escape_stops_the_agent_first_and_closes_the_view_second() {
         let mut chat = Chat::new();
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), true, ROOM),
+            chat.handle_key(&key(KeyCode::Esc), true, ROOM, &[]),
             ChatOutcome::Interrupt
         );
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), false, ROOM),
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
             ChatOutcome::Cancelled
         );
     }
@@ -533,13 +660,13 @@ mod tests {
     fn what_is_typed_is_sent_once() {
         let mut chat = Chat::new();
         for character in "hello".chars() {
-            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM);
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
         }
-        chat.handle_key(&key(KeyCode::Backspace), false, ROOM);
+        chat.handle_key(&key(KeyCode::Backspace), false, ROOM, &[]);
         assert_eq!(chat.writing().text(), "hell");
 
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Enter), false, ROOM),
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
             ChatOutcome::Send("hell".to_string())
         );
         // Sent, so the row is empty: a prompt still sitting there after
@@ -547,7 +674,7 @@ mod tests {
         assert_eq!(chat.writing().text(), "");
         // And an empty row sends nothing.
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Enter), false, ROOM),
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
             ChatOutcome::Consumed
         );
     }
@@ -558,7 +685,10 @@ mod tests {
     fn a_chord_falls_through_to_the_key_table() {
         let mut chat = Chat::new();
         let quit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        assert_eq!(chat.handle_key(&quit, false, ROOM), ChatOutcome::Ignored);
+        assert_eq!(
+            chat.handle_key(&quit, false, ROOM, &[]),
+            ChatOutcome::Ignored
+        );
         assert_eq!(chat.writing().text(), "", "it typed the chord into the row");
     }
 }

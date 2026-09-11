@@ -202,6 +202,18 @@ impl Window {
         }
     }
 
+    /// Whether a following window is at the end it follows.
+    ///
+    /// Which is the ordinary state of a transcript: it sits at the end
+    /// until the reader scrolls up. Worth asking because a key that means
+    /// "further down" has somewhere else to go once there is no further
+    /// down -- and because the answer is only true after a frame has
+    /// settled, which is where [`Window::settle`] works it out.
+    #[must_use]
+    pub const fn at_the_end(&self) -> bool {
+        self.follow && !self.left_the_end
+    }
+
     /// Scrolls the window without moving the focus, for the wheel and for a
     /// transcript's arrows.
     pub fn scroll(&mut self, rows: isize) {

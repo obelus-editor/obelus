@@ -604,6 +604,163 @@ fn the_status_row_says_what_the_session_is_set_to() {
     );
 }
 
+/// Down, at the bottom of the box, goes to the row under it -- and what is
+/// there can then be walked and changed.
+///
+/// One key, walking whatever is still able to move, in the order the things
+/// are on screen: down the box, then down the transcript, then out of the
+/// box altogether. Which is the gesture that was already there, one step
+/// longer.
+#[test]
+fn down_from_the_box_reaches_the_settings_and_changes_them() {
+    use obelus::component::chat::Focus;
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    let focus = |app: &App| app.chat().expect("the chat").focus();
+    assert_eq!(
+        focus(&app),
+        Focus::Writing,
+        "the box does not have the keys"
+    );
+
+    // The transcript is at its end -- which is where it sits until somebody
+    // scrolls it -- so down from the box reaches the row.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(
+        focus(&app),
+        Focus::Settings(0),
+        "down did not reach the row"
+    );
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::cursor_line(&dump),
+        "none",
+        "the caret stayed in the box while the keys were elsewhere:\n{dump}"
+    );
+    // The mode is the first of them, and being on it says so with the mark
+    // obelus puts on everything with a list behind it.
+    let screen = rows(&dump);
+    assert!(
+        screen[screen.len() - 1].contains("ask first \u{25b8}"),
+        "nothing says the thing under the focus opens:\n{dump}"
+    );
+
+    // Along the row, and round.
+    support::press(&mut app, KeyCode::Right);
+    assert_eq!(focus(&app), Focus::Settings(1));
+    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::Left);
+    assert_eq!(focus(&app), Focus::Settings(2), "the row does not go round");
+
+    // The switch is last, and enter flips it where it stands: a list of two
+    // values is a list nobody wants.
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "a switch opened a list");
+    pump(&mut app, &events, "the switch to go on", |app| {
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.id == "allow_all" && setting.current == "on")
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    assert!(
+        screen[screen.len() - 1].contains("Allow everything"),
+        "the switch left the row:\n{dump}"
+    );
+
+    // A select opens the list of its values instead, which is the ordinary
+    // compact list -- and the focus is still on the row behind it, so the
+    // next one can be changed without going back down.
+    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::Enter);
+    let names: Vec<String> = app
+        .picker()
+        .expect("the list")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(names, ["Fast", "Careful"], "not the model's values");
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the model to change", |app| {
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.id == "model" && setting.current == "careful")
+    });
+    assert_eq!(focus(&app), Focus::Settings(1), "the row lost the focus");
+
+    // Up comes back to the box, and so does typing -- a reader who starts
+    // typing means to type, and the character is not lost on the way.
+    support::press(&mut app, KeyCode::Up);
+    assert_eq!(focus(&app), Focus::Writing);
+    support::press(&mut app, KeyCode::Down);
+    support::type_text(&mut app, "h");
+    assert_eq!(focus(&app), Focus::Writing, "typing did not come back down");
+    assert_eq!(
+        app.chat().expect("the chat").writing().text(),
+        "h",
+        "the character that came back was swallowed"
+    );
+
+    // And escape from the row is leaving the row, not leaving the
+    // conversation: it gives up on the nearest thing first.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Esc);
+    assert_eq!(focus(&app), Focus::Writing);
+    assert!(app.chat().is_some(), "escape closed the conversation");
+}
+
+/// While the transcript is scrolled up, down brings it back before it leaves
+/// the box: the key that was already there keeps its job, and the row is one
+/// step further on.
+#[test]
+fn down_scrolls_the_transcript_before_it_leaves_the_box() {
+    use obelus::component::chat::Focus;
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    // A turn's worth of transcript, and a screen too short for it.
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let short = 14;
+    support::lay_out(&mut app, WIDTH, short);
+    support::press(&mut app, KeyCode::PageUp);
+    support::lay_out(&mut app, WIDTH, short);
+
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(
+        app.chat().expect("the chat").focus(),
+        Focus::Writing,
+        "down left the box while the transcript still had somewhere to go"
+    );
+    // And once it is back at the end, the next one does leave.
+    support::lay_out(&mut app, WIDTH, short);
+    for _ in 0..20 {
+        support::press(&mut app, KeyCode::Down);
+        support::lay_out(&mut app, WIDTH, short);
+    }
+    assert_eq!(
+        app.chat().expect("the chat").focus(),
+        Focus::Settings(0),
+        "the row was never reached"
+    );
+}
+
 /// A row too narrow for everything says so rather than stopping silently: a
 /// reader who cannot see a setting cannot know it is there.
 #[test]

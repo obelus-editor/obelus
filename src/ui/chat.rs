@@ -21,7 +21,7 @@ use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets:
 use crate::{
     acp,
     app::{App, talking::Talking},
-    component::chat::{Chat, Speaker},
+    component::chat::{Chat, Focus, Speaker},
     icons,
     theme::Theme,
     ui::{fill, put, rule, text_width, write},
@@ -139,6 +139,16 @@ pub fn regions(area: Rect, needed: usize) -> Regions {
 /// What goes between two things the status row says.
 const SEPARATOR: &str = " \u{b7} ";
 
+/// How many cells that takes.
+const SEPARATOR_WIDTH: usize = 3;
+
+/// What says the thing under the focus has a list behind it -- the same
+/// mark a settings row and an agent's card use for the same promise.
+const OPENS: &str = " \u{25b8}";
+
+/// What says the row holds more than it had room to draw.
+const MORE: &str = "\u{2026}";
+
 /// What one setting says on the row, and whether it is in force.
 fn said(setting: &acp::Setting) -> (String, bool) {
     match setting.kind {
@@ -166,6 +176,8 @@ pub struct ChatView<'a> {
     /// Everything about the session the agent lets the reader change, in
     /// the agent's own order.
     settings: &'a [acp::Setting],
+    /// Which of the two things on this screen the keys are moving.
+    focus: Focus,
 }
 
 impl<'a> ChatView<'a> {
@@ -179,6 +191,7 @@ impl<'a> ChatView<'a> {
             state: app.talking(),
             name: app.agent_name(),
             settings: app.agent_settings(),
+            focus: app.chat()?.focus(),
         })
     }
 
@@ -186,6 +199,13 @@ impl<'a> ChatView<'a> {
     /// writing is.
     #[must_use]
     pub fn caret(area: Rect, chat: &Chat) -> Option<ratatui::layout::Position> {
+        // Nowhere, while the keys are walking the row of settings: a caret
+        // left blinking in the box would say that what is typed goes
+        // there, and it does not. What says where the keys are going is
+        // the selected background on the row, the same as in every list.
+        if chat.focus() != Focus::Writing {
+            return None;
+        }
         let width = writing_width(area);
         let rows = chat.writing().rows(width);
         let regions = regions(area, rows.len());
@@ -381,26 +401,62 @@ impl ChatView<'_> {
             return;
         }
 
+        // What each one says, and what it takes to say it. The focused one
+        // carries the arrow obelus puts on everything with a list behind
+        // it, so it is wider than the others by exactly that.
+        let chosen = match self.focus {
+            Focus::Settings(at) => Some(at.min(self.settings.len() - 1)),
+            Focus::Writing => None,
+        };
+        let words: Vec<(String, bool)> = self
+            .settings
+            .iter()
+            .enumerate()
+            .map(|(index, setting)| {
+                let (mut word, on) = said(setting);
+                if Some(index) == chosen && setting.kind == acp::Kind::Select {
+                    word.push_str(OPENS);
+                }
+                (word, on)
+            })
+            .collect();
+
+        // Which one to start at: as near the beginning as having the
+        // focused one on screen allows. A row is a window on a list like
+        // any other, and the one thing a window must not do is hide what
+        // the keys are moving.
+        let mut first = 0;
+        if let Some(chosen) = chosen {
+            let mut taken = 0;
+            for index in (0..=chosen).rev() {
+                taken += text_width(&words[index].0) + SEPARATOR_WIDTH;
+                if taken > room {
+                    first = index + 1;
+                    break;
+                }
+            }
+        }
+
         let mut column = area.x + 1;
         let mut left = room;
-        for (index, setting) in self.settings.iter().enumerate() {
-            let (word, on) = said(setting);
-            let wanted = text_width(&word) + if index == 0 { 0 } else { SEPARATOR.len() };
+        // What was cut off the front, which is a setting the reader can
+        // still walk back to.
+        if first > 0 {
+            column = write(cells, column, area.y, MORE, plain.fg(self.theme.gutter));
+            left = left.saturating_sub(text_width(MORE));
+        }
+        for (index, (word, on)) in words.iter().enumerate().skip(first) {
+            let separated = index > first || first > 0;
+            let wanted = text_width(word) + usize::from(separated) * SEPARATOR_WIDTH;
             // No room for this one: the row says so rather than stopping
             // silently, because a reader who cannot see a setting cannot
             // know it is there to walk to.
             if wanted > left {
-                write(
-                    cells,
-                    column,
-                    area.y,
-                    "\u{2026}",
-                    plain.fg(self.theme.gutter),
-                );
+                write(cells, column, area.y, MORE, plain.fg(self.theme.gutter));
                 return;
             }
             left -= wanted;
-            if index > 0 {
+            if separated {
                 column = write(
                     cells,
                     column,
@@ -409,13 +465,21 @@ impl ChatView<'_> {
                     plain.fg(self.theme.gutter),
                 );
             }
+            // The focused one wears the background a selected row wears in
+            // every list, which while the reader is up here is the only
+            // thing on screen saying where the keys are going -- the caret
+            // is put away for exactly as long.
+            let ground = match Some(index) == chosen {
+                true => self.theme.picker_selected_background,
+                false => self.theme.background,
+            };
             let ink = match on {
                 true => self.theme.gutter_current,
                 // A switch that is off: there, and plainly not in force --
                 // the colour a row nobody can choose is drawn in.
                 false => self.theme.gutter,
             };
-            column = write(cells, column, area.y, &word, plain.fg(ink));
+            column = write(cells, column, area.y, word, plain.fg(ink).bg(ground));
         }
     }
 

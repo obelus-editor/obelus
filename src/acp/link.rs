@@ -928,7 +928,12 @@ fn setting_of(option: &SessionConfigOption) -> Option<Setting> {
             return None;
         }
     };
-    Some(Setting {
+    // What each one is, once, where it arrives. How an agent declares a
+    // setting decides how obelus draws it and what pressing enter on it
+    // does -- a switch is flipped and a list is opened -- so "why is this
+    // one drawn like that" is a question about this line, and it was
+    // unanswerable without it.
+    let setting = Setting {
         id: option.id.0.to_string(),
         name: option.name.clone(),
         about: said_twice(option.description.as_deref(), &option.name),
@@ -937,7 +942,17 @@ fn setting_of(option: &SessionConfigOption) -> Option<Setting> {
         kind,
         category: category_of(option.category.as_ref()),
         legacy: false,
-    })
+    };
+    tracing::debug!(
+        id = setting.id,
+        name = setting.name,
+        kind = ?setting.kind,
+        category = ?setting.category,
+        values = setting.values.len(),
+        current = setting.current,
+        "a setting the agent offers"
+    );
+    Some(setting)
 }
 
 /// What the agent said a setting is about, as one of the few obelus can do
