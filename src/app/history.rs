@@ -161,10 +161,19 @@ impl App {
         // No committed text is every way this can have no answer -- not a
         // repository, a file git has never heard of, no commits yet -- and
         // they all mean the same thing in the margin: nothing to say.
-        self.changes = git::head_text(buffer.path()).map(|committed| Changed {
+        let changes = git::head_text(buffer.path()).map(|committed| Changed {
             changes: git::Changes::between(&committed, &buffer.text().rope().to_string()),
             at,
         });
+        if changes.is_none() {
+            // Said once per file, because "why is the margin empty" is a
+            // question with no other answer on screen.
+            tracing::debug!(
+                path = %buffer.path().display(),
+                "nothing committed to compare with, so no changes"
+            );
+        }
+        self.changes = changes;
         // A hunk that was open belonged to the diff that has just been
         // replaced. Leaving it open would show removed lines that are no
         // longer removed anywhere.

@@ -51,8 +51,11 @@ pub fn install() -> Option<(WorkerGuard, WorkerGuard)> {
     let (ours, kept) = writer(&directory, OBELUS)?;
     let (theirs, also_kept) = writer(&directory, SERVERS)?;
 
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,obelus=info"));
+    // `ob` as well as `obelus`: the binary is its own crate, so the lines
+    // main writes -- what started, and that it left -- carry that target
+    // and were filtered out of their own log.
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("warn,obelus=info,ob=info"));
 
     // Two layers over one registry, each taking the events the other does
     // not: the split is by target, so an event goes to exactly one file and
@@ -98,6 +101,29 @@ fn writer(
         .build(directory)
         .ok()?;
     Some(tracing_appender::non_blocking(appender))
+}
+
+/// Chains a panic hook that writes the panic to the log.
+///
+/// A panic is the one thing a log has to have and the one thing it had none
+/// of: the message goes to stderr, which is behind the alternate screen
+/// while obelus is drawing, and the log simply stopped mid-session with no
+/// reason in it. Chained, like every other hook here, so whatever was
+/// already installed still runs.
+pub fn catch_panics() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic| {
+        // The location rather than a backtrace: a backtrace needs symbols
+        // and an environment variable, and the line that panicked is what
+        // says where to look.
+        match panic.location() {
+            Some(where_it_was) => {
+                tracing::error!(at = %where_it_was, "panicked: {}", panic);
+            }
+            None => tracing::error!("panicked: {}", panic),
+        }
+        previous(panic);
+    }));
 }
 
 /// The log file being written now, if there is one.

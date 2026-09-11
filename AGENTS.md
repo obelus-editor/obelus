@@ -198,6 +198,16 @@ call site needs to know nothing and a module moved into `lsp` takes its
 lines with it. `log.obelus` and `log.servers` open them; both are ordinary
 buffers, because obelus is a reader.
 
+The default filter names **`ob` as well as `obelus`**: the binary is its own
+crate, so everything `main` logged -- what started, and that it left -- was
+filtered out of its own log until it was added.
+
+**A panic goes in the log** (`logging::catch_panics`, chained like every
+other hook). It is the one thing a log has to have and the one thing it had
+none of: the message goes to stderr, which is behind the alternate screen,
+so the log simply stopped mid-session with no reason in it. It earned its
+keep immediately -- two real crashes on absurd terminal sizes, both fixed in
+the same slice as the line that found them.
 
 **No async runtime.** One `std::sync::mpsc` channel, one producer thread per
 event source (keyboard, file walk, watcher, each server's stdout), the main

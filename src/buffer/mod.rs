@@ -254,6 +254,16 @@ impl Buffer {
         // Absolute rather than canonical: resolving symlinks would report the
         // file under a name the reader did not use.
         let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        // The event a session is made of, and the three facts that explain
+        // what happens next: how long the parse and the highlighting have
+        // to work, and whether there is a language at all.
+        tracing::info!(
+            path = %path.display(),
+            bytes = contents.len(),
+            lines = text.line_count(),
+            language = ?syntax.as_ref().map(|state| state.language().name()),
+            "opened"
+        );
 
         Ok(Self {
             path,

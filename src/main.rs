@@ -24,6 +24,21 @@ fn main() -> Result<()> {
     // Held until main returns, so buffered log lines are flushed on the way
     // out.
     let _log_guard = logging::install();
+    // Before anything that can panic, so a panic on the way up is in the
+    // log as well.
+    logging::catch_panics();
+    // The first line of every session, and the one a reader of the log
+    // needs before any other: which obelus this is, where it was run, and
+    // what the terminal said it was. Without it there is no telling which
+    // run is being read, or that a run happened at all.
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        directory = ?std::env::current_dir().ok(),
+        files = arguments.paths.len(),
+        term = ?std::env::var("TERM").ok(),
+        colours = ?std::env::var("COLORTERM").ok(),
+        "obelus starting"
+    );
 
     // Opened before the terminal is taken over, so a bad path reports itself
     // on a normal screen rather than flashing past inside an alternate one.
@@ -66,6 +81,13 @@ fn main() -> Result<()> {
     app.load_config();
     app.use_images(images);
     let outcome = app::run(&mut terminal, &mut app);
+    // The other end of the first line, said before the terminal is put
+    // back: a log that stops without one of these ended in a panic or a
+    // kill, and putting the screen back is itself a thing that can fail.
+    match &outcome {
+        Ok(()) => tracing::info!("obelus leaving"),
+        Err(error) => tracing::error!(%error, "obelus stopping on an error"),
+    }
     if mouse {
         let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
     }
@@ -75,7 +97,9 @@ fn main() -> Result<()> {
             crossterm::event::PopKeyboardEnhancementFlags
         );
     }
-    ratatui::try_restore()?;
+    if let Err(error) = ratatui::try_restore() {
+        tracing::warn!(%error, "the terminal was not put back");
+    }
 
     outcome
 }

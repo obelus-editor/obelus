@@ -163,6 +163,16 @@ impl App {
     /// than whatever the machine it runs on has in `~/.config`.
     pub fn load_config(&mut self) {
         self.config_path = crate::config::path();
+        // Which file, and whether there was one: "my setting did nothing"
+        // is answered by the path obelus actually read, and a reader with
+        // two machines or an `XDG_CONFIG_HOME` has more than one candidate.
+        match self.config_path.as_ref().filter(|path| path.exists()) {
+            Some(path) => tracing::info!(path = %path.display(), "read the settings"),
+            None => tracing::info!(
+                path = ?self.config_path,
+                "no settings file yet, so the defaults"
+            ),
+        }
         self.configure(crate::config::load());
     }
 

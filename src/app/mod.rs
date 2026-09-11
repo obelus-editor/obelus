@@ -82,6 +82,13 @@ use crate::{
 /// would be the wrong trade.
 const COMPACT_ROWS: u16 = 10;
 
+/// How long a frame has to take before the log says so.
+///
+/// A frame is microseconds of work; anything a reader could notice is a
+/// frame that waited on something, and that is what there is to find out
+/// about.
+const SLOW_FRAME: std::time::Duration = std::time::Duration::from_millis(50);
+
 /// How many already-ready events to fold into one frame.
 ///
 /// A held-down arrow key or a scroll burst delivers faster than a terminal can
@@ -1154,10 +1161,23 @@ where
     app.start(sender);
 
     while !app.should_quit() {
+        // Timed, because a frame blocking the loop is the one performance
+        // risk this design took knowingly: `draw` writes to stdout, and
+        // over ssh or in tmux that write can wait on the far end. A line
+        // here is the evidence for taking the escape hatch -- a thread of
+        // its own for the terminal -- rather than a hunch about it.
+        let started = std::time::Instant::now();
         render(terminal, app)?;
+        let took = started.elapsed();
+        if took >= SLOW_FRAME {
+            tracing::debug!(?took, "a slow frame");
+        }
 
         let Ok(event) = events.recv() else {
-            // Every sender is gone, so no further event can arrive.
+            // Every sender is gone, so no further event can arrive. Which
+            // is not how obelus is meant to end -- the reader asks -- so it
+            // says so: the keyboard's thread has died.
+            tracing::warn!("nothing is left to send events, so there is nothing to wait for");
             break;
         };
         app.handle(event);
