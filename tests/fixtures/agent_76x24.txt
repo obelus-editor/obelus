@@ -23,7 +23,7 @@ screen 76x24  editor 76x22  status 76x1
 20|────────────────────────────────────────────────────────────────────────────
 21| 󰅂                                                                          
 22|────────────────────────────────────────────────────────────────────────────
-23| ask first                                                         󰘶󰌒  mode 
+23| ask first · Fast · Allow everything                               󰘶󰌒  mode 
 -- style --
  0|abaaccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbba
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -48,7 +48,7 @@ screen 76x24  editor 76x22  status 76x1
 20|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 21|abaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 22|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-23|acccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbba
+23|acccccccccbbbccccbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbba
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#52525b bg=#18181b

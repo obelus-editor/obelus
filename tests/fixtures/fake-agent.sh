@@ -57,10 +57,15 @@ both_ways=''
 # answer to that request to carry the mode it is in -- so a client that
 # showed the new one before asking has to take it back.
 refuses=''
+# Whether it offers anything about itself at all. Plenty of agents have
+# nothing to configure, and a client has to say so rather than draw an
+# empty row.
+bare=''
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
         refuse-mode) refuses='yes' ;;
+        nothing-to-change) bare='yes' ;;
     esac
 done
 
@@ -118,7 +123,11 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentInfo":{"name":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$me"
             ;;
         *'"method":"session/new"'*)
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1","modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
+            if [ -n "$bare" ]; then
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1"}}\n' "$(id_of "$line")"
+            else
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1","modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
+            fi
             # What it takes with a slash, which agents send once the
             # session is ready.
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Summarise the conversation"},{"name":"cost","description":"What this has cost","input":{"hint":"currency"}},{"name":"model","description":"Which model to use"},{"name":"ask","description":"Ask the reader something"},{"name":"help","description":"What it takes"},{"name":"init","description":"Start again"},{"name":"login","description":"Say who you are"},{"name":"quit","description":"Stop"},{"name":"reset","description":"Forget the session"},{"name":"share","description":"Send it somewhere"},{"name":"theme","description":"Its own colours"},{"name":"usage","description":"What it has spent"}]}}}\n'

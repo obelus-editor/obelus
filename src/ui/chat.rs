@@ -136,6 +136,25 @@ pub fn regions(area: Rect, needed: usize) -> Regions {
     }
 }
 
+/// What goes between two things the status row says.
+const SEPARATOR: &str = " \u{b7} ";
+
+/// What one setting says on the row, and whether it is in force.
+fn said(setting: &acp::Setting) -> (String, bool) {
+    match setting.kind {
+        // The value, which names itself.
+        acp::Kind::Select => (
+            setting
+                .current_name()
+                .unwrap_or(&setting.current)
+                .to_string(),
+            true,
+        ),
+        // The name, because "on" is not a thing to be told.
+        acp::Kind::Switch => (setting.name.clone(), setting.current == "on"),
+    }
+}
+
 /// The conversation, over the whole editor region.
 pub struct ChatView<'a> {
     chat: &'a Chat,
@@ -144,11 +163,9 @@ pub struct ChatView<'a> {
     state: Talking,
     /// What to call it.
     name: Option<&'a str>,
-    /// Which way of working is on, by the name of the value it is on.
-    mode: Option<&'a str>,
-    /// How many ways of working there are to walk, which is what says
-    /// whether the key that walks them is worth naming.
-    modes: usize,
+    /// Everything about the session the agent lets the reader change, in
+    /// the agent's own order.
+    settings: &'a [acp::Setting],
 }
 
 impl<'a> ChatView<'a> {
@@ -161,8 +178,7 @@ impl<'a> ChatView<'a> {
             theme: app.theme(),
             state: app.talking(),
             name: app.agent_name(),
-            mode: app.agent_mode().and_then(acp::Setting::current_name),
-            modes: app.agent_mode().map_or(0, |mode| mode.values.len()),
+            settings: app.agent_settings(),
         })
     }
 
@@ -302,39 +318,104 @@ impl ChatView<'_> {
             .bg(self.theme.background)
             .fg(self.theme.foreground);
         fill(cells, area, plain);
-        // The mode on the left, because it is a fact about the
-        // conversation and the left is where obelus puts those.
-        let mode = self.mode.unwrap_or(match self.state {
-            Talking::Ready | Talking::Thinking => "no modes",
-            _ => "",
-        });
-        write(
-            cells,
-            area.x + 1,
-            area.y,
-            mode,
-            plain.fg(self.theme.gutter_current),
-        );
 
-        // And how to change it, which is only worth saying when there is
-        // more than one to change to.
-        if self.modes < 2 {
-            return;
-        }
-        let hint = match icons::enabled() {
-            true => format!("{}{}  mode", icons::key::SHIFT, icons::key::TAB),
-            false => "shift+tab  mode".to_string(),
-        };
-        if let Ok(offset) =
-            u16::try_from(usize::from(area.width).saturating_sub(text_width(&hint) + 1))
+        // How to walk the mode, on the right, and only where there is more
+        // than one way of working to walk to. Measured first, because the
+        // room the settings have is what is left of the row.
+        let hint =
+            self.mode()
+                .filter(|mode| mode.values.len() > 1)
+                .map(|_| match icons::enabled() {
+                    true => format!("{}{}  mode", icons::key::SHIFT, icons::key::TAB),
+                    false => "shift+tab  mode".to_string(),
+                });
+        if let Some(hint) = &hint
+            && let Ok(offset) =
+                u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
         {
             write(
                 cells,
                 area.x + offset,
                 area.y,
-                &hint,
+                hint,
                 plain.fg(self.theme.gutter),
             );
+        }
+
+        let room = usize::from(area.width)
+            .saturating_sub(hint.as_deref().map_or(0, |hint| text_width(hint) + 2))
+            .saturating_sub(2);
+        self.settings(cells, area, room, plain);
+    }
+
+    /// The mode, if the agent offers one.
+    fn mode(&self) -> Option<&acp::Setting> {
+        self.settings
+            .iter()
+            .find(|setting| setting.category == acp::Category::Mode)
+    }
+
+    /// What the session is set to, along the row: every setting the agent
+    /// offers, in its own order, each said as shortly as it can be said.
+    ///
+    /// A list of values rather than of names and values: what a select is on
+    /// names itself -- `gpt-5` is plainly a model and `careful` is plainly a
+    /// way of working -- so the name would be a label on something already
+    /// labelled. A switch is the other way round: `on` says nothing, and the
+    /// thing it is about is its name, so that is what is written and being
+    /// off is said by writing it dim.
+    fn settings(&self, cells: &mut CellBuffer, area: Rect, room: usize, plain: Style) {
+        if self.settings.is_empty() {
+            // Only once there is a session: before that the row would be
+            // saying that an agent which has not spoken yet has nothing to
+            // say about itself.
+            if matches!(self.state, Talking::Ready | Talking::Thinking) {
+                write(
+                    cells,
+                    area.x + 1,
+                    area.y,
+                    "nothing to change",
+                    plain.fg(self.theme.gutter),
+                );
+            }
+            return;
+        }
+
+        let mut column = area.x + 1;
+        let mut left = room;
+        for (index, setting) in self.settings.iter().enumerate() {
+            let (word, on) = said(setting);
+            let wanted = text_width(&word) + if index == 0 { 0 } else { SEPARATOR.len() };
+            // No room for this one: the row says so rather than stopping
+            // silently, because a reader who cannot see a setting cannot
+            // know it is there to walk to.
+            if wanted > left {
+                write(
+                    cells,
+                    column,
+                    area.y,
+                    "\u{2026}",
+                    plain.fg(self.theme.gutter),
+                );
+                return;
+            }
+            left -= wanted;
+            if index > 0 {
+                column = write(
+                    cells,
+                    column,
+                    area.y,
+                    SEPARATOR,
+                    plain.fg(self.theme.gutter),
+                );
+            }
+            let ink = match on {
+                true => self.theme.gutter_current,
+                // A switch that is off: there, and plainly not in force --
+                // the colour a row nobody can choose is drawn in.
+                false => self.theme.gutter,
+            };
+            column = write(cells, column, area.y, &word, plain.fg(ink));
         }
     }
 

@@ -551,6 +551,97 @@ fn a_slash_is_a_command_and_anything_else_is_a_message() {
     );
 }
 
+/// The conversation's status row says what the session is set to: every
+/// setting the agent offers, in its own order, as short as it can be said.
+///
+/// Values, not names and values: what a select is on names itself -- `Fast`
+/// is plainly a model and `ask first` is plainly a way of working -- so a
+/// name in front of it would be a label on something already labelled. A
+/// switch is the other way round, because "on" says nothing and the thing it
+/// is about is its name, so the name is written and being off is said by
+/// writing it dim.
+#[test]
+fn the_status_row_says_what_the_session_is_set_to() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    let status = screen[screen.len() - 1].to_string();
+    assert!(
+        status.contains("ask first \u{b7} Fast \u{b7} Allow everything"),
+        "not every setting, in the agent's order:\n{dump}"
+    );
+    // The names of the selects are not on it: the row would be twice as
+    // long and say the same thing.
+    assert!(
+        !status.contains("Model"),
+        "a select's name is on the row as well as its value:\n{dump}"
+    );
+
+    // And the switch is dim while it is off, which is the colour obelus
+    // draws everything that is there and not in force. The values are not.
+    let styles = support::style_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let ink = |needle: &str| {
+        let at = status.find(needle).expect("the words");
+        // Three characters of row number and the bar before the cells.
+        styles[styles.len() - 1].chars().nth(at).expect("a cell")
+    };
+    assert_ne!(
+        ink("ask first"),
+        ink("Allow everything"),
+        "the switch that is off looks like a value:\n{dump}"
+    );
+    assert_eq!(
+        ink("ask first"),
+        ink("Fast"),
+        "two values are drawn differently:\n{dump}"
+    );
+}
+
+/// A row too narrow for everything says so rather than stopping silently: a
+/// reader who cannot see a setting cannot know it is there.
+#[test]
+fn a_status_row_with_no_room_says_there_is_more() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    support::lay_out(&mut app, 34, HEIGHT);
+    let dump = support::render(&mut app, 34, HEIGHT);
+    let screen = rows(&dump);
+    let status = screen[screen.len() - 1].to_string();
+    assert!(
+        status.contains('\u{2026}'),
+        "nothing says the row was cut:\n{dump}"
+    );
+    assert!(
+        !status.contains("Allow everything"),
+        "it all fitted, so this tests nothing:\n{dump}"
+    );
+}
+
+/// An agent with nothing to configure says so. An empty row would leave a
+/// reader wondering whether obelus had failed to read something.
+#[test]
+fn an_agent_with_nothing_to_change_says_so() {
+    let (mut app, events) = playing(&["nothing-to-change"]);
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    assert!(
+        screen[screen.len() - 1].contains("nothing to change"),
+        "the row says nothing at all:\n{dump}"
+    );
+}
+
 /// The mode is a setting like the others, and there is only ever one of it.
 ///
 /// The protocol is dropping the dedicated mode methods in favour of a config
