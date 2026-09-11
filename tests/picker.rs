@@ -1343,6 +1343,55 @@ fn the_selection_walks_past_what_cannot_be_chosen() {
     );
 }
 
+/// A key whose command the palette will not offer does nothing at all.
+///
+/// The palette draws such a row dim and refuses enter on it; a key is the
+/// same row reached another way, and one judgement has to answer for both.
+/// Before this, `f2` on a screen with no file open drew an empty list of
+/// open files, and `f3` on a clean tree wrote "nothing has changed" across
+/// the status row -- two answers to a question the palette had already said
+/// could not be asked.
+#[test]
+fn a_key_does_nothing_where_its_command_is_dim() {
+    use obelus::command::Command;
+
+    // Nothing open, and a tree with nothing changed in it.
+    let mut empty = App::new(Vec::new());
+    empty.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut empty, 60, 12);
+
+    for (key, command) in [(2u8, Command::BufferList), (3, Command::FileChanged)] {
+        assert!(
+            !empty.offers(command),
+            "{} can run here, so this tests nothing",
+            command.name()
+        );
+        press_function(&mut empty, key);
+        assert!(
+            empty.picker().is_none(),
+            "f{key} opened a list its command was too dim to open"
+        );
+        assert_eq!(empty.note(), None, "f{key} said something instead");
+    }
+
+    // And the keys whose commands *can* run still work, or the rule would
+    // have turned the table off.
+    press_function(&mut empty, 1);
+    assert!(empty.picker().is_some(), "f1 stopped opening the file list");
+    press(&mut empty, KeyCode::Esc);
+
+    // With a file open, the list of open files is offered again -- and its
+    // key works again with it.
+    let mut reading = app();
+    support::lay_out(&mut reading, 60, 12);
+    assert!(reading.offers(Command::BufferList));
+    press_function(&mut reading, 2);
+    assert!(
+        reading.picker().is_some(),
+        "f2 did nothing with a file open to list"
+    );
+}
+
 /// And each condition turns its command back on when it is met. The palette
 /// is rebuilt every time it opens, so what it lists is the answer to "what
 /// can I do *now*".
@@ -2344,14 +2393,16 @@ fn the_palette_groups_its_commands_into_tabs() {
 /// into a blank region would read as the arrow key having broken something.
 #[test]
 fn a_list_with_nothing_in_it_says_why() {
-    // No file open, so the buffer list is empty for a reason worth stating.
-    let mut empty = App::new(Vec::new());
+    // A tree with nothing in it to offer, which is the walk having
+    // finished with nothing rather than not having started: no batch of
+    // paths ever arrives here.
+    let mut empty = app();
     support::lay_out(&mut empty, 50, 8);
-    press_function(&mut empty, 2);
+    press_function(&mut empty, 1);
     let dump = support::render(&mut empty, 50, 8);
     assert!(
-        support::text_block(&dump).contains("no file is open"),
-        "an empty buffer list said nothing:\n{dump}"
+        support::text_block(&dump).contains("no files under this directory"),
+        "an empty file list said nothing:\n{dump}"
     );
 
     // A query that matches nothing is a fact about the query, and the list

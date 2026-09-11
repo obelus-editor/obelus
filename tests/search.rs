@@ -634,7 +634,7 @@ fn a_finished_walk_that_found_nothing_says_so() {
 
 /// The symbols come from a server, and with no server there is nobody to
 /// ask -- so there is no tab for them, and the key that would land on it
-/// says why instead.
+/// does nothing at all.
 #[test]
 fn the_symbols_scope_needs_a_server() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -644,7 +644,7 @@ fn the_symbols_scope_needs_a_server() {
         app.picker().is_none(),
         "a search opened on a scope with nobody to ask"
     );
-    assert_eq!(app.note(), Some("no language server to ask"));
+    assert_eq!(app.note(), None, "a key that did nothing said so");
 
     // And the palette shows it dim -- findable, so a reader learns obelus
     // can do it, and not choosable, because right now it cannot.

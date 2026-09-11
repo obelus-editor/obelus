@@ -511,13 +511,15 @@ impl ChatView<'_> {
             write(cells, column + 2, area.y, doing, dim);
         }
 
-        // What escape does, which is the one thing that changes: while the
-        // agent is working it stops the agent, and otherwise it closes the
-        // view.
-        let hint = match self.state {
-            Talking::Thinking => "esc stops it",
-            _ => "esc closes",
-        };
+        // Only while it is working, and only because that is the one thing
+        // escape does here that a reader could not guess: it stops the
+        // agent rather than closing the view. "esc closes" was a label on
+        // the convention every full-screen thing in obelus follows, which
+        // is a row of text spent saying nothing.
+        if self.state != Talking::Thinking {
+            return;
+        }
+        let hint = "esc stops it";
         if let Ok(offset) =
             u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
             && offset > column + 2

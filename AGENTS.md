@@ -130,6 +130,24 @@ was measured and left out -- it parses RFC 5424 and fails on the RFC 3164
 line that is actually in `/var/log/syslog`, which is the file a reader
 opens.
 
+**A key does nothing where its command is dim.** `App::offers` is the one
+judgement of whether a command can do its job here: the palette draws a row
+it refuses as dim and will not run it, and `App::handle_key` asks the same
+question before dispatching, so a command cannot be off in one place and
+live in the other. It is silent about it -- `f2` with no file open used to
+draw an empty list of open files, `f3` on a clean tree wrote "nothing has
+changed" across the status row, and `ctrl+c` with no selection said "nothing
+selected"; three answers to a question the palette had already said could
+not be asked. So `Requires` is where that work goes, and a note inside a
+command for "you cannot do that here" is dead code unless the condition
+cannot answer exactly (the bracket scan is the one that cannot: `ABracket`
+is the character under the cursor, and a bracket inside a string is offered
+and finds no partner).
+
+Which makes a condition worth a walk: `AChangedFile` asks git what has
+changed in the tree, once when the palette opens and once per press of the
+key. This repository answers in two milliseconds.
+
 **A command does something; a preference is a setting.** A switch that
 should outlive the session is a setting and nothing else -- the only key to
 it is the one that opens the settings. A command may *change* a setting, as

@@ -1065,7 +1065,9 @@ fn nothing_of_obeluss_own_opens_over_the_conversation() {
     );
 
     support::press(&mut app, KeyCode::Esc);
-    support::press_function(&mut app, 2);
+    // A key whose command can run with nothing open: the list of open
+    // files is dim on this screen, and a dim command's key does nothing.
+    support::press_function(&mut app, 1);
     assert!(
         app.picker().is_some(),
         "escape did not give the key table back"

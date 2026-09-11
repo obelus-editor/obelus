@@ -334,13 +334,16 @@ fn shift_arrows_select_and_plain_motion_clears_the_selection() {
     assert_eq!(buffer.cursor().column, CharColumn::new(3));
 }
 
-/// Copying without a selection reports the reason before opening a clipboard,
-/// which also makes the answer useful on a headless machine.
+/// Copying without a selection does nothing, and says nothing: the command
+/// is not offered without one, so the key it is on is dead here and the
+/// palette's dim row is where a reader finds out why. Nothing reaches the
+/// clipboard either, which is what makes the answer the same on a headless
+/// machine.
 #[test]
-fn copying_without_a_selection_explains_why() {
+fn copying_without_a_selection_does_nothing() {
     let mut app = app_on_screen(WIDTH, HEIGHT);
     support::press_control(&mut app, 'c');
-    assert_eq!(app.note(), Some("nothing selected"));
+    assert_eq!(app.note(), None, "a key that did nothing said so");
 }
 
 /// Shift applies equally to the line and document-sized motions. A page moves
@@ -1398,9 +1401,13 @@ fn a_bracket_pair_is_marked_and_can_be_jumped_between() {
     );
 }
 
-/// A cursor that is not on a bracket gets a note, not a silent nothing.
+/// A cursor that is not on a bracket: the key does nothing and says
+/// nothing, because the command is not offered there at all. The note it
+/// used to write is still reachable from the one case the condition cannot
+/// answer -- a bracket in a string, where the scan finds no partner -- and
+/// that is what the note is for.
 #[test]
-fn nowhere_to_jump_says_so() {
+fn nowhere_to_jump_does_nothing() {
     use crossterm::event::{KeyEvent, KeyModifiers};
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -1410,7 +1417,7 @@ fn nowhere_to_jump_says_so() {
         KeyModifiers::ALT,
     )));
 
-    assert_eq!(app.note(), Some("no bracket here"));
+    assert_eq!(app.note(), None, "a key that did nothing said so");
     assert_eq!(
         app.current_buffer()
             .expect("a buffer")

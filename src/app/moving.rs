@@ -221,8 +221,10 @@ impl App {
 
     /// Copies the selected text to the system clipboard.
     pub fn copy_selection(&mut self) {
+        // Nothing said when there is nothing to copy: the command is not
+        // offered without a selection, so the key does nothing and the
+        // palette's dim row is where that is answered.
         let Some(text) = self.current_buffer().and_then(Buffer::selected_text) else {
-            self.note = Some("nothing selected".to_string());
             return;
         };
 

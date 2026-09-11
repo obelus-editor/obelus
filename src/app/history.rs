@@ -63,8 +63,11 @@ impl App {
     /// did nothing; the command is not offered when there is nothing that
     /// way, which is the honest version of the same information.
     fn go_to_change(&mut self, forward: bool) {
+        // Nothing said on the way out of any of these: the command is not
+        // offered unless there is a change that way, so a reader can only
+        // arrive here with one -- and a note nobody can see is a sentence
+        // written for nobody.
         let Some(line) = self.current_buffer().map(|buffer| buffer.cursor().line) else {
-            self.note = Some("no file open".to_string());
             return;
         };
         let target = self.changes().and_then(|changes| {
@@ -76,11 +79,6 @@ impl App {
             .map(|hunk| hunk.line)
         });
         let Some(target) = target else {
-            self.note = Some(if forward {
-                "no change below here".to_string()
-            } else {
-                "no change above here".to_string()
-            });
             return;
         };
 

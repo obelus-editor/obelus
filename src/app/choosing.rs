@@ -188,6 +188,14 @@ impl App {
                 .unwrap_or_default()
                 .iter()
                 .any(|action| action.command() == command),
+            // The one condition that is a walk rather than a field: what
+            // has changed in the tree is git's to say, with every ignore
+            // rule applied. Asked once when the palette opens and once per
+            // press of the key it is on -- this repository answers in two
+            // milliseconds, which is worth paying to stop offering a row
+            // whose whole answer would be "nothing has changed".
+            Requires::AChangedFile => !self.tree_statuses().is_empty(),
+            Requires::AServerLog => crate::logging::current_file(crate::logging::SERVERS).is_some(),
         }
     }
 

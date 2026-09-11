@@ -168,6 +168,10 @@ pub enum Requires {
     ARunningServer,
     /// The running server has to say it answers this question.
     AnAnswer,
+    /// Something in the tree has to have changed since the last commit.
+    AChangedFile,
+    /// A language server has to have written to its log.
+    AServerLog,
 }
 
 /// A command's name and description, for the palette to list and match on.
@@ -459,13 +463,7 @@ impl Command {
             // is exactly what a reader with no repository does not need to
             // do, but a file in one that has never been committed still
             // gets an empty blame, which is an answer.
-            // Whether anything has changed is a walk of the whole tree with
-            // every ignore rule applied, and the palette would pay for it
-            // every time it opened. So this row is always choosable and the
-            // command says "nothing has changed" when that is the answer --
-            // the one place a row is allowed to report why it did nothing,
-            // and what buys the exception is the cost of the question.
-            Self::FileChanged => Requires::Nothing,
+            Self::FileChanged => Requires::AChangedFile,
             Self::GitHunk => Requires::AHunk,
             Self::GitPrevious => Requires::AHunkBefore,
             Self::GitNext => Requires::AHunkAfter,
@@ -488,9 +486,15 @@ impl Command {
             | Self::ConfigOpen
             | Self::ConfigFile
             | Self::LogOpen
-            | Self::LogServers
             | Self::LspRestart
             | Self::Quit => Requires::Nothing,
+            // A file of its own that only exists once a server has said
+            // something, which on a file in a language obelus has no
+            // server for is never. obelus's own log is not this: it is
+            // there from the first line it writes, and if it is not, the
+            // command saying so is the only way a reader learns that
+            // logging failed.
+            Self::LogServers => Requires::AServerLog,
         }
     }
 

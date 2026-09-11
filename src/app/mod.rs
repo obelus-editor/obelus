@@ -1081,7 +1081,17 @@ impl App {
             return;
         }
 
-        if let Some(command) = self.keymap.lookup(&key, self.context()) {
+        // A key whose command cannot do its job here does nothing at all.
+        // The palette draws such a row dim and refuses to run it; a key is
+        // the same row reached another way, and one judgement -- `offers`
+        // -- has to answer for both, or a command is off in one place and
+        // live in the other. Silence is the answer because the reader has
+        // the palette to find out why: `f3` on a tree with nothing changed
+        // used to open a list of nothing and say so on the status row,
+        // which is a sentence nobody asked for.
+        if let Some(command) = self.keymap.lookup(&key, self.context())
+            && self.offers(command)
+        {
             dispatch::dispatch(self, command);
         }
     }

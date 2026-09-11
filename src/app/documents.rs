@@ -19,10 +19,19 @@ impl App {
 
     /// Asks git what has changed in the tree, or takes what a test said.
     fn gather_statuses(&mut self) {
-        self.statuses = match &self.given_statuses {
+        self.statuses = self.tree_statuses();
+    }
+
+    /// What git says about the tree, asked now.
+    ///
+    /// The walk itself, without keeping the answer: what needs it kept is
+    /// the list of files, and what needs it fresh is the question of
+    /// whether there is anything to list at all.
+    pub(super) fn tree_statuses(&self) -> HashMap<PathBuf, git::FileStatus> {
+        match &self.given_statuses {
             Some(given) => given.clone(),
             None => git::statuses(&self.working_directory),
-        };
+        }
     }
 
     /// Says what git would say about the tree, for a test.

@@ -666,12 +666,15 @@ fn the_changes_can_be_stepped_through() {
     assert_eq!(line(&app), 50, "the middle change was counted twice");
 
     // And nothing below the last one: a wrap back to the top would look
-    // like a key that did nothing while losing the reader's place.
+    // like a key that did nothing while losing the reader's place. The key
+    // does nothing at all, because the command is not offered here -- and
+    // says nothing either, which is what every other key that cannot move
+    // does.
     support::press_alt_key(&mut app, KeyCode::Down);
     assert_eq!(line(&app), 50, "it wrapped around");
-    assert_eq!(app.note(), Some("no change below here"));
-    // Which is also why the palette shows it dim: it is there to be found,
-    // and it cannot be chosen from here.
+    assert_eq!(app.note(), None, "a key that did nothing said so");
+    // The palette is where that is answered: the row is there to be found,
+    // and it is dim because it cannot be chosen from here.
     support::press_control(&mut app, 'p');
     let rows: Vec<(String, bool)> = app
         .picker()
@@ -709,7 +712,7 @@ fn the_changes_can_be_stepped_through() {
     assert_eq!(line(&app), 5);
     support::press_alt_key(&mut app, KeyCode::Up);
     assert_eq!(line(&app), 5, "it wrapped around");
-    assert_eq!(app.note(), Some("no change above here"));
+    assert_eq!(app.note(), None, "a key that did nothing said so");
 
     // A leap, so the history brings the reader back where they were: to
     // where the last step started, and then to where the one before it did
