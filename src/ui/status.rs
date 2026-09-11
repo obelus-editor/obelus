@@ -53,7 +53,7 @@ impl<'a> StatusView<'a> {
         Self {
             buffer: app.current_buffer(),
             middle: app.note().or_else(|| app.server_working_on()),
-            rows: app.markdown().map(<[_]>::len),
+            rows: app.rendered_rows(),
             server: app.server_state(),
             picker: app.picker(),
             settings: app.settings(),

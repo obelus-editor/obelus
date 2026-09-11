@@ -166,7 +166,7 @@ impl App {
             self.chat.scroll(rows);
             return;
         }
-        if let Some(rows_in_view) = self.markdown().map(<[_]>::len)
+        if let Some(rows_in_view) = self.rendered_rows()
             && let Some(buffer) = self.current_buffer_mut()
         {
             buffer.scroll_rendering(rows, rows_in_view);

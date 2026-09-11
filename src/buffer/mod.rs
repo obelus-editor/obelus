@@ -65,16 +65,19 @@ pub enum Content {
 /// names it, because a screen showing something other than the file needs to
 /// say so.
 ///
-/// One variant per way of showing a buffer, and the extension point for both
-/// questions above: a rendered diff and a hex view are modes over a file's
-/// bytes, and a clock is a mode over a buffer with no bytes at all.
+/// Two, and two is enough: the bytes, or a reading of them. *Which* reading
+/// is the file's own business -- markdown is laid out, a log is put in
+/// columns -- and that is decided by what the file is, not by the mode. A
+/// third variant would be this enum answering a question the format already
+/// answers.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Mode {
-    /// The bytes, highlighted. What every file starts as.
+    /// The bytes, highlighted. What a file with no reading is always shown
+    /// as, and what every file can be shown as.
     #[default]
     Edit,
-    /// Markdown, rendered.
-    Markdown,
+    /// The reading its format has, laid out.
+    Preview,
 }
 
 impl Mode {
@@ -86,7 +89,7 @@ impl Mode {
     pub const fn name(self) -> Option<&'static str> {
         match self {
             Self::Edit => None,
-            Self::Markdown => Some("markdown"),
+            Self::Preview => Some("preview"),
         }
     }
 }
@@ -304,6 +307,25 @@ impl Buffer {
     /// Shows it a different way.
     pub const fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
+    }
+
+    /// Shows this buffer's reading, from the top of it.
+    ///
+    /// The top, because a reading is a different document from the file:
+    /// the cursor's line is not one of its rows, and what the viewport
+    /// holds is read as a row while the mode is on. Every way into the
+    /// mode goes through here, so there is one answer to "where does it
+    /// start".
+    pub fn show_reading(&mut self) {
+        self.mode = Mode::Preview;
+        self.scroll_by(
+            isize::MIN / 2,
+            TextArea {
+                width: 1,
+                height: 1,
+                wrap: true,
+            },
+        );
     }
 
     /// How many times the reader has come back to it.

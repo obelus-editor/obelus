@@ -16,7 +16,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::FileReload => app.reload_current(),
         Command::BufferList => app.open_buffer_picker(),
         Command::BufferClose => app.close_current(),
-        Command::MarkdownPreview => app.toggle_markdown(),
+        Command::PreviewToggle => app.toggle_preview(),
         Command::ThemeSelect => app.open_theme_picker(),
         Command::CommandPalette => app.open_command_palette(),
         Command::SymbolMenu => app.open_symbol_menu(),

@@ -5,16 +5,19 @@
 //! block is code, that a bullet is drawn at all, and that no row is wider
 //! than the width it was laid out for.
 
-use obelus::markdown::{Kind, render};
+use obelus::{
+    markdown::render,
+    reading::{Ink, Row},
+};
 
 /// Every span of a row, joined.
-fn text(row: &obelus::markdown::Row) -> String {
+fn text(row: &Row) -> String {
     row.spans.iter().map(|span| span.text.as_str()).collect()
 }
 
-fn kinds(rows: &[obelus::markdown::Row]) -> Vec<Kind> {
+fn inks(rows: &[Row]) -> Vec<Ink> {
     rows.iter()
-        .flat_map(|row| row.spans.iter().map(|span| span.kind))
+        .flat_map(|row| row.spans.iter().map(|span| span.ink))
         .collect()
 }
 
@@ -24,17 +27,17 @@ fn a_heading_a_paragraph_and_a_fence_are_told_apart() {
         "# Title\n\nSome *prose* here.\n\n```rust\nfn main() {}\n```\n",
         40,
     );
-    let all = kinds(&rows);
+    let all = inks(&rows);
 
-    assert!(all.contains(&Kind::Heading(1)), "no heading: {rows:?}");
-    assert!(all.contains(&Kind::Code), "no code: {rows:?}");
-    assert!(all.contains(&Kind::Text), "no prose: {rows:?}");
+    assert!(all.contains(&Ink::Heading(1)), "no heading: {rows:?}");
+    assert!(all.contains(&Ink::Code), "no code: {rows:?}");
+    assert!(all.contains(&Ink::Plain), "no prose: {rows:?}");
 
     // The heading keeps its words and loses its hashes: the marks are
     // markdown's, not the author's.
     let heading = rows
         .iter()
-        .find(|row| row.spans.iter().any(|span| span.kind == Kind::Heading(1)))
+        .find(|row| row.spans.iter().any(|span| span.ink == Ink::Heading(1)))
         .expect("a heading row");
     assert!(text(heading).contains("Title"));
     assert!(!text(heading).contains('#'), "{heading:?}");
@@ -70,7 +73,7 @@ fn a_list_gets_its_bullets_drawn() {
         .flat_map(|row| &row.spans)
         .find(|span| span.text.contains('\u{2022}'))
         .expect("a bullet");
-    assert_eq!(bullet.kind, Kind::Decoration);
+    assert_eq!(bullet.ink, Ink::Mark);
 }
 
 /// The whole reason for borrowing a markdown renderer instead of walking the

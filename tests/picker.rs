@@ -1175,7 +1175,7 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
         "go.bracket",
         "go.back",
         "go.forward",
-        "markdown.preview",
+        "preview.toggle",
     ] {
         assert_eq!(
             listed(name),
@@ -1328,7 +1328,7 @@ fn a_condition_met_puts_its_command_back() {
     support::lay_out(&mut markdown, 60, 12);
     press_control(&mut markdown, 'p');
     assert!(
-        offered(&markdown, "markdown.preview"),
+        offered(&markdown, "preview.toggle"),
         "a .md file was not noticed"
     );
 

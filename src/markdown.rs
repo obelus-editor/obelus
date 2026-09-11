@@ -13,43 +13,7 @@
 
 use termimad::{FmtLine, FmtText, MadSkin, minimad::Compound};
 
-/// What a run of text is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    /// Ordinary prose.
-    Text,
-    /// A heading, and how deep it is.
-    Heading(u8),
-    /// A code span, or a line inside a fenced block.
-    Code,
-    /// A quoted block.
-    Quote,
-    /// A bullet, a number, or a table's borders: the marks the renderer adds
-    /// rather than the author's own words.
-    Decoration,
-}
-
-/// A run of text with one look.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Span {
-    /// The characters.
-    pub text: String,
-    /// What they are.
-    pub kind: Kind,
-    /// Whether they are emphasised.
-    pub bold: bool,
-    /// Whether they are emphasised the other way.
-    pub italic: bool,
-}
-
-/// One row of the rendering, ready to draw.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Row {
-    /// The runs, left to right.
-    pub spans: Vec<Span>,
-    /// Whether the row is a horizontal rule, which has no text of its own.
-    pub rule: bool,
-}
+use crate::reading::{Ink, Row, Span};
 
 /// Lays markdown out for a width.
 ///
@@ -94,7 +58,7 @@ pub fn render(source: &str, width: u16) -> Vec<Row> {
             FmtLine::TableRule(rule) => Row {
                 spans: vec![Span {
                     text: table_rule(rule),
-                    kind: Kind::Decoration,
+                    ink: Ink::Mark,
                     bold: false,
                     italic: false,
                 }],
@@ -108,15 +72,15 @@ pub fn render(source: &str, width: u16) -> Vec<Row> {
 fn spans_of(composite: &termimad::FmtComposite<'_>) -> Vec<Span> {
     use termimad::CompositeKind;
 
-    let kind = match composite.kind {
-        CompositeKind::Header(level) => Kind::Heading(level),
-        CompositeKind::Code => Kind::Code,
-        CompositeKind::Quote => Kind::Quote,
+    let ink = match composite.kind {
+        CompositeKind::Header(level) => Ink::Heading(level),
+        CompositeKind::Code => Ink::Code,
+        CompositeKind::Quote => Ink::Aside,
         CompositeKind::Paragraph
         | CompositeKind::ListItem(_)
         | CompositeKind::ListItemFollowUp(_)
         | CompositeKind::OrderedListItem { .. }
-        | CompositeKind::OrderedListItemFollowUp { .. } => Kind::Text,
+        | CompositeKind::OrderedListItemFollowUp { .. } => Ink::Plain,
     };
 
     // The bullet or the number, which termimad leaves to the skin to draw:
@@ -145,7 +109,7 @@ fn spans_of(composite: &termimad::FmtComposite<'_>) -> Vec<Span> {
     if let Some(bullet) = bullet {
         spans.push(Span {
             text: bullet,
-            kind: Kind::Decoration,
+            ink: Ink::Mark,
             bold: false,
             italic: false,
         });
@@ -154,18 +118,18 @@ fn spans_of(composite: &termimad::FmtComposite<'_>) -> Vec<Span> {
         composite
             .compounds
             .iter()
-            .map(|compound| span_of(compound, kind)),
+            .map(|compound| span_of(compound, ink)),
     );
     spans
 }
 
 /// One compound, which is a run of text with the same emphasis throughout.
-fn span_of(compound: &Compound<'_>, kind: Kind) -> Span {
+fn span_of(compound: &Compound<'_>, ink: Ink) -> Span {
     Span {
         text: compound.src.to_string(),
         // A code span inside a paragraph: the compound knows, and it is more
         // specific than the line it is on.
-        kind: if compound.code { Kind::Code } else { kind },
+        ink: if compound.code { Ink::Code } else { ink },
         bold: compound.bold,
         italic: compound.italic,
     }
@@ -175,7 +139,7 @@ fn span_of(compound: &Compound<'_>, kind: Kind) -> Span {
 fn table_row(row: &termimad::FmtTableRow<'_>) -> Vec<Span> {
     let border = |text: &str| Span {
         text: text.to_string(),
-        kind: Kind::Decoration,
+        ink: Ink::Mark,
         bold: false,
         italic: false,
     };

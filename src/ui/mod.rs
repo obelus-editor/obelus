@@ -8,8 +8,8 @@
 pub mod chat;
 pub mod editor;
 pub mod image;
-pub mod markdown;
 pub mod picker;
+pub mod reading;
 pub mod settings;
 pub mod status;
 pub mod welcome;
@@ -180,12 +180,12 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // A buffer being shown some other way is shown that way. The editor view
     // draws the file's own bytes, which in this mode is not what is on
     // screen.
-    match app.markdown() {
+    match app.rendering() {
         Some(rows) => {
             let top = app
                 .current_buffer()
                 .map_or(0, |buffer| buffer.viewport().top.get());
-            markdown::draw(cells, regions.editor, rows, top, app.theme());
+            reading::draw(cells, regions.editor, rows, top, app.theme());
         }
         None => editor::EditorView::new(app).render(regions.editor, cells),
     }

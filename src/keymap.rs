@@ -283,10 +283,11 @@ impl Keymap {
     /// `F17` for the same press are both common, so a modified function key
     /// is a binding that works on one machine and not the next.
     ///
-    /// `F9`-`F12` are empty on purpose. The views that would earn them --
-    /// a diff, a commit log, a panel of references, a patch to review --
-    /// do not exist yet, and filling the bank now would mean moving them
-    /// later.
+    /// `F9`-`F12` is the bank a view earns a key from, and `F10` is the
+    /// first that has: the reading a file has, shown or stopped. The rest
+    /// are empty on purpose -- a diff, a commit log, a panel of references
+    /// -- because filling the bank before those exist would mean moving
+    /// them later.
     ///
     /// **Control does something to the file in front of you**, on the
     /// letter of the word: the palette, closing, re-reading, a line
@@ -355,6 +356,14 @@ impl Keymap {
                     command: Command::SearchSymbols,
                     context: Context::Normal,
                     chord: function(8),
+                },
+                // F10: the reading a file has, shown or stopped. It is a
+                // view, which is what this bank is for -- and the first of
+                // the four to be earned.
+                Binding {
+                    command: Command::PreviewToggle,
+                    context: Context::Normal,
+                    chord: function(10),
                 },
                 // Control, on the letter of the word. `ctrl+p` for the
                 // palette; `ctrl+w` is "close this" in every browser and
@@ -862,7 +871,12 @@ mod tests {
                 "f{number} does nothing, in the middle of a bank that does"
             );
         }
-        for number in 9..=12 {
+        // The third bank is where a view earns a key, and one has.
+        assert_eq!(
+            keymap.command_on(KeyChord::new(KeyCode::F(10), KeyModifiers::NONE)),
+            Some(crate::command::Command::PreviewToggle)
+        );
+        for number in [9, 11, 12] {
             assert!(
                 keymap
                     .command_on(KeyChord::new(KeyCode::F(number), KeyModifiers::NONE))

@@ -79,6 +79,16 @@ picker's selection keys belong to whichever component owns the state they move.
 `App`, so anything that displays a key reads that table and a rebind changes
 every display of it.
 
+**Two modes, and two is enough: `Edit` and `Preview`.** The bytes, or a
+reading of them -- and *which* reading is the file's own business, not the
+mode's: markdown is laid out as prose, a log is put in columns, and a third
+mode would be `Mode` answering a question the format already answers. A file
+that has a reading opens in it (the `preview` setting, on by default) and
+`f10` shows the bytes instead, which is where the cursor, the selection and
+the copy live. The default is applied when a buffer is *made*, never in
+`apply_config`: a default that reapplied itself would put a preview back
+over a reader who had turned it off, which is the `blame` mistake again.
+
 **A command does something; a preference is a setting.** A switch that
 should outlive the session is a setting and nothing else -- the only key to
 it is the one that opens the settings. A command may *change* a setting, as

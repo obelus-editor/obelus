@@ -295,73 +295,100 @@ impl App {
             .map(BufferId::new)
     }
 
-    /// Shows the current file as rendered markdown, or stops.
+    /// Shows the current file as whatever reading it has, or stops.
     ///
-    /// By extension, case-insensitively, and nothing else: the mode is a
-    /// *reading* of the bytes, and a reading that does not fit them produces
-    /// a screen of nonsense. A file that is not markdown gets a note, which
-    /// is the honest answer to a key that cannot do anything here.
-    pub fn toggle_markdown(&mut self) {
-        let Some(buffer) = self.current_buffer_mut() else {
-            self.note = Some("no file to render".to_string());
-            return;
-        };
-        if buffer.mode() == Mode::Markdown {
-            buffer.set_mode(Mode::Edit);
-            self.markdown = None;
-            return;
-        }
-        if !is_markdown(buffer.path()) {
-            self.note = Some("not a markdown file".to_string());
+    /// A file with no reading gets a note, which is the honest answer to a
+    /// key that cannot do anything here: a reading that does not fit the
+    /// bytes produces a screen of nonsense.
+    pub fn toggle_preview(&mut self) {
+        let showing = self
+            .current_buffer()
+            .is_some_and(|buffer| buffer.mode() == Mode::Preview);
+        if showing {
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_mode(Mode::Edit);
+            }
+            self.rendered = None;
             return;
         }
-        buffer.set_mode(Mode::Markdown);
-        // The first row, because a rendering is a different document from
-        // the file: the cursor's line is not one of its rows, and the
-        // viewport's top is read as a row while this mode is on.
-        buffer.scroll_by(
-            isize::MIN / 2,
-            TextArea {
-                width: 1,
-                height: 1,
-                wrap: true,
-            },
-        );
+        if self.reading_of_current().is_none() {
+            self.note = Some(match self.current_buffer() {
+                Some(_) => "nothing to preview in this file".to_string(),
+                None => "no file to preview".to_string(),
+            });
+            return;
+        }
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.show_reading();
+        }
     }
 
-    /// The rendering on screen, if the current file is being shown as one.
+    /// Which reading the current file has, if it has one.
     #[must_use]
-    pub fn markdown(&self) -> Option<&[markdown::Row]> {
-        self.markdown
+    pub fn reading_of_current(&self) -> Option<Reading> {
+        self.current_buffer().and_then(reading::of)
+    }
+
+    /// Shows a buffer's reading, if it has one and the reader wants that.
+    ///
+    /// Called when a buffer is made rather than on every frame or every
+    /// switch: it is a *default*, and a default that reapplied itself would
+    /// undo the reader turning it off -- which is the same mistake as a
+    /// setting and a command owning one switch between them.
+    pub(super) fn prefer_reading(&mut self, id: BufferId) {
+        if !self.config.preview {
+            return;
+        }
+        let buffer = self.buffers.get_mut(id.get()).and_then(Option::as_mut);
+        if let Some(buffer) = buffer.filter(|buffer| reading::of(buffer).is_some()) {
+            buffer.show_reading();
+        }
+    }
+
+    /// The reading on screen, if the current file is being shown as one.
+    #[must_use]
+    pub fn rendering(&self) -> Option<&[reading::Row]> {
+        self.rendered
             .as_ref()
             .map(|rendered| rendered.rows.as_slice())
     }
 
-    /// Lays the current file out as markdown, if it needs laying out.
+    /// How many rows it has, for the keys that scroll it.
+    #[must_use]
+    pub fn rendered_rows(&self) -> Option<usize> {
+        self.rendering().map(<[_]>::len)
+    }
+
+    /// Lays the current file out, if it needs laying out.
     ///
     /// Once per change of text, width or file, not once per frame: the
     /// layout is the expensive part, and a reader scrolling a README would
     /// otherwise pay for it on every row moved.
-    pub(super) fn refresh_markdown(&mut self, width: u16) {
-        let Some(buffer) = self.current_buffer() else {
-            self.markdown = None;
+    pub(super) fn refresh_rendering(&mut self, width: u16) {
+        let Some(buffer) = self
+            .current_buffer()
+            .filter(|buffer| buffer.mode() == Mode::Preview)
+        else {
+            self.rendered = None;
             return;
         };
-        if buffer.mode() != Mode::Markdown {
-            self.markdown = None;
-            return;
-        }
-
         let at = (buffer.path().to_path_buf(), buffer.version(), width);
         if self
-            .markdown
+            .rendered
             .as_ref()
             .is_some_and(|rendered| rendered.at == at)
         {
             return;
         }
-        let rows = markdown::render(&buffer.text().rope().to_string(), width);
-        self.markdown = Some(Rendered { at, rows });
+        // Asked on a miss and nowhere else: deciding which reading a file
+        // has means reading its first lines, and the answer changes only
+        // when one of the three things above does.
+        let Some(reading) = reading::of(buffer) else {
+            self.rendered = None;
+            return;
+        };
+        let rows = reading::render(reading, &buffer.text().rope().to_string(), width);
+        self.rendered = Some(Rendered { at, rows });
     }
 
     /// Opens a file, or switches to it if it is already open.
@@ -405,7 +432,9 @@ impl App {
                 // were, and a history entry for a leap that did not happen
                 // is a place `go.back` would take them for no reason.
                 self.record(from);
-                self.go_to_buffer(BufferId::new(index));
+                let id = BufferId::new(index);
+                self.go_to_buffer(id);
+                self.prefer_reading(id);
                 self.serve(index);
             }
             // A path from the walk can have gone away, or be a file this user
@@ -442,25 +471,14 @@ impl App {
     }
 }
 
-/// A markdown rendering, and what it was made from.
+/// A reading laid out, and what it was made from.
 ///
 /// The three things it depends on, so that a change to any of them is
 /// noticed: which file, which version of it, and how wide the screen was.
 #[derive(Debug)]
 pub(super) struct Rendered {
     at: (PathBuf, i32, u16),
-    rows: Vec<markdown::Row>,
-}
-
-/// Whether a path names a markdown file.
-///
-/// By extension and case-insensitively -- `README.MD` is one -- and by
-/// nothing else. Sniffing the contents would be guessing, and markdown's
-/// whole trick is that it looks like the text it came from.
-pub(super) fn is_markdown(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+    rows: Vec<reading::Row>,
 }
 
 /// Re-reads one buffer, reporting rather than propagating a failure.

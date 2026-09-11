@@ -27,7 +27,7 @@ pub enum Command {
     /// Stop showing the current file.
     BufferClose,
     /// Show this file as rendered markdown, or stop.
-    MarkdownPreview,
+    PreviewToggle,
     /// Choose a theme.
     ThemeSelect,
     /// Choose a command by name.
@@ -146,8 +146,8 @@ pub enum Requires {
     AFileOpen,
     /// The open file has to be in a language obelus can parse.
     AKnownLanguage,
-    /// The open file has to be markdown, or already shown as markdown.
-    AMarkdownFile,
+    /// The open file has to have a reading, or be showing one.
+    APreview,
     /// The cursor has to be on a bracket.
     ABracket,
     /// The cursor has to be in something that changed since the last
@@ -214,8 +214,8 @@ pub const ALL: &[CommandSpec] = &[
         title: "Close this file",
     },
     CommandSpec {
-        command: Command::MarkdownPreview,
-        name: "markdown.preview",
+        command: Command::PreviewToggle,
+        name: "preview.toggle",
         title: "Show this file rendered, or stop",
     },
     CommandSpec {
@@ -389,7 +389,7 @@ impl Command {
             | Self::FileReload
             | Self::BufferList
             | Self::BufferClose
-            | Self::MarkdownPreview => Group::Files,
+            | Self::PreviewToggle => Group::Files,
             Self::SymbolMenu
             | Self::SymbolOutline
             | Self::SymbolDefinition
@@ -449,7 +449,7 @@ impl Command {
             Self::SymbolOutline => Requires::AKnownLanguage,
             // Both ways: it turns the rendering on for a markdown file and
             // off again for one already showing as markdown.
-            Self::MarkdownPreview => Requires::AMarkdownFile,
+            Self::PreviewToggle => Requires::APreview,
             Self::GoBracket => Requires::ABracket,
             // One scope needs a file, one needs nothing but the tree, and
             // one needs a server -- but all three open the same view, whose
@@ -544,7 +544,7 @@ mod tests {
             Command::FileReload,
             Command::BufferList,
             Command::BufferClose,
-            Command::MarkdownPreview,
+            Command::PreviewToggle,
             Command::ThemeSelect,
             Command::CommandPalette,
             Command::SymbolMenu,

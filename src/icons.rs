@@ -186,7 +186,7 @@ pub fn for_command(name: &str) -> char {
         "file.reload" => '\u{f0450}',
         "buffer.list" => '\u{f0222}',
         "buffer.close" => '\u{f0b98}',
-        "markdown.preview" => '\u{f0354}',
+        "preview.toggle" => '\u{f0354}',
         "theme.select" => '\u{f03d8}',
         "command.palette" => '\u{f018d}',
         // The menu is the questions themselves; each question is what it

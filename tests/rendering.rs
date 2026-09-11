@@ -1217,7 +1217,7 @@ fn markdown_is_a_mode_over_the_same_file() {
         "a file opened in some mode other than its bytes"
     );
 
-    obelus::command::dispatch::dispatch(&mut app, Command::MarkdownPreview);
+    obelus::command::dispatch::dispatch(&mut app, Command::PreviewToggle);
     let rendered = support::render(&mut app, 60, 14);
     let text = support::text_block(&rendered);
     assert!(text.contains("Title"), "{rendered}");
@@ -1232,7 +1232,7 @@ fn markdown_is_a_mode_over_the_same_file() {
     // The mode is named, because a screen showing something other than the
     // file has to say so.
     assert!(
-        text.contains("markdown"),
+        text.contains("preview"),
         "the status bar does not name the mode:\n{rendered}"
     );
     // And no cursor: the rows are not the file's lines, so there is nowhere
@@ -1240,7 +1240,7 @@ fn markdown_is_a_mode_over_the_same_file() {
     assert_eq!(support::cursor_line(&rendered), "none", "{rendered}");
 
     // The same command again puts the file back.
-    obelus::command::dispatch::dispatch(&mut app, Command::MarkdownPreview);
+    obelus::command::dispatch::dispatch(&mut app, Command::PreviewToggle);
     assert_eq!(
         support::text_block(&support::render(&mut app, 60, 14)),
         support::text_block(&source),
@@ -1257,9 +1257,9 @@ fn only_a_markdown_file_can_be_rendered() {
 
     let mut app = app();
     support::lay_out(&mut app, 60, 14);
-    obelus::command::dispatch::dispatch(&mut app, Command::MarkdownPreview);
+    obelus::command::dispatch::dispatch(&mut app, Command::PreviewToggle);
 
-    assert_eq!(app.note(), Some("not a markdown file"));
+    assert_eq!(app.note(), Some("nothing to preview in this file"));
 
     // And the extension is read without regard to case: `README.MD` is one.
     let shouting = std::env::temp_dir().join(format!("obelus-{}-README.MD", std::process::id()));
@@ -1268,10 +1268,10 @@ fn only_a_markdown_file_can_be_rendered() {
         obelus::buffer::Buffer::open(&shouting).expect("opening it"),
     ]);
     support::lay_out(&mut upper, 60, 14);
-    obelus::command::dispatch::dispatch(&mut upper, Command::MarkdownPreview);
+    obelus::command::dispatch::dispatch(&mut upper, Command::PreviewToggle);
     assert_eq!(
         upper.current_buffer().expect("a buffer").mode(),
-        obelus::buffer::Mode::Markdown,
+        obelus::buffer::Mode::Preview,
         "an upper-case extension was not recognized"
     );
     let _ = std::fs::remove_file(&shouting);
@@ -1289,7 +1289,7 @@ fn a_rendering_scrolls_by_rows() {
 
     let mut app = App::new(vec![support::open_fixture("sample.md")]);
     support::lay_out(&mut app, 60, 8);
-    obelus::command::dispatch::dispatch(&mut app, Command::MarkdownPreview);
+    obelus::command::dispatch::dispatch(&mut app, Command::PreviewToggle);
 
     let first = support::render(&mut app, 60, 8);
     assert!(support::text_block(&first).contains("Title"), "{first}");
@@ -1498,7 +1498,7 @@ fn a_rendering_with_nowhere_to_scroll_draws_no_bar() {
     // A tall screen: the whole rendering is on it.
     let mut app = App::new(vec![support::open_fixture("sample.md")]);
     support::lay_out(&mut app, 60, 30);
-    dispatch::dispatch(&mut app, Command::MarkdownPreview);
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
     let whole = support::render(&mut app, 60, 30);
     assert!(
         support::text_block(&whole).contains("Title"),

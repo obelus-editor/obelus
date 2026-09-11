@@ -221,6 +221,7 @@ fn the_tabs_are_the_groups() {
         rows(&app),
         [
             "Wrap a line too long for the screen onto the next row",
+            "Open a file in its preview when it has one",
             "Who last changed the line the cursor is on"
         ]
     );

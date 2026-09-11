@@ -3,7 +3,7 @@
 //! The list itself is [`crate::component::picker`]; what is here is which
 //! rows go in it and what a chosen row means.
 
-use super::{documents::is_markdown, *};
+use super::*;
 
 impl App {
     /// Opens a picker over rows the caller built.
@@ -135,9 +135,13 @@ impl App {
             Requires::Nothing => true,
             Requires::AFileOpen => buffer.is_some(),
             Requires::AKnownLanguage => buffer.and_then(Buffer::language).is_some(),
-            Requires::AMarkdownFile => buffer.is_some_and(|buffer| {
-                is_markdown(buffer.path()) || buffer.mode() == Mode::Markdown
-            }),
+            // Either the file has a reading, or it is already showing one
+            // -- which is the same question asked from the other side: the
+            // key that turns a preview on is the key that turns it off.
+            Requires::APreview => {
+                self.reading_of_current().is_some()
+                    || buffer.is_some_and(|buffer| buffer.mode() == Mode::Preview)
+            }
             // The character under the cursor, not the scan the command does.
             // The scan needs the whole file highlighted to know a bracket in
             // a string from one in code, and deciding whether to *list* a

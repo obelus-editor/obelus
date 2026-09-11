@@ -66,7 +66,7 @@ use crate::{
         client::{Client, Reply},
         position,
     },
-    markdown,
+    reading::{self, Reading},
     search::{self, Scope},
     syntax::{LanguageId, brackets, highlight::Highlights, parse::SyntaxState, tags},
     theme::{Theme, builtin},
@@ -177,13 +177,14 @@ pub struct App {
     /// because it is about a *view* of the file, like the markdown
     /// rendering, and closing it must not need the file.
     opened: Option<LineNumber>,
-    /// The current file laid out as markdown, if it is being shown that way.
+    /// The current file laid out as whatever reading it has, if it is being
+    /// shown that way.
     ///
     /// Kept here rather than in the buffer for the same reason the
     /// highlights are: it is a function of the text, the width and nothing
     /// else, and re-deriving it when either changes is simpler than keeping
     /// a buffer's copy of it right.
-    markdown: Option<Rendered>,
+    rendered: Option<Rendered>,
     /// The theme to go back to if the theme picker is cancelled.
     ///
     /// Set while that picker is open, because moving through it *applies*
@@ -373,7 +374,7 @@ impl App {
             row_syntax: std::collections::HashMap::new(),
             searched: None,
             search_generation: std::sync::Arc::default(),
-            markdown: None,
+            rendered: None,
             theme_before: None,
             note: None,
             walk_generation: 0,
@@ -673,7 +674,7 @@ impl App {
         self.refresh_slash();
 
         let area = self.text_area();
-        self.refresh_markdown(editor_area.width);
+        self.refresh_rendering(editor_area.width);
         self.refresh_changes();
         self.refresh_blame();
         // Scrolled in the room the text really has: an opened hunk above the
@@ -1016,7 +1017,7 @@ impl App {
         // the cursor has nowhere to be in it and the motions have nothing to
         // move: what the keys do here is move the window.
         if self.picker.is_none()
-            && let Some(rows) = self.markdown().map(<[_]>::len)
+            && let Some(rows) = self.rendered_rows()
             && let Some(step) = view_step(&key, self.editor_area.height)
         {
             if let Some(buffer) = self.current_buffer_mut() {
