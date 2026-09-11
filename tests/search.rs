@@ -661,12 +661,12 @@ fn the_symbols_scope_needs_a_server() {
             .map(|(_, enabled)| *enabled)
     };
     assert_eq!(
-        listed("search.project"),
+        listed("search-project"),
         Some(true),
         "the project search needs nothing and cannot be chosen: {rows:?}"
     );
     assert_eq!(
-        listed("search.symbols"),
+        listed("search-symbols"),
         Some(false),
         "choosable with no server to ask: {rows:?}"
     );

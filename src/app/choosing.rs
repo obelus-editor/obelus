@@ -48,14 +48,14 @@ impl App {
     pub fn open_command_palette(&mut self) {
         // Every command, and what it can do *here* said by whether its row
         // can be chosen. Leaving out what cannot run makes the palette a
-        // list nobody can learn from -- a reader who never sees `git.hunk`
+        // list nobody can learn from -- a reader who never sees `show-change`
         // does not find out obelus has it -- while a row that runs and then
         // reports why it did nothing is a row nobody trusts. Dim and
         // unselectable is both answers at once.
         let items = crate::command::ALL
             .iter()
             .map(|spec| PickerItem {
-                icon: icons::enabled().then(|| icons::for_command(spec.name)),
+                icon: icons::enabled().then(|| icons::for_command(spec.command)),
                 enabled: self.offers(spec.command),
                 colours: None,
                 status: None,

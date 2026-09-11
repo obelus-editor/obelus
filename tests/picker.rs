@@ -112,12 +112,12 @@ fn typing_narrows_the_palette_and_the_count_follows() {
     type_text(&mut app, "theme");
     let narrowed = support::render(&mut app, 60, 12);
 
-    assert!(support::text_block(&all).contains("file.reload"));
+    assert!(support::text_block(&all).contains("reload-file"));
     assert!(
-        !support::text_block(&narrowed).contains("file.reload"),
+        !support::text_block(&narrowed).contains("reload-file"),
         "the query did not narrow the list:\n{narrowed}"
     );
-    assert!(support::text_block(&narrowed).contains("theme.select"));
+    assert!(support::text_block(&narrowed).contains("choose-theme"));
 }
 
 /// The matched characters of the selected row get a background of their
@@ -235,7 +235,7 @@ fn escape_leaves_the_code_as_it_was() {
     assert_eq!(support::render(&mut app, 60, 12), before);
 }
 
-/// Choosing `theme.select` from the palette opens the theme picker. Nothing
+/// Choosing `choose-theme` from the palette opens the theme picker. Nothing
 /// about that transition is special-cased: accepting a command runs it, and
 /// running that one opens a picker.
 #[test]
@@ -935,20 +935,20 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     };
 
     assert!(
-        row(text, "file.open").contains(&label(obelus::command::Command::FileOpen)),
+        row(text, "open-file").contains(&label(obelus::command::Command::FileOpen)),
         "{dump}"
     );
     // A command bound to nothing shows nothing. Whatever the label of a bound
     // key looks like, an unbound row cannot hold the one thing every label
     // has, which is a key. Trimmed of the scrollbar and the padding, so what
     // is left is the row's own text.
-    let unbound = row(text, "theme.select");
+    let unbound = row(text, "choose-theme");
     let ends_with_description = unbound
         .trim_end_matches(['\u{2502}', '\u{2588}', ' '])
         .ends_with("colours");
     assert!(
         ends_with_description,
-        "theme.select has no binding, so it should show no key:\n{dump}"
+        "choose-theme has no binding, so it should show no key:\n{dump}"
     );
 
     // Past the ten rows a compact list shows, so it is reached the way a
@@ -956,7 +956,7 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     type_text(&mut app, "log");
     let narrowed = support::render(&mut app, 60, 26);
     assert!(
-        row(support::text_block(&narrowed), "log.obelus")
+        row(support::text_block(&narrowed), "open-log")
             .trim_end_matches(['\u{2502}', '\u{2588}', ' '])
             .ends_with("log"),
         "a command bound to nothing showed a key:\n{narrowed}"
@@ -970,7 +970,7 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     type_text(&mut app, "quit");
     let narrowed = support::render(&mut app, 60, 12);
     assert!(
-        row(support::text_block(&narrowed), "app.quit")
+        row(support::text_block(&narrowed), "quit")
             .contains(&label(obelus::command::Command::Quit)),
         "{narrowed}"
     );
@@ -1048,15 +1048,15 @@ fn the_keys_line_up_in_a_column() {
             .unwrap_or_else(|| panic!("no {key:?} on the {name:?} row:\n{dump}"))
     };
 
-    let file = ends_at("file.open", Command::FileOpen);
+    let file = ends_at("open-file", Command::FileOpen);
     assert_eq!(
         file,
-        ends_at("command.palette", Command::CommandPalette),
+        ends_at("run-command", Command::CommandPalette),
         "a function key and a chord do not end in the same column:\n{dump}"
     );
     // Rows within the compact list's ten. There are more commands than that
     // now, and the ones past it are reached by typing rather than scrolling.
-    assert_eq!(file, ends_at("file.reload", Command::FileReload), "{dump}");
+    assert_eq!(file, ends_at("reload-file", Command::FileReload), "{dump}");
 }
 
 /// The keys come from the key table, like the welcome screen's. A rebound key
@@ -1175,7 +1175,7 @@ fn a_question_with_no_server_is_dim_and_keeps_its_key() {
         .picker()
         .expect("the palette is open")
         .matches()
-        .find(|item| item.label == "symbol.definition")
+        .find(|item| item.label == "go-to-definition")
         .expect("the row is listed whether or not it can run");
     assert!(
         !row.enabled,
@@ -1197,7 +1197,7 @@ fn a_question_with_no_server_is_dim_and_keeps_its_key() {
 /// The whole rule, in one place: every command is listed, and one that
 /// cannot do its job here is dim and cannot be chosen. A row that silently
 /// fails is worse than no row at all -- but a list that hides what it cannot
-/// do cannot be learned from, and a reader who never sees `git.hunk` does
+/// do cannot be learned from, and a reader who never sees `show-change` does
 /// not find out obelus has it.
 ///
 /// With a plain Rust file open and no server, so what is dim is everything
@@ -1230,17 +1230,17 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
     // test: asking the rule what it expects makes the assertion agree with
     // itself whatever the rule says.
     for name in [
-        "symbol.definition",
-        "symbol.typeDefinition",
-        "symbol.implementation",
-        "symbol.references",
-        "lsp.stop",
-        "selection.copy",
-        "selection.clear",
-        "go.bracket",
-        "go.back",
-        "go.forward",
-        "preview.toggle",
+        "go-to-definition",
+        "go-to-type-definition",
+        "go-to-implementation",
+        "find-references",
+        "stop-server",
+        "copy-selection",
+        "clear-selection",
+        "go-to-bracket",
+        "go-back",
+        "go-forward",
+        "toggle-preview",
     ] {
         assert_eq!(
             listed(name),
@@ -1252,18 +1252,18 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
     // And everything else can be, including the two that are worth pressing
     // precisely when nothing is running.
     for name in [
-        "file.open",
-        "file.reload",
-        "buffer.list",
-        "buffer.close",
-        "theme.select",
-        "symbol.menu",
-        "symbol.outline",
-        "go.line",
-        "log.obelus",
-        "log.servers",
-        "lsp.restart",
-        "app.quit",
+        "open-file",
+        "reload-file",
+        "switch-file",
+        "close-file",
+        "choose-theme",
+        "ask-about-symbol",
+        "show-outline",
+        "go-to-line",
+        "open-log",
+        "open-server-log",
+        "restart-server",
+        "quit",
     ] {
         assert_eq!(listed(name), Some(true), "{name} cannot be chosen");
     }
@@ -1277,7 +1277,7 @@ fn the_selection_walks_past_what_cannot_be_chosen() {
     support::lay_out(&mut app, 60, 14);
     press_control(&mut app, 'p');
 
-    // With nothing open, `file.reload` is the second row and cannot run, so
+    // With nothing open, `reload-file` is the second row and cannot run, so
     // the selection has to be somewhere else.
     let chosen = |app: &App| {
         app.picker()
@@ -1285,11 +1285,11 @@ fn the_selection_walks_past_what_cannot_be_chosen() {
             .selected_item()
             .map(|item| (item.label.clone(), item.enabled))
     };
-    assert_eq!(chosen(&app), Some(("file.open".to_string(), true)));
+    assert_eq!(chosen(&app), Some(("open-file".to_string(), true)));
     press(&mut app, KeyCode::Down);
     let (label, enabled) = chosen(&app).expect("a row");
     assert!(enabled, "the selection landed on {label}, which cannot run");
-    assert_ne!(label, "file.reload", "the selection stopped on a dim row");
+    assert_ne!(label, "reload-file", "the selection stopped on a dim row");
 
     // Every row it walks through, going down and coming back, can be chosen.
     for _ in 0..30 {
@@ -1302,28 +1302,28 @@ fn the_selection_walks_past_what_cannot_be_chosen() {
     }
 
     // A query narrows the list under the selection, and the selection comes
-    // to rest on a row that can be chosen: "sel" matches the selection
-    // commands, none of which can run with nothing open, and one theme
-    // picker that can.
-    type_text(&mut app, "sel");
+    // to rest on a row that can be chosen: "sec" matches the searches and
+    // the selection commands, and with nothing open the project's search is
+    // the one of them that can run.
+    type_text(&mut app, "sec");
     assert_eq!(
         chosen(&app),
-        Some(("theme.select".to_string(), true)),
+        Some(("search-project".to_string(), true)),
         "the selection stayed on a row that cannot be chosen"
     );
     // Both ends of the narrowed list are dim rows, and neither end key
     // lands on one.
     press_control_key(&mut app, KeyCode::Home);
-    assert_eq!(chosen(&app), Some(("theme.select".to_string(), true)));
+    assert_eq!(chosen(&app), Some(("search-project".to_string(), true)));
     press_control_key(&mut app, KeyCode::End);
-    assert_eq!(chosen(&app), Some(("theme.select".to_string(), true)));
-    for _ in 0.."sel".len() {
+    assert_eq!(chosen(&app), Some(("search-project".to_string(), true)));
+    for _ in 0.."sec".len() {
         press(&mut app, KeyCode::Backspace);
     }
 
     // And a query that leaves only dim rows: Enter does nothing rather than
     // running something that reports why it could not.
-    type_text(&mut app, "selection");
+    type_text(&mut app, "selec");
     let only_dim: Vec<String> = app
         .picker()
         .expect("the palette")
@@ -1361,10 +1361,10 @@ fn a_condition_met_puts_its_command_back() {
     support::press_shift(&mut selecting, KeyCode::Right);
     press_control(&mut selecting, 'p');
     assert!(
-        offered(&selecting, "selection.copy"),
+        offered(&selecting, "copy-selection"),
         "a selection was not noticed"
     );
-    assert!(offered(&selecting, "selection.clear"));
+    assert!(offered(&selecting, "clear-selection"));
 
     // A bracket under the cursor: `sample.rs` line one is `fn main() {`.
     let mut bracket = app();
@@ -1373,7 +1373,10 @@ fn a_condition_met_puts_its_command_back() {
         press(&mut bracket, KeyCode::Right);
     }
     press_control(&mut bracket, 'p');
-    assert!(offered(&bracket, "go.bracket"), "a bracket was not noticed");
+    assert!(
+        offered(&bracket, "go-to-bracket"),
+        "a bracket was not noticed"
+    );
 
     // Somewhere to go back to.
     let mut jumped = app();
@@ -1382,9 +1385,9 @@ fn a_condition_met_puts_its_command_back() {
     type_text(&mut jumped, "3");
     press(&mut jumped, KeyCode::Enter);
     press_control(&mut jumped, 'p');
-    assert!(offered(&jumped, "go.back"), "a jump was not noticed");
+    assert!(offered(&jumped, "go-back"), "a jump was not noticed");
     assert!(
-        !offered(&jumped, "go.forward"),
+        !offered(&jumped, "go-forward"),
         "nothing is in front until something goes back"
     );
 
@@ -1393,7 +1396,7 @@ fn a_condition_met_puts_its_command_back() {
     support::lay_out(&mut markdown, 60, 12);
     press_control(&mut markdown, 'p');
     assert!(
-        offered(&markdown, "preview.toggle"),
+        offered(&markdown, "toggle-preview"),
         "a .md file was not noticed"
     );
 
@@ -1401,10 +1404,10 @@ fn a_condition_met_puts_its_command_back() {
     let mut empty = App::new(Vec::new());
     support::lay_out(&mut empty, 60, 12);
     press_control(&mut empty, 'p');
-    assert!(offered(&empty, "file.open"));
-    assert!(!offered(&empty, "file.reload"), "reloading what?");
-    assert!(!offered(&empty, "go.line"), "into which file?");
-    assert!(!offered(&empty, "symbol.outline"), "of what?");
+    assert!(offered(&empty, "open-file"));
+    assert!(!offered(&empty, "reload-file"), "reloading what?");
+    assert!(!offered(&empty, "go-to-line"), "into which file?");
+    assert!(!offered(&empty, "show-outline"), "of what?");
 }
 
 /// Nothing to ask, so no menu: the reason goes on the status bar. A list with
@@ -1545,7 +1548,7 @@ fn the_palette_has_an_edge_above_it_and_no_preview_below() {
         "the tabs have no rule under them:\n{dump}"
     );
     assert!(
-        rows[rules[1] + 1].contains("file.open"),
+        rows[rules[1] + 1].contains("open-file"),
         "the list does not start under the tabs' rule:\n{dump}"
     );
     assert!(
@@ -2062,7 +2065,7 @@ fn every_compact_list_has_an_edge_above_it() {
             // The theme picker has no key of its own; the palette is the way
             // in, which is also what the palette is for.
             press_control(&mut app, 'p');
-            type_text(&mut app, "theme.select");
+            type_text(&mut app, "choose-theme");
             press(&mut app, KeyCode::Enter);
         } else {
             press_control(&mut app, key);
@@ -2210,7 +2213,7 @@ fn the_theme_picker_previews_and_can_be_backed_out_of() {
     let before = support::render(&mut app, 60, 12);
 
     press_control(&mut app, 'p');
-    type_text(&mut app, "theme.select");
+    type_text(&mut app, "choose-theme");
     press(&mut app, KeyCode::Enter);
 
     // On the theme that is on, whichever that is.
@@ -2247,7 +2250,7 @@ fn choosing_a_theme_keeps_it() {
     let before = support::render(&mut app, 60, 12);
 
     press_control(&mut app, 'p');
-    type_text(&mut app, "theme.select");
+    type_text(&mut app, "choose-theme");
     press(&mut app, KeyCode::Enter);
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Enter);
@@ -2300,8 +2303,8 @@ fn the_palette_groups_its_commands_into_tabs() {
     // list.
     press(&mut app, KeyCode::Right);
     let files = listed(&app);
-    assert!(files.contains(&"file.open".to_string()), "{files:?}");
-    assert!(!files.contains(&"app.quit".to_string()), "{files:?}");
+    assert!(files.contains(&"open-file".to_string()), "{files:?}");
+    assert!(!files.contains(&"quit".to_string()), "{files:?}");
     assert!(files.len() < everything.len(), "{files:?}");
 
     // And the row of tabs is on screen with the one showing marked, which is
@@ -2319,7 +2322,7 @@ fn the_palette_groups_its_commands_into_tabs() {
     press(&mut app, KeyCode::Left);
     press(&mut app, KeyCode::Left);
     let last = listed(&app);
-    assert!(last.contains(&"app.quit".to_string()), "{last:?}");
+    assert!(last.contains(&"quit".to_string()), "{last:?}");
 
     // And the block is the same height whichever tab is showing. Sizing it
     // to the tab's contents would move the rows out from under a reader
@@ -2731,7 +2734,7 @@ fn a_line_prompt_takes_digits_and_clamps_them() {
 
 /// Opening a file records where the reader was. The history is for leaps,
 /// and switching files is one: without this, a session of opening files
-/// leaves nothing to go back *to*, and `go.back` answers "nowhere further
+/// leaves nothing to go back *to*, and `go-back` answers "nowhere further
 /// back" to a reader who has been three files deep.
 #[test]
 fn opening_a_file_is_somewhere_to_come_back_from() {

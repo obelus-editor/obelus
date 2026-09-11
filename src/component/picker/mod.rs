@@ -154,7 +154,7 @@ pub struct PickerItem {
     ///
     /// A row that cannot is drawn dim and the selection walks past it. Shown
     /// rather than left out, because a list that hides what it cannot do
-    /// cannot be learned from: a reader who never sees `git.hunk` does not
+    /// cannot be learned from: a reader who never sees `show-change` does not
     /// find out that obelus has it. What they see instead is that it is
     /// there and not available *here*.
     pub enabled: bool,

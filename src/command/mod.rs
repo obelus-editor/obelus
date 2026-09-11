@@ -56,7 +56,6 @@ pub enum Command {
     GoBracket,
     /// Open what changed here, in place, or close it again.
     GitHunk,
-    /// Show who last changed each line, or stop.
     /// Go to the change above the cursor.
     GitPrevious,
     /// Go to the change below the cursor.
@@ -95,8 +94,8 @@ pub enum Command {
 ///
 /// Three, and deliberately few: the palette shows these as tabs, and every
 /// tab is somewhere a reader has to look before deciding to type instead. A
-/// group per dotted prefix would be nine of them, which is a worse way to
-/// find `file.open` than its name is.
+/// group per part of obelus would be nine of them, which is a worse way to
+/// find `open-file` than its name is.
 ///
 /// Split by what the reader is doing, not by what the code touches: reading
 /// files, following what the code means, and running obelus itself -- which
@@ -158,7 +157,7 @@ pub enum Requires {
     /// The file has to have a change below the cursor.
     ///
     /// Two conditions rather than one about the file, for the same reason
-    /// `go.back` and `go.forward` are two: a reader at the last change in a
+    /// `go-back` and `go-forward` are two: a reader at the last change in a
     /// file should not be offered a row that answers "no more changes".
     AHunkAfter,
     /// Something has to be selected.
@@ -176,11 +175,20 @@ pub enum Requires {
 }
 
 /// A command's name and description, for the palette to list and match on.
+///
+/// **A name is what the command does, verb first, words joined by hyphens**:
+/// `open-file`, `go-to-definition`, `select-all`. Not a family and a member
+/// (`file.open`, `selection.all`), which read backwards -- a reader reaching
+/// for the palette knows what they want to *do* and types that word first,
+/// and a list sorted or filtered by such a name buries the verb behind a
+/// noun they have to guess. The family a command belongs to is
+/// [`Command::group`], which is a tab on the palette and not part of any
+/// name.
 #[derive(Clone, Copy, Debug)]
 pub struct CommandSpec {
     /// The command itself.
     pub command: Command,
-    /// The dotted name shown in the palette and matched against the query.
+    /// The name shown in the palette and matched against the query.
     pub name: &'static str,
     /// One line of description.
     pub title: &'static str,
@@ -190,47 +198,47 @@ pub struct CommandSpec {
 pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::FileOpen,
-        name: "file.open",
+        name: "open-file",
         title: "Open a file",
     },
     CommandSpec {
         command: Command::FileChanged,
-        name: "file.changed",
+        name: "open-changed-file",
         title: "Open a file that has changed",
     },
     CommandSpec {
         command: Command::FileReload,
-        name: "file.reload",
+        name: "reload-file",
         title: "Re-read this file from disk",
     },
     CommandSpec {
         command: Command::BufferList,
-        name: "buffer.list",
+        name: "switch-file",
         title: "Switch to an open file",
     },
     CommandSpec {
         command: Command::BufferClose,
-        name: "buffer.close",
+        name: "close-file",
         title: "Close this file",
     },
     CommandSpec {
         command: Command::PreviewToggle,
-        name: "preview.toggle",
+        name: "toggle-preview",
         title: "Show this file rendered, or stop",
     },
     CommandSpec {
         command: Command::ThemeSelect,
-        name: "theme.select",
+        name: "choose-theme",
         title: "Change the colours",
     },
     CommandSpec {
         command: Command::CommandPalette,
-        name: "command.palette",
+        name: "run-command",
         title: "Run a command by name",
     },
     CommandSpec {
         command: Command::SymbolMenu,
-        name: "symbol.menu",
+        name: "ask-about-symbol",
         title: "Ask about the symbol under the cursor",
     },
     // No default keys. The menu is the way in, and giving each of these a
@@ -239,137 +247,137 @@ pub const ALL: &[CommandSpec] = &[
     // palette both read the key table.
     CommandSpec {
         command: Command::SymbolOutline,
-        name: "symbol.outline",
+        name: "show-outline",
         title: "Everything this file defines",
     },
     CommandSpec {
         command: Command::SymbolDefinition,
-        name: "symbol.definition",
+        name: "go-to-definition",
         title: "Go to definition",
     },
     CommandSpec {
         command: Command::SymbolTypeDefinition,
-        name: "symbol.typeDefinition",
+        name: "go-to-type-definition",
         title: "Go to type definition",
     },
     CommandSpec {
         command: Command::SymbolImplementation,
-        name: "symbol.implementation",
+        name: "go-to-implementation",
         title: "Go to implementation",
     },
     CommandSpec {
         command: Command::SymbolReferences,
-        name: "symbol.references",
+        name: "find-references",
         title: "Find references",
     },
     CommandSpec {
         command: Command::SearchFile,
-        name: "search.file",
+        name: "search-file",
         title: "Search this file",
     },
     CommandSpec {
         command: Command::SearchProject,
-        name: "search.project",
+        name: "search-project",
         title: "Search every file",
     },
     CommandSpec {
         command: Command::SearchSymbols,
-        name: "search.symbols",
+        name: "search-symbols",
         title: "Search the project's symbols",
     },
     CommandSpec {
         command: Command::GoLine,
-        name: "go.line",
+        name: "go-to-line",
         title: "Go to a line by number",
     },
     CommandSpec {
         command: Command::GoBracket,
-        name: "go.bracket",
+        name: "go-to-bracket",
         title: "Go to the matching bracket",
     },
     CommandSpec {
         command: Command::GitHunk,
-        name: "git.hunk",
+        name: "show-change",
         title: "Show what changed here",
     },
     CommandSpec {
         command: Command::GitPrevious,
-        name: "git.previous",
+        name: "go-to-previous-change",
         title: "Go to the previous change",
     },
     CommandSpec {
         command: Command::GitNext,
-        name: "git.next",
+        name: "go-to-next-change",
         title: "Go to the next change",
     },
     CommandSpec {
         command: Command::SelectionCopy,
-        name: "selection.copy",
+        name: "copy-selection",
         title: "Copy the selected text",
     },
     CommandSpec {
         command: Command::SelectionAll,
-        name: "selection.all",
+        name: "select-all",
         title: "Select the whole file",
     },
     CommandSpec {
         command: Command::SelectionClear,
-        name: "selection.clear",
+        name: "clear-selection",
         title: "Stop selecting",
     },
     CommandSpec {
         command: Command::GoBack,
-        name: "go.back",
+        name: "go-back",
         title: "Go back to where you were",
     },
     CommandSpec {
         command: Command::GoForward,
-        name: "go.forward",
+        name: "go-forward",
         title: "Go forward again",
     },
     CommandSpec {
         command: Command::AgentOpen,
-        name: "agent.open",
+        name: "talk-to-agent",
         title: "Talk to the active agent",
     },
     CommandSpec {
         command: Command::AgentSettings,
-        name: "agent.settings",
+        name: "configure-agent",
         title: "Change how the agent is working",
     },
     CommandSpec {
         command: Command::ConfigOpen,
-        name: "config.open",
+        name: "open-settings",
         title: "Change obelus's settings",
     },
     CommandSpec {
         command: Command::ConfigFile,
-        name: "config.file",
+        name: "open-settings-file",
         title: "Open the settings file",
     },
     CommandSpec {
         command: Command::LogOpen,
-        name: "log.obelus",
+        name: "open-log",
         title: "Open obelus's own log",
     },
     CommandSpec {
         command: Command::LogServers,
-        name: "log.servers",
+        name: "open-server-log",
         title: "Open the language servers' log",
     },
     CommandSpec {
         command: Command::LspRestart,
-        name: "lsp.restart",
+        name: "restart-server",
         title: "Restart the language server",
     },
     CommandSpec {
         command: Command::LspStop,
-        name: "lsp.stop",
+        name: "stop-server",
         title: "Stop the language server",
     },
     CommandSpec {
         command: Command::Quit,
-        name: "app.quit",
+        name: "quit",
         title: "Leave obelus",
     },
 ];
@@ -377,10 +385,9 @@ pub const ALL: &[CommandSpec] = &[
 impl Command {
     /// Which group the command belongs to.
     ///
-    /// Spelled out per command rather than taken from the name's prefix:
-    /// `go.back` and `symbol.definition` share a group and no prefix, and a
-    /// prefix that had to be renamed to move a command between groups would
-    /// be a name chosen for the wrong reason.
+    /// Spelled out per command rather than read off the name: a name says
+    /// what the command does and nothing about where it belongs, and moving
+    /// a command between groups is not a reason to rename it.
     #[must_use]
     pub const fn group(self) -> Group {
         match self {
@@ -427,9 +434,9 @@ impl Command {
     ///
     /// The palette leaves out anything that cannot do its job right now: a
     /// row that silently fails is worse than a row that is not there. Note
-    /// what is *not* conditional -- `symbol.menu` with no server is the thing
-    /// that says why there is none, and `lsp.restart` with no server
-    /// running is how you get one.
+    /// what is *not* conditional -- `ask-about-symbol` with no server is the
+    /// thing that says why there is none, and `restart-server` with no
+    /// server running is how you get one.
     #[must_use]
     pub const fn requires(self) -> Requires {
         match self {
@@ -479,10 +486,10 @@ impl Command {
             Self::GoBack => Requires::SomewhereBack,
             Self::GoForward => Requires::SomewhereForward,
             Self::AgentSettings => Requires::AnAgentSetting,
-            // `symbol.menu` needs nothing: with no server it is the thing
-            // that says why there is none. Nor does `lsp.restart`, which is
-            // how a stopped or dead server is started. `file.open`,
-            // `theme.select`, `log.open` and the palette itself work with
+            // `ask-about-symbol` needs nothing: with no server it is the thing
+            // that says why there is none. Nor does `restart-server`, which is
+            // how a stopped or dead server is started. `open-file`,
+            // `choose-theme`, `log.open` and the palette itself work with
             // nothing open at all.
             Self::FileOpen
             | Self::ThemeSelect
@@ -511,7 +518,7 @@ impl Command {
             .expect("every command has an entry in ALL")
     }
 
-    /// The dotted name, for logs and the palette.
+    /// The name, for logs and the palette.
     #[must_use]
     pub fn name(self) -> &'static str {
         self.spec().name
@@ -602,6 +609,29 @@ mod tests {
             "the tabs have multiplied: {:?}",
             Group::ALL
         );
+    }
+
+    /// A name is what the command does, verb first, words joined by
+    /// hyphens. The shape is what can be checked -- that it is one word of
+    /// lowercase letters and hyphens, with no dots and no camel case -- and
+    /// it is worth checking, because the one that gets this wrong is the
+    /// next command added beside thirty-six that do not.
+    #[test]
+    fn names_are_verbs_in_lowercase_words() {
+        for spec in ALL {
+            assert!(
+                spec.name
+                    .chars()
+                    .all(|character| character.is_ascii_lowercase() || character == '-'),
+                "{} is not lowercase words joined by hyphens",
+                spec.name
+            );
+            assert!(
+                !spec.name.starts_with('-') && !spec.name.ends_with('-'),
+                "{} starts or ends with a hyphen",
+                spec.name
+            );
+        }
     }
 
     #[test]

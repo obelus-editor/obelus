@@ -328,8 +328,8 @@ mod tests {
             // both have to survive the file or the reader makes them again
             // every time obelus starts.
             keys: [
-                ("file.open".to_string(), "alt+o".to_string()),
-                ("buffer.close".to_string(), String::new()),
+                ("open-file".to_string(), "alt+o".to_string()),
+                ("close-file".to_string(), String::new()),
             ]
             .into_iter()
             .collect(),

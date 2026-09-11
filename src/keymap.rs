@@ -547,7 +547,7 @@ impl Keymap {
     /// Moves a command onto another key, or takes its key away.
     ///
     /// Every binding of it, because a command bound in two contexts is one
-    /// command with one key: `buffer.close` closes the file being read and
+    /// command with one key: `close-file` closes the file being read and
     /// the file on the row of a list, and a reader who rebinds it means
     /// both. A command that had no key gets one where the reader is
     /// reading, which is where a key they press belongs.

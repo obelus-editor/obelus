@@ -553,7 +553,7 @@ fn added_lines_open_onto_their_own_colour() {
         app.picker()
             .expect("the palette")
             .matches()
-            .any(|item| item.label == "git.hunk" && item.enabled),
+            .any(|item| item.label == "show-change" && item.enabled),
         "not available on an added line"
     );
     support::press(&mut app, crossterm::event::KeyCode::Esc);
@@ -686,12 +686,12 @@ fn the_changes_can_be_stepped_through() {
             .map(|(_, enabled)| *enabled)
     };
     assert_eq!(
-        listed("git.previous"),
+        listed("go-to-previous-change"),
         Some(true),
         "not available with changes above: {rows:?}"
     );
     assert_eq!(
-        listed("git.next"),
+        listed("go-to-next-change"),
         Some(false),
         "available with nothing below: {rows:?}"
     );

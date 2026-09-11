@@ -170,82 +170,86 @@ pub fn for_permission(kind: &str) -> char {
 
 /// The glyph for a command.
 ///
-/// By name, so a glyph can mean what the command means rather than what its
-/// family does: "go back" and "go forward" are the same family and opposite
-/// actions, and one picture for both says nothing. The family is the
-/// fallback, so a command added to a known family gets something sensible
-/// before anyone thinks about it.
+/// Per command rather than per family, so a glyph can mean what the command
+/// means rather than what its neighbourhood does: "go back" and "go forward"
+/// are the same neighbourhood and opposite actions, and one picture for both
+/// says nothing. Exhaustive with no fallback -- a new command has to be
+/// given a picture, which is a line of work rather than a decision, and the
+/// alternative is a family guessed from a name that no longer has a family
+/// in it.
 #[must_use]
-pub fn for_command(name: &str) -> char {
-    match name {
+pub fn for_command(command: crate::command::Command) -> char {
+    use crate::command::Command;
+
+    match command {
         // Finding a file is what the picker does; the folder is closed until
         // then.
-        "file.open" => '\u{f021e}',
+        Command::FileOpen => '\u{f021e}',
         // A folder with a pencil on it: the files being worked on.
-        "file.changed" => '\u{f08de}',
-        "file.reload" => '\u{f0450}',
-        "buffer.list" => '\u{f0222}',
-        "buffer.close" => '\u{f0b98}',
-        "preview.toggle" => '\u{f0354}',
-        "theme.select" => '\u{f03d8}',
-        "command.palette" => '\u{f018d}',
+        Command::FileChanged => '\u{f08de}',
+        Command::FileReload => '\u{f0450}',
+        Command::BufferList => '\u{f0222}',
+        Command::BufferClose => '\u{f0b98}',
+        Command::PreviewToggle => '\u{f0354}',
+        Command::ThemeSelect => '\u{f03d8}',
+        Command::CommandPalette => '\u{f018d}',
         // The menu is the questions themselves; each question is what it
         // does. A definition is a place to land on, a type is a shape, an
         // implementation is what hangs below the thing, and references are a
         // search.
-        "symbol.menu" => '\u{f0174}',
+        Command::SymbolMenu => '\u{f0174}',
         // A list of what is in something, which is what an outline is.
-        "symbol.outline" => '\u{f0279}',
-        "symbol.definition" => '\u{f04fe}',
-        "symbol.typeDefinition" => '\u{f0169}',
-        "symbol.implementation" => '\u{f04aa}',
-        "symbol.references" => '\u{f13b8}',
-        // The hooked arrows every browser uses, which is what the jump list
-        // is.
-        // A number, which is what this one asks for.
-        // The branching lines every git tool uses for itself.
+        Command::SymbolOutline => '\u{f0279}',
+        Command::SymbolDefinition => '\u{f04fe}',
+        Command::SymbolTypeDefinition => '\u{f0169}',
+        Command::SymbolImplementation => '\u{f04aa}',
+        Command::SymbolReferences => '\u{f13b8}',
         // One view at three radii, so the glyphs say *where* rather than
         // repeating "search": the plain magnifier for the file in front of
         // the reader, folders for the tree, and a name in code for what a
         // server knows.
-        "search.file" => '\u{f0349}',
-        "search.project" => '\u{f0253}',
-        "search.symbols" => '\u{f0871}',
-        "git.hunk" => '\u{f02a2}',
+        Command::SearchFile => '\u{f0349}',
+        Command::SearchProject => '\u{f0253}',
+        Command::SearchSymbols => '\u{f0871}',
+        // A number, which is what this one asks for.
+        Command::GoLine => '\u{f03a0}',
+        Command::GoBracket => '\u{f0172}',
+        // The branching lines every git tool uses for itself.
+        Command::GitHunk => '\u{f02a2}',
         // Arrows, because these two move the reader: the diff is what they
         // step through, and the git glyph is already on the command that
         // opens one.
-        "git.previous" => '\u{f0143}',
-        "git.next" => '\u{f0140}',
-        "go.line" => '\u{f03a0}',
-        "go.bracket" => '\u{f0172}',
-        "selection.clear" => '\u{f0156}',
+        Command::GitPrevious => '\u{f0143}',
+        Command::GitNext => '\u{f0140}',
+        // Two sheets of paper, which is what copying is everywhere.
+        Command::SelectionCopy => '\u{f018f}',
         // The dotted rectangle every program draws for "all of it".
-        "selection.all" => '\u{f0486}',
-        "go.back" => '\u{f17b3}',
-        "go.forward" => '\u{f17b7}',
-        // Sliders, because a cog is the fallback for a command in no
-        // family obelus knows and two rows with the same picture say less
-        // than one.
-        "config.open" => '\u{f062e}',
+        Command::SelectionAll => '\u{f0486}',
+        Command::SelectionClear => '\u{f0156}',
+        // The hooked arrows every browser uses, which is what the jump list
+        // is.
+        Command::GoBack => '\u{f17b3}',
+        Command::GoForward => '\u{f17b7}',
+        Command::AgentOpen => ui::AGENT,
+        // A conversation with a cog on it: this changes how the agent is
+        // working, not how obelus is, and the sliders below already mean
+        // that.
+        Command::AgentSettings => '\u{f06f1}',
+        // Sliders, because a cog is what everything else in this list would
+        // fall back to and two rows with the same picture say less than one.
+        Command::ConfigOpen => '\u{f062e}',
         // A file with a cog on it: the settings themselves, as the file
         // they are kept in.
-        "config.file" => '\u{f107b}',
-        "agent.open" => ui::AGENT,
-        // A conversation with a cog on it: this changes how the agent is
-        // working, not how obelus is, and the sliders above already mean
-        // that.
-        "agent.settings" => '\u{f06f1}',
-        "log.obelus" => '\u{f09ed}',
+        Command::ConfigFile => '\u{f107b}',
+        Command::LogOpen => '\u{f09ed}',
         // A server on a wire, because that is whose words are in that one
         // and how they arrive: the handshake, the requests, and whatever it
         // wrote to its stderr.
-        "log.servers" => '\u{f048d}',
-        "lsp.restart" => '\u{f0709}',
-        "lsp.stop" => '\u{f04db}',
+        Command::LogServers => '\u{f048d}',
+        Command::LspRestart => '\u{f0709}',
+        Command::LspStop => '\u{f04db}',
         // Leaving obelus, not switching a machine off.
-        "app.quit" => '\u{f0206}',
-        other => by_family(other),
+        Command::Quit => '\u{f0206}',
     }
 }
 
@@ -286,24 +290,6 @@ pub fn for_kind(kind: crate::theme::SyntaxKind) -> char {
         // A module or namespace, which is what the outline uses this for.
         SyntaxKind::Keyword => '\u{f04aa}',
         _ => '\u{f0295}',
-    }
-}
-
-/// What a command whose name is not listed above gets.
-fn by_family(name: &str) -> char {
-    match name.split_once('.') {
-        Some(("file", _)) => '\u{f0219}',
-        Some(("buffer", _)) => '\u{f0222}',
-        Some(("theme", _)) => '\u{f03d8}',
-        Some(("command", _)) => '\u{f018d}',
-        Some(("symbol", _)) => '\u{f0295}',
-        Some(("go", _)) => '\u{f02da}',
-        Some(("log", _)) => '\u{f09ed}',
-        Some(("lsp", _)) => '\u{f048b}',
-        Some(("git", _)) => '\u{f02a2}',
-        // Something in no family obelus knows. A cog says "a thing obelus
-        // does" without claiming to know which.
-        Some(("app", _)) | None | Some(_) => '\u{f0493}',
     }
 }
 
@@ -388,41 +374,42 @@ mod tests {
 #[cfg(test)]
 mod command_tests {
     use super::*;
+    use crate::command::Command;
 
     /// A glyph per command, and no two commands that mean opposite things
     /// sharing one. "Go back" and "go forward" are the case that made this
-    /// worth asserting: same family, opposite actions.
+    /// worth asserting: neighbours, and opposite actions.
     #[test]
     fn opposite_commands_do_not_share_a_glyph() {
         for (left, right) in [
-            ("go.back", "go.forward"),
-            ("lsp.restart", "lsp.stop"),
-            ("symbol.definition", "symbol.references"),
-            ("file.open", "file.reload"),
+            (Command::GoBack, Command::GoForward),
+            (Command::LspRestart, Command::LspStop),
+            (Command::SymbolDefinition, Command::SymbolReferences),
+            (Command::FileOpen, Command::FileReload),
         ] {
             assert_ne!(
                 for_command(left),
                 for_command(right),
-                "{left} and {right} look the same"
+                "{} and {} look the same",
+                left.name(),
+                right.name()
             );
         }
     }
 
     /// Every command obelus has gets a glyph of its own, so the palette is a
     /// column of pictures that mean something rather than one picture
-    /// repeated. A new command falls back to its family, which is a glyph
-    /// that is right about the neighbourhood.
+    /// repeated. There is no fallback to find a hole in: the match is over
+    /// the commands themselves, so a new one that nobody has drawn a picture
+    /// for does not compile.
     #[test]
-    fn every_command_has_its_own_glyph_and_a_new_one_has_a_family() {
+    fn every_command_has_its_own_glyph() {
         let mut seen = std::collections::HashMap::new();
         for spec in crate::command::ALL {
-            let glyph = for_command(spec.name);
+            let glyph = for_command(spec.command);
             if let Some(earlier) = seen.insert(glyph, spec.name) {
                 panic!("{} and {} share a glyph", earlier, spec.name);
             }
         }
-
-        assert_eq!(for_command("symbol.hover"), by_family("symbol.hover"));
-        assert_ne!(for_command("nonsense"), for_command("symbol.hover"));
     }
 }

@@ -306,7 +306,7 @@ pub struct App {
     ///
     /// Held because dropping it stops the watch. `None` means auto-reload is
     /// unavailable — the watcher failed to start, most likely against an
-    /// inotify limit — and `file.reload` still works.
+    /// inotify limit — and `reload-file` still works.
     watcher: Option<Watcher>,
     /// The highlight kinds for what is on screen.
     ///

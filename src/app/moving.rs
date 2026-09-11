@@ -269,7 +269,7 @@ impl App {
                         .place_cursor(LineNumber::new(line.saturating_sub(1)), CharColumn::new(0));
                     buffer.center_on_cursor(area);
                 }
-                // A jump, so `go.back` comes back: typing a line number is
+                // A jump, so `go-back` comes back: typing a line number is
                 // exactly the kind of leap the history is for.
                 if let Some(from) = from {
                     self.jumps.push(from);

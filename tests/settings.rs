@@ -853,10 +853,10 @@ fn a_command_can_be_put_on_another_key() {
     // The keys tab: appearance, reading, keys, agents.
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
-    support::type_text(&mut app, "theme.select");
+    support::type_text(&mut app, "choose-theme");
     let dump = support::render(&mut app, 66, 12);
     assert!(
-        support::text_block(&dump).contains("theme.select"),
+        support::text_block(&dump).contains("choose-theme"),
         "the keys page does not list the commands:\n{dump}"
     );
     // It has no key at all, which is what makes it worth binding.
@@ -878,7 +878,7 @@ fn a_command_can_be_put_on_another_key() {
     // Written down, so it is still bound tomorrow.
     let written = std::fs::read_to_string(&file).expect("the file");
     assert!(
-        written.contains("theme.select") && written.contains("alt+j"),
+        written.contains("choose-theme") && written.contains("alt+j"),
         "the binding is not in the file:\n{written}"
     );
     // And the row says so where it said "press a key".
@@ -909,14 +909,14 @@ fn a_key_that_is_taken_says_so_on_the_row() {
     let mut app = open(&temporary("taken"));
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
-    support::type_text(&mut app, "theme.select");
+    support::type_text(&mut app, "choose-theme");
     support::press(&mut app, KeyCode::Enter);
 
     // `ctrl+p` is the palette's, and it stays the palette's.
     support::press_control(&mut app, 'p');
     let dump = support::render(&mut app, 66, 12);
     assert!(
-        support::text_block(&dump).contains("command.palette"),
+        support::text_block(&dump).contains("run-command"),
         "the row does not say what has the key:\n{dump}"
     );
     assert_eq!(app.keymap().chord_for(Command::ThemeSelect), None);
@@ -962,7 +962,7 @@ fn a_key_that_could_never_fire_is_refused() {
     let mut app = open(&temporary("never"));
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
-    support::type_text(&mut app, "theme.select");
+    support::type_text(&mut app, "choose-theme");
     support::press(&mut app, KeyCode::Enter);
 
     for (code, modifiers, why) in [
@@ -1010,7 +1010,7 @@ fn delete_takes_a_key_away() {
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
-    support::type_text(&mut app, "buffer.close");
+    support::type_text(&mut app, "close-file");
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Delete);
 
@@ -1027,7 +1027,7 @@ fn delete_takes_a_key_away() {
     );
     let written = std::fs::read_to_string(&file).expect("the file");
     assert!(
-        written.contains("buffer.close"),
+        written.contains("close-file"),
         "the key taken away is not in the file:\n{written}"
     );
 }

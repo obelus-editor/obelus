@@ -79,6 +79,18 @@ picker's selection keys belong to whichever component owns the state they move.
 `App`, so anything that displays a key reads that table and a rebind changes
 every display of it.
 
+**A command's name is what it does, verb first, hyphenated.** `open-file`,
+`go-to-definition`, `select-all`. Not a family and a member (`file.open`,
+`selection.all`), which read backwards: a reader reaching for the palette
+knows the verb and types it first, and a list filtered on such a name buries
+that verb behind a noun they have to guess. The family is
+`Command::group()`, which is a tab on the palette and part of no name -- so
+nothing may be read off a name either, which is why `icons::for_command`
+takes the `Command` and matches it exhaustively instead of splitting a
+prefix off a string and guessing. The names are also what the config file's
+`[keys]` table is written in, so renaming one leaves an old file's line
+unbound with a word in the log.
+
 **The paging keys belong to whatever is being read, not to the list.** A
 list with a preview under it is two things on screen, and only one of them
 is read a screenful at a time: the list is ten rows walked one at a time
@@ -121,7 +133,7 @@ opens.
 **A command does something; a preference is a setting.** A switch that
 should outlive the session is a setting and nothing else -- the only key to
 it is the one that opens the settings. A command may *change* a setting, as
-`theme.select` does by writing it, but no command may own a bit a setting
+`choose-theme` does by writing it, but no command may own a bit a setting
 owns as well: showing who wrote each line was both `config.blame` and a
 `git.blame` command flipping a field of `App`, so turning the names off with
 the key lasted until the next time anything on the settings page changed --
@@ -191,7 +203,7 @@ because an enum's spelling and a keycode are obelus's business rather than
 the reader's. What is in the file is a list of changes over the defaults, so
 a reader who moved one key still gets the new default for everything else,
 and a name or a chord obelus cannot read is skipped with a word in the log.
-Rebinding moves *every* binding of the command -- `buffer.close` is bound in
+Rebinding moves *every* binding of the command -- `close-file` is bound in
 `Normal` and in `Buffers` and is still one command with one key -- and a
 command that had none gets one in `Normal`, which is where a key a reader
 presses belongs. A chord already spoken for is refused on the row that asked
@@ -234,7 +246,7 @@ and whatever they write to their stderr, at a volume that would bury the
 dozen lines obelus has of its own. `logging::is_server` decides by the
 event's target, which `tracing` takes from the module it came from, so a
 call site needs to know nothing and a module moved into `lsp` takes its
-lines with it. `log.obelus` and `log.servers` open them; both are ordinary
+lines with it. `open-log` and `open-server-log` open them; both are ordinary
 buffers, because obelus is a reader.
 
 The default filter names **`ob` as well as `obelus`**: the binary is its own
@@ -373,7 +385,7 @@ the interactive CLI". The same choice is already on offer as a *session
 config option* -- `session/new` and `session/update` carry the whole set,
 `session/set_config_option` changes one, and the answer to that is the whole
 set again because one value can change what another offers. So obelus lists
-them (`agent.settings`) and, when a typed command is the name of one, opens
+them (`configure-agent`) and, when a typed command is the name of one, opens
 that setting's values instead of sending it. Copilot's own list is `mode`,
 `model`, `reasoning_effort` and `allow_all`; it does not elicit for
 `/model` either -- probed with `elicitation.form` advertised, 1.0.83 still
@@ -431,7 +443,7 @@ Workspace symbols and hover (the file outline is done), M1c (diagnostics, a
 gutter that holds more than line numbers), searching a file (`ctrl+f` is left
 unbound for it), the rest of M2's git (history, blame, tree diffs, staging --
 the working tree's own diff is done: `src/git/`, the margin, the map beside
-the scrollbar, `git.hunk` and the steps between hunks), the diff/semantic
+the scrollbar, `show-change` and the steps between hunks), the diff/semantic
 bridge (M3), symbol-level history (M4), the agent bridge (M5), and a minimal
 editing set, last. Don't start on these without being asked.
 

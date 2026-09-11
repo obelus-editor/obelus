@@ -401,7 +401,7 @@ impl App {
         // Where the reader was, before they are somewhere else. Opening a
         // file is a leap, and the history is for leaps: without this, a
         // session of opening files leaves nothing to go back *to*, and
-        // `go.back` answers "nowhere further back" to a reader who has been
+        // `go-back` answers "nowhere further back" to a reader who has been
         // three files deep. `push` drops a repeat of the same place, so
         // re-opening the file already being read records nothing.
         let from = self.here();
@@ -430,7 +430,7 @@ impl App {
                 // Only once the file is known to be readable: a path that
                 // turns out to be a directory leaves the reader where they
                 // were, and a history entry for a leap that did not happen
-                // is a place `go.back` would take them for no reason.
+                // is a place `go-back` would take them for no reason.
                 self.record(from);
                 let id = BufferId::new(index);
                 self.go_to_buffer(id);

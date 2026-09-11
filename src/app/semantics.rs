@@ -174,7 +174,7 @@ impl App {
             .map(|action| {
                 let command = action.command();
                 PickerItem {
-                    icon: icons::enabled().then(|| icons::for_command(command.spec().name)),
+                    icon: icons::enabled().then(|| icons::for_command(command)),
                     label: command.spec().name.to_string(),
                     detail: Some(command.spec().title.to_string()),
                     trailing: self.keymap.chord_for(command).map(KeyChord::label),
@@ -397,7 +397,7 @@ impl App {
     /// Stops the server for the current file and leaves it stopped.
     ///
     /// For a server that is costing more than it is answering. It stays
-    /// stopped until `lsp.restart`, because otherwise opening the next
+    /// stopped until `restart-server`, because otherwise opening the next
     /// file of that language would start it again.
     pub fn stop_server(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {

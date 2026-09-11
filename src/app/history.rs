@@ -84,7 +84,7 @@ impl App {
             return;
         };
 
-        // A jump, so `go.back` comes back: stepping to a change is a leap
+        // A jump, so `go-back` comes back: stepping to a change is a leap
         // across the file, the same as typing a line number.
         let from = self.here();
         let area = self.text_area();

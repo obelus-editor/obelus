@@ -262,20 +262,20 @@ fn the_readers_own_bindings_go_over_the_defaults() {
     use obelus::keymap::Context;
 
     let moved: std::collections::BTreeMap<String, String> = [
-        ("buffer.close".to_string(), "alt+w".to_string()),
-        ("theme.select".to_string(), "alt+t".to_string()),
-        ("file.open".to_string(), String::new()),
+        ("close-file".to_string(), "alt+w".to_string()),
+        ("choose-theme".to_string(), "alt+t".to_string()),
+        ("open-file".to_string(), String::new()),
         ("nonsense.command".to_string(), "ctrl+z".to_string()),
-        ("git.hunk".to_string(), "not a key".to_string()),
+        ("show-change".to_string(), "not a key".to_string()),
         // A key obelus can read and can never be given: the editor takes
         // the arrows before the table is reached.
-        ("go.line".to_string(), "up".to_string()),
+        ("go-to-line".to_string(), "up".to_string()),
     ]
     .into_iter()
     .collect();
     let keymap = Keymap::with(&moved);
 
-    // Both of `buffer.close`'s bindings moved: it is one command with one
+    // Both of `close-file`'s bindings moved: it is one command with one
     // key, bound in two contexts so that it reaches the list of open files.
     let closes: Vec<_> = keymap
         .bindings()
