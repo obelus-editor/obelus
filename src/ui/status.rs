@@ -235,9 +235,15 @@ impl StatusView<'_> {
         // Over a rendering there is no cursor, so what goes here is how far
         // down it the reader has scrolled: a position in what is on screen,
         // which is the question the same corner answers either way.
-        let right = match self.rows {
-            Some(rows) => format!("{}/{rows}", buffer.viewport().top.get() + 1),
-            None => format!("{}:{}", cursor.line.get() + 1, cursor.column.get() + 1),
+        let right = match (self.rows, buffer.in_block()) {
+            (Some(rows), _) => format!("{}/{rows}", buffer.viewport().top.get() + 1),
+            // In a hunk's removed lines, which are not lines of this file:
+            // they have no number here, so what is reported is where the
+            // caret is in the block, marked as the file's own position is
+            // not. A number without the minus would name a line of the
+            // file the caret is nowhere near.
+            (None, Some((line, column))) => format!("-{}:{}", line.get() + 1, column.get() + 1),
+            (None, None) => format!("{}:{}", cursor.line.get() + 1, cursor.column.get() + 1),
         };
         let right_width = text_width(&right);
 

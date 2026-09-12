@@ -158,13 +158,19 @@ impl App {
                     .next()
                     .is_some_and(|character| matches!(character, '(' | ')' | '[' | ']' | '{' | '}'))
             }),
-            Requires::ASelection => buffer.and_then(Buffer::selection).is_some(),
+            // In the file or in a hunk's removed lines: a reader who can
+            // put a caret on something can take a copy of it.
+            Requires::ASelection => buffer.is_some_and(Buffer::has_selection),
             // Something that changed *and* has something to show: a run of
             // added lines changed nothing that is not already on screen.
+            // Or one already open, which this is also the key that closes
+            // -- from wherever the reader has walked to inside it.
             Requires::AHunk => buffer.is_some_and(|buffer| {
-                self.changes()
-                    .and_then(|changes| changes.hunk_at(buffer.cursor().line))
-                    .is_some()
+                buffer.block().is_some()
+                    || self
+                        .changes()
+                        .and_then(|changes| changes.hunk_at(buffer.cursor().line))
+                        .is_some()
             }),
             Requires::AHunkBefore => buffer.is_some_and(|buffer| {
                 self.changes()

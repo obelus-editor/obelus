@@ -155,17 +155,36 @@ replaced above the line that replaced them. So `Text::row_count` is the
 text's count and `Buffer::screen_rows_of` is the screen's, and every path
 that moves the *viewport* uses the second (`step_screen_rows`,
 `cursor_screen_row`), while the cursor's own stepping keeps the first.
-`TextArea::inserted` is how the view says what it added, filled in one place
-(`App::inserted_rows`).
 
 One function answering both is how a deletion taller than the screen became
 unreadable: the block was drawn only from its first row, the viewport could
 not express being inside it, and two patches -- a row count re-derived in
 `ui::editor` for the caret, and a height shrunk in `App::prepare` for the
 scrolling -- kept the caret honest without making the rows reachable. Both
-are gone. A page that lands on a row the text does not have keeps the cursor
-and scrolls instead, which is how the paging keys walk through a block of any
-size and why nothing new had to be invented for them.
+are gone.
+
+**The caret can be in the block; the cursor never is.** `Buffer::block` is
+the opened hunk's lines *as a `Text`*, and `in_block` is a `Cursor` in it.
+A text, so those lines get everything the file's get from the same code: they
+wrap at the same width, their tabs reach the same stops, a wide glyph takes
+two cells, the caret moves by visual rows, a selection in them is a `Span`,
+copying is `text_in`, and the rows are drawn by the writer every other row
+goes through. The alternative was a second, smaller set of all of that --
+which is a second set of bugs, and was one: a line wider than the screen was
+cut with the caret walking off the edge of it.
+
+The *cursor* stays on the line the block is anchored to, so everything that
+asks the file about "here" -- a language server, a jump, the next change, the
+margin -- goes on being answered from a line the file has. The status row
+says `-4:7` while the caret is in there, because that place has no line
+number in this file and a number without the minus would name one it is
+nowhere near. The anchor of a selection belongs to whichever of the two the
+caret is in, and `clear_selection` reaches both. A page that lands on one of
+those rows puts the caret there, which is how the paging keys walk a block of
+any size; anything that puts the cursor somewhere outright (`place_cursor`)
+brings it back, as does closing the hunk -- which the key that opened it does
+from wherever the reader has walked to, because "the hunk at the cursor" is
+not the hunk in front of them once they have walked into it.
 
 **A command does something; a preference is a setting.** A switch that
 should outlive the session is a setting and nothing else -- the only key to

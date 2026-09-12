@@ -171,12 +171,6 @@ pub struct App {
     /// happens when a file is opened or reloaded -- which is exactly when
     /// what changed can have changed -- and not per frame.
     changes: Option<Changed>,
-    /// The hunk the reader has opened in place, if any.
-    ///
-    /// The line it is anchored to. Held here rather than in the buffer
-    /// because it is about a *view* of the file, like the markdown
-    /// rendering, and closing it must not need the file.
-    opened: Option<LineNumber>,
     /// The current file laid out as whatever reading it has, if it is being
     /// shown that way.
     ///
@@ -349,7 +343,6 @@ impl App {
             ticker: None,
             prompt: None,
             changes: None,
-            opened: None,
             statuses: std::collections::HashMap::new(),
             registry: Vec::new(),
             asked_registry: false,
@@ -521,27 +514,6 @@ impl App {
         }
     }
 
-    /// The rows the view draws that the file does not have.
-    ///
-    /// One thing does that today: a hunk the reader has opened, whose
-    /// removed lines are drawn above the line that replaced them. The
-    /// viewport's arithmetic counts rows of the *screen*, so it is told
-    /// here rather than finding out from the drawing -- which is what it
-    /// used to do, twice, in two places that could disagree.
-    fn inserted_rows(&self) -> crate::buffer::Inserted {
-        let Some(above) = self.opened else {
-            return crate::buffer::Inserted::none();
-        };
-        let rows = self
-            .changes()
-            .and_then(|changes| changes.hunk_at(above))
-            .map_or(0, |hunk| hunk.removed.len());
-        crate::buffer::Inserted {
-            above: Some(above),
-            rows,
-        }
-    }
-
     /// Which set of key bindings a key is looked up in.
     ///
     /// What the reader is in, rather than what they are doing: a dialog
@@ -643,7 +615,6 @@ impl App {
             width,
             height: self.editor_area.height,
             wrap: self.config.wrap,
-            inserted: self.inserted_rows(),
         }
     }
 

@@ -151,48 +151,143 @@ pub struct Viewport {
     pub left: usize,
 }
 
-/// Rows the view draws that the text does not have, and which line they
-/// are drawn above.
+/// Lines a hunk replaced, opened in place above the line that replaced
+/// them.
 ///
-/// An opened hunk is the one thing that does this: the lines it replaced
-/// are drawn above the line that replaced them, pushing the file down.
-/// They are rows of the *screen* and not lines of the file -- the cursor
-/// cannot be on one and they have no line numbers -- and the viewport's
-/// arithmetic is about the screen, which is why it has to be told.
+/// Rows of the screen that the file does not have -- they have no line
+/// numbers and nothing in the file is at them -- and the reader can walk
+/// into them all the same: they are text, they are what the file used to
+/// say, and a reader who can see them wants to read them and take a copy.
 ///
-/// One anchor, because one hunk is open at a time. A second thing that
-/// draws rows of its own is what would make this a list.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Inserted {
-    /// The line they are drawn above.
-    pub above: Option<LineNumber>,
-    /// How many of them there are.
-    pub rows: usize,
+/// Held by the buffer because the caret and the viewport both need them:
+/// one to have somewhere to be, the other to count the rows on screen. One
+/// block, because one hunk is open at a time.
+#[derive(Debug)]
+pub struct Block {
+    /// The line of the file they are drawn above.
+    pub above: LineNumber,
+    /// What they said, as a document of its own.
+    ///
+    /// A [`Text`] rather than a list of strings, so that everything the
+    /// file's own lines get is theirs too: they wrap at the same width, tabs
+    /// reach the same stops, a wide glyph takes two cells, the caret moves
+    /// by visual rows, and a selection in them is a span like any other.
+    /// The alternative was a second, smaller set of all of that, and a
+    /// second set is a second set of bugs.
+    pub text: Text,
+    /// How many lines the hunk actually replaced.
+    ///
+    /// Kept apart from the text, which cannot tell "nothing was removed"
+    /// from "one empty line was removed": both join to the empty string.
+    /// An added hunk is the first of those, and it has no rows at all.
+    lines: usize,
+    /// How many rows it takes at a width, worked out once for that width.
+    ///
+    /// The viewport's arithmetic asks for this inside loops -- it is the
+    /// height of the thing between two lines of the file -- and wrapping
+    /// every line of a long deletion each time round would be the frame's
+    /// whole budget. Nothing in the block changes while it is open, so the
+    /// answer only depends on the width.
+    rows: std::cell::Cell<Option<(u16, usize)>>,
 }
 
-impl Inserted {
-    /// Nothing inserted, which is every view but the one showing an opened
-    /// hunk.
+impl Block {
+    /// How many rows the whole block takes at a width.
     #[must_use]
-    pub const fn none() -> Self {
-        Self {
-            above: None,
-            rows: 0,
+    pub fn rows(&self, width: u16) -> usize {
+        if self.is_empty() {
+            return 0;
         }
+        if let Some((at, rows)) = self.rows.get()
+            && at == width
+        {
+            return rows;
+        }
+        let rows = (0..self.text.line_count())
+            .map(|line| self.text.row_count(LineNumber::new(line), width))
+            .sum();
+        self.rows.set(Some((width, rows)));
+        rows
     }
 
-    /// How many rows are drawn above a line.
+    /// How many rows come before one of its lines.
     #[must_use]
-    pub fn rows_above(self, line: LineNumber) -> usize {
-        match self.above == Some(line) {
-            true => self.rows,
-            false => 0,
+    pub fn rows_before(&self, line: LineNumber, width: u16) -> usize {
+        (0..line.get().min(self.text.line_count()))
+            .map(|line| self.text.row_count(LineNumber::new(line), width))
+            .sum()
+    }
+
+    /// Which of its lines, and which row of that line, a row of the block
+    /// is.
+    ///
+    /// The other direction of [`Block::rows_before`], for a caret arriving
+    /// at a row of the screen: a page lands on a row, and what it lands on
+    /// is a place in a line.
+    #[must_use]
+    pub fn place_at_row(&self, row: usize, width: u16) -> (LineNumber, usize) {
+        let mut left = row;
+        for line in 0..self.text.line_count() {
+            let rows = self.text.row_count(LineNumber::new(line), width);
+            if left < rows {
+                return (LineNumber::new(line), left);
+            }
+            left -= rows;
         }
+        let last = self.text.last_line();
+        (last, self.text.row_count(last, width).saturating_sub(1))
+    }
+
+    /// Whether it has anything in it.
+    ///
+    /// An added hunk replaced nothing, and opening one is still worth doing
+    /// -- the tint behind its lines is what says what kind of change it is
+    /// -- but there is nothing there for a caret to walk into.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.lines == 0
     }
 }
 
-/// The room the text has, whether it wraps in it, and what else is drawn in
-/// it.
+/// Where the caret is while the reader is in an opened block.
+///
+/// Apart from the cursor rather than instead of it: those lines are not
+/// places in the file, so nothing that asks the file about "here" -- a
+/// language server, a jump, the next change -- may be answered from one.
+/// The cursor stays on the line the block is anchored to and goes on
+/// answering all of that; this says where the caret really is, what it has
+/// selected, and nothing else.
+///
+/// The same [`Cursor`] the file has, because the block is the same kind of
+/// thing: a text with rows, columns and a cell to aim for.
+#[derive(Clone, Copy, Debug)]
+struct InBlock {
+    /// Where the caret is in the block's own text.
+    cursor: Cursor,
+    /// Where a selection started, if one has.
+    anchor: Option<Cursor>,
+}
+
+/// The run between two places, as a span, or nothing when they are the
+/// same place.
+///
+/// The file's selection and a block's are the same shape: two ends in one
+/// text, either way round.
+fn span_between(anchor: Cursor, cursor: Cursor) -> Option<Span> {
+    let (start, end) = if (anchor.line, anchor.column) <= (cursor.line, cursor.column) {
+        (anchor, cursor)
+    } else {
+        (cursor, anchor)
+    };
+    ((start.line, start.column) != (end.line, end.column)).then_some(Span {
+        line: start.line,
+        column: start.column,
+        end_line: end.line,
+        end_column: end.column,
+    })
+}
+
+/// The room the text has, and whether it wraps in it.
 ///
 /// The numbers together, because with wrapping neither is useful alone: the
 /// width decides where lines break and so how many rows they take, and the
@@ -209,8 +304,6 @@ pub struct TextArea {
     /// With this off a line is one row however long it is, and the view
     /// scrolls sideways to follow the cursor along it.
     pub wrap: bool,
-    /// Rows the view draws between the lines of the text.
-    pub inserted: Inserted,
 }
 
 impl TextArea {
@@ -282,6 +375,10 @@ pub struct Buffer {
     /// it, because paging takes the cursor along.
     detached: bool,
     viewport: Viewport,
+    /// The hunk the reader has opened in this file, if any.
+    block: Option<Block>,
+    /// And where the caret is in it, if the reader has walked in.
+    in_block: Option<InBlock>,
 }
 
 impl Buffer {
@@ -332,7 +429,54 @@ impl Buffer {
                 top: LineNumber::new(0),
                 top_row: 0,
             },
+            block: None,
+            in_block: None,
         })
+    }
+
+    /// Opens a hunk's removed lines in place, above the line that replaced
+    /// them.
+    ///
+    /// The buffer holds them because both the caret and the viewport need
+    /// them: one for somewhere to stand, the other to count the rows the
+    /// screen really has.
+    pub fn open_block(&mut self, above: LineNumber, lines: &[String]) {
+        self.block = Some(Block {
+            above,
+            // Joined without a trailing newline: a text that ends in one
+            // has an empty last line, and the block has exactly the lines
+            // the hunk replaced.
+            text: Text::from_string(&lines.join("\n")),
+            lines: lines.len(),
+            rows: std::cell::Cell::new(None),
+        });
+        self.in_block = None;
+    }
+
+    /// Closes it, and brings the caret back to the file if it was in there.
+    pub fn close_block(&mut self) {
+        self.block = None;
+        self.in_block = None;
+    }
+
+    /// The hunk opened in place, if one is.
+    #[must_use]
+    pub const fn block(&self) -> Option<&Block> {
+        self.block.as_ref()
+    }
+
+    /// Where the caret is in that block, if the reader has walked into it.
+    #[must_use]
+    pub fn in_block(&self) -> Option<(LineNumber, CharColumn)> {
+        self.in_block.map(|at| (at.cursor.line, at.cursor.column))
+    }
+
+    /// What is selected inside the block, in the block's own coordinates.
+    #[must_use]
+    pub fn block_selection(&self) -> Option<Span> {
+        let at = self.in_block?;
+        let anchor = at.anchor?;
+        span_between(anchor, at.cursor)
     }
 
     /// What the buffer holds.
@@ -367,7 +511,6 @@ impl Buffer {
                 width: 1,
                 height: 1,
                 wrap: true,
-                inserted: Inserted::none(),
             },
         );
     }

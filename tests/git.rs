@@ -407,6 +407,484 @@ fn a_hunk_opens_in_place_and_closes_again() {
     );
 }
 
+/// The caret walks into the lines a hunk replaced, and what it selects
+/// there can be copied.
+///
+/// They are text -- what the file used to say -- and a reader looking at
+/// them wants to read them a line at a time and take a copy. They are not
+/// *this* file's text, so the cursor stays on the line the block belongs
+/// to: everything that asks the file about "here" goes on being answered
+/// from a line the file has.
+#[test]
+fn the_caret_walks_into_what_a_hunk_replaced() {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    let repository = Repository::new("walk-in", "alpha\nbeta\ngamma\nkept\n");
+    repository.write("delta\nkept\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 12);
+    dispatch::dispatch(&mut app, Command::GitHunk);
+    let at = |app: &App| app.current_buffer().expect("a file").in_block();
+
+    // Up from the line that replaced them walks into the block, at its last
+    // line: the block sits directly above that line.
+    assert_eq!(at(&app), None, "the caret started in the block");
+    support::press(&mut app, KeyCode::Up);
+    assert_eq!(
+        at(&app).map(|(line, _)| line.get()),
+        Some(2),
+        "up did not walk into the block"
+    );
+    support::press(&mut app, KeyCode::Up);
+    assert_eq!(at(&app).map(|(line, _)| line.get()), Some(1));
+
+    // The caret is drawn where it is, and the status row says where that is
+    // -- as a place in the block, because those lines have no number in
+    // this file.
+    let dump = support::render(&mut app, 40, 12);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .collect();
+    let caret_row: usize = support::cursor_line(&dump)
+        .split(',')
+        .nth(1)
+        .expect("the caret's row")
+        .parse()
+        .expect("a number");
+    assert!(
+        rows[caret_row].contains("beta"),
+        "the caret is not on the line it is on:\n{dump}"
+    );
+    assert!(
+        rows[rows.len() - 1].contains("-2:1"),
+        "the status row does not say where the caret is:\n{dump}"
+    );
+
+    // The cursor has not moved: those lines are not places in the file.
+    assert_eq!(
+        app.current_buffer().expect("a file").cursor().line.get(),
+        0,
+        "the cursor followed the caret out of the file"
+    );
+
+    // And along the line as well as down the block: the caret's cell is a
+    // cell of the line it is on, which is one the file does not have.
+    support::press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 40, 12);
+    let cell = |dump: &str| {
+        support::cursor_line(dump)
+            .split(',')
+            .next()
+            .expect("the caret's cell")
+            .parse::<usize>()
+            .expect("a number")
+    };
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("beta"))
+        .expect("the row")
+        .to_string();
+    // In cells, counted the way the screen counts: the row's own number and
+    // bar come first, and the margin's glyph is one cell however many bytes
+    // it takes.
+    let word = row[..row.find("beta").expect("the word")].chars().count() - "00|".len();
+    assert_eq!(
+        cell(&dump),
+        word + "beta".len(),
+        "the caret is not at the end of the line it is on:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Home);
+    let dump = support::render(&mut app, 40, 12);
+    assert_eq!(
+        cell(&dump),
+        word,
+        "home did not take the caret to the start of the line:\n{dump}"
+    );
+
+    // Selecting in there and copying takes the removed text, not the file's.
+    support::press_shift(&mut app, KeyCode::Down);
+    support::press_shift(&mut app, KeyCode::End);
+    assert_eq!(
+        app.current_buffer().and_then(Buffer::selected_text),
+        Some("beta\ngamma".to_string()),
+        "the selection did not take the lines it was drawn over"
+    );
+    // And the command that copies is offered for it, because a reader who
+    // can select something can copy it.
+    assert!(
+        app.offers(Command::SelectionCopy),
+        "a selection in the block is not a selection"
+    );
+    // It is drawn, too: a copy whose extent nobody can see is a guess.
+    let dump = support::render(&mut app, 40, 12);
+    let styles: Vec<&str> = support::style_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .collect();
+    let ink = |row: usize, word: &str| {
+        let text = support::text_block(&dump)
+            .lines()
+            .filter(|row| row.contains('|'))
+            .nth(row)
+            .expect("a row")
+            .to_string();
+        let at = text[..text.find(word).expect("the word")].chars().count();
+        styles[row].chars().nth(at).expect("a cell")
+    };
+    assert_ne!(
+        ink(1, "beta"),
+        ink(0, "alpha"),
+        "the selected lines look like the ones around them:\n{dump}"
+    );
+
+    // Walking off the bottom of the block leaves it for the line it was
+    // drawn above, which is where the cursor has been waiting. The
+    // selection took the caret to the block's last line, so one step does
+    // it.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(at(&app), None, "down did not walk out of the block");
+    assert_eq!(
+        app.current_buffer().expect("a file").cursor().line.get(),
+        0,
+        "leaving the block landed somewhere else"
+    );
+
+    // And closing the hunk puts the caret back in the file whatever it was
+    // reading.
+    support::press(&mut app, KeyCode::Up);
+    assert!(at(&app).is_some(), "the caret did not walk back in");
+    dispatch::dispatch(&mut app, Command::GitHunk);
+    assert_eq!(at(&app), None, "the caret stayed in a block that is gone");
+}
+
+/// Walking down through a block comes out below it, on the line it was
+/// drawn above.
+///
+/// The way in from above and the way out at the bottom are not the same
+/// place: a reader who walked in from the line above and then kept going
+/// used to be put back on that same line, and pressing down again walked
+/// straight back into the block -- a hunk the cursor could never get past.
+/// And the column is the one the reader was in, through both doors: a
+/// vertical move aims for the cell it left, in the block as anywhere else.
+#[test]
+fn walking_through_a_block_comes_out_the_other_side() {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    // A change in the middle, so there is a line above the block and a line
+    // below it. The lines are long enough to have a column worth keeping.
+    let repository = Repository::new("through", "first line\nold one\nold two\nlast line\n");
+    repository.write("first line\nnew one\nlast line\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 12);
+    let cursor = |app: &App| {
+        let cursor = app.current_buffer().expect("a file").cursor();
+        (cursor.line.get(), cursor.column.get())
+    };
+    let at = |app: &App| {
+        app.current_buffer()
+            .expect("a file")
+            .in_block()
+            .map(|(line, column)| (line.get(), column.get()))
+    };
+
+    // Onto the changed line and open what it replaced. Up from there walks
+    // into the block -- it is drawn directly above this line -- so three of
+    // them walk its two lines and come out on the line above it.
+    support::press(&mut app, KeyCode::Down);
+    dispatch::dispatch(&mut app, Command::GitHunk);
+    support::press(&mut app, KeyCode::Up);
+    assert_eq!(
+        at(&app).map(|(line, _)| line),
+        Some(1),
+        "up did not walk in"
+    );
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Up);
+    assert_eq!(at(&app), None, "up did not walk out of the top");
+    for _ in 0..4 {
+        support::press(&mut app, KeyCode::Right);
+    }
+    assert_eq!(cursor(&app), (0, 4), "not on the line above the block");
+
+    // Down walks in, keeping the column, and walks the block's lines.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(at(&app), Some((0, 4)), "down did not walk in at the column");
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(at(&app), Some((1, 4)));
+
+    // And out the bottom, onto the line the block was drawn above -- not
+    // back to the one it was entered from.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(at(&app), None, "down did not walk out of the block");
+    assert_eq!(
+        cursor(&app),
+        (1, 4),
+        "walking out of the bottom landed above the block"
+    );
+
+    // Which means the reader gets past it: down again is the line after.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(at(&app), None, "down walked back into the block");
+    assert_eq!(cursor(&app), (2, 4), "the block cannot be got past");
+
+    // And back up through it the other way, out of the top onto the line
+    // above -- at the same column again.
+    support::press(&mut app, KeyCode::Up);
+    assert_eq!(cursor(&app), (1, 4));
+    for _ in 0..3 {
+        support::press(&mut app, KeyCode::Up);
+    }
+    assert_eq!(at(&app), None, "up did not walk out of the block");
+    assert_eq!(
+        cursor(&app),
+        (0, 4),
+        "walking out of the top lost the column"
+    );
+}
+
+/// A hunk that replaced nothing has nothing to walk into.
+///
+/// Added lines open like every other hunk -- the tint behind them is what
+/// says what kind of change they are -- and there are no removed lines
+/// above them. The caret has to pass straight over that, or the key that
+/// was going to move the reader up a line does nothing instead.
+#[test]
+fn a_hunk_with_nothing_removed_is_not_walked_into() {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::{Block, Buffer},
+        command::{Command, dispatch},
+    };
+
+    let repository = Repository::new("nothing-removed", "one\ntwo\n");
+    repository.write("one\nadded\ntwo\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 12);
+    support::press(&mut app, KeyCode::Down);
+    dispatch::dispatch(&mut app, Command::GitHunk);
+    let buffer = app.current_buffer().expect("a file");
+    assert_eq!(
+        buffer.block().map(Block::is_empty),
+        Some(true),
+        "the added hunk did not open"
+    );
+    assert_eq!(buffer.cursor().line.get(), 1);
+
+    // Up is the line above, not a step into a block with no lines in it.
+    support::press(&mut app, KeyCode::Up);
+    let buffer = app.current_buffer().expect("a file");
+    assert_eq!(buffer.in_block(), None, "the caret walked into nothing");
+    assert_eq!(
+        buffer.cursor().line.get(),
+        0,
+        "up was eaten by an empty block"
+    );
+}
+
+/// A removed line too long for the screen wraps, like every other line.
+///
+/// The block is a text, so it gets what the file's lines get: it breaks at
+/// the same width, the caret walks the rows it breaks into, and the end of
+/// a long line is somewhere a reader can stand. Drawn a row each and cut at
+/// the edge, the far end of such a line could be neither read nor reached.
+#[test]
+fn a_removed_line_too_long_for_the_screen_wraps() {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    let long = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
+    let repository = Repository::new("wrapped", &format!("{long}\nkept\n"));
+    repository.write("short\nkept\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    // Wrapping is off by default, and this is a test about wrapping.
+    app.configure(obelus::config::Config {
+        wrap: true,
+        ..obelus::config::Config::default()
+    });
+    // Narrow enough that the removed line needs more than one row.
+    support::lay_out(&mut app, 34, 12);
+    dispatch::dispatch(&mut app, Command::GitHunk);
+
+    let dump = support::render(&mut app, 34, 12);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("alpha beta") && text.contains("kappa"),
+        "the long line was cut rather than wrapped:\n{dump}"
+    );
+
+    // And the caret walks its rows: up from the file lands on the last row
+    // of it, and one more step is still inside the same line.
+    support::press(&mut app, KeyCode::Up);
+    let at = |app: &App| app.current_buffer().expect("a file").in_block();
+    assert_eq!(
+        at(&app).map(|(line, _)| line.get()),
+        Some(0),
+        "up did not walk into the only line there is"
+    );
+    support::press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 34, 12);
+    let caret = support::cursor_line(&dump).to_string();
+    assert_ne!(caret, "none", "the caret left the screen:\n{dump}");
+    // The end of the line is on a later row than its start, which is the
+    // whole of what wrapping means here.
+    support::press(&mut app, KeyCode::Home);
+    let home = support::cursor_line(&support::render(&mut app, 34, 12)).to_string();
+    assert_ne!(home, caret, "the line has only one row");
+}
+
+/// Selecting inside a block leaves the file's own selection alone.
+///
+/// The anchor belongs to whichever place the caret is in. Armed in the file
+/// while the reader is selecting in a block, it would sit on the line the
+/// cursor is parked on -- and walking out of the block would leave a
+/// selection nobody made, drawn across the file and copied instead of what
+/// they were actually selecting.
+#[test]
+fn selecting_in_a_block_selects_nothing_in_the_file() {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    let repository = Repository::new("anchors", "first\nold one\nold two\nlast\n");
+    repository.write("first\nnew one\nlast\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 12);
+    support::press(&mut app, KeyCode::Down);
+    dispatch::dispatch(&mut app, Command::GitHunk);
+
+    // Out of the block's top, so the cursor is parked on the line above it,
+    // then back in and along with shift held.
+    for _ in 0..3 {
+        support::press(&mut app, KeyCode::Up);
+    }
+    support::press_shift(&mut app, KeyCode::Down);
+    support::press_shift(&mut app, KeyCode::Down);
+    assert_eq!(
+        app.current_buffer().and_then(Buffer::selected_text),
+        Some("old one\n".to_string()),
+        "the selection is not the block's first line"
+    );
+
+    // And walking out of the bottom -- still holding shift, which is what
+    // a reader selecting downward does -- leaves nothing selected: the
+    // block's selection went with the block, and the file never had one.
+    support::press_shift(&mut app, KeyCode::Down);
+    let buffer = app.current_buffer().expect("a file");
+    assert_eq!(buffer.in_block(), None, "still in the block");
+    assert_eq!(
+        buffer.selection(),
+        None,
+        "walking out of a block left a selection in the file"
+    );
+    assert_eq!(buffer.selected_text(), None);
+}
+
+/// Escape gives up on a selection made inside a block, like any other.
+#[test]
+fn escape_clears_a_selection_in_a_block() {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    let repository = Repository::new("clearing", "alpha\nbeta\nkept\n");
+    repository.write("delta\nkept\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 12);
+    dispatch::dispatch(&mut app, Command::GitHunk);
+    support::press(&mut app, KeyCode::Up);
+    support::press_shift(&mut app, KeyCode::Up);
+    assert!(
+        app.current_buffer()
+            .and_then(Buffer::selected_text)
+            .is_some(),
+        "nothing was selected to give up on"
+    );
+    assert!(app.offers(Command::SelectionClear));
+
+    dispatch::dispatch(&mut app, Command::SelectionClear);
+    assert_eq!(
+        app.current_buffer().and_then(Buffer::selected_text),
+        None,
+        "escape left the selection in the block"
+    );
+    assert!(
+        !app.offers(Command::SelectionClear),
+        "the command is still offered with nothing selected"
+    );
+}
+
+/// The key that opens a hunk closes it from wherever the reader walked to.
+///
+/// Walking into the block parks the cursor on the line it is anchored to,
+/// and walking in from above leaves it on the line before that -- from
+/// neither of which is "the hunk at the cursor" the hunk in front of them.
+#[test]
+fn the_key_that_opened_a_hunk_closes_it_from_inside() {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    let repository = Repository::new("closing", "first\nold one\nold two\nlast\n");
+    repository.write("first\nnew one\nlast\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 12);
+    support::press(&mut app, KeyCode::Down);
+    dispatch::dispatch(&mut app, Command::GitHunk);
+
+    // Out of the top of the block, onto the line above it: the cursor is
+    // now two lines from the hunk it is looking at.
+    for _ in 0..3 {
+        support::press(&mut app, KeyCode::Up);
+    }
+    assert_eq!(app.current_buffer().expect("a file").cursor().line.get(), 0);
+    assert!(
+        app.current_buffer().expect("a file").block().is_some(),
+        "the block closed on its own"
+    );
+    assert!(
+        app.offers(Command::GitHunk),
+        "the key that closes it is dim while it is open"
+    );
+    dispatch::dispatch(&mut app, Command::GitHunk);
+    assert!(
+        app.current_buffer().expect("a file").block().is_none(),
+        "the hunk could not be closed from outside it"
+    );
+    assert_eq!(app.note(), None, "closing it said something");
+}
+
 /// A deletion taller than the screen can be read all the way through.
 ///
 /// The rows an opened hunk draws are rows of the *screen*, so the viewport
@@ -478,17 +956,34 @@ fn a_deletion_taller_than_the_screen_can_be_read() {
         "the file is on screen, so this is not the middle of the block:\n{middle}"
     );
 
-    // The cursor never left the line it was on -- the block is not text and
-    // has no place for it -- so any move brings the screen back to it.
+    // The caret went with it, keeping its place on the screen the way it
+    // does through any page: it began nine rows down, on the line that
+    // replaced the block, and it is nine rows down the block now. Which is
+    // what makes the next arrow key carry on from where the reader is
+    // looking rather than from the file below.
+    let buffer = app.current_buffer().expect("a file");
     assert_eq!(
-        app.current_buffer().expect("a file").cursor().line.get(),
-        0,
-        "paging through the block moved the cursor into it"
+        buffer.in_block().map(|(line, _)| line.get()),
+        Some(19),
+        "the caret did not go where the page went"
     );
-    support::press(&mut app, KeyCode::Down);
-    assert!(
-        screen(&mut app).contains("kept"),
-        "a cursor move did not bring the screen back to the cursor"
+    // And the cursor stayed on the line the block belongs to. Those lines
+    // are not in the file, so nothing that asks the file about "here" may
+    // be answered from one.
+    assert_eq!(buffer.cursor().line.get(), 0, "the cursor left the file");
+
+    // Up from the block's first line stays there: this block is drawn above
+    // the first line of the file, so there is nothing above it to walk on
+    // to. Leaving would put the caret on the line the block was drawn
+    // above, which is *below* where it was.
+    for _ in 0..25 {
+        support::press(&mut app, KeyCode::Up);
+    }
+    let buffer = app.current_buffer().expect("a file");
+    assert_eq!(
+        buffer.in_block().map(|(line, _)| line.get()),
+        Some(0),
+        "up walked out of the top of a block with nothing above it"
     );
 }
 

@@ -347,6 +347,15 @@ impl Widget for EditorView<'_> {
                 .and_then(|changes| changes.hunk_at(anchor))
                 .map(|hunk| (hunk, self.marker_background(hunk.marker())))
         });
+        let block = buffer.block();
+        // What the reader has selected inside it, in the block's own
+        // coordinates -- the selection the rest of this draws is the
+        // file's, and says nothing about lines the file does not have.
+        let selected = buffer.block_selection();
+        // And nothing to colour those lines by: a block's text has no
+        // syntax tree of its own, and the row's colour is what says the
+        // lines are gone.
+        let plain = Highlights::default();
 
         // One clock reading for the frame, taken here rather than where it
         // is used: a frame is a moment, and "how long ago" is measured from
@@ -362,67 +371,98 @@ impl Widget for EditorView<'_> {
             // line, because that is where it was, and pushing the file down
             // rather than overwriting anything: text that is not in the file
             // must not look like text that is.
-            if self.opened == Some(line)
-                && let Some(changes) = self.changes
-                && let Some(hunk) = changes.hunk_at(line)
-            {
+            // Nothing for a hunk that replaced nothing: an added one opens
+            // like any other -- the tint behind its lines is what says what
+            // kind of change it is -- and has no rows of its own to draw.
+            if let Some(block) = block.filter(|block| block.above == line && !block.is_empty()) {
                 // The rows above this line are rows of the screen, so the
                 // viewport can be inside them: whatever the top row skips
                 // is spent here first, and the rest of the block is drawn
                 // from there. Without that a deletion taller than the
                 // screen could only ever be seen from its first row --
                 // which, past that first screenful, is no way to read it.
-                let into = skip.min(hunk.removed.len());
+                let wrap_width = if self.wrap { width } else { u16::MAX };
+                let mut into = skip.min(block.rows(wrap_width));
                 skip -= into;
-                for removed in hunk.removed.iter().skip(into) {
-                    if screen_row >= area.height {
-                        break;
-                    }
-                    let y = area.y + screen_row;
-                    // Filled first, so the text below is written onto the
-                    // tint rather than the tint over the text.
-                    fill(
-                        cells,
-                        Rect {
-                            x: area.x + margin,
+                // Line by line and row by row, the way the loop below walks
+                // the file: one wrapping per line rather than one per row,
+                // which for a deletion of a few hundred lines is the
+                // difference between a frame and several.
+                'block: for removed in 0..block.text.line_count() {
+                    let removed = LineNumber::new(removed);
+                    for wrap in block.text.wrap_rows(removed, wrap_width) {
+                        if into > 0 {
+                            into -= 1;
+                            continue;
+                        }
+                        if screen_row >= area.height {
+                            break 'block;
+                        }
+                        let y = area.y + screen_row;
+                        // Filled first, so the text below is written onto
+                        // the tint rather than the tint over the text.
+                        fill(
+                            cells,
+                            Rect {
+                                x: area.x + margin,
+                                y,
+                                width: gutter + width,
+                                height: 1,
+                            },
+                            Style::new()
+                                .fg(self.theme.foreground)
+                                .bg(self.theme.change_removed_background),
+                        );
+                        // The bar a line on screen gets, not the boundary
+                        // mark: `Marker::Removed`'s top edge exists because
+                        // deleted lines have no row of their own, and
+                        // opening the hunk is exactly the act of giving
+                        // them one. The colour still says they are gone.
+                        draw_marker(
+                            area.x,
                             y,
-                            width: gutter + width,
-                            height: 1,
-                        },
-                        Style::new()
-                            .fg(self.theme.foreground)
-                            .bg(self.theme.change_removed_background),
-                    );
-                    // The bar a line on screen gets, not the boundary mark:
-                    // `Marker::Removed`'s top edge exists because deleted
-                    // lines have no row of their own, and opening the hunk
-                    // is exactly the act of giving them one. The colour
-                    // still says they are gone.
-                    draw_marker(
-                        area.x,
-                        y,
-                        Marker::Modified,
-                        self.theme.change_removed,
-                        cells,
-                    );
-                    // No line number: these lines have no number in this
-                    // file, and borrowing the next one's would be a lie
-                    // about where they are.
-                    // No background of its own: the fill above already put
-                    // the tint on this row, and a style that names one paints
-                    // over it wherever there is a glyph -- which leaves the
-                    // colour showing in the gaps between words and nowhere
-                    // else. The ordinary foreground, because the row's colour
-                    // is now what says these lines are gone, and red text on
-                    // a red row is a line nobody can read.
-                    crate::ui::write(
-                        cells,
-                        area.x + margin + gutter,
-                        y,
-                        removed,
-                        Style::new().fg(self.theme.foreground),
-                    );
-                    screen_row += 1;
+                            Marker::Modified,
+                            self.theme.change_removed,
+                            cells,
+                        );
+                        // No line number: these lines have no number in
+                        // this file, and borrowing the next one's would be
+                        // a lie about where they are.
+                        //
+                        // Written by the writer every other row goes
+                        // through, over the block's own text: it wraps at
+                        // the same width, its tabs reach the same stops,
+                        // and what the reader selected in it is drawn like
+                        // any other selection. Nothing is highlighted --
+                        // the row's colour is what says these lines are
+                        // gone, and syntax on a red row would be two things
+                        // saying different ones.
+                        draw_row(
+                            Placement {
+                                x: area.x + margin + gutter,
+                                y,
+                                width,
+                                row: wrap,
+                                // Scrolled with the file: with wrapping off
+                                // there is a window on every row of the
+                                // screen, and a block whose rows ignored it
+                                // would put its text under a caret that had
+                                // followed the window.
+                                left: if self.wrap { 0 } else { viewport.left },
+                            },
+                            &block.text,
+                            removed,
+                            cells,
+                            &Painting {
+                                highlights: &plain,
+                                theme: self.theme,
+                                marked: &[],
+                                selection: selected,
+                                brackets: None,
+                            },
+                        );
+                        screen_row += 1;
+                    }
                 }
             }
 
@@ -495,7 +535,7 @@ impl Widget for EditorView<'_> {
                 };
                 let ended = draw_row(
                     placement,
-                    buffer,
+                    text,
                     line,
                     cells,
                     &Painting {
@@ -647,7 +687,7 @@ struct Painting<'a> {
 /// text" is only knowable by whoever drew the text.
 fn draw_row(
     placement: Placement,
-    buffer: &Buffer,
+    text: &crate::text::Text,
     line: LineNumber,
     cells: &mut CellBuffer,
     painting: &Painting<'_>,
@@ -659,7 +699,6 @@ fn draw_row(
         row,
         left,
     } = placement;
-    let text = buffer.text();
     // Where this row's characters begin, plus whatever is scrolled off the
     // side. With wrapping the second is always zero, by construction: the
     // row is exactly the characters that fit.

@@ -15,8 +15,14 @@ impl Buffer {
     }
 
     /// Forgets the anchor, so nothing is selected.
+    ///
+    /// Either anchor: a selection made inside an opened hunk is a
+    /// selection, and the key that gives up on one has to reach it.
     pub const fn clear_selection(&mut self) {
         self.selection_anchor = None;
+        if let Some(at) = self.in_block.as_mut() {
+            at.anchor = None;
+        }
     }
 
     /// Selects the whole file: the anchor at the first character, the
@@ -43,26 +49,29 @@ impl Buffer {
     /// The selected characters, if the cursor has moved away from its anchor.
     #[must_use]
     pub fn selection(&self) -> Option<Span> {
-        let anchor = self.selection_anchor?;
-        let (start, end) = if (anchor.line, anchor.column) <= (self.cursor.line, self.cursor.column)
-        {
-            (anchor, self.cursor)
-        } else {
-            (self.cursor, anchor)
-        };
-        ((start.line, start.column) != (end.line, end.column)).then_some(Span {
-            line: start.line,
-            column: start.column,
-            end_line: end.line,
-            end_column: end.column,
-        })
+        span_between(self.selection_anchor?, self.cursor)
     }
 
     /// The text the reader selected, if any.
+    ///
+    /// From whichever of the two they selected it in: the file, or the
+    /// lines an opened hunk is showing. What a reader can see and put a
+    /// caret in is what they can take a copy of.
     #[must_use]
     pub fn selected_text(&self) -> Option<String> {
+        if let Some(block) = self.block.as_ref()
+            && let Some(selection) = self.block_selection()
+        {
+            return Some(block.text.text_in(selection));
+        }
         self.selection()
             .map(|selection| self.text.text_in(selection))
+    }
+
+    /// Whether anything is selected, in the file or in an opened block.
+    #[must_use]
+    pub fn has_selection(&self) -> bool {
+        self.selection().is_some() || self.block_selection().is_some()
     }
 
     /// What part of the document is on screen.
@@ -77,8 +86,11 @@ impl Buffer {
     /// or one the history remembered.
     pub fn place_cursor(&mut self, line: LineNumber, column: CharColumn) {
         // Being put somewhere is arriving, and arriving ends a detour: every
-        // caller of this follows it by saying where the screen should be.
+        // caller of this follows it by saying where the screen should be --
+        // and it ends the other detour too, which is having walked into a
+        // hunk's removed lines.
         self.detached = false;
+        self.in_block = None;
         self.selection_anchor = None;
         self.cursor.line = self.text.clamp_line(line);
         self.cursor.column = self.text.clamp_column(self.cursor.line, column);
@@ -134,10 +146,39 @@ impl Buffer {
         // the way through a deletion taller than the screen, and the same
         // thing the wheel does. The next cursor move brings the screen back
         // to it, as it does after any scroll.
+        // The row it landed on is one the view drew and the text does not
+        // have -- inside a hunk the reader has opened. The caret goes there
+        // instead: those rows are where a page through a long deletion
+        // lands, and the cursor stays on the line the block belongs to.
         let Some((line, row)) = self.text_row_at(landed, area) else {
-            self.detached = true;
+            // Into the block, on the row it landed on and at the cell it
+            // was aiming for -- a page keeps the reader's place on the
+            // screen, and their column with it.
+            if let Some(block) = self.block.as_ref() {
+                let (line, row) = block.place_at_row(landed.1, width);
+                self.in_block = Some(InBlock {
+                    cursor: Cursor {
+                        line,
+                        column: block.text.column_in_row(
+                            line,
+                            row,
+                            self.cursor.remembered_cell,
+                            width,
+                        ),
+                        remembered_cell: self.cursor.remembered_cell,
+                    },
+                    anchor: None,
+                });
+            }
+            // Whatever was being selected was being selected in the file,
+            // and the caret has just left it: a selection with one end in
+            // the file and the other in lines the file does not have is
+            // not a thing either half could be asked about.
+            self.selection_anchor = None;
+            self.detached = false;
             return;
         };
+        self.in_block = None;
         self.cursor.line = line;
         // The remembered cell, like a vertical move: paging is one.
         self.cursor.column = self
@@ -231,10 +272,16 @@ impl Buffer {
         area: TextArea,
         extend_selection: bool,
     ) {
-        if extend_selection {
-            self.selection_anchor.get_or_insert(self.cursor);
-        } else {
-            self.selection_anchor = None;
+        // The anchor belongs to whichever place the caret is in. Arming the
+        // file's while the reader is selecting inside a block would leave a
+        // selection nobody made: from the line the cursor is parked on to
+        // wherever it steps out.
+        if self.in_block.is_none() {
+            if extend_selection {
+                self.selection_anchor.get_or_insert(self.cursor);
+            } else {
+                self.selection_anchor = None;
+            }
         }
         if self.detached {
             self.detached = false;
@@ -242,72 +289,132 @@ impl Buffer {
             self.center_on_cursor(area);
             return;
         }
+        // Inside an opened hunk, where the caret has its own place to move
+        // about: those lines are text, and a reader looking at what a file
+        // used to say wants to walk it and take a copy of it.
+        if self.in_block.is_some() {
+            self.move_in_block(motion, area, extend_selection);
+            return;
+        }
+        // And the step that walks into one. The block sits between the line
+        // it was drawn above and the line before that, so it is entered
+        // from either side -- going up off the top row of the line below
+        // it, or down off the last row of the line above.
+        if let Some(entering) = self.entering_block(motion, area) {
+            self.in_block = Some(InBlock {
+                cursor: entering,
+                anchor: None,
+            });
+            self.selection_anchor = None;
+            return;
+        }
+        move_within(&self.text, &mut self.cursor, motion, area.wrap_width());
+    }
+
+    /// Which line of an opened block a motion walks into, if it walks into
+    /// one.
+    ///
+    /// Up from the first row of the line the block was drawn above enters
+    /// at its last line; down from the last row of the line before it
+    /// enters at its first. Every other motion, and every other place,
+    /// leaves the block alone.
+    fn entering_block(&self, motion: Motion, area: TextArea) -> Option<Cursor> {
+        let block = self.block.as_ref().filter(|block| !block.is_empty())?;
         let width = area.wrap_width();
         let (row, _) = self
             .text
             .visual_position(self.cursor.line, self.cursor.column, width);
-
-        let rows = match motion {
-            Motion::Up => -1,
-            Motion::Down => 1,
-            Motion::Left => {
-                self.cursor.column = self.cursor.column.saturating_sub(1);
-                self.remember(width);
-                return;
+        let entered = match motion {
+            Motion::Up if self.cursor.line == block.above && row == 0 => {
+                LineNumber::new(block.text.line_count().saturating_sub(1))
             }
-            Motion::Right => {
-                self.cursor.column = self
-                    .text
-                    .clamp_column(self.cursor.line, self.cursor.column.saturating_add(1));
-                self.remember(width);
-                return;
+            Motion::Down
+                if block.above.get() > 0
+                    && self.cursor.line.get() + 1 == block.above.get()
+                    && row + 1 == self.text.row_count(self.cursor.line, width) =>
+            {
+                LineNumber::new(0)
             }
-            Motion::LineStart => {
-                self.cursor.column = CharColumn::new(0);
-                self.remember(width);
-                return;
-            }
-            // Both land on column zero rather than one keeping the column and
-            // the other not. Symmetry is worth more here than either
-            // convention: the last line of a file that ends in a newline is
-            // empty, so its start and its end are the same place anyway.
-            Motion::DocumentStart => {
-                self.cursor.line = LineNumber::new(0);
-                self.cursor.column = CharColumn::new(0);
-                self.remember(width);
-                return;
-            }
-            Motion::DocumentEnd => {
-                self.cursor.line = self.text.last_line();
-                self.cursor.column = CharColumn::new(0);
-                self.remember(width);
-                return;
-            }
-            // Past the last character, where a cursor legitimately sits. The
-            // end of the line, not of the visual row: a line is what the key
-            // is named after.
-            Motion::LineEnd => {
-                self.cursor.column = self.text.line_length(self.cursor.line);
-                self.remember(width);
-                return;
-            }
+            _ => return None,
         };
-
-        let (line, row) = self.step_rows(self.cursor.line, row, rows, width);
-        self.cursor.line = line;
-        // Aim for the remembered cell, then take whatever column covers it on
-        // the row arrived at.
-        self.cursor.column = self
-            .text
-            .column_in_row(line, row, self.cursor.remembered_cell, width);
+        // Arriving on a row aims for the cell the reader was in, the same
+        // as arriving on any other row: a column of zero would drag the
+        // caret to the left edge on the way in and leave it there on the
+        // way out. Which row of the line, for a line that wraps: the last
+        // going up, the first coming down.
+        let row = match motion {
+            Motion::Up => block.text.row_count(entered, width).saturating_sub(1),
+            _ => 0,
+        };
+        Some(Cursor {
+            line: entered,
+            column: block
+                .text
+                .column_in_row(entered, row, self.cursor.remembered_cell, width),
+            remembered_cell: self.cursor.remembered_cell,
+        })
     }
 
-    /// Records the cell the cursor is at, as the column to aim for later.
-    fn remember(&mut self, width: u16) {
-        let (_, cell) = self
-            .text
-            .visual_position(self.cursor.line, self.cursor.column, width);
-        self.cursor.remembered_cell = cell;
+    /// Moves the caret about inside an opened block.
+    ///
+    /// The same motions over the block's own text: it is a text, so
+    /// wrapping, tabs, wide glyphs and the cell to aim for are all the
+    /// ones the file gets, from the same code. What is the block's own is
+    /// the two edges -- a move that cannot go further up or down leaves
+    /// it, for the line above or the line it was drawn above.
+    fn move_in_block(&mut self, motion: Motion, area: TextArea, extend_selection: bool) {
+        let Some(mut at) = self.in_block else {
+            return;
+        };
+        if extend_selection {
+            at.anchor.get_or_insert(at.cursor);
+        } else {
+            at.anchor = None;
+        }
+        let width = area.wrap_width();
+        let Some(block) = self.block.as_ref() else {
+            return;
+        };
+        let above = block.above;
+        let moved = move_within(&block.text, &mut at.cursor, motion, width);
+        if moved || !matches!(motion, Motion::Up | Motion::Down) {
+            self.in_block = Some(at);
+            return;
+        }
+
+        // It could not move, so it is at one end of the block and on its
+        // way out.
+        match motion {
+            // A block at the top of the file has nothing above it, so the
+            // caret stays on its first row. Leaving here would put it on
+            // the line the block was drawn above -- *below* where it was
+            // -- and the next press would walk back in.
+            Motion::Up if above.get() == 0 => self.in_block = Some(at),
+            Motion::Up => {
+                self.in_block = None;
+                let line = above.saturating_sub(1);
+                let last = self.text.row_count(line, width).saturating_sub(1);
+                self.cursor.line = line;
+                self.cursor.column =
+                    self.text
+                        .column_in_row(line, last, at.cursor.remembered_cell, width);
+                self.cursor.remembered_cell = at.cursor.remembered_cell;
+            }
+            // Out of the bottom, onto the line the block was drawn above.
+            // Said rather than assumed: the cursor is only already there
+            // for a reader who walked in from below, and one who walked in
+            // from above would be put back where they started -- which,
+            // pressed again, walks into the block again and never gets
+            // past it.
+            _ => {
+                self.in_block = None;
+                self.cursor.line = above;
+                self.cursor.column =
+                    self.text
+                        .column_in_row(above, 0, at.cursor.remembered_cell, width);
+                self.cursor.remembered_cell = at.cursor.remembered_cell;
+            }
+        }
     }
 
     /// How many rows of the screen a line takes: the rows the view draws
@@ -319,7 +426,16 @@ impl Buffer {
     /// screen -- and one function answering both is what let an opened hunk
     /// be drawn where the viewport could not reach it.
     fn screen_rows_of(&self, line: LineNumber, area: TextArea) -> usize {
-        area.inserted.rows_above(line) + self.text.row_count(line, area.wrap_width())
+        self.rows_above(line, area.wrap_width()) + self.text.row_count(line, area.wrap_width())
+    }
+
+    /// How many rows the view draws above a line, which is a hunk the
+    /// reader has opened there and nothing else.
+    fn rows_above(&self, line: LineNumber, width: u16) -> usize {
+        self.block
+            .as_ref()
+            .filter(|block| block.above == line)
+            .map_or(0, |block| block.rows(width))
     }
 
     /// The row of the screen `rows` away, crossing line boundaries and
@@ -364,12 +480,21 @@ impl Buffer {
     /// the cursor, so they count -- which is the whole of what the caret
     /// and the scrolling had wrong.
     fn cursor_screen_row(&self, area: TextArea) -> (LineNumber, usize) {
-        let (row, _) =
-            self.text
-                .visual_position(self.cursor.line, self.cursor.column, area.wrap_width());
+        // In the block, the caret is on one of the rows the view drew, and
+        // those are the first rows of the line they were drawn above.
+        let width = area.wrap_width();
+        if let (Some(block), Some(at)) = (self.block.as_ref(), self.in_block) {
+            let (row, _) = block
+                .text
+                .visual_position(at.cursor.line, at.cursor.column, width);
+            return (block.above, block.rows_before(at.cursor.line, width) + row);
+        }
+        let (row, _) = self
+            .text
+            .visual_position(self.cursor.line, self.cursor.column, width);
         (
             self.cursor.line,
-            area.inserted.rows_above(self.cursor.line) + row,
+            self.rows_above(self.cursor.line, width) + row,
         )
     }
 
@@ -381,40 +506,30 @@ impl Buffer {
     /// file does not have, and the first row of the block is not the first
     /// row of the line.
     fn text_row_at(&self, at: (LineNumber, usize), area: TextArea) -> Option<(LineNumber, usize)> {
-        let above = area.inserted.rows_above(at.0);
+        let above = self.rows_above(at.0, area.wrap_width());
         (at.1 >= above).then(|| (at.0, at.1 - above))
     }
 
-    /// The visual row `rows` away, crossing line boundaries and stopping at
-    /// either end of the document.
-    fn step_rows(
-        &self,
-        mut line: LineNumber,
-        mut row: usize,
-        rows: isize,
-        width: u16,
-    ) -> (LineNumber, usize) {
-        let last = self.text.last_line();
-        for _ in 0..rows.unsigned_abs() {
-            if rows > 0 {
-                if row + 1 < self.text.row_count(line, width) {
-                    row += 1;
-                } else if line < last {
-                    line = line.saturating_add(1);
-                    row = 0;
-                } else {
-                    break;
-                }
-            } else if row > 0 {
-                row -= 1;
-            } else if line.get() > 0 {
-                line = line.saturating_sub(1);
-                row = self.text.row_count(line, width).saturating_sub(1);
-            } else {
-                break;
+    /// How far along its row the caret is, in cells.
+    ///
+    /// From whichever text it is in: the file's, or an opened block's --
+    /// which wraps at the same width and counts cells the same way, being
+    /// a text like any other.
+    fn caret_cell(&self, area: TextArea) -> DisplayColumn {
+        let width = area.wrap_width();
+        match self.block.as_ref().zip(self.in_block) {
+            Some((block, at)) => {
+                block
+                    .text
+                    .visual_position(at.cursor.line, at.cursor.column, width)
+                    .1
+            }
+            None => {
+                self.text
+                    .visual_position(self.cursor.line, self.cursor.column, width)
+                    .1
             }
         }
-        (line, row)
     }
 
     /// Where the cursor sits on screen, as a row and a cell within the text
@@ -424,10 +539,7 @@ impl Buffer {
     /// [`Buffer::scroll_into_view`] means the text area has no room at all.
     #[must_use]
     pub fn cursor_screen_cell(&self, area: TextArea) -> Option<(u16, u16)> {
-        let width = area.wrap_width();
-        let (_, cell) = self
-            .text
-            .visual_position(self.cursor.line, self.cursor.column, width);
+        let cell = self.caret_cell(area);
         let cursor = self.cursor_screen_row(area);
 
         // The cell the cursor is in, counted from the left edge of what is
@@ -436,6 +548,7 @@ impl Buffer {
         // is a cell of the *line*: on a line scrolled by forty cells the
         // caret was drawn forty cells to the right of the character it is
         // on, or -- past the edge -- not drawn at all.
+        //
         let Ok(left) = u16::try_from(self.viewport.left) else {
             return None;
         };
@@ -512,10 +625,10 @@ impl Buffer {
             return;
         }
         let width = usize::from(area.width).max(1);
-        let (_, cell) =
-            self.text
-                .visual_position(self.cursor.line, self.cursor.column, area.wrap_width());
-        let cell = usize::from(cell.get());
+        // Whichever caret is on screen: a reader walking a long line of an
+        // opened block is as far along it as a reader walking a long line
+        // of the file, and the window has to follow the one they can see.
+        let cell = usize::from(self.caret_cell(area).get());
         if cell < self.viewport.left {
             self.viewport.left = cell;
         } else if cell >= self.viewport.left + width {
@@ -574,4 +687,109 @@ impl Buffer {
         self.viewport.top = top;
         self.viewport.top_row = top_row;
     }
+}
+
+/// The visual row `rows` away in a text, crossing line boundaries and
+/// stopping at either end of it.
+fn step_rows(
+    text: &Text,
+    mut line: LineNumber,
+    mut row: usize,
+    rows: isize,
+    width: u16,
+) -> (LineNumber, usize) {
+    let last = text.last_line();
+    for _ in 0..rows.unsigned_abs() {
+        if rows > 0 {
+            if row + 1 < text.row_count(line, width) {
+                row += 1;
+            } else if line < last {
+                line = line.saturating_add(1);
+                row = 0;
+            } else {
+                break;
+            }
+        } else if row > 0 {
+            row -= 1;
+        } else if line.get() > 0 {
+            line = line.saturating_sub(1);
+            row = text.row_count(line, width).saturating_sub(1);
+        } else {
+            break;
+        }
+    }
+    (line, row)
+}
+
+/// Moves a cursor through a text, and says whether it moved at all.
+///
+/// The file's text or an opened block's: a caret in either is a place in a
+/// text, and the answer to "what does down do here" is the same in both.
+/// The answer is also how a block's edges are found -- a move that could
+/// not go further up or down is a move off the end of one.
+///
+/// Up and down step one *visual* row, not one line. With wrapping on, a
+/// long line is many rows tall, and stepping over all of them at once is
+/// not what pressing down once looks like it should do.
+fn move_within(text: &Text, cursor: &mut Cursor, motion: Motion, width: u16) -> bool {
+    let was = (cursor.line, cursor.column);
+    let (row, _) = text.visual_position(cursor.line, cursor.column, width);
+    let moved = |cursor: &Cursor| (cursor.line, cursor.column) != was;
+
+    let rows = match motion {
+        Motion::Up => -1,
+        Motion::Down => 1,
+        Motion::Left => {
+            cursor.column = cursor.column.saturating_sub(1);
+            remember(text, cursor, width);
+            return moved(cursor);
+        }
+        Motion::Right => {
+            cursor.column = text.clamp_column(cursor.line, cursor.column.saturating_add(1));
+            remember(text, cursor, width);
+            return moved(cursor);
+        }
+        Motion::LineStart => {
+            cursor.column = CharColumn::new(0);
+            remember(text, cursor, width);
+            return moved(cursor);
+        }
+        // Both land on column zero rather than one keeping the column and
+        // the other not. Symmetry is worth more here than either
+        // convention: the last line of a file that ends in a newline is
+        // empty, so its start and its end are the same place anyway.
+        Motion::DocumentStart => {
+            cursor.line = LineNumber::new(0);
+            cursor.column = CharColumn::new(0);
+            remember(text, cursor, width);
+            return moved(cursor);
+        }
+        Motion::DocumentEnd => {
+            cursor.line = text.last_line();
+            cursor.column = CharColumn::new(0);
+            remember(text, cursor, width);
+            return moved(cursor);
+        }
+        // Past the last character, where a cursor legitimately sits. The
+        // end of the line, not of the visual row: a line is what the key
+        // is named after.
+        Motion::LineEnd => {
+            cursor.column = text.line_length(cursor.line);
+            remember(text, cursor, width);
+            return moved(cursor);
+        }
+    };
+
+    let (line, row) = step_rows(text, cursor.line, row, rows, width);
+    cursor.line = line;
+    // Aim for the remembered cell, then take whatever column covers it on
+    // the row arrived at.
+    cursor.column = text.column_in_row(line, row, cursor.remembered_cell, width);
+    moved(cursor)
+}
+
+/// Records the cell a cursor is at, as the column to aim for later.
+fn remember(text: &Text, cursor: &mut Cursor, width: u16) {
+    let (_, cell) = text.visual_position(cursor.line, cursor.column, width);
+    cursor.remembered_cell = cell;
 }

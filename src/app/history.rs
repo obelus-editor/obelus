@@ -13,9 +13,15 @@ impl App {
     }
 
     /// The hunk the reader has opened in place, if any.
+    ///
+    /// The buffer holds it: its removed lines are rows of that file's
+    /// screen and a place its caret can be, so the two things that need
+    /// them are both in there.
     #[must_use]
-    pub const fn opened_hunk(&self) -> Option<LineNumber> {
-        self.opened
+    pub fn opened_hunk(&self) -> Option<LineNumber> {
+        self.current_buffer()
+            .and_then(Buffer::block)
+            .map(|block| block.above)
     }
 
     /// Opens what changed at the cursor, in place, or closes it again.
@@ -29,6 +35,18 @@ impl App {
             self.note = Some("no file open".to_string());
             return;
         };
+        // An open one closes wherever the reader is standing. Walking into
+        // the block parks the cursor on the line it is anchored to, and
+        // walking in from above leaves it on the line before that -- from
+        // neither of which is "the hunk at the cursor" the hunk in front of
+        // them.
+        if let Some(buffer) = self
+            .current_buffer_mut()
+            .filter(|buffer| buffer.block().is_some())
+        {
+            buffer.close_block();
+            return;
+        }
         let Some(hunk) = self.changes().and_then(|changes| changes.hunk_at(line)) else {
             self.note = Some("nothing changed here".to_string());
             return;
@@ -37,12 +55,10 @@ impl App {
         // is what puts the change type behind the lines, and "which lines
         // exactly are new here" is a question the margin's one column cannot
         // answer. An added hunk simply has nothing to show above itself.
-        let anchor = hunk.line;
-        self.opened = if self.opened == Some(anchor) {
-            None
-        } else {
-            Some(anchor)
-        };
+        let (anchor, removed) = (hunk.line, hunk.removed.clone());
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.open_block(anchor, &removed);
+        }
     }
 
     /// Moves the cursor to the change above it.
@@ -175,7 +191,9 @@ impl App {
         // A hunk that was open belonged to the diff that has just been
         // replaced. Leaving it open would show removed lines that are no
         // longer removed anywhere.
-        self.opened = None;
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.close_block();
+        }
     }
 }
 
