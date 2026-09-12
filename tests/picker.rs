@@ -2604,16 +2604,23 @@ fn a_language_with_no_tags_says_so_rather_than_looking_empty() {
     );
 }
 
-/// The buffer list is ordered by how often each file has been come back to.
-/// A list in the order files were opened puts the one opened by accident an
-/// hour ago above the one being read all afternoon.
+/// The buffer list holds still: the files in the order they were opened,
+/// whatever the reader has been doing with them.
+///
+/// It used to be ordered by how often each had been come back to, so the
+/// row a reader was reaching for moved every time they used it -- the list
+/// reordered itself in the moment between deciding to press the key and
+/// looking at what came up. The one file whose place they might otherwise
+/// have to hunt for is the one they are in, and that is the row the list
+/// opens on.
 #[test]
-fn the_buffer_list_puts_the_most_visited_first() {
+fn the_buffer_list_keeps_the_order_the_files_were_opened_in() {
     let mut app = App::new(vec![
         support::open_fixture("sample.rs"),
         support::open_fixture("long.rs"),
         support::open_fixture("indented.rs"),
     ]);
+    app.statuses_for_test(std::collections::HashMap::new());
     support::lay_out(&mut app, 60, 12);
 
     let listed = |app: &App| -> Vec<String> {
@@ -2629,26 +2636,37 @@ fn the_buffer_list_puts_the_most_visited_first() {
         press(app, KeyCode::Enter);
     };
 
-    // Twice to the third file, once to the second.
+    press_function(&mut app, 2);
+    let opened = listed(&app);
+    let names: Vec<&str> = opened
+        .iter()
+        .map(|label| label.rsplit('/').next().unwrap_or(label))
+        .collect();
+    assert_eq!(
+        names,
+        ["sample.rs", "long.rs", "indented.rs"],
+        "not the order they were opened in: {opened:?}"
+    );
+    press(&mut app, KeyCode::Esc);
+
+    // Whatever is visited, and however often, the list is the same list.
     visit(&mut app, "indented");
     visit(&mut app, "long");
     visit(&mut app, "indented");
-
     press_function(&mut app, 2);
-    let order = listed(&app);
-    let at = |needle: &str| {
-        order
-            .iter()
-            .position(|label| label.contains(needle))
-            .unwrap_or_else(|| panic!("{needle:?} is not listed: {order:?}"))
-    };
-    assert!(
-        at("indented.rs") < at("long.rs"),
-        "twice-visited is not above once-visited: {order:?}"
+    assert_eq!(
+        listed(&app),
+        opened,
+        "the list reordered itself under the reader"
     );
+
+    // And it opens on the file being read, which is where a reader who has
+    // just arrived somewhere is looking.
     assert!(
-        at("long.rs") < at("sample.rs"),
-        "once-visited is not above never-chosen: {order:?}"
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .is_some_and(|item| item.label.contains("indented.rs")),
+        "the list did not open on the file being read"
     );
 }
 

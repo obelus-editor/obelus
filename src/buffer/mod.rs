@@ -330,12 +330,6 @@ pub struct Buffer {
     content: Content,
     /// How it is being shown.
     mode: Mode,
-    /// How many times the reader has come back to it.
-    ///
-    /// The buffer list is ordered by this. A list in the order files were
-    /// opened puts the one opened by accident an hour ago above the one
-    /// being read all afternoon.
-    activations: u32,
     text: Text,
     syntax: Option<SyntaxState>,
     /// Whether the last attempt to re-read the file failed.
@@ -412,7 +406,6 @@ impl Buffer {
             path,
             content: Content::File,
             mode: Mode::Edit,
-            activations: 0,
             text,
             syntax,
             stale: false,
@@ -513,17 +506,6 @@ impl Buffer {
                 wrap: true,
             },
         );
-    }
-
-    /// How many times the reader has come back to it.
-    #[must_use]
-    pub const fn activations(&self) -> u32 {
-        self.activations
-    }
-
-    /// Counts a visit.
-    pub const fn activate(&mut self) {
-        self.activations = self.activations.saturating_add(1);
     }
 
     /// Where the document came from.

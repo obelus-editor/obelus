@@ -157,22 +157,22 @@ impl App {
     pub fn open_buffer_picker(&mut self) {
         // Before the buffers are borrowed to build the rows.
         self.gather_statuses();
-        let mut open: Vec<(usize, &Buffer)> = self
+        // In the order they were opened, which is the order the slots are
+        // in. Not sorted by how often each has been come back to: that
+        // reorders the list under a reader between one press of the key and
+        // the next, so the row they are reaching for is never where it was
+        // last time. A list worth learning is a list that holds still --
+        // and the one file whose place they might have to hunt for, the one
+        // they are in, is the row the list opens on anyway.
+        let open = self
             .buffers
             .iter()
             .enumerate()
             // Closed slots are holes, not rows.
-            .filter_map(|(index, buffer)| buffer.as_ref().map(|buffer| (index, buffer)))
-            .collect();
-        // Most visited first. A list in the order files were opened puts the
-        // one opened by accident an hour ago above the one being read all
-        // afternoon; ties keep the order they were opened in, which is the
-        // only other thing obelus knows about them.
-        open.sort_by_key(|(index, buffer)| (std::cmp::Reverse(buffer.activations()), *index));
+            .filter_map(|(index, buffer)| buffer.as_ref().map(|buffer| (index, buffer)));
 
         let statuses = &self.statuses;
         let items = open
-            .into_iter()
             .map(|(index, buffer)| PickerItem {
                 icon: Some(icons::for_path(buffer.path())),
                 label: relative(buffer.path(), &self.working_directory),
@@ -235,14 +235,14 @@ impl App {
         self.close(id);
     }
 
-    /// Moves to a buffer, counting the visit.
-    ///
-    /// One place, because the count is what orders the buffer list and a
-    /// path that set `current` without counting would quietly leave a file
-    /// out of that order.
+    /// Moves to a buffer.
     pub(super) fn go_to_buffer(&mut self, id: BufferId) {
-        if let Some(buffer) = self.buffers.get_mut(id.get()).and_then(Option::as_mut) {
-            buffer.activate();
+        if self
+            .buffers
+            .get(id.get())
+            .and_then(Option::as_ref)
+            .is_some()
+        {
             self.current = Some(id);
         }
     }
