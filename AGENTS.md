@@ -413,6 +413,20 @@ the turn and reports back whether it was refused. Both assertions are in
 boolean one is only offered to a client that said in the handshake that it
 can show a switch.
 
+**A form is asked one question at a time, and the order is the agent's
+needs.** `elicitation/create`'s schema arrives as a *map* of fields -- JSON
+objects have no order to keep -- so the order the agent wrote them in is
+gone before obelus sees it, and asking in the alphabet's order put an
+"Other, if none of these suit" in front of the list it was an alternative
+to. What is left to go on is `required`: those first, in the order the agent
+listed them, and the rest after.
+
+What it does not need, a reader must be able to say nothing to -- enter on
+an empty box for words, a row of its own in a list. Escape is not that
+answer: escape gives up on the whole form, which is the one thing a reader
+walking past an aside does not mean. Without it an optional "anything else?"
+was a question with no way out but abandoning everything already answered.
+
 **An agent that wants to ask something uses `elicitation/create`.** That is
 the one way it can put UI on a client's screen, and it is gated on a
 capability: no `elicitation.form` in the handshake and an agent either falls
@@ -427,6 +441,19 @@ declared: obelus is not a browser, and a mode it cannot put is a mode it
 should not be sent. Anything else -- a multi-select, a property type it has
 never heard of -- is declined with the reason in the transcript rather than
 half-filled in.
+
+**A question the reader did not start says what it is about.** The compact
+list carries an `about` -- prose above its rows, a rule under it -- and a
+permission request fills it with what the agent is actually going to do:
+the tool call's own content, which is the command or the text it carries,
+and the files it names when it has none. The title stays on the prompt row,
+because a line is what fits there; "allow" and "refuse" are answers, and a
+question with the words missing is not one a reader can answer. It is
+wrapped to the width and capped at five rows: it is somebody else's prose,
+and an agent explaining itself at length must not push the list it belongs
+to off the screen. `raw_input` is not used -- that is the agent's own
+arguments in its own shape, and reading meaning into it would be obelus
+guessing.
 
 **A list open over anything owns the status row.** It is the thing taking
 the keys and holding the caret, so `StatusView` draws its prompt before the

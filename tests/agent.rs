@@ -1037,6 +1037,59 @@ fn a_settings_values_are_a_list_and_the_agent_answers_with_all_of_them() {
     );
 }
 
+/// A permission question says what it is actually about to do, above the
+/// answers.
+///
+/// "Allow once" and "Reject" are answers, and the question they answer is
+/// which command on which file -- not the line the title fits in. The
+/// protocol carries that as the tool call's own content, which is what an
+/// agent fills in to be shown.
+#[test]
+fn a_permission_question_says_what_it_will_do() {
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let asking = rows(&dump);
+    let at = |needle: &str| {
+        asking
+            .iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("no {needle:?} on screen:\n{dump}"))
+    };
+    // The command, above the options, with a rule between them -- and the
+    // title still on the prompt row, where the question goes.
+    let said = at("cargo test --all-features");
+    let allow = at("Allow once");
+    assert!(said < allow, "the reason is not above the answers:\n{dump}");
+    assert!(
+        asking[said + 1].contains('\u{2500}'),
+        "nothing separates the words from the answers:\n{dump}"
+    );
+    assert!(
+        asking[asking.len() - 1].contains("Run the tests"),
+        "the question left the prompt row:\n{dump}"
+    );
+
+    // And the answers are still answers: the list walks and chooses.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    assert!(
+        screen(&mut app).contains("and I was refused"),
+        "the answer the reader chose did not reach the agent"
+    );
+}
+
 /// The conversation is a dialog: nothing of obelus's own opens over it.
 ///
 /// It is the whole region and it has its own keys, so a command that put a
@@ -1071,6 +1124,88 @@ fn nothing_of_obeluss_own_opens_over_the_conversation() {
     assert!(
         app.picker().is_some(),
         "escape did not give the key table back"
+    );
+}
+
+/// The questions a form has to have answered come first, and what it does
+/// not need can be walked past.
+///
+/// A form arrives as a *map* of fields -- JSON objects have no order to
+/// keep -- so the order the agent wrote them in is gone by the time obelus
+/// sees it, and asking in the alphabet's order put an "Other, if none of
+/// these suit" in front of the list it was an alternative to. What is left
+/// to go on is what the agent said it needs, which is the question itself.
+///
+/// And what it does not need, a reader must be able to say nothing to:
+/// enter on an empty box for words, a row of its own in a list. Escape is
+/// not that answer -- escape gives up on the whole form, which is the one
+/// thing a reader walking past an aside does not mean.
+#[test]
+fn a_form_asks_for_what_it_needs_first_and_the_rest_can_be_left_blank() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/pick");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+
+    // The choice, though its name sorts after the optional field's -- and
+    // its rows say what each choice is, which is what the agent wrote
+    // beside them.
+    let listed: Vec<(String, Option<String>)> = app
+        .picker()
+        .expect("the question")
+        .matches()
+        .map(|item| (item.label.clone(), item.detail.clone()))
+        .collect();
+    assert_eq!(
+        listed.first().map(|(label, _)| label.as_str()),
+        Some("Write the weekly report"),
+        "not the field the agent said it needs: {listed:?}"
+    );
+    assert_eq!(
+        listed
+            .first()
+            .and_then(|(_, about)| about.clone())
+            .as_deref(),
+        Some("Gather the git changes of the week and write them up"),
+        "the rows do not say what they are: {listed:?}"
+    );
+    // Nothing to leave blank here: the agent needs this one answered.
+    assert!(
+        !listed.iter().any(|(label, _)| label == "leave blank"),
+        "a question the agent needs answered offered a way past it"
+    );
+
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Task: Review the code"),
+        "the answer is not in the conversation:\n{text}"
+    );
+
+    // Then the optional one, which says how to walk past it -- and enter on
+    // an empty box does. By row, because the note wraps.
+    assert!(
+        text.lines().any(|row| row.contains("leaves it blank")),
+        "nothing says the question can be left:\n{text}"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer to go back", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Other: left blank"),
+        "the question was not left blank:\n{text}"
+    );
+    assert!(
+        text.contains("you picked review and nothing else"),
+        "the selected value or omitted field went back wrong:\n{text}"
     );
 }
 

@@ -38,7 +38,7 @@ use agent_client_protocol::{
             SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
             SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionConfigSelectOption,
             SessionConfigSelectOptions, SessionModeState, SessionNotification, SessionUpdate,
-            SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent,
+            SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent, ToolCallContent,
             WriteTextFileRequest,
         },
     },
@@ -127,8 +127,11 @@ pub enum Incoming {
     Failed(&'static str, String),
     /// The agent is asking to be allowed something.
     Permission {
-        /// What it wants to do.
+        /// What it wants to do, in a line.
         title: String,
+        /// And in its own words: which command, which file -- what the
+        /// reader is actually being asked about.
+        reason: Option<String>,
         /// What obelus may answer.
         options: Vec<Choice>,
         /// Which option, or nothing for "not answered".
@@ -302,6 +305,13 @@ pub struct Field {
     pub about: Option<String>,
     /// What sort of answer it takes.
     pub takes: Takes,
+    /// Whether the agent said it has to be answered.
+    ///
+    /// What it buys is a question the reader can walk past: a form with an
+    /// optional "anything else?" on it is a form where saying nothing is
+    /// an answer, and a client that insists on one is a client the reader
+    /// has to escape out of -- which gives up the whole form.
+    pub required: bool,
 }
 
 /// What sort of answer a [`Field`] takes.
@@ -432,6 +442,7 @@ async fn talk(
                 let (answer, answered) = oneshot::channel();
                 let question = Incoming::Permission {
                     title: title_of(&request),
+                    reason: reason_of(&request),
                     options: request
                         .options
                         .iter()
@@ -735,6 +746,43 @@ fn title_of(request: &RequestPermissionRequest) -> String {
         .unwrap_or_else(|| "the agent wants to do something".to_string())
 }
 
+/// What the agent is actually about to do, for the reader deciding whether
+/// to let it.
+///
+/// The title is a line -- "run a command", "edit a file" -- and a line is
+/// not enough to answer a question about permission: *which* command, on
+/// *which* file. The protocol carries that as the tool call's content, so
+/// this is the words of it, and the files it names when it has no words.
+///
+/// Not `raw_input`: that is the agent's own arguments in its own shape,
+/// which obelus would have to guess the meaning of. The typed fields are
+/// what an agent fills in to be shown.
+fn reason_of(request: &RequestPermissionRequest) -> Option<String> {
+    let fields = &request.tool_call.fields;
+    let said: Vec<String> = fields
+        .content
+        .iter()
+        .flatten()
+        .filter_map(|content| match content {
+            ToolCallContent::Content(block) => words(&block.content),
+            // A diff and a terminal are shown by the conversation itself
+            // once the work is allowed; what the question needs is the
+            // file it is about, which the locations carry.
+            _ => None,
+        })
+        .collect();
+    if !said.is_empty() {
+        return Some(said.join("\n"));
+    }
+    let places: Vec<String> = fields
+        .locations
+        .iter()
+        .flatten()
+        .map(|place| place.path.display().to_string())
+        .collect();
+    (!places.is_empty()).then(|| places.join("\n"))
+}
+
 /// What a `session/update` means, if it is one obelus shows.
 ///
 /// The protocol has fifteen kinds and this shows five. The rest -- plans,
@@ -793,6 +841,13 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
 /// the wire has an object and objects have no order, so there is nothing
 /// else to go on.
 fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String> {
+    let required: Vec<&str> = schema
+        .required
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .map(String::as_str)
+        .collect();
     let mut fields = Vec::new();
     for (name, property) in &schema.properties {
         let (title, about, takes) = match property {
@@ -869,8 +924,23 @@ fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String> {
             title: title.unwrap_or_else(|| name.clone()),
             about,
             takes,
+            required: required.contains(&name.as_str()),
         });
     }
+    // The ones that have to be answered first, in the order the agent
+    // listed them; the rest after, in the only order left.
+    //
+    // The schema's properties arrive as a sorted map -- JSON objects have
+    // no order to keep -- so the order the agent wrote them in is gone by
+    // the time obelus sees it, and asking by the alphabet put "Other" in
+    // front of the question it was an alternative to. What is left is what
+    // the agent said had to be answered, which is the question itself.
+    fields.sort_by_key(
+        |field| match required.iter().position(|name| *name == field.name) {
+            Some(at) => (0, at),
+            None => (1, 0),
+        },
+    );
     Ok(fields)
 }
 

@@ -7,6 +7,12 @@
 
 pub mod files;
 
+/// How many rows of an agent's own words a list will carry.
+///
+/// Five: enough for a sentence about a command and its arguments, and few
+/// enough that the list it is about is still the thing on screen.
+const MOST_ABOUT: u16 = 5;
+
 use std::path::PathBuf;
 
 use nucleo_matcher::{
@@ -67,12 +73,14 @@ pub enum PickerValue {
         /// Which value, by the agent's id for it.
         value: String,
     },
-    /// Answer one field of a form the agent asked the reader to fill in.
+    /// One answer to a question the agent asked.
     AgentAsked {
-        /// Which field, by its name in the agent's own schema.
+        /// Which field, by the name the answer goes back under.
         field: String,
-        /// Which value, by the agent's id for it.
-        value: String,
+        /// What the reader chose, by the agent's id for it -- or nothing,
+        /// which is the row a question the agent does not need answered
+        /// gets so that saying nothing is something a reader can choose.
+        value: Option<String>,
     },
     /// Answer an agent's permission request with this option.
     ///
@@ -250,6 +258,8 @@ pub struct Picker {
     /// on each row. The first tab shows everything, so nothing is ever
     /// unreachable by walking them.
     tabs: Vec<String>,
+    /// What the list is about, drawn above its rows.
+    about: Option<String>,
     /// Which tab is showing.
     tab: usize,
     /// Whether the tabs are scopes: rows that come from three different
@@ -314,6 +324,7 @@ impl Picker {
             window: Window::new(),
             outline: Option::None,
             tabs: Vec::new(),
+            about: None,
             tab: 0,
             scopes: false,
             searching: false,
@@ -404,6 +415,38 @@ impl Picker {
     #[must_use]
     pub const fn tab_rows(&self) -> u16 {
         if self.tabs.is_empty() { 0 } else { 2 }
+    }
+
+    /// Says what the list is about, above its rows.
+    ///
+    /// For a list that is an answer to something the reader did not start:
+    /// an agent asking to run a command is a question, and three options
+    /// with no account of what they answer is a question with the words
+    /// missing. The prompt row can hold a few of those words; this holds
+    /// the ones that do not fit on a row.
+    pub fn about(&mut self, about: &str) {
+        self.about = Some(about.to_string());
+    }
+
+    /// What the list is about, if it says.
+    #[must_use]
+    pub fn what_about(&self) -> Option<&str> {
+        self.about.as_deref()
+    }
+
+    /// How many rows that takes at a width: the words, and a rule under
+    /// them.
+    ///
+    /// Capped, because it is somebody else's prose: an agent explaining
+    /// itself at length must not push the list it belongs to off the
+    /// screen. What is left of it is on the row that was cut.
+    #[must_use]
+    pub fn about_rows(&self, width: u16) -> u16 {
+        let Some(about) = self.about.as_deref() else {
+            return 0;
+        };
+        let rows = u16::try_from(crate::text::wrapped(about, width).len()).unwrap_or(MOST_ABOUT);
+        rows.clamp(1, MOST_ABOUT).saturating_add(1)
     }
 
     /// Moves to the next tab, or the previous one, wrapping.
@@ -592,7 +635,8 @@ impl Picker {
     /// key handler to size a page. Two would drift, and the symptom would be
     /// a page that moves by not quite a screenful.
     #[must_use]
-    pub fn visible_rows(&self, available: u16) -> u16 {
+    pub fn visible_rows(&self, available: u16, width: u16) -> u16 {
+        let above = self.tab_rows().saturating_add(self.about_rows(width));
         match self.layout {
             PickerLayout::FullArea => available,
             // A list with tabs keeps its full height whatever the tab holds:
@@ -601,12 +645,13 @@ impl Picker {
             // tabs the list is as tall as it has rows -- at least one, which
             // is where the reason for having none goes.
             PickerLayout::Compact { rows } if !self.tabs.is_empty() => {
-                rows.saturating_add(self.tab_rows()).min(available)
+                rows.saturating_add(above).min(available)
             }
             PickerLayout::Compact { rows } => u16::try_from(self.match_count())
                 .unwrap_or(u16::MAX)
                 .max(1)
                 .min(rows)
+                .saturating_add(above)
                 .min(available),
         }
     }

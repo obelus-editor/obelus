@@ -484,19 +484,69 @@ fn home_and_end_do_not_panic_on_an_empty_list() {
     assert_eq!(picker.selected(), 0);
 }
 
+/// A list can say what it is about, above its rows.
+///
+/// For a question the reader did not start: an agent asking to run a
+/// command is a question, and three options with no account of what they
+/// answer is that question with the words missing. The prompt row holds a
+/// line of it; this holds the part that does not fit on a row -- which
+/// command, on which file.
+#[test]
+fn a_list_can_say_what_it_is_about() {
+    let mut asking = Picker::new(
+        items(&["Allow once", "Reject"]),
+        PickerLayout::Compact { rows: 10 },
+    );
+    assert_eq!(
+        asking.about_rows(40),
+        0,
+        "a list with nothing to say took rows"
+    );
+
+    asking.about("cargo test --all-features");
+    // The words, and the rule that makes the rows below read as answers
+    // rather than as more of the sentence.
+    assert_eq!(asking.about_rows(40), 2);
+    assert_eq!(
+        asking.visible_rows(20, 40),
+        4,
+        "the block did not grow by what it says"
+    );
+
+    // Wrapped at the width it is drawn in, so a narrower screen takes more
+    // rows for the same words.
+    assert!(
+        asking.about_rows(12) > asking.about_rows(40),
+        "the words are not wrapped to the room"
+    );
+
+    // And capped: an agent explaining itself at length must not push the
+    // list it belongs to off the screen.
+    let mut wordy = Picker::new(
+        items(&["Allow once", "Reject"]),
+        PickerLayout::Compact { rows: 10 },
+    );
+    wordy.about(&"a very long explanation ".repeat(40));
+    assert_eq!(wordy.about_rows(40), 6, "the words are not capped");
+}
+
 /// The page a key moves by has to be the number of rows actually on screen, or
 /// paging moves by not quite a screenful and the list appears to skip.
 #[test]
 fn a_page_is_the_number_of_rows_on_screen() {
     let full = Picker::new(many(50), PickerLayout::FullArea);
-    assert_eq!(full.visible_rows(11), 11, "a full-area list takes the room");
+    assert_eq!(
+        full.visible_rows(11, 60),
+        11,
+        "a full-area list takes the room"
+    );
 
     let compact = Picker::new(many(50), PickerLayout::Compact { rows: 10 });
-    assert_eq!(compact.visible_rows(11), 10, "capped by the layout");
-    assert_eq!(compact.visible_rows(4), 4, "and by the room");
+    assert_eq!(compact.visible_rows(11, 60), 10, "capped by the layout");
+    assert_eq!(compact.visible_rows(4, 60), 4, "and by the room");
 
     let short = Picker::new(many(3), PickerLayout::Compact { rows: 10 });
-    assert_eq!(short.visible_rows(11), 3, "and by the candidates");
+    assert_eq!(short.visible_rows(11, 60), 3, "and by the candidates");
 }
 
 /// The rows stay still while the cursor walks through them, and move only

@@ -267,7 +267,10 @@ impl App {
             PickerValue::AgentValue { setting, value } => {
                 self.set_agent_setting(&setting, &value);
             }
-            PickerValue::AgentAsked { field, value } => self.answer_asked(&field, &value),
+            PickerValue::AgentAsked { field, value } => match value {
+                Some(value) => self.answer_asked(&field, &value),
+                None => self.skip_asked(),
+            },
             PickerValue::Nothing => {}
         }
     }

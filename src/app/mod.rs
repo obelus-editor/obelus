@@ -946,6 +946,19 @@ impl App {
                     .height,
                 writing: width,
             };
+            // Enter on an empty box, while the question waiting is one the
+            // agent said it does not need answered: the reader is walking
+            // past it. The box swallows a blank message -- rightly, there
+            // is nothing to send -- so this is asked before it.
+            if key.code == KeyCode::Enter
+                && keymap::modifiers_of(&key) == Some(KeyModifiers::NONE)
+                && self.is_answering()
+                && self.asked_may_be_skipped()
+                && self.chat.writing().text().trim().is_empty()
+            {
+                self.skip_asked();
+                return;
+            }
             // The list of the agent's own commands, when one is showing:
             // it follows what is being typed in the box, so it takes the
             // keys that move about a list and leaves the rest to the box.

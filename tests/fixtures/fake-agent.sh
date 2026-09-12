@@ -151,13 +151,38 @@ while IFS= read -r line; do
                 printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$(id_of "$line")"
             fi
             ;;
+        *'"method":"session/prompt"'*'"text":"/pick'*)
+            # A form shaped like the one a real agent sends when it asks
+            # "what would you like to do": one choice whose options carry a
+            # line about themselves, and a free-text field for an answer
+            # that is not on the list.
+            turn=$(id_of "$line")
+            printf '{"jsonrpc":"2.0","id":904,"method":"elicitation/create","params":{"mode":"form","sessionId":"s-1","message":"what would you like to do","requestedSchema":{"type":"object","properties":{"task":{"type":"string","title":"Task","oneOf":[{"const":"report","title":"Write the weekly report","description":"Gather the git changes of the week and write them up"},{"const":"review","title":"Review the code","description":"Read the current diff for bugs and simplifications"},{"const":"build","title":"Carry on with obelus","description":"Write code in this repository"},{"const":"survey","title":"Survey the repository","description":"Read the recent commits and describe where things stand"}]},"other":{"type":"string","title":"Other","description":"Type your own answer instead of choosing one above"}},"required":["task"]}}}\n'
+            ;;
+        *'"id":904'*)
+            # The form's response is an object: a choice must use the
+            # option's id, and walking past "Other" must omit its key.
+            # Keeping both in the reply makes the UI test fail if either
+            # side stops being true.
+            case "$line" in
+                *'"action":"accept"'*'"task":"review"'*'"other":'*)
+                    said='you picked review and something else'
+                    ;;
+                *'"action":"accept"'*'"task":"review"'*)
+                    said='you picked review and nothing else'
+                    ;;
+                *) said='you did not pick review' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            ;;
         *'"method":"session/prompt"'*'"text":"/ask'*)
             turn=$(id_of "$line")
             if [ -z "$forms" ]; then
                 printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"this client cannot be asked"}}}}\n'
                 printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
             else
-                printf '{"jsonrpc":"2.0","id":903,"method":"elicitation/create","params":{"mode":"form","sessionId":"s-1","message":"which way should I do it","requestedSchema":{"type":"object","properties":{"how":{"type":"string","title":"How","oneOf":[{"const":"fast","title":"Quickly"},{"const":"careful","title":"Carefully","description":"and slowly"}]},"sure":{"type":"boolean","title":"Sure"},"times":{"type":"integer","title":"Times","minimum":1,"maximum":9}}}}}\n'
+                printf '{"jsonrpc":"2.0","id":903,"method":"elicitation/create","params":{"mode":"form","sessionId":"s-1","message":"which way should I do it","requestedSchema":{"type":"object","properties":{"how":{"type":"string","title":"How","oneOf":[{"const":"fast","title":"Quickly"},{"const":"careful","title":"Carefully","description":"and slowly"}]},"sure":{"type":"boolean","title":"Sure"},"times":{"type":"integer","title":"Times","minimum":1,"maximum":9}},"required":["how","sure","times"]}}}\n'
             fi
             ;;
         *'"id":903'*)
@@ -223,7 +248,7 @@ while IFS= read -r line; do
                 *) wrote='wrote the file' ;;
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and it %s"}}}}\n' "$wrote"
-            printf '{"jsonrpc":"2.0","id":901,"method":"session/request_permission","params":{"sessionId":"s-1","toolCall":{"toolCallId":"t1","title":"Run the tests"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n'
+            printf '{"jsonrpc":"2.0","id":901,"method":"session/request_permission","params":{"sessionId":"s-1","toolCall":{"toolCallId":"t1","title":"Run the tests","content":[{"type":"content","content":{"type":"text","text":"cargo test --all-features"}}],"locations":[{"path":"/tmp/obelus/Cargo.toml"}]},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n'
             ;;
         *'"id":901'*)
             case "$line" in

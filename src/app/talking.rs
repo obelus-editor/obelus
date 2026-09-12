@@ -483,18 +483,22 @@ impl App {
             // reader types next goes back as the answer rather than to the
             // agent as a message.
             acp::Takes::Words(suggested) => {
-                self.chat.note(&question(&field));
+                let asked = question(&field);
+                self.chat.note(&skippable(&asked, field.required));
                 if let Some(words) = suggested {
                     self.chat.put(words);
                 }
             }
-            acp::Takes::Number { .. } => self.chat.note(&question(&field)),
+            acp::Takes::Number { .. } => {
+                let asked = question(&field);
+                self.chat.note(&skippable(&asked, field.required));
+            }
         }
     }
 
     /// One field's values, as the list obelus puts every choice in.
     fn list_of(&self, field: &acp::Field, values: &[acp::Value], on: Option<&str>) -> Picker {
-        let items = values
+        let mut items: Vec<PickerItem> = values
             .iter()
             .map(|value| PickerItem {
                 icon: None,
@@ -503,7 +507,7 @@ impl App {
                 trailing: (Some(value.id.as_str()) == on).then(|| "now".to_string()),
                 value: PickerValue::AgentAsked {
                     field: field.name.clone(),
-                    value: value.id.clone(),
+                    value: Some(value.id.clone()),
                 },
                 enabled: true,
                 colours: None,
@@ -513,6 +517,29 @@ impl App {
                 tab: None,
             })
             .collect();
+        // And, for a question the agent said it does not need answered, a
+        // row for saying nothing. A list is answered by choosing from it,
+        // so the way past one has to be a row in it -- escape is the way
+        // out of the whole form, and a reader who means "no answer to this
+        // one" would be giving up on all of it.
+        if !field.required {
+            items.push(PickerItem {
+                icon: None,
+                label: "leave blank".to_string(),
+                detail: None,
+                trailing: None,
+                value: PickerValue::AgentAsked {
+                    field: field.name.clone(),
+                    value: None,
+                },
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                kind: None,
+                tab: None,
+            });
+        }
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.ask(&field.title);
         picker.when_empty("it offered nothing to choose from");
@@ -614,6 +641,34 @@ impl App {
         }
     }
 
+    /// Whether the field being asked is one the reader may walk past.
+    ///
+    /// The agent said which fields it needs; the rest are asides -- "or
+    /// type your own answer", "anything else?" -- and a client that
+    /// insists on one leaves the reader with escape, which gives up the
+    /// whole form.
+    #[must_use]
+    pub(super) fn asked_may_be_skipped(&self) -> bool {
+        self.asking
+            .as_ref()
+            .and_then(|asking| asking.left.front())
+            .is_some_and(|field| !field.required)
+    }
+
+    /// Leaves the question unanswered and moves on to the next.
+    pub(super) fn skip_asked(&mut self) {
+        let Some(asking) = self.asking.as_mut() else {
+            return;
+        };
+        let Some(asked) = asking.left.pop_front() else {
+            return;
+        };
+        self.chat.note(&format!("{}: left blank", asked.title));
+        self.picker = None;
+        self.chat.put("");
+        self.put_the_question();
+    }
+
     /// Says no to the form, whichever field the reader was on.
     pub(super) fn refuse_asking(&mut self) {
         let Some(asking) = self.asking.take() else {
@@ -688,9 +743,10 @@ impl App {
             }
             acp::Incoming::Permission {
                 title,
+                reason,
                 options,
                 answer,
-            } => self.ask_permission(&title, &options, answer),
+            } => self.ask_permission(&title, reason.as_deref(), &options, answer),
             acp::Incoming::Ask {
                 message,
                 fields,
@@ -774,6 +830,7 @@ impl App {
     fn ask_permission(
         &mut self,
         title: &str,
+        reason: Option<&str>,
         options: &[acp::Choice],
         answer: acp::Answer<Option<String>>,
     ) {
@@ -797,6 +854,12 @@ impl App {
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.ask(title);
+        // What it is actually about to do, above the answers: "allow" and
+        // "refuse" are answers to a question, and the question is which
+        // command on which file rather than the line the title fits in.
+        if let Some(reason) = reason {
+            picker.about(reason);
+        }
         self.permission = Some(answer);
         self.picker = Some(picker);
     }
@@ -879,6 +942,14 @@ impl App {
 /// The title, and what it will take: a number with bounds is a question
 /// that has to say them, because a reader who types the wrong one only
 /// finds out afterwards.
+/// A question, with how to walk past it when it may be walked past.
+fn skippable(question: &str, required: bool) -> String {
+    match required {
+        true => question.to_string(),
+        false => format!("{question} \u{b7} enter alone leaves it blank"),
+    }
+}
+
 fn question(field: &acp::Field) -> String {
     let mut asked = field.title.clone();
     if let acp::Takes::Number { whole, least, most } = field.takes {

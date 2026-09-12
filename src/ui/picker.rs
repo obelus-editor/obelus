@@ -27,8 +27,10 @@ use crate::{
 const LIST_ROWS: u16 = 10;
 
 /// How tall the whole list is: its rows, and the tabs over them.
-fn list_region_rows(picker: &Picker) -> u16 {
-    LIST_ROWS.saturating_add(picker.tab_rows())
+fn list_region_rows(picker: &Picker, width: u16) -> u16 {
+    LIST_ROWS
+        .saturating_add(picker.tab_rows())
+        .saturating_add(picker.about_rows(width))
 }
 
 /// The fewest rows worth giving a preview.
@@ -57,7 +59,7 @@ pub fn preview_region(picker: Option<&Picker>, editor: Rect) -> Option<Rect> {
         return None;
     }
     // The list, the rule between them, and enough left to be worth it.
-    let rows = list_region_rows(picker);
+    let rows = list_region_rows(picker, editor.width);
     if editor.height < rows + 1 + LEAST_PREVIEW_ROWS {
         return None;
     }
@@ -107,13 +109,13 @@ impl<'a> PickerView<'a> {
         match self.picker.layout() {
             PickerLayout::FullArea => match preview_region(Some(self.picker), editor) {
                 Some(_) => Rect {
-                    height: list_region_rows(self.picker),
+                    height: list_region_rows(self.picker, editor.width),
                     ..editor
                 },
                 None => editor,
             },
             PickerLayout::Compact { .. } => {
-                let wanted = self.picker.visible_rows(editor.height);
+                let wanted = self.picker.visible_rows(editor.height, editor.width);
                 Rect {
                     y: editor.y + editor.height - wanted,
                     height: wanted,
@@ -128,17 +130,21 @@ impl PickerView<'_> {
     /// The rows of the list, within the region it is drawn in.
     ///
     /// A list with tabs keeps its first two rows for them -- the tabs and
-    /// the rule under them -- so what a reader walks is what is left. One
+    /// the rule under them -- and one that says what it is about keeps the
+    /// rows that takes, so what a reader walks is what is left. One
     /// function, shared with the drawing and with everything that has to
     /// know how many rows are on screen: a window settled on a height the
     /// rows do not have scrolls before the last row it drew, and a page
     /// steps further than the reader can see.
     #[must_use]
     pub fn rows_region(&self, region: Rect) -> Rect {
-        let tabs = self.picker.tab_rows();
+        let above = self
+            .picker
+            .tab_rows()
+            .saturating_add(self.picker.about_rows(region.width));
         Rect {
-            y: region.y + tabs,
-            height: region.height.saturating_sub(tabs),
+            y: region.y + above,
+            height: region.height.saturating_sub(above),
             ..region
         }
     }
@@ -161,15 +167,52 @@ impl Widget for PickerView<'_> {
                 .bg(self.theme.background),
         );
 
-        // The tabs first, with their own rule under them, and the list below
+        // What the list is about, above everything: a question the reader
+        // did not start needs its words before its answers, and a rule
+        // under them is what makes the answers read as answers rather than
+        // as more of the sentence.
+        let about_rows = self.picker.about_rows(area.width);
+        if let Some(about) = self.picker.what_about()
+            && about_rows > 0
+        {
+            let words = crate::text::wrapped(about, area.width.saturating_sub(2));
+            for (row, words) in words.iter().enumerate().take(usize::from(about_rows) - 1) {
+                let Ok(row) = u16::try_from(row) else { break };
+                crate::ui::write(
+                    cells,
+                    area.x + 1,
+                    area.y + row,
+                    words,
+                    Style::new()
+                        .fg(self.theme.foreground)
+                        .bg(self.theme.background),
+                );
+            }
+            crate::ui::rule(
+                cells,
+                Rect {
+                    y: area.y + about_rows - 1,
+                    height: 1,
+                    ..area
+                },
+                self.theme,
+            );
+        }
+
+        // The tabs next, with their own rule under them, and the list below
         // whatever they took. The rule is why a tab row reads as a heading
         // over the list rather than as its first row.
         let list = self.rows_region(area);
         let tabs = self.picker.tab_rows();
         if tabs > 0 {
+            let under = Rect {
+                y: area.y + about_rows,
+                height: area.height.saturating_sub(about_rows),
+                ..area
+            };
             crate::ui::tabs(
                 cells,
-                area,
+                under,
                 self.picker.tabs(),
                 self.picker.tab(),
                 self.theme,
@@ -177,7 +220,7 @@ impl Widget for PickerView<'_> {
             crate::ui::rule(
                 cells,
                 Rect {
-                    y: area.y + 1,
+                    y: under.y + 1,
                     height: 1,
                     ..area
                 },
