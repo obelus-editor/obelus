@@ -1152,6 +1152,25 @@ fn a_form_asks_for_what_it_needs_first_and_the_rest_can_be_left_blank() {
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the question", App::is_asking);
 
+    // What the form is about, above the answers rather than in a line of
+    // its own in the transcript: a list of answers with nothing saying
+    // what they answer is not a question.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let asking = rows(&dump);
+    let said = asking
+        .iter()
+        .position(|row| row.contains("what would you like to do"))
+        .unwrap_or_else(|| panic!("the form does not say what it is about:\n{dump}"));
+    let first = asking
+        .iter()
+        .position(|row| row.contains("Write the weekly report"))
+        .expect("the first option");
+    assert!(said < first, "it is not above the answers:\n{dump}");
+    assert!(
+        asking[said + 1].contains('\u{2500}'),
+        "nothing separates it from them:\n{dump}"
+    );
+
     // The choice, though its name sorts after the optional field's -- and
     // its rows say what each choice is, which is what the agent wrote
     // beside them.

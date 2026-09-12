@@ -24,6 +24,13 @@ use crate::{
 /// takes the whole form as one answer.
 #[derive(Debug)]
 pub struct Asking {
+    /// What the agent said the form is about, in its own words.
+    ///
+    /// Kept because it belongs above whichever question is showing rather
+    /// than in a line of its own: a form is one question with several
+    /// parts, and saying what it is about twice is saying it once too
+    /// often.
+    message: String,
     /// The fields nobody has answered yet, the next one first.
     left: std::collections::VecDeque<acp::Field>,
     /// What has been answered, in the order it was.
@@ -433,8 +440,8 @@ impl App {
         fields: Vec<acp::Field>,
         answer: acp::Answer<Option<Vec<(String, acp::Reply)>>>,
     ) {
-        self.chat.note(&format!("it asks: {message}"));
         self.asking = Some(Asking {
+            message: message.to_string(),
             left: fields.into(),
             given: Vec::new(),
             answer,
@@ -444,19 +451,26 @@ impl App {
 
     /// Puts the next field, or answers the form when there is none left.
     fn put_the_question(&mut self) {
-        let Some(field) = self
-            .asking
-            .as_ref()
-            .and_then(|asking| asking.left.front())
-            .cloned()
-        else {
+        let Some(asking) = self.asking.as_ref() else {
+            return;
+        };
+        let Some(field) = asking.left.front().cloned() else {
             self.settle_asking();
             return;
         };
+        let message = asking.message.clone();
+        // Said once, in front of the first question: after that the reader
+        // is in the middle of answering and knows what they are answering.
+        let first = asking.given.is_empty();
         match &field.takes {
             // One of a few: the list, like every other choice.
             acp::Takes::One(values) => {
-                let picker = self.list_of(&field, values, None);
+                let mut picker = self.list_of(&field, values, None);
+                // What the form is about, above the answers -- the same
+                // place a permission request says what it would do, and
+                // for the same reason: a list of answers with nothing
+                // saying what they answer is not a question.
+                picker.about(&message);
                 self.picker = Some(picker);
             }
             acp::Takes::Switch(on) => {
@@ -476,22 +490,27 @@ impl App {
                     true => "on",
                     false => "off",
                 };
-                let picker = self.list_of(&field, &sides, Some(side));
+                let mut picker = self.list_of(&field, &sides, Some(side));
+                picker.about(&message);
                 self.picker = Some(picker);
             }
             // Words: the box, which is where words are typed. What the
             // reader types next goes back as the answer rather than to the
             // agent as a message.
+            // Words go in the box, so the question goes in the
+            // transcript -- with what the form is about in front of it
+            // when this is the first thing asked, because a box with a
+            // field's name over it says nothing about why.
             acp::Takes::Words(suggested) => {
-                let asked = question(&field);
-                self.chat.note(&skippable(&asked, field.required));
+                let asked = asked_for(&message, &field, first);
+                self.chat.note(&asked);
                 if let Some(words) = suggested {
                     self.chat.put(words);
                 }
             }
             acp::Takes::Number { .. } => {
-                let asked = question(&field);
-                self.chat.note(&skippable(&asked, field.required));
+                let asked = asked_for(&message, &field, first);
+                self.chat.note(&asked);
             }
         }
     }
@@ -942,11 +961,18 @@ impl App {
 /// The title, and what it will take: a number with bounds is a question
 /// that has to say them, because a reader who types the wrong one only
 /// finds out afterwards.
-/// A question, with how to walk past it when it may be walked past.
-fn skippable(question: &str, required: bool) -> String {
-    match required {
-        true => question.to_string(),
-        false => format!("{question} \u{b7} enter alone leaves it blank"),
+/// What to write in the transcript for a field the reader types into: the
+/// question, what the form is about when it has not been said yet, and how
+/// to walk past it when it may be walked past.
+fn asked_for(message: &str, field: &acp::Field, first: bool) -> String {
+    let asked = question(field);
+    let asked = match first && !message.is_empty() && message != field.title {
+        true => format!("{message} \u{2014} {asked}"),
+        false => asked,
+    };
+    match field.required {
+        true => asked,
+        false => format!("{asked} \u{b7} enter alone leaves it blank"),
     }
 }
 

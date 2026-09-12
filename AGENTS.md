@@ -443,8 +443,9 @@ never heard of -- is declined with the reason in the transcript rather than
 half-filled in.
 
 **A question the reader did not start says what it is about.** The compact
-list carries an `about` -- prose above its rows, a rule under it -- and a
-permission request fills it with what the agent is actually going to do:
+list carries an `about` -- prose above its rows, a rule under it -- and both
+questions an agent can ask fill it: a form puts its own message there, and a
+permission request what the agent is actually going to do:
 the tool call's own content, which is the command or the text it carries,
 and the files it names when it has none. The title stays on the prompt row,
 because a line is what fits there; "allow" and "refuse" are answers, and a
@@ -453,7 +454,11 @@ wrapped to the width and capped at five rows: it is somebody else's prose,
 and an agent explaining itself at length must not push the list it belongs
 to off the screen. `raw_input` is not used -- that is the agent's own
 arguments in its own shape, and reading meaning into it would be obelus
-guessing.
+guessing. A form said it in a transcript line of its own once ("it asks:
+..."), which is the same words twice: the question is on screen, and what
+it is about belongs over it rather than above the last thing the agent
+said. Said once, in front of the first question, because after that the
+reader is in the middle of answering and knows what they are answering.
 
 **A list open over anything owns the status row.** It is the thing taking
 the keys and holding the caret, so `StatusView` draws its prompt before the
