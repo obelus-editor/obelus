@@ -5,6 +5,7 @@
 //! stdout; adding slow work to it is the mistake that actually happens, rather
 //! than the write itself being slow.
 
+pub mod card;
 pub mod chat;
 pub mod editor;
 pub mod image;
@@ -118,7 +119,7 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
     // does not fit on one row. After the picker, because an agent's own
     // question is a list opened over it.
     if let Some(chat) = app.chat() {
-        return chat::ChatView::caret(regions.editor, chat);
+        return chat::ChatView::caret(regions.editor, chat, app.card());
     }
 
     // The settings filter by typing too, so the caret goes where the typing

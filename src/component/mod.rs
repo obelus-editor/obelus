@@ -4,6 +4,7 @@
 //! The views in [`crate::ui`] borrow them to draw, but do not define their
 //! behaviour.
 
+pub mod card;
 pub mod chat;
 pub mod composer;
 pub mod picker;

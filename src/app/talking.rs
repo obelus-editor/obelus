@@ -13,7 +13,10 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use super::*;
 use crate::{
     acp,
-    component::chat::{Chat, Speaker},
+    component::{
+        card::{Card, CardOutcome, Choice},
+        chat::{Chat, Speaker},
+    },
 };
 
 /// A form an agent asked the reader to fill in.
@@ -231,13 +234,6 @@ impl App {
 
     /// Sends what the reader typed.
     pub(super) fn send_to_agent(&mut self, text: &str) {
-        // Unless a field of a form is waiting for it: the agent asked for
-        // words and these are the words, so they go back as the answer
-        // rather than out as a message.
-        if self.is_answering() {
-            self.answer_typed(text);
-            return;
-        }
         self.chat.asked(text);
         if self.talker.is_none() {
             self.start_agent();
@@ -410,27 +406,66 @@ impl App {
         }
     }
 
-    /// Whether a field of a form is waiting for words to be typed.
-    ///
-    /// Which is the one state where what is typed in the box is not a
-    /// message: the agent asked for something, and this is it.
+    /// The card an agent's question is on, while one is up.
     #[must_use]
-    pub fn is_answering(&self) -> bool {
-        self.asking
-            .as_ref()
-            .and_then(|asking| asking.left.front())
-            .is_some_and(|field| {
-                matches!(
-                    field.takes,
-                    acp::Takes::Words(_) | acp::Takes::Number { .. }
-                )
-            })
+    pub fn card(&self) -> Option<&Card> {
+        self.card.as_ref()
+    }
+
+    /// Gives a key to the card.
+    ///
+    /// What it does not take falls through to the table, so `ctrl+q` quits
+    /// from a card the way it quits from a list.
+    pub(super) fn card_key(&mut self, key: &crossterm::event::KeyEvent) -> bool {
+        let Some(card) = self.card.as_ref() else {
+            return false;
+        };
+        // The width a card's own rows have, which is what its caret is
+        // worked out against.
+        let width =
+            crate::ui::card::width_of(crate::ui::chat::bands_for(self.editor_area, card).writing);
+        let Some(card) = self.card.as_mut() else {
+            return false;
+        };
+        match card.handle_key(key, width) {
+            CardOutcome::Ignored => false,
+            CardOutcome::Consumed => true,
+            // Escape gives up on the nearest thing, and while a question is
+            // on screen the nearest thing is the question.
+            CardOutcome::Cancelled => {
+                match self.is_asking_permission() {
+                    true => self.refuse_permission(),
+                    false => self.refuse_asking(),
+                }
+                true
+            }
+            CardOutcome::Answered { chosen, words } => {
+                self.answer_card(&chosen, words.as_deref());
+                true
+            }
+        }
     }
 
     /// Whether the agent is waiting on an answer to something it asked.
     #[must_use]
     pub const fn is_asking(&self) -> bool {
         self.asking.is_some()
+    }
+
+    /// Brings the conversation back, because the agent is waiting on the
+    /// reader.
+    ///
+    /// A question is answered on a card inside the conversation, so one
+    /// asked after the reader escaped out of it would be a card nobody can
+    /// see -- taking their keys, and holding up an agent that is waiting
+    /// for an answer they were never shown.
+    fn show_the_question(&mut self) {
+        self.showing_chat = true;
+        // And nothing of the reader's own over it. The list of the agent's
+        // commands follows what is being typed in the box, and the box is
+        // what the card covers: left open it would be a list over a
+        // question, about words the keys are no longer going to.
+        self.slash = None;
     }
 
     /// Puts a form the agent asked for to the reader.
@@ -440,6 +475,7 @@ impl App {
         fields: Vec<acp::Field>,
         answer: acp::Answer<Option<Vec<(String, acp::Reply)>>>,
     ) {
+        self.show_the_question();
         self.asking = Some(Asking {
             message: message.to_string(),
             left: fields.into(),
@@ -454,200 +490,205 @@ impl App {
         let Some(asking) = self.asking.as_ref() else {
             return;
         };
-        let Some(field) = asking.left.front().cloned() else {
+        if asking.left.is_empty() {
             self.settle_asking();
             return;
+        }
+        // What the card says it is about: the agent's own words the first
+        // time, and afterwards the field's own question -- by then the
+        // reader is in the middle of the form, and what they need to know
+        // is which part of it this is.
+        let about = match asking.given.is_empty() {
+            true => asking.message.clone(),
+            false => String::new(),
         };
-        let message = asking.message.clone();
-        // Said once, in front of the first question: after that the reader
-        // is in the middle of answering and knows what they are answering.
-        let first = asking.given.is_empty();
-        match &field.takes {
-            // One of a few: the list, like every other choice.
-            acp::Takes::One(values) => {
-                let mut picker = self.list_of(&field, values, None);
-                // What the form is about, above the answers -- the same
-                // place a permission request says what it would do, and
-                // for the same reason: a list of answers with nothing
-                // saying what they answer is not a question.
-                picker.about(&message);
-                self.picker = Some(picker);
+        let (choice, words) = self.asked_now();
+        let mut card = match &choice {
+            Some(field) => card_of(field),
+            None => Card::new(Vec::new(), false),
+        };
+        let about = match (about.is_empty(), &choice, &words) {
+            (false, _, _) => about,
+            // A card with nothing but a box on it has nothing else to say
+            // what it is for, so the field's question goes above it.
+            (true, None, Some(field)) => question(field),
+            (true, Some(field), _) => question(field),
+            (true, None, None) => String::new(),
+        };
+        if !about.is_empty() {
+            card.about(&about);
+        }
+        if let Some(field) = &words {
+            let suggested = match &field.takes {
+                acp::Takes::Words(suggested) => suggested.clone(),
+                _ => None,
+            };
+            // Its title rather than its question: the row it names is one
+            // row, and what it is for has been said above.
+            card.writing(&field.title, field.required, suggested.as_deref());
+        }
+        self.card = Some(card);
+    }
+
+    /// The fields the card on screen is answering: the one it puts the
+    /// question about, and the one the reader writes their own answer in.
+    ///
+    /// One function rather than two places working it out, because putting
+    /// the question and taking the answer have to agree about which fields
+    /// were on the card.
+    fn asked_now(&self) -> (Option<acp::Field>, Option<acp::Field>) {
+        let Some(asking) = self.asking.as_ref() else {
+            return (None, None);
+        };
+        let Some(field) = asking.left.front().cloned() else {
+            return (None, None);
+        };
+        match field.takes {
+            // Words, and nothing to choose from: the card is the box.
+            acp::Takes::Words(_) | acp::Takes::Number { .. } => (None, Some(field)),
+            // Named answers, and -- when the agent asked for words next --
+            // room to write one of your own under them. Both on the one
+            // card, because "one of these, or say what you want instead"
+            // is one question however many fields it takes to write down.
+            _ => {
+                let words = asking
+                    .left
+                    .get(1)
+                    .filter(|next| matches!(next.takes, acp::Takes::Words(_)))
+                    .cloned();
+                (Some(field), words)
             }
-            acp::Takes::Switch(on) => {
-                let sides = [
-                    acp::Value {
-                        id: "on".to_string(),
-                        name: "on".to_string(),
-                        about: None,
-                    },
-                    acp::Value {
-                        id: "off".to_string(),
-                        name: "off".to_string(),
-                        about: None,
-                    },
-                ];
-                let side = match on {
-                    true => "on",
-                    false => "off",
-                };
-                let mut picker = self.list_of(&field, &sides, Some(side));
-                picker.about(&message);
-                self.picker = Some(picker);
+        }
+    }
+
+    /// Takes what the reader put on the card.
+    pub(super) fn answer_card(&mut self, chosen: &[String], words: Option<&str>) {
+        // A permission request is named answers and nothing else, so the
+        // one they chose is the answer.
+        if self.is_asking_permission() {
+            self.card = None;
+            match chosen.first() {
+                Some(option) => self.allow(option),
+                None => self.refuse_permission(),
             }
-            // Words: the box, which is where words are typed. What the
-            // reader types next goes back as the answer rather than to the
-            // agent as a message.
-            // Words go in the box, so the question goes in the
-            // transcript -- with what the form is about in front of it
-            // when this is the first thing asked, because a box with a
-            // field's name over it says nothing about why.
-            acp::Takes::Words(suggested) => {
-                let asked = asked_for(&message, &field, first);
-                self.chat.note(&asked);
-                if let Some(words) = suggested {
-                    self.chat.put(words);
+            return;
+        }
+        let (choice, asked) = self.asked_now();
+        let mut given: Vec<(String, acp::Reply)> = Vec::new();
+        let mut said: Vec<String> = Vec::new();
+        if let Some(field) = &choice {
+            match &field.takes {
+                acp::Takes::One(values) => match chosen.first() {
+                    Some(id) => {
+                        said.push(format!("{}: {}", field.title, called(values, id)));
+                        given.push((field.name.clone(), acp::Reply::Value(id.clone())));
+                    }
+                    // Nothing chosen, on a question that did not have to be:
+                    // the reader answered in their own words instead, and
+                    // the field is left out.
+                    None => said.push(format!("{}: left blank", field.title)),
+                },
+                acp::Takes::Some { values, .. } => {
+                    // Nothing ticked is the field left blank, like an empty
+                    // box: the key is left out rather than sent as an empty
+                    // list, because "I did not answer that" and "none of
+                    // them" are not the same answer. A field the agent
+                    // needs never gets here -- the card will not send one
+                    // with nothing ticked.
+                    let names: Vec<String> = chosen.iter().map(|id| called(values, id)).collect();
+                    match names.is_empty() {
+                        true => said.push(format!("{}: left blank", field.title)),
+                        false => {
+                            said.push(format!("{}: {}", field.title, names.join(", ")));
+                            given.push((field.name.clone(), acp::Reply::Values(chosen.to_vec())));
+                        }
+                    }
+                }
+                acp::Takes::Switch(_) => {
+                    let on = chosen.first().is_some_and(|id| id == "on");
+                    let side = match on {
+                        true => "on",
+                        false => "off",
+                    };
+                    said.push(format!("{}: {side}", field.title));
+                    given.push((field.name.clone(), acp::Reply::Switch(on)));
+                }
+                // Not what a card with named answers is asking.
+                acp::Takes::Words(_) | acp::Takes::Number { .. } => {}
+            }
+        }
+        if let Some(field) = &asked {
+            let text = words.unwrap_or_default().trim().to_string();
+            match &field.takes {
+                // Nothing typed, and nothing needed: left out of the
+                // answer, the way an empty box leaves out a field that
+                // takes words. A complaint about a number nobody was
+                // asked for is obelus insisting on its own behalf.
+                acp::Takes::Number { .. } if text.is_empty() && !field.required => {}
+                acp::Takes::Number { whole, least, most } => {
+                    let Some(reply) = self.number_of(field, &text, *whole, *least, *most) else {
+                        // The reader's slip, so it is said and the card
+                        // stays: an answer nobody can give is worse than a
+                        // question asked twice.
+                        return;
+                    };
+                    given.push((field.name.clone(), reply));
+                }
+                _ => {
+                    if let Some(text) = words {
+                        given.push((field.name.clone(), acp::Reply::Words(text.to_string())));
+                    }
                 }
             }
-            acp::Takes::Number { .. } => {
-                let asked = asked_for(&message, &field, first);
-                self.chat.note(&asked);
-            }
         }
-    }
-
-    /// One field's values, as the list obelus puts every choice in.
-    fn list_of(&self, field: &acp::Field, values: &[acp::Value], on: Option<&str>) -> Picker {
-        let mut items: Vec<PickerItem> = values
-            .iter()
-            .map(|value| PickerItem {
-                icon: None,
-                label: value.name.clone(),
-                detail: value.about.clone(),
-                trailing: (Some(value.id.as_str()) == on).then(|| "now".to_string()),
-                value: PickerValue::AgentAsked {
-                    field: field.name.clone(),
-                    value: Some(value.id.clone()),
-                },
-                enabled: true,
-                colours: None,
-                status: None,
-                depth: 0,
-                kind: None,
-                tab: None,
-            })
-            .collect();
-        // And, for a question the agent said it does not need answered, a
-        // row for saying nothing. A list is answered by choosing from it,
-        // so the way past one has to be a row in it -- escape is the way
-        // out of the whole form, and a reader who means "no answer to this
-        // one" would be giving up on all of it.
-        if !field.required {
-            items.push(PickerItem {
-                icon: None,
-                label: "leave blank".to_string(),
-                detail: None,
-                trailing: None,
-                value: PickerValue::AgentAsked {
-                    field: field.name.clone(),
-                    value: None,
-                },
-                enabled: true,
-                colours: None,
-                status: None,
-                depth: 0,
-                kind: None,
-                tab: None,
-            });
-        }
-        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.ask(&field.title);
-        picker.when_empty("it offered nothing to choose from");
-        if let Some(on) = on
-            && let Some(name) = values.iter().find(|value| value.id == on)
-        {
-            picker.prefer(name.name.clone());
-        }
-        picker
-    }
-
-    /// Takes a row the reader chose as one field's answer.
-    pub(super) fn answer_asked(&mut self, field: &str, value: &str) {
+        let taken = usize::from(choice.is_some()) + usize::from(asked.is_some());
         let Some(asking) = self.asking.as_mut() else {
             return;
         };
-        let Some(asked) = asking.left.front().filter(|asked| asked.name == field) else {
-            // A row from a list that is no longer the question. Nothing to
-            // do with it: the form moved on, or was given up on.
-            return;
-        };
-        let (reply, said) = match &asked.takes {
-            acp::Takes::Switch(_) => (acp::Reply::Switch(value == "on"), value.to_string()),
-            // The name for the transcript, not the id: the id is the
-            // agent's word for it and can be anything.
-            acp::Takes::One(values) => (
-                acp::Reply::Value(value.to_string()),
-                values
-                    .iter()
-                    .find(|known| known.id == value)
-                    .map_or(value, |known| known.name.as_str())
-                    .to_string(),
-            ),
-            // A list cannot answer these, so a row from one is not theirs.
-            acp::Takes::Words(_) | acp::Takes::Number { .. } => return,
-        };
-        let title = asked.title.clone();
-        asking.given.push((field.to_string(), reply));
-        asking.left.pop_front();
-        self.chat.note(&format!("{title}: {said}"));
-        self.put_the_question();
-    }
-
-    /// Takes what the reader typed as one field's answer.
-    fn answer_typed(&mut self, text: &str) {
-        let Some(asking) = self.asking.as_mut() else {
-            return;
-        };
-        let Some(asked) = asking.left.front() else {
-            return;
-        };
-        let reply = match &asked.takes {
-            acp::Takes::Words(_) => acp::Reply::Words(text.to_string()),
-            acp::Takes::Number { whole, least, most } => {
-                let Ok(number) = text.trim().parse::<f64>() else {
-                    // The reader's slip, so it is said and asked again:
-                    // an answer nobody can give is worse than a question
-                    // asked twice.
-                    let title = asked.title.clone();
-                    self.chat
-                        .note(&format!("{title} takes a number, not {text:?}"));
-                    return;
-                };
-                if least.is_some_and(|least| number < least)
-                    || most.is_some_and(|most| number > most)
-                {
-                    let question = question(asked);
-                    self.chat.note(&format!("that is outside {question}"));
-                    return;
-                }
-                match whole {
-                    #[expect(
-                        clippy::cast_possible_truncation,
-                        reason = "a whole number the reader typed, and the protocol takes an i64"
-                    )]
-                    true => acp::Reply::Whole(number as i64),
-                    false => acp::Reply::Number(number),
-                }
-            }
-            // A typed answer to a question that is a list is not an answer.
-            acp::Takes::One(_) | acp::Takes::Switch(_) => return,
-        };
-        let name = asked.name.clone();
-        asking.given.push((name, reply));
-        asking.left.pop_front();
+        for _ in 0..taken {
+            asking.left.pop_front();
+        }
+        asking.given.extend(given);
+        for line in said {
+            self.chat.note(&line);
+        }
         // Theirs, in the transcript, because that is what they said -- the
         // agent asked in words and this is the answer in words.
-        self.chat.asked(text);
+        if let Some(text) = words {
+            self.chat.asked(text);
+        }
+        self.card = None;
         self.put_the_question();
+    }
+
+    /// A number the reader typed, if it is one the field will take.
+    fn number_of(
+        &mut self,
+        field: &acp::Field,
+        text: &str,
+        whole: bool,
+        least: Option<f64>,
+        most: Option<f64>,
+    ) -> Option<acp::Reply> {
+        let Ok(number) = text.parse::<f64>() else {
+            let title = field.title.clone();
+            self.chat
+                .note(&format!("{title} takes a number, not {text:?}"));
+            return None;
+        };
+        if least.is_some_and(|least| number < least) || most.is_some_and(|most| number > most) {
+            let asked = question(field);
+            self.chat.note(&format!("that is outside {asked}"));
+            return None;
+        }
+        Some(match whole {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a whole number the reader typed, and the protocol takes an i64"
+            )]
+            true => acp::Reply::Whole(number as i64),
+            false => acp::Reply::Number(number),
+        })
     }
 
     /// Answers the form, now that every field has one.
@@ -660,36 +701,9 @@ impl App {
         }
     }
 
-    /// Whether the field being asked is one the reader may walk past.
-    ///
-    /// The agent said which fields it needs; the rest are asides -- "or
-    /// type your own answer", "anything else?" -- and a client that
-    /// insists on one leaves the reader with escape, which gives up the
-    /// whole form.
-    #[must_use]
-    pub(super) fn asked_may_be_skipped(&self) -> bool {
-        self.asking
-            .as_ref()
-            .and_then(|asking| asking.left.front())
-            .is_some_and(|field| !field.required)
-    }
-
-    /// Leaves the question unanswered and moves on to the next.
-    pub(super) fn skip_asked(&mut self) {
-        let Some(asking) = self.asking.as_mut() else {
-            return;
-        };
-        let Some(asked) = asking.left.pop_front() else {
-            return;
-        };
-        self.chat.note(&format!("{}: left blank", asked.title));
-        self.picker = None;
-        self.chat.put("");
-        self.put_the_question();
-    }
-
     /// Says no to the form, whichever field the reader was on.
     pub(super) fn refuse_asking(&mut self) {
+        self.card = None;
         let Some(asking) = self.asking.take() else {
             return;
         };
@@ -841,11 +855,12 @@ impl App {
         self.talk_to(&id, &installed.command, &installed.arguments);
     }
 
-    /// Puts a permission request to the reader, as a list.
+    /// Puts a permission request to the reader, on the card everything
+    /// else it asks is answered on.
     ///
-    /// The compact picker, which is what every other choice in obelus is: a
-    /// list of named things with one selected, filtered by typing. A dialog
-    /// of its own would be a second way to choose something.
+    /// Which is what it is: a question in the agent's words with a few
+    /// named answers and no room to write your own, because the protocol
+    /// takes one of its own options and nothing else.
     fn ask_permission(
         &mut self,
         title: &str,
@@ -853,34 +868,27 @@ impl App {
         options: &[acp::Choice],
         answer: acp::Answer<Option<String>>,
     ) {
+        self.show_the_question();
         self.chat
             .note(&format!("asking to {}", title.to_lowercase()));
-        let items = options
+        let choices = options
             .iter()
-            .map(|choice| PickerItem {
+            .map(|choice| Choice {
+                id: choice.id.clone(),
+                name: choice.name.clone(),
+                about: None,
                 icon: icons::enabled().then(|| icons::for_permission(&choice.kind)),
-                label: choice.name.clone(),
-                detail: None,
-                trailing: None,
-                value: PickerValue::Permission(choice.id.clone()),
-                enabled: true,
-                colours: None,
-                status: None,
-                depth: 0,
-                kind: None,
-                tab: None,
+                chosen: false,
             })
             .collect();
-        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.ask(title);
+        let mut card = Card::new(choices, false);
+        card.needs_one();
         // What it is actually about to do, above the answers: "allow" and
         // "refuse" are answers to a question, and the question is which
         // command on which file rather than the line the title fits in.
-        if let Some(reason) = reason {
-            picker.about(reason);
-        }
+        card.about(reason.unwrap_or(title));
         self.permission = Some(answer);
-        self.picker = Some(picker);
+        self.card = Some(card);
     }
 
     /// Answers the permission request the reader chose an option for.
@@ -899,6 +907,7 @@ impl App {
     /// request is never answered waits for ever, and one that is told it
     /// was cancelled ends the turn and says so.
     pub(super) fn refuse_permission(&mut self) {
+        self.card = None;
         let Some(answer) = self.permission.take() else {
             return;
         };
@@ -961,21 +970,6 @@ impl App {
 /// The title, and what it will take: a number with bounds is a question
 /// that has to say them, because a reader who types the wrong one only
 /// finds out afterwards.
-/// What to write in the transcript for a field the reader types into: the
-/// question, what the form is about when it has not been said yet, and how
-/// to walk past it when it may be walked past.
-fn asked_for(message: &str, field: &acp::Field, first: bool) -> String {
-    let asked = question(field);
-    let asked = match first && !message.is_empty() && message != field.title {
-        true => format!("{message} \u{2014} {asked}"),
-        false => asked,
-    };
-    match field.required {
-        true => asked,
-        false => format!("{asked} \u{b7} enter alone leaves it blank"),
-    }
-}
-
 fn question(field: &acp::Field) -> String {
     let mut asked = field.title.clone();
     if let acp::Takes::Number { whole, least, most } = field.takes {
@@ -995,6 +989,80 @@ fn question(field: &acp::Field) -> String {
         Some(about) => format!("{asked} \u{2014} {about}"),
         None => asked,
     }
+}
+
+/// What to call one of a field's values in the transcript.
+///
+/// Its name, or the agent's id for it when it offered one it does not
+/// list -- which is still what the reader chose.
+fn called(values: &[acp::Value], id: &str) -> String {
+    values
+        .iter()
+        .find(|value| value.id == id)
+        .map_or(id, |value| value.name.as_str())
+        .to_string()
+}
+
+/// One field's card, before it is told what the question is about.
+fn card_of(field: &acp::Field) -> Card {
+    let mut card = match &field.takes {
+        acp::Takes::One(values) => Card::new(choices_of(values, &[]), false),
+        acp::Takes::Some {
+            values,
+            least,
+            most,
+            chosen,
+        } => {
+            let mut card = Card::new(choices_of(values, chosen), true);
+            card.counts(*least, *most);
+            card
+        }
+        // On and off, which is a choice of two -- and the one it is on
+        // starts chosen, because that is the answer until the reader says
+        // otherwise.
+        acp::Takes::Switch(on) => {
+            let sides = [
+                acp::Value {
+                    id: "on".to_string(),
+                    name: "on".to_string(),
+                    about: None,
+                },
+                acp::Value {
+                    id: "off".to_string(),
+                    name: "off".to_string(),
+                    about: None,
+                },
+            ];
+            let mut card = Card::new(choices_of(&sides, &[]), false);
+            card.prefer(match on {
+                true => "on",
+                false => "off",
+            });
+            card
+        }
+        // A card with nothing to choose from is a card with a box on it,
+        // which the caller puts there: the field it writes is not always
+        // this one.
+        acp::Takes::Words(_) | acp::Takes::Number { .. } => Card::new(Vec::new(), false),
+    };
+    if field.required {
+        card.needs_one();
+    }
+    card
+}
+
+/// A field's values, as the card's rows.
+fn choices_of(values: &[acp::Value], chosen: &[String]) -> Vec<Choice> {
+    values
+        .iter()
+        .map(|value| Choice {
+            id: value.id.clone(),
+            name: value.name.clone(),
+            about: value.about.clone(),
+            icon: None,
+            chosen: chosen.contains(&value.id),
+        })
+        .collect()
 }
 
 /// What to call a value in the transcript.

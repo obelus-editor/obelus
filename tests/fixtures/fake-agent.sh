@@ -61,11 +61,17 @@ refuses=''
 # nothing to configure, and a client has to say so rather than draw an
 # empty row.
 bare=''
+# Whether it asks the reader something the moment the session opens, before
+# anything has been said to it. Agents do: a login, a workspace to use. What
+# it is here for is that the reader may have walked away from the
+# conversation by then.
+at_once=''
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
         refuse-mode) refuses='yes' ;;
         nothing-to-change) bare='yes' ;;
+        asks-at-once) at_once='yes' ;;
     esac
 done
 
@@ -128,6 +134,11 @@ while IFS= read -r line; do
             else
                 printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1","modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             fi
+            # And, where it was asked to, a question before anything has
+            # been said to it.
+            if [ -n "$at_once" ]; then
+                printf '{"jsonrpc":"2.0","id":906,"method":"elicitation/create","params":{"mode":"form","sessionId":"s-1","message":"which workspace am I in","requestedSchema":{"type":"object","properties":{"where":{"type":"string","title":"Where"}},"required":["where"]}}}\n'
+            fi
             # What it takes with a slash, which agents send once the
             # session is ready.
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Summarise the conversation"},{"name":"cost","description":"What this has cost","input":{"hint":"currency"}},{"name":"model","description":"Which model to use"},{"name":"ask","description":"Ask the reader something"},{"name":"help","description":"What it takes"},{"name":"init","description":"Start again"},{"name":"login","description":"Say who you are"},{"name":"quit","description":"Stop"},{"name":"reset","description":"Forget the session"},{"name":"share","description":"Send it somewhere"},{"name":"theme","description":"Its own colours"},{"name":"usage","description":"What it has spent"}]}}}\n'
@@ -161,17 +172,47 @@ while IFS= read -r line; do
             ;;
         *'"id":904'*)
             # The form's response is an object: a choice must use the
-            # option's id, and walking past "Other" must omit its key.
+            # option's id, and leaving "Other" empty must omit its key.
+            # Its keys arrive sorted rather than in the order the card was
+            # filled in, which is what a JSON object is.
             # Keeping both in the reply makes the UI test fail if either
             # side stops being true.
             case "$line" in
-                *'"action":"accept"'*'"task":"review"'*'"other":'*)
+                *'"action":"accept"'*'"other":'*'"task":"review"'*)
                     said='you picked review and something else'
                     ;;
                 *'"action":"accept"'*'"task":"review"'*)
                     said='you picked review and nothing else'
                     ;;
                 *) said='you did not pick review' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            ;;
+        *'"id":906'*)
+            case "$line" in
+                *'"action":"accept"'*) said='you are somewhere' ;;
+                *) said='you would not say where' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/several'*)
+            # A form with a multi-select on it: several answers at once,
+            # which the schema carries as an array of the ids, plus the
+            # free-text field an agent pairs with one to catch what the
+            # list does not cover.
+            turn=$(id_of "$line")
+            printf '{"jsonrpc":"2.0","id":905,"method":"elicitation/create","params":{"mode":"form","sessionId":"s-1","message":"which parts should I look at","requestedSchema":{"type":"object","properties":{"areas":{"type":"array","title":"Areas","minItems":2,"items":{"anyOf":[{"const":"app","title":"src/app","description":"the application"},{"const":"acp","title":"src/acp","description":"the agent link"},{"const":"ui","title":"src/ui","description":"the screen"}]}},"other":{"type":"string","title":"Other","description":"Anywhere else it should look"}},"required":["areas"]}}}\n'
+            ;;
+        *'"id":905'*)
+            case "$line" in
+                *'"action":"accept"'*'"areas":["acp","ui"]'*'"other":"tests'*)
+                    said='you picked two and said where else'
+                    ;;
+                *'"action":"accept"'*'"areas":["acp","ui"]'*)
+                    said='you picked two'
+                    ;;
+                *) said='you picked something else' ;;
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"

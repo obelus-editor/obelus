@@ -32,11 +32,12 @@ use agent_client_protocol::{
             CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction,
             ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities,
             ElicitationMode, ElicitationPropertySchema, ElicitationSchema, FileSystemCapabilities,
-            Implementation, InitializeRequest, NewSessionRequest, PermissionOptionId,
-            PromptRequest, ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
-            RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-            SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
-            SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionConfigSelectOption,
+            Implementation, InitializeRequest, MultiSelectItems, NewSessionRequest,
+            PermissionOptionId, PromptRequest, ReadTextFileRequest, ReadTextFileResponse,
+            RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+            SelectedPermissionOutcome, SessionConfigId, SessionConfigKind, SessionConfigOption,
+            SessionConfigOptionCategory, SessionConfigOptionValue,
+            SessionConfigOptionsCapabilities, SessionConfigSelectOption,
             SessionConfigSelectOptions, SessionModeState, SessionNotification, SessionUpdate,
             SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent, ToolCallContent,
             WriteTextFileRequest,
@@ -319,6 +320,17 @@ pub struct Field {
 pub enum Takes {
     /// One of these.
     One(Vec<Value>),
+    /// Any of these, with how many of them the agent will take.
+    Some {
+        /// What there is to choose from.
+        values: Vec<Value>,
+        /// The fewest it will take, if it said.
+        least: Option<u64>,
+        /// And the most.
+        most: Option<u64>,
+        /// Which of them start chosen, by the agent's ids for them.
+        chosen: Vec<String>,
+    },
     /// On or off, starting here.
     Switch(bool),
     /// Words, starting with these if the agent suggested any.
@@ -339,6 +351,8 @@ pub enum Takes {
 pub enum Reply {
     /// One of a list, by the agent's id for it.
     Value(String),
+    /// Several of a list, by the agent's ids for them.
+    Values(Vec<String>),
     /// A switch.
     Switch(bool),
     /// Words.
@@ -912,11 +926,39 @@ fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String> {
                     most: number.maximum.map(|most| most as f64),
                 },
             ),
-            // Several answers at once, which is a form rather than a
-            // question, and obelus puts questions.
-            ElicitationPropertySchema::Array(_) => {
-                return Err(format!("{name} takes several answers at once"));
-            }
+            // Several of a list. The items come either as bare strings or
+            // as titled options, which is the same pair the single-select
+            // kind comes in and is read the same way.
+            ElicitationPropertySchema::Array(several) => (
+                several.title.clone(),
+                several.description.clone(),
+                Takes::Some {
+                    values: match &several.items {
+                        MultiSelectItems::Titled(items) => items
+                            .options
+                            .iter()
+                            .map(|option| Value {
+                                id: option.value.clone(),
+                                name: option.title.clone(),
+                                about: said_twice(option.description.as_deref(), &option.title),
+                            })
+                            .collect(),
+                        MultiSelectItems::String(items) => items
+                            .values
+                            .iter()
+                            .map(|value| Value {
+                                id: value.clone(),
+                                name: value.clone(),
+                                about: None,
+                            })
+                            .collect(),
+                        other => return Err(format!("{name} is a list of {other:?}")),
+                    },
+                    least: several.min_items,
+                    most: several.max_items,
+                    chosen: several.default.clone().unwrap_or_default(),
+                },
+            ),
             other => return Err(format!("{name} is a {other:?}")),
         };
         fields.push(Field {
@@ -953,6 +995,7 @@ fn content_of(
         .map(|(name, reply)| {
             let value = match reply {
                 Reply::Value(value) | Reply::Words(value) => ElicitationContentValue::String(value),
+                Reply::Values(values) => ElicitationContentValue::StringArray(values),
                 Reply::Switch(on) => ElicitationContentValue::Boolean(on),
                 Reply::Number(number) => ElicitationContentValue::Number(number),
                 Reply::Whole(number) => ElicitationContentValue::Integer(number),

@@ -73,20 +73,6 @@ pub enum PickerValue {
         /// Which value, by the agent's id for it.
         value: String,
     },
-    /// One answer to a question the agent asked.
-    AgentAsked {
-        /// Which field, by the name the answer goes back under.
-        field: String,
-        /// What the reader chose, by the agent's id for it -- or nothing,
-        /// which is the row a question the agent does not need answered
-        /// gets so that saying nothing is something a reader can choose.
-        value: Option<String>,
-    },
-    /// Answer an agent's permission request with this option.
-    ///
-    /// The agent's own id for it, which is what the answer names -- not the
-    /// words on the row, which are the agent's and can be anything.
-    Permission(String),
     /// Nothing. A row that is there to say why the list is short.
     Nothing,
 }
@@ -989,5 +975,58 @@ impl Picker {
         {
             self.window.set_focus(row);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A list can say what it is about, and what it says takes room from
+    /// its rows rather than from the screen around it.
+    ///
+    /// Nothing in obelus sets this today -- an agent's question moved to a
+    /// card of its own, which is where prose above answers belongs when the
+    /// answers are the whole point. It is kept because the next list that
+    /// is an answer to something the reader did not start will want it, and
+    /// a feature nobody exercises is a feature that has quietly stopped
+    /// working by then.
+    #[test]
+    fn what_a_list_is_about_takes_room_from_its_rows() {
+        let rows = ["one", "two", "three"]
+            .into_iter()
+            .map(|name| PickerItem {
+                icon: None,
+                label: name.to_string(),
+                detail: None,
+                trailing: None,
+                value: PickerValue::Nothing,
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                kind: None,
+                tab: None,
+            })
+            .collect();
+        let mut picker = Picker::new(rows, PickerLayout::Compact { rows: 10 });
+        let width = 20;
+        let plain = picker.visible_rows(12, width);
+        assert_eq!(picker.about_rows(width), 0, "a list with nothing to say");
+
+        picker.about("a sentence long enough to want two rows of a narrow list");
+        assert_eq!(
+            picker.what_about(),
+            Some("a sentence long enough to want two rows of a narrow list")
+        );
+        // The words, wrapped, and a rule under them: what makes the rows
+        // under it read as answers rather than as more of the sentence.
+        let about = picker.about_rows(width);
+        assert!(about > 2, "the prose was not wrapped: {about}");
+        assert_eq!(
+            picker.visible_rows(12, width),
+            plain + about,
+            "the prose did not take its room from the list"
+        );
     }
 }

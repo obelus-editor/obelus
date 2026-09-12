@@ -263,14 +263,9 @@ impl App {
             PickerValue::Setting { key, word } => {
                 self.change_setting(key, &crate::config::Value::Choice(word));
             }
-            PickerValue::Permission(option) => self.allow(&option),
             PickerValue::AgentValue { setting, value } => {
                 self.set_agent_setting(&setting, &value);
             }
-            PickerValue::AgentAsked { field, value } => match value {
-                Some(value) => self.answer_asked(&field, &value),
-                None => self.skip_asked(),
-            },
             PickerValue::Nothing => {}
         }
     }

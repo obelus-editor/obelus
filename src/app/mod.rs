@@ -220,6 +220,13 @@ pub struct App {
     slash: Option<Picker>,
     /// The form the agent asked the reader to fill in, while one is open.
     asking: Option<talking::Asking>,
+    /// The card whatever the agent asked is answered on.
+    ///
+    /// One field for both kinds of question it can ask -- a form's field
+    /// and a request for permission -- because on screen they are the same
+    /// thing: what it wants to know, what the answers are, and room to say
+    /// one in your own words where it will take those.
+    card: Option<crate::component::card::Card>,
     /// The permission request waiting on the reader: the channel its
     /// answer goes back through.
     permission: Option<crate::acp::Answer<Option<String>>>,
@@ -352,6 +359,7 @@ impl App {
             talker: None,
             slash: None,
             asking: None,
+            card: None,
             permission: None,
             said_it_died: false,
             icons: HashMap::new(),
@@ -823,6 +831,14 @@ impl App {
         if self.page_preview(&key) {
             return;
         }
+        // The card an agent's question is answered on, which is nearer
+        // than anything else on screen: it covers the box a message would
+        // be written in, because while the agent is waiting on an answer
+        // there is no message to send.
+        if self.card_key(&key) {
+            return;
+        }
+
         if let Some(picker) = self.picker.as_mut() {
             // What a search is asking, before and after the key. The picker
             // owns the query and the tab and knows nothing about where rows
@@ -939,26 +955,12 @@ impl App {
             // view lays them out with: a page of scrolling is the page on
             // screen, and the caret moves by the rows the box really has.
             let width = ui::chat::writing_width(self.editor_area);
-            let needed = self.chat.writing().rows(width).len();
             let room = ChatRoom {
-                transcript: ui::chat::regions(self.editor_area, needed)
+                transcript: ui::chat::bands(self.editor_area, &self.chat, self.card.as_ref())
                     .transcript
                     .height,
                 writing: width,
             };
-            // Enter on an empty box, while the question waiting is one the
-            // agent said it does not need answered: the reader is walking
-            // past it. The box swallows a blank message -- rightly, there
-            // is nothing to send -- so this is asked before it.
-            if key.code == KeyCode::Enter
-                && keymap::modifiers_of(&key) == Some(KeyModifiers::NONE)
-                && self.is_answering()
-                && self.asked_may_be_skipped()
-                && self.chat.writing().text().trim().is_empty()
-            {
-                self.skip_asked();
-                return;
-            }
             // The list of the agent's own commands, when one is showing:
             // it follows what is being typed in the box, so it takes the
             // keys that move about a list and leaves the rest to the box.

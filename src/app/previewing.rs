@@ -281,8 +281,6 @@ impl App {
             PickerValue::Command(_)
             | PickerValue::Theme(_)
             | PickerValue::Setting { .. }
-            | PickerValue::Permission(_)
-            | PickerValue::AgentAsked { .. }
             | PickerValue::AgentValue { .. }
             | PickerValue::Nothing => None,
         }

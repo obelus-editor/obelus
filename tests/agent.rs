@@ -15,7 +15,11 @@ use std::{
 };
 
 use crossterm::event::KeyCode;
-use obelus::{app::App, event::Event};
+use obelus::{
+    app::App,
+    component::card::{Card, On},
+    event::Event,
+};
 
 /// The screen these tests use.
 const WIDTH: u16 = 76;
@@ -1065,7 +1069,8 @@ fn a_permission_question_says_what_it_will_do() {
             .unwrap_or_else(|| panic!("no {needle:?} on screen:\n{dump}"))
     };
     // The command, above the options, with a rule between them -- and the
-    // title still on the prompt row, where the question goes.
+    // title in the transcript, directly above the card, because that is
+    // where what the agent is doing is said.
     let said = at("cargo test --all-features");
     let allow = at("Allow once");
     assert!(said < allow, "the reason is not above the answers:\n{dump}");
@@ -1073,9 +1078,13 @@ fn a_permission_question_says_what_it_will_do() {
         asking[said + 1].contains('\u{2500}'),
         "nothing separates the words from the answers:\n{dump}"
     );
+    let asked = at("asking to run the tests");
+    assert!(asked < said, "the question is not above the card:\n{dump}");
+    // The row of settings is still obelus's status row: a card is part of
+    // the conversation rather than a list opened over it.
     assert!(
-        asking[asking.len() - 1].contains("Run the tests"),
-        "the question left the prompt row:\n{dump}"
+        asking[asking.len() - 1].contains("ask first"),
+        "the card took the status row:\n{dump}"
     );
 
     // And the answers are still answers: the list walks and chooses.
@@ -1127,8 +1136,7 @@ fn nothing_of_obeluss_own_opens_over_the_conversation() {
     );
 }
 
-/// The questions a form has to have answered come first, and what it does
-/// not need can be walked past.
+/// A form's answers and the room to write your own are one card.
 ///
 /// A form arrives as a *map* of fields -- JSON objects have no order to
 /// keep -- so the order the agent wrote them in is gone by the time obelus
@@ -1136,12 +1144,11 @@ fn nothing_of_obeluss_own_opens_over_the_conversation() {
 /// these suit" in front of the list it was an alternative to. What is left
 /// to go on is what the agent said it needs, which is the question itself.
 ///
-/// And what it does not need, a reader must be able to say nothing to:
-/// enter on an empty box for words, a row of its own in a list. Escape is
-/// not that answer -- escape gives up on the whole form, which is the one
-/// thing a reader walking past an aside does not mean.
+/// The two go on the one card because they are one question: these
+/// answers, or say what you want instead. Choosing one answers the whole
+/// card, so a reader who wants nothing but a named answer presses one key.
 #[test]
-fn a_form_asks_for_what_it_needs_first_and_the_rest_can_be_left_blank() {
+fn a_form_puts_its_answers_and_room_for_your_own_on_one_card() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus::app::talking::Talking::Ready
@@ -1157,14 +1164,14 @@ fn a_form_asks_for_what_it_needs_first_and_the_rest_can_be_left_blank() {
     // what they answer is not a question.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let asking = rows(&dump);
-    let said = asking
-        .iter()
-        .position(|row| row.contains("what would you like to do"))
-        .unwrap_or_else(|| panic!("the form does not say what it is about:\n{dump}"));
-    let first = asking
-        .iter()
-        .position(|row| row.contains("Write the weekly report"))
-        .expect("the first option");
+    let at = |needle: &str| {
+        asking
+            .iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("no {needle:?} on screen:\n{dump}"))
+    };
+    let said = at("what would you like to do");
+    let first = at("Write the weekly report");
     assert!(said < first, "it is not above the answers:\n{dump}");
     assert!(
         asking[said + 1].contains('\u{2500}'),
@@ -1172,16 +1179,17 @@ fn a_form_asks_for_what_it_needs_first_and_the_rest_can_be_left_blank() {
     );
 
     // The choice, though its name sorts after the optional field's -- and
-    // its rows say what each choice is, which is what the agent wrote
+    // its rows say what each answer is, which is what the agent wrote
     // beside them.
     let listed: Vec<(String, Option<String>)> = app
-        .picker()
+        .card()
         .expect("the question")
-        .matches()
-        .map(|item| (item.label.clone(), item.detail.clone()))
+        .choices()
+        .iter()
+        .map(|choice| (choice.name.clone(), choice.about.clone()))
         .collect();
     assert_eq!(
-        listed.first().map(|(label, _)| label.as_str()),
+        listed.first().map(|(name, _)| name.as_str()),
         Some("Write the weekly report"),
         "not the field the agent said it needs: {listed:?}"
     );
@@ -1193,46 +1201,103 @@ fn a_form_asks_for_what_it_needs_first_and_the_rest_can_be_left_blank() {
         Some("Gather the git changes of the week and write them up"),
         "the rows do not say what they are: {listed:?}"
     );
-    // Nothing to leave blank here: the agent needs this one answered.
-    assert!(
-        !listed.iter().any(|(label, _)| label == "leave blank"),
-        "a question the agent needs answered offered a way past it"
+    // And under them, the field the agent does not need: a row saying what
+    // it is for, which is what a box says while nothing is in it.
+    assert_eq!(
+        app.card().and_then(Card::placeholder),
+        Some("Other"),
+        "no room to write an answer of your own:\n{dump}"
+    );
+    let other = at("Other");
+    assert!(other > first, "it is not under the answers:\n{dump}");
+
+    // And the card as a whole: the answer under the reader marked the way
+    // every list marks it, the one they are not on plain, and the row for
+    // their own answer saying what it is for in the colour obelus writes
+    // everything that is not there yet in.
+    support::check(
+        &format!("asked_{WIDTH}x{HEIGHT}"),
+        &support::render(&mut app, WIDTH, HEIGHT),
     );
 
+    // Chosen the way every named answer is chosen, and that answers the
+    // card: nothing was written, so nothing is sent for the field the
+    // agent said it does not need.
     support::press(&mut app, KeyCode::Down);
-    support::press(&mut app, KeyCode::Enter);
-    let text = screen(&mut app);
-    assert!(
-        text.contains("Task: Review the code"),
-        "the answer is not in the conversation:\n{text}"
-    );
-
-    // Then the optional one, which says how to walk past it -- and enter on
-    // an empty box does. By row, because the note wraps.
-    assert!(
-        text.lines().any(|row| row.contains("leaves it blank")),
-        "nothing says the question can be left:\n{text}"
-    );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the answer to go back", |app| {
         app.talking() == obelus::app::talking::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
-        text.contains("Other: left blank"),
-        "the question was not left blank:\n{text}"
+        text.contains("Task: Review the code"),
+        "the answer is not in the conversation:\n{text}"
     );
     assert!(
         text.contains("you picked review and nothing else"),
-        "the selected value or omitted field went back wrong:\n{text}"
+        "the chosen value or the omitted field went back wrong:\n{text}"
+    );
+}
+
+/// What the reader types goes in the box on the card, wherever they were.
+///
+/// The box is the only thing on a card that takes characters, and a reader
+/// who starts typing means to type. What they write is sent with whatever
+/// they choose, because both are on the card in front of them.
+#[test]
+fn writing_your_own_answer_goes_with_the_one_you_choose() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/pick");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+
+    // Typed while the reader is on the first answer: it goes in the box
+    // under them rather than nowhere.
+    support::type_text(&mut app, "tests as well");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("tests as well")),
+        "what was typed is not on the card:\n{dump}"
+    );
+
+    // Words alone will not do here, because the agent said it needs one of
+    // its own answers -- and the card says so when the reader asks it to
+    // send, rather than sending a form the agent will not take.
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.is_asking(), "the form went back without what it needs");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("choose one")),
+        "nothing says why it did not go:\n{dump}"
+    );
+
+    // And walking back up to the answers does not lose it: the choice and
+    // the words are two halves of one answer. Up from the box reaches the
+    // last of them, so the second is three rows above it.
+    for _ in 0..3 {
+        support::press(&mut app, KeyCode::Up);
+    }
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer to go back", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("you picked review and something else"),
+        "the words did not go with the choice:\n{text}"
     );
 }
 
 /// The agent asks the reader something, and obelus puts the question.
 ///
-/// A form of three fields, put one at a time: a list where the answer is one
-/// of a few, the same list for a switch, and the box where it is typed. What
-/// goes back is the whole form, keyed by the names the agent gave.
+/// A form of three fields, each a card of its own: named answers, the same
+/// for a switch, and a box where it takes a number. What goes back is the
+/// whole form, keyed by the names the agent gave.
 #[test]
 fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
     let (mut app, events) = talking();
@@ -1242,44 +1307,44 @@ fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
     support::type_text(&mut app, "/ask ");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the question", |app| {
-        app.picker().is_some()
+        app.card().is_some()
     });
 
-    // What it is asking, in its own words, and the first field as a list.
+    // What it is asking, in its own words, and the first field's answers.
     let text = screen(&mut app);
     assert!(
         text.contains("which way should I do it"),
-        "the question is not in the conversation:\n{text}"
+        "the question is not on the card:\n{text}"
     );
-    for word in ["How", "Quickly", "Carefully", "and slowly"] {
-        assert!(text.contains(word), "no {word} in the list:\n{text}");
+    for word in ["Quickly", "Carefully", "and slowly"] {
+        assert!(text.contains(word), "no {word} on the card:\n{text}");
     }
 
-    // Chosen the way every list is chosen from -- and the next field is
-    // there straight away, because the agent is waiting on all of them.
+    // Chosen the way every named answer is, and the next field is there
+    // straight away: the agent is waiting on all of them.
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     let sides: Vec<String> = app
-        .picker()
+        .card()
         .expect("the switch")
-        .matches()
-        .map(|item| item.label.clone())
+        .choices()
+        .iter()
+        .map(|choice| choice.name.clone())
         .collect();
     assert_eq!(sides, ["on", "off"], "the switch has other sides");
     assert_eq!(
-        app.picker()
-            .and_then(|picker| picker.selected_item())
-            .map(|item| item.label.as_str()),
-        Some("off"),
+        app.card().map(Card::on),
+        Some(On::Choice(1)),
         "the switch did not open on the side the agent suggested"
     );
     support::press(&mut app, KeyCode::Up);
     support::press(&mut app, KeyCode::Enter);
 
-    // The last one takes a number, so it is asked in the box -- and the
-    // question says what it will take, because a reader who types the wrong
-    // thing otherwise finds out afterwards.
-    assert!(app.picker().is_none(), "a number was put as a list");
+    // The last one takes a number, so the card is a box -- and it says what
+    // it will take, because a reader who types the wrong thing otherwise
+    // finds out afterwards.
+    let card = app.card().expect("the number");
+    assert!(card.choices().is_empty(), "a number was put as a list");
     let text = screen(&mut app);
     assert!(
         text.contains("whole number from 1 to 9"),
@@ -1287,7 +1352,8 @@ fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
     );
 
     // What the reader types is the answer rather than a message, and one
-    // that will not do is said and asked again.
+    // that will not do is said and asked again -- with what they typed
+    // still there to be fixed.
     support::type_text(&mut app, "later");
     support::press(&mut app, KeyCode::Enter);
     let text = screen(&mut app);
@@ -1295,6 +1361,9 @@ fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
         text.contains("takes a number"),
         "words went in as a number:\n{text}"
     );
+    for _ in 0..5 {
+        support::press(&mut app, KeyCode::Backspace);
+    }
     support::type_text(&mut app, "12");
     support::press(&mut app, KeyCode::Enter);
     let text = screen(&mut app);
@@ -1307,6 +1376,9 @@ fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
         "the form was answered with what will not do"
     );
 
+    for _ in 0..2 {
+        support::press(&mut app, KeyCode::Backspace);
+    }
     support::type_text(&mut app, "3");
     support::press(&mut app, KeyCode::Enter);
     // And the agent says what it was given: the id of the row, the switch
@@ -1321,6 +1393,181 @@ fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
     );
 }
 
+/// Several answers at once are ticked, and sent from a row of their own.
+///
+/// A multi-select is the one question where the row under the reader is not
+/// the answer -- the ticks are -- so enter ticks and the card is sent from
+/// the row that says so. Which is also why the box has a tick of its own
+/// here: on a card where everything is ticked, a row that meant something
+/// else would be a second way of saying yes.
+///
+/// How many the agent will take is the agent's to say, and until it has
+/// them the row that sends the card says so rather than doing nothing.
+#[test]
+fn several_answers_are_ticked_and_sent_from_a_row_of_their_own() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/several");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+
+    // Every answer with a box in front of it, none of them ticked: a card
+    // that ticked something for the reader would be answering for them.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("[ ] src/acp")),
+        "the answers are not ticks:\n{dump}"
+    );
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("[ ] Other")),
+        "the box has no tick of its own:\n{dump}"
+    );
+
+    // Enter ticks, and the card stays: ticking and sending cannot both be
+    // enter.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.is_asking(), "a tick answered the question");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("[x] src/acp")),
+        "the answer was not ticked:\n{dump}"
+    );
+
+    // One is not enough, and the row that sends the card says which: what
+    // cannot be done is drawn dim with the reason on it.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.is_asking(), "the form went back short of what it needs");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("at least 2")),
+        "nothing says how many it takes:\n{dump}"
+    );
+
+    // A second one ticked, and then the card goes.
+    for _ in 0..2 {
+        support::press(&mut app, KeyCode::Up);
+    }
+    support::press(&mut app, KeyCode::Enter);
+    for _ in 0..2 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer to go back", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Areas: src/acp, src/ui"),
+        "what was ticked is not in the conversation:\n{text}"
+    );
+    assert!(
+        text.contains("you picked two"),
+        "the ticks did not go back as a list:\n{text}"
+    );
+}
+
+/// Ticking the box on such a card opens it, and what is written goes with
+/// the ticks.
+#[test]
+fn the_box_on_a_ticked_card_is_ticked_open() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/several");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+
+    // Two of them ticked.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+
+    // Then the box: ticking it is saying you mean to write something, so
+    // that is where the keys go next.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.card().map(Card::on),
+        Some(On::Words),
+        "ticking the box left the reader somewhere else"
+    );
+    support::type_text(&mut app, "tests too");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("tests too")),
+        "what was typed is not on the card:\n{dump}"
+    );
+
+    // And the whole card, once: what it is about over a rule, the answers
+    // with their ticks, the box under them, and the row that sends it --
+    // with the conversation's own status row still at the foot of the
+    // screen, because a card is part of the conversation rather than a
+    // list opened over it.
+    support::check(
+        &format!("card_{WIDTH}x{HEIGHT}"),
+        &support::render(&mut app, WIDTH, HEIGHT),
+    );
+
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer to go back", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("you picked two and said where else"),
+        "the words did not go with the ticks:\n{text}"
+    );
+}
+
+/// A question asked while the reader is away from the conversation brings
+/// it back.
+///
+/// The card is drawn inside the conversation, so a question asked after
+/// they escaped out of it would be a card nobody can see -- taking their
+/// keys, and holding up an agent waiting for an answer it never showed
+/// them. Agents ask before anything is said to them: a login, a workspace.
+#[test]
+fn a_question_asked_while_the_conversation_is_away_brings_it_back() {
+    let (mut app, events) = playing(&["asks-at-once"]);
+
+    // Away from it before it has even opened, which escape does while it is
+    // not working: the agent goes on starting, and asks with nobody there.
+    support::press(&mut app, KeyCode::Esc);
+    assert!(
+        app.chat().is_none(),
+        "escape did not close the conversation"
+    );
+    assert!(app.card().is_none(), "the question was already here");
+
+    pump(&mut app, &events, "the question", |app| {
+        app.card().is_some()
+    });
+    assert!(
+        app.chat().is_some(),
+        "the question is on a card nobody can see"
+    );
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump)
+            .iter()
+            .any(|row| row.contains("which workspace am I in")),
+        "the question is not on screen:\n{dump}"
+    );
+}
+
 /// Escape says no to the form, and the agent hears that rather than nothing.
 #[test]
 fn escape_on_a_form_tells_the_agent_it_was_not_answered() {
@@ -1331,7 +1578,7 @@ fn escape_on_a_form_tells_the_agent_it_was_not_answered() {
     support::type_text(&mut app, "/ask ");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the question", |app| {
-        app.picker().is_some()
+        app.card().is_some()
     });
 
     support::press(&mut app, KeyCode::Esc);

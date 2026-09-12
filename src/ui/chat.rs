@@ -21,7 +21,10 @@ use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets:
 use crate::{
     acp,
     app::{App, talking::Talking},
-    component::chat::{Chat, Focus, Speaker},
+    component::{
+        card::Card,
+        chat::{Chat, Focus, Speaker},
+    },
     icons,
     theme::Theme,
     ui::{fill, put, rule, text_width, write},
@@ -54,6 +57,12 @@ fn mark(speaker: Speaker) -> &'static str {
         Speaker::Note => "!",
     }
 }
+
+/// The rows that are there whatever is written: the header and two rules.
+///
+/// The box needs no rule under it -- the screen keeps one between whatever
+/// is showing and the status bar, and that one is directly under the box.
+const FIXED: u16 = 3;
 
 /// The most rows the box takes, however much is written in it.
 ///
@@ -109,23 +118,68 @@ pub fn above_writing(area: Rect, chat: &Chat) -> Rect {
     }
 }
 
+/// The fewest rows of what has been said the reader is left with.
+///
+/// A card an agent's question is on takes what it needs from the foot of
+/// the region, and what it needs can be most of it: a question with eight
+/// answers and room to write your own is a tall thing. This is where it
+/// stops -- below this the transcript would be gone, and the question
+/// would be on screen with nothing saying what it came out of.
+const LEAST_SAID: u16 = 3;
+
+/// How many rows a card may take from the foot of the region.
+///
+/// More than the box gets, because the two are different promises: the box
+/// is a few lines to type in, and a card is a question that has to be
+/// readable or it cannot be answered.
+const fn most_for_a_card(area: Rect) -> u16 {
+    area.height.saturating_sub(FIXED + LEAST_SAID)
+}
+
+/// The bands, with whatever is at the foot of the region: the box a message
+/// is written in, or the card an agent's question is answered on.
+///
+/// One function so the view, the caret and the keys cannot disagree about
+/// where the boundary is.
+#[must_use]
+pub fn bands(area: Rect, chat: &Chat, card: Option<&Card>) -> Regions {
+    match card {
+        Some(card) => bands_for(area, card),
+        None => regions(area, chat.writing().rows(writing_width(area)).len()),
+    }
+}
+
+/// The bands with a card at the foot of them.
+///
+/// Measured against the width a card's rows have, which is not the width the
+/// box has: the box is written in under an icon, and a card is a region of
+/// its own with a margin.
+#[must_use]
+pub fn bands_for(area: Rect, card: &Card) -> Regions {
+    let rows = card.rows(super::card::width_of(area));
+    regions_capped(area, rows, most_for_a_card(area))
+}
+
 /// Where the four bands go, given how many rows the box needs.
 #[must_use]
 pub fn regions(area: Rect, needed: usize) -> Regions {
+    regions_capped(area, needed, MOST_WRITING)
+}
+
+/// The same, for a foot of the region with a cap of its own.
+#[must_use]
+pub fn regions_capped(area: Rect, needed: usize, most: u16) -> Regions {
     let row = |y: u16, height: u16| Rect {
         x: area.x,
         y,
         width: area.width,
         height,
     };
-    // The header and two rules: three rows that are there whatever is
-    // written. The box needs no rule under it -- the screen keeps one
-    // between whatever is showing and the status bar, and that one is
-    // directly under the box.
-    let fixed = 3;
+    let fixed = FIXED;
+    let most = most.max(1);
     let writing = u16::try_from(needed)
-        .unwrap_or(MOST_WRITING)
-        .clamp(1, MOST_WRITING)
+        .unwrap_or(most)
+        .clamp(1, most)
         .min(area.height.saturating_sub(fixed).max(1));
     let transcript = area.height.saturating_sub(fixed + writing);
     let top = area.y;
@@ -178,6 +232,8 @@ pub struct ChatView<'a> {
     settings: &'a [acp::Setting],
     /// Which of the two things on this screen the keys are moving.
     focus: Focus,
+    /// The card an agent's question is on, while it is waiting on one.
+    card: Option<&'a Card>,
 }
 
 impl<'a> ChatView<'a> {
@@ -192,13 +248,23 @@ impl<'a> ChatView<'a> {
             name: app.agent_name(),
             settings: app.agent_settings(),
             focus: app.chat()?.focus(),
+            card: app.card(),
         })
     }
 
     /// Where the terminal should put its caret: in the box, where the
     /// writing is.
     #[must_use]
-    pub fn caret(area: Rect, chat: &Chat) -> Option<ratatui::layout::Position> {
+    pub fn caret(
+        area: Rect,
+        chat: &Chat,
+        card: Option<&Card>,
+    ) -> Option<ratatui::layout::Position> {
+        // In the card, while one is up: it is what covers the box, and
+        // what the reader is typing in is the half of it that takes words.
+        if let Some(card) = card {
+            return super::card::caret(area, card);
+        }
         // Nowhere, while the keys are walking the row of settings: a caret
         // left blinking in the box would say that what is typed goes
         // there, and it does not. What says where the keys are going is
@@ -237,7 +303,7 @@ impl Widget for ChatView<'_> {
 
         let width = writing_width(area);
         let rows = self.chat.writing().rows(width);
-        let regions = regions(area, rows.len());
+        let regions = bands(area, self.chat, self.card);
 
         self.header(cells, regions.header, plain, dim);
         for y in [regions.header.bottom(), regions.writing.y - 1] {
@@ -253,7 +319,13 @@ impl Widget for ChatView<'_> {
         }
 
         self.transcript(cells, regions.transcript, plain, dim);
-        self.writing(cells, regions.writing, &rows, plain, dim);
+        // The card where the box would be: while the agent is waiting on
+        // an answer there is no message to send, so the row the reader
+        // would type it in is the room the question needs.
+        match self.card {
+            Some(card) => super::card::draw(cells, regions.writing, card, self.theme),
+            None => self.writing(cells, regions.writing, &rows, plain, dim),
+        }
     }
 }
 

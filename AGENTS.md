@@ -290,6 +290,18 @@ agent goes in. `main` pushes the *narrowest* kitty-keyboard flag
 hook, and `alt+enter` breaks the line as well, because alt is the escape
 prefix and always arrives. Nothing else in obelus depends on the protocol.
 
+**Wherever enter means something else, a line is `shift+enter` *and*
+`alt+enter`.** Both, every time, and it is one rule rather than a decision
+per box: `shift+enter` is what a reader reaches for and it arrives only from
+a terminal that speaks the protocol above; `alt+enter` is what arrives from
+the rest. A place that took one of them left the other falling through to
+whatever was underneath — in the agent's card, into the box it covers, where
+the line went into a message nobody could see and was sent afterwards. So
+the pair is taken together, and taken *before* the modifier check, since alt
+disqualifies a key everywhere else. Where the reader has nowhere to type at
+all, the pair is swallowed rather than passed on, for the same reason a
+plain character is.
+
 **`dispatch` has no wildcard arm** and warns on one, so a new `Command` fails
 to compile until it is handled. Same idea in `theme`: only fields with readers.
 
@@ -413,43 +425,83 @@ the turn and reports back whether it was refused. Both assertions are in
 boolean one is only offered to a client that said in the handshake that it
 can show a switch.
 
-**A form is asked one question at a time, and the order is the agent's
-needs.** `elicitation/create`'s schema arrives as a *map* of fields -- JSON
-objects have no order to keep -- so the order the agent wrote them in is
-gone before obelus sees it, and asking in the alphabet's order put an
-"Other, if none of these suit" in front of the list it was an alternative
-to. What is left to go on is `required`: those first, in the order the agent
-listed them, and the rest after.
+**A form is asked on a card, and the order is the agent's needs.**
+`elicitation/create`'s schema arrives as a *map* of fields -- JSON objects
+have no order to keep -- so the order the agent wrote them in is gone before
+obelus sees it, and asking in the alphabet's order put an "Other, if none of
+these suit" in front of the list it was an alternative to. What is left to
+go on is `required`: those first, in the order the agent listed them, and
+the rest after.
 
-What it does not need, a reader must be able to say nothing to -- enter on
-an empty box for words, a row of its own in a list. Escape is not that
-answer: escape gives up on the whole form, which is the one thing a reader
-walking past an aside does not mean. Without it an optional "anything else?"
-was a question with no way out but abandoning everything already answered.
+A named-answer field and a words field next to it go on the *one* card,
+because that pair is one question -- "these, or say what you want instead" --
+however many fields it takes to write down. Everything else is a card of its
+own, in turn.
+
+What the agent does not need, a reader must be able to say nothing to:
+they send the card with the box empty, and the field is left out of the
+answer. Escape is not that answer -- escape gives up on the whole form,
+which is the one thing a reader walking past an aside does not mean.
 
 **An agent that wants to ask something uses `elicitation/create`.** That is
 the one way it can put UI on a client's screen, and it is gated on a
 capability: no `elicitation.form` in the handshake and an agent either falls
-back or gives up. What it may ask for is a flat form of primitives, and
-obelus puts it the way it puts everything else -- a list where the answer is
-one of a few or a switch, the box where it is words or a number -- one field
-at a time, because a terminal reader has one thing on screen and one caret
-in it. The whole form goes back as one answer, keyed by the agent's own
-names; escape declines it, and the view going away cancels it, because an
-agent that hears nothing waits for ever. `elicitation.url` is *not*
-declared: obelus is not a browser, and a mode it cannot put is a mode it
-should not be sent. Anything else -- a multi-select, a property type it has
-never heard of -- is declined with the reason in the transcript rather than
+back or gives up. What it may ask for is a flat form of primitives: one of a
+list, several of a list, a switch, words, a number. The whole form goes back
+as one answer, keyed by the agent's own names; escape declines it, and the
+view going away cancels it, because an agent that hears nothing waits for
+ever. `elicitation.url` is *not* declared: obelus is not a browser, and a
+mode it cannot put is a mode it should not be sent. A property type it has
+never heard of is declined with the reason in the transcript rather than
 half-filled in.
 
-**A question the reader did not start says what it is about.** The compact
-list carries an `about` -- prose above its rows, a rule under it -- and both
+**A question is a card, not a picker.** A picker is for finding one thing
+among many by typing at it: a query, a fuzzy match, tabs, rows arriving from
+a walk. A question is somebody else asking, with a handful of named answers
+and sometimes room to write your own. Strip the filtering from a picker and
+nothing of it is left but the row drawing -- and what a card needs on top of
+that is a row that *grows*, which the list machinery cannot have: every
+picker in obelus counts one row per screen row, and a file list of thousands
+must not pay for a box one caller wants. So `component/card.rs` composes the
+two halves obelus already has -- the rows, and the `Composer` a message is
+written in -- and `ui/card.rs` draws them.
+
+The card sits where the box sits, because while the agent is waiting there
+is no message to send, and the transcript shrinks by however much it needs.
+The conversation keeps the status row: a card is part of the conversation
+rather than a list opened over it.
+
+**Enter acts on the row the reader is on, and that is the whole key table.**
+One answer: enter on it answers the card, with whatever is in the box. Many:
+enter ticks, and the card is sent from a row that says `submit`, because
+ticking and sending cannot both be enter. In the box: enter sends, `alt` and
+enter makes a line, which is what enter does in the box anywhere else in
+obelus. No new key was needed -- not even space, which everywhere else in
+obelus is a character.
+
+Walking does *not* choose. The box is under the answers, so every way to it
+walks over them, and a card whose answer followed the focus would answer
+with whichever row the reader passed on their way somewhere else. Typing
+goes to the box wherever the reader is, and a card with no box swallows what
+is typed rather than letting it fall through to the box underneath, which is
+covered and would carry it to the agent as a message afterwards.
+
+What the card cannot do yet it says rather than refuses silently -- `at
+least 2` on the row that sends it, or a row of its own where there is none
+-- and only once the reader has asked for it. A card that opens saying
+"choose one" is telling somebody who has tried nothing yet that they have
+got it wrong.
+
+**A question the reader did not start says what it is about.** The card
+carries an `about` -- prose above its answers, a rule under it -- and both
 questions an agent can ask fill it: a form puts its own message there, and a
-permission request what the agent is actually going to do:
-the tool call's own content, which is the command or the text it carries,
-and the files it names when it has none. The title stays on the prompt row,
-because a line is what fits there; "allow" and "refuse" are answers, and a
-question with the words missing is not one a reader can answer. It is
+permission request what the agent is actually going to do: the tool call's
+own content, which is the command or the text it carries, and the files it
+names when it has none. "Allow" and "refuse" are answers, and a question
+with the words missing is not one a reader can answer. The title is in the
+transcript directly above the card, where what the agent is doing is said.
+The compact list keeps an `about` of its own for the same reason, whichever
+list needs one next. It is
 wrapped to the width and capped at five rows: it is somebody else's prose,
 and an agent explaining itself at length must not push the list it belongs
 to off the screen. `raw_input` is not used -- that is the agent's own
@@ -457,8 +509,7 @@ arguments in its own shape, and reading meaning into it would be obelus
 guessing. A form said it in a transcript line of its own once ("it asks:
 ..."), which is the same words twice: the question is on screen, and what
 it is about belongs over it rather than above the last thing the agent
-said. Said once, in front of the first question, because after that the
-reader is in the middle of answering and knows what they are answering.
+said.
 
 **A list open over anything owns the status row.** It is the thing taking
 the keys and holding the caret, so `StatusView` draws its prompt before the
