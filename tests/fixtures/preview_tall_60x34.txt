@@ -10,7 +10,7 @@ screen 60x34  editor 60x32  status 60x1
  7|  src/other07.rs                                          │
  8|  src/other08.rs                                          │
  9|  src/other09.rs                                          │
-10|───────────────────────────────────────────────────────────┼
+10|───────────────────────────────────────────────────────────┤
 11|    1 //! Forty lines, so a preview has more to show than  █
 12|      it has room for.                                     █
 13|    2 pub const LINE_01: u32 = 1;                          █
@@ -32,7 +32,7 @@ screen 60x34  editor 60x32  status 60x1
 29|   18 pub const LINE_17: u32 = 17;                         │
 30|   19 pub const LINE_18: u32 = 18;                         │
 31|   20 pub const LINE_19: u32 = 19;                         │
-32|───────────────────────────────────────────────────────────┴
+32|───────────────────────────────────────────────────────────┘
 33| 󰍉                                                          
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab

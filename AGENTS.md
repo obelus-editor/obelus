@@ -301,9 +301,15 @@ what the agent asked for, so the reader stood on a row that had stopped
 saying it was under them: they pressed enter, got nothing, and had nothing
 on screen to tell them which row had refused.
 
-**A rule meets the bar it crosses.** Drawn through, it left the bar in two
-pieces, and a control in two pieces reads as one that is broken. `rule` and
-`scrollbar` join from both sides -- the rule looks at the cells above and
+**A rule meets the bar it crosses, and meets it with the right corner.**
+Drawn through, it left the bar in two pieces, and a control in two pieces
+reads as one that is broken. The glyph comes from all four directions rather
+than from the two a bar can be on, because the arms that are *not* there are
+what makes a corner: the bar is in the last column, so a ┬ there hangs
+half a stroke over the edge of the screen with nothing to join to. A screen
+with a list, a preview and a status bar on it reads as one frame -- ┐ down
+into the list's bar, ┤ where it runs through, ┘ closing the bottom.
+`rule` and `scrollbar` join from both sides -- the rule looks at the cells above and
 below each of its own, the bar at the cell beyond each of its ends -- because
 which of the two is drawn first depends on the view, and neither of them
 should have to know. A list over a file draws its edge after the file's bar;

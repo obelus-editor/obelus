@@ -10,7 +10,7 @@ screen 60x22  editor 60x20  status 60x1
  7|                                                            
  8|                                                            
  9|                                                            
-10|───────────────────────────────────────────────────────────┬
+10|───────────────────────────────────────────────────────────┐
 11|    9 pub const LINE_08: u32 = 8;                          │
 12|   10 pub const LINE_09: u32 = 9;                          │
 13|   11 pub const LINE_10: u32 = 10;                         █
@@ -20,7 +20,7 @@ screen 60x22  editor 60x20  status 60x1
 17|   15 pub const LINE_14: u32 = 14;                         │
 18|   16 pub const LINE_15: u32 = 15;                         │
 19|   17 pub const LINE_16: u32 = 16;                         │
-20|───────────────────────────────────────────────────────────┴
+20|───────────────────────────────────────────────────────────┘
 21| 󰍉                                                          
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab

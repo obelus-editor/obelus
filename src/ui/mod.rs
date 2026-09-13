@@ -323,14 +323,8 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     status::StatusView::new(app).render(regions.status, cells);
 }
 
-/// A rule's own glyph, and the three ways a bar can meet it.
+/// A rule's own glyph.
 const RULE: char = '\u{2500}';
-/// A bar below the rule.
-const RULE_DOWN: char = '\u{252c}';
-/// A bar above it.
-const RULE_UP: char = '\u{2534}';
-/// A bar on both sides, which is a list with a preview under it.
-const RULE_BOTH: char = '\u{253c}';
 
 /// The two glyphs a bar is drawn with: the track, and the thumb on it.
 const TRACK: char = '\u{2502}';
@@ -349,18 +343,38 @@ fn is_rule(cells: &CellBuffer, x: u16, y: u16) -> bool {
     cells.cell((x, y)).is_some_and(|cell| {
         matches!(
             cell.symbol(),
-            "\u{2500}" | "\u{252c}" | "\u{2534}" | "\u{253c}"
+            "\u{2500}"
+                | "\u{252c}"
+                | "\u{2534}"
+                | "\u{253c}"
+                | "\u{2524}"
+                | "\u{251c}"
+                | "\u{2518}"
+                | "\u{2510}"
+                | "\u{2514}"
+                | "\u{250c}"
         )
     })
 }
 
-/// Which glyph a rule takes where a bar meets it.
-const fn crossing(above: bool, below: bool) -> char {
-    match (above, below) {
-        (true, true) => RULE_BOTH,
-        (true, false) => RULE_UP,
-        (false, true) => RULE_DOWN,
-        (false, false) => RULE,
+/// The glyph for a crossing, by which of the four directions carry a line.
+///
+/// All four, rather than just the two a bar can be on, because the arms that
+/// are *not* there are what makes a corner a corner: a bar meets the rules
+/// in the last column of the screen, and a `\u{252c}` there hangs half a
+/// stroke over the edge with nothing to join to.
+const fn crossing(up: bool, down: bool, left: bool, right: bool) -> char {
+    match (up, down, left, right) {
+        (true, true, true, true) => '\u{253c}',
+        (true, true, true, false) => '\u{2524}',
+        (true, true, false, true) => '\u{251c}',
+        (true, false, true, true) => '\u{2534}',
+        (false, true, true, true) => '\u{252c}',
+        (true, false, true, false) => '\u{2518}',
+        (false, true, true, false) => '\u{2510}',
+        (true, false, false, true) => '\u{2514}',
+        (false, true, false, true) => '\u{250c}',
+        _ => RULE,
     }
 }
 
@@ -384,7 +398,7 @@ pub(crate) fn rule(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
             cells,
             x,
             area.y,
-            crossing(above, below),
+            crossing(above, below, x > area.left(), x + 1 < area.right()),
             Style::new().fg(theme.gutter),
         );
     }
@@ -450,25 +464,26 @@ pub(crate) fn scrollbar(
     // off rather than being cut in half by it. The other way round is done
     // by `rule`, because which of the two is drawn first depends on the
     // view and neither of them should have to know.
-    if area.y > 0 && is_rule(cells, x, area.y - 1) {
-        let above = area.y > 1 && is_bar(cells, x, area.y - 2);
+    // Which way the rule runs is read from the cells beside it, the same
+    // way: a rule that stops here is a corner, and one that goes on is a T.
+    let joining = |cells: &mut CellBuffer, y: u16, above: bool, below: bool| {
+        let left = x > 0 && is_rule(cells, x - 1, y);
+        let right = is_rule(cells, x + 1, y);
         put(
             cells,
             x,
-            area.y - 1,
-            crossing(above, true),
+            y,
+            crossing(above, below, left, right),
             Style::new().fg(theme.gutter),
         );
+    };
+    if area.y > 0 && is_rule(cells, x, area.y - 1) {
+        let above = area.y > 1 && is_bar(cells, x, area.y - 2);
+        joining(cells, area.y - 1, above, true);
     }
     if is_rule(cells, x, area.bottom()) {
         let below = is_bar(cells, x, area.bottom() + 1);
-        put(
-            cells,
-            x,
-            area.bottom(),
-            crossing(true, below),
-            Style::new().fg(theme.gutter),
-        );
+        joining(cells, area.bottom(), true, below);
     }
 }
 

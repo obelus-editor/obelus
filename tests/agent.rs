@@ -2248,7 +2248,7 @@ fn a_transcript_with_more_than_fits_has_a_bar() {
         .collect();
     assert_eq!(
         ends,
-        ['\u{252c}', '\u{2534}', '\u{2500}'],
+        ['\u{2510}', '\u{2518}', '\u{2500}'],
         "the rules do not meet the transcript's bar:\n{dump}"
     );
 

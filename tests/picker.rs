@@ -3305,11 +3305,15 @@ fn every_bar_on_the_screen_is_in_the_same_column() {
 /// A rule meets the bar it crosses rather than cutting it in half.
 ///
 /// A list with tabs over a file with a preview under it has all three
-/// junctions on one screen: the rule under the tabs with the list's bar
-/// starting below it, the rule between the list and the preview with a bar
-/// on either side, and the rule above the status bar with the preview's bar
-/// ending on it. Drawn through, each of them left a bar in two pieces, and a
-/// control in two pieces reads as one that is broken.
+/// junctions on one screen: the rule under the tabs turning down into the
+/// list's bar, the rule between the list and the preview docking into a bar
+/// that runs through it, and the rule above the status bar closing the
+/// bottom of the preview's. Drawn through, each of them left a bar in two
+/// pieces, and a control in two pieces reads as one that is broken.
+///
+/// Corners rather than the T-shaped junctions, because the bar is in the
+/// last column: a `\u{252c}` there hangs half a stroke over the edge of the
+/// screen with nothing to join to.
 #[test]
 fn a_rule_closes_off_the_bar_it_crosses() {
     let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
@@ -3337,7 +3341,7 @@ fn a_rule_closes_off_the_bar_it_crosses() {
         .collect();
     assert_eq!(
         ends,
-        ['\u{252c}', '\u{253c}', '\u{2534}'],
+        ['\u{2510}', '\u{2524}', '\u{2518}'],
         "the rules do not meet the bar:\n{dump}"
     );
 
@@ -3358,7 +3362,7 @@ fn a_rule_closes_off_the_bar_it_crosses() {
         .collect();
     assert_eq!(
         ends,
-        ['\u{2534}', '\u{252c}', '\u{2534}'],
+        ['\u{2518}', '\u{2510}', '\u{2518}'],
         "the edge of the list does not meet the bars:\n{dump}"
     );
 }
