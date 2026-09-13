@@ -530,6 +530,34 @@ needs next, and a row that overwrote it would take away the only record.
 `esc stops it` rides on the row that says something is going, beside the
 thing it would stop.
 
+**A change that has happened is the working tree's; a change that has not is
+the agent's to show.** An agent that edits a file leaves the file different
+from the last commit, and drawing that is what obelus does all day: the
+margin, `show-change`, `alt+d`. Rendering the agent's own diff over it would
+be a second answer to the same question, and the wrong one when something
+else has touched the file too -- so an edit that has been made is a row with
+`+12 -4` on it, and the file is where it is read.
+
+A change it is *asking* to make is the opposite: the lines are in neither
+the file nor the last commit, and the reader is being asked to agree to
+them. Those go in the transcript, under the call's own row, open -- and they
+stay there afterwards, which is how a reader finds out later what they
+agreed to. Drawn the way an opened hunk is drawn in a file, tinted to the
+edge with the marker's bar against the text, because it is the same thing
+being said. `Theme::marker_colour` is where both views ask what a change
+looks like.
+
+The protocol sends the file as it is and as it would be rather than a patch,
+so obelus diffs the two with `Changes::between` -- the engine the margins
+come from. Nothing parses anybody's patch text, and a proposal is read with
+the same hunks as everything else. The rows are worked out once, when the
+call arrives: a frame is not the place to diff a file.
+
+A change folds itself once the call it belongs to is finished, because by
+then the file has the lines and the margin has the change. While the call is
+pending it stays open: it *is* the question. The reader's word beats both,
+as everywhere else.
+
 **A run of tool calls of one kind is one row until the reader opens it.**
 Thirty calls in a turn is a log, and a reader looking for what the agent
 *did* should not have to scroll past the machine to find it. Three in a row
@@ -586,6 +614,13 @@ least 2` on the row that sends it, or a row of its own where there is none
 -- and only once the reader has asked for it. A card that opens saying
 "choose one" is telling somebody who has tried nothing yet that they have
 got it wrong.
+
+**What a permission request is about is a row in the transcript, not a line
+of obelus's own.** It used to write "asking to run the tests" as a note and
+then put the question underneath -- the same words twice, once obelus
+started putting the call itself in the transcript. Now the call goes where
+every call goes, waiting, which is what says the agent is asking about it;
+the card below carries the answers and whatever the agent said about why.
 
 **A question the reader did not start says what it is about.** The card
 carries an `about` -- prose above its answers, a rule under it -- and both

@@ -40,7 +40,7 @@ use agent_client_protocol::{
             SessionConfigOptionsCapabilities, SessionConfigSelectOption,
             SessionConfigSelectOptions, SessionModeState, SessionNotification, SessionUpdate,
             SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent, ToolCallContent,
-            ToolCallLocation, WriteTextFileRequest,
+            ToolCallId, ToolCallLocation, ToolCallUpdateFields, WriteTextFileRequest,
         },
     },
 };
@@ -128,8 +128,9 @@ pub enum Incoming {
     Failed(&'static str, String),
     /// The agent is asking to be allowed something.
     Permission {
-        /// What it wants to do, in a line.
-        title: String,
+        /// The call it is asking about, which is the same call the
+        /// transcript already has a row for -- or is about to.
+        call: Call,
         /// And in its own words: which command, which file -- what the
         /// reader is actually being asked about.
         reason: Option<String>,
@@ -170,25 +171,13 @@ pub enum Update {
     /// A piece of its thinking, which agents send separately so that it can
     /// be shown as what it is.
     Thought(String),
-    /// It is using a tool: what it calls the call, and where it has got to.
+    /// It is using a tool, and this is where it has got to.
     Tool {
-        /// Its own id for the call, so a later update replaces the row
-        /// rather than adding one.
-        id: String,
-        /// What it calls it.
-        title: String,
-        /// `pending`, `in_progress`, `completed` or `failed`.
-        status: String,
-        /// What sort of thing it is doing: `read`, `edit`, `search`,
-        /// `execute` and the rest of the protocol's own list. Empty on an
+        /// The call itself.
+        call: Call,
+        /// `pending`, `in_progress`, `completed` or `failed`. Empty on an
         /// update that did not say, which means it has not changed.
-        kind: String,
-        /// The files it named, with the line where it said one.
-        ///
-        /// What makes a tool call something a reader can go to rather than
-        /// something they can only read about: obelus opens files for a
-        /// living, and this is the agent saying which.
-        places: Vec<Place>,
+        status: String,
     },
     /// The way of working changed, which the agent can do on its own.
     Mode(String),
@@ -356,6 +345,48 @@ pub enum Takes {
     },
 }
 
+/// One thing an agent did, or is asking to do.
+///
+/// One type for both, because on screen they are one row: the agent sends a
+/// call, asks permission for it, and updates it when it is done, all under
+/// the same id.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Call {
+    /// Its own id for the call, so a later update replaces the row rather
+    /// than adding one.
+    pub id: String,
+    /// What it calls it. Empty on an update that did not say, which means
+    /// it has not changed -- and the same for the two fields under it.
+    pub title: String,
+    /// What sort of thing it is doing: `read`, `edit`, `search`, `execute`
+    /// and the rest of the protocol's own list.
+    pub kind: String,
+    /// The files it named, with the line where it said one.
+    ///
+    /// What makes a tool call something a reader can go to rather than
+    /// something they can only read about: obelus opens files for a living,
+    /// and this is the agent saying which.
+    pub places: Vec<Place>,
+    /// The change it is making, when it said.
+    pub change: Option<Change>,
+}
+
+/// A change to a file, as the agent describes it.
+///
+/// The file as it is and as it would be, which is what the protocol sends
+/// rather than a patch: obelus diffs the two with the engine it diffs
+/// everything else with, so a change that has not happened is read the way
+/// every change that has is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Change {
+    /// Which file.
+    pub path: PathBuf,
+    /// What is in it now, or nothing where the file is new.
+    pub before: Option<String>,
+    /// What would be in it.
+    pub after: String,
+}
+
 /// Somewhere in the project an agent said it was working.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Place {
@@ -474,7 +505,7 @@ async fn talk(
                 // hear to stop waiting.
                 let (answer, answered) = oneshot::channel();
                 let question = Incoming::Permission {
-                    title: title_of(&request),
+                    call: call_of(&request.tool_call.tool_call_id, &request.tool_call.fields),
                     reason: reason_of(&request),
                     options: request
                         .options
@@ -795,15 +826,6 @@ fn refusal(why: &str) -> agent_client_protocol::Error {
 }
 
 /// What a permission request is about.
-fn title_of(request: &RequestPermissionRequest) -> String {
-    request
-        .tool_call
-        .fields
-        .title
-        .clone()
-        .unwrap_or_else(|| "the agent wants to do something".to_string())
-}
-
 /// What the agent is actually about to do, for the reader deciding whether
 /// to let it.
 ///
@@ -857,32 +879,23 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
             .into_iter()
             .collect(),
         SessionUpdate::ToolCall(call) => vec![Update::Tool {
-            id: call.tool_call_id.0.to_string(),
-            title: call.title.clone(),
+            call: Call {
+                id: call.tool_call_id.0.to_string(),
+                title: call.title.clone(),
+                kind: format!("{:?}", call.kind).to_lowercase(),
+                places: call.locations.iter().map(place_of).collect(),
+                change: change_of(&call.content),
+            },
             status: format!("{:?}", call.status).to_lowercase(),
-            kind: format!("{:?}", call.kind).to_lowercase(),
-            places: call.locations.iter().map(place_of).collect(),
         }],
         // A later update carries only what changed, so what it leaves out
         // arrives here as nothing and is read as "the same as before".
         SessionUpdate::ToolCallUpdate(call) => vec![Update::Tool {
-            id: call.tool_call_id.0.to_string(),
-            title: call.fields.title.clone().unwrap_or_default(),
+            call: call_of(&call.tool_call_id, &call.fields),
             status: call
                 .fields
                 .status
                 .map(|status| format!("{status:?}").to_lowercase())
-                .unwrap_or_default(),
-            kind: call
-                .fields
-                .kind
-                .map(|kind| format!("{kind:?}").to_lowercase())
-                .unwrap_or_default(),
-            places: call
-                .fields
-                .locations
-                .clone()
-                .map(|places| places.iter().map(place_of).collect())
                 .unwrap_or_default(),
         }],
         SessionUpdate::CurrentModeUpdate(mode) => {
@@ -1239,6 +1252,39 @@ fn said_twice(about: Option<&str>, name: &str) -> Option<String> {
     about
         .filter(|about| about.trim() != name.trim())
         .map(str::to_string)
+}
+
+/// A call, from the fields an update carries.
+fn call_of(id: &ToolCallId, fields: &ToolCallUpdateFields) -> Call {
+    Call {
+        id: id.0.to_string(),
+        title: fields.title.clone().unwrap_or_default(),
+        kind: fields
+            .kind
+            .map(|kind| format!("{kind:?}").to_lowercase())
+            .unwrap_or_default(),
+        places: fields
+            .locations
+            .clone()
+            .map(|places| places.iter().map(place_of).collect())
+            .unwrap_or_default(),
+        change: fields
+            .content
+            .clone()
+            .and_then(|content| change_of(&content)),
+    }
+}
+
+/// The change a call carries, if it carries one.
+fn change_of(content: &[ToolCallContent]) -> Option<Change> {
+    content.iter().find_map(|content| match content {
+        ToolCallContent::Diff(diff) => Some(Change {
+            path: diff.path.clone(),
+            before: diff.old_text.clone(),
+            after: diff.new_text.clone(),
+        }),
+        _ => None,
+    })
 }
 
 /// Where a tool call said it was working.

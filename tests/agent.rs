@@ -159,6 +159,12 @@ fn a_whole_turn_of_conversation() {
         "the chunks were not joined up:\n{text}"
     );
     assert!(text.contains("Read the file"), "no tool call:\n{text}");
+    // Including the one it is asking about, which is a row like any other
+    // -- waiting, which is what says the question is about it.
+    assert!(
+        text.contains("Run the tests"),
+        "what it is asking about is not in the transcript:\n{text}"
+    );
     // And which file it was in, written the way a reader writes a path --
     // relative to the tree obelus was opened on. This is what makes a tool
     // call somewhere to go rather than something to read about.
@@ -1085,8 +1091,11 @@ fn a_permission_question_says_what_it_will_do() {
         asking[said + 1].contains('\u{2500}'),
         "nothing separates the words from the answers:\n{dump}"
     );
-    let asked = at("asking to run the tests");
-    assert!(asked < said, "the question is not above the card:\n{dump}");
+    let asked = at("Run the tests");
+    assert!(
+        asked < said,
+        "what it is asking about is not above the question:\n{dump}"
+    );
     // The row of settings is still obelus's status row: a card is part of
     // the conversation rather than a list opened over it.
     assert!(
@@ -1787,7 +1796,9 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
     });
 
     // Up from the box, which is empty: the caret cannot move in it, so the
-    // key goes to the nearest row of the transcript worth standing on.
+    // key goes to the nearest row of the transcript worth standing on --
+    // the command it asked about -- and again to the file it read.
+    support::press(&mut app, KeyCode::Up);
     support::press(&mut app, KeyCode::Up);
     assert!(
         matches!(
@@ -2011,5 +2022,67 @@ fn a_row_naming_a_file_that_is_gone_changes_nothing() {
         buffer.cursor().line,
         reading,
         "the cursor moved in the reader's own file to a line from somebody else's"
+    );
+}
+
+/// A change an agent is asking to make is in the transcript, open.
+///
+/// The lines it would write are in neither the file nor the last commit, so
+/// this is the only place they exist -- and the reader is being asked to
+/// agree to them. They go where everything else the agent did goes, and
+/// they stay there afterwards, which is how a reader finds out later what
+/// they agreed to.
+#[test]
+fn a_change_it_is_asking_to_make_is_read_in_the_transcript() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/edit");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking_permission);
+
+    // The file, how much it changes, and the lines themselves -- worked out
+    // by obelus from the two texts the agent sent, with the engine it works
+    // out every other change with.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let shown = rows(&dump);
+    let heading = shown
+        .iter()
+        .position(|row| row.contains("Edit the file"))
+        .unwrap_or_else(|| panic!("the change is not in the transcript:\n{dump}"));
+    assert!(
+        shown[heading].contains("many_lines.rs") && shown[heading].contains("+2 \u{2212}2"),
+        "the row does not say what it changes:\n{dump}"
+    );
+    assert!(
+        shown[heading + 2].contains("fn step_rows(row: usize)"),
+        "the line it would replace is not shown:\n{dump}"
+    );
+    assert!(
+        shown[heading + 4].contains("fn step_rows(row: ScreenRow)"),
+        "the line it would write is not shown:\n{dump}"
+    );
+    // And the whole of it: the tint a line of a change carries, which is
+    // the one an opened hunk carries in a file, and the bar in its own
+    // colour at the edge of it.
+    support::check(&format!("change_{WIDTH}x{HEIGHT}"), &dump);
+
+    // Answered, it folds: the change is in the file now, and a file's own
+    // changes are drawn in the margin beside them. The row that opens it
+    // stays, with the count still on it.
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("+2 \u{2212}2"),
+        "the row forgot what it changed:\n{text}"
+    );
+    assert!(
+        !text.contains("fn step_rows(row: ScreenRow)"),
+        "the change is still open after it was made:\n{text}"
     );
 }

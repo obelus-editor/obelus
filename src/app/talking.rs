@@ -769,13 +769,7 @@ impl App {
             acp::Incoming::Update(update) => match update {
                 acp::Update::Said(text) => self.chat.chunk(Speaker::Agent, &text),
                 acp::Update::Thought(text) => self.chat.chunk(Speaker::Thought, &text),
-                acp::Update::Tool {
-                    id,
-                    title,
-                    status,
-                    kind,
-                    places,
-                } => self.chat.tool(&id, &title, &status, &kind, places),
+                acp::Update::Tool { call, status } => self.chat.tool(&call, &status),
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
                 // said, and a transcript with them in it is a log.
@@ -800,11 +794,11 @@ impl App {
                 self.chat.note(&format!("{what}: {why}"));
             }
             acp::Incoming::Permission {
-                title,
+                call,
                 reason,
                 options,
                 answer,
-            } => self.ask_permission(&title, reason.as_deref(), &options, answer),
+            } => self.ask_permission(&call, reason.as_deref(), &options, answer),
             acp::Incoming::Ask {
                 message,
                 fields,
@@ -889,14 +883,24 @@ impl App {
     /// takes one of its own options and nothing else.
     fn ask_permission(
         &mut self,
-        title: &str,
+        call: &acp::Call,
         reason: Option<&str>,
         options: &[acp::Choice],
         answer: acp::Answer<Option<String>>,
     ) {
         self.show_the_question();
-        self.chat
-            .note(&format!("asking to {}", title.to_lowercase()));
+        // The call goes in the transcript, where every call goes, waiting
+        // -- which is what says the agent is asking about it. obelus used
+        // to write a line of its own here ("asking to run the tests"), and
+        // that is the same words twice now that what it is asking about is
+        // a row above the question.
+        //
+        // A change it is asking to make goes with it, open, because the
+        // lines it would write *are* the question: they are in neither the
+        // file nor the last commit, so this is the only place they exist.
+        // After the answer they stay, which is how a reader finds out later
+        // what they agreed to.
+        self.chat.tool(call, "pending");
         let choices = options
             .iter()
             .map(|choice| Choice {
@@ -912,7 +916,12 @@ impl App {
         // What it is actually about to do, above the answers: "allow" and
         // "refuse" are answers to a question, and the question is which
         // command on which file rather than the line the title fits in.
-        card.about(reason.unwrap_or(title));
+        // Nothing at all where it said nothing -- what it is asking about
+        // is the row above the card, and an empty block is a rule around
+        // silence.
+        if let Some(reason) = reason.filter(|reason| !reason.trim().is_empty()) {
+            card.about(reason);
+        }
         self.permission = Some(answer);
         self.card = Some(card);
     }

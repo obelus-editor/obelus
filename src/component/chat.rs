@@ -58,6 +58,12 @@ pub struct Said {
     /// to go: obelus opens files for a living, and a tool call is the agent
     /// saying which ones it has been in.
     pub places: Vec<crate::acp::Place>,
+    /// The change it is making, as the rows that draw it.
+    ///
+    /// Empty for everything that is not a change. What is kept is the rows
+    /// rather than the two texts: the diff is worked out once, when it
+    /// arrives.
+    pub change: Vec<crate::git::change::Line>,
     /// Whether the reader has opened or closed what this begins.
     ///
     /// `None` means nobody has said, and obelus decides: a run of tool
@@ -94,9 +100,42 @@ pub struct Row {
     pub folds: Option<usize>,
     /// Whether what it folds is open, for the mark that says so.
     pub open: bool,
+    /// What the row is, where it is a line of a change: gone, new, or the
+    /// line it is at.
+    pub marker: Option<crate::git::change::Marker>,
+    /// How much a change adds and takes away, on the row that heads it.
+    pub changed: Option<(usize, usize)>,
     /// How deep the row sits: the members of an opened run are drawn under
     /// their own heading, so that a run reads as one thing.
     pub depth: u8,
+}
+
+/// Where a call says it was, which for a change is the file it changes.
+///
+/// An agent editing a file often names no location: what it is doing is the
+/// diff, and the diff says which file. Taking the path from there is what
+/// makes an edit somewhere the reader can go.
+fn places_of(call: &crate::acp::Call) -> Vec<crate::acp::Place> {
+    if !call.places.is_empty() {
+        return call.places.clone();
+    }
+    call.change
+        .iter()
+        .map(|change| crate::acp::Place {
+            path: change.path.clone(),
+            line: None,
+        })
+        .collect()
+}
+
+/// The change a call is making, as the rows that draw it.
+///
+/// Worked out once, when it arrives, rather than every time the transcript
+/// is drawn: a diff is real work, and a frame is not the place for it.
+fn changed_rows(call: &crate::acp::Call) -> Vec<crate::git::change::Line> {
+    call.change.as_ref().map_or_else(Vec::new, |change| {
+        crate::git::change::drawn(change.before.as_deref().unwrap_or_default(), &change.after)
+    })
 }
 
 /// How many tool calls of one kind in a row it takes before they are folded
@@ -318,48 +357,43 @@ impl Chat {
     }
 
     /// Takes news of a tool call: a new one, or the same one further along.
-    pub fn tool(
-        &mut self,
-        id: &str,
-        title: &str,
-        status: &str,
-        kind: &str,
-        places: Vec<crate::acp::Place>,
-    ) {
+    pub fn tool(&mut self, call: &crate::acp::Call, status: &str) {
         let existing = self
             .said
             .iter_mut()
             .rev()
-            .find(|said| said.tag.as_deref() == Some(id));
-        match existing {
-            Some(said) => {
-                // A later update carries only what changed, so what arrives
-                // empty means "the one you already have" -- for the title,
-                // for the kind, and for the places it named.
-                if !title.is_empty() {
-                    said.text = title.to_string();
-                }
-                if !kind.is_empty() {
-                    said.kind = kind.to_string();
-                }
-                if !places.is_empty() {
-                    said.places = places;
-                }
-                if !status.is_empty() {
-                    said.state = Some(status.to_string());
-                }
-            }
-            None => {
-                self.said.push(Said {
-                    speaker: Speaker::Tool,
-                    text: title.to_string(),
-                    tag: Some(id.to_string()),
-                    state: Some(status.to_string()),
-                    kind: kind.to_string(),
-                    places,
-                    opened: None,
-                });
-            }
+            .find(|said| said.tag.as_deref() == Some(call.id.as_str()));
+        let Some(said) = existing else {
+            self.said.push(Said {
+                speaker: Speaker::Tool,
+                text: call.title.clone(),
+                tag: Some(call.id.clone()),
+                state: Some(status.to_string()),
+                kind: call.kind.clone(),
+                places: places_of(call),
+                change: changed_rows(call),
+                opened: None,
+            });
+            return;
+        };
+        // A later update carries only what changed, so what arrives empty
+        // means "the one you already have" -- for the title, the kind, the
+        // places it named, the change it is making and where it has got to.
+        if !call.title.is_empty() {
+            said.text = call.title.clone();
+        }
+        if !call.kind.is_empty() {
+            said.kind = call.kind.clone();
+        }
+        let places = places_of(call);
+        if !places.is_empty() {
+            said.places = places;
+        }
+        if call.change.is_some() {
+            said.change = changed_rows(call);
+        }
+        if !status.is_empty() {
+            said.state = Some(status.to_string());
         }
     }
 
@@ -408,6 +442,8 @@ impl Chat {
                 place: None,
                 folds: None,
                 open: false,
+                marker: None,
+                changed: None,
                 depth: 0,
             });
         }
@@ -470,6 +506,8 @@ impl Chat {
             place: None,
             folds: Some(run.start),
             open,
+            marker: None,
+            changed: None,
             depth: 0,
         }];
         if open {
@@ -486,6 +524,29 @@ impl Chat {
             return Vec::new();
         };
         let room = width.saturating_sub(u16::from(depth) * DEEPER);
+        let inside = room.saturating_sub(DEEPER);
+
+        // A change is not prose. It is drawn as the lines it is, under the
+        // call's own row -- which is what folds them, because a diff is the
+        // one thing an agent sends that is longer than the screen.
+        if !said.change.is_empty() {
+            let mut rows = vec![Row {
+                changed: Some(crate::git::change::counted(&said.change)),
+                ..self.opening(said, said.text.clone(), depth, Some(at))
+            }];
+            if self.is_open(at) {
+                rows.extend(said.change.iter().flat_map(|line| {
+                    crate::text::wrapped(&line.text, inside)
+                        .into_iter()
+                        .map(|text| Row {
+                            marker: line.marker,
+                            ..Self::under(said, text, depth + 1)
+                        })
+                }));
+            }
+            return rows;
+        }
+
         let words = crate::text::wrapped(&said.text, room);
         // Thinking long enough to be worth putting away gets a heading of
         // its own, which is what folds it. obelus does not fold it away by
@@ -493,49 +554,66 @@ impl Chat {
         // of what a turn is worth -- but a reader who has read it should be
         // able to close it. Short thinking is just the words: a heading
         // over three words is two rows saying one thing.
-        let heading =
-            (said.speaker == Speaker::Thought && words.len() >= LEAST_TO_FOLD).then(|| Row {
-                speaker: said.speaker,
-                text: "thought".to_string(),
-                first: true,
-                state: None,
-                kind: String::new(),
-                place: None,
-                folds: Some(at),
-                open: self.is_open(at),
-                depth,
-            });
-        if heading.is_some() && !self.is_open(at) {
-            return heading.into_iter().collect();
+        if said.speaker != Speaker::Thought || words.len() < LEAST_TO_FOLD {
+            return words
+                .into_iter()
+                .enumerate()
+                .map(|(row, text)| match row {
+                    0 => self.opening(said, text, depth, None),
+                    _ => Self::under(said, text, depth),
+                })
+                .collect();
         }
-        let under = heading.is_some();
-        heading
-            .into_iter()
-            .chain(words.into_iter().enumerate().map(|(row, words)| {
-                Row {
-                    speaker: said.speaker,
-                    text: words,
-                    // Under a heading nothing is the first row: the heading is,
-                    // and it carries the glyph.
-                    first: row == 0 && !under,
-                    state: (row == 0).then(|| said.state.clone()).flatten(),
-                    kind: said.kind.clone(),
-                    place: (row == 0)
-                        .then(|| {
-                            said.places
-                                .first()
-                                .map(|place| (place.clone(), said.places.len() - 1))
-                        })
-                        .flatten(),
-                    folds: None,
-                    open: false,
-                    depth: match under {
-                        true => depth + 1,
-                        false => depth,
-                    },
-                }
-            }))
-            .collect()
+        let mut rows = vec![self.opening(said, "thought".to_string(), depth, Some(at))];
+        if self.is_open(at) {
+            rows.extend(
+                crate::text::wrapped(&said.text, inside)
+                    .into_iter()
+                    .map(|text| Self::under(said, text, depth + 1)),
+            );
+        }
+        rows
+    }
+
+    /// The row a thing said begins with.
+    ///
+    /// It carries the glyph and everything that is true of the whole of it:
+    /// where it has got to, the file it names, and whether there is more
+    /// behind it than it is showing.
+    fn opening(&self, said: &Said, text: String, depth: u8, folds: Option<usize>) -> Row {
+        Row {
+            speaker: said.speaker,
+            text,
+            first: true,
+            state: said.state.clone(),
+            kind: said.kind.clone(),
+            place: said
+                .places
+                .first()
+                .map(|place| (place.clone(), said.places.len() - 1)),
+            folds,
+            open: folds.is_some_and(|at| self.is_open(at)),
+            marker: None,
+            changed: None,
+            depth,
+        }
+    }
+
+    /// A row that continues something already begun.
+    fn under(said: &Said, text: String, depth: u8) -> Row {
+        Row {
+            speaker: said.speaker,
+            text,
+            first: false,
+            state: None,
+            kind: said.kind.clone(),
+            place: None,
+            folds: None,
+            open: false,
+            marker: None,
+            changed: None,
+            depth,
+        }
     }
 
     /// The row that separates one thing said from the next.
@@ -549,6 +627,8 @@ impl Chat {
             place: None,
             folds: None,
             open: false,
+            marker: None,
+            changed: None,
             depth: 0,
         }
     }
@@ -567,6 +647,14 @@ impl Chat {
         }
         if said.speaker == Speaker::Thought {
             return true;
+        }
+        // A change is open while it is the question: the agent is asking to
+        // make it, and what it is asking about is the lines. Once it is
+        // made the file itself has them, and obelus draws a file's changes
+        // in the margin beside them -- so the block folds away and the row
+        // that opens it stays.
+        if !said.change.is_empty() {
+            return matches!(said.state.as_deref(), Some("pending" | "in_progress"));
         }
         self.said[self.run_from(at)]
             .iter()
@@ -832,6 +920,7 @@ impl Chat {
             state: None,
             kind: String::new(),
             places: Vec::new(),
+            change: Vec::new(),
             opened: None,
         });
     }
@@ -1006,13 +1095,10 @@ mod tests {
             line: Some(20),
         };
         chat.tool(
-            "t1",
-            "Read the file",
+            &call("t1", "Read the file", "read", vec![place.clone()]),
             "in_progress",
-            "read",
-            vec![place.clone()],
         );
-        chat.tool("t1", "", "completed", "", Vec::new());
+        chat.tool(&call("t1", "", "", Vec::new()), "completed");
 
         let rows = chat.rows(60);
         let row = rows.first().expect("the tool call");
@@ -1033,6 +1119,17 @@ mod tests {
         writing: 20,
     };
 
+    /// A tool call, as an agent sends one.
+    fn call(id: &str, title: &str, kind: &str, places: Vec<crate::acp::Place>) -> crate::acp::Call {
+        crate::acp::Call {
+            id: id.to_string(),
+            title: title.to_string(),
+            kind: kind.to_string(),
+            places,
+            change: None,
+        }
+    }
+
     /// Somewhere an agent said it had been.
     fn place(path: &str, line: u32) -> crate::acp::Place {
         crate::acp::Place {
@@ -1047,19 +1144,13 @@ mod tests {
         chat.asked("what is this file");
         chat.chunk(Speaker::Agent, "let me look");
         chat.tool(
-            "t1",
-            "Read a file",
+            &call("t1", "Read a file", "read", vec![place("/a.rs", 3)]),
             "completed",
-            "read",
-            vec![place("/a.rs", 3)],
         );
         chat.chunk(Speaker::Agent, "and another");
         chat.tool(
-            "t2",
-            "Read another",
+            &call("t2", "Read another", "read", vec![place("/b.rs", 9)]),
             "completed",
-            "read",
-            vec![place("/b.rs", 9)],
         );
         chat
     }
@@ -1124,7 +1215,10 @@ mod tests {
     #[test]
     fn a_run_folds_itself_unless_something_in_it_failed() {
         let read = |chat: &mut Chat, id: &str, state: &str| {
-            chat.tool(id, "Read a file", state, "read", vec![place("/a.rs", 1)]);
+            chat.tool(
+                &call(id, "Read a file", "read", vec![place("/a.rs", 1)]),
+                state,
+            );
         };
         let mut chat = Chat::new();
         read(&mut chat, "t1", "completed");
@@ -1205,7 +1299,10 @@ mod tests {
         let title = "x".repeat(usize::from(ROOM.reading) - 1);
         let title = title.as_str();
         for id in ["t1", "t2", "t3"] {
-            chat.tool(id, title, "completed", "read", vec![place("/a.rs", 1)]);
+            chat.tool(
+                &call(id, title, "read", vec![place("/a.rs", 1)]),
+                "completed",
+            );
         }
         // Opened: folded, its members are not drawn at all.
         chat.fold(0);
@@ -1274,11 +1371,8 @@ mod tests {
     fn a_page_takes_the_cursor_with_it_and_the_wheel_does_not() {
         let mut chat = Chat::new();
         chat.tool(
-            "t1",
-            "Read a file",
+            &call("t1", "Read a file", "read", vec![place("/a.rs", 3)]),
             "completed",
-            "read",
-            vec![place("/a.rs", 3)],
         );
         // Enough between them that the two cannot be on screen together:
         // the transcript here is ten rows.
@@ -1286,11 +1380,8 @@ mod tests {
             chat.note(&format!("something happened {index}"));
         }
         chat.tool(
-            "t2",
-            "Read another",
+            &call("t2", "Read another", "read", vec![place("/b.rs", 9)]),
             "completed",
-            "read",
-            vec![place("/b.rs", 9)],
         );
         chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
 
@@ -1377,11 +1468,14 @@ mod tests {
     #[test]
     fn a_tool_call_is_one_row_however_often_it_changes() {
         let mut chat = Chat::new();
-        chat.tool("t1", "Read the file", "pending", "read", Vec::new());
-        chat.tool("t2", "Run the tests", "pending", "execute", Vec::new());
+        chat.tool(&call("t1", "Read the file", "read", Vec::new()), "pending");
+        chat.tool(
+            &call("t2", "Run the tests", "execute", Vec::new()),
+            "pending",
+        );
         // A later update carries only what changed, so an empty title means
         // the one already there.
-        chat.tool("t1", "", "completed", "", Vec::new());
+        chat.tool(&call("t1", "", "", Vec::new()), "completed");
 
         let rows = chat.rows(40);
         let calls: Vec<(&str, Option<&str>)> = rows

@@ -210,6 +210,25 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"that is where it is"}}}}\n'
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
             ;;
+        *'"method":"session/prompt"'*'"text":"/edit'*)
+            # An agent asking to change a file: the call carries the file as
+            # it is and as it would be, which the protocol sends instead of
+            # a patch, and the client is the one that works out the diff.
+            turn=$(id_of "$line")
+            before='fn step_rows(row: usize) -> usize {\n    row\n}\n'
+            after='fn step_rows(row: ScreenRow) -> usize {\n    row.get()\n}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"e-1","title":"Edit the file","kind":"edit","status":"pending","content":[{"type":"diff","path":"%s/tests/fixtures/many_lines.rs","oldText":"%s","newText":"%s"}]}}}\n' "$PWD" "$before" "$after"
+            printf '{"jsonrpc":"2.0","id":907,"method":"session/request_permission","params":{"sessionId":"s-1","toolCall":{"toolCallId":"e-1"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n'
+            ;;
+        *'"id":907'*)
+            case "$line" in
+                *'"optionId":"once"'*) said='I changed it' ;;
+                *) said='I left it alone' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call_update","toolCallId":"e-1","status":"completed"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            ;;
         *'"method":"session/prompt"'*'"text":"/nowhere'*)
             # A tool call naming a file that is not there, which is what an
             # agent that deleted one -- or made one up -- sends.
@@ -320,14 +339,18 @@ while IFS= read -r line; do
                 *) wrote='wrote the file' ;;
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and it %s"}}}}\n' "$wrote"
-            printf '{"jsonrpc":"2.0","id":901,"method":"session/request_permission","params":{"sessionId":"s-1","toolCall":{"toolCallId":"t1","title":"Run the tests","content":[{"type":"content","content":{"type":"text","text":"cargo test --all-features"}}],"locations":[{"path":"/tmp/obelus/Cargo.toml"}]},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n'
+            printf '{"jsonrpc":"2.0","id":901,"method":"session/request_permission","params":{"sessionId":"s-1","toolCall":{"toolCallId":"t2","title":"Run the tests","kind":"execute","content":[{"type":"content","content":{"type":"text","text":"cargo test --all-features"}}],"locations":[{"path":"/tmp/obelus/Cargo.toml"}]},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n'
             ;;
         *'"id":901'*)
             case "$line" in
                 *'"optionId":"once"'*) allowed='allowed' ;;
                 *) allowed='refused' ;;
             esac
+            # Both of them finish: the file it read, and the command it
+            # asked about. An agent says how a call ended whether or not it
+            # had to ask first.
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call_update","toolCallId":"t1","status":"completed"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call_update","toolCallId":"t2","status":"completed"}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and I was %s"}}}}\n' "$allowed"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
             ;;

@@ -231,6 +231,10 @@ const SEPARATOR_WIDTH: usize = 3;
 /// mark a settings row and an agent's card use for the same promise.
 const OPENS: &str = " \u{25b8}";
 
+/// The bar a line of a change carries, which is the one an opened hunk
+/// carries in a file.
+const BAR: char = '\u{2590}';
+
 /// The same, turned down, for something already open.
 const OPENED: &str = " \u{25be}";
 
@@ -402,6 +406,17 @@ impl ChatView<'_> {
             // enter opens.
             let here = self.focus == Focus::Transcript(first + usize::from(offset));
             let (glyph, style) = self.voice(row, plain, dim);
+            // A line of a change is drawn the way an opened hunk is drawn
+            // in a file: tinted its whole width, with the marker's own bar
+            // against the text. The same two colours, because it is the
+            // same thing being said.
+            let (style, dim) = match row.marker {
+                Some(marker) => {
+                    let tint = plain.bg(self.theme.marker_background(marker));
+                    (tint, tint.fg(self.theme.gutter))
+                }
+                None => (style, dim),
+            };
             let (style, dim) = match here {
                 true => (
                     style.bg(self.theme.picker_selected_background),
@@ -418,6 +433,32 @@ impl ChatView<'_> {
                         ..area
                     },
                     style,
+                );
+            }
+            // The tint runs to the edge, as it does behind an opened hunk
+            // in a file: a block of colour that stopped where the words
+            // stop would be ragged down its right side, and the block is
+            // what says these lines are a change rather than a quotation.
+            if row.marker.is_some() {
+                let from = words.saturating_sub(1);
+                fill(
+                    cells,
+                    Rect {
+                        x: from,
+                        y,
+                        width: area.right().saturating_sub(from),
+                        height: 1,
+                    },
+                    style,
+                );
+            }
+            if let Some(marker) = row.marker {
+                put(
+                    cells,
+                    words.saturating_sub(1),
+                    y,
+                    BAR,
+                    style.fg(self.theme.marker_colour(marker)),
                 );
             }
             if row.first {
@@ -446,6 +487,17 @@ impl ChatView<'_> {
             // promise, turned down when what it holds is open.
             if row.folds.is_some() {
                 ended = write(cells, ended + 1, y, opens(row.open), dim);
+            }
+            // How much it changes, which is what a reader reads first: the
+            // shape of the change before any of its lines.
+            if let Some((added, removed)) = row.changed {
+                ended = write(
+                    cells,
+                    ended + 2,
+                    y,
+                    &format!("+{added} \u{2212}{removed}"),
+                    dim,
+                );
             }
             // A tool call's state goes after its title rather than in front
             // of it: the title is what a reader is scanning, and the state

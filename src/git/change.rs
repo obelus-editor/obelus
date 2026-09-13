@@ -71,6 +71,59 @@ pub enum Marker {
     Removed,
 }
 
+/// One row of a change as it is drawn.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Line {
+    /// What the row is: gone, new, or neither.
+    pub marker: Option<Marker>,
+    /// The words.
+    pub text: String,
+}
+
+/// A change nobody has made yet, as rows to draw.
+///
+/// For an agent asking to edit a file: the lines are in neither the file nor
+/// the last commit, so there is nothing to work them out *from* -- the agent
+/// sends the file as it is and as it would be, and this is the only place
+/// those lines exist.
+///
+/// Through the same hunks the margin is drawn from, so a change that has not
+/// happened is read the way every change that has is. Each hunk says which
+/// line it is at, because that is what a reader would open.
+#[must_use]
+pub fn drawn(before: &str, after: &str) -> Vec<Line> {
+    let lines: Vec<&str> = after.lines().collect();
+    let mut rows = Vec::new();
+    for hunk in Changes::between(before, after).hunks() {
+        let at = hunk.line.get();
+        rows.push(Line {
+            marker: None,
+            text: format!("line {}", at + 1),
+        });
+        rows.extend(hunk.removed.iter().map(|text| Line {
+            marker: Some(Marker::Removed),
+            text: text.clone(),
+        }));
+        rows.extend(lines.iter().skip(at).take(hunk.lines).map(|text| Line {
+            marker: Some(Marker::Added),
+            text: (*text).to_string(),
+        }));
+    }
+    rows
+}
+
+/// How much a change adds and takes away.
+#[must_use]
+pub fn counted(lines: &[Line]) -> (usize, usize) {
+    let count = |wanted| {
+        lines
+            .iter()
+            .filter(|line| line.marker == Some(wanted))
+            .count()
+    };
+    (count(Marker::Added), count(Marker::Removed))
+}
+
 /// Every difference between the committed file and the one on disk.
 #[derive(Clone, Debug, Default)]
 pub struct Changes {

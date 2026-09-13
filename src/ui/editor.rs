@@ -146,7 +146,7 @@ impl EditorView<'_> {
                     area.x,
                     area.y + row,
                     marker,
-                    self.marker_colour(marker),
+                    self.theme.marker_colour(marker),
                     cells,
                 );
             }
@@ -169,24 +169,6 @@ impl EditorView<'_> {
             None => line,
         };
         git::blame::label(blame.get(at.get())?.as_ref(), now)
-    }
-
-    /// The colour a marker is drawn in, wherever it is drawn.
-    const fn marker_colour(&self, marker: Marker) -> Color {
-        match marker {
-            Marker::Added => self.theme.change_added,
-            Marker::Modified => self.theme.change_modified,
-            Marker::Removed => self.theme.change_removed,
-        }
-    }
-
-    /// The tint behind a line of an opened hunk.
-    const fn marker_background(&self, marker: Marker) -> Color {
-        match marker {
-            Marker::Added => self.theme.change_added_background,
-            Marker::Modified => self.theme.change_modified_background,
-            Marker::Removed => self.theme.change_removed_background,
-        }
     }
 }
 
@@ -345,7 +327,7 @@ impl Widget for EditorView<'_> {
         let opened = self.opened.and_then(|anchor| {
             self.changes
                 .and_then(|changes| changes.hunk_at(anchor))
-                .map(|hunk| (hunk, self.marker_background(hunk.marker())))
+                .map(|hunk| (hunk, self.theme.marker_background(hunk.marker())))
         });
         let block = buffer.block();
         // What the reader has selected inside it, in the block's own
@@ -506,7 +488,7 @@ impl Widget for EditorView<'_> {
                     && let Some(changes) = self.changes
                     && let Some(marker) = changes.marker_at(line)
                 {
-                    draw_marker(area.x, y, marker, self.marker_colour(marker), cells);
+                    draw_marker(area.x, y, marker, self.theme.marker_colour(marker), cells);
                 }
 
                 if index == 0 {

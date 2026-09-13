@@ -308,6 +308,33 @@ pub struct Theme {
 }
 
 impl Theme {
+    /// The colour a change's marker is drawn in, wherever it is drawn.
+    ///
+    /// Here rather than in a view, because two of them draw one now: a file
+    /// marks its changed lines in the margin, and a conversation draws the
+    /// lines of a change an agent is asking to make. The same change said
+    /// twice would be two colours for one fact.
+    #[must_use]
+    pub const fn marker_colour(&self, marker: crate::git::change::Marker) -> Color {
+        use crate::git::change::Marker;
+        match marker {
+            Marker::Added => self.change_added,
+            Marker::Modified => self.change_modified,
+            Marker::Removed => self.change_removed,
+        }
+    }
+
+    /// The tint behind a line of a change.
+    #[must_use]
+    pub const fn marker_background(&self, marker: crate::git::change::Marker) -> Color {
+        use crate::git::change::Marker;
+        match marker {
+            Marker::Added => self.change_added_background,
+            Marker::Modified => self.change_modified_background,
+            Marker::Removed => self.change_removed_background,
+        }
+    }
+
     /// The colour text of this kind is drawn in, falling back to plain text.
     #[must_use]
     pub const fn colour_for(&self, kind: Option<SyntaxKind>) -> Color {
