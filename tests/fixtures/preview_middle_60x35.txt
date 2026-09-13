@@ -10,17 +10,17 @@ screen 60x35  editor 60x33  status 60x1
  7|                                                            
  8|                                                            
  9|                                                            
-10|───────────────────────────────────────────────────────────┐
-11|   20 pub const LINE_19: u32 = 19;                         │
-12|   21 pub const LINE_20: u32 = 20;                         │
-13|   22 pub const LINE_21: u32 = 21;                         │
-14|   23 pub const LINE_22: u32 = 22;                         │
-15|   24 pub const LINE_23: u32 = 23;                         │
-16|   25 pub const LINE_24: u32 = 24;                         │
-17|   26 pub const LINE_25: u32 = 25;                         │
-18|   27 pub const LINE_26: u32 = 26;                         │
-19|   28 pub const LINE_27: u32 = 27;                         │
-20|   29 pub const LINE_28: u32 = 28;                         │
+10|────────────────────────────────────────────────────────────
+11|   20 pub const LINE_19: u32 = 19;                         █
+12|   21 pub const LINE_20: u32 = 20;                         █
+13|   22 pub const LINE_21: u32 = 21;                         █
+14|   23 pub const LINE_22: u32 = 22;                         █
+15|   24 pub const LINE_23: u32 = 23;                         █
+16|   25 pub const LINE_24: u32 = 24;                         █
+17|   26 pub const LINE_25: u32 = 25;                         █
+18|   27 pub const LINE_26: u32 = 26;                         █
+19|   28 pub const LINE_27: u32 = 27;                         █
+20|   29 pub const LINE_28: u32 = 28;                         █
 21|   30 pub const LINE_29: u32 = 29;                         █
 22|   31 pub const LINE_30: u32 = 30;                         █
 23|   32 pub const LINE_31: u32 = 31;                         █
@@ -33,7 +33,7 @@ screen 60x35  editor 60x33  status 60x1
 30|   39 pub const LINE_38: u32 = 38;                         █
 31|   40                                                      █
 32|                                                           █
-33|───────────────────────────────────────────────────────────┘
+33|────────────────────────────────────────────────────────────
 34| 󰍉                                                          
 -- style --
  0|abbbabbbbbaccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad
@@ -47,18 +47,18 @@ screen 60x35  editor 60x33  status 60x1
  8|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
  9|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 10|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-11|dddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddde
-12|dddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddde
-13|dddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddde
-14|dddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddde
-15|dddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddde
-16|dddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddde
-17|dddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddde
-18|dddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddde
-19|dddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddde
-20|dddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddde
+11|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
+12|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
+13|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
+14|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
+15|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
+16|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
+17|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
+18|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
+19|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
+20|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
 21|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
-22|dddhhdfffdfffffdjjjjjjjhdgggdddiihdddddddddddddddddddddddddh
+22|dddhhdfffdfffffdkkkkkkkhdgggdddiihdddddddddddddddddddddddddh
 23|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
 24|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
 25|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
@@ -70,7 +70,7 @@ screen 60x35  editor 60x33  status 60x1
 31|dddeeddddddddddddddddddddddddddddddddddddddddddddddddddddddh
 32|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddh
 33|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-34|kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+34|llllllllllllllllllllllllllllllllllllllllllllllllllllllllllll
 -- legend --
 a fg=#e4e4e7 bg=#27272a
 b fg=#c084fc bg=#27272a
@@ -81,7 +81,8 @@ f fg=#c084fc bg=#18181b
 g fg=#fbbf24 bg=#18181b
 h fg=#a1a1aa bg=#18181b
 i fg=#f472b6 bg=#18181b
-j fg=#fbbf24 bg=#1e3a5f
-k fg=#d4d4d8 bg=#18181b
+j fg=#404047 bg=#18181b
+k fg=#fbbf24 bg=#1e3a5f
+l fg=#d4d4d8 bg=#18181b
 -- cursor --
 4,34

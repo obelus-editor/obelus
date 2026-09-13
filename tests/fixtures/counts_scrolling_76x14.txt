@@ -6,14 +6,14 @@ screen 76x14  editor 76x12  status 76x1
  3|  src/module/file00.rs     ██████████████████████     400      20      10 █
  4|  src/module/file01.rs     ██████████████████████     391      20      10 █
  5|  src/module/file02.rs     ██████████████████████     382      20      10 █
- 6|  src/module/file03.rs     █████████████████████      373      20      10 │
- 7|  src/module/file04.rs     █████████████████████      364      20      10 │
- 8|  src/module/file05.rs     ████████████████████       355      20      10 │
- 9|  src/module/file06.rs     ████████████████████       346      20      10 │
-10|  src/module/file07.rs     ███████████████████        337      20      10 │
-11|  src/module/file08.rs     ███████████████████        328      20      10 │
-12|  src/module/file09.rs     ██████████████████         319      20      10 │
-13|  src/module/file10.rs     ██████████████████         310      20      10 │
+ 6|  src/module/file03.rs     █████████████████████      373      20      10 █
+ 7|  src/module/file04.rs     █████████████████████      364      20      10 █
+ 8|  src/module/file05.rs     ████████████████████       355      20      10 █
+ 9|  src/module/file06.rs     ████████████████████       346      20      10 █
+10|  src/module/file07.rs     ███████████████████        337      20      10 █
+11|  src/module/file08.rs     ███████████████████        328      20      10 █
+12|  src/module/file09.rs     ██████████████████         319      20      10 █
+13|  src/module/file10.rs     ██████████████████         310      20      10 █
 -- style --
  0|aaaaaaaaaaaabbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -21,14 +21,14 @@ screen 76x14  editor 76x12  status 76x1
  3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbf
  4|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccf
  5|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccf
- 6|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccca
- 7|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccca
- 8|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccca
- 9|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccca
-10|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccca
-11|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccca
-12|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccca
-13|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccca
+ 6|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccg
+ 7|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccg
+ 8|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccg
+ 9|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccg
+10|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccg
+11|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccg
+12|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccg
+13|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccg
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
@@ -36,5 +36,6 @@ c fg=#e4e4e7 bg=#18181b
 d fg=#71717a bg=#18181b
 e fg=#52525b bg=#27272a
 f fg=#a1a1aa bg=#18181b
+g fg=#404047 bg=#18181b
 -- cursor --
 none

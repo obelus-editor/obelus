@@ -243,6 +243,17 @@ pub struct Theme {
     pub gutter: Color,
     /// The cursor's line number.
     pub gutter_current: Color,
+    /// The track a scrollbar's thumb slides in.
+    ///
+    /// A block, a shade off the page, rather than a thin line: the bar is a
+    /// surface with something sliding on it, and drawing the track as a rule
+    /// made it a line -- which every other line on the screen then had to
+    /// decide whether to join. That decision could only be made by reading
+    /// the cells around it, and a cell holding a vertical stroke may as
+    /// easily be a character of the file being read as a control: this
+    /// repository's own golden grids are full of them, and a rule over one
+    /// grew a tick everywhere the file had a bar under it.
+    pub scrollbar_track: Color,
     /// Behind a control that is a surface rather than words: the track a
     /// switch's knob slides along.
     ///

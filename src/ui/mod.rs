@@ -346,60 +346,12 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     status::StatusView::new(app).render(regions.status, cells);
 }
 
-/// A rule's own glyph.
-const RULE: char = '\u{2500}';
-
-/// The two glyphs a bar is drawn with: the track, and the thumb on it.
-const TRACK: char = '\u{2502}';
-/// The thumb.
-const THUMB: char = '\u{2588}';
-
-/// Whether what is drawn in a cell is part of a bar.
-fn is_bar(cells: &CellBuffer, x: u16, y: u16) -> bool {
-    cells
-        .cell((x, y))
-        .is_some_and(|cell| matches!(cell.symbol(), "\u{2502}" | "\u{2588}"))
-}
-
-/// Whether what is drawn in a cell is part of a rule.
-fn is_rule(cells: &CellBuffer, x: u16, y: u16) -> bool {
-    cells.cell((x, y)).is_some_and(|cell| {
-        matches!(
-            cell.symbol(),
-            "\u{2500}"
-                | "\u{252c}"
-                | "\u{2534}"
-                | "\u{253c}"
-                | "\u{2524}"
-                | "\u{251c}"
-                | "\u{2518}"
-                | "\u{2510}"
-                | "\u{2514}"
-                | "\u{250c}"
-        )
-    })
-}
-
-/// The glyph for a crossing, by which of the four directions carry a line.
+/// The block a bar is drawn with, track and thumb alike.
 ///
-/// All four, rather than just the two a bar can be on, because the arms that
-/// are *not* there are what makes a corner a corner: a bar meets the rules
-/// in the last column of the screen, and a `\u{252c}` there hangs half a
-/// stroke over the edge with nothing to join to.
-const fn crossing(up: bool, down: bool, left: bool, right: bool) -> char {
-    match (up, down, left, right) {
-        (true, true, true, true) => '\u{253c}',
-        (true, true, true, false) => '\u{2524}',
-        (true, true, false, true) => '\u{251c}',
-        (true, false, true, true) => '\u{2534}',
-        (false, true, true, true) => '\u{252c}',
-        (true, false, true, false) => '\u{2518}',
-        (false, true, true, false) => '\u{2510}',
-        (true, false, false, true) => '\u{2514}',
-        (false, true, false, true) => '\u{250c}',
-        _ => RULE,
-    }
-}
+/// One glyph in two colours rather than a line and a block: a bar is a
+/// surface with something sliding on it, and it is the *shade* that says
+/// which part of it the reader is looking at.
+const BAR: char = '\u{2588}';
 
 /// One row of rule, saying that what is above it and what is below it are
 /// different things.
@@ -407,23 +359,18 @@ const fn crossing(up: bool, down: bool, left: bool, right: bool) -> char {
 /// Filled first: the row it goes on held code a moment ago, and a rule drawn
 /// over the top of that would have the code showing between its cells.
 ///
-/// Where a bar is already drawn against it the rule is closed off rather
-/// than drawn through: a scrollbar cut in half by a line reads as two
-/// controls, and one of them looks broken. The bar joins from its side too
-/// ([`scrollbar`]), because which of the two is drawn first depends on the
-/// view and neither of them should have to know.
+/// It runs the whole width, joining nothing. A rule that closed itself off
+/// against whatever was drawn beside it had to decide, per cell, whether
+/// that neighbour was a control -- and the only thing it could ask was what
+/// glyph the cell held, which a file's own text answers just as well as a
+/// scrollbar does. A rule over one of this repository's golden grids grew a
+/// tick everywhere the file had a bar under it. What the bar is drawn with
+/// is what tells the two apart now: a block is a surface, and a surface does
+/// not need a line to meet it.
 pub(crate) fn rule(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
     fill(cells, area, Style::new().bg(theme.background));
     for x in area.left()..area.right() {
-        let above = area.y > 0 && is_bar(cells, x, area.y - 1);
-        let below = is_bar(cells, x, area.y + 1);
-        put(
-            cells,
-            x,
-            area.y,
-            crossing(above, below, x > area.left(), x + 1 < area.right()),
-            Style::new().fg(theme.gutter),
-        );
+        put(cells, x, area.y, '\u{2500}', Style::new().fg(theme.gutter));
     }
 }
 
@@ -432,6 +379,10 @@ pub(crate) fn rule(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
 /// Shared by the editor and the lists, because it is the same question in
 /// both -- how much of this is on screen, and which part -- and two
 /// implementations would answer it in two shapes.
+///
+/// Drawn as a block in two shades: the track a shade off the page and the
+/// thumb the brighter one. A line would be a line, and every rule that
+/// crossed it would have to work out whether to join.
 ///
 /// `total` is how many rows the whole thing has and `top` which of them is
 /// on the first row.
@@ -475,38 +426,12 @@ pub(crate) fn scrollbar(
 
     for row in 0..area.height {
         let inside = usize::from(row) >= start && usize::from(row) < start + thumb;
-        let (glyph, colour) = if inside {
-            (THUMB, theme.gutter_current)
+        let colour = if inside {
+            theme.gutter_current
         } else {
-            (TRACK, theme.gutter)
+            theme.scrollbar_track
         };
-        put(cells, x, area.y + row, glyph, Style::new().fg(colour));
-    }
-
-    // And the ends, where a rule may already be waiting: the bar closes it
-    // off rather than being cut in half by it. The other way round is done
-    // by `rule`, because which of the two is drawn first depends on the
-    // view and neither of them should have to know.
-    // Which way the rule runs is read from the cells beside it, the same
-    // way: a rule that stops here is a corner, and one that goes on is a T.
-    let joining = |cells: &mut CellBuffer, y: u16, above: bool, below: bool| {
-        let left = x > 0 && is_rule(cells, x - 1, y);
-        let right = is_rule(cells, x + 1, y);
-        put(
-            cells,
-            x,
-            y,
-            crossing(above, below, left, right),
-            Style::new().fg(theme.gutter),
-        );
-    };
-    if area.y > 0 && is_rule(cells, x, area.y - 1) {
-        let above = area.y > 1 && is_bar(cells, x, area.y - 2);
-        joining(cells, area.y - 1, above, true);
-    }
-    if is_rule(cells, x, area.bottom()) {
-        let below = is_bar(cells, x, area.bottom() + 1);
-        joining(cells, area.bottom(), true, below);
+        put(cells, x, area.y + row, BAR, Style::new().fg(colour));
     }
 }
 

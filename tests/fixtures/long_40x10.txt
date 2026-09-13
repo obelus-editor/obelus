@@ -8,7 +8,7 @@ screen 40x10  editor 40x8  status 40x1
  5|      "item-06", "item-07",            █
  6|      "item-08", "item-09",            █
  7|      "item-10", "item-11"];           █
- 8|───────────────────────────────────────┘
+ 8|────────────────────────────────────────
  9|   tests/fixtures/long.rs          1:1 
 -- style --
  0|aaaabaccaddddddbbabbaaaaaaaaaaaaaaaaaaab

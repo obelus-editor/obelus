@@ -3302,67 +3302,44 @@ fn every_bar_on_the_screen_is_in_the_same_column() {
     assert_eq!(columns.len(), 1, "the bars are in {columns:?}:\n{dump}");
 }
 
-/// A rule meets the bar it crosses rather than cutting it in half.
+/// A rule is a rule, whatever happens to be drawn under it.
 ///
-/// A list with tabs over a file with a preview under it has all three
-/// junctions on one screen: the rule under the tabs turning down into the
-/// list's bar, the rule between the list and the preview docking into a bar
-/// that runs through it, and the rule above the status bar closing the
-/// bottom of the preview's. Drawn through, each of them left a bar in two
-/// pieces, and a control in two pieces reads as one that is broken.
+/// It used to close itself off against a scrollbar it crossed, which meant
+/// deciding per cell whether the neighbour was a control -- and the only
+/// question it could ask the grid was which glyph the cell held. A file's
+/// own text answers that the same way a bar does: this repository is full of
+/// golden grids drawn in box characters, and a rule over one grew a tick
+/// everywhere the file had a stroke under it. The bar is a block now, which
+/// is a surface rather than a line, and nothing has to join anything.
 ///
-/// Corners rather than the T-shaped junctions, because the bar is in the
-/// last column: a `\u{252c}` there hangs half a stroke over the edge of the
-/// screen with nothing to join to.
+/// Broken deliberately by putting the junction back: the rule between the
+/// list and the preview came out `\u{2500}\u{252c}\u{252c}\u{2500}\u{252c}` and
+/// so on, which is what the reader saw.
 #[test]
-fn a_rule_closes_off_the_bar_it_crosses() {
-    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
-    let mut statuses = std::collections::HashMap::new();
-    statuses.insert(
-        std::path::PathBuf::from("src/dir_00/file.rs"),
-        obelus::git::FileStatus::Changed,
-    );
-    app.statuses_for_test(statuses);
+fn a_rule_is_a_rule_over_whatever_is_under_it() {
+    let mut app = App::new(vec![support::open_fixture("boxes.txt")]);
+    app.statuses_for_test(std::collections::HashMap::new());
     support::lay_out(&mut app, 60, 22);
     press_function(&mut app, 1);
     app.handle(Event::FilesFound {
         generation: 1,
-        paths: std::iter::once("tests/fixtures/many_lines.rs".into())
+        paths: std::iter::once("tests/fixtures/boxes.txt".into())
             .chain((0..40).map(|number| format!("src/dir_{number:02}/file.rs").into()))
             .collect(),
     });
     let dump = support::render(&mut app, 60, 22);
-    let ends: Vec<char> = support::text_block(&dump)
-        .lines()
-        .filter_map(|row| row.split_once('|'))
-        .map(|(_, drawn)| drawn.trim_end())
-        .filter(|drawn| drawn.contains('\u{2500}'))
-        .filter_map(|drawn| drawn.chars().last())
-        .collect();
-    assert_eq!(
-        ends,
-        ['\u{2510}', '\u{2524}', '\u{2518}'],
-        "the rules do not meet the bar:\n{dump}"
-    );
 
-    // And the other way round: a compact list over the code draws its own
-    // edge *after* what is under it, so there the rule is the one that has
-    // to notice the bar rather than the other way about.
-    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
-    app.statuses_for_test(std::collections::HashMap::new());
-    support::lay_out(&mut app, 60, 22);
-    support::press_control(&mut app, 'p');
-    let dump = support::render(&mut app, 60, 22);
-    let ends: Vec<char> = support::text_block(&dump)
+    let rules: Vec<&str> = support::text_block(&dump)
         .lines()
         .filter_map(|row| row.split_once('|'))
         .map(|(_, drawn)| drawn.trim_end())
         .filter(|drawn| drawn.contains('\u{2500}'))
-        .filter_map(|drawn| drawn.chars().last())
         .collect();
-    assert_eq!(
-        ends,
-        ['\u{2518}', '\u{2510}', '\u{2518}'],
-        "the edge of the list does not meet the bars:\n{dump}"
-    );
+    assert!(rules.len() >= 2, "not the screen this is about:\n{dump}");
+    for rule in rules {
+        assert!(
+            rule.chars().all(|glyph| glyph == '\u{2500}'),
+            "a rule grew a junction: {rule:?}\n{dump}"
+        );
+    }
 }

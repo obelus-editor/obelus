@@ -6,7 +6,7 @@ screen 46x8  editor 46x6  status 46x1
  3|              alpha, beta, gamma, delta,     █
  4|              epsilon, zeta);                █
  5|    4     }                                  █
- 6|─────────────────────────────────────────────┘
+ 6|──────────────────────────────────────────────
  7|   tests/fixtures/indented.rs            1:1 
 -- style --
  0|aaaabaccadddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaab

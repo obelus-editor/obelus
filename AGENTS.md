@@ -313,26 +313,28 @@ what the agent asked for, so the reader stood on a row that had stopped
 saying it was under them: they pressed enter, got nothing, and had nothing
 on screen to tell them which row had refused.
 
-**A rule meets the bar it crosses, and meets it with the right corner.**
-Drawn through, it left the bar in two pieces, and a control in two pieces
-reads as one that is broken. The glyph comes from all four directions rather
-than from the two a bar can be on, because the arms that are *not* there are
-what makes a corner: the bar is in the last column, so a ┬ there hangs
-half a stroke over the edge of the screen with nothing to join to. A screen
-with a list, a preview and a status bar on it reads as one frame -- ┐ down
-into the list's bar, ┤ where it runs through, ┘ closing the bottom.
-`rule` and `scrollbar` join from both sides -- the rule looks at the cells above and
-below each of its own, the bar at the cell beyond each of its ends -- because
-which of the two is drawn first depends on the view, and neither of them
-should have to know. A list over a file draws its edge after the file's bar;
-a list's own bar is drawn after the rule under its tabs. Both come out
-closed.
+**A bar is a block, so no rule has to meet it.** The track is a block a
+shade off the page and the thumb the same block brighter: a surface with
+something sliding on it, which is what a scrollbar is. Drawn as a *line* --
+a column of ┃ with the thumb picked out -- it was one more line on a screen
+of lines, and every rule that crossed it then had to decide whether to join.
 
-The cost is knowing what is drawn in a cell, which means reading the grid
-back. The only thing that can go wrong is a file whose own text has a bar
-glyph directly above or below a rule, which would take one cell of it for a
-junction -- a cosmetic slip in a file drawing box characters, against
-threading a list of every rule through every view.
+That decision cost more than it was worth. `rule` and `scrollbar` made it by
+reading the grid back: a cell holding ┃ or █ beside a rule meant a bar, and
+the rule turned into a corner. But a cell is a cell. A file's own text
+answers that question exactly as a control does, and this repository is full
+of files that do -- every golden grid under `tests/fixtures` is drawn in box
+characters. The note that used to be here called that a cosmetic slip in one
+cell; what it looked like on screen was a row of ┬ across the whole width,
+under a list previewing a file of grids, and the reader who found it was
+looking at an obelus previewing obelus's own fixtures. A markdown table has
+the same glyphs and would have done the same thing.
+
+So the shape of the thing says what it is, and nothing reads the grid back.
+A rule runs its whole width in one glyph; a block column meets it and needs
+nothing from it. The one row of the block that the rule takes is the
+boundary between two bars -- a list's and its preview's -- which are two
+controls over two different things, and reading as two is right.
 
 **Everything that scrolls says so, in the last column of the region it is
 in.** A file, a preview, a list, a page of settings, a conversation -- the

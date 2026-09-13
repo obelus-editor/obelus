@@ -7,18 +7,18 @@ screen 60x20  editor 60x18  status 60x1
  4|    5                                                       
  5|────────────────────────────────────────────────────────────
  6|  all  files  code  obelus                              ← → 
- 7|───────────────────────────────────────────────────────────┐
+ 7|────────────────────────────────────────────────────────────
  8| 󰈞 open-file  Open a file                                󱊫 █
  9| 󰣞 open-changed-file  Open a file that has changed       󱊭 █
-10| 󰑐 reload-file  Re-read this file from disk            󰘴 r │
-11| 󰈢 switch-file  Switch to an open file                   󱊬 │
-12| 󰮘 close-file  Close this file                         󰘴 w │
-13| 󰍔 toggle-preview  Show this file rendered, or stop      󱊴 │
-14| 󰏘 choose-theme  Change the colours                        │
-15| 󰆍 run-command  Run a command by name                  󰘴 p │
-16| 󰅴 ask-about-symbol  Ask about the symbol under the c  󰘵 󰌑 │
-17| 󰉹 show-outline  Everything this file defines            󱊱 │
-18|───────────────────────────────────────────────────────────┘
+10| 󰑐 reload-file  Re-read this file from disk            󰘴 r █
+11| 󰈢 switch-file  Switch to an open file                   󱊬 █
+12| 󰮘 close-file  Close this file                         󰘴 w █
+13| 󰍔 toggle-preview  Show this file rendered, or stop      󱊴 █
+14| 󰏘 choose-theme  Change the colours                        █
+15| 󰆍 run-command  Run a command by name                  󰘴 p █
+16| 󰅴 ask-about-symbol  Ask about the symbol under the c  󰘵 󰌑 █
+17| 󰉹 show-outline  Everything this file defines            󱊱 █
+18|────────────────────────────────────────────────────────────
 19| 󰍉                                                          
 -- style --
  0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -31,16 +31,16 @@ screen 60x20  editor 60x18  status 60x1
  7|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
  8|gggggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggggghgb
  9|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeb
-10|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeae
-11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaeae
-12|aaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaaaeeeae
-13|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-14|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaae
-15|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaeeeae
-16|aaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeae
-17|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeae
+10|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeai
+11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaeai
+12|aaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaaaeeeai
+13|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeei
+14|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaai
+15|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaeeeai
+16|aaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeai
+17|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeai
 18|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-19|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
+19|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#a1a1aa bg=#18181b
@@ -50,6 +50,7 @@ e fg=#52525b bg=#18181b
 f fg=#a3e635 bg=#18181b
 g fg=#e4e4e7 bg=#27272a
 h fg=#52525b bg=#27272a
-i fg=#d4d4d8 bg=#18181b
+i fg=#404047 bg=#18181b
+j fg=#d4d4d8 bg=#18181b
 -- cursor --
 4,19
