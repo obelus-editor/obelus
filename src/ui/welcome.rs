@@ -10,15 +10,13 @@
 //! directory is on it because the file picker only ever searches that one
 //! tree, which is worth knowing before pressing the key that opens it.
 
-use std::path::Path;
-
 use ratatui::{
     buffer::Buffer as CellBuffer,
     layout::Rect,
     style::{Color, Style},
     widgets::Widget,
 };
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr};
 
 use crate::{
     app::App,
@@ -28,8 +26,48 @@ use crate::{
     ui::{put, write},
 };
 
-/// The commands worth naming, in the order they are shown.
-const OFFERED: &[Command] = &[Command::FileOpen, Command::CommandPalette, Command::Quit];
+/// The commands worth naming, with the words this screen says them in.
+///
+/// Ways *in*, which is what this screen is for: a file, a file that has
+/// changed, a search of the tree, the agent, everything by name, and the way
+/// out. Not `switch-file` -- there is nothing open to switch to on the one
+/// screen where this is showing.
+///
+/// The words are this screen's own, not [`crate::command::CommandSpec`]'s.
+/// A palette row is read once, in a list, with the whole width to say what
+/// the command does; these sit two to a line under a plate fifty columns
+/// wide, beside a key and a picture of what they open. What is left to say
+/// there is which *thing* -- a file, the files that changed, the agent --
+/// and the verb is the key. Thirteen columns is what two of them and their
+/// caps fit into, which is the other half of why they are short.
+const OFFERED: &[(Command, &str)] = &[
+    (Command::FileOpen, "open a file"),
+    (Command::FileChanged, "changed files"),
+    (Command::SearchProject, "search files"),
+    (Command::AgentOpen, "ask the agent"),
+    (Command::CommandPalette, "run a command"),
+    (Command::Quit, "leave obelus"),
+];
+
+/// How many columns of keys the plate carries under it.
+const COLUMNS: usize = 2;
+
+/// The gap between those columns.
+const GUTTER: u16 = 4;
+
+/// How many rows of screen one row of the grid takes.
+///
+/// Two: the keys are read one at a time, and a blank between them is what
+/// makes a block of six read as six things rather than as a paragraph.
+const ROW_HEIGHT: u16 = 2;
+
+/// The gap between a key and what it opens.
+///
+/// One, against the four between the columns: the key and the words after
+/// it are one thing said twice, and a cell of air between them is enough to
+/// keep the keys a column of their own. More than that and each row reads
+/// as two things that happen to share a line.
+const BESIDE: u16 = 1;
 
 /// The name, on a plate.
 ///
@@ -68,13 +106,41 @@ const RAMP_STEPS: u16 = 8;
 /// flashing, and a whole number of steps so the cycle has no seam.
 const CYCLE: u32 = RAMP_STEPS as u32 * 2;
 
-/// What the name means, and what the thing is for.
-const TAGLINE: &str = "read the code you didn't write";
+/// The version, set into the plate's own edge.
+///
+/// In the frame rather than on a row of its own: it is a fact about the
+/// thing the plate names, and a line under the plate holding one short word
+/// is a row of screen spent on punctuation.
+fn version() -> String {
+    concat!(" v", env!("CARGO_PKG_VERSION"), " ").to_string()
+}
+
+/// The plate's foot with the version set into it.
+///
+/// Composed here rather than written into [`WORDMARK`], because the version
+/// is not obelus's to spell: it comes from the manifest, and a copy in a
+/// string here is a copy that goes stale the moment it is bumped.
+fn foot() -> String {
+    let Some(edge) = WORDMARK.last() else {
+        return String::new();
+    };
+    let version = version();
+    let width = edge.chars().count();
+    let set = version.chars().count();
+    if width < set + 4 {
+        return (*edge).to_string();
+    }
+    let at = (width - set) / 2;
+    edge.chars()
+        .take(at)
+        .chain(version.chars())
+        .chain(edge.chars().skip(at + set))
+        .collect()
+}
 
 /// The centred block.
 pub struct WelcomeView<'a> {
     keymap: &'a Keymap,
-    working_directory: &'a Path,
     theme: &'a Theme,
     /// How far the ramp has travelled, in ticks.
     ///
@@ -90,15 +156,16 @@ impl<'a> WelcomeView<'a> {
     pub fn new(app: &'a App) -> Self {
         Self {
             keymap: app.keymap(),
-            working_directory: app.working_directory(),
             theme: app.theme(),
             phase: app.phase(),
         }
     }
 }
 
-/// One key and what it does.
+/// One key, the picture of what it opens, and what it is called here.
 struct Hint {
+    /// The glyph for the command, where the font has one.
+    icon: Option<char>,
     key: String,
     text: String,
 }
@@ -106,45 +173,46 @@ struct Hint {
 impl Widget for WelcomeView<'_> {
     fn render(self, area: Rect, cells: &mut CellBuffer) {
         let hints = self.hints();
-        let footer = home_relative(self.working_directory);
 
-        // The wordmark, a blank, the tagline, a blank, a rule, a blank, the
-        // hints, a blank, the footer.
-        let tall = u16::try_from(WORDMARK.len() + hints.len() + 6).unwrap_or(u16::MAX);
+        // The plate, a blank, and the keys. Nothing else: what the reader
+        // needs here is the way in, and the version is set into the plate's
+        // own edge rather than spending a row of its own.
+        // The plate, a blank, and the keys two to a line with a blank
+        // between the lines -- and none after the last of them.
+        let lines = u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1);
+        let keys = (lines * ROW_HEIGHT).saturating_sub(1);
+        let tall = u16::try_from(WORDMARK.len()).unwrap_or(u16::MAX) + 1 + keys;
         let wordmark = width_of(WORDMARK[0]);
-        let short = u16::try_from(hints.len() + 4).unwrap_or(u16::MAX);
+        let short = u16::try_from(hints.len() + 2).unwrap_or(u16::MAX);
 
         if wordmark <= area.width && tall <= area.height {
-            self.lavish(area, cells, &hints, &footer, wordmark, tall);
+            self.lavish(area, cells, &hints, wordmark, tall);
         } else if let Some(narrow) = hint_block_width(&hints)
             && narrow <= area.width
             && short <= area.height
         {
-            self.compact(area, cells, &hints, &footer, narrow, short);
+            self.compact(area, cells, &hints, narrow, short);
         }
     }
 }
 
 impl WelcomeView<'_> {
-    /// The wordmark, the keys as caps, and a footer.
-    fn lavish(
-        &self,
-        area: Rect,
-        cells: &mut CellBuffer,
-        hints: &[Hint],
-        footer: &str,
-        width: u16,
-        height: u16,
-    ) {
+    /// The plate, and the keys under it.
+    fn lavish(&self, area: Rect, cells: &mut CellBuffer, hints: &[Hint], width: u16, height: u16) {
         let left = area.x + (area.width - width) / 2;
         let mut y = area.y + (area.height - height) / 2;
 
         // A ramp across the letters, in the theme's own accent hues rather
         // than in colours invented here, so it belongs to whichever theme is
-        // on.
+        // on. The frame and the version in its foot are in it too: they are
+        // part of the mark, and one still thing in a moving one reads as a
+        // thing that has stopped.
         let from = self.theme.syntax.keyword;
         let to = self.theme.syntax.function;
-        for row in WORDMARK {
+        let foot = foot();
+        let last = WORDMARK.len().saturating_sub(1);
+        for (at, row) in WORDMARK.iter().enumerate() {
+            let row = if at == last { foot.as_str() } else { *row };
             let mut column = 0u16;
             for character in row.chars() {
                 if character != ' ' {
@@ -163,52 +231,42 @@ impl WelcomeView<'_> {
         }
 
         y += 1;
-        centred(cells, left, y, width, TAGLINE, self.theme.gutter);
-        y += 2;
+        self.grid(cells, left, y, width, hints);
+    }
 
-        // A rule the full width of the block, which is what makes the
-        // wordmark read as a heading rather than as decoration.
-        for column in 0..width {
-            put(
+    /// The keys in columns under the plate, centred on it.
+    ///
+    /// Two to a line, which is what makes the block as wide as the plate
+    /// rather than a narrow list against one edge of it. Every column is the
+    /// same width and every cell in it starts at the same cell, so a reader
+    /// runs down either one.
+    fn grid(&self, cells: &mut CellBuffer, left: u16, top: u16, width: u16, hints: &[Hint]) {
+        let Some(cell) = cell_width(hints) else {
+            return;
+        };
+        let columns = u16::try_from(COLUMNS).unwrap_or(1);
+        let block = cell * columns + GUTTER * (columns - 1);
+        let indent = width.saturating_sub(block) / 2;
+
+        for (at, hint) in hints.iter().enumerate() {
+            let Ok(column) = u16::try_from(at % COLUMNS) else {
+                continue;
+            };
+            let Ok(row) = u16::try_from(at / COLUMNS) else {
+                continue;
+            };
+            self.hint_row(
                 cells,
-                left + column,
-                y,
-                '\u{2500}',
-                Style::new().fg(self.theme.gutter),
-            );
-        }
-        y += 2;
-
-        let keys = hints.iter().map(|hint| hint.key.width()).max().unwrap_or(0);
-        for hint in hints {
-            self.hint_row(cells, left, y, keys, hint, true);
-            y += 1;
-        }
-
-        y += 1;
-        write(cells, left, y, footer, Style::new().fg(self.theme.gutter));
-        let version = concat!("v", env!("CARGO_PKG_VERSION"));
-        if let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(version.width())) {
-            write(
-                cells,
-                left + offset,
-                y,
-                version,
-                Style::new().fg(self.theme.gutter),
+                left + indent + column * (cell + GUTTER),
+                top + row * ROW_HEIGHT,
+                keys_width(hints),
+                hint,
             );
         }
     }
 
     /// The keys, and nothing that needs room.
-    fn compact(
-        &self,
-        area: Rect,
-        cells: &mut CellBuffer,
-        hints: &[Hint],
-        footer: &str,
-        width: u16,
-        height: u16,
-    ) {
+    fn compact(&self, area: Rect, cells: &mut CellBuffer, hints: &[Hint], width: u16, height: u16) {
         let left = area.x + (area.width - width) / 2;
         let mut y = area.y + (area.height - height) / 2;
 
@@ -219,90 +277,115 @@ impl WelcomeView<'_> {
             "obelus",
             Style::new().fg(self.theme.foreground),
         );
+        // The version at the other end of the same row, which is where the
+        // plate carries it when there is room for a plate.
+        let version = version();
+        let version = version.trim();
+        if let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(version.width())) {
+            write(
+                cells,
+                left + offset,
+                y,
+                version,
+                Style::new().fg(self.theme.gutter),
+            );
+        }
         y += 2;
 
         let keys = hints.iter().map(|hint| hint.key.width()).max().unwrap_or(0);
         for hint in hints {
-            self.hint_row(cells, left, y, keys, hint, false);
+            self.hint_row(cells, left, y, keys, hint);
             y += 1;
         }
-
-        y += 1;
-        write(cells, left, y, footer, Style::new().fg(self.theme.gutter));
     }
 
-    /// One key and its description, the keys right-aligned into their column
-    /// so the descriptions start together.
-    fn hint_row(
-        &self,
-        cells: &mut CellBuffer,
-        left: u16,
-        y: u16,
-        keys: usize,
-        hint: &Hint,
-        capped: bool,
-    ) {
-        let Ok(pad) = u16::try_from(keys - hint.key.width()) else {
+    /// One cell of the grid: the key, then the picture of what it opens and
+    /// what it is called.
+    ///
+    /// The key first because that is what the reader is here to learn, and
+    /// in plain ink rather than on a panel: six panels in a block is six
+    /// strips of colour on a screen that is otherwise a wordmark and some
+    /// words, and the key does not need to be told apart from prose when it
+    /// is a glyph in its own column.
+    ///
+    /// The picture belongs to the words, not to the key -- it is a picture
+    /// of the *thing* -- so it sits against them, and the key column is left
+    /// to the keys.
+    ///
+    /// Every part sits at a fixed offset from the cell's own left edge, and
+    /// the offsets come from the widest of each across all the hints, so the
+    /// two columns line up with each other and the cells line up down a
+    /// column.
+    fn hint_row(&self, cells: &mut CellBuffer, left: u16, y: u16, keys: usize, hint: &Hint) {
+        let Ok(width) = u16::try_from(keys) else {
             return;
         };
-        if capped {
-            // A raised panel behind the key, so it reads as something to
-            // press rather than as more prose.
-            let style = Style::new()
-                .fg(self.theme.foreground)
-                .bg(self.theme.raised_background);
-            let capped = format!(" {} ", hint.key);
-            write(cells, left + pad, y, &capped, style);
-            let Ok(offset) = u16::try_from(keys + 4) else {
-                return;
-            };
-            write(
-                cells,
-                left + offset,
-                y,
-                &hint.text,
-                Style::new().fg(self.theme.gutter),
-            );
-        } else {
-            write(
-                cells,
-                left + pad,
-                y,
-                &hint.key,
-                Style::new().fg(self.theme.foreground),
-            );
-            let Ok(offset) = u16::try_from(keys + 3) else {
-                return;
-            };
-            write(
-                cells,
-                left + offset,
-                y,
-                &hint.text,
-                Style::new().fg(self.theme.gutter),
-            );
+        let inset = u16::try_from(keys.saturating_sub(drawn(&hint.key))).unwrap_or(0);
+        write(
+            cells,
+            left + inset,
+            y,
+            &hint.key,
+            Style::new().fg(self.theme.foreground),
+        );
+
+        let mut x = left.saturating_add(width).saturating_add(BESIDE);
+        if let Some(icon) = hint.icon {
+            put(cells, x, y, icon, Style::new().fg(self.theme.gutter));
+            // Two, always: the terminal allocates one cell for a private use
+            // codepoint and the font draws two.
+            x = x.saturating_add(2);
         }
+        write(cells, x, y, &hint.text, Style::new().fg(self.theme.gutter));
     }
 
     fn hints(&self) -> Vec<Hint> {
         OFFERED
             .iter()
-            .filter_map(|command| {
+            .filter_map(|(command, text)| {
                 let chord = self.keymap.chord_for(*command)?;
                 Some(Hint {
+                    icon: crate::icons::enabled().then(|| crate::icons::for_command(*command)),
                     key: chord.label(),
-                    text: command.spec().title.to_lowercase(),
+                    text: (*text).to_string(),
                 })
             })
             .collect()
     }
 }
 
-/// How wide the compact block has to be.
+/// How many cells a run of text is *drawn* in.
+///
+/// Not [`UnicodeWidthStr::width`], which answers one for a private use
+/// codepoint: a Nerd Font draws those two cells wide while the terminal
+/// allocates one, which is why everything here leaves a blank column after a
+/// glyph. Two columns of keys line up only if the measuring agrees with the
+/// drawing, and the width tables cannot -- they know nothing about the font.
+fn drawn(contents: &str) -> usize {
+    contents
+        .chars()
+        .map(|character| match character {
+            '\u{e000}'..='\u{f8ff}' | '\u{f0000}'..='\u{ffffd}' => 2,
+            _ => character.width().unwrap_or(0),
+        })
+        .sum()
+}
+
+/// How wide the column of keys has to be, as drawn.
+fn keys_width(hints: &[Hint]) -> usize {
+    hints.iter().map(|hint| drawn(&hint.key)).max().unwrap_or(0)
+}
+
+/// How wide one cell of the grid is: the key, a gap, the picture, the words.
+fn cell_width(hints: &[Hint]) -> Option<u16> {
+    let text = hints.iter().map(|hint| drawn(&hint.text)).max()?;
+    let icon = usize::from(hints.iter().any(|hint| hint.icon.is_some())) * 2;
+    u16::try_from(keys_width(hints) + usize::from(BESIDE) + icon + text).ok()
+}
+
+/// How wide the compact block has to be, which is one cell.
 fn hint_block_width(hints: &[Hint]) -> Option<u16> {
-    let keys = hints.iter().map(|hint| hint.key.width()).max()?;
-    let widest = hints.iter().map(|hint| hint.text.width()).max()?;
-    u16::try_from(keys + 3 + widest).ok()
+    cell_width(hints)
 }
 
 fn width_of(row: &str) -> u16 {
@@ -347,24 +430,4 @@ fn ramp(from: Color, to: Color, along: f32) -> Color {
         }
     };
     Color::Rgb(mix(fr, tr), mix(fg, tg), mix(fb, tb))
-}
-
-/// The path as a reader would write it, with the home directory as `~`.
-fn home_relative(path: &Path) -> String {
-    let Some(home) = std::env::var_os("HOME") else {
-        return path.display().to_string();
-    };
-    match path.strip_prefix(Path::new(&home)) {
-        Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
-        Ok(rest) => format!("~/{}", rest.display()),
-        Err(_) => path.display().to_string(),
-    }
-}
-
-fn centred(cells: &mut CellBuffer, left: u16, y: u16, width: u16, contents: &str, colour: Color) {
-    let Ok(text) = u16::try_from(contents.width()) else {
-        return;
-    };
-    let offset = width.saturating_sub(text) / 2;
-    write(cells, left + offset, y, contents, Style::new().fg(colour));
 }

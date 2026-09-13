@@ -1,46 +1,46 @@
 screen 64x20  editor 64x18  status 64x1
 -- text --
  0|                                                                
- 1|      ╔═════════════════════════════════════════════════╗       
- 2|      ║ ▄█████▄ ██████▄ ███████ ██      ██   ██ ▄█████▄ ║       
- 3|      ║ ██   ██ ██   ██ ██      ██      ██   ██ ██      ║       
- 4|      ║ ██   ██ ██████  ██████  ██      ██   ██ ▀█████▄ ║       
- 5|      ║ ██   ██ ██   ██ ██      ██      ██   ██      ██ ║       
- 6|      ║ ▀█████▀ ██████▀ ███████ ███████ ▀█████▀ ▀█████▀ ║       
- 7|      ╚═════════════════════════════════════════════════╝       
- 8|                                                                
- 9|                read the code you didn't write                  
-10|                                                                
-11|      ───────────────────────────────────────────────────       
-12|                                                                
-13|         󱊫   open a file                                        
-14|       󰘴 p   run a command by name                              
-15|       󰘴 q   leave obelus                                       
+ 1|                                                                
+ 2|      ╔═════════════════════════════════════════════════╗       
+ 3|      ║ ▄█████▄ ██████▄ ███████ ██      ██   ██ ▄█████▄ ║       
+ 4|      ║ ██   ██ ██   ██ ██      ██      ██   ██ ██      ║       
+ 5|      ║ ██   ██ ██████  ██████  ██      ██   ██ ▀█████▄ ║       
+ 6|      ║ ██   ██ ██   ██ ██      ██      ██   ██      ██ ║       
+ 7|      ║ ▀█████▀ ██████▀ ███████ ███████ ▀█████▀ ▀█████▀ ║       
+ 8|      ╚════════════════════ v0.1.0 ═════════════════════╝       
+ 9|                                                                
+10|           󱊫  󰈞 open a file        󱊭  󰣞 changed files           
+11|                                                                
+12|           󱊰  󰉓 search files       󱊮  󰚩 ask the agent           
+13|                                                                
+14|         󰘴 p  󰆍 run a command    󰘴 q  󰈆 leave obelus            
+15|                                                                
 16|                                                                
-17|      /tmp/obelus                                  v0.1.0       
+17|                                                                
 18|────────────────────────────────────────────────────────────────
 19|                                                                
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 1|aaaaaabbbbbbbccccccdddddddeeeeeeffffffggggggghhhhhhiiiiiiaaaaaaa
- 2|aaaaaababbbbbccacccddddaddeeeeeaffaaaaaaggaaahhahhhiiiiaiaaaaaaa
- 3|aaaaaababbaaaccaccaaaddaddaaaaaaffaaaaaaggaaahhahhaaaaaaiaaaaaaa
- 4|aaaaaababbaaaccacccdddaaddeeeeaaffaaaaaaggaaahhahhhiiiiaiaaaaaaa
- 5|aaaaaababbaaaccaccaaaddaddaaaaaaffaaaaaaggaaahhaaaaaaiiaiaaaaaaa
- 6|aaaaaababbbbbccacccddddaddeeeeeaffffffgaggggghhahhhiiiiaiaaaaaaa
- 7|aaaaaabbbbbbbccccccdddddddeeeeeeffffffggggggghhhhhhiiiiiiaaaaaaa
- 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 9|aaaaaaaaaaaaaaaajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaaaaa
-10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-11|aaaaaajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjaaaaaaa
-12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-13|aaaaaaaakkkaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-14|aaaaaakkkkkaajjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-15|aaaaaakkkkkaajjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaaaaabbbbbbbccccccdddddddeeeeeeffffffggggggghhhhhhiiiiiiaaaaaaa
+ 3|aaaaaababbbbbccacccddddaddeeeeeaffaaaaaaggaaahhahhhiiiiaiaaaaaaa
+ 4|aaaaaababbaaaccaccaaaddaddaaaaaaffaaaaaaggaaahhahhaaaaaaiaaaaaaa
+ 5|aaaaaababbaaaccacccdddaaddeeeeaaffaaaaaaggaaahhahhhiiiiaiaaaaaaa
+ 6|aaaaaababbaaaccaccaaaddaddaaaaaaffaaaaaaggaaahhaaaaaaiiaiaaaaaaa
+ 7|aaaaaababbbbbccacccddddaddeeeeeaffffffgaggggghhahhhiiiiaiaaaaaaa
+ 8|aaaaaabbbbbbbccccccdddddddeaeeeeffafffggggggghhhhhhiiiiiiaaaaaaa
+ 9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+10|aaaaaaaaaaaaaajajjjjjjjjjjjaaaaaaaaaaajajjjjjjjjjjjjjaaaaaaaaaaa
+11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+12|aaaaaaaaaaaaaajajjjjjjjjjjjjaaaaaaaaaajajjjjjjjjjjjjjaaaaaaaaaaa
+13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+14|aaaaaaaaaaaaaajajjjjjjjjjjjjjaaaaaaaaajajjjjjjjjjjjjaaaaaaaaaaaa
+15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-17|aaaaaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaajjjjjjaaaaaaa
+17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 18|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
-19|llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll
+19|kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#c084fc bg=#18181b
@@ -52,7 +52,6 @@ g fg=#8498fa bg=#18181b
 h fg=#789cfa bg=#18181b
 i fg=#6ca0fa bg=#18181b
 j fg=#52525b bg=#18181b
-k fg=#e4e4e7 bg=#27272a
-l fg=#d4d4d8 bg=#18181b
+k fg=#d4d4d8 bg=#18181b
 -- cursor --
 none

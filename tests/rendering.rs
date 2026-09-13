@@ -689,9 +689,14 @@ fn the_end_of_the_file_is_on_screen_after_control_end() {
     );
 }
 
-/// The keys are right-aligned into their column so the descriptions start
-/// together. Invisible with the shipped bindings, which all happen to be six
-/// characters wide — and about to matter the moment one of them is rebound.
+/// The keys are right-aligned inside their caps, so the words after them
+/// start together down a column. Invisible with the shipped bindings, which
+/// all happen to be the same width -- and about to matter the moment one of
+/// them is rebound.
+///
+/// Down a *column*: the keys are laid out two to a line now, so the two that
+/// have to line up are the ones above and below each other -- the first and
+/// the third, with the second beside the first.
 #[test]
 fn the_welcome_screen_lines_up_keys_of_different_widths() {
     use crossterm::event::{KeyCode, KeyModifiers};
@@ -710,6 +715,13 @@ fn the_welcome_screen_lines_up_keys_of_different_widths() {
                 KeyCode::Char('o'),
                 KeyModifiers::CONTROL | KeyModifiers::ALT,
             ),
+        },
+        // The second row of the first column, which is the one that has to
+        // line up with the first: what sits between them is the other column.
+        Binding {
+            command: Command::FileChanged,
+            context: Context::Normal,
+            chord: KeyChord::new(KeyCode::F(3), KeyModifiers::NONE),
         },
         Binding {
             command: Command::Quit,
@@ -732,10 +744,10 @@ fn the_welcome_screen_lines_up_keys_of_different_widths() {
     assert_eq!(
         column_of("open a file"),
         column_of("leave obelus"),
-        "the descriptions do not start together:\n{dump}"
+        "the words in one column do not start together:\n{dump}"
     );
-    // The wider chord's key starts further left, which is what right-aligning
-    // a column of keys means.
+    // The wider chord's key starts further left inside its cap, which is
+    // what right-aligning them into one means.
     let wide = KeyChord::new(
         KeyCode::Char('o'),
         KeyModifiers::CONTROL | KeyModifiers::ALT,

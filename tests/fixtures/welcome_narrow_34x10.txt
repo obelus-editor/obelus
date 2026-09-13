@@ -1,24 +1,24 @@
 screen 34x10  editor 34x8  status 34x1
 -- text --
- 0|   obelus                         
+ 0|       obelus        v0.1.0       
  1|                                  
- 2|     󱊫   open a file              
- 3|   󰘴 p   run a command by name    
- 4|   󰘴 q   leave obelus             
- 5|                                  
- 6|   /tmp/obelus                    
- 7|                                  
+ 2|        󱊫  󰈞 open a file          
+ 3|        󱊭  󰣞 changed files        
+ 4|        󱊰  󰉓 search files         
+ 5|        󱊮  󰚩 ask the agent        
+ 6|       󰘴 p 󰆍 run a command        
+ 7|       󰘴 q 󰈆 leave obelus         
  8|──────────────────────────────────
  9|                                  
 -- style --
- 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|aaaaaaaaaaaaaaaaaaaaabbbbbbaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|aaaaaaaaabbbbbbbbbbbaaaaaaaaaaaaaa
- 3|aaaaaaaaabbbbbbbbbbbbbbbbbbbbbaaaa
- 4|aaaaaaaaabbbbbbbbbbbbaaaaaaaaaaaaa
- 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 6|aaabbbbbbbbbbbaaaaaaaaaaaaaaaaaaaa
- 7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaaaaaaaaaababbbbbbbbbbbaaaaaaaaaa
+ 3|aaaaaaaaaaababbbbbbbbbbbbbaaaaaaaa
+ 4|aaaaaaaaaaababbbbbbbbbbbbaaaaaaaaa
+ 5|aaaaaaaaaaababbbbbbbbbbbbbaaaaaaaa
+ 6|aaaaaaaaaaababbbbbbbbbbbbbaaaaaaaa
+ 7|aaaaaaaaaaababbbbbbbbbbbbaaaaaaaaa
  8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
  9|cccccccccccccccccccccccccccccccccc
 -- legend --
