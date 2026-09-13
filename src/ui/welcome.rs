@@ -31,14 +31,27 @@ use crate::{
 /// The commands worth naming, in the order they are shown.
 const OFFERED: &[Command] = &[Command::FileOpen, Command::CommandPalette, Command::Quit];
 
-/// The name in block elements, which every monospace font has — unlike the
-/// private use area the file glyphs come from.
+/// The name, on a plate.
+///
+/// Block elements and box drawing, which every monospace font has -- unlike
+/// the private use area the file glyphs come from, so this is the one thing
+/// on screen that needs no particular font.
+///
+/// The letters are drawn at half a row's resolution: a stroke that ends
+/// halfway down a cell ends in a half block, so the round ends of the O, the
+/// S and the U are curves rather than the square steps a whole cell gives.
+///
+/// The frame is part of the mark rather than drawn around it, so the sheen
+/// runs through it -- the ramp is taken per column across whatever is here,
+/// and a frame outside it would be the one still thing on a moving screen.
 const WORDMARK: &[&str] = &[
-    " ████   █████   ██████  ██      ██  ██   █████",
-    "██  ██  ██  ██  ██      ██      ██  ██  ██    ",
-    "██  ██  █████   █████   ██      ██  ██   ████ ",
-    "██  ██  ██  ██  ██      ██      ██  ██      ██",
-    " ████   █████   ██████  ██████   ████   █████ ",
+    "╔═════════════════════════════════════════════════╗",
+    "║ ▄█████▄ ██████▄ ███████ ██      ██   ██ ▄█████▄ ║",
+    "║ ██   ██ ██   ██ ██      ██      ██   ██ ██      ║",
+    "║ ██   ██ ██████  ██████  ██      ██   ██ ▀█████▄ ║",
+    "║ ██   ██ ██   ██ ██      ██      ██   ██      ██ ║",
+    "║ ▀█████▀ ██████▀ ███████ ███████ ▀█████▀ ▀█████▀ ║",
+    "╚═════════════════════════════════════════════════╝",
 ];
 
 /// How many colours the ramp across the wordmark is made of.

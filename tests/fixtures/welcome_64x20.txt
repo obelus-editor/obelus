@@ -1,44 +1,44 @@
 screen 64x20  editor 64x18  status 64x1
 -- text --
  0|                                                                
- 1|                                                                
- 2|          ████   █████   ██████  ██      ██  ██   █████         
- 3|         ██  ██  ██  ██  ██      ██      ██  ██  ██             
- 4|         ██  ██  █████   █████   ██      ██  ██   ████          
- 5|         ██  ██  ██  ██  ██      ██      ██  ██      ██         
- 6|          ████   █████   ██████  ██████   ████   █████          
- 7|                                                                
- 8|                 read the code you didn't write                 
- 9|                                                                
-10|         ──────────────────────────────────────────────         
-11|                                                                
-12|            󱊫   open a file                                     
-13|          󰘴 p   run a command by name                           
-14|          󰘴 q   leave obelus                                    
-15|                                                                
-16|         /tmp/obelus                             v0.1.0         
-17|                                                                
+ 1|      ╔═════════════════════════════════════════════════╗       
+ 2|      ║ ▄█████▄ ██████▄ ███████ ██      ██   ██ ▄█████▄ ║       
+ 3|      ║ ██   ██ ██   ██ ██      ██      ██   ██ ██      ║       
+ 4|      ║ ██   ██ ██████  ██████  ██      ██   ██ ▀█████▄ ║       
+ 5|      ║ ██   ██ ██   ██ ██      ██      ██   ██      ██ ║       
+ 6|      ║ ▀█████▀ ██████▀ ███████ ███████ ▀█████▀ ▀█████▀ ║       
+ 7|      ╚═════════════════════════════════════════════════╝       
+ 8|                                                                
+ 9|                read the code you didn't write                  
+10|                                                                
+11|      ───────────────────────────────────────────────────       
+12|                                                                
+13|         󱊫   open a file                                        
+14|       󰘴 p   run a command by name                              
+15|       󰘴 q   leave obelus                                       
+16|                                                                
+17|      /tmp/obelus                                  v0.1.0       
 18|────────────────────────────────────────────────────────────────
 19|                                                                
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|aaaaaaaaaabbbbaaaccccdaaaddeeeeaaffaaaaaaggaahhaaaiiiiiaaaaaaaaa
- 3|aaaaaaaaabbaabbaaccaaddaaddaaaaaaffaaaaaaggaahhaahiaaaaaaaaaaaaa
- 4|aaaaaaaaabbaabbaaccccdaaaddeeeaaaffaaaaaaggaahhaaaiiiiaaaaaaaaaa
- 5|aaaaaaaaabbaabbaaccaaddaaddaaaaaaffaaaaaaggaahhaaaaaaiiaaaaaaaaa
- 6|aaaaaaaaaabbbbaaaccccdaaaddeeeeaafffffgaaagghhaaahiiiiaaaaaaaaaa
- 7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 8|aaaaaaaaaaaaaaaaajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaaaa
- 9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-10|aaaaaaaaajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjaaaaaaaaa
-11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-12|aaaaaaaaaaakkkaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-13|aaaaaaaaakkkkkaajjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaa
-14|aaaaaaaaakkkkkaajjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-16|aaaaaaaaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaajjjjjjaaaaaaaaa
-17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaaaabbbbbbbccccccdddddddeeeeeeffffffggggggghhhhhhiiiiiiaaaaaaa
+ 2|aaaaaababbbbbccacccddddaddeeeeeaffaaaaaaggaaahhahhhiiiiaiaaaaaaa
+ 3|aaaaaababbaaaccaccaaaddaddaaaaaaffaaaaaaggaaahhahhaaaaaaiaaaaaaa
+ 4|aaaaaababbaaaccacccdddaaddeeeeaaffaaaaaaggaaahhahhhiiiiaiaaaaaaa
+ 5|aaaaaababbaaaccaccaaaddaddaaaaaaffaaaaaaggaaahhaaaaaaiiaiaaaaaaa
+ 6|aaaaaababbbbbccacccddddaddeeeeeaffffffgaggggghhahhhiiiiaiaaaaaaa
+ 7|aaaaaabbbbbbbccccccdddddddeeeeeeffffffggggggghhhhhhiiiiiiaaaaaaa
+ 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 9|aaaaaaaaaaaaaaaajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaaaaa
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+11|aaaaaajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjaaaaaaa
+12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+13|aaaaaaaakkkaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+14|aaaaaakkkkkaajjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+15|aaaaaakkkkkaajjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+17|aaaaaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaajjjjjjaaaaaaa
 18|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 19|llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll
 -- legend --
