@@ -2086,3 +2086,72 @@ fn a_change_it_is_asking_to_make_is_read_in_the_transcript() {
         "the change is still open after it was made:\n{text}"
     );
 }
+
+/// The row that says it is working turns, and stops when it is not.
+///
+/// A picture of a cog says a tool was used; only movement says it is still
+/// going. And the thread that moves it lives exactly as long as its reason:
+/// one waking twelve times a second behind a screen where nothing is
+/// happening is the one cost an animation must not have.
+#[test]
+fn the_row_that_says_it_is_working_turns_while_it_is_working() {
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    // The first thing drawn on the row, past the row number the dump puts
+    // in front of it.
+    let turning = |app: &mut App| {
+        let dump = support::render(app, WIDTH, HEIGHT);
+        rows(&dump)
+            .iter()
+            .find(|row| row.contains("thinking"))
+            .and_then(|row| row.split_once('|'))
+            .and_then(|(_, drawn)| drawn.trim_start().chars().next())
+            .expect("the row that says it is working")
+    };
+    let first = turning(&mut app);
+
+    // A tick arrives on its own, because the agent working is what the
+    // ticker is for -- and the frame it brings is a different one.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        assert!(!left.is_zero(), "nothing is animating while it works");
+        let Ok(event) = events.recv_timeout(left) else {
+            panic!("nothing is animating while it works");
+        };
+        let ticked = matches!(event, Event::Tick);
+        app.handle(event);
+        if ticked && turning(&mut app) != first {
+            break;
+        }
+    }
+
+    // Answered, the turn ends and the ticking stops with it.
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    // A frame, so the ticker is asked for again and not wanted, and then
+    // whatever was already on its way. Bounded: a ticker that has not
+    // stopped would keep this draining for ever, and a test that hangs
+    // says less than one that fails.
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    for _ in 0..50 {
+        let Ok(event) = events.recv_timeout(Duration::from_millis(100)) else {
+            break;
+        };
+        app.handle(event);
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    assert!(
+        events.recv_timeout(Duration::from_millis(400)).is_err(),
+        "it is still animating with nothing to animate"
+    );
+}

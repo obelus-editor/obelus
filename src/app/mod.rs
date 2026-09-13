@@ -460,13 +460,6 @@ impl App {
     /// missing program.
     fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
-        // Only if the welcome screen is what will be on screen. Starting a
-        // ticker for a reader who opened a file from the command line would
-        // be twelve redraws a second behind a screen with nothing moving on
-        // it.
-        if self.buffers.is_empty() {
-            self.ticker = Ticker::start(sender.clone());
-        }
         self.start_watching(sender);
         for index in 0..self.buffers.len() {
             self.serve(index);
@@ -513,6 +506,33 @@ impl App {
         match self.chat() {
             Some(chat) => ui::chat::above_writing(self.editor_area, chat),
             None => self.editor_area,
+        }
+    }
+
+    /// Whether anything on screen is moving.
+    ///
+    /// One question, because one screen animates at a time: the welcome
+    /// screen's sheen while there is nothing open, and an agent at work
+    /// while the conversation is showing. Asked every frame from what is
+    /// true, rather than switched on and off from the half-dozen places
+    /// that change either, which is how a ticker outlives its reason.
+    const fn wants_animating(&self, working: bool) -> bool {
+        match self.showing_chat {
+            true => working,
+            false => self.current.is_none(),
+        }
+    }
+
+    /// Starts or stops the ticker, and does nothing where it is already
+    /// what it should be.
+    ///
+    /// A thread waking twelve times a second to redraw a screen with
+    /// nothing moving on it is the one cost an animation must not have.
+    fn animate(&mut self, wanted: bool) {
+        match (wanted, self.ticker.is_some()) {
+            (true, false) => self.ticker = self.events.clone().and_then(Ticker::start),
+            (false, true) => self.ticker = None,
+            _ => {}
         }
     }
 
@@ -643,6 +663,7 @@ impl App {
             | talking::Talking::Gone => None,
         };
         self.chat.doing(doing);
+        self.animate(self.wants_animating(doing.is_some()));
 
         // Which rows the list will draw is what decides which rows need
         // their matched characters worked out, and only the geometry knows

@@ -288,11 +288,6 @@ impl App {
         if self.current == Some(id) {
             self.current = self.nearest_open(id.get());
         }
-        // Nothing left, so the welcome screen is what is on screen -- and it
-        // is the only thing that animates.
-        if self.current.is_none() {
-            self.ticker = self.events.clone().and_then(Ticker::start);
-        }
     }
 
     /// The open buffer nearest to a slot, looking back first.
@@ -402,11 +397,6 @@ impl App {
 
     /// Opens a file, or switches to it if it is already open.
     pub(super) fn open(&mut self, path: &Path) {
-        // Whatever happens next, the welcome screen is over: even a file that
-        // fails to open leaves a reader looking at something other than a
-        // shimmering logo, and nothing else on screen moves.
-        self.ticker = None;
-
         // Where the reader was, before they are somewhere else. Opening a
         // file is a leap, and the history is for leaps: without this, a
         // session of opening files leaves nothing to go back *to*, and

@@ -231,6 +231,23 @@ const SEPARATOR_WIDTH: usize = 3;
 /// mark a settings row and an agent's card use for the same promise.
 const OPENS: &str = " \u{25b8}";
 
+/// The frames the row that says something is happening turns through.
+///
+/// Braille, which needs no particular font: a terminal that cannot draw
+/// these cannot draw the rest of obelus either, and this is the one thing
+/// on screen that has to be legible without one. Ten frames at the
+/// ticker's twelve a second is a turn a second and a bit.
+const SPINNING: [char; 10] = [
+    '\u{280b}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283c}', '\u{2834}', '\u{2826}', '\u{2827}',
+    '\u{2807}', '\u{280f}',
+];
+
+/// Which frame of it the screen is on.
+fn spinning(phase: u32) -> char {
+    let at = phase as usize % SPINNING.len();
+    SPINNING[at]
+}
+
 /// The bar a line of a change carries, which is the one an opened hunk
 /// carries in a file.
 const BAR: char = '\u{2590}';
@@ -283,6 +300,8 @@ pub struct ChatView<'a> {
     /// The tree obelus was opened on, for writing the paths an agent names
     /// the way a reader writes them.
     root: &'a Path,
+    /// Where the animation has got to, for the row that turns.
+    phase: u32,
 }
 
 impl<'a> ChatView<'a> {
@@ -299,6 +318,7 @@ impl<'a> ChatView<'a> {
             focus: app.chat()?.focus(),
             card: app.card(),
             root: app.working_directory(),
+            phase: app.phase(),
         })
     }
 
@@ -463,7 +483,13 @@ impl ChatView<'_> {
             }
             if row.first {
                 let at = area.x + MARGIN + u16::from(row.depth) * DEEPER;
-                if icons::enabled() {
+                // The row that says something is happening turns, and it
+                // turns whether or not glyphs are drawn: a picture of a
+                // cog says a tool was used, and only movement says it is
+                // still going.
+                if row.speaker == Speaker::Doing {
+                    put(cells, at, y, spinning(self.phase), style);
+                } else if icons::enabled() {
                     put(cells, at, y, glyph, style);
                 } else {
                     write(cells, at, y, mark(row.speaker), style);

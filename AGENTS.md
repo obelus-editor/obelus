@@ -511,6 +511,21 @@ seeing it. Escape comes back out to the box without closing anything, and
 typing goes to the box wherever the cursor was, because a reader who starts
 typing means to type.
 
+**One screen animates at a time, and only while something is moving.** The
+welcome screen's sheen and the row that says an agent is working are the
+only two, so one question decides it every frame: the conversation's, while
+it is showing, and the welcome screen's otherwise. Asked from what is true
+rather than switched on and off from the places that change either -- which
+is how a ticker outlives its reason and wakes twelve times a second behind a
+screen where nothing is happening.
+
+The row that says something is happening *turns*: a picture of a cog says a
+tool was used, and only movement says it is still going. Braille, so it needs
+no particular font, and drawn whether or not glyphs are -- it is the one
+thing on screen that has to be legible without them. `Ticker::start` still
+answers `None` over a network, where an animation is a luxury paid for in
+round trips.
+
 **A header says what a thing *is*; the foot of the transcript says what is
 happening.** The conversation's header carried five states, and they were
 the wrong five: two said what the screen already said better ("nobody is
