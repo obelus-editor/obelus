@@ -1974,11 +1974,10 @@ fn a_screen_with_no_room_for_the_text_still_draws() {
     }
 }
 
-/// A log opens as a log: columns, and the levels in colour.
+/// A log reads as a log: columns, and the levels in colour.
 ///
-/// The reading is what the file is for -- a screenful of a log is skimmed,
-/// not read -- so a file that has one opens in it, and `f10` is how to see
-/// the bytes instead.
+/// Asked for, not applied: a file opens as its bytes, whatever reading it
+/// has, and `f10` is how to ask for the reading.
 #[test]
 fn a_log_opens_in_its_own_reading() {
     let path = std::env::temp_dir().join(format!("obelus-reading-{}.log", std::process::id()));
@@ -1993,14 +1992,18 @@ fn a_log_opens_in_its_own_reading() {
     let mut app = App::new(vec![
         obelus::buffer::Buffer::open(&path).expect("opening it"),
     ]);
-    // The settings decide, and the default is to show a reading.
-    app.configure(obelus::config::Config::default());
     support::lay_out(&mut app, 76, 10);
 
     assert_eq!(
         app.current_buffer().expect("a buffer").mode(),
+        obelus::buffer::Mode::Edit,
+        "a file was put into a reading nobody asked for"
+    );
+    support::press_function(&mut app, 10);
+    assert_eq!(
+        app.current_buffer().expect("a buffer").mode(),
         obelus::buffer::Mode::Preview,
-        "a log opened as its bytes"
+        "the key that asks for the reading did not give one"
     );
     let dump = support::render(&mut app, 76, 10);
     let rows: Vec<&str> = support::text_block(&dump).lines().skip(1).collect();
@@ -2089,9 +2092,19 @@ fn a_file_with_no_reading_opens_as_itself() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// The setting turns the default off, and the command still works.
+/// A file opens as its bytes, whatever reading it has.
+///
+/// It used to open *in* the reading when it had one, under a setting that
+/// was on by default. Which reading a file has is the file's own business,
+/// but whether to be shown one instead of the file is the reader's, and a
+/// program whose whole subject is what is in a file should not answer that
+/// for them: the reading is a keystroke away and the bytes are what was
+/// asked for.
+///
+/// Broken deliberately by showing the reading when a buffer is made: the
+/// log came up in columns and this failed on the first assertion.
 #[test]
-fn the_reading_can_be_left_off_by_default() {
+fn a_file_with_a_reading_still_opens_as_its_bytes() {
     let path = std::env::temp_dir().join(format!("obelus-off-{}.log", std::process::id()));
     std::fs::write(
         &path,
@@ -2102,19 +2115,15 @@ fn the_reading_can_be_left_off_by_default() {
     let mut app = App::new(vec![
         obelus::buffer::Buffer::open(&path).expect("opening it"),
     ]);
-    app.configure(obelus::config::Config {
-        preview: false,
-        ..obelus::config::Config::default()
-    });
+    app.configure(obelus::config::Config::default());
     support::lay_out(&mut app, 76, 8);
 
     assert_eq!(
         app.current_buffer().expect("a buffer").mode(),
         obelus::buffer::Mode::Edit,
-        "the reading was shown to a reader who asked for the bytes"
+        "the reading was shown to a reader who asked for the file"
     );
-    // Asked for, it is still there: the setting is about what happens
-    // without being asked.
+    // Asked for, it is there.
     support::press_function(&mut app, 10);
     assert_eq!(
         app.current_buffer().expect("a buffer").mode(),
@@ -2149,6 +2158,10 @@ fn the_end_of_a_reading_is_its_last_screenful() {
         obelus::buffer::Buffer::open(&path).expect("opening it"),
     ]);
     app.configure(obelus::config::Config::default());
+    support::lay_out(&mut app, 60, 8);
+    // The reading is asked for: a file opens as its bytes. Drawn again
+    // afterwards, because the rows of a reading are worked out for a frame.
+    support::press_function(&mut app, 10);
     support::lay_out(&mut app, 60, 8);
 
     // The premise: more rows than lines, which is what made the end

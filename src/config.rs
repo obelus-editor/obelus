@@ -29,9 +29,6 @@ pub struct Config {
     pub wrap: bool,
     /// Whether a file that has a reading opens in it.
     ///
-    /// A log read as columns and a README read as prose are what those
-    /// files are *for*; the bytes are one key away either way.
-    pub preview: bool,
     /// Which agent obelus talks to, by the registry's own name for it.
     ///
     /// One, or none. Two would mean every question having to say which
@@ -59,7 +56,6 @@ impl Default for Config {
             wrap: false,
             // On: a file with a reading has one because reading it that way
             // is better, and `f10` is how to see the bytes instead.
-            preview: true,
             // None until the reader installs one: obelus does not choose an
             // agent for anybody.
             agent: None,
@@ -156,12 +152,6 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Switch,
     },
     Setting {
-        key: "preview",
-        label: "Open a file in its preview when it has one",
-        group: Group::Reading,
-        kind: Kind::Switch,
-    },
-    Setting {
         key: "blame",
         label: "Who last changed the line the cursor is on",
         group: Group::Reading,
@@ -180,7 +170,6 @@ impl Config {
             "theme" => Some(Value::Choice(self.theme.clone())),
             "icons" => Some(Value::Switch(self.icons)),
             "blame" => Some(Value::Switch(self.blame)),
-            "preview" => Some(Value::Switch(self.preview)),
             "wrap" => Some(Value::Switch(self.wrap)),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
@@ -193,7 +182,6 @@ impl Config {
             ("theme", Value::Choice(word)) => self.theme = word.clone(),
             ("icons", Value::Switch(on)) => self.icons = *on,
             ("blame", Value::Switch(on)) => self.blame = *on,
-            ("preview", Value::Switch(on)) => self.preview = *on,
             ("wrap", Value::Switch(on)) => self.wrap = *on,
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
@@ -288,9 +276,6 @@ fn from_table(table: &toml::Table) -> Config {
     if let Some(on) = table.get("wrap").and_then(toml::Value::as_bool) {
         config.wrap = on;
     }
-    if let Some(on) = table.get("preview").and_then(toml::Value::as_bool) {
-        config.preview = on;
-    }
     if let Some(word) = table.get("agent").and_then(toml::Value::as_str) {
         config.agent = (!word.is_empty()).then(|| word.to_string());
     }
@@ -315,7 +300,6 @@ pub fn to_toml(config: &Config) -> String {
     table.insert("icons".to_string(), config.icons.into());
     table.insert("blame".to_string(), config.blame.into());
     table.insert("wrap".to_string(), config.wrap.into());
-    table.insert("preview".to_string(), config.preview.into());
     // Written even when there is nobody, so the file says what obelus read
     // rather than leaving the reader to wonder whether it noticed.
     table.insert(
@@ -501,7 +485,6 @@ mod tests {
             icons: false,
             blame: false,
             wrap: true,
-            preview: false,
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and
             // both have to survive the file or the reader makes them again

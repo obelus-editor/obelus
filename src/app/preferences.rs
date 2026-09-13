@@ -244,14 +244,6 @@ impl App {
     pub fn configure(&mut self, config: crate::config::Config) {
         self.config = config;
         self.apply_config();
-        // The files that were already open -- the ones named on the command
-        // line, opened before any of this was read -- get their reading
-        // now. Here rather than in `apply_config`, which runs after every
-        // change a reader makes: a default that reapplied itself would put
-        // a preview back over a reader who had turned it off.
-        for index in 0..self.buffers.len() {
-            self.prefer_reading(crate::buffer::BufferId::new(index));
-        }
     }
 
     /// Reads and writes settings at a path of the caller's choosing.

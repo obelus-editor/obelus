@@ -126,11 +126,16 @@ swap and the only way through a long one.
 reading of them -- and *which* reading is the file's own business, not the
 mode's: markdown is laid out as prose, a log is put in columns, and a third
 mode would be `Mode` answering a question the format already answers. A file
-that has a reading opens in it (the `preview` setting, on by default) and
-`f10` shows the bytes instead, which is where the cursor, the selection and
-the copy live. The default is applied when a buffer is *made*, never in
-`apply_config`: a default that reapplied itself would put a preview back
-over a reader who had turned it off, which is the `blame` mistake again.
+opens as its *bytes*, whatever reading it has, and `f10` asks for the
+reading; the bytes are where the cursor, the selection and the copy live.
+
+It used to open in the reading when it had one, under a setting that was on
+by default. Which reading a file has is the file's own business; whether to
+be shown one *instead of the file* is the reader's, and a program whose
+whole subject is what is in a file should not answer that for them. The
+setting went with the behaviour, because a switch that turns off something
+nothing does is a switch with nothing behind it -- and an old config naming
+it is simply ignored, the way any key `from_toml` does not know is.
 
 **A log's format is decided by its lines, not its name.** `syslog`,
 `access.log`, `obelus.2026-09-11.log` -- the extension says nothing, so

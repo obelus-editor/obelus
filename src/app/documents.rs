@@ -333,22 +333,6 @@ impl App {
         self.current_buffer().and_then(reading::of)
     }
 
-    /// Shows a buffer's reading, if it has one and the reader wants that.
-    ///
-    /// Called when a buffer is made rather than on every frame or every
-    /// switch: it is a *default*, and a default that reapplied itself would
-    /// undo the reader turning it off -- which is the same mistake as a
-    /// setting and a command owning one switch between them.
-    pub(super) fn prefer_reading(&mut self, id: BufferId) {
-        if !self.config.preview {
-            return;
-        }
-        let buffer = self.buffers.get_mut(id.get()).and_then(Option::as_mut);
-        if let Some(buffer) = buffer.filter(|buffer| reading::of(buffer).is_some()) {
-            buffer.show_reading();
-        }
-    }
-
     /// The reading on screen, if the current file is being shown as one.
     #[must_use]
     pub fn rendering(&self) -> Option<&[reading::Row]> {
@@ -433,7 +417,6 @@ impl App {
                 self.record(from);
                 let id = BufferId::new(index);
                 self.go_to_buffer(id);
-                self.prefer_reading(id);
                 self.serve(index);
             }
             // A path from the walk can have gone away, or be a file this user
