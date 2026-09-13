@@ -564,6 +564,39 @@ What is *not* shared is worth saying too: a language server and an agent per
 process, which is the cost of not having panes. Three windows on one Rust
 project is three rust-analyzers.
 
+**A tree may carry settings, and a tree is not the reader.** `.obelus/config.toml`
+in the working directory, or `.obelus.toml` beside it, laid *over* the
+reader's own file key by key: the tree says what this project needs -- wrapped
+lines, a theme -- and says nothing about everything else, which stays
+theirs. Read into a fresh config instead of over theirs and a tree with one
+line in it would turn off a reader's wrapping, which is what every "project
+settings" feature that replaces rather than layers actually does.
+
+The directory form is looked for first, because it is the form with room in
+it: a theme belonging to the tree will go beside the config in there. The
+single file stays, because making a directory to set one line is asking too
+much. Only the working directory itself, never walking up: obelus has one
+answer to which tree it is on -- the file list walks it, the counts count
+it, git is read from it.
+
+**What a tree may set is a property of the setting**, `Reach`, not a list of
+exceptions somewhere: the next setting a stranger should not be trusted with
+will be found by asking that question while writing the setting down.
+`agent` is `ReaderOnly` because it says which agent obelus *starts*, and a
+program starting because a file in a downloaded tree said so is a decision
+that belongs to the person at the keyboard; `keys` is `ReaderOnly` because a
+tree that could rebind them could put `quit` where a reader would find it by
+accident. VS Code learned this one the same way and calls it `machine`
+scope.
+
+Nothing is ever written to the tree's file -- it belongs to whoever wrote
+the tree, and a reader changing a theme would be editing a file their next
+commit carries. So a setting the tree has is not theirs to change here, and
+the row says so rather than doing nothing: the file's name sits where they
+would have reached, a lock against the control, the whole row in the dim ink
+that means unusable everywhere else. Sublime's project settings win
+silently, and "I changed it and nothing happened" is the bug that follows.
+
 **The configuration file holds preferences, not state.** `config.rs` is the
 whole of it — one table, `dirs` for where it lives, written the moment
 anything changes. Rebindable keys are still guaranteed by the key table being

@@ -82,6 +82,13 @@ impl App {
     /// still leaves the reader with the setting they asked for until they
     /// restart -- and with a note saying it will not last.
     pub(super) fn change_setting(&mut self, key: &'static str, value: &crate::config::Value) {
+        if let Some(path) = self.pinned_by(key) {
+            // Nothing happens, and nothing needs saying: the row itself
+            // carries the name of the file that has it, in the dim ink
+            // every unusable thing here is drawn in.
+            tracing::debug!(key, path = %path.display(), "the tree has this one");
+            return;
+        }
         self.config.set(key, value);
         self.apply_config();
         let Some(path) = self.config_path.clone() else {
@@ -190,6 +197,63 @@ impl App {
             }
             crate::config::Reading::Unreadable(why) => self.settings_unreadable(&path, &why),
         }
+        self.apply_tree();
+    }
+
+    /// Lays the tree's own settings over the reader's.
+    ///
+    /// After theirs, every time theirs is read: the tree is the narrower
+    /// answer -- it is about *this* project -- so it wins where it says
+    /// anything, and says nothing everywhere else.
+    ///
+    /// A file that will not read is a line in the log and nothing more. The
+    /// reader's settings are what obelus has, and throwing them away because
+    /// a tree somebody else wrote has a typo in it would be the tree
+    /// deciding something it was never given.
+    pub(super) fn apply_tree(&mut self) {
+        self.pinned.clear();
+        self.tree_config = crate::config::tree_path(&self.working_directory);
+        let Some(path) = self.tree_config.clone() else {
+            return;
+        };
+        match crate::config::read_table(&path) {
+            Ok(Some(table)) => {
+                self.pinned =
+                    crate::config::apply(&mut self.config, &table, crate::config::Whose::Tree);
+                tracing::info!(
+                    path = %path.display(),
+                    settings = ?self.pinned,
+                    "the tree has settings of its own",
+                );
+                self.apply_config();
+            }
+            Ok(None) => {}
+            Err(why) => {
+                tracing::warn!(path = %path.display(), why, "the tree's settings will not read");
+            }
+        }
+    }
+
+    /// The settings the tree has set, which are the ones the reader cannot
+    /// change from here.
+    #[must_use]
+    pub fn pinned(&self) -> &[&'static str] {
+        &self.pinned
+    }
+
+    /// The tree's own settings file, while the tree has one.
+    #[must_use]
+    pub fn tree_config(&self) -> Option<&Path> {
+        self.tree_config.as_deref()
+    }
+
+    /// Which file has this setting, if it is not the reader's to change.
+    #[must_use]
+    pub fn pinned_by(&self, key: &str) -> Option<&Path> {
+        self.pinned
+            .contains(&key)
+            .then_some(self.tree_config.as_deref())
+            .flatten()
     }
 
     /// Takes the settings file as it stands now, because somebody else
@@ -202,22 +266,26 @@ impl App {
     /// reader who has turned a preview off should not have it come back
     /// because somebody in another window changed the theme.
     pub(super) fn reread_config(&mut self) {
-        let Some(path) = self.config_path.clone() else {
-            return;
-        };
-        match crate::config::read_from(&path) {
-            crate::config::Reading::Settings(config) => {
-                tracing::info!(path = %path.display(), "the settings changed under us");
-                self.config = config;
-                self.apply_config();
-                self.config_is_readable = true;
+        if let Some(path) = self.config_path.clone() {
+            match crate::config::read_from(&path) {
+                crate::config::Reading::Settings(config) => {
+                    tracing::info!(path = %path.display(), "the settings changed under us");
+                    self.config = config;
+                    self.apply_config();
+                    self.config_is_readable = true;
+                }
+                // Gone, which is somebody deleting it or an editor writing
+                // it in a way obelus caught mid-flight. Neither is a reason
+                // to throw away what this session is set to.
+                crate::config::Reading::Nothing | crate::config::Reading::Nowhere => {}
+                crate::config::Reading::Unreadable(why) => self.settings_unreadable(&path, &why),
             }
-            // Gone, which is somebody deleting it or an editor writing it
-            // in a way obelus caught mid-flight. Neither is a reason to
-            // throw away what this session is set to.
-            crate::config::Reading::Nothing | crate::config::Reading::Nowhere => {}
-            crate::config::Reading::Unreadable(why) => self.settings_unreadable(&path, &why),
         }
+        // And the tree's over the top, from the reader's file up: a layer
+        // laid over what already has it would keep a setting the tree has
+        // since stopped naming, because nothing would have put the reader's
+        // own answer back underneath it.
+        self.apply_tree();
     }
 
     /// Says the settings file cannot be read, and stops writing to it.

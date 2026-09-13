@@ -258,6 +258,16 @@ pub struct App {
     /// told -- which is every test, and is why a test cannot write over the
     /// reader's real settings.
     config_path: Option<PathBuf>,
+    /// The tree's own settings file, while the tree has one.
+    ///
+    /// Read after the reader's and laid over it, so the tree says what it
+    /// cares about and the reader keeps everything else. Never written to:
+    /// it belongs to whoever wrote the tree, and a reader who changed a
+    /// theme would be editing a file their next commit would carry.
+    tree_config: Option<PathBuf>,
+    /// The settings that file set, which are the ones the reader cannot
+    /// change here.
+    pinned: Vec<&'static str>,
     /// The settings view, while it is open.
     settings: Option<Settings>,
     /// The line counts, while they are showing.
@@ -382,6 +392,8 @@ impl App {
             config_is_readable: true,
             config: crate::config::Config::default(),
             config_path: None,
+            tree_config: None,
+            pinned: Vec::new(),
             settings: None,
             counts: None,
             screen_area: Rect::ZERO,
@@ -505,6 +517,11 @@ impl App {
     /// else, so a test that renders one says which tree it is on.
     pub fn working_directory_for_test(&mut self, root: PathBuf) {
         self.working_directory = root;
+        // And whatever that tree has to say about the settings, which is
+        // what putting obelus on a tree means: at startup the two happen
+        // together, and a test that moved one without the other would be
+        // testing an application no reader can have.
+        self.apply_tree();
     }
 
     /// Starts watching every open file for changes on disk.
@@ -549,6 +566,14 @@ impl App {
                     tracing::warn!(%error, path = %path.display(), "not watching the settings");
                 }
             }
+        }
+        // And the tree's own settings, for the same reason twice over:
+        // another obelus on this project may be looking at them, and a `git
+        // pull` rewrites them under everybody.
+        if let Some(path) = self.tree_config.clone()
+            && let Err(error) = watcher.watch(&path)
+        {
+            tracing::warn!(%error, path = %path.display(), "not watching the tree's settings");
         }
         self.watcher = Some(watcher);
     }

@@ -25,6 +25,15 @@ fn temporary(name: &str) -> std::path::PathBuf {
     directory.join("config.toml")
 }
 
+/// A tree of its own for one test, with a `.obelus.toml` in it.
+fn tree(name: &str, contents: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("obelus-tree-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("a directory");
+    std::fs::write(root.join(".obelus.toml"), contents).expect("the tree's settings");
+    root
+}
+
 fn open(file: &std::path::Path) -> App {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(file.to_path_buf());
@@ -467,6 +476,138 @@ fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
     );
 
     let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// A tree can carry settings of its own, and they win where they say
+/// anything.
+///
+/// Which is what a project is for: everybody reading this repository gets
+/// its wrapped lines, whatever they have set for themselves elsewhere.
+///
+/// Broken deliberately by reading the tree's table into a fresh config
+/// instead of over the reader's: the theme the reader had chosen came back
+/// as the default, and the last assertion failed.
+#[test]
+fn a_tree_lays_its_own_settings_over_the_readers() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = tree("over", "wrap = true\n");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    // The reader's own, as they would have come from their file.
+    app.configure(obelus::config::Config {
+        theme: "light".to_string(),
+        wrap: false,
+        ..obelus::config::Config::default()
+    });
+    app.working_directory_for_test(root.clone());
+
+    assert!(app.config().wrap, "the tree's setting did not take");
+    assert_eq!(
+        app.theme().name,
+        "light",
+        "the tree took away a setting it never named"
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A tree may not choose the agent, or rebind a key.
+///
+/// A tree is written by whoever wrote the tree. Most of these settings are
+/// harmless to hand over; starting a program is not, and neither is moving
+/// the keys under somebody's fingers.
+///
+/// Broken deliberately by giving `agent` and `keys` `Reach::Anywhere`: both
+/// arrived from the tree and both assertions failed.
+#[test]
+fn a_tree_may_not_start_an_agent_or_move_a_key() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = tree(
+        "reach",
+        "agent = \"claude-acp\"\n[keys]\nquit = \"ctrl+x\"\n",
+    );
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus::config::Config::default());
+    app.working_directory_for_test(root.clone());
+
+    assert_eq!(app.config().agent, None, "a tree started an agent");
+    assert!(
+        app.config().keys.is_empty(),
+        "a tree moved a key: {:?}",
+        app.config().keys
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// The directory form is the one with room in it, so it is the one that
+/// wins.
+///
+/// Broken deliberately by looking for `.obelus.toml` first: the stray file
+/// won over the directory, and a tree that had grown past one file would
+/// have been read out of the one it left behind.
+#[test]
+fn the_directory_wins_over_the_file_beside_it() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = tree("both", "theme = \"light\"\n");
+    std::fs::create_dir_all(root.join(".obelus")).expect("a directory");
+    std::fs::write(
+        root.join(".obelus").join("config.toml"),
+        "theme = \"dark\"\n",
+    )
+    .expect("the file");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus::config::Config::default());
+    app.working_directory_for_test(root.clone());
+
+    assert_eq!(app.theme().name, "dark", "the stray file won");
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A setting the tree has is not the reader's to change, and the row says
+/// which file has it.
+///
+/// Broken deliberately by letting `change_setting` write anyway: the switch
+/// moved, the file the reader's own settings live in got a line the tree
+/// overrides, and the first assertion failed.
+#[test]
+fn a_setting_the_tree_has_cannot_be_changed_here() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = tree("pinned", "wrap = true\n");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus::config::Config::default());
+    app.working_directory_for_test(root.clone());
+    support::lay_out(&mut app, 76, 12);
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, KeyCode::Right);
+
+    // Onto the wrapped-lines row and try to turn it off.
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.config().wrap,
+        "a setting the tree has was changed from the settings page"
+    );
+
+    // And the row says where it comes from.
+    let dump = support::render(&mut app, 76, 12);
+    assert!(
+        support::text_block(&dump).contains(".obelus.toml"),
+        "the row does not say which file has it:\n{dump}"
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// An application that was never told where its settings live does not write

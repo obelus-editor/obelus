@@ -110,6 +110,39 @@ impl Group {
     }
 }
 
+/// Who may set a setting.
+///
+/// A tree's own settings are written by whoever wrote the tree, and a reader
+/// who opens somebody's repository has not agreed to everything in it. Most
+/// of these are harmless to hand over -- a theme, a wrapped line, a name in
+/// the margin -- and some are not: `agent` says which agent obelus starts,
+/// and a program starting because a file in a downloaded tree said so is a
+/// decision that belongs to the person at the keyboard. The keys are the
+/// same: a tree that could rebind them could put a reader's `quit` somewhere
+/// they would find by accident.
+///
+/// A kind rather than a list of exceptions, because the next one of these
+/// will be found the way this one was -- by asking, of a new setting,
+/// whether a stranger may set it -- and the asking should be part of writing
+/// the setting down rather than something to remember.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reach {
+    /// Either file: the reader's own, or the tree's.
+    Anywhere,
+    /// The reader's own file alone. A tree naming it is ignored, with a word
+    /// in the log for whoever wrote that file.
+    ReaderOnly,
+}
+
+/// Which file a table of settings came out of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Whose {
+    /// The reader's, wherever this system keeps such things.
+    Reader,
+    /// The tree obelus was opened on.
+    Tree,
+}
+
 /// One setting, as data.
 #[derive(Clone, Copy, Debug)]
 pub struct Setting {
@@ -126,6 +159,22 @@ pub struct Setting {
     pub group: Group,
     /// What sort of control it gets.
     pub kind: Kind,
+    /// Which files may set it.
+    pub reach: Reach,
+}
+
+impl Setting {
+    /// Whether a table out of `whose` file may set this.
+    #[must_use]
+    pub fn settable_by(&self, whose: Whose) -> bool {
+        whose == Whose::Reader || self.reach == Reach::Anywhere
+    }
+
+    /// The setting a key names, if obelus has one.
+    #[must_use]
+    pub fn named(key: &str) -> Option<&'static Self> {
+        ALL.iter().find(|setting| setting.key == key)
+    }
 }
 
 /// The themes a reader can choose between.
@@ -137,24 +186,28 @@ pub const ALL: &[Setting] = &[
         key: "theme",
         label: "Colour theme",
         group: Group::Appearance,
+        reach: Reach::Anywhere,
         kind: Kind::Choice(THEMES),
     },
     Setting {
         key: "icons",
         label: "Nerd Font glyphs in lists and on the status bar",
         group: Group::Appearance,
+        reach: Reach::Anywhere,
         kind: Kind::Switch,
     },
     Setting {
         key: "wrap",
         label: "Wrap a line too long for the screen onto the next row",
         group: Group::Reading,
+        reach: Reach::Anywhere,
         kind: Kind::Switch,
     },
     Setting {
         key: "blame",
         label: "Who last changed the line the cursor is on",
         group: Group::Reading,
+        reach: Reach::Anywhere,
         kind: Kind::Switch,
     },
 ];
@@ -201,6 +254,47 @@ impl Config {
 #[must_use]
 pub fn path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("obelus").join("config.toml"))
+}
+
+/// Where a tree keeps settings of its own, if it keeps any.
+///
+/// `.obelus/config.toml` first and `.obelus.toml` after it: the directory is
+/// the form with room in it -- a theme belonging to the tree will go beside
+/// the config in there -- and the single file is for a tree that only ever
+/// wants the one line. Both, because making a directory to set one line is
+/// asking too much, and a tree that has grown past one file should not have
+/// to keep a stray dotfile beside the directory holding the rest.
+///
+/// The working directory itself, without walking up: obelus has one answer
+/// to which tree it is on -- the file list walks it, the counts count it,
+/// git is read from it -- and settings found by walking somewhere else would
+/// be a second answer to that question.
+#[must_use]
+pub fn tree_path(root: &Path) -> Option<PathBuf> {
+    let inside = root.join(".obelus").join("config.toml");
+    if inside.is_file() {
+        return Some(inside);
+    }
+    let beside = root.join(".obelus.toml");
+    beside.is_file().then_some(beside)
+}
+
+/// The table a file holds, for a caller that means to lay it over something.
+///
+/// Three answers, like [`read_from`]'s four: there is none, here it is, or
+/// it will not read. A tree's file that will not read is *not* a reason to
+/// stop -- obelus goes on with the reader's own settings and says so in the
+/// log -- which is why this hands back the reason rather than a config with
+/// the defaults in it.
+pub fn read_table(path: &Path) -> Result<Option<toml::Table>, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    text.parse::<toml::Table>()
+        .map(Some)
+        .map_err(|error| error.to_string())
 }
 
 /// Reads the file, or the defaults for every way it can decline.
@@ -264,22 +358,78 @@ pub fn from_toml(text: &str) -> Config {
 /// The same, from a table already parsed.
 fn from_table(table: &toml::Table) -> Config {
     let mut config = Config::default();
-    if let Some(word) = table.get("theme").and_then(toml::Value::as_str) {
+    apply(&mut config, table, Whose::Reader);
+    config
+}
+
+/// Which files may set the key `key`.
+///
+/// Asked of a *key* rather than of a [`Setting`], because two of the things
+/// in the file are not rows on the settings page: the agent is chosen on a
+/// page of its own, and the keys are a table. Both are the reader's alone.
+///
+/// A key obelus has never heard of reaches nowhere, which costs nothing --
+/// nothing reads it either way -- and means a key added to the file before
+/// it is added here cannot arrive from a tree.
+#[must_use]
+pub fn reach_of(key: &str) -> Reach {
+    match key {
+        "agent" | "keys" => Reach::ReaderOnly,
+        _ => Setting::named(key).map_or(Reach::ReaderOnly, |setting| setting.reach),
+    }
+}
+
+/// Lays a table of settings over a config, and says which keys it set.
+///
+/// Over, rather than into a fresh one: a tree's file names the few settings
+/// that tree cares about, and everything it does not name is the reader's
+/// and stays theirs. Reading it into a default config and taking that would
+/// be a tree with one line in it turning off a reader's wrapped lines.
+///
+/// What the tree may not set is left alone, with a word in the log for
+/// whoever wrote that file: from the outside it is a line that did nothing,
+/// which is worth being able to find out about.
+pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'static str> {
+    let mut set = Vec::new();
+    let mut allowed = |key: &'static str| {
+        if reach_of(key) == Reach::Anywhere || whose == Whose::Reader {
+            set.push(key);
+            return true;
+        }
+        if table.contains_key(key) {
+            tracing::warn!(key, "a tree may not set this, so it is left alone");
+        }
+        false
+    };
+
+    if let Some(word) = table.get("theme").and_then(toml::Value::as_str)
+        && allowed("theme")
+    {
         config.theme = word.to_string();
     }
-    if let Some(on) = table.get("icons").and_then(toml::Value::as_bool) {
+    if let Some(on) = table.get("icons").and_then(toml::Value::as_bool)
+        && allowed("icons")
+    {
         config.icons = on;
     }
-    if let Some(on) = table.get("blame").and_then(toml::Value::as_bool) {
+    if let Some(on) = table.get("blame").and_then(toml::Value::as_bool)
+        && allowed("blame")
+    {
         config.blame = on;
     }
-    if let Some(on) = table.get("wrap").and_then(toml::Value::as_bool) {
+    if let Some(on) = table.get("wrap").and_then(toml::Value::as_bool)
+        && allowed("wrap")
+    {
         config.wrap = on;
     }
-    if let Some(word) = table.get("agent").and_then(toml::Value::as_str) {
+    if let Some(word) = table.get("agent").and_then(toml::Value::as_str)
+        && allowed("agent")
+    {
         config.agent = (!word.is_empty()).then(|| word.to_string());
     }
-    if let Some(keys) = table.get("keys").and_then(toml::Value::as_table) {
+    if let Some(keys) = table.get("keys").and_then(toml::Value::as_table)
+        && allowed("keys")
+    {
         // Whatever is a string. A command obelus has never heard of and a
         // chord it cannot read are dealt with where the table is built,
         // which is the one place that knows what either of those is.
@@ -289,7 +439,7 @@ fn from_table(table: &toml::Table) -> Config {
             }
         }
     }
-    config
+    set
 }
 
 /// The file's contents for a config.

@@ -47,6 +47,13 @@ pub struct SettingsView<'a> {
     images: &'a crate::ui::image::Images,
     /// Every command and the key it is on, for the keys page.
     keys: Vec<(crate::command::Command, Option<crate::keymap::KeyChord>)>,
+    /// The settings the tree has set, and the file it set them in.
+    ///
+    /// Written the way the reader would write it -- `.obelus.toml`, not the
+    /// whole path -- because it is a file in the tree they are looking at.
+    pinned: Vec<&'static str>,
+    /// That file, if there is one.
+    tree: Option<String>,
 }
 
 impl<'a> SettingsView<'a> {
@@ -61,6 +68,12 @@ impl<'a> SettingsView<'a> {
             failure: app.registry_failure(),
             images: app.images(),
             keys: app.settings()?.keys(app.keymap()),
+            pinned: app.pinned().to_vec(),
+            tree: app.tree_config().map(|path| {
+                crate::ui::relative_to(path, app.working_directory())
+                    .display()
+                    .to_string()
+            }),
         })
     }
 }
@@ -130,6 +143,7 @@ impl Widget for SettingsView<'_> {
                     matched: self.settings.matched_in(command.name()),
                     detail: self.saying(*command),
                     aside: Aside::Words(chord.map(|chord| chord.label()).unwrap_or_default()),
+                    pinned: None,
                 })
                 .collect();
             self.column(cells, region, &rows, "no command by that name");
@@ -144,6 +158,11 @@ impl Widget for SettingsView<'_> {
                 matched: self.settings.matched(setting),
                 detail: None,
                 aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
+                pinned: self
+                    .pinned
+                    .contains(&setting.key)
+                    .then(|| self.tree.clone())
+                    .flatten(),
             })
             .collect();
         self.column(cells, region, &rows, "no setting by that name");
@@ -157,6 +176,13 @@ struct Row {
     matched: Option<std::ops::Range<usize>>,
     detail: Option<(String, ratatui::style::Color)>,
     aside: Aside,
+    /// The file that has this one, when it is not the reader's to change.
+    ///
+    /// Named on the row rather than said when the reader tries to move it:
+    /// a row that answers only when pushed is a row that looks like every
+    /// other until it is, and what a reader wants to know here is which of
+    /// these are theirs.
+    pinned: Option<String>,
 }
 
 /// What a row shows on the right.
@@ -234,20 +260,40 @@ impl SettingsView<'_> {
             };
             fill(cells, area, plain.bg(background));
 
+            // What the row says about where it came from, measured before
+            // the name is: it is written between the two, so the name is cut
+            // to what is left rather than to the whole row.
+            let lock = u16::from(crate::icons::enabled()) * 2;
+            let source = row.pinned.as_ref().map(|source| {
+                let room = aside_at.saturating_sub(region.x + 4 + lock);
+                clipped(source, room)
+            });
+            let reserved = source.as_deref().map_or(0, |source| {
+                u16::try_from(crate::ui::text_width(source)).unwrap_or(0) + lock + 1
+            });
+
             // Cut to what is left before the right-hand column: a line
             // running under it reads as part of it.
-            let width = aside_at.saturating_sub(region.x + 2);
+            let width = aside_at.saturating_sub(region.x + 2 + reserved);
             let label = clipped(&row.label, width);
             // Through the shared writer, so the characters the query
             // matched carry the background every other list marks a match
             // with: a row in a narrowed list has to say why it is in it.
+            // The ink says whether a row can be used, which is the rule
+            // everywhere here: a setting the tree has is not this reader's
+            // to move, and a row that looked live until they pressed it
+            // would be a row that lied.
+            let ink = match row.pinned {
+                Some(_) => plain.fg(self.theme.gutter),
+                None => plain,
+            };
             let after = write_marked(
                 cells,
                 area,
                 region.x + 1,
                 y,
                 &label,
-                plain.bg(background),
+                ink.bg(background),
                 &Marked::matched(
                     run_of(row.matched.clone()),
                     self.theme.picker_match_background,
@@ -267,10 +313,40 @@ impl SettingsView<'_> {
                     plain.fg(*colour).bg(background),
                 );
             }
-            match &row.aside {
-                Aside::Control(kind, value) => {
-                    draw_control(cells, aside_at, y, *kind, value, self.theme, background)
+            // Where it came from, in the space the reader would otherwise
+            // reach across, and a lock against the control itself: the name
+            // says which file has it and the lock says it is shut, which
+            // between them is the whole answer without a word of prose.
+            if let Some(source) = &source {
+                let width = u16::try_from(crate::ui::text_width(source)).unwrap_or(0);
+                write(
+                    cells,
+                    aside_at.saturating_sub(width + lock + 1),
+                    y,
+                    source,
+                    plain.fg(self.theme.gutter).bg(background),
+                );
+                if crate::icons::enabled() {
+                    put(
+                        cells,
+                        aside_at.saturating_sub(2),
+                        y,
+                        '\u{f033e}',
+                        plain.fg(self.theme.gutter).bg(background),
+                    );
                 }
+            }
+
+            match &row.aside {
+                Aside::Control(kind, value) => draw_control(
+                    cells,
+                    ratatui::layout::Position { x: aside_at, y },
+                    *kind,
+                    value,
+                    self.theme,
+                    background,
+                    row.pinned.is_none(),
+                ),
                 Aside::Words(words) => {
                     write(
                         cells,
@@ -584,14 +660,24 @@ fn clipped(text: &str, room: u16) -> String {
 /// Writes a control: a switch, or the word a droplist is set to.
 fn draw_control(
     cells: &mut CellBuffer,
-    x: u16,
-    y: u16,
+    at: ratatui::layout::Position,
     kind: Kind,
     value: &Value,
     theme: &Theme,
     background: ratatui::style::Color,
+    usable: bool,
 ) {
+    let (x, y) = (at.x, at.y);
     let style = Style::new().bg(background);
+    // A control the reader cannot move is drawn in the dim ink, value and
+    // all: what it is set to is still worth seeing -- it is what this tree
+    // has decided -- and what they cannot do about it is said the way
+    // everything unusable here says it.
+    let ink = if usable {
+        theme.foreground
+    } else {
+        theme.gutter
+    };
     match (kind, value) {
         (Kind::Switch, Value::Switch(on)) => {
             // A slider: a square knob at one end of a short track. The
@@ -618,7 +704,7 @@ fn draw_control(
             // and green here would mean something different from green in
             // the margin, where it means a line git has never seen.
             let (at, colour) = if *on {
-                (x + TRACK_WIDTH / 2, theme.foreground)
+                (x + TRACK_WIDTH / 2, ink)
             } else {
                 (x, theme.gutter)
             };
@@ -633,7 +719,7 @@ fn draw_control(
             }
         }
         (Kind::Choice(_), Value::Choice(word)) => {
-            let after = write(cells, x, y, word, style.fg(theme.foreground));
+            let after = write(cells, x, y, word, style.fg(ink));
             // Pointing right, at the value: the list it opens is the
             // ordinary compact one and comes up wherever that comes up, so
             // an arrow pointing down would be pointing at whatever happens
