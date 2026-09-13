@@ -422,6 +422,54 @@ fn the_view_closes_and_the_file_is_what_it_shows() {
     obelus::icons::use_glyphs(true);
 }
 
+/// Settings arriving from another machine are noticed, link and all.
+///
+/// Which is how anybody keeps settings in git: the file lives in a dotfiles
+/// repository and the place obelus looks is a link to it. What a `git pull`
+/// rewrites is the file at the far end, so that is the path the change
+/// arrives on -- not the one obelus was told about.
+///
+/// Broken deliberately by comparing the event's path only against the
+/// configured one: the change arrived on the file the link points at,
+/// matched nothing, and the window went on showing the theme the reader had
+/// already moved on from.
+#[cfg(unix)]
+#[test]
+fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let directory = std::env::temp_dir().join(format!("obelus-linked-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    let repository = directory.join("dotfiles");
+    let config_home = directory.join("config");
+    std::fs::create_dir_all(&repository).expect("a directory");
+    std::fs::create_dir_all(&config_home).expect("a directory");
+
+    let real = repository.join("config.toml");
+    std::fs::write(&real, "theme = \"dark\"\n").expect("the file");
+    let linked = config_home.join("config.toml");
+    std::os::unix::fs::symlink(&real, &linked).expect("a link");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(linked);
+    assert_eq!(app.theme().name, "dark", "it did not read through the link");
+
+    // What another machine's change looks like once git has put it there:
+    // the repository's own file, rewritten, and the watcher reporting that
+    // path rather than the link's.
+    std::fs::write(&real, "theme = \"light\"\n").expect("the file");
+    app.handle(Event::FileChanged { path: real });
+    assert_eq!(
+        app.theme().name,
+        "light",
+        "a setting that arrived through the link was not picked up"
+    );
+
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
 /// An application that was never told where its settings live does not write
 /// any: every test is one of those, and the reader's own file is not
 /// something a test may touch.

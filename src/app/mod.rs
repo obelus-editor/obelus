@@ -537,10 +537,18 @@ impl App {
         // changed in one of them is a setting changed for all of them, and
         // a file read once at startup would leave every other window
         // holding what the reader has already moved on from.
-        if let Some(path) = self.config_path.clone()
-            && let Err(error) = watcher.watch(&path)
-        {
-            tracing::warn!(%error, path = %path.display(), "not watching the settings");
+        if let Some(path) = self.config_path.clone() {
+            // And whatever it really names, which for a reader who keeps
+            // their settings in a dotfiles repository is a file in there:
+            // what a `git pull` rewrites is that one, and a watch on the
+            // link's own directory would never hear about it. Both, because
+            // the link itself can be replaced too -- by the thing that made
+            // it -- and that is a change to these settings as well.
+            for path in [crate::config::resolved(&path), path] {
+                if let Err(error) = watcher.watch(&path) {
+                    tracing::warn!(%error, path = %path.display(), "not watching the settings");
+                }
+            }
         }
         self.watcher = Some(watcher);
     }
@@ -830,7 +838,15 @@ impl App {
             // no handling of its own beyond waking the loop.
             Event::Resize => {}
             Event::FileChanged { path } => {
-                if self.config_path.as_deref() == Some(&path) {
+                // The settings, by either of their names: the watcher
+                // reports whichever path the change arrived on, and a
+                // change that came from a repository arrives on the file
+                // the link points at rather than on the link.
+                if self
+                    .config_path
+                    .as_deref()
+                    .is_some_and(|config| path == config || path == crate::config::resolved(config))
+                {
                     self.reread_config();
                 } else if crate::git::state_moved(&path) {
                     self.forget_what_git_said();

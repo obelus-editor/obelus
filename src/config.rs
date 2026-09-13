@@ -334,12 +334,37 @@ pub fn to_toml(config: &Config) -> String {
     toml::to_string(&table).unwrap_or_default()
 }
 
+/// What a path really names, following any links.
+///
+/// A reader who keeps their settings in git links the place obelus looks at
+/// the file in their repository, which makes the difference between the two
+/// paths matter twice. Writing has to go *through* the link, because a
+/// rename replaces what the name refers to -- the link would become an
+/// ordinary file on the first setting they changed, and every change after
+/// that would go somewhere the repository never sees, silently. And
+/// watching has to follow it, because what a `git pull` rewrites is the
+/// file at the far end: a watch on the link's own directory hears nothing,
+/// so settings arriving from another machine would sit on disk until obelus
+/// was next started.
+///
+/// A path that is not there yet cannot be resolved, and is its own answer:
+/// there is no link to follow.
+#[must_use]
+pub fn resolved(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// Writes a config to a path, making its directory if it is not there.
 ///
 /// The path is passed in rather than looked up here, so that nothing can
 /// write to the reader's real file by accident: a test, or a probe run while
 /// working on obelus, has to say where it is writing.
 pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
+    // Through the link rather than over it: a rename replaces what the name
+    // refers to, and where the settings are kept in a dotfiles repository
+    // the name refers to a link.
+    let resolved = resolved(path);
+    let path = resolved.as_path();
     let Some(directory) = path.parent() else {
         return std::fs::write(path, to_toml(config));
     };
@@ -362,6 +387,61 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{Config, Value, from_toml, save_to, to_toml};
+
+    /// A path that is a link is written *through*, not over.
+    ///
+    /// Which is how anybody keeps their settings in git: the file lives in a
+    /// dotfiles repository and the place obelus looks is a link to it. The
+    /// atomic rename replaces what the name refers to, and the name refers
+    /// to the link -- so saving turned the link into an ordinary file and
+    /// the repository stopped hearing about changes, with nothing on screen
+    /// saying so.
+    ///
+    /// Broken deliberately by taking the `canonicalize` out of `save_to`:
+    /// the link came back an ordinary file and the file in the repository
+    /// still held the old theme.
+    #[cfg(unix)]
+    #[test]
+    fn saving_through_a_link_keeps_the_link_and_writes_what_it_points_at() {
+        let directory = std::env::temp_dir().join(format!("obelus-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let repository = directory.join("dotfiles");
+        let config_home = directory.join("config");
+        std::fs::create_dir_all(&repository).expect("a directory");
+        std::fs::create_dir_all(&config_home).expect("a directory");
+
+        let real = repository.join("config.toml");
+        std::fs::write(&real, "theme = \"dark\"\n").expect("the file");
+        let linked = config_home.join("config.toml");
+        std::os::unix::fs::symlink(&real, &linked).expect("a link");
+
+        let config = Config {
+            theme: "light".to_string(),
+            ..Config::default()
+        };
+        save_to(&linked, &config).expect("saving");
+
+        assert!(
+            std::fs::symlink_metadata(&linked)
+                .expect("the link")
+                .file_type()
+                .is_symlink(),
+            "saving replaced the link with a file of its own"
+        );
+        let written = std::fs::read_to_string(&real).expect("the file it points at");
+        assert!(
+            written.contains("light"),
+            "the file in the repository did not get the change: {written:?}"
+        );
+        // And nothing left beside either of them.
+        assert!(
+            !config_home.join("config.toml.writing").exists()
+                && !repository.join("config.toml.writing").exists(),
+            "a half-written file was left behind"
+        );
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
 
     /// Saving replaces the file rather than rewriting it where it lies.
     ///
