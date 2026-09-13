@@ -713,7 +713,32 @@ async fn talk(
         )
         .await;
 
-    outcome.err().map(|error| error.to_string())
+    outcome.err().map(|error| {
+        // The whole of it in the log, where the `spawned_at` of a protocol
+        // crate is worth having, and a sentence in the reason -- which is
+        // what the transcript says.
+        tracing::warn!(error = %error, "the conversation ended");
+        ended_because(&error)
+    })
+}
+
+/// Why the conversation ended, in a line.
+///
+/// The protocol's own `Display` is its message and then every field of
+/// `data` pretty-printed, which for an agent that exited is four rows of
+/// JSON carrying one sentence and the source path of a crate in the cargo
+/// registry. The sentence is the part a reader is owed.
+fn ended_because(error: &agent_client_protocol::schema::v1::Error) -> String {
+    error
+        .data
+        .as_ref()
+        .and_then(|data| data.get("data"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| match error.message.is_empty() {
+            true => error.to_string(),
+            false => error.message.clone(),
+        })
 }
 
 /// What obelus tells an agent about itself.

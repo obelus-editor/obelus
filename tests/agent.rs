@@ -1657,3 +1657,102 @@ fn the_list_of_commands_scrolls_and_says_what_matched() {
         "the list does not say which characters matched"
     );
 }
+
+/// An agent that stopped is started again by talking to it.
+///
+/// Which is what the view tells the reader to do, and what it did not do:
+/// the handle of the conversation that ended stayed in place, so the check
+/// for "is there an agent" found one and said the message into a channel
+/// whose other end had gone. The reader's only way out was the settings.
+#[test]
+fn talking_to_an_agent_that_stopped_starts_it_again() {
+    // Started the way a reader's is -- an installed agent named in the
+    // settings -- because that is what starting it *again* goes through.
+    let (mut app, events) = wired();
+    let directory =
+        std::env::temp_dir().join(format!("obelus-agent-restart-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("a directory");
+    let root = directory.join("agents");
+    obelus::agent::remember(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        "0.1",
+        &root,
+    )
+    .expect("writing what was installed");
+    app.agents_root_for_test(root);
+    let file = directory.join("config.toml");
+    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
+    app.config_file_for_test(file);
+    app.open_agent();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/die");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to stop", |app| {
+        app.talking() == obelus::app::talking::Talking::Gone
+    });
+
+    // What it says is a line, not the protocol crate's own error with the
+    // source path of a cargo registry in it.
+    let text = screen(&mut app);
+    assert!(
+        text.contains("exit status: 3"),
+        "it does not say why it stopped:\n{text}"
+    );
+    assert!(
+        !text.contains("spawned_at"),
+        "the transcript has the protocol's own JSON in it:\n{text}"
+    );
+
+    // Asked something, it starts again and answers.
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start again", |app| {
+        matches!(
+            app.talking(),
+            obelus::app::talking::Talking::Thinking | obelus::app::talking::Talking::Ready
+        )
+    });
+    pump(
+        &mut app,
+        &events,
+        "the next question",
+        App::is_asking_permission,
+    );
+    let text = screen(&mut app);
+    assert!(
+        text.contains("working it out"),
+        "the second turn never started:\n{text}"
+    );
+}
+
+/// An agent that stops takes its question with it.
+///
+/// A card is answered into a channel, and the far end of that channel died
+/// with the agent. Left on screen it would be a question the reader can
+/// answer and nobody can hear.
+#[test]
+fn a_question_goes_when_the_agent_does() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/pick");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+
+    // The agent's thread says the conversation ended, which is the one way
+    // obelus hears about it however the agent went.
+    app.handle(Event::Acp(obelus::acp::Incoming::Gone(None)));
+    assert!(app.card().is_none(), "the card outlived the agent");
+    assert!(
+        !app.is_asking(),
+        "the form is still waiting on a dead agent"
+    );
+}

@@ -230,11 +230,6 @@ pub struct App {
     /// The permission request waiting on the reader: the channel its
     /// answer goes back through.
     permission: Option<crate::acp::Answer<Option<String>>>,
-    /// Whether the transcript has already said the agent died.
-    ///
-    /// The check runs once a frame, so without this the news would be in
-    /// the transcript once per frame for as long as the view is open.
-    said_it_died: bool,
     /// Each agent's own mark, as SVG, by the registry's id for it.
     icons: HashMap<String, String>,
     /// Whether the marks have been asked for.
@@ -361,7 +356,6 @@ impl App {
             asking: None,
             card: None,
             permission: None,
-            said_it_died: false,
             icons: HashMap::new(),
             asked_icons: false,
             images: crate::ui::image::Images::none(),

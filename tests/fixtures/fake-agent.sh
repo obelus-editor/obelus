@@ -196,6 +196,34 @@ while IFS= read -r line; do
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             ;;
+        *'"method":"session/prompt"'*'"text":"/many'*)
+            # A turn with a run of tool calls of one kind in it, which is
+            # what an agent looking around a repository actually does: a
+            # client that draws thirty of these has drawn a log.
+            turn=$(id_of "$line")
+            for name in app acp buffer ui; do
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"r-%s","title":"Read src/%s","kind":"read","status":"completed","locations":[{"path":"%s/tests/fixtures/many_lines.rs","line":4}]}}}\n' "$name" "$name" "$PWD"
+            done
+            # And one that failed, after them: the run it belongs to is not
+            # the same run, because what failed is not a read.
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"x-1","title":"Run the tests","kind":"execute","status":"failed"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"that is where it is"}}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/nowhere'*)
+            # A tool call naming a file that is not there, which is what an
+            # agent that deleted one -- or made one up -- sends.
+            turn=$(id_of "$line")
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"g-1","title":"Read the missing file","kind":"read","status":"completed","locations":[{"path":"%s/tests/fixtures/not-here.rs","line":2}]}}}\n' "$PWD"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/die'*)
+            # An agent that stops in the middle of a turn: a crash, a kill,
+            # a `/quit` of its own. The client is left with a handle to a
+            # conversation that has ended, and what it does about that is
+            # the point of the test.
+            exit 3
+            ;;
         *'"method":"session/prompt"'*'"text":"/several'*)
             # A form with a multi-select on it: several answers at once,
             # which the schema carries as an array of the ids, plus the

@@ -235,7 +235,17 @@ impl App {
     /// Sends what the reader typed.
     pub(super) fn send_to_agent(&mut self, text: &str) {
         self.chat.asked(text);
-        if self.talker.is_none() {
+        // An agent that has stopped is started again by talking to it,
+        // which is what the view tells the reader to do. The handle of the
+        // one that ended is dropped first: it is still a handle, so a
+        // check for "is there one" would find it and say the message to a
+        // channel nobody is reading.
+        if self
+            .talker
+            .as_ref()
+            .is_none_or(crate::acp::Talk::has_exited)
+        {
+            self.stop_agent();
             self.start_agent();
         }
         let Some(talker) = self.talker.as_mut() else {
@@ -261,10 +271,19 @@ impl App {
         if let Some(mut talker) = self.talker.take() {
             talker.shutdown();
         }
+        self.forget_the_question();
+    }
+
+    /// Drops whatever the agent was waiting on an answer to.
+    ///
+    /// Dropped rather than answered: there is no longer anything to answer,
+    /// and dropping the channel is what tells the other side so. The card
+    /// goes with them, because a question on screen that nobody is waiting
+    /// for is a question the reader would answer into nothing.
+    fn forget_the_question(&mut self) {
         self.permission = None;
-        // Dropped rather than answered: there is no longer anything to
-        // answer, and dropping is what tells the other side so.
         self.asking = None;
+        self.card = None;
     }
 
     /// The agent's own commands, while one is being typed.
@@ -792,11 +811,13 @@ impl App {
                 answer,
             } => self.read_for_agent(&path, line, limit, answer),
             acp::Incoming::Gone(why) => {
-                if let Some(why) = why {
-                    tracing::warn!(why, "the conversation ended");
-                    self.chat.note(&format!("the agent stopped: {why}"));
-                } else {
-                    self.chat.note("the agent stopped");
+                // Whatever it was waiting on goes with it. The handle
+                // stays, dead, because the view reads the state off it --
+                // and talking to it again is what starts the next one.
+                self.forget_the_question();
+                match why {
+                    Some(why) => self.chat.note(&format!("the agent stopped: {why}")),
+                    None => self.chat.note("the agent stopped"),
                 }
             }
             // Folded into the handle above.
@@ -825,7 +846,6 @@ impl App {
             &self.working_directory,
             sender,
         ));
-        self.said_it_died = false;
     }
 
     /// Starts the active agent, or says why it cannot.

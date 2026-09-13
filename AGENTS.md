@@ -455,6 +455,22 @@ mode it cannot put is a mode it should not be sent. A property type it has
 never heard of is declined with the reason in the transcript rather than
 half-filled in.
 
+**An agent that stopped is started again by talking to it.** Which is what
+the view tells the reader to do, and what it did not do: the handle of a
+conversation that had ended stayed in place, so the check for "is there an
+agent" found one and said the message into a channel whose far end had gone.
+The handle stays -- the view reads the state off it, and a screen that
+forgot the agent had died would have nothing to say about why nothing
+happens -- so what asks is whether it has *exited*, not whether it is there.
+Everything it was waiting on goes at the same time: a card the reader can
+answer into a dead channel is worse than no card.
+
+Its last words are a line. The protocol crate's `Display` is its message
+followed by every field of `data` pretty-printed, which for an agent that
+exited is four rows of JSON carrying one sentence and the source path of a
+crate in the cargo registry. The sentence goes in the transcript and the
+whole of it in the log.
+
 **A question is a card, not a picker.** A picker is for finding one thing
 among many by typing at it: a query, a fuzzy match, tabs, rows arriving from
 a walk. A question is somebody else asking, with a handful of named answers
