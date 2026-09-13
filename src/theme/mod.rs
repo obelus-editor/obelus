@@ -255,8 +255,27 @@ pub struct Theme {
     pub status_foreground: Color,
     /// The status line's marker for a file that can no longer be read.
     pub status_stale: Color,
-    /// Behind the selected row of a picker.
-    pub picker_selected_background: Color,
+    /// Behind the row the keys are on.
+    ///
+    /// Every list, page and card in obelus: the rows of a picker, of the
+    /// settings, of an agent's question, and the row of the transcript the
+    /// reader is standing on. One colour, because they are one thing being
+    /// said -- and it is said *only* where there is no caret to say it, a
+    /// box being marked by the caret that sits in it.
+    ///
+    /// It marks where the keys are and nothing else. Whether the row can be
+    /// used is said in the ink: a row that lost this for being unusable
+    /// would leave the reader pressing a key, getting nothing, and unable
+    /// to see which row refused.
+    pub selected_row_background: Color,
+    /// Behind something that reads as a surface rather than as prose: the
+    /// cap a key is drawn in on the welcome screen.
+    ///
+    /// The same colour as a selected row in the themes obelus ships, and a
+    /// field of its own because they are two different promises -- one says
+    /// "the keys are here", the other "this is a thing to press" -- and a
+    /// theme that wanted them apart could not say so through one name.
+    pub raised_background: Color,
     /// Behind the characters of a row that the query matched.
     ///
     /// A background rather than a colour, because a row can be a line of

@@ -222,7 +222,7 @@ impl SettingsView<'_> {
             }
             let focused = index == self.settings.focus();
             let background = if focused {
-                self.theme.picker_selected_background
+                self.theme.selected_row_background
             } else {
                 self.theme.background
             };
@@ -379,7 +379,7 @@ impl SettingsView<'_> {
     /// second mark saying the same thing in a different language.
     fn card(&self, cells: &mut CellBuffer, area: Rect, agent: &Listed, focused: bool) {
         let background = if focused {
-            self.theme.picker_selected_background
+            self.theme.selected_row_background
         } else {
             self.theme.background
         };

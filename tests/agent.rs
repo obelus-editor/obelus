@@ -96,6 +96,27 @@ fn row_of(dump: &str, needle: &str) -> u16 {
         .expect("a row number")
 }
 
+/// What is painted behind the row a needle is on.
+///
+/// Read out of the dump's own legend rather than compared against a colour
+/// written down here: a test that names `#27272a` is a test that fails when
+/// somebody picks a better grey.
+fn behind(dump: &str, needle: &str) -> String {
+    let at = usize::from(row_of(dump, needle));
+    let letter = support::style_block(dump)
+        .lines()
+        .find(|row| row.trim_start().starts_with(&format!("{at}|")))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(_, marks)| marks.chars().next())
+        .unwrap_or_else(|| panic!("no styles for row {at}:\n{dump}"));
+    support::legend_block(dump)
+        .lines()
+        .find(|line| line.starts_with(&format!("{letter} ")))
+        .and_then(|line| line.split_once("bg="))
+        .map(|(_, colour)| colour.trim().to_string())
+        .unwrap_or_else(|| panic!("no colour for {letter}:\n{dump}"))
+}
+
 /// The transcript's text, as it is on screen.
 fn screen(app: &mut App) -> String {
     let dump = support::render(app, WIDTH, HEIGHT);
@@ -1465,6 +1486,17 @@ fn several_answers_are_ticked_and_sent_from_a_row_of_their_own() {
     assert!(
         rows(&dump).iter().any(|row| row.contains("at least 2")),
         "nothing says how many it takes:\n{dump}"
+    );
+    // And it is still the row the reader is standing on. Two things are
+    // being said and they are said in two ways: the background is where the
+    // keys are, and the ink is whether this can be used. A row that lost
+    // its background for being unusable would leave the reader unable to
+    // see where they are -- pressing enter, getting nothing, and with no
+    // way to tell that it was this row that refused.
+    assert_ne!(
+        behind(&dump, "at least 2"),
+        behind(&dump, "src/app"),
+        "the row the reader is on is not marked while it cannot be used"
     );
 
     // A second one ticked, and then the card goes.

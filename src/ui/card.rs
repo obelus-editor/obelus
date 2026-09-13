@@ -173,7 +173,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
         };
         let focused = card.on() == On::Choice(index);
         let background = match focused {
-            true => theme.picker_selected_background,
+            true => theme.selected_row_background,
             false => theme.background,
         };
         let style = plain.bg(background);
@@ -220,7 +220,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
     if let Some(row) = parts.tick {
         let focused = card.on() == On::Tick;
         let style = match focused {
-            true => plain.bg(theme.picker_selected_background),
+            true => plain.bg(theme.selected_row_background),
             false => plain,
         };
         fill(cells, row, style);
@@ -284,12 +284,21 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
     if let Some(row) = parts.submit {
         rule(cells, Rect { height: 1, ..row }, theme);
         let wanting = card.wanting();
-        let focused = card.on() == On::Submit;
-        let style = match (focused, wanting.is_some()) {
-            (_, true) => dim,
-            (true, false) => plain.bg(theme.picker_selected_background),
-            (false, false) => plain,
+        // Two things, said in two ways, the way every list in obelus says
+        // them: the background is where the keys are, and the ink is
+        // whether the row can be used. A row that lost its background for
+        // being unusable would leave the reader with no way to see where
+        // they are -- pressing enter, getting nothing, and nothing on
+        // screen saying which row refused.
+        let ground = match card.on() == On::Submit {
+            true => theme.selected_row_background,
+            false => theme.background,
         };
+        let ink = match wanting.is_some() {
+            true => theme.gutter,
+            false => theme.foreground,
+        };
+        let style = plain.fg(ink).bg(ground);
         let y = row.y + 1;
         if y < row.bottom() {
             fill(
@@ -303,7 +312,13 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
             );
             let ended = write(cells, area.x + MARGIN, y, SUBMIT, style);
             if let Some(wanting) = wanting {
-                write(cells, ended + 1, y, &format!("\u{b7} {wanting}"), dim);
+                write(
+                    cells,
+                    ended + 1,
+                    y,
+                    &format!("\u{b7} {wanting}"),
+                    style.fg(theme.gutter),
+                );
             }
         }
     }

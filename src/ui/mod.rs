@@ -602,7 +602,7 @@ where
         let style = match index == current {
             true => Style::new()
                 .fg(theme.foreground)
-                .bg(theme.picker_selected_background),
+                .bg(theme.selected_row_background),
             false => dim,
         };
         column = write_marked(

@@ -286,7 +286,7 @@ impl PickerView<'_> {
         matched: &[u32],
     ) {
         let background = if chosen {
-            self.theme.picker_selected_background
+            self.theme.selected_row_background
         } else {
             self.theme.background
         };

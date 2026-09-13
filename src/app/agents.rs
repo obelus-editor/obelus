@@ -243,7 +243,7 @@ impl App {
         let palette = Palette {
             ink: self.theme().gutter_current,
             paper: self.theme().background,
-            selected: self.theme().picker_selected_background,
+            selected: self.theme().selected_row_background,
         };
         let listed = self.listed_agents();
         let wanted: Vec<(String, bool)> = {

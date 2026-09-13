@@ -278,6 +278,20 @@ the key that closes a file, because the thing to close is the row. So a new
 dialog gets a context, and a key it should keep gets a binding in it -- not a
 fall-through.
 
+**One mark for "the keys are here", and it says nothing else.** Every list,
+page and card in obelus puts `selected_row_background` behind the row the
+reader is on -- a picker's rows, the settings', an agent's question, the
+transcript -- and the same colour behind the one item of a row of them, for
+the things laid out across a row rather than down a column. Where there is a
+caret there is no background: a box is marked by the caret sitting in it,
+and two marks for one fact is one too many.
+
+Whether a row can be *used* is said in the ink, never by taking the
+background away. A card's `submit` row did the latter while it was short of
+what the agent asked for, so the reader stood on a row that had stopped
+saying it was under them: they pressed enter, got nothing, and had nothing
+on screen to tell them which row had refused.
+
 **The wheel moves the view; the keys move the cursor.** A notch scrolls what
 is on screen and leaves the cursor where it was -- `scroll_by` on a buffer
 moves the viewport and nothing else -- and the paging keys move the cursor by

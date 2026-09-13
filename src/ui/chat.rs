@@ -439,8 +439,8 @@ impl ChatView<'_> {
             };
             let (style, dim) = match here {
                 true => (
-                    style.bg(self.theme.picker_selected_background),
-                    dim.bg(self.theme.picker_selected_background),
+                    style.bg(self.theme.selected_row_background),
+                    dim.bg(self.theme.selected_row_background),
                 ),
                 false => (style, dim),
             };
@@ -722,7 +722,7 @@ impl ChatView<'_> {
             // thing on screen saying where the keys are going -- the caret
             // is put away for exactly as long.
             let ground = match Some(index) == chosen {
-                true => self.theme.picker_selected_background,
+                true => self.theme.selected_row_background,
                 false => self.theme.background,
             };
             let ink = match on {

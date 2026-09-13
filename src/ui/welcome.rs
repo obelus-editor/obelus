@@ -237,7 +237,7 @@ impl WelcomeView<'_> {
             // press rather than as more prose.
             let style = Style::new()
                 .fg(self.theme.foreground)
-                .bg(self.theme.picker_selected_background);
+                .bg(self.theme.raised_background);
             let capped = format!(" {} ", hint.key);
             write(cells, left + pad, y, &capped, style);
             let Ok(offset) = u16::try_from(keys + 4) else {
