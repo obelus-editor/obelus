@@ -37,6 +37,14 @@ nucleo-matcher = "0.3"
 # Walking the tree for the file picker, respecting .gitignore.
 ignore = "0.4"
 
+# Counting the lines of the tree. `default-features = false` drops tokei's
+# `cli` feature, which is its own binary's: clap, colored, env_logger and
+# num-format, none of which a library call needs. What is left still walks
+# the tree with the same `ignore` above, so counting obeys the same
+# .gitignore the file list does -- and it is the one dependency here that
+# brings a thread pool of its own.
+tokei = { version = "14", default-features = false }
+
 # File watching. Its callback runs on its own thread; the debounce thread
 # turns that into events on the one channel the main loop reads.
 notify = "8"

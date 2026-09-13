@@ -170,6 +170,12 @@ impl App {
             picker.move_selection_by(rows.signum());
             return;
         }
+        // The counts, which are a list as well: the notch steps the row
+        // rather than the view, for the same reason it does in a picker.
+        if let Some(counts) = self.counts.as_mut() {
+            counts.scroll(rows, crate::ui::counts::list_height(self.screen_area));
+            return;
+        }
         // The conversation's transcript, which is the only thing under a
         // list here that scrolls without a cursor in it.
         if self.showing_chat {

@@ -1,0 +1,58 @@
+screen 76x24  editor 76x22  status 76x1
+-- text --
+ 0|  languages  files                                                      ← → 
+ 1|────────────────────────────────────────────────────────────────────────────
+ 2|                                             files    code comments  blank  
+ 3| 󰉋 All                                           3   31564    4765    3215  
+ 4| ├  Rust             ██████████████████████    94   31501    3638    3203  
+ 5| │ ╰   Markdown                                 90       0    7036    1044  
+ 6| ├  Plain Text       █                         23       0    1051       0  
+ 7| ╰  TOML             █                          2      63      76      12  
+ 8|                                                                            
+ 9|                                                                            
+10|                                                                            
+11|                                                                            
+12|                                                                            
+13|                                                                            
+14|                                                                            
+15|                                                                            
+16|                                                                            
+17|                                                                            
+18|                                                                            
+19|                                                                            
+20|                                                                            
+21|                                                                            
+22|                                                                            
+23|                                                                            
+-- style --
+ 0|abbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|cccccccccccccccccccccccccccccccccccccccccccccdddddccccddddcddddddddccdddddcc
+ 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbc
+ 4|caccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccccc
+ 5|cacacccddddddddcccccccccccccccccccccccccccccccccddcccccccdccccddddccccddddcc
+ 6|caccccccccccccccccccccaccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 7|caccccccccccccccccccccaccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+13|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+14|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+19|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+22|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+23|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+-- legend --
+a fg=#52525b bg=#18181b
+b fg=#e4e4e7 bg=#27272a
+c fg=#e4e4e7 bg=#18181b
+d fg=#71717a bg=#18181b
+-- cursor --
+none

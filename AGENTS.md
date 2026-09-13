@@ -487,6 +487,8 @@ src/
   component/      picker (one component, several instantiations), settings,
                   the conversation, the box a message is written in, and the
                   window every list shares
+  counts.rs       how much code is here: tokei's walk, in the two orderings
+                  the view reads it in
   syntax/         language registry (14 languages), parsing, highlights, tags
   lsp/            transport, client, actions, positions, outline
   git/            gix: head text, statuses, hunks, blame

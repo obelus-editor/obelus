@@ -7,6 +7,7 @@
 
 pub mod card;
 pub mod chat;
+pub mod counts;
 pub mod editor;
 pub mod image;
 pub mod picker;
@@ -145,6 +146,14 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
         });
     }
 
+    // Nothing is typed into the counts, so there is no caret in them: what
+    // marks where the keys are going is the row's background, and a caret as
+    // well would be two marks for one fact. Without this the file behind
+    // them kept its own, blinking in a view it is not part of.
+    if app.counts().is_some() {
+        return None;
+    }
+
     let buffer = app.current_buffer()?;
     // No cursor over a rendering. The rows are not the file's lines, so
     // there is nowhere in them the cursor honestly is.
@@ -237,6 +246,20 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
                 );
             }
         }
+        return;
+    }
+    // The counts take the whole region: a table of numbers with the file
+    // behind it would be a screen with two things on it and no way to tell
+    // which one a key would reach.
+    // The counts take the screen whole -- the status row included, and the
+    // rule that would be above one. A status row says what is being read and
+    // where the cursor is in it; while this is showing there is no file being
+    // read and no cursor anywhere, so obelus's own row could only name the
+    // file behind the view, at a line and column belonging to a cursor that
+    // is nowhere on screen. The two rows that would have said
+    // it go to the list instead.
+    if let Some(view) = counts::CountsView::new(app) {
+        view.render(area, cells);
         return;
     }
     // The settings take the whole region: they are their own screen, with

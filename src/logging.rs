@@ -54,8 +54,14 @@ pub fn install() -> Option<(WorkerGuard, WorkerGuard)> {
     // `ob` as well as `obelus`: the binary is its own crate, so the lines
     // main writes -- what started, and that it left -- carry that target
     // and were filtered out of their own log.
+    //
+    // `tokei=off` because counting a tree warns once per file whose
+    // extension it does not know -- `Cargo.lock` alone does it on this
+    // repository -- and that is a fact about the tree rather than anything
+    // obelus has to say about itself. A line per unrecognised file would
+    // bury the dozen obelus writes, which is the thing this log is for.
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("warn,obelus=info,ob=info"));
+        .unwrap_or_else(|_| EnvFilter::new("warn,obelus=info,ob=info,tokei=off"));
 
     // Two layers over one registry, each taking the events the other does
     // not: the split is by target, so an event goes to exactly one file and

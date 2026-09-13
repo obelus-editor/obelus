@@ -15,6 +15,7 @@
 //! itself, the keys, the frame, and the loop.
 pub mod agents;
 mod choosing;
+mod counting;
 mod documents;
 mod history;
 mod keys;
@@ -49,6 +50,7 @@ use crate::{
     command::{Command, Requires, dispatch},
     component::{
         chat::{ChatOutcome, Room as ChatRoom},
+        counts::Counts,
         picker::{
             Colouring, Listing, Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files,
         },
@@ -258,6 +260,15 @@ pub struct App {
     config_path: Option<PathBuf>,
     /// The settings view, while it is open.
     settings: Option<Settings>,
+    /// The line counts, while they are showing.
+    counts: Option<Counts>,
+    /// The whole screen, as of the last frame.
+    ///
+    /// Kept beside `editor_area` because one view is not in it: the counts
+    /// take the screen whole -- no status row and no rule above one -- and
+    /// the keys that move about their list have to be told the height that
+    /// is actually drawn.
+    screen_area: Rect,
     /// What a test said git would say, instead of asking it.
     given_statuses: Option<HashMap<PathBuf, git::FileStatus>>,
     /// Which listings the open file list is showing, in tab order.
@@ -372,6 +383,8 @@ impl App {
             config: crate::config::Config::default(),
             config_path: None,
             settings: None,
+            counts: None,
+            screen_area: Rect::ZERO,
             given_statuses: None,
             listing: Vec::new(),
             searching: Vec::new(),
@@ -608,7 +621,10 @@ impl App {
     /// behind it, and it says its own answer to escape.
     #[must_use]
     pub const fn is_showing_dialog(&self) -> bool {
-        self.picker.is_some() || self.settings.is_some() || self.showing_chat
+        self.picker.is_some()
+            || self.settings.is_some()
+            || self.counts.is_some()
+            || self.showing_chat
     }
 
     /// How far along the welcome screen's colours have travelled, in ticks.
@@ -795,6 +811,7 @@ impl App {
     /// tests. Laying out here means it happens inside `Terminal::draw`, which
     /// is allowed: it is arithmetic over sizes, not work.
     pub fn draw_into(&mut self, cells: &mut CellBuffer, area: Rect) -> Option<Position> {
+        self.screen_area = area;
         self.prepare(ui::regions(area).editor);
         ui::draw(cells, area, self);
         ui::cursor_position(area, self)
@@ -832,6 +849,7 @@ impl App {
                     self.on_reply(language, reply);
                 }
             }
+            Event::Counted(counted) => self.on_counted(*counted),
             Event::Scroll(rows) => self.scroll(rows),
             Event::Tick => self.phase = self.phase.wrapping_add(1),
             Event::Matches {
@@ -1017,6 +1035,14 @@ impl App {
                 }
                 SettingsOutcome::Ignored => {}
             }
+        }
+
+        // The counts take what the settings did not. They are a dialog with
+        // nothing to type into, so what they take is the keys that walk a
+        // list and the two that leave it -- and everything else falls
+        // through to the table, where nothing is bound in a dialog.
+        if self.counts.is_some() && self.counts_key(&key) {
+            return;
         }
 
         // The conversation takes what the settings did not: it is the whole

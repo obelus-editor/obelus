@@ -1,0 +1,59 @@
+screen 76x24  editor 76x22  status 76x1
+-- text --
+ 0|  languages  files                                                      ← → 
+ 1|────────────────────────────────────────────────────────────────────────────
+ 2|                                                      code comments  blank  
+ 3|  src/app/mod.rs           ██████████████████████     742     192      60  
+ 4|  src/log.rs               ██████████████████         749      23      23  
+ 5|  Cargo.toml               ████                        63      76      12  
+ 6|                                                                            
+ 7|                                                                            
+ 8|                                                                            
+ 9|                                                                            
+10|                                                                            
+11|                                                                            
+12|                                                                            
+13|                                                                            
+14|                                                                            
+15|                                                                            
+16|                                                                            
+17|                                                                            
+18|                                                                            
+19|                                                                            
+20|                                                                            
+21|                                                                            
+22|                                                                            
+23|                                                                            
+-- style --
+ 0|aaaaaaaaaaaabbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|ccccccccccccccccccccccccccccccccccccccccccccccccccccccddddcddddddddccdddddcc
+ 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbc
+ 4|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccc
+ 5|ccccccccccccccccccccccccccccaaaacccccccccccccccccccccccccccccccccccccccccccc
+ 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+13|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+14|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+19|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+22|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+23|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+-- legend --
+a fg=#52525b bg=#18181b
+b fg=#e4e4e7 bg=#27272a
+c fg=#e4e4e7 bg=#18181b
+d fg=#71717a bg=#18181b
+e fg=#52525b bg=#27272a
+-- cursor --
+none

@@ -72,6 +72,8 @@ pub enum Command {
     GoForward,
     /// Talk to the active agent.
     AgentOpen,
+    /// Count the lines of the tree, by language and by file.
+    CountLines,
     /// Read the settings file itself.
     ConfigFile,
     /// Open the settings.
@@ -341,6 +343,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Talk to the active agent",
     },
     CommandSpec {
+        command: Command::CountLines,
+        name: "count-lines",
+        title: "How much code is here, by language and by file",
+    },
+    CommandSpec {
         command: Command::ConfigOpen,
         name: "open-settings",
         title: "Change obelus's settings",
@@ -391,7 +398,11 @@ impl Command {
             | Self::FileReload
             | Self::BufferList
             | Self::BufferClose
-            | Self::PreviewToggle => Group::Files,
+            | Self::PreviewToggle
+            // A question about the tree of files, asked before any of them
+            // is open: which makes it one of the files rather than one of
+            // obelus's own housekeeping.
+            | Self::CountLines => Group::Files,
             Self::SymbolMenu
             | Self::SymbolOutline
             | Self::SymbolDefinition
@@ -487,6 +498,10 @@ impl Command {
             | Self::ConfigFile
             | Self::LogOpen
             | Self::LspRestart
+            // The tree is always there to be counted, and a tree with
+            // nothing in it is an answer as well: what it says is that
+            // there is nothing here.
+            | Self::CountLines
             | Self::Quit => Requires::Nothing,
             // A file of its own that only exists once a server has said
             // something, which on a file in a language obelus has no

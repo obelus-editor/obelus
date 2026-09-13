@@ -130,6 +130,12 @@ pub mod ui {
     pub const STALE: char = '\u{f0a4b}';
     /// A set of colours.
     pub const THEME: char = '\u{f03d8}';
+    /// The tree obelus is reading, taken as a whole.
+    ///
+    /// A folder, which is what a tree of files is drawn as everywhere. It
+    /// sits in the glyph column of the row the languages hang from, so the
+    /// line down to them has something above it.
+    pub const TREE: char = '\u{f024b}';
     /// The reader, in a conversation with an agent.
     pub const READER: char = '\u{f0013}';
     /// The agent answering.
@@ -259,6 +265,9 @@ pub fn for_command(command: crate::command::Command) -> char {
         Command::GoBack => '\u{f17b3}',
         Command::GoForward => '\u{f17b7}',
         Command::AgentOpen => ui::AGENT,
+        // A bar chart, which is what the view itself draws: a column per
+        // language against the biggest one.
+        Command::CountLines => '\u{f0128}',
         // Sliders, because a cog is what everything else in this list would
         // fall back to and two rows with the same picture say less than one.
         Command::ConfigOpen => '\u{f062e}',
@@ -319,6 +328,19 @@ pub fn for_kind(kind: crate::theme::SyntaxKind) -> char {
 
 /// What a file with nothing more specific gets.
 const FILE: char = '\u{f15b}';
+
+/// The glyph for a language, looked up by one of its file extensions.
+///
+/// An extension rather than a name, so there is one table rather than two:
+/// what a Rust file looks like is already written down once, and a second
+/// list mapping "Rust" to the same glyph is a list that can disagree with
+/// it. Whoever knows the language hands over an extension it is written in
+/// -- which for the line counts is tokei, the crate that already holds that
+/// mapping for two hundred languages.
+#[must_use]
+pub fn for_extension(extension: &str) -> char {
+    by_extension(extension).unwrap_or(FILE)
+}
 
 /// The glyph for a path.
 #[must_use]

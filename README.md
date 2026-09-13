@@ -25,6 +25,12 @@ ob                  # or nothing, and pick one from the welcome screen
   command by name. Files carry a Nerd Font glyph — which needs a patched
   terminal font, and is the first thing here that will want a config file.
 - Two built-in themes, `dark` and `light`, switched without a reparse
+- **How much code is here.** `count-lines` counts the tree with tokei and
+  puts it in two pages: the languages, biggest first, with a bar against the
+  biggest of them and the prose that is written *inside* each one on a row of
+  its own — 90 of this repository's Rust files carry 7,000 lines of Markdown
+  — and the files, where `enter` opens the one under the cursor. The first
+  row is the whole tree, and choosing a language leaves only its files.
 
 Long lines wrap on word boundaries, using the Unicode line breaking algorithm
 — so Chinese, which has no spaces, breaks between characters, and an English

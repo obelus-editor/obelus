@@ -139,6 +139,12 @@ pub enum Event {
     /// a redraw a reader did not ask for is a redraw that can only get in the
     /// way.
     Tick,
+    /// A tree, counted.
+    ///
+    /// Boxed because it is much the largest thing an event carries -- two
+    /// lists as long as the project is -- and every other variant would be
+    /// sized to it.
+    Counted(Box<crate::counts::Counted>),
     /// A file on disk changed.
     ///
     /// Reported for everything in a watched directory, since the watch is on
