@@ -91,6 +91,15 @@ prefix off a string and guessing. The names are also what the config file's
 `[keys]` table is written in, so renaming one leaves an old file's line
 unbound with a word in the log.
 
+**A file that is open is previewed where it is being read.** Whichever list
+names it -- the open files, or the whole tree -- because it is one question
+with one answer: a file's own place in it is the thing a reader remembers it
+by, and choosing the row takes them back to exactly that, so the list reads
+as something folded over the file rather than as a way somewhere new. A file
+nothing has opened has no such place and starts at the top. `App::read_at`
+is the one answer; a list that had its own would be a list where choosing a
+row moved the screen under the reader.
+
 **The paging keys belong to whatever is being read, not to the list.** A
 list with a preview under it is two things on screen, and only one of them
 is read a screenful at a time: the list is ten rows walked one at a time

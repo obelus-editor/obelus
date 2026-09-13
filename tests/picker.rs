@@ -3192,3 +3192,53 @@ fn the_buffer_list_opens_on_the_current_file() {
         "the list did not open on the file being read: {rows:?}"
     );
 }
+
+/// The file list previews an open file where it is being read, too.
+///
+/// The same answer the list of open files gives, because it is the same
+/// question: a file's place in it is the thing a reader remembers it by, and
+/// a list that showed the top of a file they are twenty screens into would
+/// be showing them somewhere they have not been for an hour. A file nothing
+/// has opened has no such place, so it starts at the top.
+#[test]
+fn the_file_list_previews_an_open_file_where_it_is_being_read() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 60, 30);
+    for _ in 0..24 {
+        press(&mut app, KeyCode::Down);
+    }
+
+    // The file list, with the open file among the rows the walk found.
+    press_function(&mut app, 1);
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: vec![
+            "tests/fixtures/many_lines.rs".into(),
+            "tests/fixtures/sample.rs".into(),
+        ],
+    });
+    support::type_text(&mut app, "many");
+    let dump = support::render(&mut app, 60, 30);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("LINE_24"),
+        "the preview is not where the file is being read:\n{dump}"
+    );
+    assert!(
+        !text.contains("LINE_01"),
+        "the preview went back to the top of the file:\n{dump}"
+    );
+
+    // And a file nobody has open starts at the top, because there is
+    // nowhere else it has been.
+    for _ in 0..4 {
+        press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "sample");
+    let dump = support::render(&mut app, 60, 30);
+    assert!(
+        support::text_block(&dump).contains("greeting"),
+        "a file nobody has open is not previewed from its top:\n{dump}"
+    );
+}

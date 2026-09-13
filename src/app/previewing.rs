@@ -250,9 +250,14 @@ impl App {
             columns: picker.indices_at(picker.selected()).to_vec(),
         };
         match &item.value {
-            // A file has no symbol in it to mark, so the preview starts at
-            // the top with nothing highlighted.
-            PickerValue::File(path) => Some((self.working_directory.join(path), Marked::top())),
+            // A file has no symbol in it to mark, so nothing is
+            // highlighted -- and where it is shown is where it is being
+            // read, when it is open at all.
+            PickerValue::File(path) => {
+                let path = self.working_directory.join(path);
+                let at = self.read_at(&path);
+                Some((path, at))
+            }
             // A file already open is being read somewhere, and that is the
             // part of it to show: choosing the row takes the reader back to
             // exactly this, so the list reads as something folded over the
@@ -288,6 +293,22 @@ impl App {
 }
 
 impl App {
+    /// Where a file should be shown: where it is being read if it is open,
+    /// and at the top if it is not.
+    ///
+    /// The same answer the list of open files gives, because it is the same
+    /// question -- a file's place in it is the thing a reader remembers it
+    /// by, and choosing the row takes them back to exactly that. A list
+    /// that previewed the top of a file the reader is twenty screens into
+    /// would show them somewhere they have not been for an hour.
+    fn read_at(&self, path: &Path) -> Marked {
+        self.buffers
+            .iter()
+            .flatten()
+            .find(|buffer| buffer.path() == path)
+            .map_or_else(Marked::top, |buffer| Marked::on(&buffer.cursor()))
+    }
+
     /// The file being read and the line it is being read at, as a preview's
     /// subject.
     fn reading_now(&self) -> Option<(PathBuf, Marked)> {
