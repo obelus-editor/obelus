@@ -482,6 +482,18 @@ impl App {
         self.events = Some(sender);
     }
 
+    /// Puts the application on a tree of the test's choosing.
+    ///
+    /// The working directory is read from the process once, at startup, and
+    /// a test inherits whatever directory the test runner was started in --
+    /// which is the checkout's own path, and differs between a clone, a
+    /// worktree and somebody else's machine. Anything that *shows* that path
+    /// is then a golden grid that passes where it was written and nowhere
+    /// else, so a test that renders one says which tree it is on.
+    pub fn working_directory_for_test(&mut self, root: PathBuf) {
+        self.working_directory = root;
+    }
+
     /// Starts watching every open file for changes on disk.
     fn start_watching(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         let mut watcher = match Watcher::new(sender) {

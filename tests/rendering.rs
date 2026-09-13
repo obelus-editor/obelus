@@ -115,6 +115,11 @@ fn a_narrow_screen_truncates_the_path_from_the_left() {
 #[test]
 fn starting_with_nothing_open_shows_a_welcome_screen() {
     let mut app = App::new(Vec::new());
+    // The screen says which tree obelus is on, so the test says which tree
+    // that is: left to the process's own directory this grid holds the path
+    // of whoever's checkout ran it -- and a path outside `$HOME` so the `~`
+    // it would otherwise be written with is not this machine's either.
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     support::check("welcome_64x20", &support::render(&mut app, 64, 20));
 }
 
@@ -122,6 +127,7 @@ fn starting_with_nothing_open_shows_a_welcome_screen() {
 #[test]
 fn a_narrow_screen_gets_the_keys_without_the_wordmark() {
     let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     let dump = support::render(&mut app, 34, 10);
 
     let open = obelus::keymap::function(1).label();

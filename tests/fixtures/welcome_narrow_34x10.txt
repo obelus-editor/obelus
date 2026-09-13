@@ -6,7 +6,7 @@ screen 34x10  editor 34x8  status 34x1
  3|   󰘴 p   run a command by name    
  4|   󰘴 q   leave obelus             
  5|                                  
- 6|   ~/Work/obelus                  
+ 6|   /tmp/obelus                    
  7|                                  
  8|──────────────────────────────────
  9|                                  
@@ -17,7 +17,7 @@ screen 34x10  editor 34x8  status 34x1
  3|aaaaaaaaabbbbbbbbbbbbbbbbbbbbbaaaa
  4|aaaaaaaaabbbbbbbbbbbbaaaaaaaaaaaaa
  5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 6|aaabbbbbbbbbbbbbaaaaaaaaaaaaaaaaaa
+ 6|aaabbbbbbbbbbbaaaaaaaaaaaaaaaaaaaa
  7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
  9|cccccccccccccccccccccccccccccccccc

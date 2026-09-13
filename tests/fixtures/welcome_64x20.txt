@@ -16,7 +16,7 @@ screen 64x20  editor 64x18  status 64x1
 13|          󰘴 p   run a command by name                           
 14|          󰘴 q   leave obelus                                    
 15|                                                                
-16|         ~/Work/obelus                           v0.1.0         
+16|         /tmp/obelus                             v0.1.0         
 17|                                                                
 18|────────────────────────────────────────────────────────────────
 19|                                                                
@@ -37,7 +37,7 @@ screen 64x20  editor 64x18  status 64x1
 13|aaaaaaaaakkkkkaajjjjjjjjjjjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaa
 14|aaaaaaaaakkkkkaajjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-16|aaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaajjjjjjaaaaaaaaa
+16|aaaaaaaaajjjjjjjjjjjaaaaaaaaaaaaaaaaaaaaaaaaaaaaajjjjjjaaaaaaaaa
 17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 18|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 19|llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll
