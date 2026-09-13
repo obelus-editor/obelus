@@ -769,7 +769,13 @@ impl App {
             acp::Incoming::Update(update) => match update {
                 acp::Update::Said(text) => self.chat.chunk(Speaker::Agent, &text),
                 acp::Update::Thought(text) => self.chat.chunk(Speaker::Thought, &text),
-                acp::Update::Tool { id, title, status } => self.chat.tool(&id, &title, &status),
+                acp::Update::Tool {
+                    id,
+                    title,
+                    status,
+                    kind,
+                    places,
+                } => self.chat.tool(&id, &title, &status, &kind, places),
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
                 // said, and a transcript with them in it is a log.

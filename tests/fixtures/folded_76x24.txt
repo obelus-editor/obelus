@@ -2,19 +2,19 @@ screen 76x24  editor 76x22  status 76x1
 -- text --
  0| 󰚩  Fake Agent 0.1                                                          
  1|────────────────────────────────────────────────────────────────────────────
- 2| 󰀓  what is this file                                                       
+ 2| 󰀓  /many                                                                   
  3|                                                                            
- 4| 󰟷  working it out                                                          
- 5|                                                                            
- 6| 󰚩  it is a rust file                                                       
- 7|                                                                            
- 8| 󰈙  Read the file  tests/fixtures/many_lines.rs:7 󰄬                         
+ 4| 󰈙  4 files  ▾ 󰄬                                                            
+ 5|   󰈙  Read src/app  tests/fixtures/many_lines.rs:4 󰄬                        
+ 6|   󰈙  Read src/acp  tests/fixtures/many_lines.rs:4 󰄬                        
+ 7|   󰈙  Read src/buffer  tests/fixtures/many_lines.rs:4 󰄬                     
+ 8|   󰈙  Read src/ui  tests/fixtures/many_lines.rs:4 󰄬                         
  9|                                                                            
-10| 󰚩   saying this is what obelus handed over and it refused to write         
+10| 󰆍  Run the tests 󰅙                                                         
 11|                                                                            
-12| 󰋽  asking to run the tests                                                 
+12| 󰚩  that is where it is                                                     
 13|                                                                            
-14| 󰚩   and I was allowed                                                      
+14|                                                                            
 15|                                                                            
 16|                                                                            
 17|                                                                            
@@ -27,17 +27,17 @@ screen 76x24  editor 76x22  status 76x1
 -- style --
  0|abaaccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 2|acaacccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|acaacccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|abaabbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 8|abaabbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+ 5|aaabaabbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaabaabbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|aaabaabbbbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaa
+ 8|aaabaabbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaaa
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+10|abaabbbbbbbbbbbbbaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-12|abaabbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -53,5 +53,7 @@ screen 76x24  editor 76x22  status 76x1
 a fg=#e4e4e7 bg=#18181b
 b fg=#52525b bg=#18181b
 c fg=#a1a1aa bg=#18181b
+d fg=#52525b bg=#27272a
+e fg=#f472b6 bg=#18181b
 -- cursor --
-4,21
+none

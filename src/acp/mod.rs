@@ -31,8 +31,8 @@ use std::path::Path;
 
 use futures::channel::mpsc;
 pub use link::{
-    Answer, Ask, Category, Choice, Chosen, Field, Incoming, Kind, Order, Reply, Setting, Takes,
-    Update, Value,
+    Answer, Ask, Category, Choice, Chosen, Field, Incoming, Kind, Order, Place, Reply, Setting,
+    Takes, Update, Value,
 };
 
 /// One running agent: how to ask it things, and what it has said about

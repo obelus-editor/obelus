@@ -16,6 +16,8 @@
 //! rows arrive at the end and the view follows them unless the reader has
 //! scrolled up to read something.
 
+use std::path::Path;
+
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
 use crate::{
@@ -23,7 +25,7 @@ use crate::{
     app::{App, talking::Talking},
     component::{
         card::Card,
-        chat::{Chat, Focus, Speaker},
+        chat::{Chat, DEEPER, Focus, Row, Speaker},
     },
     icons,
     theme::Theme,
@@ -55,6 +57,7 @@ fn mark(speaker: Speaker) -> &'static str {
         Speaker::Thought => "~",
         Speaker::Tool => "+",
         Speaker::Note => "!",
+        Speaker::Doing => "\u{2026}",
     }
 }
 
@@ -98,6 +101,16 @@ pub struct Regions {
 /// box needs be worked out before the bands are laid out.
 #[must_use]
 pub fn writing_width(area: Rect) -> u16 {
+    area.width.saturating_sub(MARGIN + INDENT + 1).max(1)
+}
+
+/// The cells a row of the transcript has to write in.
+///
+/// Which is what its rows are wrapped to, and so what decides which row is
+/// which -- the keys need it as much as the drawing does, because a cursor
+/// in the transcript stands on a row.
+#[must_use]
+pub fn reading_width(area: Rect) -> u16 {
     area.width.saturating_sub(MARGIN + INDENT + 1).max(1)
 }
 
@@ -190,6 +203,24 @@ pub fn regions_capped(area: Rect, needed: usize, most: u16) -> Regions {
     }
 }
 
+/// What a tool call says about where it was working.
+///
+/// The path as a reader writes it -- relative to the tree obelus was opened
+/// on -- and the line when the agent named one. And how many other files it
+/// named, because a call that touched six of them says so on its one row
+/// until the reader opens it.
+fn said_place(place: &acp::Place, root: &Path, more: usize) -> String {
+    let path = super::relative_to(&place.path, root).display().to_string();
+    let said = match place.line {
+        Some(line) => format!("{path}:{line}"),
+        None => path,
+    };
+    match more {
+        0 => said,
+        more => format!("{said}  +{more}"),
+    }
+}
+
 /// What goes between two things the status row says.
 const SEPARATOR: &str = " \u{b7} ";
 
@@ -199,6 +230,17 @@ const SEPARATOR_WIDTH: usize = 3;
 /// What says the thing under the focus has a list behind it -- the same
 /// mark a settings row and an agent's card use for the same promise.
 const OPENS: &str = " \u{25b8}";
+
+/// The same, turned down, for something already open.
+const OPENED: &str = " \u{25be}";
+
+/// Which mark a row that folds something carries.
+const fn opens(open: bool) -> &'static str {
+    match open {
+        true => OPENED,
+        false => OPENS,
+    }
+}
 
 /// What says the row holds more than it had room to draw.
 const MORE: &str = "\u{2026}";
@@ -234,6 +276,9 @@ pub struct ChatView<'a> {
     focus: Focus,
     /// The card an agent's question is on, while it is waiting on one.
     card: Option<&'a Card>,
+    /// The tree obelus was opened on, for writing the paths an agent names
+    /// the way a reader writes them.
+    root: &'a Path,
 }
 
 impl<'a> ChatView<'a> {
@@ -249,6 +294,7 @@ impl<'a> ChatView<'a> {
             settings: app.agent_settings(),
             focus: app.chat()?.focus(),
             card: app.card(),
+            root: app.working_directory(),
         })
     }
 
@@ -333,9 +379,7 @@ impl ChatView<'_> {
     /// What has been said, and the commands being completed over it.
     fn transcript(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
         let words = area.x + MARGIN + INDENT;
-        let rows = self
-            .chat
-            .rows(area.width.saturating_sub(MARGIN + INDENT + 1));
+        let rows = self.chat.rows(reading_width(area));
         if rows.is_empty() {
             write(cells, words, area.y, self.nothing_said(), dim);
         }
@@ -348,20 +392,78 @@ impl ChatView<'_> {
                 break;
             }
             let y = area.y + offset;
-            let (glyph, style) = self.voice(row.speaker, plain, dim);
+            // The members of an opened run are drawn in from their heading,
+            // so that a run reads as one thing rather than as a stretch of
+            // rows that happen to look alike.
+            let words = words + u16::from(row.depth) * DEEPER;
+            // The row the reader is standing on, marked the way every list
+            // in obelus marks one. Only rows that do something are ever
+            // stood on, so the mark is the promise: what is lit is what
+            // enter opens.
+            let here = self.focus == Focus::Transcript(first + usize::from(offset));
+            let (glyph, style) = self.voice(row, plain, dim);
+            let (style, dim) = match here {
+                true => (
+                    style.bg(self.theme.picker_selected_background),
+                    dim.bg(self.theme.picker_selected_background),
+                ),
+                false => (style, dim),
+            };
+            if here {
+                fill(
+                    cells,
+                    Rect {
+                        y,
+                        height: 1,
+                        ..area
+                    },
+                    style,
+                );
+            }
             if row.first {
+                let at = area.x + MARGIN + u16::from(row.depth) * DEEPER;
                 if icons::enabled() {
-                    put(cells, area.x + MARGIN, y, glyph, style);
+                    put(cells, at, y, glyph, style);
                 } else {
-                    write(cells, area.x + MARGIN, y, mark(row.speaker), style);
+                    write(cells, at, y, mark(row.speaker), style);
                 }
             }
-            let ended = write(cells, words, y, &row.text, style);
+            let mut ended = write(cells, words, y, &row.text, style);
+            // Where it said it was working, after the title. The path is
+            // its own affordance: obelus opens files, so a row that names
+            // one is a row that goes there.
+            if let Some((place, more)) = &row.place {
+                ended = write(
+                    cells,
+                    ended + 2,
+                    y,
+                    &said_place(place, self.root, *more),
+                    dim,
+                );
+            }
+            // What says there is more behind this row than it is showing:
+            // the same mark a settings row and a card use for the same
+            // promise, turned down when what it holds is open.
+            if row.folds.is_some() {
+                ended = write(cells, ended + 1, y, opens(row.open), dim);
+            }
             // A tool call's state goes after its title rather than in front
             // of it: the title is what a reader is scanning, and the state
             // changes under them twice.
             if let Some(state) = &row.state {
                 self.state_of(cells, ended + 1, y, state, dim);
+            }
+            // How to stop it, on the row that says it is going: the one
+            // thing escape does here that a reader could not guess, and it
+            // belongs beside the thing it would stop.
+            if row.speaker == Speaker::Doing && self.state == Talking::Thinking {
+                let hint = "esc stops it";
+                if let Ok(offset) =
+                    u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
+                    && area.x + offset > ended + 1
+                {
+                    write(cells, area.x + offset, y, hint, dim);
+                }
             }
         }
     }
@@ -478,7 +580,7 @@ impl ChatView<'_> {
         // it, so it is wider than the others by exactly that.
         let chosen = match self.focus {
             Focus::Settings(at) => Some(at.min(self.settings.len() - 1)),
-            Focus::Writing => None,
+            Focus::Transcript(_) | Focus::Writing => None,
         };
         let words: Vec<(String, bool)> = self
             .settings
@@ -556,6 +658,14 @@ impl ChatView<'_> {
     }
 
     /// Who is being talked to, and what they are doing.
+    /// Who is being talked to, and nothing else.
+    ///
+    /// A header says what the thing it names *is*, which for an agent is
+    /// its name. What is *happening* goes at the foot of the transcript,
+    /// where the next thing will appear; what went wrong is a line in the
+    /// transcript where it went wrong. Five states used to sit here, two of
+    /// them saying what the screen already said better and one of them
+    /// saying "not started yet" about an agent that had failed to start.
     fn header(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
         let mut column = area.x + MARGIN;
         if icons::enabled() {
@@ -563,46 +673,18 @@ impl ChatView<'_> {
             column += INDENT;
         }
         let name = self.name.unwrap_or("no agent");
-        column = write(
+        write(
             cells,
             column,
             area.y,
             name,
             plain.fg(self.theme.gutter_current),
         );
-
-        let doing = match self.state {
-            Talking::Nobody => "nobody is chosen",
-            Talking::Idle => "not started yet",
-            Talking::Starting => "starting\u{2026}",
-            Talking::Ready => "",
-            Talking::Thinking => "thinking\u{2026}",
-            Talking::Gone => "it has stopped",
-        };
-        if !doing.is_empty() {
-            write(cells, column + 2, area.y, doing, dim);
-        }
-
-        // Only while it is working, and only because that is the one thing
-        // escape does here that a reader could not guess: it stops the
-        // agent rather than closing the view. "esc closes" was a label on
-        // the convention every full-screen thing in obelus follows, which
-        // is a row of text spent saying nothing.
-        if self.state != Talking::Thinking {
-            return;
-        }
-        let hint = "esc stops it";
-        if let Ok(offset) =
-            u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
-            && offset > column + 2
-        {
-            write(cells, area.x + offset, area.y, hint, dim);
-        }
     }
 
     /// The glyph and colour one speaker's rows are drawn in.
-    fn voice(&self, speaker: Speaker, plain: Style, dim: Style) -> (char, Style) {
-        match speaker {
+    fn voice(&self, row: &Row, plain: Style, dim: Style) -> (char, Style) {
+        match row.speaker {
             // The reader's own words in the brighter colour: a transcript is
             // read looking for where you asked something.
             Speaker::Reader => (icons::ui::READER, plain.fg(self.theme.gutter_current)),
@@ -610,8 +692,15 @@ impl ChatView<'_> {
             // Thinking is not the answer, and a transcript that draws them
             // alike is a transcript a reader has to sort out themselves.
             Speaker::Thought => (icons::ui::THOUGHT, dim),
-            Speaker::Tool => (icons::ui::TOOL, dim),
+            // What sort of tool, where the agent said: reading a file and
+            // rewriting one are not the same news, and the glyph is where a
+            // reader scanning a turn takes that in.
+            Speaker::Tool => (icons::for_tool(&row.kind), dim),
             Speaker::Note => (icons::ui::NOTE, dim),
+            // The glyph a tool call carries while it is running, for the
+            // same reason: this is the row that says something is under
+            // way.
+            Speaker::Doing => (icons::ui::RUNNING, dim.fg(self.theme.gutter_current)),
         }
     }
 
@@ -649,7 +738,33 @@ impl ChatView<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Speaker, mark};
+    use std::path::{Path, PathBuf};
+
+    use super::{Speaker, mark, said_place};
+
+    /// Where a tool call was, written the way a reader writes a path.
+    ///
+    /// Relative to the tree obelus was opened on, because that is the part
+    /// already known -- and left alone when it is somewhere else, because a
+    /// path outside the tree is news. The others it named are counted
+    /// rather than listed: the row is one row until the reader opens it.
+    #[test]
+    fn a_tool_call_says_where_it_was_the_way_a_reader_writes_it() {
+        let root = Path::new("/tree");
+        let inside = crate::acp::Place {
+            path: PathBuf::from("/tree/src/app.rs"),
+            line: Some(20),
+        };
+        assert_eq!(said_place(&inside, root, 0), "src/app.rs:20");
+        assert_eq!(said_place(&inside, root, 2), "src/app.rs:20  +2");
+
+        // No line, and nowhere near the tree.
+        let elsewhere = crate::acp::Place {
+            path: PathBuf::from("/etc/hosts"),
+            line: None,
+        };
+        assert_eq!(said_place(&elsewhere, root, 0), "/etc/hosts");
+    }
 
     /// Without glyphs the mark is all there is to tell one voice from
     /// another, so no two of them can be the same.

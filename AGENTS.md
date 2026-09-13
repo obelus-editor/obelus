@@ -278,6 +278,15 @@ the key that closes a file, because the thing to close is the row. So a new
 dialog gets a context, and a key it should keep gets a binding in it -- not a
 fall-through.
 
+**The wheel moves the view; the keys move the cursor.** A notch scrolls what
+is on screen and leaves the cursor where it was -- `scroll_by` on a buffer
+moves the viewport and nothing else -- and the paging keys move the cursor by
+a screenful, with the view following it. Two gestures, two jobs: a reader
+spinning a wheel is looking around, and one pressing a key is going
+somewhere. A list is the exception that proves it: there a notch steps the
+selection, because a list's view *is* its selection and there is nothing
+else in it to scroll.
+
 **Modifiers are judged exactly, in one place.** `keymap::modifiers_of` is the
 only judge; `SUPER`/`HYPER`/`META` disqualify a key rather than being masked
 away. Masking meant `ctrl+super+q` quit.
@@ -470,6 +479,76 @@ followed by every field of `data` pretty-printed, which for an agent that
 exited is four rows of JSON carrying one sentence and the source path of a
 crate in the cargo registry. The sentence goes in the transcript and the
 whole of it in the log.
+
+**A tool call is somewhere to go, not something to read about.** The
+protocol says what sort of thing the agent is doing (`kind`) and which files
+it was in (`locations`), and obelus kept neither: a row with a title and a
+tick on it. The kind picks the glyph, because a reader scanning a turn is
+looking for whether it *changed* anything and that is a picture rather than
+a sentence; the locations go on the row as a path, written relative to the
+tree obelus was opened on. Other clients open a preview from one of these;
+obelus opens a *buffer* -- with its jump list, its definitions, its hunks --
+which is the one thing a reader has that they do not.
+
+Everything on the row is kept rather than rebuilt, because an update carries
+only what changed. An agent saying "it finished" and nothing else is not
+saying the file it was in has stopped being the file it was in, and a row
+rebuilt from that update would lose its kind, its title and its place at the
+moment it succeeded.
+
+**The transcript has a cursor, and it stands only on rows that do
+something.** A tool call names a file; prose does not. The cursor steps over
+what cannot be opened -- the rule a list follows for a row that cannot be
+chosen -- so a reader walking a conversation never lands somewhere enter
+does nothing, and the lit row is the promise: what is marked is what opens.
+
+The arrows move the nearest thing that can still move. Where there is a row
+to stand on they walk to it and the view follows; where there is none they
+scroll a row, which is what they have always done and what a conversation of
+nothing but words still needs. Enter opens what the row names -- in a
+buffer, and the conversation hides itself, because going somewhere means
+seeing it. Escape comes back out to the box without closing anything, and
+typing goes to the box wherever the cursor was, because a reader who starts
+typing means to type.
+
+**A header says what a thing *is*; the foot of the transcript says what is
+happening.** The conversation's header carried five states, and they were
+the wrong five: two said what the screen already said better ("nobody is
+chosen", beside a header already reading "no agent" and over a transcript
+already saying where to fix it), one said "not started yet" about an agent
+that had *failed* to start, and the two that were real -- starting, thinking
+-- belong where the next thing will appear, because that is where the reader
+is looking. So the header is the name, and nothing else.
+
+What is happening is one row at the foot of the transcript, worked out from
+the state every frame rather than written into the transcript. A state has
+no history: the next one replaces it and Ready removes it, and what is not
+stored cannot be left on screen saying something that has stopped being
+true. What *went wrong* is the opposite and stays a line in the transcript
+where it went wrong -- an agent that died, and why, is the thing a reader
+needs next, and a row that overwrote it would take away the only record.
+`esc stops it` rides on the row that says something is going, beside the
+thing it would stop.
+
+**A run of tool calls of one kind is one row until the reader opens it.**
+Thirty calls in a turn is a log, and a reader looking for what the agent
+*did* should not have to scroll past the machine to find it. Three in a row
+is where they stop reading them and start scrolling past them, so three is
+where a run folds itself. Opened -- enter on the heading, which is the same
+"do what this row is for" enter means everywhere -- the members are rows of
+their own, each one a file to go to.
+
+A failure in a run opens it, because a failure is the one thing in a turn
+nobody should have to go looking for. What the reader said about a run beats
+both: one they closed stays closed, whatever is in it.
+
+**Thinking is not folded away.** Folding is for repetition, and thinking is
+prose -- often the most of what a turn is worth, since it is where the agent
+says why it thinks the bug is where it thinks it is. It gets a heading so a
+reader who has read it can put it away, and only when it is long enough for
+that to be worth a row: a heading over three words is two rows saying one
+thing. obelus never closes it by itself, which also means it can never close
+under somebody who is reading it.
 
 **A question is a card, not a picker.** A picker is for finding one thing
 among many by typing at it: a query, a fuzzy match, tabs, rows arriving from

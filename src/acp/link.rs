@@ -40,7 +40,7 @@ use agent_client_protocol::{
             SessionConfigOptionsCapabilities, SessionConfigSelectOption,
             SessionConfigSelectOptions, SessionModeState, SessionNotification, SessionUpdate,
             SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent, ToolCallContent,
-            WriteTextFileRequest,
+            ToolCallLocation, WriteTextFileRequest,
         },
     },
 };
@@ -179,6 +179,16 @@ pub enum Update {
         title: String,
         /// `pending`, `in_progress`, `completed` or `failed`.
         status: String,
+        /// What sort of thing it is doing: `read`, `edit`, `search`,
+        /// `execute` and the rest of the protocol's own list. Empty on an
+        /// update that did not say, which means it has not changed.
+        kind: String,
+        /// The files it named, with the line where it said one.
+        ///
+        /// What makes a tool call something a reader can go to rather than
+        /// something they can only read about: obelus opens files for a
+        /// living, and this is the agent saying which.
+        places: Vec<Place>,
     },
     /// The way of working changed, which the agent can do on its own.
     Mode(String),
@@ -344,6 +354,15 @@ pub enum Takes {
         /// And the largest.
         most: Option<f64>,
     },
+}
+
+/// Somewhere in the project an agent said it was working.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Place {
+    /// The file.
+    pub path: PathBuf,
+    /// The line it named, counted from one, if it named one.
+    pub line: Option<u32>,
 }
 
 /// One answer to one [`Field`].
@@ -841,7 +860,11 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
             id: call.tool_call_id.0.to_string(),
             title: call.title.clone(),
             status: format!("{:?}", call.status).to_lowercase(),
+            kind: format!("{:?}", call.kind).to_lowercase(),
+            places: call.locations.iter().map(place_of).collect(),
         }],
+        // A later update carries only what changed, so what it leaves out
+        // arrives here as nothing and is read as "the same as before".
         SessionUpdate::ToolCallUpdate(call) => vec![Update::Tool {
             id: call.tool_call_id.0.to_string(),
             title: call.fields.title.clone().unwrap_or_default(),
@@ -849,6 +872,17 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
                 .fields
                 .status
                 .map(|status| format!("{status:?}").to_lowercase())
+                .unwrap_or_default(),
+            kind: call
+                .fields
+                .kind
+                .map(|kind| format!("{kind:?}").to_lowercase())
+                .unwrap_or_default(),
+            places: call
+                .fields
+                .locations
+                .clone()
+                .map(|places| places.iter().map(place_of).collect())
                 .unwrap_or_default(),
         }],
         SessionUpdate::CurrentModeUpdate(mode) => {
@@ -1205,6 +1239,14 @@ fn said_twice(about: Option<&str>, name: &str) -> Option<String> {
     about
         .filter(|about| about.trim() != name.trim())
         .map(str::to_string)
+}
+
+/// Where a tool call said it was working.
+fn place_of(location: &ToolCallLocation) -> Place {
+    Place {
+        path: location.path.clone(),
+        line: location.line,
+    }
 }
 
 /// One command, as the view offers it.

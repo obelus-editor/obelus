@@ -84,6 +84,18 @@ pub fn area_of(size: Size) -> Rect {
     }
 }
 
+/// The path as it should be read: relative to the working directory when it
+/// lies under it, and unchanged when it does not.
+///
+/// A reader spends its time inside one tree, and the leading directories of
+/// that tree are the part already known. Shared, because more than one view
+/// writes a path now: the status bar says which file is open, and a
+/// conversation says which ones an agent has been in.
+#[must_use]
+pub fn relative_to<'a>(path: &'a std::path::Path, root: &std::path::Path) -> &'a std::path::Path {
+    path.strip_prefix(root).unwrap_or(path)
+}
+
 /// Where the terminal should put its cursor, if anywhere.
 ///
 /// The terminal's own cursor rather than a painted block, so it takes the

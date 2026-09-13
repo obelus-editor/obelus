@@ -631,6 +631,18 @@ impl App {
     fn prepare(&mut self, editor_area: Rect) {
         self.editor_area = editor_area;
         self.check_servers();
+        // What the conversation says is happening, read off the state
+        // rather than remembered: a row that is worked out every frame
+        // cannot be left saying something that stopped being true.
+        let doing = match self.talking() {
+            talking::Talking::Starting => Some("starting\u{2026}"),
+            talking::Talking::Thinking => Some("thinking\u{2026}"),
+            talking::Talking::Nobody
+            | talking::Talking::Idle
+            | talking::Talking::Ready
+            | talking::Talking::Gone => None,
+        };
+        self.chat.doing(doing);
 
         // Which rows the list will draw is what decides which rows need
         // their matched characters worked out, and only the geometry knows
@@ -953,6 +965,7 @@ impl App {
                 transcript: ui::chat::bands(self.editor_area, &self.chat, self.card.as_ref())
                     .transcript
                     .height,
+                reading: ui::chat::reading_width(self.editor_area),
                 writing: width,
             };
             // The list of the agent's own commands, when one is showing:
@@ -985,6 +998,34 @@ impl App {
                 }
                 ChatOutcome::Interrupt => {
                     self.interrupt_agent();
+                    return;
+                }
+                // Where a row of the transcript says the agent was. The
+                // conversation stays as it was behind it: a reader who
+                // followed the agent into a file is still in the
+                // conversation about that file, and escape brings it back.
+                ChatOutcome::GoTo(place) => {
+                    // The protocol counts a file's lines from one and the
+                    // rest of obelus counts them from zero, which is what
+                    // `go_to` takes: a language server's numbering, because
+                    // that is who it was written for.
+                    let line = place.line.unwrap_or(1).saturating_sub(1);
+                    self.go_to(&place.path, line, 0);
+                    // And out of the way, because going somewhere means
+                    // seeing it: the conversation is the whole region while
+                    // it is showing. It is hidden rather than ended, so the
+                    // key that opens it brings back every word of it.
+                    //
+                    // Only if there is something to see, though: a file an
+                    // agent named can have gone away, and hiding the
+                    // conversation to show a file that never opened would
+                    // take away the only thing on screen.
+                    if self
+                        .current_buffer()
+                        .is_some_and(|buffer| buffer.path() == place.path)
+                    {
+                        self.close_chat();
+                    }
                     return;
                 }
                 ChatOutcome::Choose(id) => {

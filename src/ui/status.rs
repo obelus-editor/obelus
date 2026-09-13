@@ -16,7 +16,7 @@ use crate::{
     icons,
     lsp::ServerState,
     theme::Theme,
-    ui::{fill, text_width, truncate_from_left, write},
+    ui::{fill, relative_to, text_width, truncate_from_left, write},
 };
 
 /// The status region.
@@ -336,15 +336,6 @@ impl StatusView<'_> {
         let line = typed(picker.question(), picker.query());
         write(cells, area.x + 1, area.y, &line, style);
     }
-}
-
-/// The path as it should be read: relative to the working directory when it
-/// lies under it, and unchanged when it does not.
-///
-/// A reader spends its time inside one tree, and the leading directories of
-/// that tree are the part already known.
-fn relative_to<'a>(path: &'a Path, root: &Path) -> &'a Path {
-    path.strip_prefix(root).unwrap_or(path)
 }
 
 #[cfg(test)]

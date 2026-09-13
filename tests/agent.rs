@@ -159,6 +159,13 @@ fn a_whole_turn_of_conversation() {
         "the chunks were not joined up:\n{text}"
     );
     assert!(text.contains("Read the file"), "no tool call:\n{text}");
+    // And which file it was in, written the way a reader writes a path --
+    // relative to the tree obelus was opened on. This is what makes a tool
+    // call somewhere to go rather than something to read about.
+    assert!(
+        text.contains("tests/fixtures/many_lines.rs:7"),
+        "the tool call does not say where it was:\n{text}"
+    );
     // And the file it asked obelus to read, which obelus answered from the
     // tree it was started on.
     assert!(
@@ -1754,5 +1761,255 @@ fn a_question_goes_when_the_agent_does() {
     assert!(
         !app.is_asking(),
         "the form is still waiting on a dead agent"
+    );
+}
+
+/// A row of the transcript that names a file is a place to go.
+///
+/// Which is what obelus has that a client showing a preview does not: the
+/// reader lands in a buffer, with its jump list, its definitions and its
+/// hunks. The cursor only ever stands on a row that does something, so
+/// there is no way to reach one where enter does nothing.
+#[test]
+fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+
+    // Up from the box, which is empty: the caret cannot move in it, so the
+    // key goes to the nearest row of the transcript worth standing on.
+    support::press(&mut app, KeyCode::Up);
+    assert!(
+        matches!(
+            app.chat().map(obelus::component::chat::Chat::focus),
+            Some(obelus::component::chat::Focus::Transcript(_))
+        ),
+        "up from the box did not reach the transcript"
+    );
+    // And it is lit, the way a chosen row is lit in every list.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let lit = rows(&dump)
+        .iter()
+        .position(|row| row.contains("Read the file"))
+        .expect("the tool call");
+    let styles: Vec<&str> = support::style_block(&dump).lines().collect();
+    assert!(
+        styles[lit + 1].contains('d'),
+        "the row the reader is on is not marked:\n{dump}"
+    );
+
+    // Enter opens what it names, at the line it named -- and the
+    // conversation gets out of the way, because going somewhere means
+    // seeing it.
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.chat().is_none(), "the conversation is still over it");
+    let buffer = app.current_buffer().expect("the file it read");
+    assert!(
+        buffer.path().ends_with("many_lines.rs"),
+        "it opened {}",
+        buffer.path().display()
+    );
+    assert_eq!(
+        buffer.cursor().line.get(),
+        6,
+        "it did not land on the line the agent named"
+    );
+}
+
+/// A conversation of nothing but words scrolls the way it always has.
+///
+/// The arrows move the nearest thing that can still move: a row to stand on
+/// where there is one, and the view itself where there is not. Most
+/// conversations have nothing to stand on at all, and they must not have
+/// lost a key for it.
+#[test]
+fn the_arrows_still_scroll_a_transcript_with_nowhere_to_stand() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let chat = app.chat().expect("the conversation");
+    assert!(
+        chat.rows(60).iter().all(|row| !row.acts()),
+        "this conversation has somewhere to stand after all"
+    );
+
+    support::press(&mut app, KeyCode::Up);
+    assert!(
+        matches!(
+            app.chat().map(obelus::component::chat::Chat::focus),
+            Some(obelus::component::chat::Focus::Writing)
+        ),
+        "the cursor went somewhere there was nothing to stand on"
+    );
+}
+
+/// A run of tool calls of one kind is one row until the reader opens it.
+///
+/// Thirty calls in a turn is a log, and a reader looking for what the agent
+/// *did* should not have to scroll past the machine to find it. Opened, the
+/// members are rows of their own -- each one a file to go to.
+#[test]
+fn a_run_of_tool_calls_folds_into_one_row() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/many");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+
+    // Four reads, one row -- and the one that is not a read is its own row,
+    // because a run is a run of one kind.
+    let text = screen(&mut app);
+    assert!(text.contains("4 files"), "the run is not folded:\n{text}");
+    assert!(
+        !text.contains("Read src/app"),
+        "a folded run is showing its members:\n{text}"
+    );
+    assert!(
+        text.contains("Run the tests"),
+        "the call that is not a read was folded in with them:\n{text}"
+    );
+
+    // Up from the box walks past the failed call to the run's heading, and
+    // enter opens it where it is.
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    support::check(&format!("folded_{WIDTH}x{HEIGHT}"), &dump);
+    let opened = rows(&dump);
+    let heading = opened
+        .iter()
+        .position(|row| row.contains("4 files"))
+        .expect("the heading");
+    assert!(
+        opened[heading + 1].contains("Read src/app"),
+        "opening it did not put its members under it:\n{dump}"
+    );
+
+    // And a member is a place to go, like any other tool call.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.chat().is_none(), "the conversation is still over it");
+    let buffer = app.current_buffer().expect("the file it read");
+    assert!(
+        buffer.path().ends_with("many_lines.rs"),
+        "it opened {}",
+        buffer.path().display()
+    );
+}
+
+/// The header says who, and the transcript says what is happening.
+///
+/// A header says what the thing it names *is*, which for an agent is its
+/// name. What is *happening* belongs at the foot of the transcript, where
+/// the next thing will appear and where the reader is already looking --
+/// and it takes the one hint that goes with it, because escape stopping the
+/// agent is the thing a reader could not guess.
+#[test]
+fn what_is_happening_is_in_the_transcript_and_not_in_the_header() {
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let shown = rows(&dump);
+    assert!(
+        shown[0].contains("Fake Agent") && !shown[0].contains("thinking"),
+        "the header is still saying what is happening:\n{dump}"
+    );
+    let doing = shown
+        .iter()
+        .position(|row| row.contains("thinking\u{2026}"))
+        .unwrap_or_else(|| panic!("nothing says it is working:\n{dump}"));
+    assert!(
+        shown[doing].contains("esc stops it"),
+        "how to stop it is not beside the thing it stops:\n{dump}"
+    );
+
+    // And when it is not working, it is not there.
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        !text.contains("thinking\u{2026}"),
+        "it is still saying it is working:\n{text}"
+    );
+}
+
+/// A row naming a file that is not there leaves the reader where they are.
+///
+/// An agent can name a file it deleted, or one it made up. Opening it
+/// cannot work, and the two things that must not happen are the cursor
+/// moving in the reader's *own* file to a line from somebody else's, and
+/// the conversation hiding itself to show a file that never opened.
+#[test]
+fn a_row_naming_a_file_that_is_gone_changes_nothing() {
+    // With a file of the reader's own open behind the conversation, which
+    // is the one that must not be moved about.
+    let (sender, events) = channel();
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    app.events_for_test(sender);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.open_agent();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let reading = app
+        .current_buffer()
+        .expect("the reader's own file")
+        .cursor()
+        .line;
+    support::type_text(&mut app, "/nowhere");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.chat().is_some(),
+        "the conversation hid itself for a file that never opened"
+    );
+    let buffer = app.current_buffer().expect("the reader's own file");
+    assert!(
+        buffer.path().ends_with("many_lines.rs"),
+        "it opened {} out of nothing",
+        buffer.path().display()
+    );
+    assert_eq!(
+        buffer.cursor().line,
+        reading,
+        "the cursor moved in the reader's own file to a line from somebody else's"
     );
 }

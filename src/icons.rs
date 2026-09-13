@@ -168,6 +168,34 @@ pub fn for_permission(kind: &str) -> char {
     }
 }
 
+/// A tool call, by the sort of thing the agent said it is doing.
+///
+/// The protocol's own list of kinds, which is the cheapest signal a turn
+/// carries: a reader scanning what an agent did is looking for whether it
+/// *changed* anything, and that is a glyph rather than a sentence.
+#[must_use]
+pub fn for_tool(kind: &str) -> char {
+    match kind {
+        // A file, and a file with a pencil on it.
+        "read" => '\u{f0219}',
+        "edit" => '\u{f0cb6}',
+        "delete" => '\u{f01b4}',
+        "move" => '\u{f0552}',
+        // The same magnifier obelus searches with everywhere else.
+        "search" => '\u{f0349}',
+        // A terminal, because that is what running something is.
+        "execute" => '\u{f018d}',
+        // The glyph the transcript draws thinking with: this is the agent
+        // doing it as a tool rather than out loud.
+        "think" => ui::THOUGHT,
+        "fetch" => '\u{f059f}',
+        "switch_mode" => '\u{f04e6}',
+        // A kind obelus has not heard of. The title says what it is; the
+        // glyph says only that the agent is doing something.
+        _ => ui::TOOL,
+    }
+}
+
 /// The glyph for a command.
 ///
 /// Per command rather than per family, so a glyph can mean what the command

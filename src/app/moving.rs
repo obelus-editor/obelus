@@ -37,6 +37,18 @@ impl App {
     fn go_to_place(&mut self, path: &Path, line: u32, column: Column) {
         let from = self.here();
         self.open(path);
+        // A file that would not open leaves the reader where they were --
+        // it has gone away, or it is not theirs to read -- and where they
+        // were is a file of their own. Without this the cursor would move
+        // in *their* file to a line from somebody else's, which is the
+        // worst of both: nothing was opened and something was lost.
+        if self
+            .current_buffer()
+            .is_none_or(|buffer| buffer.path() != path)
+        {
+            self.note = Some(format!("could not open {}", path.display()));
+            return;
+        }
 
         let Some(id) = self.current else { return };
         // Before the buffer is borrowed: the area depends on which file is

@@ -297,7 +297,10 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"working it out"}}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"it is "}}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"a rust file"}}}}\n'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"t1","title":"Read the file","status":"in_progress"}}}\n'
+            # With the kind and the file it is about, the way a real agent
+            # sends them: the kind is what the client draws a glyph from,
+            # and the location is what makes the row somewhere to go.
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"t1","title":"Read the file","kind":"read","status":"in_progress","locations":[{"path":"%s/tests/fixtures/many_lines.rs","line":7}]}}}\n' "$PWD"
             printf '{"jsonrpc":"2.0","id":900,"method":"fs/read_text_file","params":{"sessionId":"s-1","path":"tests/fixtures/read-me.txt"}}\n'
             ;;
         *'"id":900'*)

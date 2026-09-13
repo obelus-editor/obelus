@@ -29,6 +29,12 @@ pub enum Speaker {
     Tool,
     /// obelus itself: what went wrong, what was allowed, what stopped.
     Note,
+    /// What is happening now.
+    ///
+    /// Not a thing that was said: the state of the one saying things, at
+    /// the foot of the transcript where the next thing will appear. It is
+    /// there while it is true and gone when it is not.
+    Doing,
 }
 
 /// One thing that was said.
@@ -43,6 +49,23 @@ pub struct Said {
     pub tag: Option<String>,
     /// Where a tool call has got to.
     pub state: Option<String>,
+    /// What sort of thing a tool call is doing, which is what picks its
+    /// glyph: a reader scans a turn for "did it *change* anything".
+    pub kind: String,
+    /// The files a tool call named.
+    ///
+    /// Kept whole rather than as one line of text, because they are places
+    /// to go: obelus opens files for a living, and a tool call is the agent
+    /// saying which ones it has been in.
+    pub places: Vec<crate::acp::Place>,
+    /// Whether the reader has opened or closed what this begins.
+    ///
+    /// `None` means nobody has said, and obelus decides: a run of tool
+    /// calls of one kind folds itself once there are enough of them to be a
+    /// log rather than a story, and its thinking stays open because
+    /// thinking is prose somebody may want to read. Once the reader says
+    /// otherwise it stays the way they left it.
+    pub opened: Option<bool>,
 }
 
 /// One row of the transcript, wrapped to a width.
@@ -57,6 +80,51 @@ pub struct Row {
     pub first: bool,
     /// A tool call's state, on its first row.
     pub state: Option<String>,
+    /// What sort of thing a tool call is doing, on its first row.
+    pub kind: String,
+    /// The first place a tool call named, on its first row, and how many
+    /// more it named.
+    pub place: Option<(crate::acp::Place, usize)>,
+    /// What this row opens and closes, by where what it begins is in the
+    /// transcript.
+    ///
+    /// A run of tool calls of one kind, or a piece of thinking: both are
+    /// one row with a mark on it until the reader opens them, and both are
+    /// opened by the same key on the same sort of row.
+    pub folds: Option<usize>,
+    /// Whether what it folds is open, for the mark that says so.
+    pub open: bool,
+    /// How deep the row sits: the members of an opened run are drawn under
+    /// their own heading, so that a run reads as one thing.
+    pub depth: u8,
+}
+
+/// How many tool calls of one kind in a row it takes before they are folded
+/// under a heading.
+///
+/// Two of anything is not a log. Three is where a reader stops reading them
+/// and starts scrolling past them.
+const LEAST_TO_FOLD: usize = 3;
+
+/// How far in the members of an opened run are drawn.
+///
+/// Shared with the view: the rows are wrapped to what is left after it and
+/// drawn starting at it, so the two have to be the same number or the words
+/// run off the end.
+pub const DEEPER: u16 = 2;
+
+impl Row {
+    /// Whether the cursor can stand on this row.
+    ///
+    /// Only rows that do something when they are chosen: a tool call names
+    /// a file, and pressing enter on it opens that file. Prose is stepped
+    /// over rather than landed on -- the same rule a list follows for a row
+    /// that cannot be chosen -- so a reader walking the transcript never
+    /// reaches a row where enter does nothing.
+    #[must_use]
+    pub const fn acts(&self) -> bool {
+        self.place.is_some() || self.folds.is_some()
+    }
 }
 
 /// How much room the conversation's two halves have.
@@ -68,6 +136,9 @@ pub struct Row {
 pub struct Room {
     /// The rows the transcript has.
     pub transcript: u16,
+    /// The cells a row of the transcript has, which is what its rows are
+    /// wrapped to -- and so what decides which row is which.
+    pub reading: u16,
     /// The cells a row of the box has.
     pub writing: u16,
 }
@@ -85,6 +156,8 @@ pub enum ChatOutcome {
     Interrupt,
     /// Move to the agent's next way of working.
     StepMode,
+    /// Open what a row of the transcript names.
+    GoTo(crate::acp::Place),
     /// Open the values of one of the agent's settings, by its id.
     Choose(String),
     /// Flip one of its switches, by its id.
@@ -100,6 +173,9 @@ pub enum ChatOutcome {
 /// depending on which of them the reader is in, and there is no third.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Focus {
+    /// A row of the transcript, by where it is in the rows as they are
+    /// drawn. Only ever a row that does something.
+    Transcript(usize),
     /// The box. What is typed goes in it, and the caret is in it.
     #[default]
     Writing,
@@ -112,6 +188,13 @@ pub enum Focus {
 pub struct Chat {
     /// What has been said, oldest first.
     said: Vec<Said>,
+    /// What is happening now, if anything is.
+    ///
+    /// One slot rather than a line of the transcript: a state has no
+    /// history, and the next one replaces it. Which is also why it cannot
+    /// go stale -- what is not stored cannot be left on screen saying
+    /// something that has stopped being true.
+    doing: Option<String>,
     /// What is being written.
     input: Composer,
     /// Which rows of the transcript are on screen.
@@ -132,6 +215,7 @@ impl Chat {
     pub fn new() -> Self {
         Self {
             said: Vec::new(),
+            doing: None,
             input: Composer::new(),
             window: Window::following(),
             focus: Focus::Writing,
@@ -210,6 +294,15 @@ impl Chat {
         self.push(Speaker::Note, text, None);
     }
 
+    /// Says what is happening now, or that nothing is.
+    ///
+    /// Called with whatever the state is, every frame: it is read from the
+    /// state rather than remembered, so there is no way for it to be left
+    /// behind.
+    pub fn doing(&mut self, what: Option<&str>) {
+        self.doing = what.map(str::to_string);
+    }
+
     /// Takes a piece of an answer, or of the agent's thinking.
     ///
     /// Chunks arrive a few words at a time, so a chunk that continues what
@@ -225,7 +318,14 @@ impl Chat {
     }
 
     /// Takes news of a tool call: a new one, or the same one further along.
-    pub fn tool(&mut self, id: &str, title: &str, status: &str) {
+    pub fn tool(
+        &mut self,
+        id: &str,
+        title: &str,
+        status: &str,
+        kind: &str,
+        places: Vec<crate::acp::Place>,
+    ) {
         let existing = self
             .said
             .iter_mut()
@@ -233,12 +333,21 @@ impl Chat {
             .find(|said| said.tag.as_deref() == Some(id));
         match existing {
             Some(said) => {
-                // A later update carries only what changed, so an empty
-                // title means "the one you already have".
+                // A later update carries only what changed, so what arrives
+                // empty means "the one you already have" -- for the title,
+                // for the kind, and for the places it named.
                 if !title.is_empty() {
                     said.text = title.to_string();
                 }
-                said.state = Some(status.to_string());
+                if !kind.is_empty() {
+                    said.kind = kind.to_string();
+                }
+                if !places.is_empty() {
+                    said.places = places;
+                }
+                if !status.is_empty() {
+                    said.state = Some(status.to_string());
+                }
             }
             None => {
                 self.said.push(Said {
@@ -246,6 +355,9 @@ impl Chat {
                     text: title.to_string(),
                     tag: Some(id.to_string()),
                     state: Some(status.to_string()),
+                    kind: kind.to_string(),
+                    places,
+                    opened: None,
                 });
             }
         }
@@ -258,28 +370,215 @@ impl Chat {
     #[must_use]
     pub fn rows(&self, width: u16) -> Vec<Row> {
         let mut rows = Vec::new();
-        for (index, said) in self.said.iter().enumerate() {
-            if index > 0 {
-                rows.push(Row {
-                    speaker: said.speaker,
-                    text: String::new(),
-                    first: false,
-                    state: None,
-                });
+        let mut at = 0;
+        let mut first = true;
+        while at < self.said.len() {
+            let run = self.run_from(at);
+            if !first {
+                rows.push(self.blank(at));
             }
-            for (row, words) in crate::text::wrapped(&said.text, width)
-                .into_iter()
-                .enumerate()
-            {
-                rows.push(Row {
-                    speaker: said.speaker,
-                    text: words,
-                    first: row == 0,
-                    state: (row == 0).then(|| said.state.clone()).flatten(),
-                });
+            first = false;
+            match run.len() >= LEAST_TO_FOLD {
+                // A run of one kind, under a heading of its own: thirty
+                // tool calls in a turn is a log, and a reader looking for
+                // what the agent *did* should not have to scroll past the
+                // machine to find it.
+                true => rows.extend(self.run_rows(run.clone(), width)),
+                false => {
+                    for index in run.clone() {
+                        rows.extend(self.said_rows(index, 0, width));
+                    }
+                }
+            }
+            at = run.end;
+        }
+        // And what is happening now, under the last of it: the foot of the
+        // transcript is where the next thing will appear, which is where a
+        // reader is already looking.
+        if let Some(doing) = self.doing.as_deref() {
+            if !first {
+                rows.push(self.blank(self.said.len()));
+            }
+            rows.push(Row {
+                speaker: Speaker::Doing,
+                text: doing.to_string(),
+                first: true,
+                state: None,
+                kind: String::new(),
+                place: None,
+                folds: None,
+                open: false,
+                depth: 0,
+            });
+        }
+        rows
+    }
+
+    /// The run of things said that begins at `at`: as many tool calls of
+    /// one kind as follow one another, or the one thing that is not.
+    fn run_from(&self, at: usize) -> std::ops::Range<usize> {
+        let Some(said) = self.said.get(at) else {
+            // Never empty: the caller walks by the end of what this
+            // returns, and an empty range would leave it where it was.
+            return at..at + 1;
+        };
+        if said.speaker != Speaker::Tool {
+            return at..at + 1;
+        }
+        let mut end = at + 1;
+        while self
+            .said
+            .get(end)
+            .is_some_and(|next| next.speaker == Speaker::Tool && next.kind == said.kind)
+        {
+            end += 1;
+        }
+        at..end
+    }
+
+    /// A run of tool calls: its heading, and its members when it is open.
+    fn run_rows(&self, run: std::ops::Range<usize>, width: u16) -> Vec<Row> {
+        let Some(said) = self.said.get(run.start) else {
+            return Vec::new();
+        };
+        let members: Vec<&Said> = self.said[run.clone()].iter().collect();
+        let count = run.len();
+        // What they have in common, where they have it: a run of reads is a
+        // run of files, and a run of commands is a run of calls.
+        let what = match members.iter().all(|said| !said.places.is_empty()) {
+            true => "files",
+            false => "calls",
+        };
+        // The state of the run is the state of the worst of it: one that
+        // failed is the news, and one still running is why the row moves.
+        let state = members
+            .iter()
+            .filter_map(|said| said.state.as_deref())
+            .fold(None, |worst: Option<&str>, state| match (worst, state) {
+                (Some("failed"), _) | (_, "failed") => Some("failed"),
+                (Some("in_progress"), _) | (_, "in_progress") => Some("in_progress"),
+                (Some("pending"), _) | (_, "pending") => Some("pending"),
+                (_, state) => Some(state),
+            });
+        let open = self.is_open(run.start);
+        let mut rows = vec![Row {
+            speaker: Speaker::Tool,
+            text: format!("{count} {what}"),
+            first: true,
+            state: state.map(str::to_string),
+            kind: said.kind.clone(),
+            place: None,
+            folds: Some(run.start),
+            open,
+            depth: 0,
+        }];
+        if open {
+            for index in run {
+                rows.extend(self.said_rows(index, 1, width));
             }
         }
         rows
+    }
+
+    /// One thing said, as the rows it takes.
+    fn said_rows(&self, at: usize, depth: u8, width: u16) -> Vec<Row> {
+        let Some(said) = self.said.get(at) else {
+            return Vec::new();
+        };
+        let room = width.saturating_sub(u16::from(depth) * DEEPER);
+        let words = crate::text::wrapped(&said.text, room);
+        // Thinking long enough to be worth putting away gets a heading of
+        // its own, which is what folds it. obelus does not fold it away by
+        // itself -- an agent's reasoning about the code is often the most
+        // of what a turn is worth -- but a reader who has read it should be
+        // able to close it. Short thinking is just the words: a heading
+        // over three words is two rows saying one thing.
+        let heading =
+            (said.speaker == Speaker::Thought && words.len() >= LEAST_TO_FOLD).then(|| Row {
+                speaker: said.speaker,
+                text: "thought".to_string(),
+                first: true,
+                state: None,
+                kind: String::new(),
+                place: None,
+                folds: Some(at),
+                open: self.is_open(at),
+                depth,
+            });
+        if heading.is_some() && !self.is_open(at) {
+            return heading.into_iter().collect();
+        }
+        let under = heading.is_some();
+        heading
+            .into_iter()
+            .chain(words.into_iter().enumerate().map(|(row, words)| {
+                Row {
+                    speaker: said.speaker,
+                    text: words,
+                    // Under a heading nothing is the first row: the heading is,
+                    // and it carries the glyph.
+                    first: row == 0 && !under,
+                    state: (row == 0).then(|| said.state.clone()).flatten(),
+                    kind: said.kind.clone(),
+                    place: (row == 0)
+                        .then(|| {
+                            said.places
+                                .first()
+                                .map(|place| (place.clone(), said.places.len() - 1))
+                        })
+                        .flatten(),
+                    folds: None,
+                    open: false,
+                    depth: match under {
+                        true => depth + 1,
+                        false => depth,
+                    },
+                }
+            }))
+            .collect()
+    }
+
+    /// The row that separates one thing said from the next.
+    fn blank(&self, at: usize) -> Row {
+        Row {
+            speaker: self.said.get(at).map_or(Speaker::Note, |said| said.speaker),
+            text: String::new(),
+            first: false,
+            state: None,
+            kind: String::new(),
+            place: None,
+            folds: None,
+            open: false,
+            depth: 0,
+        }
+    }
+
+    /// Whether what begins at `at` is open.
+    ///
+    /// What the reader said, and otherwise what obelus makes of it: a run
+    /// of tool calls folds itself, unless one of them failed -- a failure
+    /// is the one thing in a turn nobody may have to go looking for.
+    fn is_open(&self, at: usize) -> bool {
+        let Some(said) = self.said.get(at) else {
+            return false;
+        };
+        if let Some(open) = said.opened {
+            return open;
+        }
+        if said.speaker == Speaker::Thought {
+            return true;
+        }
+        self.said[self.run_from(at)]
+            .iter()
+            .any(|said| said.state.as_deref() == Some("failed"))
+    }
+
+    /// Opens what is closed and closes what is open.
+    pub fn fold(&mut self, at: usize) {
+        let open = self.is_open(at);
+        if let Some(said) = self.said.get_mut(at) {
+            said.opened = Some(!open);
+        }
     }
 
     /// Moves the window if it has to, once a frame.
@@ -342,6 +641,14 @@ impl Chat {
             return outcome;
         }
 
+        // The transcript, while the reader is walking it. What it does not
+        // take falls through to the box below, the same way.
+        if let Focus::Transcript(at) = self.focus
+            && let Some(outcome) = self.on_transcript(key, bare, at, room)
+        {
+            return outcome;
+        }
+
         match key.code {
             KeyCode::Esc if bare && thinking => ChatOutcome::Interrupt,
             KeyCode::Esc if bare => ChatOutcome::Cancelled,
@@ -382,8 +689,19 @@ impl Chat {
             // the wheel -- and by the arrows once the caret is at the edge
             // of the box, which is where a reader presses them next.
             KeyCode::Up if bare => {
-                if !self.input.up(room.writing) {
-                    self.scroll_by(-1);
+                if self.input.up(room.writing) {
+                    return ChatOutcome::Consumed;
+                }
+                // Out of the box and into the transcript, onto the row
+                // nearest the box that does something. Where there is no
+                // such row -- a conversation of nothing but words, which is
+                // most of them -- the key scrolls, as it always has.
+                match self.nearest_stop(room) {
+                    Some(stop) => {
+                        self.focus = Focus::Transcript(stop);
+                        self.show_row(stop, room);
+                    }
+                    None => self.scroll_by(-1),
                 }
                 ChatOutcome::Consumed
             }
@@ -512,12 +830,157 @@ impl Chat {
             text: text.to_string(),
             tag,
             state: None,
+            kind: String::new(),
+            places: Vec::new(),
+            opened: None,
         });
     }
 
     /// Scrolls by rows.
     fn scroll_by(&mut self, rows: isize) {
         self.window.scroll(rows);
+    }
+
+    /// The rows of the transcript a cursor can stand on.
+    fn stops(&self, width: u16) -> Vec<usize> {
+        self.rows(width)
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.acts())
+            .map(|(at, _)| at)
+            .collect()
+    }
+
+    /// Which rows are on screen, given the room the transcript has.
+    fn in_view(&self, room: Room) -> std::ops::Range<usize> {
+        let top = self.window.top();
+        let count = self.rows(room.reading).len();
+        top.min(count)..(top + usize::from(room.transcript)).min(count)
+    }
+
+    /// Puts a row of the transcript on screen, moving the window as little
+    /// as it takes.
+    fn show_row(&mut self, at: usize, room: Room) {
+        let view = self.in_view(room);
+        if at < view.start {
+            self.scroll_by(-isize::try_from(view.start - at).unwrap_or(1));
+        } else if at >= view.end {
+            self.scroll_by(isize::try_from(at + 1 - view.end).unwrap_or(1));
+        }
+    }
+
+    /// The next row worth standing on above or below `at`, if there is one
+    /// that way.
+    fn next_stop(&self, at: usize, up: bool, room: Room) -> Option<usize> {
+        let stops = self.stops(room.reading);
+        match up {
+            true => stops.iter().rev().find(|stop| **stop < at).copied(),
+            false => stops.iter().find(|stop| **stop > at).copied(),
+        }
+    }
+
+    /// The row worth standing on nearest the box, among those on screen.
+    ///
+    /// Which is where the cursor comes in from the box, and where a page
+    /// leaves it. Nothing on screen to stand on means the key was not a
+    /// walk at all, and the caller scrolls instead.
+    fn nearest_stop(&self, room: Room) -> Option<usize> {
+        let view = self.in_view(room);
+        self.stops(room.reading)
+            .iter()
+            .rev()
+            .find(|stop| view.contains(stop))
+            .copied()
+    }
+
+    /// Walks the transcript, or gives up and says so.
+    ///
+    /// The arrows move the nearest thing that can still move: a row to
+    /// stand on where there is one, and the view itself where there is
+    /// not. A transcript of nothing but prose -- which is most of them --
+    /// therefore scrolls by a row exactly as it always has.
+    fn on_transcript(
+        &mut self,
+        key: &KeyEvent,
+        bare: bool,
+        at: usize,
+        room: Room,
+    ) -> Option<ChatOutcome> {
+        match key.code {
+            KeyCode::Up if bare => {
+                match self.next_stop(at, true, room) {
+                    Some(stop) => {
+                        self.focus = Focus::Transcript(stop);
+                        self.show_row(stop, room);
+                    }
+                    None => self.scroll_by(-1),
+                }
+                Some(ChatOutcome::Consumed)
+            }
+            KeyCode::Down if bare => {
+                match self.next_stop(at, false, room) {
+                    Some(stop) => {
+                        self.focus = Focus::Transcript(stop);
+                        self.show_row(stop, room);
+                    }
+                    // Under the last of them is the box, which is where a
+                    // reader who has walked to the end of the transcript
+                    // is going next.
+                    None => self.focus = Focus::Writing,
+                }
+                Some(ChatOutcome::Consumed)
+            }
+            // A page moves the view and takes the cursor with it, onto the
+            // nearest row it can stand on in what is now on screen. The
+            // wheel is the other way about -- it moves the view and leaves
+            // the cursor -- because a reader spinning it is looking around
+            // rather than going somewhere.
+            KeyCode::PageUp | KeyCode::PageDown if bare => {
+                let page = isize::try_from(room.transcript.max(1)).unwrap_or(1);
+                self.scroll_by(match key.code {
+                    KeyCode::PageUp => -page,
+                    _ => page,
+                });
+                if let Some(stop) = self.nearest_stop(room) {
+                    self.focus = Focus::Transcript(stop);
+                }
+                Some(ChatOutcome::Consumed)
+            }
+            // Whatever the row is: a heading opens and closes what is
+            // under it, and a row that names a file goes there. Both are
+            // "do what this row is for", which is what enter means
+            // everywhere else in obelus.
+            KeyCode::Enter if bare => {
+                let row = self.rows(room.reading).get(at).cloned();
+                match row {
+                    Some(row) => match (row.folds, row.place) {
+                        (Some(begins), _) => {
+                            self.fold(begins);
+                            // The heading stays under the reader: what
+                            // moved is what is below it.
+                            self.show_row(at, room);
+                            Some(ChatOutcome::Consumed)
+                        }
+                        (None, Some((place, _))) => Some(ChatOutcome::GoTo(place)),
+                        (None, None) => Some(ChatOutcome::Consumed),
+                    },
+                    None => Some(ChatOutcome::Consumed),
+                }
+            }
+            // Back to the box: escape gives up on the nearest thing first,
+            // and the nearest thing is walking about in here.
+            KeyCode::Esc if bare => {
+                self.focus = Focus::Writing;
+                Some(ChatOutcome::Consumed)
+            }
+            // The box's own keys take the focus back with them, because a
+            // reader who starts typing means to type.
+            KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter => {
+                self.focus = Focus::Writing;
+                None
+            }
+            _ => None,
+        }
     }
 }
 
@@ -527,6 +990,38 @@ mod tests {
 
     use super::*;
 
+    /// A later update about a tool call carries only what changed.
+    ///
+    /// Which is the protocol's own arrangement, and the reason everything
+    /// on the row is kept rather than rebuilt: an agent that says "it
+    /// finished" and nothing else is not saying the file it was in has
+    /// stopped being the file it was in. Rebuilding the row from that
+    /// update would leave a call whose kind, title and place vanish the
+    /// moment it succeeds.
+    #[test]
+    fn an_update_that_says_only_the_state_keeps_the_rest() {
+        let mut chat = Chat::new();
+        let place = crate::acp::Place {
+            path: std::path::PathBuf::from("/tree/src/app.rs"),
+            line: Some(20),
+        };
+        chat.tool(
+            "t1",
+            "Read the file",
+            "in_progress",
+            "read",
+            vec![place.clone()],
+        );
+        chat.tool("t1", "", "completed", "", Vec::new());
+
+        let rows = chat.rows(60);
+        let row = rows.first().expect("the tool call");
+        assert_eq!(row.text, "Read the file", "the title was lost");
+        assert_eq!(row.kind, "read", "the kind was lost");
+        assert_eq!(row.place, Some((place, 0)), "where it was, was lost");
+        assert_eq!(row.state.as_deref(), Some("completed"), "the state is old");
+    }
+
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
@@ -534,8 +1029,309 @@ mod tests {
     /// A screen with ten rows of transcript and a box twenty cells wide.
     const ROOM: Room = Room {
         transcript: 10,
+        reading: 40,
         writing: 20,
     };
+
+    /// Somewhere an agent said it had been.
+    fn place(path: &str, line: u32) -> crate::acp::Place {
+        crate::acp::Place {
+            path: std::path::PathBuf::from(path),
+            line: Some(line),
+        }
+    }
+
+    /// A conversation with two tool calls and prose between them.
+    fn walked() -> Chat {
+        let mut chat = Chat::new();
+        chat.asked("what is this file");
+        chat.chunk(Speaker::Agent, "let me look");
+        chat.tool(
+            "t1",
+            "Read a file",
+            "completed",
+            "read",
+            vec![place("/a.rs", 3)],
+        );
+        chat.chunk(Speaker::Agent, "and another");
+        chat.tool(
+            "t2",
+            "Read another",
+            "completed",
+            "read",
+            vec![place("/b.rs", 9)],
+        );
+        chat
+    }
+
+    /// The cursor walks the rows that do something and steps over the rest.
+    ///
+    /// Prose is not a place to stand: a reader walking the transcript is
+    /// looking for what the agent *did*, and a cursor that stopped on every
+    /// line of an answer would take a dozen keys to cross one.
+    #[test]
+    fn the_cursor_stands_only_on_rows_that_do_something() {
+        let mut chat = walked();
+        let rows = chat.rows(ROOM.reading);
+        let stops: Vec<usize> = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.acts())
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(stops.len(), 2, "the tool calls are the two stops");
+
+        // Up from the box reaches the one nearest it, and up again the one
+        // before that. What is between them is walked over.
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Transcript(stops[1]));
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Transcript(stops[0]));
+        // And there is nothing above it, so the key scrolls instead of
+        // leaving the cursor somewhere it cannot be.
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Transcript(stops[0]));
+
+        // Enter opens what the row names.
+        assert_eq!(
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
+            ChatOutcome::GoTo(place("/a.rs", 3))
+        );
+
+        // Down walks back, and past the last one is the box.
+        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Transcript(stops[1]));
+        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+        assert_eq!(
+            chat.focus(),
+            Focus::Writing,
+            "under the transcript is the box"
+        );
+
+        // Escape is the other way back: it gives up on the nearest thing,
+        // which is being in the transcript rather than the conversation.
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        let outcome = chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]);
+        assert_eq!(outcome, ChatOutcome::Consumed, "escape closed the view");
+        assert_eq!(chat.focus(), Focus::Writing);
+    }
+
+    /// A run folds itself, and a failure in it opens it again.
+    ///
+    /// A failure is the one thing in a turn nobody should have to go
+    /// looking for. What the reader says about it outlasts both: a run they
+    /// closed stays closed, whatever is in it.
+    #[test]
+    fn a_run_folds_itself_unless_something_in_it_failed() {
+        let read = |chat: &mut Chat, id: &str, state: &str| {
+            chat.tool(id, "Read a file", state, "read", vec![place("/a.rs", 1)]);
+        };
+        let mut chat = Chat::new();
+        read(&mut chat, "t1", "completed");
+        read(&mut chat, "t2", "completed");
+        // Two of them are drawn as they are, and tight: calls of one kind
+        // in a row are one block rather than two paragraphs.
+        assert_eq!(chat.rows(ROOM.reading).len(), 2, "two calls, two rows");
+
+        // The third makes it a run, and a run is one row.
+        read(&mut chat, "t3", "completed");
+        let rows = chat.rows(ROOM.reading);
+        assert_eq!(rows.len(), 1, "a run of three is not one row: {rows:?}");
+        assert_eq!(rows[0].text, "3 files");
+        assert!(rows[0].folds.is_some() && !rows[0].open);
+
+        // One of them failed, so it is open without anybody asking.
+        read(&mut chat, "t3", "failed");
+        let rows = chat.rows(ROOM.reading);
+        assert!(rows[0].open, "a run with a failure in it stayed folded");
+        assert_eq!(rows.len(), 4, "its members are not under it: {rows:?}");
+
+        // And the reader's word beats both ways of deciding.
+        chat.fold(0);
+        let rows = chat.rows(ROOM.reading);
+        assert_eq!(rows.len(), 1, "the reader closed it and it opened itself");
+        chat.fold(0);
+        assert_eq!(chat.rows(ROOM.reading).len(), 4);
+    }
+
+    /// Thinking is not folded away, but it can be put away.
+    ///
+    /// An agent's reasoning about the code is often the most of what a turn
+    /// is worth, so obelus never closes it for the reader -- and short
+    /// thinking has no heading at all, because a heading over three words
+    /// is two rows saying one thing.
+    #[test]
+    fn thinking_is_open_and_only_the_reader_closes_it() {
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Thought, "hmm");
+        assert_eq!(
+            chat.rows(ROOM.reading).len(),
+            1,
+            "short thinking was given a heading"
+        );
+
+        let mut chat = Chat::new();
+        chat.chunk(
+            Speaker::Thought,
+            "step_rows is answering two questions at once: the rows of the \
+             text, and the rows of the screen. An opened hunk is where they \
+             stop being the same number, which is why the caret jumped.",
+        );
+        let rows = chat.rows(ROOM.reading);
+        assert_eq!(rows[0].text, "thought", "long thinking has no heading");
+        assert!(rows[0].open, "obelus closed the thinking by itself");
+        assert!(rows.len() > 1, "the thinking is not under its heading");
+
+        chat.fold(0);
+        assert_eq!(
+            chat.rows(ROOM.reading).len(),
+            1,
+            "the reader could not put it away"
+        );
+    }
+
+    /// What is drawn in from the edge is wrapped to what is left of it.
+    ///
+    /// The members of an opened run are indented, and the view draws them
+    /// at that indent: a row wrapped to the full width would run off the
+    /// end by exactly as far as it was moved in. Two numbers that have to
+    /// agree, so they are one number -- and this is what says so.
+    #[test]
+    fn rows_drawn_in_from_the_edge_are_wrapped_to_what_is_left() {
+        let mut chat = Chat::new();
+        // One cell short of the room a row has at the edge, so that it
+        // fits there and does not fit an indent further in: the one text
+        // that tells the two widths apart.
+        let title = "x".repeat(usize::from(ROOM.reading) - 1);
+        let title = title.as_str();
+        for id in ["t1", "t2", "t3"] {
+            chat.tool(id, title, "completed", "read", vec![place("/a.rs", 1)]);
+        }
+        // Opened: folded, its members are not drawn at all.
+        chat.fold(0);
+
+        let rows = chat.rows(ROOM.reading);
+        assert!(
+            rows.iter().any(|row| row.depth > 0),
+            "the run did not open: {rows:?}"
+        );
+        for row in &rows {
+            let room = usize::from(ROOM.reading.saturating_sub(u16::from(row.depth) * DEEPER));
+            assert!(
+                crate::ui::text_width(&row.text) <= room,
+                "{:?} is {} cells wide with {room} to write in",
+                row.text,
+                crate::ui::text_width(&row.text)
+            );
+        }
+    }
+
+    /// What is happening now is one row, always last, and always current.
+    ///
+    /// A state has no history: the next one replaces it rather than piling
+    /// up under it, and nothing at all removes it. Being worked out from
+    /// the state every frame is what makes it impossible to leave behind
+    /// saying something that has stopped being true.
+    #[test]
+    fn what_is_happening_is_one_row_that_is_replaced() {
+        let mut chat = Chat::new();
+        chat.doing(Some("starting\u{2026}"));
+        chat.doing(Some("thinking\u{2026}"));
+        let rows = chat.rows(ROOM.reading);
+        assert_eq!(rows.len(), 1, "the states piled up: {rows:?}");
+        assert_eq!(rows[0].text, "thinking\u{2026}");
+        assert_eq!(rows[0].speaker, Speaker::Doing);
+        assert!(
+            !rows[0].acts(),
+            "the cursor can stand on what is happening now"
+        );
+
+        // Whatever is said while it is going, it stays under all of it.
+        chat.note("the agent stopped: exit status 3");
+        let rows = chat.rows(ROOM.reading);
+        assert_eq!(
+            rows.last().map(|row| row.speaker),
+            Some(Speaker::Doing),
+            "something was said under what is happening: {rows:?}"
+        );
+
+        chat.doing(None);
+        assert!(
+            chat.rows(ROOM.reading)
+                .iter()
+                .all(|row| row.speaker != Speaker::Doing),
+            "it outlived what it was about"
+        );
+    }
+
+    /// A page moves the view and takes the cursor with it; the wheel moves
+    /// the view and leaves it.
+    ///
+    /// Two gestures, two jobs: a reader pressing a key is going somewhere,
+    /// and one spinning a wheel is looking around. The same split the
+    /// editor has had all along.
+    #[test]
+    fn a_page_takes_the_cursor_with_it_and_the_wheel_does_not() {
+        let mut chat = Chat::new();
+        chat.tool(
+            "t1",
+            "Read a file",
+            "completed",
+            "read",
+            vec![place("/a.rs", 3)],
+        );
+        // Enough between them that the two cannot be on screen together:
+        // the transcript here is ten rows.
+        for index in 0..8 {
+            chat.note(&format!("something happened {index}"));
+        }
+        chat.tool(
+            "t2",
+            "Read another",
+            "completed",
+            "read",
+            vec![place("/b.rs", 9)],
+        );
+        chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
+
+        let rows = chat.rows(ROOM.reading);
+        let stops: Vec<usize> = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.acts())
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(stops.len(), 2);
+
+        // In at the one nearest the box, then a page up: the view moves,
+        // and the cursor lands on what the view now holds.
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Transcript(stops[1]));
+        chat.handle_key(&key(KeyCode::PageUp), false, ROOM, &[]);
+        assert_eq!(
+            chat.focus(),
+            Focus::Transcript(stops[0]),
+            "the page left the cursor behind"
+        );
+
+        // And the wheel over the same ground leaves the cursor alone.
+        let before = chat.focus();
+        chat.scroll(3);
+        assert_eq!(chat.focus(), before, "the wheel moved the cursor");
+    }
+
+    /// Typing takes the cursor back to the box, wherever it was.
+    ///
+    /// A reader who starts typing means to type -- the same rule the row of
+    /// settings under the box follows.
+    #[test]
+    fn typing_in_the_transcript_goes_to_the_box() {
+        let mut chat = walked();
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Char('h')), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Writing);
+        assert_eq!(chat.writing().text(), "h");
+    }
 
     /// Chunks arrive a few words at a time, and what a reader should see is
     /// one answer rather than one paragraph per packet.
@@ -581,11 +1377,11 @@ mod tests {
     #[test]
     fn a_tool_call_is_one_row_however_often_it_changes() {
         let mut chat = Chat::new();
-        chat.tool("t1", "Read the file", "pending");
-        chat.tool("t2", "Run the tests", "pending");
+        chat.tool("t1", "Read the file", "pending", "read", Vec::new());
+        chat.tool("t2", "Run the tests", "pending", "execute", Vec::new());
         // A later update carries only what changed, so an empty title means
         // the one already there.
-        chat.tool("t1", "", "completed");
+        chat.tool("t1", "", "completed", "", Vec::new());
 
         let rows = chat.rows(40);
         let calls: Vec<(&str, Option<&str>)> = rows
