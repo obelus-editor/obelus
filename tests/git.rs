@@ -1324,13 +1324,18 @@ fn the_changes_can_be_stepped_through() {
     );
 }
 
-/// The changes in the whole file, in a column of its own right of the bar.
+/// The changes in the whole file, in a column of its own inside the bar.
 ///
-/// One column, the same width as the margin on the far side and drawn with
-/// the same glyph, so the right edge is a thin bar with a thin stroke beside
-/// it rather than one wide block with no obvious position in it. The rows are
-/// lines of the file, not rows of the screen: the margin says what changed
-/// here, this says where else to look.
+/// One column, the same width as the margin on the other side. Its mark
+/// leans the other way, away from the bar beside it and towards the text:
+/// two thin strokes with a gap read as two things, where a mark against the
+/// bar would read as one thick bar. The rows are lines of the file, not
+/// rows of the screen: the margin says what changed here, this says where
+/// else to look.
+///
+/// Inside the bar rather than outside it, so that the bar is the last
+/// column -- which is where every list in obelus puts its own, and what
+/// keeps them in one line when a list opens over a file.
 #[test]
 fn the_map_beside_the_bar_shows_the_whole_file() {
     use obelus::{app::App, buffer::Buffer};
@@ -1351,17 +1356,17 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
         .filter(|row| !row.is_empty())
         .map(|row| row.chars().collect())
         .collect();
-    // The map is the last column and the bar the one before it.
+    // The bar is the last column and the map the one before it.
     let cell = |row: &Vec<char>, back: usize| row.get(row.len() - back).copied().unwrap_or(' ');
 
     assert!(
         rows.iter()
             .take(10)
-            .all(|row| matches!(cell(row, 2), '\u{2502}' | '\u{2588}')),
-        "the bar is not the column before last:\n{dump}"
+            .all(|row| matches!(cell(row, 1), '\u{2502}' | '\u{2588}')),
+        "the bar is not the last column:\n{dump}"
     );
     assert!(
-        rows.iter().take(10).any(|row| cell(row, 2) == '\u{2588}'),
+        rows.iter().take(10).any(|row| cell(row, 1) == '\u{2588}'),
         "the thumb is not on the bar:\n{dump}"
     );
 
@@ -1369,7 +1374,7 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
     // rows down a ten-row column -- and nowhere else, on a screen where
     // nothing visible has changed at all.
     let marked: Vec<usize> = (0..10)
-        .filter(|row| cell(&rows[*row], 1) == '\u{2590}')
+        .filter(|row| cell(&rows[*row], 2) == '\u{258c}')
         .collect();
     assert_eq!(
         marked,
@@ -1394,7 +1399,7 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
         .map(|row| row.chars().collect())
         .collect();
     let marked: Vec<usize> = (0..10)
-        .filter(|row| cell(&rows[*row], 1) == '\u{2590}')
+        .filter(|row| cell(&rows[*row], 2) == '\u{258c}')
         .collect();
     assert_eq!(
         marked,

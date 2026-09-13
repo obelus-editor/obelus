@@ -53,13 +53,38 @@ pub fn text_offset(lines: usize, changes: bool) -> u16 {
     margin.saturating_add(gutter_width(lines))
 }
 
-/// The column the change map takes, right of the scrollbar.
+/// The column the change map takes, just inside the scrollbar.
 ///
-/// One column, the same width as the margin on the other side, and drawn
-/// with the same glyph: the two are one answer at two scales -- what changed
-/// on this line, and where else in the file to look. Reserved on the same
-/// terms as the margin, so a file obelus knows nothing about spends nothing.
+/// The map and the bar are the same picture at the same scale -- the whole
+/// file squeezed into the height of the screen -- so they belong beside
+/// each other, and the reader reads across them: here is where you are, and
+/// here is what has changed. It used to be *outside* the bar, which put the
+/// bar one column short of the screen's edge; every list in obelus puts its
+/// own bar in the last column, so a list opened over a file made the bar
+/// jump sideways, and a list with a preview under it had one bar in two
+/// columns with a rule between them. Inside the bar, both are true at once.
+///
+/// One column, the same width as the margin on the other side: the two are
+/// one answer at two scales -- what changed on this line, and where else in
+/// the file to look. Reserved on the same terms as the margin, so a file
+/// obelus knows nothing about spends nothing.
+///
+/// On the left with the margin rather than out beyond the scrollbar, which
+/// is where it was. Every other list in obelus puts its bar in the last
+/// column; the editor's sat one column short of it, so a file list opened
+/// over a file made the bar jump sideways -- and inside one screen, a list
+/// with a preview under it had its bar in two different columns with a rule
+/// between them. All the news about changes is on the left now, and all the
+/// news about where you are is on the right.
 pub const CHANGE_MAP_WIDTH: u16 = 1;
+
+/// The mark a row of the map carries.
+///
+/// The margin's own mark is against the *right* of its cell, where it sits
+/// beside the text it is about. This one is against the left, so that it
+/// does not touch the bar it is next to: two thin strokes with a gap read
+/// as two things, and `map + bar` with no gap reads as one thick bar.
+const MAP_MARK: char = '\u{258c}';
 
 /// The column the scrollbar takes, on the right.
 ///
@@ -142,12 +167,12 @@ impl EditorView<'_> {
                 crate::ui::bar_row(hunk.line.get() + hunk.lines.max(1) - 1, total, area.height)
                     .max(first);
             for row in first..=last {
-                draw_marker(
+                put(
+                    cells,
                     area.x,
                     area.y + row,
-                    marker,
-                    self.theme.marker_colour(marker),
-                    cells,
+                    MAP_MARK,
+                    Style::new().fg(self.theme.marker_colour(marker)),
                 );
             }
         }
@@ -289,24 +314,32 @@ impl Widget for EditorView<'_> {
         // the two would disagree about is a caret neither of them puts on
         // the screen.
         let before = text_offset(text.line_count(), self.changes.is_some());
-        debug_assert!(
-            before >= area.width || before == margin + gutter_width(text.line_count()),
-            "the caret and the text disagree about what comes before the text"
-        );
         let gutter = gutter_width(text.line_count()).min(area.width - margin);
         let map = if self.changes.is_some() {
             CHANGE_MAP_WIDTH.min(area.width - margin - gutter)
         } else {
             0
         };
+        // The same total the caret's position is worked out from, which is
+        // what keeps the two agreeing -- checked only where the caret is
+        // drawn at all. A screen too narrow for what goes before the text
+        // clamps it away, and `cursor_position` draws nothing there: what
+        // the two would disagree about is a caret neither of them puts on
+        // the screen.
+        debug_assert!(
+            before >= area.width || before == margin + gutter,
+            "the caret and the text disagree about what comes before the text"
+        );
         let bar = SCROLLBAR_WIDTH.min(area.width - margin - gutter - map);
         let width = area.width - margin - gutter - bar - map;
         if width == 0 {
             return;
         }
+        // Just inside the bar, which is the same picture at the same
+        // scale: the whole file in the height of the screen.
         if map > 0 {
             let column = Rect {
-                x: area.right() - map,
+                x: area.right() - bar - map,
                 width: map,
                 ..area
             };
@@ -564,13 +597,12 @@ impl Widget for EditorView<'_> {
         let more_below = line.get() < text.line_count();
         let scrolled = viewport.top.get() > 0 || viewport.top_row > 0;
         if bar > 0 && (more_below || scrolled) {
-            let track = Rect {
-                width: area.width - map,
-                ..area
-            };
+            // The whole region, so the bar is in the last column of it --
+            // which is where every list in obelus puts its own, and what
+            // keeps them in one line when a list opens over a file.
             crate::ui::scrollbar(
                 cells,
-                track,
+                area,
                 viewport.top.get(),
                 text.line_count(),
                 self.theme,

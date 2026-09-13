@@ -407,6 +407,14 @@ impl ChatView<'_> {
         if rows.is_empty() {
             write(cells, words, area.y, self.nothing_said(), dim);
         }
+        // The same bar everything else that scrolls has, in the same
+        // column: a transcript that scrolled and said nothing about it was
+        // the one scrolling thing in obelus with no answer to "how much of
+        // this is there". The column is already spare -- the rows are
+        // wrapped to leave it -- so nothing moves to make room.
+        if self.chat.scrollable(area.height) {
+            crate::ui::scrollbar(cells, area, self.chat.top(), rows.len(), self.theme);
+        }
         let first = self.chat.top().min(rows.len());
         for (offset, row) in rows.iter().skip(first).enumerate() {
             let Ok(offset) = u16::try_from(offset) else {

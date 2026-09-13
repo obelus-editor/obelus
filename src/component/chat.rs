@@ -316,6 +316,16 @@ impl Chat {
         self.window.top()
     }
 
+    /// Whether there is more of what was said than there is room for.
+    ///
+    /// What decides whether the transcript draws a bar, the way every other
+    /// list in obelus decides it: a bar on something that fits is a bar
+    /// that says nothing.
+    #[must_use]
+    pub fn scrollable(&self, room: u16) -> bool {
+        self.window.scrollable(room)
+    }
+
     /// The window itself, for the view: what is on screen, and whether
     /// there is more of it than there is screen.
     #[must_use]

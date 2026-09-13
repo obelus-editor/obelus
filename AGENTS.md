@@ -301,6 +301,36 @@ what the agent asked for, so the reader stood on a row that had stopped
 saying it was under them: they pressed enter, got nothing, and had nothing
 on screen to tell them which row had refused.
 
+**A rule meets the bar it crosses.** Drawn through, it left the bar in two
+pieces, and a control in two pieces reads as one that is broken. `rule` and
+`scrollbar` join from both sides -- the rule looks at the cells above and
+below each of its own, the bar at the cell beyond each of its ends -- because
+which of the two is drawn first depends on the view, and neither of them
+should have to know. A list over a file draws its edge after the file's bar;
+a list's own bar is drawn after the rule under its tabs. Both come out
+closed.
+
+The cost is knowing what is drawn in a cell, which means reading the grid
+back. The only thing that can go wrong is a file whose own text has a bar
+glyph directly above or below a rule, which would take one cell of it for a
+junction -- a cosmetic slip in a file drawing box characters, against
+threading a list of every rule through every view.
+
+**Everything that scrolls says so, in the last column of the region it is
+in.** A file, a preview, a list, a page of settings, a conversation -- the
+last of those had no bar at all, which left a reader paging through it with
+nothing on screen answering "how much of this is there, and which part am I
+looking at". The editor's used to
+sit one short of it, because the map of where a file has changed had the
+edge: a list opened over a file made the bar jump sideways, and inside one
+screen a list with a preview under it had its bar in two columns with a rule
+between them.
+
+The map is *inside* the bar now rather than outside it. They are the same
+picture at the same scale -- the whole file squeezed into the height of the
+screen -- so they belong side by side, and the reader reads across them:
+here is where you are, and here is what has changed.
+
 **The wheel moves the view; the keys move the cursor.** A notch scrolls what
 is on screen and leaves the cursor where it was -- `scroll_by` on a buffer
 moves the viewport and nothing else -- and the paging keys move the cursor by

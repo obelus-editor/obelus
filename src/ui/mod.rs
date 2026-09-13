@@ -323,15 +323,70 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     status::StatusView::new(app).render(regions.status, cells);
 }
 
+/// A rule's own glyph, and the three ways a bar can meet it.
+const RULE: char = '\u{2500}';
+/// A bar below the rule.
+const RULE_DOWN: char = '\u{252c}';
+/// A bar above it.
+const RULE_UP: char = '\u{2534}';
+/// A bar on both sides, which is a list with a preview under it.
+const RULE_BOTH: char = '\u{253c}';
+
+/// The two glyphs a bar is drawn with: the track, and the thumb on it.
+const TRACK: char = '\u{2502}';
+/// The thumb.
+const THUMB: char = '\u{2588}';
+
+/// Whether what is drawn in a cell is part of a bar.
+fn is_bar(cells: &CellBuffer, x: u16, y: u16) -> bool {
+    cells
+        .cell((x, y))
+        .is_some_and(|cell| matches!(cell.symbol(), "\u{2502}" | "\u{2588}"))
+}
+
+/// Whether what is drawn in a cell is part of a rule.
+fn is_rule(cells: &CellBuffer, x: u16, y: u16) -> bool {
+    cells.cell((x, y)).is_some_and(|cell| {
+        matches!(
+            cell.symbol(),
+            "\u{2500}" | "\u{252c}" | "\u{2534}" | "\u{253c}"
+        )
+    })
+}
+
+/// Which glyph a rule takes where a bar meets it.
+const fn crossing(above: bool, below: bool) -> char {
+    match (above, below) {
+        (true, true) => RULE_BOTH,
+        (true, false) => RULE_UP,
+        (false, true) => RULE_DOWN,
+        (false, false) => RULE,
+    }
+}
+
 /// One row of rule, saying that what is above it and what is below it are
 /// different things.
 ///
 /// Filled first: the row it goes on held code a moment ago, and a rule drawn
 /// over the top of that would have the code showing between its cells.
+///
+/// Where a bar is already drawn against it the rule is closed off rather
+/// than drawn through: a scrollbar cut in half by a line reads as two
+/// controls, and one of them looks broken. The bar joins from its side too
+/// ([`scrollbar`]), because which of the two is drawn first depends on the
+/// view and neither of them should have to know.
 pub(crate) fn rule(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
     fill(cells, area, Style::new().bg(theme.background));
     for x in area.left()..area.right() {
-        put(cells, x, area.y, '\u{2500}', Style::new().fg(theme.gutter));
+        let above = area.y > 0 && is_bar(cells, x, area.y - 1);
+        let below = is_bar(cells, x, area.y + 1);
+        put(
+            cells,
+            x,
+            area.y,
+            crossing(above, below),
+            Style::new().fg(theme.gutter),
+        );
     }
 }
 
@@ -384,11 +439,36 @@ pub(crate) fn scrollbar(
     for row in 0..area.height {
         let inside = usize::from(row) >= start && usize::from(row) < start + thumb;
         let (glyph, colour) = if inside {
-            ('\u{2588}', theme.gutter_current)
+            (THUMB, theme.gutter_current)
         } else {
-            ('\u{2502}', theme.gutter)
+            (TRACK, theme.gutter)
         };
         put(cells, x, area.y + row, glyph, Style::new().fg(colour));
+    }
+
+    // And the ends, where a rule may already be waiting: the bar closes it
+    // off rather than being cut in half by it. The other way round is done
+    // by `rule`, because which of the two is drawn first depends on the
+    // view and neither of them should have to know.
+    if area.y > 0 && is_rule(cells, x, area.y - 1) {
+        let above = area.y > 1 && is_bar(cells, x, area.y - 2);
+        put(
+            cells,
+            x,
+            area.y - 1,
+            crossing(above, true),
+            Style::new().fg(theme.gutter),
+        );
+    }
+    if is_rule(cells, x, area.bottom()) {
+        let below = is_bar(cells, x, area.bottom() + 1);
+        put(
+            cells,
+            x,
+            area.bottom(),
+            crossing(true, below),
+            Style::new().fg(theme.gutter),
+        );
     }
 }
 

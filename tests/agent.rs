@@ -2187,3 +2187,82 @@ fn the_row_that_says_it_is_working_turns_while_it_is_working() {
         "it is still animating with nothing to animate"
     );
 }
+
+/// A transcript long enough to scroll says so, like everything else.
+///
+/// It was the one scrolling thing in obelus with no bar: a reader could page
+/// through a conversation with nothing on screen answering "how much of this
+/// is there, and which part am I looking at". The column it takes is already
+/// spare -- the rows are wrapped to leave it -- so nothing moves to make
+/// room for it, and the rules above and below close off against it the way
+/// they do everywhere else.
+#[test]
+fn a_transcript_with_more_than_fits_has_a_bar() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+
+    // Nothing said yet, so nothing to scroll and no bar to say so.
+    let dump = support::render(&mut app, 60, 22);
+    let bar = |dump: &str| -> Vec<char> {
+        rows(dump)
+            .iter()
+            .filter_map(|row| row.split_once('|'))
+            .filter_map(|(_, drawn)| drawn.trim_end().chars().last())
+            .filter(|glyph| matches!(glyph, '\u{2502}' | '\u{2588}'))
+            .collect()
+    };
+    assert!(
+        bar(&dump).is_empty(),
+        "a conversation that fits is drawing a bar:\n{dump}"
+    );
+
+    // Said enough to fill it twice over.
+    for turn in 0..8 {
+        support::type_text(&mut app, &format!("tell me about number {turn}"));
+        support::press(&mut app, KeyCode::Enter);
+        pump(&mut app, &events, "the question", App::is_asking_permission);
+        support::press(&mut app, KeyCode::Enter);
+        pump(&mut app, &events, "the turn", |app| {
+            app.talking() == obelus::app::talking::Talking::Ready
+        });
+    }
+
+    let dump = support::render(&mut app, 60, 22);
+    let drawn = bar(&dump);
+    assert!(!drawn.is_empty(), "the transcript has no bar:\n{dump}");
+    // Following the end, so the thumb is at the bottom of the track.
+    assert_eq!(
+        drawn.last(),
+        Some(&'\u{2588}'),
+        "the thumb is not where the reader is:\n{dump}"
+    );
+    // And the rules above and below it are closed off against it.
+    let ends: Vec<char> = rows(&dump)
+        .iter()
+        .filter_map(|row| row.split_once('|'))
+        .map(|(_, drawn)| drawn.trim_end())
+        .filter(|drawn| drawn.contains('\u{2500}'))
+        .filter_map(|drawn| drawn.chars().last())
+        .collect();
+    assert_eq!(
+        ends,
+        ['\u{252c}', '\u{2534}', '\u{2500}'],
+        "the rules do not meet the transcript's bar:\n{dump}"
+    );
+
+    // Scrolled back, the thumb comes with it.
+    for _ in 0..3 {
+        app.handle(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::PageUp,
+            crossterm::event::KeyModifiers::NONE,
+        )));
+    }
+    let scrolled = support::render(&mut app, 60, 22);
+    assert_ne!(
+        bar(&scrolled).last(),
+        Some(&'\u{2588}'),
+        "the thumb stayed at the end while the reader went back:\n{scrolled}"
+    );
+}

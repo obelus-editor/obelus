@@ -3242,3 +3242,123 @@ fn the_file_list_previews_an_open_file_where_it_is_being_read() {
         "a file nobody has open is not previewed from its top:\n{dump}"
     );
 }
+
+/// Every bar on a screen is in the same column.
+///
+/// A list opened over a file, with a preview under it, is three scrolling
+/// things at once -- and the editor's bar used to sit one column short of
+/// the others, because the change map had the last column. A bar that jumps
+/// sideways across a rule reads as two different controls, which is what it
+/// stopped being the moment the map moved to the left with the rest of the
+/// news about changes.
+#[test]
+fn every_bar_on_the_screen_is_in_the_same_column() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 60, 22);
+
+    // The file alone, which scrolls because it is forty lines in twenty.
+    let dump = support::render(&mut app, 60, 22);
+    // Which screen row each bar is on, and which column it is in.
+    let bars = |dump: &str| -> Vec<(usize, usize)> {
+        support::text_block(dump)
+            .lines()
+            .filter_map(|row| row.split_once('|'))
+            .enumerate()
+            .filter_map(|(at, (_, drawn))| {
+                drawn
+                    .chars()
+                    .position(|glyph| matches!(glyph, '\u{2502}' | '\u{2588}'))
+                    .map(|column| (at, column))
+            })
+            .collect()
+    };
+    let editor = bars(&dump);
+    assert!(!editor.is_empty(), "the file does not scroll:\n{dump}");
+
+    // And with a list over it, long enough to scroll, previewing a file
+    // long enough to scroll as well.
+    press_function(&mut app, 1);
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: std::iter::once("tests/fixtures/many_lines.rs".into())
+            .chain((0..40).map(|number| format!("src/dir_{number:02}/file.rs").into()))
+            .collect(),
+    });
+    let dump = support::render(&mut app, 60, 22);
+    let listed = bars(&dump);
+    // The rule between the two has no bar on it, so a gap in the rows is
+    // what says both of them drew one.
+    let gap = listed.windows(2).any(|pair| pair[1].0 > pair[0].0 + 1);
+    assert!(gap, "the list and its preview do not both scroll:\n{dump}");
+
+    let mut columns: Vec<usize> = editor
+        .into_iter()
+        .chain(listed)
+        .map(|(_, column)| column)
+        .collect();
+    columns.sort_unstable();
+    columns.dedup();
+    assert_eq!(columns.len(), 1, "the bars are in {columns:?}:\n{dump}");
+}
+
+/// A rule meets the bar it crosses rather than cutting it in half.
+///
+/// A list with tabs over a file with a preview under it has all three
+/// junctions on one screen: the rule under the tabs with the list's bar
+/// starting below it, the rule between the list and the preview with a bar
+/// on either side, and the rule above the status bar with the preview's bar
+/// ending on it. Drawn through, each of them left a bar in two pieces, and a
+/// control in two pieces reads as one that is broken.
+#[test]
+fn a_rule_closes_off_the_bar_it_crosses() {
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    let mut statuses = std::collections::HashMap::new();
+    statuses.insert(
+        std::path::PathBuf::from("src/dir_00/file.rs"),
+        obelus::git::FileStatus::Changed,
+    );
+    app.statuses_for_test(statuses);
+    support::lay_out(&mut app, 60, 22);
+    press_function(&mut app, 1);
+    app.handle(Event::FilesFound {
+        generation: 1,
+        paths: std::iter::once("tests/fixtures/many_lines.rs".into())
+            .chain((0..40).map(|number| format!("src/dir_{number:02}/file.rs").into()))
+            .collect(),
+    });
+    let dump = support::render(&mut app, 60, 22);
+    let ends: Vec<char> = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|'))
+        .map(|(_, drawn)| drawn.trim_end())
+        .filter(|drawn| drawn.contains('\u{2500}'))
+        .filter_map(|drawn| drawn.chars().last())
+        .collect();
+    assert_eq!(
+        ends,
+        ['\u{252c}', '\u{253c}', '\u{2534}'],
+        "the rules do not meet the bar:\n{dump}"
+    );
+
+    // And the other way round: a compact list over the code draws its own
+    // edge *after* what is under it, so there the rule is the one that has
+    // to notice the bar rather than the other way about.
+    let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 60, 22);
+    support::press_control(&mut app, 'p');
+    let dump = support::render(&mut app, 60, 22);
+    let ends: Vec<char> = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|'))
+        .map(|(_, drawn)| drawn.trim_end())
+        .filter(|drawn| drawn.contains('\u{2500}'))
+        .filter_map(|drawn| drawn.chars().last())
+        .collect();
+    assert_eq!(
+        ends,
+        ['\u{2534}', '\u{252c}', '\u{2534}'],
+        "the edge of the list does not meet the bars:\n{dump}"
+    );
+}
