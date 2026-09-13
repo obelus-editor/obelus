@@ -672,8 +672,8 @@ impl App {
     /// answer nobody is looking at is not worth a redraw, and putting rows
     /// from one scope into another is worse than dropping them.
     fn on_workspace_symbols(&mut self, reply: Reply) {
-        let symbols = lsp::outline::found_in(reply.result);
         let root = self.working_directory.clone();
+        let symbols = lsp::outline::found_in(reply.result, &root);
         let Some(picker) = self.picker.as_mut() else {
             return;
         };

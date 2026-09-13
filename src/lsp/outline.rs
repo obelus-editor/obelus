@@ -147,7 +147,17 @@ pub struct Found {
     pub end_character: u32,
 }
 
-/// The names in a `workspace/symbol` reply.
+/// The names in a `workspace/symbol` reply that are under `root`.
+///
+/// The root is asked for rather than assumed because a server answers with
+/// everything it has indexed, and for rust-analyzer that is every dependency
+/// of the project as well: a search for `new` in a repository of a dozen
+/// files comes back with hundreds of rows from the registry, and the one the
+/// reader meant is somewhere among them. A list obelus offers is a list of
+/// the reader's own tree -- the same rule the file list follows, and the
+/// reason it can stay instant. Going *to* a definition in a dependency is
+/// still going there: that is a jump the reader asked for by name, and this
+/// is the other thing, a list to choose from.
 ///
 /// Two shapes again, and this time the difference is where the position is:
 /// the old one carries a whole range, the newer one is allowed to carry only
@@ -158,18 +168,19 @@ pub struct Found {
 /// Empty for an error and for a null answer, which is what a server that
 /// has not finished indexing says.
 #[must_use]
-pub fn found_in(result: Result<Value, String>) -> Vec<Found> {
+pub fn found_in(result: Result<Value, String>, root: &std::path::Path) -> Vec<Found> {
     let Ok(value) = result else {
         return Vec::new();
     };
+    let mine = |symbol: &Found| symbol.path.starts_with(root);
     // The flat shape first: every server that answers this question at all
     // answers with it, and the newer shape deserializes from the same JSON
     // with its range thrown away.
     if let Ok(symbols) = serde_json::from_value::<Vec<SymbolInformation>>(value.clone()) {
-        return symbols.iter().filter_map(found).collect();
+        return symbols.iter().filter_map(found).filter(mine).collect();
     }
     match serde_json::from_value::<Vec<lsp_types::WorkspaceSymbol>>(value) {
-        Ok(symbols) => symbols.iter().filter_map(newer).collect(),
+        Ok(symbols) => symbols.iter().filter_map(newer).filter(mine).collect(),
         Err(error) => {
             tracing::debug!(%error, "a workspace/symbol answer in no shape obelus knows");
             Vec::new()
@@ -214,6 +225,11 @@ mod workspace_tests {
     use super::found_in;
     use crate::theme::SyntaxKind;
 
+    /// The tree these replies are about.
+    fn root() -> &'static std::path::Path {
+        std::path::Path::new("/p")
+    }
+
     /// The shape every server that answers this question at all uses: a
     /// name, a kind as a number, and a location with a range in it.
     #[test]
@@ -231,7 +247,7 @@ mod workspace_tests {
                 }
             }
         ]);
-        let found = found_in(Ok(reply));
+        let found = found_in(Ok(reply), root());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "Picker");
         assert_eq!(found[0].kind, SyntaxKind::Type);
@@ -252,7 +268,7 @@ mod workspace_tests {
         let reply = json!([
             { "name": "far_away", "kind": 12, "location": { "uri": "file:///p/a.rs" } }
         ]);
-        assert!(found_in(Ok(reply)).is_empty());
+        assert!(found_in(Ok(reply), root()).is_empty());
     }
 
     /// An error, a null and a shape obelus does not know all mean the same
@@ -260,8 +276,79 @@ mod workspace_tests {
     /// answers null.
     #[test]
     fn nothing_usable_means_no_rows() {
-        assert!(found_in(Err("no".to_string())).is_empty());
-        assert!(found_in(Ok(json!(null))).is_empty());
-        assert!(found_in(Ok(json!({ "unexpected": true }))).is_empty());
+        assert!(found_in(Err("no".to_string()), root()).is_empty());
+        assert!(found_in(Ok(json!(null)), root()).is_empty());
+        assert!(found_in(Ok(json!({ "unexpected": true })), root()).is_empty());
+    }
+
+    /// A search offers the reader's own tree and nothing else.
+    ///
+    /// rust-analyzer indexes every dependency of the project, so most of
+    /// what a real answer carries is registry sources: rows that would bury
+    /// the handful the reader was asking about, and whose paths cannot even
+    /// be shown the way the file list shows paths, having no prefix in
+    /// common with the root.
+    #[test]
+    fn only_what_is_under_the_root_is_a_row() {
+        let at = |path: &str| {
+            json!({
+                "name": "new",
+                "kind": 12,
+                "location": {
+                    "uri": format!("file://{path}"),
+                    "range": { "start": { "line": 3, "character": 7 },
+                               "end": { "line": 3, "character": 10 } }
+                }
+            })
+        };
+        let reply = json!([
+            at("/p/src/main.rs"),
+            at("/home/reader/.cargo/registry/src/serde/lib.rs"),
+            at("/p/src/deep/inside.rs"),
+            // A path that merely starts with the same letters is a
+            // different directory, not a file inside this one.
+            at("/p-notes/scratch.rs"),
+        ]);
+
+        let kept = found_in(Ok(reply.clone()), root());
+        assert_eq!(
+            kept.iter()
+                .map(|symbol| symbol.path.clone())
+                .collect::<Vec<_>>(),
+            [
+                std::path::PathBuf::from("/p/src/main.rs"),
+                std::path::PathBuf::from("/p/src/deep/inside.rs"),
+            ],
+            "the list is not the reader's own tree"
+        );
+
+        // Every one of those rows is readable: what dropped two of them is
+        // the root, not a shape the reply could not be read in.
+        assert_eq!(
+            found_in(Ok(reply), std::path::Path::new("/")).len(),
+            4,
+            "not every symbol was read"
+        );
+
+        // The newer shape is read by the other arm and follows the same
+        // rule. A location with no range at all is what sends a whole
+        // answer down that arm.
+        let newer = found_in(
+            Ok(json!([
+                at("/p/src/main.rs"),
+                at("/home/reader/.cargo/registry/src/serde/lib.rs"),
+                { "name": "later", "kind": 12,
+                  "location": { "uri": "file:///p/src/lazy.rs" } },
+            ])),
+            root(),
+        );
+        assert_eq!(
+            newer
+                .iter()
+                .map(|symbol| symbol.name.as_str())
+                .collect::<Vec<_>>(),
+            ["new"],
+            "the newer shape does not follow the root"
+        );
     }
 }
