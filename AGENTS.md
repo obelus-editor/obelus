@@ -367,6 +367,57 @@ stdin needs its own thread, because a busy server stops draining the pipe. An
 answer that arrives after the world has moved on is the normal case, which is
 why requests record the version they asked against.
 
+**obelus does not split its window, so several obelus processes is the
+normal case.** A terminal already splits, tiles and tabs better than an
+editor can from the inside, so obelus has one region and no panes. What that
+buys has to be paid for on the other side: two or three of them on one
+project, plus the reader's own shell in the same repository, is how obelus is
+actually used, and nothing it writes outside a buffer belongs to it alone.
+
+Three rules come out of that, and every one of them was broken:
+
+*Anything read once at startup must be re-read when somebody else changes
+it.* The settings were read at startup and never again, so a theme changed in
+one window was a theme changed in one window. The watcher -- already there
+for open files -- now watches the settings file too, and `App::reread_config`
+applies what it finds. `apply_config` rather than `configure`: the second
+half of `configure` puts every open file back to the reading the settings
+ask for, and a reader who turned a preview off should not have it come back
+because somebody in another window changed the theme. The agent is the one
+setting that does *not* reach in: a conversation is this window's, and
+restarting it under the reader because another window chose differently is
+somebody else's decision arriving as an interruption.
+
+*Anything written must survive another process writing it at the same
+moment.* `save_to` wrote in place, which truncates first; a second obelus
+reading in that gap got an empty file, took it for "no settings", and wrote
+its defaults over everything the reader had. It writes beside the file and
+renames over it now -- the one filesystem operation with no gap in it -- and
+reading distinguishes "there is no file" from "there is a file obelus cannot
+read". The second stops obelus writing at all: what is in that file is the
+reader's, and saving over something it could not read replaces settings it
+never saw. It says so on the status row and starts saving again the moment
+the file reads, which the watcher notices.
+
+*Anything cached about the world must be dropped when the world moves.* What
+has changed in a file is a question about the file *and* about the commit it
+is compared with, and the cache was keyed only by the file: a commit in
+another window left the margin drawing a diff against a commit that was no
+longer the one the file is against. `HEAD` and `index` are watched, and
+`App::forget_what_git_said` drops the hunks and the blame when either moves.
+
+Two smaller ones, in the same spirit. An install claims the agent's directory
+with a file created exclusively, so two windows asked for the same agent do
+not run two `npm`s into one prefix; the claim is given up by being dropped,
+and one left behind by a killed process is taken over after ten minutes. And
+every log line carries the process's number, because several obelus
+processes share one log and two interleaved stories with nothing to tell them
+apart are neither of them readable.
+
+What is *not* shared is worth saying too: a language server and an agent per
+process, which is the cost of not having panes. Three windows on one Rust
+project is three rust-analyzers.
+
 **The configuration file holds preferences, not state.** `config.rs` is the
 whole of it — one table, `dirs` for where it lives, written the moment
 anything changes. Rebindable keys are still guaranteed by the key table being

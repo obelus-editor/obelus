@@ -9,7 +9,10 @@
 mod support;
 
 use obelus::{
+    app::App,
+    buffer::Buffer,
     coordinates::LineNumber,
+    event::Event,
     git::{Changes, Marker},
 };
 
@@ -1703,4 +1706,36 @@ fn a_real_repository_gives_a_real_blame() {
     let stranger = repository.directory.join("unknown.rs");
     std::fs::write(&stranger, "nothing\n").expect("writing");
     assert!(obelus::git::blame::lines_of(&stranger).is_none());
+}
+
+/// A commit in another window is a commit in this one.
+///
+/// obelus does not split its own window -- the terminal does -- so several
+/// of them on one project is the ordinary way to work, and the reader's own
+/// shell is in there too. What has changed in a file is a question about the
+/// file *and* about the commit it is being compared with, and obelus only
+/// ever asked again when the file changed: the margin went on drawing a diff
+/// against a commit that was no longer the one the file is against.
+#[test]
+fn a_commit_from_somewhere_else_empties_the_margin() {
+    let repository = Repository::new("moved", "one\ntwo\nthree\n");
+    repository.write("one\ntwo\nthree\nfour\n");
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("the file")]);
+    support::lay_out(&mut app, 40, 10);
+    assert!(
+        app.changes().is_some_and(|changes| !changes.is_empty()),
+        "the added line is not in the margin"
+    );
+
+    // Committed from somewhere else, with nothing touching the file: the
+    // line is no longer new, and the only thing that says so is git.
+    repository.commit("the fourth line");
+    app.handle(Event::FileChanged {
+        path: repository.directory.join(".git").join("HEAD"),
+    });
+    support::lay_out(&mut app, 40, 10);
+    assert!(
+        app.changes().is_none_or(Changes::is_empty),
+        "the margin is still drawing a diff against the old commit"
+    );
 }

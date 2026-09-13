@@ -217,27 +217,65 @@ pub fn path() -> Option<PathBuf> {
 
 /// Reads the file, or the defaults for every way it can decline.
 #[must_use]
-pub fn load() -> Config {
+pub fn load() -> Reading {
     let Some(path) = path() else {
-        return Config::default();
+        return Reading::Nowhere;
     };
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        // Not there yet is the ordinary case, not an error: obelus writes it
-        // the first time something is changed.
-        return Config::default();
+    read_from(&path)
+}
+
+/// The same, from a path the caller names.
+#[must_use]
+pub fn read_from(path: &Path) -> Reading {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        // Not there yet is the ordinary case, not an error: obelus writes
+        // the file the first time something is changed.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Reading::Nothing;
+        }
+        Err(error) => return Reading::Unreadable(error.to_string()),
     };
-    from_toml(&text)
+    match text.parse::<toml::Table>() {
+        Ok(table) => Reading::Settings(from_table(&table)),
+        Err(error) => Reading::Unreadable(error.to_string()),
+    }
+}
+
+/// What reading the settings file found.
+///
+/// "There is no file" and "there is a file obelus cannot read" are different
+/// answers and were the same one: both became the defaults, and a session
+/// that started on the defaults writes the defaults back the first time
+/// anything is changed. A file being written by another obelus at that
+/// moment, or edited by hand into something that will not parse, is then a
+/// file whose contents obelus has thrown away.
+#[derive(Clone, Debug)]
+pub enum Reading {
+    /// This system has nowhere to keep one.
+    Nowhere,
+    /// There is none yet, which is where everybody starts.
+    Nothing,
+    /// There is one, and this is what it says.
+    Settings(Config),
+    /// There is one and it could not be read, with what went wrong.
+    Unreadable(String),
 }
 
 /// The config a file's contents describe, taking the default for anything
 /// missing or of the wrong type.
 #[must_use]
 pub fn from_toml(text: &str) -> Config {
-    let mut config = Config::default();
     let Ok(table) = text.parse::<toml::Table>() else {
         tracing::warn!("the config file is not toml, so the defaults it is");
-        return config;
+        return Config::default();
     };
+    from_table(&table)
+}
+
+/// The same, from a table already parsed.
+fn from_table(table: &toml::Table) -> Config {
+    let mut config = Config::default();
     if let Some(word) = table.get("theme").and_then(toml::Value::as_str) {
         config.theme = word.to_string();
     }
@@ -302,15 +340,76 @@ pub fn to_toml(config: &Config) -> String {
 /// write to the reader's real file by accident: a test, or a probe run while
 /// working on obelus, has to say where it is writing.
 pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
-    if let Some(directory) = path.parent() {
-        std::fs::create_dir_all(directory)?;
-    }
-    std::fs::write(path, to_toml(config))
+    let Some(directory) = path.parent() else {
+        return std::fs::write(path, to_toml(config));
+    };
+    std::fs::create_dir_all(directory)?;
+    // Written beside it and renamed over it, because another obelus may be
+    // reading this file at this moment: a plain write truncates first, and
+    // a reader landing in that gap sees an empty file, takes it for "no
+    // settings", and writes its defaults over everything the reader has.
+    // A rename within one directory is the one filesystem operation that
+    // has no such gap.
+    //
+    // Beside it rather than in a temporary directory: rename is only atomic
+    // within a filesystem, and the only directory known to be on the same
+    // one is this one.
+    let beside = path.with_extension("toml.writing");
+    std::fs::write(&beside, to_toml(config))?;
+    std::fs::rename(&beside, path)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, Value, from_toml, to_toml};
+    use super::{Config, Value, from_toml, save_to, to_toml};
+
+    /// Saving replaces the file rather than rewriting it where it lies.
+    ///
+    /// Which is what makes it safe for another obelus to be reading it at
+    /// that moment: a write in place truncates first, and a reader landing
+    /// in that gap sees an empty file, takes it for "no settings", and
+    /// writes its own defaults over everything the reader had. A rename
+    /// within one directory has no such gap -- and the file being a new
+    /// one afterwards is how that shows from the outside.
+    #[cfg(unix)]
+    #[test]
+    fn saving_replaces_the_file_rather_than_emptying_it_first() {
+        use std::os::unix::fs::MetadataExt as _;
+
+        let directory = std::env::temp_dir().join(format!("obelus-config-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory");
+        let path = directory.join("config.toml");
+
+        let mut config = Config::default();
+        config.set("theme", &Value::Choice("light".to_string()));
+        save_to(&path, &config).expect("saving");
+        let first = std::fs::metadata(&path).expect("the file").ino();
+
+        config.set("theme", &Value::Choice("dark".to_string()));
+        save_to(&path, &config).expect("saving again");
+        let second = std::fs::metadata(&path).expect("the file").ino();
+
+        assert_ne!(
+            first, second,
+            "the settings were rewritten where they lay, which another obelus can read half of"
+        );
+        assert_eq!(
+            from_toml(&std::fs::read_to_string(&path).expect("the file")).theme,
+            "dark",
+            "the new settings are not what is in the file"
+        );
+        // And nothing left beside it: a file called `config.toml.writing`
+        // in a reader's config directory is obelus's mess, not theirs.
+        let beside: Vec<_> = std::fs::read_dir(&directory)
+            .expect("the directory")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| name != "config.toml")
+            .collect();
+        assert!(beside.is_empty(), "it left {beside:?} behind");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
 
     /// Written and read back is the same config: the file is the only place
     /// a setting survives, so anything that does not survive the round trip

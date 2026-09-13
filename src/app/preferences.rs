@@ -89,6 +89,13 @@ impl App {
             // to: an application that never read one does not write one.
             return;
         };
+        if !self.config_is_readable {
+            // Said when it was found to be unreadable, and again here,
+            // because this is the moment the reader finds out their change
+            // is not being kept.
+            self.note = Some("not saved: the settings will not read".to_string());
+            return;
+        }
         if let Err(error) = crate::config::save_to(&path, &self.config) {
             tracing::warn!(%error, "not saving the configuration");
             self.note = Some(format!("not saved: {error}"));
@@ -166,17 +173,67 @@ impl App {
     /// than whatever the machine it runs on has in `~/.config`.
     pub fn load_config(&mut self) {
         self.config_path = crate::config::path();
-        // Which file, and whether there was one: "my setting did nothing"
-        // is answered by the path obelus actually read, and a reader with
-        // two machines or an `XDG_CONFIG_HOME` has more than one candidate.
-        match self.config_path.as_ref().filter(|path| path.exists()) {
-            Some(path) => tracing::info!(path = %path.display(), "read the settings"),
-            None => tracing::info!(
-                path = ?self.config_path,
-                "no settings file yet, so the defaults"
-            ),
+        let Some(path) = self.config_path.clone() else {
+            tracing::info!("nowhere to keep settings, so the defaults");
+            return;
+        };
+        // Which file, and what was in it: "my setting did nothing" is
+        // answered by the path obelus actually read, and a reader with two
+        // machines or an `XDG_CONFIG_HOME` has more than one candidate.
+        match crate::config::read_from(&path) {
+            crate::config::Reading::Settings(config) => {
+                tracing::info!(path = %path.display(), "read the settings");
+                self.configure(config);
+            }
+            crate::config::Reading::Nothing | crate::config::Reading::Nowhere => {
+                tracing::info!(path = %path.display(), "no settings file yet, so the defaults");
+            }
+            crate::config::Reading::Unreadable(why) => self.settings_unreadable(&path, &why),
         }
-        self.configure(crate::config::load());
+    }
+
+    /// Takes the settings file as it stands now, because somebody else
+    /// changed it.
+    ///
+    /// Another obelus on the same project, or the reader's own editor: what
+    /// is in the file is what obelus is set to, whichever process wrote it.
+    /// Only the settings, not [`App::configure`]'s second half -- that puts
+    /// every open file back to the reading the settings ask for, and a
+    /// reader who has turned a preview off should not have it come back
+    /// because somebody in another window changed the theme.
+    pub(super) fn reread_config(&mut self) {
+        let Some(path) = self.config_path.clone() else {
+            return;
+        };
+        match crate::config::read_from(&path) {
+            crate::config::Reading::Settings(config) => {
+                tracing::info!(path = %path.display(), "the settings changed under us");
+                self.config = config;
+                self.apply_config();
+                self.config_is_readable = true;
+            }
+            // Gone, which is somebody deleting it or an editor writing it
+            // in a way obelus caught mid-flight. Neither is a reason to
+            // throw away what this session is set to.
+            crate::config::Reading::Nothing | crate::config::Reading::Nowhere => {}
+            crate::config::Reading::Unreadable(why) => self.settings_unreadable(&path, &why),
+        }
+    }
+
+    /// Says the settings file cannot be read, and stops writing to it.
+    ///
+    /// What is in it is the reader's, and obelus cannot read it: saving
+    /// over it would replace settings it never saw with whatever this
+    /// session happens to be set to. So nothing is saved until it reads
+    /// -- which it will, the moment somebody fixes the file, because the
+    /// watcher is on it.
+    fn settings_unreadable(&mut self, path: &Path, why: &str) {
+        tracing::warn!(path = %path.display(), why, "the settings file will not read");
+        self.config_is_readable = false;
+        // Short, because the status row is one row and shares it with the
+        // file and the position: which file and what went wrong are in the
+        // log, where there is room for them.
+        self.note = Some("the settings will not read, so none are saved".to_string());
     }
 
     /// Uses a configuration without reading a file.
@@ -206,5 +263,6 @@ impl App {
             &std::fs::read_to_string(&path).unwrap_or_default(),
         ));
         self.config_path = Some(path);
+        self.config_is_readable = true;
     }
 }

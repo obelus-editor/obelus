@@ -156,6 +156,21 @@ impl App {
         }
     }
 
+    /// Throws away what git said, because the repository has moved.
+    ///
+    /// A commit, a checkout, a stage -- in another obelus or in a shell.
+    /// What has changed in a file is a question about the file *and* about
+    /// the commit it is being compared with, and the caches here are keyed
+    /// only by the file: without this the margin goes on showing a diff
+    /// against a commit that is no longer the one the file is against, and
+    /// goes on showing it until the reader types something.
+    pub(super) fn forget_what_git_said(&mut self) {
+        tracing::info!("the repository moved, so what it said about it is dropped");
+        self.changes = None;
+        self.blames.clear();
+        self.asking_blame.clear();
+    }
+
     /// Asks git what has changed, if it has not already been asked about
     /// this version of this file.
     pub(super) fn refresh_changes(&mut self) {

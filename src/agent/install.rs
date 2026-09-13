@@ -114,6 +114,11 @@ fn install(
     started: Instant,
     sender: &Sender<Event>,
 ) -> Result<(), String> {
+    // Said first, so that a second obelus asked for the same agent stops
+    // here rather than running a second `npm` into the same directory.
+    // Held to the end of this function and given up by being dropped,
+    // however it ends.
+    let _claim = super::claim(&agent.id, root)?;
     let Some(home) = super::home(&agent.id, root) else {
         return Err(format!(
             "{} is not a name obelus can keep a directory of",
@@ -354,6 +359,57 @@ mod tests {
         assert_eq!(installed.command, std::path::PathBuf::from("uvx"));
         assert_eq!(installed.arguments, ["py-agent==2.0.0", "serve"]);
         assert_eq!(installed.version, "2.0.0");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An install that another obelus is already doing does not run twice.
+    ///
+    /// They share the agent's directory, and an install is a program
+    /// writing a tree into it: two at once is two of them with one prefix,
+    /// and the mixed tree they leave says nothing about which half is
+    /// which. A python one again, because what is being tested is the
+    /// claim rather than the fetching.
+    #[test]
+    fn an_install_another_obelus_is_already_doing_does_not_run() {
+        let root = std::env::temp_dir().join(format!("obelus-twice-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let agent = Agent {
+            id: "py-agent".to_string(),
+            name: "Python one".to_string(),
+            version: "2.0.0".to_string(),
+            description: String::new(),
+            authors: Vec::new(),
+            license: String::new(),
+            website: None,
+            icon: None,
+            distribution: Distribution::Python {
+                package: "py-agent==2.0.0".to_string(),
+                arguments: Vec::new(),
+            },
+        };
+
+        // The other obelus, holding the claim for as long as this is held.
+        let theirs = crate::agent::claim(&agent.id, &root).expect("their claim");
+
+        let (sender, _events) = std::sync::mpsc::channel();
+        let outcome = super::install(&agent, &root, std::time::Instant::now(), &sender);
+        assert!(
+            outcome.is_err_and(|why| why.contains("another obelus")),
+            "it installed over an install that was already running"
+        );
+        assert_eq!(
+            crate::agent::installation(&agent.id, &root),
+            None,
+            "it wrote a record for an install it did not do"
+        );
+
+        // And once they are finished, it installs.
+        drop(theirs);
+        super::install(&agent, &root, std::time::Instant::now(), &sender).expect("installing");
+        assert!(
+            crate::agent::installation(&agent.id, &root).is_some(),
+            "it would not install after the other one finished"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

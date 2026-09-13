@@ -1161,3 +1161,80 @@ fn the_settings_file_itself_can_be_read() {
         "the settings are not on screen:\n{dump}"
     );
 }
+
+/// A setting changed in another obelus is a setting changed here.
+///
+/// The terminal splits the window; obelus does not. So several of them on
+/// one project is the ordinary way to work, and a settings file read once at
+/// startup would leave every other window holding what the reader has
+/// already moved on from. The watcher says the file changed, and what is in
+/// it is what obelus is set to -- whichever process wrote it.
+#[test]
+fn a_setting_changed_by_another_obelus_arrives_here() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let file = temporary("shared");
+    std::fs::write(&file, "theme = \"light\"\n").expect("a settings file");
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 66, 12);
+    assert_eq!(app.theme().name, "light", "the file was not read");
+
+    // Another obelus writes the file. Nothing else says so: the watcher
+    // hands over a path, and everything about what changed is in the file.
+    std::fs::write(&file, "theme = \"dark\"\n").expect("the other window");
+    app.handle(Event::FileChanged { path: file });
+    assert_eq!(
+        app.theme().name,
+        "dark",
+        "the change in the other window never arrived"
+    );
+}
+
+/// A settings file obelus cannot read is one it will not write over.
+///
+/// What is in it is the reader's. A file caught mid-write by another obelus,
+/// or hand-edited into something that will not parse, used to read as "no
+/// settings at all" -- and the next change in this window wrote the defaults
+/// over everything that was in it.
+#[test]
+fn a_settings_file_that_will_not_read_is_not_written_over() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let file = temporary("broken");
+    let kept = "theme = \"light\"\nthis file is half written";
+    std::fs::write(&file, kept).expect("a settings file");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 66, 12);
+    app.handle(Event::FileChanged { path: file.clone() });
+
+    // A change made here is not saved, and the reader is told why rather
+    // than finding out later that their settings went.
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        std::fs::read_to_string(&file).expect("the file"),
+        kept,
+        "obelus wrote over a file it could not read"
+    );
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("not saved"),
+        "nothing said the change was not kept:\n{dump}"
+    );
+
+    // Fixed in the other window, it reads again and saves again.
+    std::fs::write(&file, "theme = \"light\"\n").expect("the other window");
+    app.handle(Event::FileChanged { path: file.clone() });
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::press(&mut app, KeyCode::Enter);
+    assert_ne!(
+        std::fs::read_to_string(&file).expect("the file"),
+        "theme = \"light\"\n",
+        "it is still refusing to save a file it can read"
+    );
+}

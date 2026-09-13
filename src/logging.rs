@@ -68,14 +68,14 @@ pub fn install() -> Option<(WorkerGuard, WorkerGuard)> {
         // No escape sequences: this is a file, and a pager should not have
         // to strip colour out of it.
         .with_ansi(false)
-        .with_writer(ours)
+        .with_writer(Marked(ours))
         .with_filter(tracing_subscriber::filter::filter_fn(|event| {
             !is_server(event.target())
         }))
         .boxed();
     let theirs = tracing_subscriber::fmt::layer()
         .with_ansi(false)
-        .with_writer(theirs)
+        .with_writer(Marked(theirs))
         .with_filter(tracing_subscriber::filter::filter_fn(|event| {
             is_server(event.target())
         }))
@@ -101,6 +101,53 @@ fn writer(
         .build(directory)
         .ok()?;
     Some(tracing_appender::non_blocking(appender))
+}
+
+/// A writer that puts this process's number in front of every line.
+///
+/// obelus does not split its own window -- the terminal does that -- so
+/// several of them on one project is the ordinary way to work, and they
+/// share one log. Two interleaved stories with nothing to tell them apart
+/// are neither of them readable.
+///
+/// On the line rather than in the filename: one file still rotates as one
+/// file, and a reader following what happened does not have to open one
+/// per window and put them back in order by hand.
+struct Marked<M>(M);
+
+impl<'writer, M: tracing_subscriber::fmt::MakeWriter<'writer>>
+    tracing_subscriber::fmt::MakeWriter<'writer> for Marked<M>
+{
+    type Writer = Whose<M::Writer>;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        Whose {
+            inner: self.0.make_writer(),
+            said: false,
+        }
+    }
+}
+
+/// One event's writer, which says whose it is before it says anything else.
+struct Whose<W> {
+    inner: W,
+    said: bool,
+}
+
+impl<W: std::io::Write> std::io::Write for Whose<W> {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        // Once per event: `make_writer` is called for each of them, so the
+        // first write of each is the head of a line.
+        if !self.said {
+            self.said = true;
+            write!(self.inner, "{} ", std::process::id())?;
+        }
+        self.inner.write(buffer)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 /// Chains a panic hook that writes the panic to the log.
@@ -172,6 +219,54 @@ fn log_directory() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    /// Every line says which obelus wrote it.
+    ///
+    /// Several of them share the log, because several of them on one
+    /// project is the ordinary way to work. A line that does not say whose
+    /// it is belongs to whichever story the reader guesses.
+    #[test]
+    fn every_line_says_whose_it_is() {
+        use std::io::Write as _;
+
+        use tracing_subscriber::fmt::MakeWriter as _;
+
+        #[derive(Clone, Default)]
+        struct Kept(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Kept {
+            fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().expect("the lock").extend_from_slice(buffer);
+                Ok(buffer.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl<'writer> tracing_subscriber::fmt::MakeWriter<'writer> for Kept {
+            type Writer = Self;
+            fn make_writer(&'writer self) -> Self::Writer {
+                self.clone()
+            }
+        }
+
+        let kept = Kept::default();
+        let marked = super::Marked(kept.clone());
+        // Two events, each written the way the subscriber writes one: a
+        // fresh writer, then the pieces of the line.
+        for words in ["starting\n", "leaving\n"] {
+            let mut writer = marked.make_writer();
+            write!(writer, "INFO ").expect("the level");
+            write!(writer, "{words}").expect("the words");
+        }
+
+        let written = String::from_utf8(kept.0.lock().expect("the lock").clone()).expect("utf-8");
+        let pid = std::process::id();
+        assert_eq!(
+            written,
+            format!("{pid} INFO starting\n{pid} INFO leaving\n"),
+            "a line does not say whose it is"
+        );
+    }
+
     /// Which file an event goes to, by the module it came from. The split
     /// is the whole point of having two, and it is silent when wrong: a
     /// server's stream in obelus's own log buries it, and obelus's lines in

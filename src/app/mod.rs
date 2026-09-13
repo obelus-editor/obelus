@@ -244,6 +244,12 @@ pub struct App {
     /// Where installed agents live, for a test that would rather not use
     /// the reader's own data directory. `None` is that directory.
     agents_root: Option<PathBuf>,
+    /// Whether the settings file is one obelus may write to.
+    ///
+    /// False once it has been found unreadable: what is in it is the
+    /// reader's, and saving over something obelus could not read would
+    /// replace settings it never saw. Set again the moment it reads.
+    config_is_readable: bool,
     /// What the reader has decided, as read from the file at startup.
     config: crate::config::Config,
     /// Where to write it back, or `None` for an application that was never
@@ -362,6 +368,7 @@ impl App {
             installing: HashMap::new(),
             install_failures: HashMap::new(),
             agents_root: None,
+            config_is_readable: true,
             config: crate::config::Config::default(),
             config_path: None,
             settings: None,
@@ -488,6 +495,27 @@ impl App {
             if let Err(error) = watcher.watch(buffer.path()) {
                 tracing::warn!(%error, path = %buffer.path().display(), "not watching");
             }
+        }
+        // And what git keeps its state in, because obelus is not the only
+        // thing in the repository: a commit in another window, or in a
+        // shell, changes what has changed in every file on screen. The
+        // margin would otherwise go on showing a diff against a commit that
+        // is no longer the one the file is against.
+        for path in crate::git::state_of(&self.working_directory) {
+            if let Err(error) = watcher.watch(&path) {
+                tracing::warn!(%error, path = %path.display(), "not watching the repository");
+            }
+        }
+        // And the settings, because obelus is not the only obelus. Several
+        // of them on one project is the ordinary way to work -- the
+        // terminal splits the window, obelus does not -- so a setting
+        // changed in one of them is a setting changed for all of them, and
+        // a file read once at startup would leave every other window
+        // holding what the reader has already moved on from.
+        if let Some(path) = self.config_path.clone()
+            && let Err(error) = watcher.watch(&path)
+        {
+            tracing::warn!(%error, path = %path.display(), "not watching the settings");
         }
         self.watcher = Some(watcher);
     }
@@ -772,7 +800,15 @@ impl App {
             // Redrawing is unconditional after every event, so a resize needs
             // no handling of its own beyond waking the loop.
             Event::Resize => {}
-            Event::FileChanged { path } => self.reload_path(&path),
+            Event::FileChanged { path } => {
+                if self.config_path.as_deref() == Some(&path) {
+                    self.reread_config();
+                } else if crate::git::state_moved(&path) {
+                    self.forget_what_git_said();
+                } else {
+                    self.reload_path(&path);
+                }
+            }
             Event::Lsp { language, message } => {
                 let Some(client) = self.servers.get_mut(&language) else {
                     return;

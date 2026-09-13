@@ -51,6 +51,51 @@ fn repository(path: &Path) -> Option<gix::Repository> {
     gix::discover(from).ok()
 }
 
+/// The files a repository changes when its *state* changes, for whoever is
+/// watching.
+///
+/// `HEAD` moves on a commit, a checkout or a rebase; `index` on a stage or
+/// an unstage. Between them they cover every way the answer to "what has
+/// changed in this file" can change without the file itself being touched
+/// -- which is to say, every way another process can move the ground under
+/// a reader. Nothing else in `.git` is worth watching: the object files
+/// churn constantly and say nothing a margin cares about.
+#[must_use]
+pub fn state_of(path: &Path) -> Vec<PathBuf> {
+    let Some(repository) = repository(path) else {
+        return Vec::new();
+    };
+    let directory = repository.path();
+    ["HEAD", "index"]
+        .iter()
+        .map(|name| directory.join(name))
+        .collect()
+}
+
+/// Whether a path is one of the files that say a repository has moved.
+///
+/// Asked rather than remembered: it is asked only when one of those two
+/// names arrives, which is rare, and a list kept up to date would have to
+/// be kept up to date -- through a checkout that replaces the directory,
+/// through a reader opening a file in another repository entirely.
+///
+/// The repository is discovered from the path itself for the same reason
+/// everything else here is: the file the question is about can be outside
+/// the tree obelus was started in.
+#[must_use]
+pub fn state_moved(path: &Path) -> bool {
+    if !matches!(
+        path.file_name().and_then(std::ffi::OsStr::to_str),
+        Some("HEAD" | "index")
+    ) {
+        return false;
+    }
+    let Some(directory) = path.parent() else {
+        return false;
+    };
+    repository(path).is_some_and(|repository| repository.path() == directory)
+}
+
 /// What git says about a file in the working tree.
 ///
 /// Only the two states a reader cares about while choosing a file to read:
