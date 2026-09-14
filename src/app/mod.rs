@@ -298,6 +298,15 @@ pub struct App {
     /// The settings that file set, which are the ones the reader cannot
     /// change here.
     pinned: Vec<&'static str>,
+    /// Which settings the reader's own file named.
+    ///
+    /// The same question the line above answers for the tree, asked of the
+    /// other layer. Worked out from the file rather than by comparing what
+    /// it came to with the default: a reader who writes down a setting has
+    /// said something about it even where they said what obelus would have
+    /// done anyway, and a page that compared could not tell them apart from
+    /// a reader who never opened the file.
+    readers_named: Vec<&'static str>,
     /// The settings view, while it is open.
     settings: Option<Settings>,
     /// The line counts, while they are showing.
@@ -427,6 +436,7 @@ impl App {
             readers_config: crate::config::Config::default(),
             tree_config: None,
             pinned: Vec::new(),
+            readers_named: Vec::new(),
             settings: None,
             counts: None,
             screen_area: Rect::ZERO,

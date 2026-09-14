@@ -577,11 +577,14 @@ fn a_tree_lays_its_own_settings_over_the_readers() {
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     // The reader's own, as they would have come from their file.
-    app.configure(obelus::config::Config {
-        theme: "light".to_string(),
-        wrap: false,
-        ..obelus::config::Config::default()
-    });
+    app.configure(
+        obelus::config::Config {
+            theme: "light".to_string(),
+            wrap: false,
+            ..obelus::config::Config::default()
+        },
+        Vec::new(),
+    );
     app.working_directory_for_test(root.clone());
 
     assert!(app.config().wrap, "the tree's setting did not take");
@@ -612,7 +615,7 @@ fn a_tree_may_not_start_an_agent_or_move_a_key() {
     let root = scratch.path().to_path_buf();
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     app.working_directory_for_test(root.clone());
 
     assert_eq!(app.config().agent, None, "a tree started an agent");
@@ -644,7 +647,7 @@ fn the_directory_wins_over_the_file_beside_it() {
     .expect("the file");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     app.working_directory_for_test(root.clone());
 
     assert_eq!(app.theme().name, "dark", "the stray file won");
@@ -665,7 +668,7 @@ fn a_setting_the_tree_has_cannot_be_changed_here() {
     let root = scratch.path().to_path_buf();
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     app.working_directory_for_test(root.clone());
     support::lay_out(&mut app, 76, 12);
     dispatch::dispatch(&mut app, Command::ConfigOpen);
@@ -706,7 +709,7 @@ fn the_trees_page_edits_the_trees_file() {
     );
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
@@ -754,7 +757,7 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
     );
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
@@ -788,7 +791,7 @@ fn a_tree_with_no_settings_gets_a_file_when_one_is_set() {
     let root = support::Scratch::new("tree-new");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
@@ -813,10 +816,17 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     let root = tree("whose", "wrap = true\n");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config {
-        theme: "light".to_string(),
-        ..obelus::config::Config::default()
-    });
+    // The theme they chose, and the margin's names written down at exactly
+    // what obelus would have done anyway: a reader who agrees has still
+    // been here, and the column has to say so.
+    app.configure(
+        obelus::config::Config {
+            theme: "light".to_string(),
+            blame_margin: obelus::config::Config::default().blame_margin,
+            ..obelus::config::Config::default()
+        },
+        vec!["theme", "blame_margin"],
+    );
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
@@ -841,6 +851,20 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     assert!(
         wrap.contains("project"),
         "a setting the tree has does not say so: {wrap:?}"
+    );
+    // And beside it, one the reader wrote down and the tree says nothing
+    // about -- written at exactly what obelus would have done anyway. The
+    // column asks whether their file speaks about it, not whether it
+    // disagrees: a reader who wrote a line and happened to agree was being
+    // told they had never been here.
+    let blame = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Blame in the margin"))
+        .expect("the row")
+        .to_string();
+    assert!(
+        blame.contains("global"),
+        "a setting written down at its default is not the reader's: {blame:?}"
     );
 
     // And the two tabs a tree may not have.
@@ -871,7 +895,7 @@ fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
     let root = support::Scratch::new("tree-later");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
     assert!(!app.config().wrap, "the tree had settings already");
 
@@ -908,7 +932,7 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
     let root = tree("grey", "wrap = true\n");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
 
@@ -968,7 +992,7 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
     root.write(".obelus/config.toml", "wrap = true\n");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 10);
     dispatch::dispatch(&mut app, Command::ConfigTree);

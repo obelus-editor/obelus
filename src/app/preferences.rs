@@ -245,9 +245,9 @@ impl App {
         // answered by the path obelus actually read, and a reader with two
         // machines or an `XDG_CONFIG_HOME` has more than one candidate.
         match crate::config::read_from(&path) {
-            crate::config::Reading::Settings(config) => {
-                tracing::info!(path = %path.display(), "read the settings");
-                self.configure(config);
+            crate::config::Reading::Settings(config, named) => {
+                tracing::info!(path = %path.display(), settings = ?named, "read the settings");
+                self.configure(config, named);
             }
             crate::config::Reading::Nothing | crate::config::Reading::Nowhere => {
                 tracing::info!(path = %path.display(), "no settings file yet, so the defaults");
@@ -311,6 +311,12 @@ impl App {
         &self.pinned
     }
 
+    /// Which settings the reader's own file named.
+    #[must_use]
+    pub fn readers_named(&self) -> &[&'static str] {
+        &self.readers_named
+    }
+
     /// The tree's own settings file, while the tree has one.
     #[must_use]
     pub fn tree_config(&self) -> Option<&Path> {
@@ -338,9 +344,10 @@ impl App {
     pub(super) fn reread_config(&mut self) {
         if let Some(path) = self.config_path.clone() {
             match crate::config::read_from(&path) {
-                crate::config::Reading::Settings(config) => {
+                crate::config::Reading::Settings(config, named) => {
                     tracing::info!(path = %path.display(), "the settings changed under us");
                     self.readers_config = config.clone();
+                    self.readers_named = named;
                     self.config = config;
                     self.apply_config();
                     self.config_is_readable = true;
@@ -380,10 +387,15 @@ impl App {
     /// The way in for anything that has settings from somewhere else -- a
     /// test that needs wrapping on, a file that has already been read.
     /// Nothing is written back unless a path has been named as well.
-    pub fn configure(&mut self, config: crate::config::Config) {
+    /// `named` is which settings their file spoke about. A setting they
+    /// wrote down is theirs whether or not it says anything the default did
+    /// not: working that out by comparing with the default cannot tell a
+    /// reader who agreed from a reader who never came.
+    pub fn configure(&mut self, config: crate::config::Config, named: Vec<&'static str>) {
         // The reader's own layer, which is what the tree's is laid over --
         // and what a setting goes back to when the tree stops naming it.
         self.readers_config = config.clone();
+        self.readers_named = named;
         self.config = config;
         self.apply_config();
         self.apply_tree();
@@ -394,9 +406,12 @@ impl App {
     /// For a test: the reader's own file is not something a test may write
     /// to, and a test of "does changing this save it" has to have a file.
     pub fn config_file_for_test(&mut self, path: PathBuf) {
-        self.configure(crate::config::from_toml(
-            &std::fs::read_to_string(&path).unwrap_or_default(),
-        ));
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let named = match crate::config::read_from(&path) {
+            crate::config::Reading::Settings(_, named) => named,
+            _ => Vec::new(),
+        };
+        self.configure(crate::config::from_toml(&text), named);
         self.config_path = Some(path);
         self.config_is_readable = true;
     }

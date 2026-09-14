@@ -749,10 +749,13 @@ fn a_removed_line_too_long_for_the_screen_wraps() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     // Wrapping is off by default, and this is a test about wrapping.
-    app.configure(obelus::config::Config {
-        wrap: true,
-        ..obelus::config::Config::default()
-    });
+    app.configure(
+        obelus::config::Config {
+            wrap: true,
+            ..obelus::config::Config::default()
+        },
+        Vec::new(),
+    );
     // Narrow enough that the removed line needs more than one row.
     support::lay_out(&mut app, 34, 12);
     dispatch::dispatch(&mut app, Command::GitHunk);
@@ -1696,10 +1699,13 @@ fn the_names_can_be_turned_off() {
     });
     assert!(support::text_block(&support::render(&mut app, 44, 8)).contains("Ada"));
 
-    app.configure(Config {
-        blame_margin: false,
-        ..Config::default()
-    });
+    app.configure(
+        Config {
+            blame_margin: false,
+            ..Config::default()
+        },
+        Vec::new(),
+    );
     let off = support::render(&mut app, 44, 8);
     assert!(
         !support::text_block(&off).contains("Ada"),
@@ -1707,7 +1713,7 @@ fn the_names_can_be_turned_off() {
     );
 
     // And back on without asking again: the answer is still in hand.
-    app.configure(Config::default());
+    app.configure(Config::default(), Vec::new());
     assert!(
         support::text_block(&support::render(&mut app, 44, 8)).contains("Ada"),
         "the names did not come back"
@@ -3638,10 +3644,13 @@ fn the_commit_behind_a_line_can_be_asked_for_with_the_names_off() {
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
     // The margin's names turned off, which is a question about the margin.
-    app.configure(obelus::config::Config {
-        blame_margin: false,
-        ..Default::default()
-    });
+    app.configure(
+        obelus::config::Config {
+            blame_margin: false,
+            ..Default::default()
+        },
+        Vec::new(),
+    );
     let events = support::drive(&mut app);
     support::lay_out(&mut app, 74, 14);
     support::render(&mut app, 74, 14);

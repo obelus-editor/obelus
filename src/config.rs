@@ -337,7 +337,10 @@ pub fn read_from(path: &Path) -> Reading {
         Err(error) => return Reading::Unreadable(error.to_string()),
     };
     match text.parse::<toml::Table>() {
-        Ok(table) => Reading::Settings(from_table(&table)),
+        Ok(table) => {
+            let (config, named) = from_table(&table);
+            Reading::Settings(config, named)
+        }
         Err(error) => Reading::Unreadable(error.to_string()),
     }
 }
@@ -356,8 +359,10 @@ pub enum Reading {
     Nowhere,
     /// There is none yet, which is where everybody starts.
     Nothing,
-    /// There is one, and this is what it says.
-    Settings(Config),
+    /// There is one; this is what it says, and these are the settings it
+    /// named. A setting it named is the reader's whether or not what they
+    /// wrote differs from what obelus would have done.
+    Settings(Config, Vec<&'static str>),
     /// There is one and it could not be read, with what went wrong.
     Unreadable(String),
 }
@@ -370,14 +375,20 @@ pub fn from_toml(text: &str) -> Config {
         tracing::warn!("the config file is not toml, so the defaults it is");
         return Config::default();
     };
-    from_table(&table)
+    from_table(&table).0
 }
 
-/// The same, from a table already parsed.
-fn from_table(table: &toml::Table) -> Config {
+/// The same, from a table already parsed, with the keys it named.
+///
+/// Which keys, not only what they came to: a reader who writes a setting
+/// down has said something about it even where what they said is what
+/// obelus would have done anyway, and a page that worked that out by
+/// comparing with the default could not tell them from a reader who said
+/// nothing at all.
+fn from_table(table: &toml::Table) -> (Config, Vec<&'static str>) {
     let mut config = Config::default();
-    apply(&mut config, table, Whose::Reader);
-    config
+    let named = apply(&mut config, table, Whose::Reader);
+    (config, named)
 }
 
 /// Which files may set the key `key`.

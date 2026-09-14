@@ -25,10 +25,13 @@ fn app() -> App {
 /// looking at a table in a comment is reading something the screen has not
 /// rearranged -- so a test of what wrapping does has to ask for it.
 fn wrapping(app: &mut App) {
-    app.configure(obelus::config::Config {
-        wrap: true,
-        ..obelus::config::Config::default()
-    });
+    app.configure(
+        obelus::config::Config {
+            wrap: true,
+            ..obelus::config::Config::default()
+        },
+        Vec::new(),
+    );
 }
 
 /// An application whose geometry is already known.
@@ -2081,7 +2084,7 @@ fn a_file_with_no_reading_opens_as_itself() {
     let mut app = App::new(vec![
         obelus::buffer::Buffer::open(&path).expect("opening it"),
     ]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     support::lay_out(&mut app, 60, 8);
 
     assert_eq!(
@@ -2119,7 +2122,7 @@ fn a_file_with_a_reading_still_opens_as_its_bytes() {
     let mut app = App::new(vec![
         obelus::buffer::Buffer::open(&path).expect("opening it"),
     ]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     support::lay_out(&mut app, 76, 8);
 
     assert_eq!(
@@ -2161,7 +2164,7 @@ fn the_end_of_a_reading_is_its_last_screenful() {
     let mut app = App::new(vec![
         obelus::buffer::Buffer::open(&path).expect("opening it"),
     ]);
-    app.configure(obelus::config::Config::default());
+    app.configure(obelus::config::Config::default(), Vec::new());
     support::lay_out(&mut app, 60, 8);
     // The reading is asked for: a file opens as its bytes. Drawn again
     // afterwards, because the rows of a reading are worked out for a frame.

@@ -47,16 +47,13 @@ pub struct SettingsView<'a> {
     images: &'a crate::ui::image::Images,
     /// Every command and the key it is on, for the keys page.
     keys: Vec<(crate::command::Command, Option<crate::keymap::KeyChord>)>,
-    /// The reader's own settings, under whatever the tree lays over them.
-    ///
-    /// What a row on the tree's page says beside a setting the tree has not
-    /// got: the value showing is the reader's, or nobody's.
-    readers: Config,
     /// The settings the tree has set, and the file it set them in.
     ///
     /// Written the way the reader would write it -- `.obelus.toml`, not the
     /// whole path -- because it is a file in the tree they are looking at.
     pinned: Vec<&'static str>,
+    /// Which settings the reader's own file named.
+    named: Vec<&'static str>,
     /// That file, if there is one.
     tree: Option<String>,
 }
@@ -73,8 +70,8 @@ impl<'a> SettingsView<'a> {
             failure: app.registry_failure(),
             images: app.images(),
             keys: app.settings()?.keys(app.keymap()),
-            readers: app.readers_config().clone(),
             pinned: app.pinned().to_vec(),
+            named: app.readers_named().to_vec(),
             // The file the tree has, or the one it would get: the tree's
             // page says which file it is writing before there is a file to
             // write, because that is the question a reader opening it has.
@@ -552,11 +549,14 @@ impl SettingsView<'_> {
         if self.pinned.contains(&setting.key) {
             return Scope::Project;
         }
-        let theirs = Settings::value_of(setting, &self.readers);
-        let default = Settings::value_of(setting, &Config::default());
-        match theirs == default {
-            true => Scope::Default,
-            false => Scope::Global,
+        // Whether their file speaks about it, which is the same question
+        // the line above asks of the tree's. Whether what it says differs
+        // from the default is a different question and the wrong one: a
+        // reader who wrote a setting down and happened to agree with obelus
+        // would be told they had never been here.
+        match self.named.contains(&setting.key) {
+            true => Scope::Global,
+            false => Scope::Default,
         }
     }
 
