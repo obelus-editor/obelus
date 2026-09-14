@@ -1857,3 +1857,48 @@ fn a_settings_file_that_will_not_read_is_not_written_over() {
         "it is still refusing to save a file it can read"
     );
 }
+
+#[test]
+fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = support::Scratch::new("settings-unknown");
+    let file = scratch.path().join("config.toml");
+    // A line from a newer obelus, a setting that has been renamed since, and
+    // a comment somebody wrote for themselves. None of it is obelus's to
+    // throw away on the next switch a reader flips.
+    std::fs::write(
+        &file,
+        "# mine, do not eat\nfuture_setting = 3\nblame = false\nwrap = true\n",
+    )
+    .expect("writing the file");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 76, 16);
+    // Any change at all: the file is written whole, and whole used to mean
+    // only what obelus knew about. Onto the reading tab and flip the first
+    // switch on it.
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Enter);
+
+    let written = std::fs::read_to_string(&file).expect("reading it back");
+    assert!(
+        written.contains("future_setting = 3"),
+        "a setting obelus has never heard of was deleted:\n{written}"
+    );
+    assert!(
+        written.contains("blame = false"),
+        "a setting under a name obelus has stopped using was deleted:\n{written}"
+    );
+    assert!(
+        written.contains("# mine, do not eat"),
+        "somebody's comment was deleted:\n{written}"
+    );
+    assert!(
+        written.contains("wrap = false"),
+        "the switch that was flipped was not written:\n{written}"
+    );
+}

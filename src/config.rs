@@ -471,30 +471,49 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     set
 }
 
-/// The file's contents for a config.
+/// The file's contents for a config, with nothing else in it.
 #[must_use]
 pub fn to_toml(config: &Config) -> String {
-    let mut table = toml::Table::new();
-    table.insert("theme".to_string(), config.theme.clone().into());
-    table.insert("icons".to_string(), config.icons.into());
-    table.insert("blame_margin".to_string(), config.blame_margin.into());
-    table.insert("wrap".to_string(), config.wrap.into());
+    over("", config)
+}
+
+/// The file's contents for a config, laid over a file that already exists.
+///
+/// Edited rather than rewritten, the way a tree's file is. Obelus used to
+/// write its own file whole on the grounds that obelus wrote all of it,
+/// which is not true: readers open it and put lines in by hand. Writing it
+/// whole took out everything obelus did not recognise -- a setting from a
+/// newer version, a key that has been renamed since, a line with a typo in
+/// it -- silently, on the next switch they flipped. A program that will not
+/// edit a file it is reading should not quietly delete from one it owns.
+///
+/// A file that is not toml at all is started again from nothing: there is
+/// no document to lay anything over, and obelus has already said so
+/// elsewhere.
+#[must_use]
+pub fn over(existing: &str, config: &Config) -> String {
+    let mut document = existing
+        .parse::<toml_edit::DocumentMut>()
+        .unwrap_or_default();
+    document["theme"] = toml_edit::value(config.theme.clone());
+    document["icons"] = toml_edit::value(config.icons);
+    document["blame_margin"] = toml_edit::value(config.blame_margin);
+    document["wrap"] = toml_edit::value(config.wrap);
     // Written even when there is nobody, so the file says what obelus read
     // rather than leaving the reader to wonder whether it noticed.
-    table.insert(
-        "agent".to_string(),
-        config.agent.clone().unwrap_or_default().into(),
-    );
-    // Only when the reader has moved something: an empty table in the file
+    document["agent"] = toml_edit::value(config.agent.clone().unwrap_or_default());
+    // Only while the reader has moved something: an empty table in the file
     // says obelus was thinking about keys, which it was not.
-    if !config.keys.is_empty() {
-        let mut keys = toml::Table::new();
+    if config.keys.is_empty() {
+        document.remove("keys");
+    } else {
+        let mut keys = toml_edit::Table::new();
         for (name, chord) in &config.keys {
-            keys.insert(name.clone(), chord.clone().into());
+            keys[name] = toml_edit::value(chord.clone());
         }
-        table.insert("keys".to_string(), keys.into());
+        document["keys"] = toml_edit::Item::Table(keys);
     }
-    toml::to_string(&table).unwrap_or_default()
+    document.to_string()
 }
 
 /// What a path really names, following any links.
@@ -616,8 +635,12 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
     // the name refers to a link.
     let resolved = resolved(path);
     let path = resolved.as_path();
+    // What is in it already, so that whatever obelus does not recognise
+    // stays there. Nothing, where there is nothing: the first write makes
+    // the file.
+    let existing = std::fs::read_to_string(path).unwrap_or_default();
     let Some(directory) = path.parent() else {
-        return std::fs::write(path, to_toml(config));
+        return std::fs::write(path, over(&existing, config));
     };
     std::fs::create_dir_all(directory)?;
     // Written beside it and renamed over it, because another obelus may be
@@ -631,7 +654,7 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
     // within a filesystem, and the only directory known to be on the same
     // one is this one.
     let beside = path.with_extension("toml.writing");
-    std::fs::write(&beside, to_toml(config))?;
+    std::fs::write(&beside, over(&existing, config))?;
     std::fs::rename(&beside, path)
 }
 

@@ -190,6 +190,23 @@ file's history can find nothing for a second and a half and still be
 working: without a number moving, "not found yet" and "not there" look the
 same.
 
+**Do not delete what you do not recognise.** Obelus wrote its own settings
+file whole, on the grounds that obelus wrote all of it. That is not true --
+readers put lines in by hand -- so writing it whole silently took out
+everything obelus did not know: a setting from a newer version, a key
+renamed since, a line with a typo in it, and the comment beside them. It
+took them out on the next switch the reader flipped, which is nowhere near
+where they would look. A tree's file was already edited rather than
+rewritten, with `toml_edit`, for exactly this reason; the reader's is now
+too.
+
+**Ask the same question of every layer.** The column saying where a value
+came from asked the tree "does your file name this setting" and asked the
+reader "does your value differ from the default". So a reader who wrote a
+setting down and happened to agree with obelus was told they had never been
+here. Both answers were available -- `apply` returns the keys a table set --
+and one of them was being thrown away.
+
 **A setting about how something is drawn is not a setting about whether it
 can be asked.** Turning the margin's names off turned off the walk that
 finds them, so the key that opens the commit behind a line went dead and
