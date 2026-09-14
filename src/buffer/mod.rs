@@ -3,6 +3,7 @@
 
 pub mod folds;
 mod moving;
+pub mod undo;
 
 use std::path::{Path, PathBuf};
 
@@ -439,6 +440,12 @@ pub struct Buffer {
     blocks: Vec<Block>,
     /// And where the caret is in it, if the reader has walked in.
     in_block: Option<InBlock>,
+    /// Everything the reader can put back.
+    ///
+    /// A journal of changes rather than of documents: a copy of the whole
+    /// text per keystroke is the obvious thing and is unaffordable in a file
+    /// worth reading.
+    undo: undo::Undo,
 }
 
 impl Buffer {
@@ -494,6 +501,7 @@ impl Buffer {
             },
             blocks: Vec::new(),
             in_block: None,
+            undo: undo::Undo::default(),
         })
     }
 
@@ -629,6 +637,7 @@ impl Buffer {
             },
             blocks: Vec::new(),
             in_block: None,
+            undo: undo::Undo::default(),
         }
     }
 
@@ -856,25 +865,99 @@ impl Buffer {
     /// Says whether anything changed. Replacing nothing with nothing did
     /// not, and neither did anything at all to a document that is not a file
     /// somebody could write.
-    pub fn edit(&mut self, span: Span, with: &str) -> bool {
+    pub fn edit(&mut self, span: Span, with: &str, doing: undo::Doing) -> bool {
+        let Some(step) = self.apply(span, with, doing) else {
+            return false;
+        };
+        self.undo.record(step);
+        true
+    }
+
+    /// Puts back the most recent group of changes.
+    ///
+    /// Backwards through the group, because a later step in it was made
+    /// against the document a earlier one left behind.
+    pub fn undo(&mut self) -> bool {
+        let Some(group) = self.undo.undo() else {
+            return false;
+        };
+        for step in group.iter().rev() {
+            let span = self.spanning(step.at, step.inserted.chars().count());
+            self.apply(span, &step.removed, undo::Doing::Whole);
+        }
+        true
+    }
+
+    /// Does again what [`undo`](Self::undo) put back.
+    pub fn redo(&mut self) -> bool {
+        let Some(group) = self.undo.redo() else {
+            return false;
+        };
+        for step in &group {
+            let span = self.spanning(step.at, step.removed.chars().count());
+            self.apply(span, &step.inserted, undo::Doing::Whole);
+        }
+        true
+    }
+
+    /// Whether there is anything to put back.
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        self.undo.can_undo()
+    }
+
+    /// Whether there is anything to do again.
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        self.undo.can_redo()
+    }
+
+    /// Says the reader did something that was not an edit, so the next one
+    /// starts a group of its own.
+    pub const fn settle_undo(&mut self) {
+        self.undo.close();
+    }
+
+    /// A span from an offset and a length in characters.
+    fn spanning(&self, at: CharOffset, characters: usize) -> Span {
+        let (line, column) = self.text.position(at);
+        let (end_line, end_column) = self.text.position(CharOffset::new(at.get() + characters));
+        Span {
+            line,
+            column,
+            end_line,
+            end_column,
+        }
+    }
+
+    /// The change itself, without writing it down.
+    ///
+    /// Apart from [`edit`](Self::edit) because undoing is this without the
+    /// journal: a step put back that wrote itself into the journal would be
+    /// a step the reader could undo for ever.
+    fn apply(&mut self, span: Span, with: &str, doing: undo::Doing) -> Option<undo::Step> {
         // A commit's version is a document nobody can write, and a reading
         // is a rendering of one rather than the bytes. The three guards on
         // `Content::Commit` elsewhere -- the watcher, the language server,
         // the list of open files -- are the same rule as this one.
         if !self.content.is_file() || self.mode != Mode::Edit {
-            return false;
+            return None;
         }
         let empty = span.line == span.end_line && span.column == span.end_column;
         if empty && with.is_empty() {
-            return false;
+            return None;
         }
 
         let lines_before = self.text.line_count();
-        if !empty {
-            let (_, edit) = self.text.remove(span);
-            self.reparse(&edit);
-        }
         let at = self.text.char_offset(span.line, span.column);
+        let removed = match empty {
+            true => String::new(),
+            false => {
+                let (removed, edit) = self.text.remove(span);
+                self.reparse(&edit);
+                removed
+            }
+        };
         if !with.is_empty() {
             let edit = self.text.insert(at, with);
             self.reparse(&edit);
@@ -910,7 +993,12 @@ impl Buffer {
             .position(CharOffset::new(at.get() + with.chars().count()));
         self.place_cursor(line, column);
         self.viewport.top = self.text.clamp_line(self.viewport.top);
-        true
+        Some(undo::Step {
+            at,
+            removed,
+            inserted: with.to_string(),
+            doing,
+        })
     }
 
     /// Tells the parse about an edit, where there is a parse.
@@ -965,6 +1053,9 @@ impl Buffer {
         // new text is asked what it offers, which is the same question the
         // open asked.
         self.folds.offer(folds::of(&self.text));
+        // Whatever the reader could have put back was about the text that
+        // has just been replaced.
+        self.undo.forget();
 
         self.cursor.line = self.text.clamp_line(self.cursor.line);
         self.cursor.column = self.text.clamp_column(self.cursor.line, self.cursor.column);

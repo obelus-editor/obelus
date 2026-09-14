@@ -7,7 +7,7 @@
 mod support;
 
 use obelus::{
-    buffer::Buffer,
+    buffer::{Buffer, undo::Doing},
     coordinates::{CharColumn, LineNumber, Span},
 };
 
@@ -36,7 +36,7 @@ fn an_edit_moves_the_version_the_caches_are_keyed_on() {
     let (_scratch, mut buffer) = opened("edit-version", "fn main() {}\n");
     let before = buffer.version();
 
-    assert!(buffer.edit(at(0, 3), "x"));
+    assert!(buffer.edit(at(0, 3), "x", Doing::Typing));
     assert_eq!(
         buffer.version(),
         before + 1,
@@ -46,7 +46,7 @@ fn an_edit_moves_the_version_the_caches_are_keyed_on() {
     // Replacing nothing with nothing is not a change and must not pretend
     // to be one: a version that moves for it invalidates everything for
     // nothing.
-    assert!(!buffer.edit(at(0, 3), ""));
+    assert!(!buffer.edit(at(0, 3), "", Doing::Typing));
     assert_eq!(buffer.version(), before + 1);
 }
 
@@ -72,7 +72,7 @@ fn an_edit_is_told_to_the_parse() {
     // Widen the literal. If the tree were not told, the bytes after the edit
     // would still be read against the old tree and the character now inside
     // the string would be highlighted as whatever used to be there.
-    assert!(buffer.edit(at(0, 21), "cdefgh"));
+    assert!(buffer.edit(at(0, 21), "cdefgh", Doing::Typing));
     assert_eq!(
         kind(&buffer, 25),
         inside,
@@ -95,7 +95,7 @@ fn a_fold_below_an_edit_moves_with_it() {
     );
 
     // A line added above it, which moves every line below by one.
-    assert!(buffer.edit(at(0, 0), "// a note\n"));
+    assert!(buffer.edit(at(0, 0), "// a note\n", Doing::Typing));
     assert!(
         buffer.folds().hides(LineNumber::new(6)),
         "the fold did not move with the lines it was about"
@@ -114,8 +114,122 @@ fn a_commits_version_refuses_to_be_edited() {
     let before = version.text().rope().to_string();
 
     assert!(
-        !version.edit(at(0, 0), "x"),
+        !version.edit(at(0, 0), "x", Doing::Typing),
         "a commit's version let itself be written"
     );
     assert_eq!(version.text().rope().to_string(), before);
+}
+
+#[test]
+fn undoing_everything_gives_back_the_document_that_was_opened() {
+    let source = "fn main() {\n    let x = 1;\n}\n";
+    let (_scratch, mut buffer) = opened("undo-round-trip", source);
+
+    // A spread of edits: typing, a deletion, a whole replacement, and one
+    // that adds a line.
+    buffer.edit(at(1, 12), "23", Doing::Typing);
+    buffer.settle_undo();
+    buffer.edit(
+        Span {
+            line: LineNumber::new(1),
+            column: CharColumn::new(4),
+            end_line: LineNumber::new(1),
+            end_column: CharColumn::new(7),
+        },
+        "const",
+        Doing::Whole,
+    );
+    buffer.settle_undo();
+    buffer.edit(at(0, 11), "\n    // note", Doing::Whole);
+
+    assert_ne!(buffer.text().rope().to_string(), source);
+
+    let mut steps = 0;
+    while buffer.undo() {
+        steps += 1;
+        assert!(steps < 20, "undo did not run out");
+    }
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        source,
+        "undoing everything did not give back what was opened"
+    );
+
+    while buffer.redo() {}
+    assert_ne!(
+        buffer.text().rope().to_string(),
+        source,
+        "redoing everything did not put the edits back"
+    );
+}
+
+#[test]
+fn a_run_of_typing_comes_back_in_one_step() {
+    let (_scratch, mut buffer) = opened("undo-grouping", "fn main() {}\n");
+
+    // Five characters, the way a reader types them: each one where the last
+    // one left off.
+    for (step, character) in "hello".chars().enumerate() {
+        buffer.edit(at(0, 3 + step), &character.to_string(), Doing::Typing);
+    }
+    assert_eq!(buffer.text().rope().to_string(), "fn hellomain() {}\n");
+
+    assert!(buffer.undo());
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        "fn main() {}\n",
+        "one undo did not take the whole run of typing"
+    );
+    assert!(!buffer.can_undo(), "the run was more than one step");
+}
+
+#[test]
+fn moving_the_cursor_starts_a_new_step() {
+    let (_scratch, mut buffer) = opened("undo-settle", "fn main() {}\n");
+
+    buffer.edit(at(0, 3), "a", Doing::Typing);
+    // The reader went somewhere else and came back, which is a decision.
+    buffer.settle_undo();
+    buffer.edit(at(0, 4), "b", Doing::Typing);
+
+    assert!(buffer.undo());
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        "fn amain() {}\n",
+        "the two runs were treated as one"
+    );
+    assert!(buffer.undo());
+    assert_eq!(buffer.text().rope().to_string(), "fn main() {}\n");
+}
+
+#[test]
+fn a_paste_is_never_swallowed_by_the_typing_around_it() {
+    let (_scratch, mut buffer) = opened("undo-whole", "fn main() {}\n");
+
+    buffer.edit(at(0, 3), "a", Doing::Typing);
+    buffer.edit(at(0, 4), "PASTED", Doing::Whole);
+    buffer.edit(at(0, 10), "b", Doing::Typing);
+
+    assert!(buffer.undo());
+    assert_eq!(buffer.text().rope().to_string(), "fn aPASTEDmain() {}\n");
+    assert!(buffer.undo());
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        "fn amain() {}\n",
+        "the paste did not come back on its own"
+    );
+}
+
+#[test]
+fn a_re_read_forgets_what_could_have_been_put_back() {
+    let (scratch, mut buffer) = opened("undo-reload", "one\n");
+    buffer.edit(at(0, 3), "x", Doing::Typing);
+    assert!(buffer.can_undo());
+
+    std::fs::write(scratch.path().join("sample.rs"), "something else\n").expect("rewriting it");
+    assert!(buffer.reload().expect("re-reading it"));
+    assert!(
+        !buffer.can_undo(),
+        "a step about text that has been replaced is still offered"
+    );
 }
