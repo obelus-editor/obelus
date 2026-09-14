@@ -254,6 +254,97 @@ impl App {
         }
     }
 
+    /// Copies the selection and takes it out of the document.
+    ///
+    /// The selection in the *file*, not the one in an opened hunk. A hunk's
+    /// rows are lines the file no longer has, and cutting them would be
+    /// cutting from a diff.
+    pub fn cut_selection(&mut self) {
+        let Some(span) = self.current_buffer().and_then(Buffer::selection) else {
+            return;
+        };
+        let Some(text) = self
+            .current_buffer()
+            .map(|buffer| buffer.text().text_in(span))
+        else {
+            return;
+        };
+        match crate::clipboard::copy(&text) {
+            Ok(()) => self.note = Some("cut selection".to_string()),
+            Err(error) => {
+                // Taken out anyway: the reader asked for it gone, and a
+                // clipboard that would not take it does not change that.
+                // Undo is where it went, and the note says so.
+                tracing::warn!(%error, "copying the cut failed");
+                self.note = Some("cut selection, but could not copy it".to_string());
+            }
+        }
+        self.change(span, "", crate::buffer::undo::Doing::Whole);
+    }
+
+    /// Puts back what was last copied or cut.
+    ///
+    /// From wherever the clipboard is -- an outside program's, or obelus's
+    /// own where that cannot be read. A selection is what it replaces,
+    /// because a reader who selected something and pasted meant to.
+    pub fn paste(&mut self) {
+        let Some(what) = crate::clipboard::paste() else {
+            self.note = Some("nothing to paste".to_string());
+            return;
+        };
+        self.paste_text(&what);
+    }
+
+    /// Puts a run of text in where the reader is.
+    ///
+    /// What the terminal's own paste arrives as, and what the clipboard
+    /// hands back. One change either way, so undoing it is one step.
+    pub(super) fn paste_text(&mut self, what: &str) {
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        let cursor = buffer.cursor();
+        let span = buffer.selection().unwrap_or(Span {
+            line: cursor.line,
+            column: cursor.column,
+            end_line: cursor.line,
+            end_column: cursor.column,
+        });
+        self.change(span, what, crate::buffer::undo::Doing::Whole);
+    }
+
+    /// Puts back what the last change took away.
+    pub fn undo(&mut self) {
+        let Some(index) = self.current.map(BufferId::get) else {
+            return;
+        };
+        let went_back = self
+            .buffers
+            .get_mut(index)
+            .and_then(Option::as_mut)
+            .is_some_and(Buffer::undo);
+        match went_back {
+            true => self.change_document(index),
+            false => self.note = Some("nothing to undo".to_string()),
+        }
+    }
+
+    /// Does again what [`undo`](Self::undo) put back.
+    pub fn redo(&mut self) {
+        let Some(index) = self.current.map(BufferId::get) else {
+            return;
+        };
+        let went_forward = self
+            .buffers
+            .get_mut(index)
+            .and_then(Option::as_mut)
+            .is_some_and(Buffer::redo);
+        match went_forward {
+            true => self.change_document(index),
+            false => self.note = Some("nothing to redo".to_string()),
+        }
+    }
+
     /// The question being asked, if one is.
     #[must_use]
     pub const fn prompt(&self) -> Option<&Prompt> {

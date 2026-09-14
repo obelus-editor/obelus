@@ -275,6 +275,12 @@ pub fn for_command(command: crate::command::Command) -> char {
         Command::GitPrevious => '\u{f0143}',
         Command::GitNext => '\u{f0140}',
         // Two sheets of paper, which is what copying is everywhere.
+        // Scissors, a clipboard with an arrow in, and the two arrows that
+        // curl back on themselves.
+        Command::SelectionCut => '\u{f0190}',
+        Command::Paste => '\u{f0192}',
+        Command::Undo => '\u{f054c}',
+        Command::Redo => '\u{f044e}',
         Command::SelectionCopy => '\u{f018f}',
         // The dotted rectangle every program draws for "all of it".
         Command::SelectionAll => '\u{f0486}',

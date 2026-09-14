@@ -1,31 +1,215 @@
-//! Putting text on the reader's clipboard.
+//! Putting text on the reader's clipboard, and getting it back.
 //!
-//! Through the terminal, with OSC 52: the escape sequence hands the text to
-//! whatever is drawing obelus, and that program owns it from then on. Two
-//! things follow, and they are the reasons for choosing this over a library
-//! that talks to the display server:
+//! Through whatever the machine actually has, which is the design helix and
+//! nvim both arrived at and which neither reaches by linking a clipboard
+//! library. An outside program -- `wl-copy`, `xclip`, `pbcopy`, `tmux` --
+//! when there is one, and OSC 52 when there is not.
+//!
+//! OSC 52 hands the text to whatever is drawing obelus, and that program owns
+//! it from then on. Two things follow, and they are why it is the fallback
+//! rather than nothing:
 //!
 //! - **It survives obelus exiting.** On Wayland and X11 the clipboard has no
-//!   server; the content belongs to a live client, and a library that offers it
-//!   from inside this process loses it the moment the process ends. Copy, quit,
-//!   paste is the most ordinary thing a reader does with a copy.
+//!   server; the content belongs to a live client, and a library that offered
+//!   it from inside this process would lose it the moment the process ended.
+//!   Copy, quit, paste is the most ordinary thing a reader does with a copy.
 //! - **It works over ssh.** The terminal is on the reader's own machine while
 //!   obelus is not, and a display-server connection has nothing to connect to
 //!   at this end.
 //!
-//! What it costs: a terminal that does not implement the sequence copies
-//! nothing and says nothing, because there is no reply to wait for. Every
-//! terminal obelus is likely to be read in does implement it, and the
-//! alternative -- asking the display server -- fails outright in the two
-//! cases above rather than silently in an unlikely one.
+//! It cannot be *read*, though. Many terminals refuse -- a program that could
+//! ask what is on your clipboard is a program that can read your passwords --
+//! and helix does not even try: its own OSC 52 provider answers a read with
+//! "not supported". So obelus keeps whatever it last copied or cut, and hands
+//! that back when nothing else can answer. Text from outside arrives instead
+//! by the terminal's own paste, which is bracketed and comes in as an event.
 //!
-//! It does not survive the *terminal* exiting either, for the same reason:
-//! the terminal is then the client that has gone. Making a copy outlive
-//! everything is a clipboard manager's job, not an editor's.
+//! A copy does not survive the *terminal* exiting either: the terminal is
+//! then the client that has gone. Making a copy outlive everything is a
+//! clipboard manager's job, not an editor's.
 
-use std::io;
+use std::{
+    io,
+    process::{Command, Stdio},
+    sync::{Mutex, OnceLock},
+};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+/// Whatever obelus last copied or cut.
+///
+/// What a paste falls back to. Kept whether or not the provider took the
+/// copy, because the case it is for is exactly the one where the provider
+/// cannot be asked afterwards.
+static KEPT: Mutex<Option<String>> = Mutex::new(None);
+
+/// Which way this machine talks to its clipboard, worked out once.
+static PROVIDER: OnceLock<Provider> = OnceLock::new();
+
+/// A provider a test asked for, which stands in front of the detected one.
+///
+/// Its own thing rather than seeding `PROVIDER`, because a `OnceLock` can be
+/// set once and a suite has more than one test in it.
+static ASKED: Mutex<Option<Provider>> = Mutex::new(None);
+
+/// The ways there are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Provider {
+    /// `wl-copy` and `wl-paste`.
+    Wayland,
+    /// `xclip`.
+    XClip,
+    /// `xsel`.
+    XSel,
+    /// `pbcopy` and `pbpaste`.
+    Pasteboard,
+    /// `tmux load-buffer` and `save-buffer`, which reach the outer terminal.
+    Tmux,
+    /// `win32yank.exe`.
+    Win32Yank,
+    /// The escape sequence, which writes and cannot read.
+    Osc52,
+    /// Nothing outside obelus at all.
+    ///
+    /// What a test gets, so that running the suite does not reach into the
+    /// clipboard of whoever is running it -- and what the copy and paste
+    /// commands are really made of, since every other provider falls back
+    /// to this the moment it cannot answer.
+    Kept,
+}
+
+impl Provider {
+    /// The two commands it is, or `None` for the one that is not a command.
+    const fn commands(
+        self,
+    ) -> Option<(
+        &'static str,
+        &'static [&'static str],
+        &'static str,
+        &'static [&'static str],
+    )> {
+        match self {
+            Self::Wayland => Some((
+                "wl-copy",
+                &["--type", "text/plain"],
+                "wl-paste",
+                &["--no-newline"],
+            )),
+            Self::XClip => Some((
+                "xclip",
+                &["-selection", "clipboard"],
+                "xclip",
+                &["-selection", "clipboard", "-o"],
+            )),
+            Self::XSel => Some(("xsel", &["--nodetach", "-i", "-b"], "xsel", &["-o", "-b"])),
+            Self::Pasteboard => Some(("pbcopy", &[], "pbpaste", &[])),
+            Self::Tmux => Some((
+                "tmux",
+                &["load-buffer", "-w", "-"],
+                "tmux",
+                &["save-buffer", "-"],
+            )),
+            Self::Win32Yank => Some((
+                "win32yank.exe",
+                &["-i", "--crlf"],
+                "win32yank.exe",
+                &["-o", "--lf"],
+            )),
+            Self::Osc52 | Self::Kept => None,
+        }
+    }
+}
+
+/// What this machine has, asked once and remembered.
+///
+/// The order is helix's, which is nvim's: a multiplexer first, because it is
+/// what is between obelus and the terminal; then the display server the
+/// environment says is running; then the escape sequence, which needs
+/// nothing and can be wrong about nothing except whether the terminal was
+/// listening.
+pub fn provider() -> Provider {
+    if let Some(asked) = ASKED.lock().ok().and_then(|asked| *asked) {
+        return asked;
+    }
+    *PROVIDER.get_or_init(|| {
+        let have = |program: &str| {
+            Command::new(program)
+                .arg("--help")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok()
+        };
+        let set = |name: &str| std::env::var_os(name).is_some_and(|value| !value.is_empty());
+
+        let found = if set("TMUX") && have("tmux") {
+            Provider::Tmux
+        } else if set("WAYLAND_DISPLAY") && have("wl-copy") && have("wl-paste") {
+            Provider::Wayland
+        } else if set("DISPLAY") && have("xclip") {
+            Provider::XClip
+        } else if set("DISPLAY") && have("xsel") {
+            Provider::XSel
+        } else if have("pbcopy") && have("pbpaste") {
+            Provider::Pasteboard
+        } else if have("win32yank.exe") {
+            Provider::Win32Yank
+        } else {
+            Provider::Osc52
+        };
+        tracing::info!(?found, "the clipboard");
+        found
+    })
+}
+
+/// Puts text back, from wherever it can be got.
+///
+/// The provider first, and what obelus kept when the provider cannot read --
+/// which is OSC 52 always, and any of the others when the program is not
+/// there any more or says nothing.
+#[must_use]
+pub fn paste() -> Option<String> {
+    let kept = || KEPT.lock().ok().and_then(|kept| kept.clone());
+    let Some((_, _, program, arguments)) = provider().commands() else {
+        return kept();
+    };
+    let outcome = Command::new(program)
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output();
+    match outcome {
+        Ok(output) if output.status.success() => match String::from_utf8(output.stdout) {
+            // An empty clipboard is not an answer worth having over one
+            // obelus is sure of.
+            Ok(text) if !text.is_empty() => Some(text),
+            _ => kept(),
+        },
+        Ok(_) | Err(_) => kept(),
+    }
+}
+
+/// Uses a provider of the caller's choosing, for a test.
+///
+/// A suite that ran against whatever the machine has would reach into the
+/// clipboard of whoever ran it, and would pass or fail by what happened to
+/// be on it.
+pub fn use_provider_for_test(provider: Provider) {
+    if let Ok(mut asked) = ASKED.lock() {
+        *asked = Some(provider);
+    }
+    if let Ok(mut kept) = KEPT.lock() {
+        *kept = None;
+    }
+}
+
+/// Remembers what obelus put on the clipboard.
+fn keep(text: &str) {
+    if let Ok(mut kept) = KEPT.lock() {
+        *kept = Some(text.to_string());
+    }
+}
 
 /// Hands `text` to the terminal for its clipboard.
 ///
@@ -38,7 +222,26 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 /// one has to arrive before the next frame rather than whenever a buffer
 /// happens to fill.
 pub fn copy(text: &str) -> io::Result<()> {
-    write_to(&mut io::stdout().lock(), text)
+    // Kept first and whatever happens: the case this is for is the one where
+    // the provider cannot be asked for it back.
+    keep(text);
+    let Some((program, arguments, _, _)) = provider().commands() else {
+        return write_to(&mut io::stdout().lock(), text);
+    };
+    let mut child = Command::new(program)
+        .args(arguments)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    if let Some(stdin) = child.stdin.as_mut() {
+        io::Write::write_all(stdin, text.as_bytes())?;
+    }
+    // Waited for, because until it has taken the text it has not got it --
+    // and because a program left running is a program still holding a pipe.
+    drop(child.stdin.take());
+    child.wait()?;
+    Ok(())
 }
 
 /// The same, to somewhere a test can read.

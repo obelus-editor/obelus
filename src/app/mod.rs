@@ -910,6 +910,9 @@ impl App {
             }
             Event::Counted(counted) => self.on_counted(*counted),
             Event::Scroll(rows) => self.scroll(rows),
+            // One change for the whole of it, so undoing a paste is one
+            // step rather than however many lines it happened to be.
+            Event::Paste(text) => self.paste_text(&text),
             Event::Tick => self.phase = self.phase.wrapping_add(1),
             Event::Matches {
                 generation,
@@ -1297,6 +1300,21 @@ impl App {
                     buffer.move_cursor(motion, area);
                 }
             }
+            return;
+        }
+
+        // What a key puts into the document. After the motions, which have
+        // the arrows and the ends of a line, and before the table, which has
+        // the chords: a bare character is neither of those, and `Backspace`,
+        // `Delete`, `Enter` and `Tab` cannot be in the table at all --
+        // `why_not` refuses them, because every list and box takes them
+        // itself.
+        if self.picker.is_none()
+            && self.settings.is_none()
+            && !self.showing_chat
+            && let Some(typing) = keys::typing_for(&key)
+        {
+            self.typed(typing);
             return;
         }
 

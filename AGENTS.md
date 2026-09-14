@@ -559,7 +559,7 @@ command is gone and `App::blame` reads the setting.
 * **Control does something to the file in front of you**, on the letter of
   the word: `p` the palette, `w` close, `r` re-read, `t` toggle the reading
   its format has, `l` a line number, `a` all of it, `c` copy, `q` leave.
-  `ctrl+v` is left alone: obelus takes typed text in the agent's box, and
+  `ctrl+v` was left alone until there was a paste to give it, and
   that is the one chord every reader will try there.
 * **Alt asks about the cursor, or walks what was found**: `alt+enter` the
   symbol under it (an IDE's context actions, and alt is the escape prefix so

@@ -415,9 +415,7 @@ impl Keymap {
                 // control does something to the file in front of the
                 // reader, and a reading of the file is that rather than a
                 // thing opened to look at. Not `p`, which is the palette,
-                // and not `v`, which is kept for a paste -- obelus takes
-                // typed text in the agent's box, and `ctrl+v` is the one
-                // chord every reader will try there.
+                // and not `v`, which is the paste it was being kept for.
                 Binding {
                     command: Command::PreviewToggle,
                     context: Context::Normal,
@@ -443,6 +441,31 @@ impl Keymap {
                 // selection. It is also screen's prefix and tmux's other
                 // one: a reader inside either of those has to rebind it,
                 // and the keys page is where.
+                // The four a reader arrives already knowing. `ctrl+v` was
+                // being kept for this one; `ctrl+y` is redo because
+                // `ctrl+shift+z` cannot be said here -- a control byte
+                // cannot carry the case of a letter, and the chord only
+                // reaches a terminal speaking the kitty protocol.
+                Binding {
+                    command: Command::SelectionCut,
+                    context: Context::Normal,
+                    chord: control('x'),
+                },
+                Binding {
+                    command: Command::Paste,
+                    context: Context::Normal,
+                    chord: control('v'),
+                },
+                Binding {
+                    command: Command::Undo,
+                    context: Context::Normal,
+                    chord: control('z'),
+                },
+                Binding {
+                    command: Command::Redo,
+                    context: Context::Normal,
+                    chord: control('y'),
+                },
                 Binding {
                     command: Command::SelectionAll,
                     context: Context::Normal,

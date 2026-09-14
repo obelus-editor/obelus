@@ -233,3 +233,206 @@ fn a_re_read_forgets_what_could_have_been_put_back() {
         "a step about text that has been replaced is still offered"
     );
 }
+
+/// Editing as a reader does it: through the keys.
+mod keys {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    fn reading(name: &str, contents: &str) -> (support::Scratch, App) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 12);
+        (scratch, app)
+    }
+
+    fn text(app: &App) -> String {
+        app.current_buffer()
+            .expect("a buffer")
+            .text()
+            .rope()
+            .to_string()
+    }
+
+    #[test]
+    fn typing_puts_characters_where_the_cursor_is() {
+        let (_scratch, mut app) = reading("keys-typing", "fn main() {}\n");
+        for _ in 0..3 {
+            support::press(&mut app, KeyCode::Right);
+        }
+        support::type_text(&mut app, "hello");
+        assert_eq!(text(&app), "fn hellomain() {}\n");
+
+        support::press(&mut app, KeyCode::Enter);
+        assert_eq!(text(&app), "fn hello\nmain() {}\n");
+    }
+
+    #[test]
+    fn backspace_takes_what_is_behind_and_delete_what_is_in_front() {
+        let (_scratch, mut app) = reading("keys-deleting", "abcd\n");
+        for _ in 0..2 {
+            support::press(&mut app, KeyCode::Right);
+        }
+        support::press(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "acd\n");
+        support::press(&mut app, KeyCode::Delete);
+        assert_eq!(text(&app), "ad\n");
+    }
+
+    /// The one thing every reader expects of them without being told.
+    #[test]
+    fn backspace_over_a_selection_takes_the_selection() {
+        let (_scratch, mut app) = reading("keys-selection", "one two three\n");
+        for _ in 0..3 {
+            support::press_shift(&mut app, KeyCode::Right);
+        }
+        support::press(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), " two three\n");
+
+        // And typing over one replaces it.
+        for _ in 0..4 {
+            support::press_shift(&mut app, KeyCode::Right);
+        }
+        support::type_text(&mut app, "X");
+        assert_eq!(text(&app), "X three\n");
+    }
+
+    /// A line break joins the lines it is between, from either side.
+    #[test]
+    fn deleting_across_the_end_of_a_line_joins_them() {
+        let (_scratch, mut app) = reading("keys-join", "one\ntwo\n");
+        support::press(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Delete);
+        assert_eq!(text(&app), "onetwo\n");
+
+        let (_scratch, mut app) = reading("keys-join-back", "one\ntwo\n");
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "onetwo\n");
+    }
+
+    /// Nothing behind the first character and nothing in front of the last.
+    #[test]
+    fn deleting_off_either_end_does_nothing() {
+        let (_scratch, mut app) = reading("keys-ends", "one\n");
+        support::press(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "one\n");
+
+        support::press_control_key(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Delete);
+        assert_eq!(text(&app), "one\n");
+    }
+
+    /// The clipboard is one thing for the whole process, so the tests that
+    /// use it take turns.
+    static CLIPBOARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn cutting_takes_the_selection_out_and_pasting_puts_it_back() {
+        let _turn = CLIPBOARD
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Nothing outside obelus: a suite that used whatever this machine
+        // has would reach into the clipboard of whoever ran it, and would
+        // pass or fail by what happened to be on it.
+        obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
+
+        let (_scratch, mut app) = reading("keys-cut", "one two\n");
+        for _ in 0..4 {
+            support::press_shift(&mut app, KeyCode::Right);
+        }
+        dispatch::dispatch(&mut app, Command::SelectionCut);
+        assert_eq!(text(&app), "two\n");
+
+        support::press_control_key(&mut app, KeyCode::End);
+        dispatch::dispatch(&mut app, Command::Paste);
+        assert!(
+            text(&app).starts_with("two\none "),
+            "the cut text did not come back: {:?}",
+            text(&app)
+        );
+    }
+
+    #[test]
+    fn undo_and_redo_walk_the_changes() {
+        let (_scratch, mut app) = reading("keys-undo", "fn main() {}\n");
+        support::type_text(&mut app, "abc");
+        assert_eq!(text(&app), "abcfn main() {}\n");
+
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(
+            text(&app),
+            "fn main() {}\n",
+            "one undo did not take the run"
+        );
+        dispatch::dispatch(&mut app, Command::Redo);
+        assert_eq!(text(&app), "abcfn main() {}\n");
+    }
+
+    /// A pasted function is one change, however many lines it is.
+    #[test]
+    fn what_the_terminal_pastes_arrives_as_one_change() {
+        let (_scratch, mut app) = reading("keys-bracketed", "\n");
+        app.handle(obelus::event::Event::Paste(
+            "fn one() {}\nfn two() {}\n".to_string(),
+        ));
+        assert_eq!(text(&app), "fn one() {}\nfn two() {}\n\n");
+
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(
+            text(&app),
+            "\n",
+            "undoing a paste took it back a line at a time"
+        );
+    }
+
+    /// The commands say so rather than doing nothing, because a key that is
+    /// not offered does nothing at all and the palette row would be grey.
+    /// What a cut can be pasted back out of when nothing outside can be
+    /// read -- which is OSC 52 always, and every other provider whenever
+    /// the program behind it is gone or says nothing.
+    #[test]
+    fn a_clipboard_that_cannot_be_read_still_pastes_what_obelus_cut() {
+        let _turn = CLIPBOARD
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Osc52);
+
+        assert_eq!(
+            obelus::clipboard::paste(),
+            None,
+            "something was on the clipboard before anything was put there"
+        );
+        obelus::clipboard::copy("what obelus cut").expect("copying");
+        assert_eq!(
+            obelus::clipboard::paste().as_deref(),
+            Some("what obelus cut"),
+            "a sequence that cannot be read back left nothing to paste"
+        );
+    }
+
+    #[test]
+    fn a_document_with_nothing_to_undo_does_not_offer_it() {
+        let (_scratch, mut app) = reading("keys-offers", "one\n");
+        assert!(!app.offers(Command::Undo));
+        assert!(!app.offers(Command::Redo));
+        // Paste is always offered: what is on a clipboard is not a question
+        // that can be answered without asking an outside program.
+        assert!(app.offers(Command::Paste));
+
+        support::type_text(&mut app, "x");
+        assert!(app.offers(Command::Undo));
+        assert!(!app.offers(Command::Redo));
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert!(app.offers(Command::Redo));
+    }
+}

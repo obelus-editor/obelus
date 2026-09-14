@@ -74,6 +74,14 @@ pub enum Command {
     GitNext,
     /// Copy the selected text to the system clipboard.
     SelectionCopy,
+    /// Copy the selection and take it out.
+    SelectionCut,
+    /// Put back what was last copied or cut.
+    Paste,
+    /// Put back what the last change took away.
+    Undo,
+    /// Do again what undo put back.
+    Redo,
     /// Stop selecting.
     SelectionClear,
     /// Select the whole file.
@@ -165,6 +173,10 @@ pub enum Requires {
     ABracket,
     /// The project has to be a repository with something in it.
     AHistory,
+    /// The document has to have a change in it that can be put back.
+    SomethingToUndo,
+    /// And one that has been put back and can be made again.
+    SomethingToRedo,
     /// The cursor has to be in a run of lines that folds, or on a folded
     /// one.
     AFoldHere,
@@ -380,6 +392,26 @@ pub const ALL: &[CommandSpec] = &[
         title: "Select the whole file",
     },
     CommandSpec {
+        command: Command::SelectionCut,
+        name: "cut-selection",
+        title: "Copy the selection and take it out",
+    },
+    CommandSpec {
+        command: Command::Paste,
+        name: "paste",
+        title: "Put back what was last copied or cut",
+    },
+    CommandSpec {
+        command: Command::Undo,
+        name: "undo",
+        title: "Put back what the last change took away",
+    },
+    CommandSpec {
+        command: Command::Redo,
+        name: "redo",
+        title: "Do again what undo put back",
+    },
+    CommandSpec {
         command: Command::SelectionClear,
         name: "clear-selection",
         title: "Stop selecting",
@@ -490,6 +522,10 @@ impl Command {
             | Self::GitPrevious
             | Self::GitNext
             | Self::SelectionCopy
+            | Self::SelectionCut
+            | Self::Paste
+            | Self::Undo
+            | Self::Redo
             | Self::SelectionClear
             | Self::SelectionAll
             | Self::GoBack
@@ -569,7 +605,17 @@ impl Command {
             Self::GitHunk => Requires::AHunk,
             Self::GitPrevious => Requires::AHunkBefore,
             Self::GitNext => Requires::AHunkAfter,
-            Self::SelectionCopy | Self::SelectionClear => Requires::ASelection,
+            Self::SelectionCopy | Self::SelectionClear | Self::SelectionCut => {
+                Requires::ASelection
+            }
+            // Not "is there anything to paste": obelus's own store knows
+            // without being asked, and an external clipboard has to be run
+            // to find out. A requirement that cannot be answered cheaply
+            // becomes a key that does nothing and a row grey for ever,
+            // because `offers` gates both. The command says what it found.
+            Self::Paste => Requires::AFileOpen,
+            Self::Undo => Requires::SomethingToUndo,
+            Self::Redo => Requires::SomethingToRedo,
             // Not a selection: this is how one is made. A file, though --
             // there is nothing to take all of otherwise.
             Self::SelectionAll => Requires::AFileOpen,

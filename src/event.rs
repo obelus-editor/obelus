@@ -158,6 +158,18 @@ pub enum Event {
     /// because obelus asks the terminal to report the mouse -- without that
     /// the wheel arrives as arrow keys.
     Scroll(isize),
+    /// Text the terminal pasted, all at once.
+    ///
+    /// Because obelus asks for bracketed paste, which wraps what the
+    /// terminal's own paste key delivers in a pair of escape sequences.
+    /// Without it a pasted function arrives as somebody typing very fast,
+    /// newlines and all, and every line of it is indented again by whatever
+    /// `Enter` does -- the staircase the mode was invented to stop.
+    ///
+    /// It is also how text from outside reaches obelus at all: the sequence
+    /// obelus copies *with* cannot be read back, so the terminal reading the
+    /// clipboard is the way in.
+    Paste(String),
     /// Time passed, and something on screen moves with it.
     ///
     /// The only animated thing obelus has is the welcome screen's wordmark,
@@ -186,9 +198,9 @@ pub enum Event {
 impl Event {
     /// Translates a crossterm event, or `None` for one obelus ignores.
     ///
-    /// Mouse, focus and paste events are dropped rather than stored: nothing
-    /// reads them yet, and a variant nothing reads is indistinguishable from a
-    /// broken feature.
+    /// Mouse and focus events obelus has no use for are dropped rather than
+    /// stored: a variant nothing reads is indistinguishable from a broken
+    /// feature.
     fn from_terminal(event: TerminalEvent) -> Option<Self> {
         match event {
             TerminalEvent::Key(key) => Some(Self::Key(key)),
@@ -202,7 +214,8 @@ impl Event {
                 crossterm::event::MouseEventKind::ScrollUp => Some(Self::Scroll(-3)),
                 _ => None,
             },
-            TerminalEvent::FocusGained | TerminalEvent::FocusLost | TerminalEvent::Paste(_) => None,
+            TerminalEvent::Paste(text) => Some(Self::Paste(text)),
+            TerminalEvent::FocusGained | TerminalEvent::FocusLost => None,
         }
     }
 }
@@ -336,6 +349,20 @@ impl Drop for Ticker {
 
 #[cfg(test)]
 mod tests {
+    /// A paste is the only way text from outside reaches obelus: the
+    /// sequence it copies *with* cannot be read back, so what the terminal
+    /// delivers is the way in. Dropped, it is not a paste that arrives
+    /// wrong -- it is a key that does nothing.
+    #[test]
+    fn what_the_terminal_pastes_arrives() {
+        let pasted =
+            super::Event::from_terminal(crossterm::event::Event::Paste("fn main() {}".to_string()));
+        assert!(
+            matches!(pasted, Some(super::Event::Paste(text)) if text == "fn main() {}"),
+            "a paste from the terminal did not arrive"
+        );
+    }
+
     use std::ffi::OsString;
 
     use super::*;

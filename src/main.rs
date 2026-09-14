@@ -72,6 +72,8 @@ fn main() -> Result<()> {
     // everywhere). That is a real loss for a reader, and it buys the one
     // thing a reader does with a mouse far more often.
     let mouse = enable_mouse();
+    // And what the terminal pastes, wrapped so it can be told from typing.
+    enable_paste();
     // And the keyboard, for the one key obelus needs that a terminal
     // cannot otherwise report.
     let keyboard = enable_keyboard();
@@ -91,6 +93,7 @@ fn main() -> Result<()> {
     if mouse {
         let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
     }
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableBracketedPaste);
     if keyboard {
         let _ = crossterm::execute!(
             std::io::stdout(),
@@ -152,6 +155,22 @@ fn enable_keyboard() -> bool {
 ///
 /// Best effort: a terminal that will not report the mouse is a terminal where
 /// the wheel keeps sending arrow keys, which is how obelus behaved before it
+/// Asks the terminal to wrap what it pastes.
+///
+/// Without it a pasted function arrives as somebody typing very fast, and
+/// every newline in it does whatever `Enter` does. With it, the whole of it
+/// arrives at once and goes in as one change a reader can undo in one step.
+///
+/// Best effort, like the mouse: a terminal that does not know the mode says
+/// nothing and pastes the old way.
+fn enable_paste() {
+    if let Err(error) =
+        crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste)
+    {
+        tracing::warn!(%error, "no bracketed paste");
+    }
+}
+
 /// asked. Not a reason to refuse to start.
 fn enable_mouse() -> bool {
     match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {

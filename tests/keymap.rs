@@ -27,7 +27,9 @@ fn a_global_binding_is_found_from_a_specific_context() {
 #[test]
 fn an_unbound_key_resolves_to_nothing() {
     let keymap = Keymap::new();
-    let event = press(KeyCode::Char('z'), KeyModifiers::CONTROL);
+    // `f12`, which is the last of git's bank and not yet earned. It was
+    // `ctrl+z` until that became undo.
+    let event = press(KeyCode::F(12), KeyModifiers::NONE);
     assert_eq!(keymap.lookup(&event, Context::Normal), None);
 }
 
