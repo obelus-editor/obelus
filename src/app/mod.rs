@@ -223,12 +223,6 @@ pub struct App {
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
     statuses: std::collections::HashMap<PathBuf, git::FileStatus>,
-    /// The agents the registry lists, cached-then-fetched.
-    registry: Vec<crate::agent::Agent>,
-    /// Whether the registry has been asked for and not yet failed.
-    asked_registry: bool,
-    /// Why the registry could not be fetched, until it is tried again.
-    registry_failure: Option<String>,
     /// The conversation with an agent, whether or not it is on screen.
     ///
     /// Kept rather than opened: the view is a region the reader shows and
@@ -256,57 +250,10 @@ pub struct App {
     /// The permission request waiting on the reader: the channel its
     /// answer goes back through.
     permission: Option<crate::acp::Answer<Option<String>>>,
-    /// Each agent's own mark, as SVG, by the registry's id for it.
-    icons: HashMap<String, String>,
-    /// Whether the marks have been asked for.
-    asked_icons: bool,
-    /// The marks again, as pixels the terminal will take -- or nothing to
-    /// take them, on a terminal that cannot show a picture.
-    images: crate::ui::image::Images,
-    /// The installs running, and how far each has got.
-    installing: HashMap<String, crate::agent::install::Progress>,
-    /// Why an install did not work, per agent, until it is tried again.
-    install_failures: HashMap<String, String>,
-    /// Where installed agents live, for a test that would rather not use
-    /// the reader's own data directory. `None` is that directory.
-    agents_root: Option<PathBuf>,
-    /// Whether the settings file is one obelus may write to.
-    ///
-    /// False once it has been found unreadable: what is in it is the
-    /// reader's, and saving over something obelus could not read would
-    /// replace settings it never saw. Set again the moment it reads.
-    config_is_readable: bool,
-    /// What the reader has decided, as read from the file at startup.
-    config: crate::config::Config,
-    /// Where to write it back, or `None` for an application that was never
-    /// told -- which is every test, and is why a test cannot write over the
-    /// reader's real settings.
-    config_path: Option<PathBuf>,
-    /// The reader's own settings, before the tree's are laid over them.
-    ///
-    /// Kept so that the tree's page can say whose value a row is showing
-    /// when the tree has not set it: theirs, or nobody's. Worked out from
-    /// the merged config it cannot be -- by then the two are one.
-    readers_config: crate::config::Config,
-    /// The tree's own settings file, while the tree has one.
-    ///
-    /// Read after the reader's and laid over it, so the tree says what it
-    /// cares about and the reader keeps everything else. Never written to:
-    /// it belongs to whoever wrote the tree, and a reader who changed a
-    /// theme would be editing a file their next commit would carry.
-    tree_config: Option<PathBuf>,
-    /// The settings that file set, which are the ones the reader cannot
-    /// change here.
-    pinned: Vec<&'static str>,
-    /// Which settings the reader's own file named.
-    ///
-    /// The same question the line above answers for the tree, asked of the
-    /// other layer. Worked out from the file rather than by comparing what
-    /// it came to with the default: a reader who writes down a setting has
-    /// said something about it even where they said what obelus would have
-    /// done anyway, and a page that compared could not tell them apart from
-    /// a reader who never opened the file.
-    readers_named: Vec<&'static str>,
+    /// What obelus knows about the agents it could run.
+    agents: agents::Agents,
+    /// The settings as they stand, and where each part came from.
+    settled: preferences::Settled,
     /// The settings view, while it is open.
     settings: Option<Settings>,
     /// The line counts, while they are showing.
@@ -414,9 +361,6 @@ impl App {
             prompt: None,
             changes: None,
             statuses: std::collections::HashMap::new(),
-            registry: Vec::new(),
-            asked_registry: false,
-            registry_failure: None,
             chat: crate::component::chat::Chat::new(),
             showing_chat: false,
             talker: None,
@@ -424,19 +368,8 @@ impl App {
             asking: None,
             card: None,
             permission: None,
-            icons: HashMap::new(),
-            asked_icons: false,
-            images: crate::ui::image::Images::none(),
-            installing: HashMap::new(),
-            install_failures: HashMap::new(),
-            agents_root: None,
-            config_is_readable: true,
-            config: crate::config::Config::default(),
-            config_path: None,
-            readers_config: crate::config::Config::default(),
-            tree_config: None,
-            pinned: Vec::new(),
-            readers_named: Vec::new(),
+            settled: preferences::Settled::default(),
+            agents: agents::Agents::default(),
             settings: None,
             counts: None,
             screen_area: Rect::ZERO,
@@ -618,7 +551,7 @@ impl App {
         // changed in one of them is a setting changed for all of them, and
         // a file read once at startup would leave every other window
         // holding what the reader has already moved on from.
-        if let Some(path) = self.config_path.clone() {
+        if let Some(path) = self.settled.path.clone() {
             // And whatever it really names, which for a reader who keeps
             // their settings in a dotfiles repository is a file in there:
             // what a `git pull` rewrites is that one, and a watch on the
@@ -803,7 +736,7 @@ impl App {
         TextArea {
             width,
             height: self.editor_area.height,
-            wrap: self.config.wrap,
+            wrap: self.settled.config.wrap,
         }
     }
 
@@ -945,7 +878,7 @@ impl App {
                 // reports whichever path the change arrived on, and a
                 // change that came from a repository arrives on the file
                 // the link points at rather than on the link.
-                let readers = self.config_path.as_deref().is_some_and(|config| {
+                let readers = self.settled.path.as_deref().is_some_and(|config| {
                     path == config || path == crate::config::resolved(config)
                 });
                 // Or the tree's own, which is a change to the settings just
@@ -1161,7 +1094,7 @@ impl App {
                 return;
             };
             let room = (self.editor_area.width, self.editor_area.height);
-            let outcome = settings.handle_key(&key, &self.config, &keymap, &listed, room);
+            let outcome = settings.handle_key(&key, &self.settled.config, &keymap, &listed, room);
             match outcome {
                 SettingsOutcome::Consumed => return,
                 SettingsOutcome::Cancelled => {

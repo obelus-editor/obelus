@@ -91,7 +91,7 @@ impl App {
     #[must_use]
     pub fn talking(&self) -> Talking {
         let Some(talker) = self.talker.as_ref() else {
-            return match self.config.agent.as_deref() {
+            return match self.settled.config.agent.as_deref() {
                 None | Some("") => Talking::Nobody,
                 Some(_) => Talking::Idle,
             };
@@ -114,7 +114,7 @@ impl App {
     /// header that changes under the reader.
     #[must_use]
     pub fn agent_name(&self) -> Option<&str> {
-        let chosen = match self.config.agent.as_deref() {
+        let chosen = match self.settled.config.agent.as_deref() {
             None | Some("") => None,
             Some(id) => Some(id),
         };
@@ -854,7 +854,13 @@ impl App {
 
     /// Starts the active agent, or says why it cannot.
     fn start_agent(&mut self) {
-        let Some(id) = self.config.agent.clone().filter(|id| !id.is_empty()) else {
+        let Some(id) = self
+            .settled
+            .config
+            .agent
+            .clone()
+            .filter(|id| !id.is_empty())
+        else {
             return;
         };
         let Some(root) = self.agents_root() else {

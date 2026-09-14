@@ -25,6 +25,38 @@ pub struct Listed {
     pub active: bool,
 }
 
+/// What obelus knows about the agents it could run.
+///
+/// One field on `App` rather than nine. They are one subject -- the list,
+/// the mark beside each name, the installs in flight -- and they arrive
+/// together: the registry is fetched, the marks are fetched for what it
+/// listed, an install is started for one of those. Spread across the
+/// application they read as nine unrelated things, and the one that says
+/// where they live is the only one a test ever sets.
+#[derive(Debug, Default)]
+pub(super) struct Agents {
+    /// The agents the registry lists, cached-then-fetched.
+    pub registry: Vec<crate::agent::Agent>,
+    /// Whether the registry has been asked for and not yet failed.
+    pub asked: bool,
+    /// Why the registry could not be fetched, until it is tried again.
+    pub failure: Option<String>,
+    /// Each agent's own mark, as SVG, by the registry's id for it.
+    pub icons: HashMap<String, String>,
+    /// Whether the marks have been asked for.
+    pub asked_icons: bool,
+    /// The marks again, as pixels the terminal will take -- or nothing to
+    /// take them, on a terminal that cannot show a picture.
+    pub images: crate::ui::image::Images,
+    /// The installs running, and how far each has got.
+    pub installing: HashMap<String, crate::agent::install::Progress>,
+    /// Why an install did not work, per agent, until it is tried again.
+    pub install_failures: HashMap<String, String>,
+    /// Where installed agents live, for a test that would rather not use
+    /// the reader's own data directory. `None` is that directory.
+    pub root: Option<PathBuf>,
+}
+
 impl App {
     /// The agents page's rows.
     ///
@@ -34,7 +66,8 @@ impl App {
     #[must_use]
     pub fn listed_agents(&self) -> Vec<Listed> {
         let root = self.agents_root();
-        self.registry
+        self.agents
+            .registry
             .iter()
             .map(|agent| {
                 // What the install wrote down when it finished, which is the
@@ -44,9 +77,9 @@ impl App {
                 let installed = root
                     .as_deref()
                     .and_then(|root| agent::installation(&agent.id, root));
-                let status = if self.installing.contains_key(&agent.id) {
+                let status = if self.agents.installing.contains_key(&agent.id) {
                     Status::Installing
-                } else if let Some(failure) = self.install_failures.get(&agent.id) {
+                } else if let Some(failure) = self.agents.install_failures.get(&agent.id) {
                     Status::Failed(failure.clone())
                 } else if let Some(installed) = installed {
                     // The registry moves versions hourly, so this is the
@@ -71,7 +104,7 @@ impl App {
                     // that offers to install it says two things at once.
                     active: self.config().agent.as_deref() == Some(agent.id.as_str())
                         && matches!(status, Status::Installed | Status::Outdated { .. }),
-                    progress: self.installing.get(&agent.id).copied(),
+                    progress: self.agents.installing.get(&agent.id).copied(),
                     status,
                     agent: agent.clone(),
                 }
@@ -87,12 +120,12 @@ impl App {
     /// to use the reader's own.
     #[must_use]
     pub(super) fn agents_root(&self) -> Option<PathBuf> {
-        self.agents_root.clone().or_else(agent::root)
+        self.agents.root.clone().or_else(agent::root)
     }
 
     /// Keeps installed agents somewhere else, for a test.
     pub fn agents_root_for_test(&mut self, root: PathBuf) {
-        self.agents_root = Some(root);
+        self.agents.root = Some(root);
     }
 
     /// Fetches the registry, showing whatever was cached while it runs.
@@ -101,11 +134,11 @@ impl App {
     /// session does not last that long, so asking again on every visit to
     /// the page would be a network round trip for the same answer.
     pub(super) fn refresh_registry(&mut self) {
-        if !self.registry.is_empty() || self.asked_registry {
+        if !self.agents.registry.is_empty() || self.agents.asked {
             return;
         }
-        self.asked_registry = true;
-        self.registry_failure = None;
+        self.agents.asked = true;
+        self.agents.failure = None;
         // Nothing read here, not even the cache: the thread does both, and
         // the frame that opens the settings does no I/O at all.
         if let Some(sender) = self.events.clone() {
@@ -120,15 +153,15 @@ impl App {
     /// that started with no network is a session that may have one later.
     pub(super) fn on_registry(&mut self, agents: Vec<Agent>, failure: Option<String>) {
         if let Some(why) = failure {
-            self.registry_failure = Some(why);
-            self.asked_registry = false;
+            self.agents.failure = Some(why);
+            self.agents.asked = false;
             return;
         }
         if agents.is_empty() {
             return;
         }
-        self.registry_failure = None;
-        self.registry = agents;
+        self.agents.failure = None;
+        self.agents.registry = agents;
         // Marks are fetched from the list, so this is the first moment
         // there is anything to fetch. The cached list arrives first and the
         // fetched one replaces it; the once-only flag inside means the
@@ -144,13 +177,13 @@ impl App {
     /// the alternate screen, and cannot happen inside a frame. A test gets
     /// no pictures, which is also what most terminals get.
     pub fn use_images(&mut self, images: Images) {
-        self.images = images;
+        self.agents.images = images;
     }
 
     /// The marks, for the view to draw.
     #[must_use]
     pub fn images(&self) -> &Images {
-        &self.images
+        &self.agents.images
     }
 
     /// Fetches every mark obelus does not have, once.
@@ -159,13 +192,17 @@ impl App {
     /// cards wear glyphs, and forty downloads for something nothing will
     /// draw is forty requests a reader did not ask for.
     fn fetch_icons(&mut self) {
-        if !self.images.available() || self.asked_icons || self.registry.is_empty() {
+        if !self.agents.images.available()
+            || self.agents.asked_icons
+            || self.agents.registry.is_empty()
+        {
             return;
         }
         let wanted: Vec<(String, String)> = self
+            .agents
             .registry
             .iter()
-            .filter(|agent| !self.icons.contains_key(&agent.id))
+            .filter(|agent| !self.agents.icons.contains_key(&agent.id))
             .filter_map(|agent| {
                 agent
                     .icon
@@ -176,7 +213,7 @@ impl App {
         if wanted.is_empty() {
             return;
         }
-        self.asked_icons = true;
+        self.agents.asked_icons = true;
         if let Some(sender) = self.events.clone() {
             agent::icon::spawn_fetch(wanted, sender);
         }
@@ -184,7 +221,7 @@ impl App {
 
     /// Takes one agent's mark.
     pub(super) fn on_icon(&mut self, id: String, svg: String) {
-        self.icons.insert(id, svg);
+        self.agents.icons.insert(id, svg);
     }
 
     /// Moves the agents page's window of cards, if the focused one has
@@ -226,8 +263,8 @@ impl App {
     /// the function that has to know about it.
     #[must_use]
     pub fn shows_pictures(&self) -> bool {
-        self.images.available()
-            && !self.icons.is_empty()
+        self.agents.images.available()
+            && !self.agents.icons.is_empty()
             && self.settings.as_ref().is_some_and(Settings::on_agents)
     }
 
@@ -258,7 +295,7 @@ impl App {
                 .map(|(index, agent)| (agent.agent.id.clone(), index == focus))
                 .collect()
         };
-        let Self { images, icons, .. } = self;
+        let Agents { images, icons, .. } = &mut self.agents;
         for (id, focused) in wanted {
             if let Some(svg) = icons.get(&id) {
                 images.prepare(&id, svg, focused, palette);
@@ -269,23 +306,23 @@ impl App {
     /// Why the list could not be fetched, if it could not.
     #[must_use]
     pub fn registry_failure(&self) -> Option<&str> {
-        self.registry_failure.as_deref()
+        self.agents.failure.as_deref()
     }
 
     /// Notes how far an install has got.
     pub(super) fn on_installing(&mut self, id: String, progress: Progress) {
-        self.installing.insert(id, progress);
+        self.agents.installing.insert(id, progress);
     }
 
     /// Takes an install's outcome.
     pub(super) fn on_installed(&mut self, id: String, failure: Option<String>) {
-        self.installing.remove(&id);
+        self.agents.installing.remove(&id);
         match failure {
             Some(why) => {
-                self.install_failures.insert(id, why);
+                self.agents.install_failures.insert(id, why);
             }
             None => {
-                self.install_failures.remove(&id);
+                self.agents.install_failures.remove(&id);
                 // Installed and nothing else in use: the reader pressed the
                 // button, so this is the one they want.
                 if self.config().agent.is_none() {
@@ -297,10 +334,16 @@ impl App {
 
     /// Starts installing an agent, or says why it will not.
     pub(super) fn install_agent(&mut self, id: &str) {
-        let Some(agent) = self.registry.iter().find(|agent| agent.id == id).cloned() else {
+        let Some(agent) = self
+            .agents
+            .registry
+            .iter()
+            .find(|agent| agent.id == id)
+            .cloned()
+        else {
             return;
         };
-        if self.installing.contains_key(id) {
+        if self.agents.installing.contains_key(id) {
             return;
         }
         let Some(root) = self.agents_root() else {
@@ -310,7 +353,7 @@ impl App {
         // Nothing to report yet -- a download says how far through it is
         // once bytes arrive, and a package manager never does -- but the
         // row has to stop offering a button the moment it is pressed.
-        self.installing.insert(
+        self.agents.installing.insert(
             agent.id.clone(),
             Progress {
                 done: 0,
@@ -318,7 +361,7 @@ impl App {
                 elapsed: std::time::Duration::ZERO,
             },
         );
-        self.install_failures.remove(id);
+        self.agents.install_failures.remove(id);
         if let Some(sender) = self.events.clone() {
             tracing::info!(id, root = %root.display(), "installing an agent");
             agent::install::spawn(&agent, &root, sender);

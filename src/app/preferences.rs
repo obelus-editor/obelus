@@ -6,11 +6,69 @@
 
 use super::*;
 
+/// The settings as they stand, and where each part of them came from.
+///
+/// One field on `App` rather than seven, because the seven move together:
+/// the reader's file is read, the keys it named are noted, the tree's file
+/// is laid over the top, and the page says whose a value is out of all of
+/// it. A change that set one and forgot another would be a page confidently
+/// naming the wrong layer, which is exactly the bug this grouping is here
+/// to stop happening twice.
+#[derive(Debug)]
+pub(super) struct Settled {
+    /// What obelus is actually going by: the reader's own, with the tree's
+    /// laid over it.
+    pub config: crate::config::Config,
+    /// Where the reader's file is, or `None` for an application that was
+    /// never told -- which is every test, and is why a test cannot write
+    /// over the reader's real settings.
+    pub path: Option<PathBuf>,
+    /// False once that file has been found unreadable: what is in it is the
+    /// reader's, and saving over something obelus could not read would
+    /// replace settings it never saw. True again the moment it reads.
+    pub readable: bool,
+    /// The reader's own layer, before the tree's went over it.
+    ///
+    /// Kept so the tree's page can say whose value a row is showing. Worked
+    /// out from the merged config it cannot be -- by then the two are one.
+    pub readers: crate::config::Config,
+    /// Which settings the reader's file named.
+    ///
+    /// Which, not what they came to: a reader who writes a setting down has
+    /// said something about it even where what they said is what obelus
+    /// would have done anyway.
+    pub named: Vec<&'static str>,
+    /// The tree's own settings file, while the tree has one.
+    ///
+    /// Never written to by a reader changing their own settings: it belongs
+    /// to whoever wrote the tree, and their next commit would carry it.
+    pub tree: Option<PathBuf>,
+    /// The settings that file set, which are the ones the reader cannot
+    /// change here.
+    pub pinned: Vec<&'static str>,
+}
+
+impl Default for Settled {
+    fn default() -> Self {
+        Self {
+            config: crate::config::Config::default(),
+            path: None,
+            // Until something says otherwise: a file nobody has failed to
+            // read is a file obelus may write.
+            readable: true,
+            readers: crate::config::Config::default(),
+            named: Vec::new(),
+            tree: None,
+            pinned: Vec::new(),
+        }
+    }
+}
+
 impl App {
     /// What the reader has decided.
     #[must_use]
     pub const fn config(&self) -> &crate::config::Config {
-        &self.config
+        &self.settled.config
     }
 
     /// The settings view, while it is open.
@@ -114,21 +172,21 @@ impl App {
         // The reader's own layer, and then the tree's back over it: a
         // setting they change is theirs, and what the tree has is still the
         // tree's.
-        self.readers_config.set(key, value);
+        self.settled.readers.set(key, value);
         self.apply_tree();
-        let Some(path) = self.config_path.clone() else {
+        let Some(path) = self.settled.path.clone() else {
             // Nobody said where the file is, so there is nothing to write
             // to: an application that never read one does not write one.
             return;
         };
-        if !self.config_is_readable {
+        if !self.settled.readable {
             // Said when it was found to be unreadable, and again here,
             // because this is the moment the reader finds out their change
             // is not being kept.
             self.note = Some("not saved: the settings will not read".to_string());
             return;
         }
-        if let Err(error) = crate::config::save_to(&path, &self.readers_config) {
+        if let Err(error) = crate::config::save_to(&path, &self.settled.readers) {
             tracing::warn!(%error, "not saving the configuration");
             self.note = Some(format!("not saved: {error}"));
         }
@@ -179,12 +237,12 @@ impl App {
     /// it when the reader changes something on the settings page; a change
     /// made in it by hand is picked up the next time obelus starts.
     pub fn open_config_file(&mut self) {
-        let Some(path) = self.config_path.clone() else {
+        let Some(path) = self.settled.path.clone() else {
             self.note = Some("this system has nowhere for a settings file".to_string());
             return;
         };
         if !path.exists()
-            && let Err(error) = crate::config::save_to(&path, &self.config)
+            && let Err(error) = crate::config::save_to(&path, &self.settled.config)
         {
             tracing::warn!(%error, "not writing the configuration");
             self.note = Some(format!("no settings file, and none written: {error}"));
@@ -203,12 +261,15 @@ impl App {
     /// something a reader can edit.
     pub(super) fn rebind(&mut self, command: crate::command::Command, chord: Option<KeyChord>) {
         let written = chord.map(|chord| chord.label_in(false)).unwrap_or_default();
-        self.config.keys.insert(command.name().to_string(), written);
+        self.settled
+            .config
+            .keys
+            .insert(command.name().to_string(), written);
         self.keymap.rebind(command, chord);
-        let Some(path) = self.config_path.clone() else {
+        let Some(path) = self.settled.path.clone() else {
             return;
         };
-        if let Err(error) = crate::config::save_to(&path, &self.config) {
+        if let Err(error) = crate::config::save_to(&path, &self.settled.config) {
             tracing::warn!(%error, "not saving the configuration");
             self.note = Some(format!("not saved: {error}"));
         }
@@ -219,16 +280,16 @@ impl App {
     /// One place, called at startup and after every change, so a setting
     /// cannot mean one thing on the way in and another when it is edited.
     fn apply_config(&mut self) {
-        if let Some(theme) = builtin::by_name(&self.config.theme) {
+        if let Some(theme) = builtin::by_name(&self.settled.config.theme) {
             self.theme = theme;
         }
-        icons::use_glyphs(self.config.icons);
+        icons::use_glyphs(self.settled.config.icons);
         // The table the reader's own bindings leave. Built rather than
         // patched: what is in the file is a list of changes over the
         // defaults, and applying them to a table that has already had them
         // applied would leave a rebind that was undone in the file still in
         // force.
-        self.keymap = crate::keymap::Keymap::with(&self.config.keys);
+        self.keymap = crate::keymap::Keymap::with(&self.settled.config.keys);
     }
 
     /// Reads the configuration file and applies it.
@@ -236,8 +297,8 @@ impl App {
     /// Separate from [`App::new`] so that a test gets the defaults rather
     /// than whatever the machine it runs on has in `~/.config`.
     pub fn load_config(&mut self) {
-        self.config_path = crate::config::path();
-        let Some(path) = self.config_path.clone() else {
+        self.settled.path = crate::config::path();
+        let Some(path) = self.settled.path.clone() else {
             tracing::info!("nowhere to keep settings, so the defaults");
             return;
         };
@@ -273,20 +334,23 @@ impl App {
         // would stay in force: nothing would have put the reader's answer
         // back underneath it, and deleting a line from the tree's file
         // would do nothing until obelus was started again.
-        self.config = self.readers_config.clone();
-        self.pinned.clear();
-        self.tree_config = crate::config::tree_path(&self.working_directory);
-        let Some(path) = self.tree_config.clone() else {
+        self.settled.config = self.settled.readers.clone();
+        self.settled.pinned.clear();
+        self.settled.tree = crate::config::tree_path(&self.working_directory);
+        let Some(path) = self.settled.tree.clone() else {
             self.apply_config();
             return;
         };
         match crate::config::read_table(&path) {
             Ok(Some(table)) => {
-                self.pinned =
-                    crate::config::apply(&mut self.config, &table, crate::config::Whose::Tree);
+                self.settled.pinned = crate::config::apply(
+                    &mut self.settled.config,
+                    &table,
+                    crate::config::Whose::Tree,
+                );
                 tracing::info!(
                     path = %path.display(),
-                    settings = ?self.pinned,
+                    settings = ?self.settled.pinned,
                     "the tree has settings of its own",
                 );
             }
@@ -301,34 +365,35 @@ impl App {
     /// The reader's own settings, under whatever the tree lays over them.
     #[must_use]
     pub const fn readers_config(&self) -> &crate::config::Config {
-        &self.readers_config
+        &self.settled.readers
     }
 
     /// The settings the tree has set, which are the ones the reader cannot
     /// change from here.
     #[must_use]
     pub fn pinned(&self) -> &[&'static str] {
-        &self.pinned
+        &self.settled.pinned
     }
 
     /// Which settings the reader's own file named.
     #[must_use]
     pub fn readers_named(&self) -> &[&'static str] {
-        &self.readers_named
+        &self.settled.named
     }
 
     /// The tree's own settings file, while the tree has one.
     #[must_use]
     pub fn tree_config(&self) -> Option<&Path> {
-        self.tree_config.as_deref()
+        self.settled.tree.as_deref()
     }
 
     /// Which file has this setting, if it is not the reader's to change.
     #[must_use]
     pub fn pinned_by(&self, key: &str) -> Option<&Path> {
-        self.pinned
+        self.settled
+            .pinned
             .contains(&key)
-            .then_some(self.tree_config.as_deref())
+            .then_some(self.settled.tree.as_deref())
             .flatten()
     }
 
@@ -342,15 +407,15 @@ impl App {
     /// reader who has turned a preview off should not have it come back
     /// because somebody in another window changed the theme.
     pub(super) fn reread_config(&mut self) {
-        if let Some(path) = self.config_path.clone() {
+        if let Some(path) = self.settled.path.clone() {
             match crate::config::read_from(&path) {
                 crate::config::Reading::Settings(config, named) => {
                     tracing::info!(path = %path.display(), "the settings changed under us");
-                    self.readers_config = config.clone();
-                    self.readers_named = named;
-                    self.config = config;
+                    self.settled.readers = config.clone();
+                    self.settled.named = named;
+                    self.settled.config = config;
                     self.apply_config();
-                    self.config_is_readable = true;
+                    self.settled.readable = true;
                 }
                 // Gone, which is somebody deleting it or an editor writing
                 // it in a way obelus caught mid-flight. Neither is a reason
@@ -375,7 +440,7 @@ impl App {
     /// watcher is on it.
     fn settings_unreadable(&mut self, path: &Path, why: &str) {
         tracing::warn!(path = %path.display(), why, "the settings file will not read");
-        self.config_is_readable = false;
+        self.settled.readable = false;
         // Short, because the status row is one row and shares it with the
         // file and the position: which file and what went wrong are in the
         // log, where there is room for them.
@@ -394,9 +459,9 @@ impl App {
     pub fn configure(&mut self, config: crate::config::Config, named: Vec<&'static str>) {
         // The reader's own layer, which is what the tree's is laid over --
         // and what a setting goes back to when the tree stops naming it.
-        self.readers_config = config.clone();
-        self.readers_named = named;
-        self.config = config;
+        self.settled.readers = config.clone();
+        self.settled.named = named;
+        self.settled.config = config;
         self.apply_config();
         self.apply_tree();
     }
@@ -412,7 +477,7 @@ impl App {
             _ => Vec::new(),
         };
         self.configure(crate::config::from_toml(&text), named);
-        self.config_path = Some(path);
-        self.config_is_readable = true;
+        self.settled.path = Some(path);
+        self.settled.readable = true;
     }
 }
