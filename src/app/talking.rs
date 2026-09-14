@@ -814,6 +814,9 @@ impl App {
                 limit,
                 answer,
             } => self.read_for_agent(&path, line, limit, answer),
+            acp::Incoming::Write { path, text, answer } => {
+                self.write_for_agent(&path, &text, answer);
+            }
             acp::Incoming::Gone(why) => {
                 // Whatever it was waiting on goes with it. The handle
                 // stays, dead, because the view reads the state off it --
@@ -976,6 +979,97 @@ impl App {
     /// Refused outside the project, whichever way the text would have come:
     /// an agent asking for something outside the tree obelus was started on
     /// is asking for something the reader did not open it to look at.
+    /// Writes a file for the agent.
+    ///
+    /// Through the buffer where obelus has one open, so the reader can undo
+    /// it. That is the whole of why this is allowed at all: the objection
+    /// was never that an agent should not change a file, it was that a
+    /// reader could not see the change arrive or take it back. A document on
+    /// screen that changed under them is one `ctrl+z` from what it was.
+    ///
+    /// Inside the working directory only, the same fence a read is behind.
+    /// Writes a file for the agent, as a test asks it to.
+    ///
+    /// Straight in rather than through an `Incoming`: that road needs a live
+    /// agent to have opened it, and what is worth testing here is what
+    /// happens to the document rather than how the message arrived.
+    pub fn write_for_agent_for_test(&mut self, path: &Path, text: &str) -> bool {
+        let (answer, answered) = futures::channel::oneshot::channel();
+        self.write_for_agent(path, text, answer);
+        futures::executor::block_on(answered).unwrap_or(false)
+    }
+
+    fn write_for_agent(&mut self, path: &Path, text: &str, answer: acp::Answer<bool>) {
+        let full = match path.is_absolute() {
+            true => path.to_path_buf(),
+            false => self.working_directory.join(path),
+        };
+        // A path that does not exist yet cannot be canonicalised, so the
+        // fence is tested on the directory it would go in.
+        let inside = full
+            .canonicalize()
+            .or_else(|_| {
+                full.parent()
+                    .map(std::path::Path::canonicalize)
+                    .unwrap_or_else(|| Err(std::io::ErrorKind::NotFound.into()))
+            })
+            .is_ok_and(|full| full.starts_with(&self.working_directory));
+        if !inside {
+            tracing::info!(path = %full.display(), "the agent asked to write outside the tree");
+            let _ = answer.send(false);
+            return;
+        }
+
+        let open = self
+            .buffers
+            .iter()
+            .enumerate()
+            .find(|(_, buffer)| {
+                buffer
+                    .as_ref()
+                    .is_some_and(|buffer| buffer.path() == full && buffer.content().is_file())
+            })
+            .map(|(index, _)| index);
+
+        let wrote = match open {
+            // The whole document replaced as one change, which is one step
+            // back. The protocol has no way to say "this part", so what
+            // arrives is the file with the change already in it.
+            Some(index) => {
+                let whole = self
+                    .buffers
+                    .get(index)
+                    .and_then(Option::as_ref)
+                    .map(|buffer| buffer.spanning_all());
+                let changed = whole.is_some_and(|span| {
+                    self.buffers
+                        .get_mut(index)
+                        .and_then(Option::as_mut)
+                        .is_some_and(|buffer| {
+                            buffer.edit(span, text, crate::buffer::undo::Doing::Whole)
+                        })
+                });
+                if changed {
+                    self.change_document(index);
+                    self.warned_about_quitting = false;
+                    self.note = Some("the agent changed this file".to_string());
+                }
+                // A write of what is already there changed nothing and is
+                // not a failure: the agent asked for a state, and that is
+                // the state.
+                true
+            }
+            None => match std::fs::write(&full, text) {
+                Ok(()) => true,
+                Err(error) => {
+                    tracing::warn!(%error, path = %full.display(), "writing for the agent failed");
+                    false
+                }
+            },
+        };
+        let _ = answer.send(wrote);
+    }
+
     fn read_for_agent(
         &mut self,
         path: &Path,

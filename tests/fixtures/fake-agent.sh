@@ -112,7 +112,7 @@ while IFS= read -r line; do
             # different client, and says so through the name it is given
             # back.
             case "$line" in
-                *'"readTextFile":true'*'"writeTextFile":false'*) me='Fake Agent' ;;
+                *'"readTextFile":true'*'"writeTextFile":true'*) me='Fake Agent' ;;
                 *) me='Wrong Client' ;;
             esac
             case "$line" in
@@ -329,9 +329,10 @@ while IFS= read -r line; do
             # escaped newline, and what the test looks for is the words.
             text=$(printf '%s' "$line" | sed -n 's/.*"content":"\([^"\\]*\).*/\1/p')
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" saying %s"}}}}\n' "$text"
-            # And a write, which obelus refuses: it said so in the
-            # handshake, and an agent that asks anyway gets an error.
-            printf '{"jsonrpc":"2.0","id":902,"method":"fs/write_text_file","params":{"sessionId":"s-1","path":"tests/fixtures/read-me.txt","content":"no"}}\n'
+            # And a write outside the tree, which obelus refuses: an agent
+            # inside a reader may change what the reader is looking at and
+            # nothing else.
+            printf '{"jsonrpc":"2.0","id":902,"method":"fs/write_text_file","params":{"sessionId":"s-1","path":"/tmp/obelus-not-in-the-tree.txt","content":"no"}}\n'
             ;;
         *'"id":902'*)
             case "$line" in

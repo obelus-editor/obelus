@@ -1030,6 +1030,21 @@ impl Buffer {
         self.undo.close();
     }
 
+    /// The whole document, as a span.
+    ///
+    /// For a caller replacing all of it in one change -- which is one step
+    /// to undo rather than however many lines it touched.
+    #[must_use]
+    pub fn spanning_all(&self) -> Span {
+        let last = self.text.last_line();
+        Span {
+            line: LineNumber::new(0),
+            column: CharColumn::new(0),
+            end_line: last,
+            end_column: self.text.line_length(last),
+        }
+    }
+
     /// A span from an offset and a length in characters.
     fn spanning(&self, at: CharOffset, characters: usize) -> Span {
         let (line, column) = self.text.position(at);

@@ -41,6 +41,7 @@ use agent_client_protocol::{
             SessionConfigSelectOptions, SessionModeState, SessionNotification, SessionUpdate,
             SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent, ToolCallContent,
             ToolCallId, ToolCallLocation, ToolCallUpdateFields, WriteTextFileRequest,
+            WriteTextFileResponse,
         },
     },
 };
@@ -119,6 +120,17 @@ pub enum Incoming {
         /// one that way -- read into a setting like any other, and dropped
         /// if the settings turn out to carry the mode themselves.
         mode: Option<Setting>,
+    },
+    /// The agent wants to write a file.
+    Write {
+        /// Which file, as the agent named it.
+        path: std::path::PathBuf,
+        /// What it should say afterwards. The whole of it: the protocol has
+        /// no way to say "this part", so an agent that changed one line
+        /// sends the file back with that line changed.
+        text: String,
+        /// Whether it was allowed to.
+        answer: Answer<bool>,
     },
     /// Something to show.
     Update(Update),
@@ -484,6 +496,7 @@ async fn talk(
     let asking = events.clone();
     let elicited = events.clone();
     let reading = events.clone();
+    let writing = events.clone();
 
     let outcome = Client
         .builder()
@@ -612,15 +625,27 @@ async fn talk(
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |_request: WriteTextFileRequest, responder, _connection| {
-                // Refused here rather than reported: the answer does not
-                // depend on anything the view knows, and the handshake has
-                // already said so. Obelus writes files the reader asked it
-                // to -- it does not write files somebody else asked it to.
-                tracing::info!("the agent tried to write a file");
-                responder.respond_with_error(refusal(
-                    "obelus writes what the reader edits, and nothing an agent asks for",
-                ))
+            async move |request: WriteTextFileRequest, responder, _connection| {
+                // Through the main loop, the same as a read -- and for a
+                // stronger reason. A file obelus has open is a document the
+                // reader can undo, and an agent writing straight to disk
+                // under one would leave two versions with no way back to
+                // either.
+                let (answer, answered) = oneshot::channel();
+                let question = Incoming::Write {
+                    path: request.path.clone(),
+                    text: request.content.clone(),
+                    answer,
+                };
+                if writing.send(Event::Acp(question)).is_err() {
+                    return responder.respond_with_error(refusal("obelus is not listening"));
+                }
+                match answered.await {
+                    Ok(true) => responder.respond(WriteTextFileResponse::new()),
+                    Ok(false) | Err(_) => {
+                        responder.respond_with_error(refusal("obelus will not write that"))
+                    }
+                }
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -796,16 +821,16 @@ fn ended_because(error: &agent_client_protocol::schema::v1::Error) -> String {
 
 /// What obelus tells an agent about itself.
 ///
-/// It reads files out and does not write them, and it has no terminal to
-/// offer. Declaring the truth here is what keeps a well-behaved agent from
-/// asking for the rest.
+/// It reads files out and writes them back inside the tree it was opened
+/// on, and it has no terminal to offer. Declaring the truth here is what
+/// keeps a well-behaved agent from asking for the rest.
 fn handshake() -> InitializeRequest {
     InitializeRequest::new(ProtocolVersion::V1)
         .client_capabilities(
             ClientCapabilities::new()
                 .fs(FileSystemCapabilities::new()
                     .read_text_file(true)
-                    .write_text_file(false))
+                    .write_text_file(true))
                 .terminal(false)
                 .elicitation(
                     ElicitationCapabilities::new().form(ElicitationFormCapabilities::new()),

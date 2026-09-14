@@ -1014,3 +1014,105 @@ mod indenting {
         assert_eq!(text(&app), "    foo(bar)\n");
     }
 }
+
+/// An agent changing a file obelus has open.
+mod agents {
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    fn reading(name: &str, contents: &str) -> (support::Scratch, App, std::path::PathBuf) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(
+            scratch
+                .path()
+                .canonicalize()
+                .expect("the scratch directory"),
+        );
+        support::lay_out(&mut app, 70, 12);
+        (scratch, app, path)
+    }
+
+    fn asked(app: &mut App, path: &std::path::Path, text: &str) -> bool {
+        app.write_for_agent_for_test(path, text)
+    }
+
+    fn text(app: &App) -> String {
+        app.current_buffer()
+            .expect("a buffer")
+            .text()
+            .rope()
+            .to_string()
+    }
+
+    /// The whole reason this is allowed: the reader can take it back.
+    #[test]
+    fn what_an_agent_writes_to_an_open_file_can_be_undone() {
+        let (_scratch, mut app, path) = reading("agent-undo", "fn main() {}\n");
+        assert!(asked(&mut app, &path, "fn main() { done(); }\n"));
+        assert_eq!(text(&app), "fn main() { done(); }\n");
+
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(
+            text(&app),
+            "fn main() {}\n",
+            "a change the reader did not make could not be taken back"
+        );
+    }
+
+    /// It goes into the document rather than past it, so the reader is told
+    /// there is something unwritten.
+    #[test]
+    fn an_agents_change_is_unwritten_until_the_reader_saves() {
+        let (_scratch, mut app, path) = reading("agent-dirty", "one\n");
+        assert!(asked(&mut app, &path, "two\n"));
+
+        assert!(app.current_buffer().expect("a buffer").is_dirty());
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("the file"),
+            "one\n",
+            "it went to disk behind the reader"
+        );
+
+        dispatch::dispatch(&mut app, Command::FileSave);
+        assert_eq!(std::fs::read_to_string(&path).expect("the file"), "two\n");
+    }
+
+    /// A file nobody has open has no document to go through, so it is
+    /// written.
+    #[test]
+    fn a_file_that_is_not_open_is_written_to_disk() {
+        let (scratch, mut app, _path) = reading("agent-closed", "one\n");
+        let other = scratch.path().join("other.rs");
+        assert!(asked(&mut app, &other, "made by the agent\n"));
+        assert_eq!(
+            std::fs::read_to_string(&other).expect("the new file"),
+            "made by the agent\n"
+        );
+    }
+
+    /// An agent inside a reader may change what the reader is looking at,
+    /// and nothing else.
+    #[test]
+    fn a_file_outside_the_tree_is_refused() {
+        let (_scratch, mut app, _path) = reading("agent-outside", "one\n");
+        let elsewhere = std::env::temp_dir().join("obelus-agent-must-not-write.txt");
+        let _ = std::fs::remove_file(&elsewhere);
+
+        assert!(
+            !asked(&mut app, &elsewhere, "no"),
+            "a write outside the tree was allowed"
+        );
+        assert!(
+            !elsewhere.exists(),
+            "a file outside the tree was written anyway"
+        );
+    }
+}
