@@ -39,6 +39,13 @@ fn list_region_rows(picker: &Picker, width: u16) -> u16 {
 /// strip of decoration above the prompt.
 const LEAST_PREVIEW_ROWS: u16 = 4;
 
+/// How much of the tab row's right-hand end is spoken for.
+///
+/// The arrows that say the tabs can be walked, and a column either side of
+/// them, so a note about what is still arriving sits beside the arrows
+/// rather than on top of them.
+const FILLING_INSET: usize = 6;
+
 /// Where the preview goes, if there is room for one.
 ///
 /// Below the list rather than beside it: a terminal is usually wider than one
@@ -210,13 +217,31 @@ impl Widget for PickerView<'_> {
                 height: area.height.saturating_sub(about_rows),
                 ..area
             };
-            crate::ui::tabs(
+            let used = crate::ui::tabs(
                 cells,
                 under,
                 self.picker.tabs(),
                 self.picker.tab(),
                 self.theme,
             );
+            // Beside the tabs, inside the arrows that already sit there: a
+            // list still filling has to say so somewhere that does not move
+            // its rows out from under the reader when it stops.
+            if let Some(note) = self.picker.is_filling() {
+                let room = usize::from(under.width)
+                    .saturating_sub(crate::ui::text_width(note) + FILLING_INSET);
+                if let Ok(offset) = u16::try_from(room)
+                    && under.x + offset > used
+                {
+                    crate::ui::write(
+                        cells,
+                        under.x + offset,
+                        under.y,
+                        note,
+                        Style::new().fg(self.theme.gutter).bg(self.theme.background),
+                    );
+                }
+            }
             crate::ui::rule(
                 cells,
                 Rect {

@@ -129,6 +129,34 @@ screen is accounted for, so the ordinary case -- a remote at or near `HEAD`
 before its budget ran out is left alone, because telling a reader their work
 is not on the remote when it is would be the worse lie.
 
+**A list long enough to be worth searching is long enough to be worth
+threading.** The history used to ask for two hundred commits on the main
+thread. Both halves of that were wrong, and wrong together: the bound made
+the key cost 346ms on a busy file and 674ms on a rarely-touched one in a
+40,000-commit project -- a visible freeze -- and it also made the query lie,
+because rows that were never fetched are rows a query cannot match and the
+reader is told "no match" either way. Walking the whole history on a thread
+costs about two seconds there and nothing at all at the key, so the bound
+had nothing left to buy. A limit on a list is a limit on what can be found
+in it: reach for a thread before reaching for a number.
+
+**A list that is still arriving must sit still.** `replace` is for a
+different list and starts at the top; `relist` is for the same list with
+more in it and keeps the row under the reader. And the history filters
+without ranking (`keeps_order`), which is right on its own -- a log is a
+timeline, and `git log --grep` keeps it -- and which also means arrivals are
+older commits that land at the bottom, where they move nothing. Measured
+first: nucleo ties far more often than expected on short subjects, and ties
+already break by arrival order, so ranking reorders a log less often than it
+looks. Less often is not never, and a guarantee beats a tendency.
+
+**Say "still reading" where it does not move the rows.** A note above the
+list that appears and later goes away slides every row twice. The tab row
+has room that is already there. And the note carries a count, because a
+file's history can find nothing for a second and a half and still be
+working: without a number moving, "not found yet" and "not there" look the
+same.
+
 **Which tabs a view has must be a cheap question.** The search settles its
 scopes when it opens and the history settles its radii, and both settle them
 on facts they can have for nothing: is a file open, does the project have a

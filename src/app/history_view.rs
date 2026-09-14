@@ -55,14 +55,29 @@ pub(super) struct Showing {
     /// rows are mostly somebody else's files, and the reader is looking for
     /// one thing.
     pub opened: Option<(gix::ObjectId, Vec<(PathBuf, git::FileStatus)>)>,
+    /// How many commits the walk filling this list has looked at, and `None`
+    /// once it has finished.
+    ///
+    /// A file's history is found by asking every commit in the project
+    /// whether it touched that path, so a list can sit empty for a second
+    /// while the answer is still true. "Still reading" and "nothing here"
+    /// are different facts and the reader is owed the difference.
+    pub reading: Option<usize>,
+    /// Which of the commits the remote already has.
+    ///
+    /// `None` where the question does not arise -- no remote, or a branch
+    /// tracking nothing -- and then nothing is marked: every commit is
+    /// equally unpushed, and marking all of them says no more than marking
+    /// none.
+    pub pushed: Option<HashSet<gix::ObjectId>>,
+    /// Whether it is still worth asking the remote about a new batch.
+    ///
+    /// Unpushed commits are the newest ones, so once a batch arrives with
+    /// every commit in it already on the remote, so is everything older.
+    /// Asking again for each of a whole history's batches would walk the
+    /// remote branch once per batch to learn the same thing.
+    pub marking: bool,
 }
-
-/// How many commits a list asks for.
-///
-/// A screenful and a great deal more, so that scrolling lands somewhere
-/// rather than running out -- and a bound, because a history is as long as
-/// the project and a reader is looking at one list.
-const LISTED: usize = 200;
 
 impl App {
     /// Opens the history at the radius a key names.
@@ -80,6 +95,9 @@ impl App {
         let names: Vec<&str> = radii.iter().map(|radius| radius.label()).collect();
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
         picker.with_scopes(&names);
+        // A log is read newest first, and a query asks which commits mention
+        // something -- not which subject line scored best.
+        picker.keeps_order();
         picker.go_to_tab(tab);
         self.picker = Some(picker);
         self.history = Showing {
@@ -87,6 +105,9 @@ impl App {
             commits: Vec::new(),
             of: None,
             opened: None,
+            reading: None,
+            pushed: None,
+            marking: true,
         };
         self.refresh_history();
     }
@@ -111,7 +132,7 @@ impl App {
                 Radius::File => self.current_buffer().is_some(),
                 // The project's costs no such walk: the first commit the
                 // walk reaches is the answer.
-                Radius::Project => self.has_any(None),
+                Radius::Project => self.has_any(),
             })
             .collect()
     }
@@ -119,23 +140,18 @@ impl App {
     /// Whether the project has a history at all, for the key to be offered.
     #[must_use]
     pub(super) fn has_history(&self) -> bool {
-        self.has_any(None)
+        self.has_any()
     }
 
-    /// Whether there is a single commit to be had at a radius.
+    /// Whether the project has a single commit to be had.
     ///
-    /// Asked with a limit of one, because that is the question. Asking for
-    /// the whole list and looking at its length costs a walk that finds two
-    /// hundred commits and a tree lookup for each of them -- ten times over
-    /// on this repository, and the answer was needed before the first row
-    /// could be drawn.
-    fn has_any(&self, only: Option<&Path>) -> bool {
-        !crate::git::history::of(&self.working_directory, only, 1).is_empty()
-    }
-
-    /// The commits at a radius, newest first.
-    fn history_of(&self, only: Option<&Path>) -> Vec<Commit> {
-        crate::git::history::of(&self.working_directory, only, LISTED)
+    /// The first one the walk reaches is the answer, and no tree is looked
+    /// at on the way, so this is a question a key can be offered on. Which
+    /// commits touched some *file* is not: that is a tree lookup per commit
+    /// of the whole project, and it belongs on the thread that fills the
+    /// list rather than in front of the key that opens it.
+    fn has_any(&self) -> bool {
+        !crate::git::history::of(&self.working_directory, None, 1).is_empty()
     }
 
     /// Fills the list with the commits of whichever tab is showing.
@@ -153,10 +169,64 @@ impl App {
                 .map(|buffer| buffer.path().to_path_buf()),
             Radius::Project => None,
         };
-        self.history.commits = self.history_of(only.as_deref());
+        self.history.commits = Vec::new();
         self.history.of = only.clone();
         // An opened commit belongs to the tab it was opened in.
         self.history.opened = None;
+        self.history.pushed = None;
+        self.history.marking = true;
+        self.history.reading = Some(0);
+        self.start_reading_history(only.as_deref());
+        self.show_history();
+    }
+
+    /// Starts a walk of the history the list is waiting for.
+    ///
+    /// Bumping the generation first is what tells the walk before it --
+    /// another tab, another file -- that nobody is waiting for it any more.
+    fn start_reading_history(&mut self, only: Option<&Path>) {
+        let generation = self
+            .history_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        let Some(sender) = self.events.clone() else {
+            // No loop to answer into: the tests that drive the app by hand
+            // read the history themselves.
+            return;
+        };
+        crate::git::history::spawn_log(
+            &self.working_directory,
+            only,
+            generation,
+            &self.history_generation,
+            sender,
+        );
+    }
+
+    /// Puts a batch of commits into the list waiting for them.
+    pub(super) fn on_logged(&mut self, commits: Vec<Commit>, walked: usize, done: bool) {
+        // The generation says the walk is the one wanted; this says there is
+        // still a list for it to fill.
+        if self.picker.is_none() || self.history.radii.is_empty() {
+            return;
+        }
+        self.history.commits.extend(commits);
+        self.history.reading = (!done).then_some(walked);
+        if self.history.marking {
+            let asked: Vec<gix::ObjectId> = self
+                .history
+                .commits
+                .iter()
+                .map(|commit| commit.id)
+                .collect();
+            let found = crate::git::history::pushed(&self.working_directory, &asked);
+            // Once every commit in hand is on the remote, so is every older
+            // one, and there is nothing left for the question to tell apart.
+            self.history.marking = found
+                .as_ref()
+                .is_some_and(|found| found.len() != asked.len());
+            self.history.pushed = found;
+        }
         self.show_history();
     }
 
@@ -169,12 +239,7 @@ impl App {
             .and_then(|picker| self.history.radii.get(picker.tab()).copied())
             == Some(Radius::Project);
         let now = std::time::SystemTime::now();
-        // Which of them the remote already has. `None` where the question
-        // does not arise -- no remote, or a branch tracking nothing -- and
-        // then nothing is marked: every commit is equally unpushed, and
-        // marking all of them says no more than marking none.
-        let asked: Vec<gix::ObjectId> = self.history.commits.iter().map(|c| c.id).collect();
-        let pushed = crate::git::history::pushed(&self.working_directory, &asked);
+        let pushed = self.history.pushed.clone();
         let mut items: Vec<PickerItem> = Vec::new();
         for commit in &self.history.commits {
             let open = self
@@ -241,15 +306,27 @@ impl App {
                 }
             }
         }
-        let empty = match self.history.of.as_deref() {
+        let empty = match (self.history.reading.is_some(), self.history.of.as_deref()) {
+            // Still looking. A file's history is every commit that ever
+            // touched it, and nothing found yet is not nothing to find.
+            (true, _) => "reading the history\u{2026}",
             // Said in the reader's terms: they pressed a key about *this*
             // file, and the answer is about this file.
-            Some(_) => "no commit has touched this file",
-            None => "nothing in the history here",
+            (false, Some(_)) => "no commit has touched this file",
+            (false, None) => "nothing in the history here",
         };
+        // How far the walk has got. A file's history can find nothing for a
+        // second and a half and still be working, and a count that moves is
+        // the only thing that tells that apart from a list that is finished
+        // and empty.
+        let filling = self
+            .history
+            .reading
+            .map(|walked| format!("{walked} commits read\u{2026}"));
         if let Some(picker) = self.picker.as_mut() {
-            picker.replace(items);
+            picker.relist(items);
             picker.when_empty(empty);
+            picker.filling(filling);
         }
     }
 
@@ -337,14 +414,7 @@ impl App {
     /// the rest is the message. A reader opening a file as a commit had it
     /// is asking why it says what it says, and that is the answer.
     pub(super) fn said_at(&self, id: gix::ObjectId) -> Option<Vec<String>> {
-        let commit = crate::git::history::of(&self.working_directory, None, 1)
-            .into_iter()
-            .find(|commit| commit.id == id)
-            .or_else(|| {
-                crate::git::history::of(&self.working_directory, None, LISTED)
-                    .into_iter()
-                    .find(|commit| commit.id == id)
-            })?;
+        let commit = crate::git::history::one(&self.working_directory, id)?;
         let now = std::time::SystemTime::now();
         let mut said = vec![
             format!(

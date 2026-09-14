@@ -125,6 +125,15 @@ pub struct App {
     /// Bumped every time a file picker opens, so batches from a walk whose
     /// picker has already closed are recognizable and dropped.
     walk_generation: u64,
+    /// Which walk of the history the list is expecting batches from.
+    ///
+    /// Bumped every time a history starts being read -- a key, a tab, a
+    /// different file -- so the batches of the walk before it are
+    /// recognizable as stale. Shared with the walking thread, which reads it
+    /// to find out that nobody is waiting for it any more: a whole history
+    /// is a walk of the whole project, and there is nothing else to stop it
+    /// with.
+    history_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// Sender for the background walk, once the loop has started.
     events: Option<std::sync::mpsc::Sender<Event>>,
     /// One language server per language, started when a file of that language
@@ -410,6 +419,7 @@ impl App {
             row_syntax: std::collections::HashMap::new(),
             searched: None,
             search_generation: std::sync::Arc::default(),
+            history_generation: std::sync::Arc::default(),
             rendered: None,
             theme_before: None,
             note: None,
@@ -510,6 +520,17 @@ impl App {
     /// ticker and a language server per open file.
     pub fn events_for_test(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender);
+    }
+
+    /// Which walk of the history the list is waiting for.
+    ///
+    /// So that a test can hand the list a batch by hand and have it taken
+    /// for the answer it is waiting for. Batches arrive on a clock, and a
+    /// test that waited for one would be a test that sometimes did not.
+    #[must_use]
+    pub fn history_walk_for_test(&self) -> u64 {
+        self.history_generation
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Puts the application on a tree of the test's choosing.
@@ -925,6 +946,22 @@ impl App {
                 // was running, and they will walk back.
                 self.asking_blame.remove(&path);
                 self.blames.insert(path, lines);
+            }
+            Event::Logged {
+                generation,
+                commits,
+                walked,
+                done,
+            } => {
+                // A batch from a walk whose list is gone, or from one
+                // superseded by another tab, another file, another key.
+                if generation
+                    == self
+                        .history_generation
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    self.on_logged(commits, walked, done);
+                }
             }
             Event::FilesFound { generation, paths } => {
                 // A batch from a walk whose picker is gone, or from one

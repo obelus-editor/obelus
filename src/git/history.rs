@@ -12,9 +12,15 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+        mpsc::Sender,
+    },
+    time::{Duration, Instant},
 };
 
-use crate::git::FileStatus;
+use crate::{event::Event, git::FileStatus};
 
 /// One commit, as a row of a list.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,50 +48,181 @@ impl Commit {
 /// The most recent commits, newest first.
 ///
 /// `only` narrows the walk to commits that changed one path; `None` asks
-/// about the whole project. `limit` is how many to collect -- a history is
-/// as long as the project and a reader is looking at one screen of it.
+/// about the whole project. `limit` is how many to collect.
+///
+/// The walk runs until it has them or the history runs out, and asking
+/// about a path costs a tree lookup per commit -- so a rarely-changed file
+/// is a walk of the whole project however few rows are wanted. That is what
+/// [`spawn_log`] is for. This one answers the cheap questions: what is at
+/// the top, does this project have a commit at all.
 ///
 /// Empty for every ordinary way this has no answer: not a repository, no
 /// commits yet, a path git has never heard of.
 #[must_use]
 pub fn of(within: &Path, only: Option<&Path>, limit: usize) -> Vec<Commit> {
+    let mut found = Vec::new();
+    walk(within, only, |commit| {
+        if let Some(commit) = commit {
+            found.push(commit);
+        }
+        found.len() < limit
+    });
+    found
+}
+
+/// Walks a whole history on its own thread, sending it in batches.
+///
+/// Unbounded, because every bound on it was a lie told to save time: a limit
+/// on the rows is a limit on which commits can be searched, and a limit on
+/// the walk hides the histories of exactly the files nobody has edited
+/// lately. A whole walk of a forty-thousand-commit project asking about one
+/// path takes about two seconds, which is nothing to wait through when the
+/// rows arrive as they are found and everything else stays live.
+///
+/// `generation` comes back with every batch: a reader moves between tabs and
+/// files faster than a history can be walked, and the answers to the
+/// question before must be recognizable as stale. `current` is the
+/// generation anybody is still waiting for, read as the walk goes, because
+/// there is nothing else to stop a thread with -- it has to ask.
+///
+/// The last batch carries `done`, which is what turns "still reading" into
+/// "nothing here": with nothing found, those are different facts.
+pub fn spawn_log(
+    within: &Path,
+    only: Option<&Path>,
+    generation: u64,
+    current: &Arc<AtomicU64>,
+    sender: Sender<Event>,
+) {
+    let within = within.to_path_buf();
+    let only = only.map(Path::to_path_buf);
+    let current = Arc::clone(current);
+    let outcome = std::thread::Builder::new()
+        .name("obelus-history".to_string())
+        .spawn(move || {
+            let mut batch = Vec::new();
+            let mut walked = 0usize;
+            let mut sent = Instant::now();
+            let mut stopped = false;
+
+            walk(&within, only.as_deref(), |commit| {
+                walked += 1;
+                if let Some(commit) = commit {
+                    batch.push(commit);
+                }
+                // On a clock rather than on a count. A project's walk finds a
+                // commit every step and a file's finds one every thousand,
+                // and both want the same thing from the reader's side: rows
+                // often enough to read, seldom enough not to redraw the
+                // screen raw.
+                if sent.elapsed() < TICK {
+                    return true;
+                }
+                sent = Instant::now();
+                if current.load(Ordering::Relaxed) != generation {
+                    stopped = true;
+                    return false;
+                }
+                let commits = std::mem::take(&mut batch);
+                if sender
+                    .send(Event::Logged {
+                        generation,
+                        commits,
+                        walked,
+                        done: false,
+                    })
+                    .is_err()
+                {
+                    stopped = true;
+                    return false;
+                }
+                true
+            });
+
+            // Nobody is waiting for the end of a walk they have already
+            // moved off: saying it is done would be answering a question
+            // that was withdrawn.
+            if !stopped {
+                let _ = sender.send(Event::Logged {
+                    generation,
+                    commits: batch,
+                    walked,
+                    done: true,
+                });
+            }
+        });
+
+    if let Err(error) = outcome {
+        tracing::warn!(%error, "not reading the history");
+    }
+}
+
+/// How often a walk in progress hands over what it has found.
+const TICK: Duration = Duration::from_millis(80);
+
+/// One commit by its id, without a walk.
+///
+/// A commit that is being shown is one the reader already chose from a list,
+/// so the question is not "which commits are there" but "what does this one
+/// say" -- and an object store answers that directly. Walking to find it
+/// again would cost the whole history for a commit far enough back, which is
+/// exactly when a reader most wants to be told what it said.
+#[must_use]
+pub fn one(within: &Path, id: gix::ObjectId) -> Option<Commit> {
+    let repository = super::repository(within)?;
+    let commit = repository.find_commit(id).ok()?;
+    let author = commit.author().ok()?;
+    let message = commit.message_raw_sloppy().to_string();
+    let (subject, body) = split(&message);
+    Some(Commit {
+        id,
+        subject,
+        body,
+        who: author.name.to_string(),
+        when: author.time().map(|time| time.seconds).unwrap_or_default(),
+    })
+}
+
+/// Walks the commits reachable from `HEAD`, newest first.
+///
+/// `each` is handed every commit the walk looks at: `Some` when it answers
+/// the question `only` asked, `None` when it was looked at and passed over.
+/// Both, rather than only the answers, because the two callers need what the
+/// skipped ones cost -- one to stop after enough answers, the other to know
+/// how far it has got and whether anybody is still waiting. It returns
+/// whether to go on.
+fn walk(within: &Path, only: Option<&Path>, mut each: impl FnMut(Option<Commit>) -> bool) {
     let Some(repository) = super::repository(within) else {
-        return Vec::new();
+        return;
     };
     // A path that cannot be placed in the repository is not the whole
     // project: asking about one file and being handed every commit is the
-    // wrong answer told confidently. Empty says what is true -- obelus has
+    // wrong answer told confidently. Nothing says what is true -- obelus has
     // nothing to show about this path.
     let relative = match only {
         Some(path) => match within_repository(&repository, path) {
             Some(relative) => Some(relative),
-            None => return Vec::new(),
+            None => return,
         },
         None => None,
     };
     let Ok(head) = repository.head_id() else {
-        return Vec::new();
+        return;
     };
-    let Ok(walk) = repository.rev_walk([head]).all() else {
-        return Vec::new();
+    let Ok(commits) = repository.rev_walk([head]).all() else {
+        return;
     };
 
-    let mut found = Vec::new();
-    // A bound on the walk as well as on the answer: a file touched once, a
-    // thousand commits ago, must not cost a thousand tree lookups before
-    // the list can be drawn.
-    let mut seen = 0;
-    for info in walk.flatten() {
-        seen += 1;
-        if found.len() >= limit || seen > limit.saturating_mul(WALK) {
-            break;
-        }
+    for info in commits.flatten() {
         let Ok(commit) = repository.find_commit(info.id) else {
             continue;
         };
         if let Some(relative) = relative.as_deref()
             && !touches(&repository, &commit, relative)
         {
+            if !each(None) {
+                return;
+            }
             continue;
         }
         let Ok(author) = commit.author() else {
@@ -93,15 +230,17 @@ pub fn of(within: &Path, only: Option<&Path>, limit: usize) -> Vec<Commit> {
         };
         let message = commit.message_raw_sloppy().to_string();
         let (subject, body) = split(&message);
-        found.push(Commit {
+        let found = Commit {
             id: info.id,
             subject,
             body,
             who: author.name.to_string(),
             when: author.time().map(|time| time.seconds).unwrap_or_default(),
-        });
+        };
+        if !each(Some(found)) {
+            return;
+        }
     }
-    found
 }
 
 /// Where a path sits in its repository, for a path that may not be there.
@@ -118,13 +257,6 @@ fn within_repository(repository: &gix::Repository, path: &Path) -> Option<PathBu
     let path = std::path::absolute(path).ok()?;
     Some(path.strip_prefix(work_dir).ok()?.to_path_buf())
 }
-
-/// How many commits may be looked at for each one the list keeps.
-///
-/// A file that changes rarely is the case this is for: without it, asking
-/// for twenty rows about a file nobody has touched since the start would
-/// walk the whole project.
-const WALK: usize = 50;
 
 /// Whether a commit changed what a path points at.
 ///

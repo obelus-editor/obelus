@@ -61,6 +61,29 @@ pub enum Event {
         /// only the scan knows which one to show.
         done: bool,
     },
+    /// A batch of commits from a walk of the history.
+    ///
+    /// The walk is unbounded -- a file's history is every commit that ever
+    /// touched it, and finding that out costs a tree lookup per commit of
+    /// the whole project -- so the list fills while the reader reads it
+    /// rather than making them wait for the end of it.
+    Logged {
+        /// Which walk these came from, so a history the reader has already
+        /// moved off -- another tab, another file, a closed list -- can be
+        /// dropped rather than shown under whatever is there now.
+        generation: u64,
+        /// The commits, newest first, continuing where the last batch left
+        /// off.
+        commits: Vec<crate::git::history::Commit>,
+        /// How many commits the walk has looked at, which is what says it is
+        /// still going and how far it has got. A walk over a file nobody
+        /// touched has nothing else to report for seconds at a time.
+        walked: usize,
+        /// Whether this is the last batch. An empty list that is still
+        /// filling and one that is finished are different facts, and only
+        /// the walk knows which is true.
+        done: bool,
+    },
     /// Who last changed each line of a file.
     Blamed {
         /// Which file it is about: a blame is a walk of history, and the

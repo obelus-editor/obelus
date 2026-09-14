@@ -2047,9 +2047,12 @@ fn the_history_opens_at_the_radius_its_key_names() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 70, 16);
 
     support::press_function(&mut app, 9);
+
+    support::read_history(&mut app, &events);
     let picker = app.picker().expect("the history");
     assert_eq!(picker.tabs(), ["this file", "the project"]);
     assert_eq!(picker.tab(), 0, "f9 did not open the file's own tab");
@@ -2073,6 +2076,7 @@ fn the_history_opens_at_the_radius_its_key_names() {
 
     // The other tab is a walk away, and walking onto it asks its question.
     support::press(&mut app, KeyCode::Right);
+    support::read_history(&mut app, &events);
     assert!(
         app.picker()
             .expect("the history")
@@ -2108,8 +2112,10 @@ fn a_commit_opens_its_files_under_it() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 70, 16);
     support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
 
     let rows = |app: &App| -> Vec<String> {
         app.picker()
@@ -2155,8 +2161,10 @@ fn a_file_of_a_commit_opens_as_that_commit_had_it() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 70, 16);
     support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
     // The older commit, opened, and its one file chosen.
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
@@ -2197,8 +2205,10 @@ fn a_subject_is_cut_at_its_end() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 50, 10);
     support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
 
     let dump = support::render(&mut app, 50, 10);
     let row = support::text_block(&dump)
@@ -2229,8 +2239,10 @@ fn a_commits_version_carries_what_the_commit_said() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
@@ -2288,8 +2300,10 @@ fn a_commits_version_is_not_the_file_at_that_path() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Down);
@@ -2337,8 +2351,10 @@ fn opening_a_file_does_not_find_a_commits_version_of_it() {
     // the wrong reason.
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Down);
@@ -2380,10 +2396,13 @@ fn a_commits_version_is_marked_against_the_commit_before_it() {
         obelus::buffer::Buffer::open(&repository.path()).expect("opening it"),
     ]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 60, 16);
     let _ = support::render(&mut app, 60, 16);
 
     support::press_function(&mut app, 10);
+
+    support::read_history(&mut app, &events);
     // The middle commit, and the file as it had it.
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
@@ -2446,6 +2465,7 @@ fn the_history_previews_what_a_row_would_give() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 60, 24);
     support::press_function(&mut app, 10);
 
@@ -2463,6 +2483,7 @@ fn the_history_previews_what_a_row_would_give() {
         let (from, to) = (rules[rules.len() - 2] + 1, rules[rules.len() - 1]);
         rows[from..to].join("\n")
     }
+    support::read_history(&mut app, &events);
 
     // A commit: what it said, from the first line of it.
     let dump = support::render(&mut app, 60, 24);
@@ -2527,8 +2548,10 @@ fn the_open_files_say_which_commit_they_came_from() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 60, 14);
     support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Down);
@@ -2642,8 +2665,10 @@ fn the_commits_the_remote_has_not_seen_are_marked() {
     let repository = Pushed::new("marked", 2);
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.work.clone());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 64, 14);
     support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
 
     let rows: Vec<(String, Option<FileStatus>)> = app
         .picker()
@@ -2678,8 +2703,10 @@ fn a_repository_with_nowhere_to_push_marks_nothing() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 64, 14);
     support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
     assert!(
         app.picker()
             .expect("the history")
@@ -2706,8 +2733,10 @@ fn a_commit_in_a_files_history_opens_that_file() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
     assert_eq!(
         app.picker().expect("the history").tab(),
         0,
@@ -2766,8 +2795,10 @@ fn a_file_nobody_has_touched_lately_still_opens_its_history() {
 
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
 
     let picker = app.picker().expect("the history");
     assert_eq!(picker.tab(), 0, "the file's own tab is not there");
@@ -2776,5 +2807,220 @@ fn a_file_nobody_has_touched_lately_still_opens_its_history() {
         rows,
         ["the one that touched it", "committed"],
         "the commits that touched it were not found"
+    );
+}
+
+#[test]
+fn a_query_keeps_a_log_in_its_own_order() {
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-order", "one\n");
+    // An older subject the matcher scores well -- the query contiguous, at a
+    // word boundary -- under a newer one it merely tolerates, where the same
+    // letters are scattered through other words. Ranked, the old commit is
+    // listed first.
+    repository.write("one\ntwo\n");
+    repository.commit("Fold a line");
+    repository.write("one\ntwo\nthree\n");
+    repository.commit("Something else entirely");
+    repository.write("one\ntwo\nthree\nfour\n");
+    repository.commit("Fix the outline's depth");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::type_text(&mut app, "fold");
+
+    let picker = app.picker().expect("the history");
+    let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
+    assert_eq!(
+        rows,
+        ["Fix the outline's depth", "Fold a line"],
+        "the query ranked the log instead of filtering it"
+    );
+}
+
+#[test]
+fn a_history_is_not_cut_off_at_a_screenful() {
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-unbounded", "0\n");
+    // More commits than any list obelus used to ask for. A history is as
+    // long as the project, and a reader searching one is searching all of
+    // it: rows that were never fetched are rows a query cannot match.
+    for change in 1..=230 {
+        repository.write(&format!("{change}\n"));
+        repository.commit(&format!("change {change}"));
+    }
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+
+    let picker = app.picker().expect("the history");
+    assert_eq!(
+        picker.match_count(),
+        231,
+        "the history stopped short of the commits that touched this file"
+    );
+
+    // And the oldest of them can be searched for, which is what a bounded
+    // list quietly could not do: rows that were never fetched are rows a
+    // query cannot match, and the reader is told "no match" either way.
+    support::type_text(&mut app, "committed");
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the history")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        ["committed"],
+        "a commit past the old limit cannot be searched for"
+    );
+}
+
+#[test]
+fn a_list_still_filling_says_so() {
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-filling", "one\n");
+    repository.write("two\n");
+    repository.commit("the second");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 16);
+
+    // The key comes back before the walk does -- that is the whole point of
+    // the walk being elsewhere -- so the list it opens is one that says it
+    // is not finished.
+    support::press_function(&mut app, 9);
+    assert!(
+        app.picker().expect("the history").is_filling().is_some(),
+        "a list that is still being read does not say so"
+    );
+    assert_eq!(
+        app.picker().expect("the history").nothing_to_show(),
+        Some("reading the history\u{2026}"),
+        "an empty list that is still filling reads as an empty history"
+    );
+
+    support::read_history(&mut app, &events);
+    assert!(
+        app.picker().expect("the history").is_filling().is_none(),
+        "a finished list still says it is filling"
+    );
+    assert_eq!(
+        app.picker().expect("the history").nothing_to_show(),
+        None,
+        "a filled list still shows a reason for being empty"
+    );
+}
+
+#[test]
+fn a_walk_the_reader_moved_off_does_not_fill_the_list_it_left() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-stale", "one\n");
+    // A project with commits this file knows nothing about, so the file's
+    // answer landing in the project's list is visible as rows that are
+    // there twice.
+    repository.write("two\n");
+    repository.commit("the file's own");
+    std::fs::write(repository.directory().join("other.rs"), "elsewhere\n").expect("the other file");
+    repository.commit_all("elsewhere");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 16);
+
+    // Both walks are started before either is heard from, which is what a
+    // reader does when they press a key and immediately press another.
+    support::press_function(&mut app, 9);
+    support::press(&mut app, KeyCode::Right);
+
+    // Everything both walks sent, so a batch that should be dropped has
+    // every chance to land.
+    while let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(300)) {
+        app.handle(event);
+    }
+
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the history")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        ["elsewhere", "the file's own", "committed"],
+        "the list the reader left filled the one they moved to"
+    );
+}
+
+#[test]
+fn a_batch_landing_does_not_move_the_reader_off_their_row() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer, event::Event, git::history::Commit};
+
+    let repository = Repository::new("history-while-reading", "one\n");
+    repository.write("two\n");
+    repository.commit("the second");
+    repository.write("three\n");
+    repository.commit("the third");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+
+    // The reader has chosen a row and is looking at it.
+    support::press(&mut app, KeyCode::Down);
+    let chosen = app
+        .picker()
+        .expect("the history")
+        .selected_item()
+        .expect("a row")
+        .label
+        .clone();
+    assert_eq!(
+        chosen, "the second",
+        "the row under the reader is not theirs"
+    );
+
+    // More of the history arrives, as it does for the two seconds a large
+    // project takes to walk.
+    app.handle(Event::Logged {
+        generation: app.history_walk_for_test(),
+        commits: vec![Commit {
+            id: gix::ObjectId::null(gix::hash::Kind::Sha1),
+            subject: "older still".to_string(),
+            body: String::new(),
+            who: "somebody".to_string(),
+            when: 0,
+        }],
+        walked: 900,
+        done: false,
+    });
+
+    let picker = app.picker().expect("the history");
+    assert_eq!(picker.match_count(), 4, "the batch did not reach the list");
+    assert_eq!(
+        picker.selected_item().expect("a row").label,
+        chosen,
+        "a batch landing moved the reader off the row they chose"
     );
 }

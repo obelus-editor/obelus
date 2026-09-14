@@ -307,6 +307,30 @@ pub struct Picker {
     prefer: Option<String>,
     layout: PickerLayout,
     matcher: Matcher,
+    /// What is still arriving, drawn beside the tabs.
+    ///
+    /// A list that is still filling has to say so, and it has to say so
+    /// somewhere that does not move its rows: a line above them that
+    /// appears and later goes away slides the whole list under the reader
+    /// twice. Beside the tabs there is room that is already there.
+    filling: Option<String>,
+    /// Whether the list's own order is an answer, so a query filters it
+    /// without reordering it.
+    ///
+    /// A log is a timeline. Typing "fold" into one asks which commits
+    /// mention folding, not which subject line a fuzzy matcher liked best,
+    /// and a short sentence written by a person gives a matcher very little
+    /// to prefer one over another with -- so ranking replaces an order that
+    /// means something with one that means almost nothing. `git log --grep`
+    /// keeps the timeline; so does every log a reader has seen.
+    ///
+    /// It also makes a list that is still arriving sit still. Ranked, a
+    /// commit that turns up with a better score than the selected row
+    /// inserts *above* it, and the row under the reader's eye becomes a
+    /// different commit -- repeatedly, for as long as the walk runs. In the
+    /// list's own order the arrivals are older commits, which belong at the
+    /// bottom, so nothing above the selection ever moves.
+    ordered: bool,
     /// Scratch for `Utf32Str::new`, which needs somewhere to put a converted
     /// haystack.
     haystack: Vec<char>,
@@ -347,6 +371,8 @@ impl Picker {
             question: None,
             empty: "nothing to choose from".to_string(),
             prefer: None,
+            filling: None,
+            ordered: false,
             layout,
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
             haystack: Vec::new(),
@@ -399,6 +425,25 @@ impl Picker {
     #[must_use]
     pub const fn is_searching(&self) -> bool {
         self.searching
+    }
+
+    /// Says the list is still being filled, and what to show while it is.
+    ///
+    /// `None` once it is not.
+    pub fn filling(&mut self, note: Option<String>) {
+        self.filling = note;
+    }
+
+    /// What the list is still waiting for, if it is waiting.
+    #[must_use]
+    pub fn is_filling(&self) -> Option<&str> {
+        self.filling.as_deref()
+    }
+
+    /// Says this list's own order is an answer, so a query filters the rows
+    /// without reordering them.
+    pub const fn keeps_order(&mut self) {
+        self.ordered = true;
     }
 
     /// Says this list is a list of files, whose rows the application
@@ -500,6 +545,21 @@ impl Picker {
         self.items = items;
         self.window.set_focus(0);
         self.refilter();
+    }
+
+    /// Puts new rows in the list without moving the reader off theirs.
+    ///
+    /// [`replace`](Self::replace) is for a different list, and a different
+    /// list starts at the top. This is for the same list with more in it --
+    /// a history still arriving, a commit opened to show its files -- where
+    /// the row under the reader is still the row they chose, and yanking
+    /// them back to the top every time a batch lands would make a filling
+    /// list impossible to read.
+    pub fn relist(&mut self, items: Vec<PickerItem>) {
+        let selected = self.window.focus();
+        self.items = items;
+        self.refilter();
+        self.select_row(selected);
     }
 
     /// Moves the selection by rows, stopping at the ends.
@@ -988,9 +1048,13 @@ impl Picker {
                 }
             }
             // Best first, and ties by the original order so the list does not
-            // reshuffle as more items arrive.
-            self.matched
-                .sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+            // reshuffle as more items arrive. A list whose order is itself an
+            // answer keeps it: the scoring above has already said which rows
+            // match, which is all such a list wants from a query.
+            if !self.ordered {
+                self.matched
+                    .sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+            }
         }
 
         self.window.set_count(self.matched.len());

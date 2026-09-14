@@ -302,3 +302,37 @@ impl Drop for Scratch {
         let _ = std::fs::remove_dir_all(&self.path);
     }
 }
+
+/// Gives the app a channel, so the walks it starts have somewhere to answer.
+///
+/// The loop does this at startup; a test drives the app by hand and would
+/// otherwise start threads that can never report back.
+#[allow(dead_code)]
+pub fn drive(app: &mut App) -> std::sync::mpsc::Receiver<obelus::event::Event> {
+    let (sender, events) = obelus::event::channel();
+    app.events_for_test(sender);
+    events
+}
+
+/// Runs the history walk the app has started through to its last batch.
+///
+/// A history arrives in batches while the reader reads, which is the point
+/// of it; a test wants the finished list, so it waits for the batch that
+/// says there are no more.
+#[allow(dead_code)]
+pub fn read_history(app: &mut App, events: &std::sync::mpsc::Receiver<obelus::event::Event>) {
+    while let Ok(event) = events.recv_timeout(std::time::Duration::from_secs(20)) {
+        app.handle(event);
+        // The app's own answer, not the batch's: a walk the reader has
+        // moved off still sends its last batch, and that batch being
+        // dropped is the point. Waiting on the list saying it has stopped
+        // filling waits for the walk anybody is actually waiting for.
+        if app
+            .picker()
+            .is_none_or(|picker| picker.is_filling().is_none())
+        {
+            return;
+        }
+    }
+    panic!("the history never finished arriving");
+}
