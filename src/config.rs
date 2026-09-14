@@ -148,13 +148,23 @@ pub enum Whose {
 pub struct Setting {
     /// What it is called in the file.
     pub key: &'static str,
-    /// What the view calls it: one line, which is both its name and its
-    /// description.
+    /// What the view calls it: one word where one will do.
     ///
-    /// One rather than two, because two of them side by side on a row read
-    /// as a heading and a footnote -- and the footnote said what the
-    /// heading already had.
-    pub label: &'static str,
+    /// A *name*, not a sentence. These were sentences -- "Colour theme",
+    /// "Who last changed the line the cursor is on" -- on the grounds that a
+    /// name and a description side by side read as a heading and a footnote.
+    /// Which is true when the footnote says what the heading already had;
+    /// what it actually produced was a column of prose, where a reader
+    /// looking for the one row they came for had to read every row to find
+    /// it. A column of names is scanned. The palette has said a name and a
+    /// description side by side since the beginning, and this is that row.
+    pub name: &'static str,
+    /// What it does, in the dim colour after the name.
+    ///
+    /// Empty where the name is the whole of it: `Theme` needs no gloss, and
+    /// a line of prose saying "the colour theme" beside it is the footnote
+    /// that objection was about.
+    pub about: &'static str,
     /// Which tab it lives under.
     pub group: Group,
     /// What sort of control it gets.
@@ -184,28 +194,32 @@ const THEMES: &[&str] = &["dark", "light"];
 pub const ALL: &[Setting] = &[
     Setting {
         key: "theme",
-        label: "Colour theme",
+        name: "Theme",
+        about: "",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Choice(THEMES),
     },
     Setting {
         key: "icons",
-        label: "Nerd Font glyphs in lists and on the status bar",
+        name: "Icons",
+        about: "glyphs from a Nerd Font, in lists and on the status bar",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
     },
     Setting {
         key: "wrap",
-        label: "Wrap a line too long for the screen onto the next row",
+        name: "Wrap",
+        about: "a line too long for the screen carries onto the next row",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
     },
     Setting {
         key: "blame",
-        label: "Who last changed the line the cursor is on",
+        name: "Blame",
+        about: "who last changed the line the cursor is on",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,

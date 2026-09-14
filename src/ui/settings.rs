@@ -154,9 +154,12 @@ impl Widget for SettingsView<'_> {
         let rows: Vec<Row> = settings
             .iter()
             .map(|setting| Row {
-                label: setting.label.to_string(),
+                label: setting.name.to_string(),
                 matched: self.settings.matched(setting),
-                detail: None,
+                // What it does, after the name and in the dim colour, which
+                // is the shape a palette row has had all along.
+                detail: (!setting.about.is_empty())
+                    .then(|| (setting.about.to_string(), self.theme.gutter)),
                 aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
                 pinned: self
                     .pinned
@@ -231,6 +234,17 @@ impl SettingsView<'_> {
             false => region.width,
         };
         let aside_at = region.x + room.saturating_sub(CONTROL_WIDTH + 1);
+        // Where what a row *does* starts, measured over the whole page
+        // rather than taken from each name: a column of names is read down,
+        // and prose that started at a different column on every row would
+        // be four beginnings to find rather than one.
+        let names = rows
+            .iter()
+            .filter(|row| row.detail.is_some())
+            .map(|row| crate::ui::text_width(&row.label))
+            .max()
+            .unwrap_or(0);
+        let detail_at = region.x + 1 + u16::try_from(names).unwrap_or(0) + 2;
         let showing = window.visible(region.height);
         for (offset, (index, row)) in rows
             .iter()
@@ -300,11 +314,11 @@ impl SettingsView<'_> {
                 ),
             );
             if let Some((detail, colour)) = row.detail.as_ref() {
-                // Two columns after the name, which is the gap the palette
-                // leaves between a name and what it does: one reads as a
-                // single phrase.
-                let at = after + 2;
-                let left = aside_at.saturating_sub(at);
+                // Into its own column, two past the longest name: near
+                // enough to the name to read as one phrase, and in a line
+                // down the page so that the page is read as a table.
+                let at = detail_at.max(after + 2);
+                let left = aside_at.saturating_sub(at + reserved);
                 write(
                     cells,
                     at,

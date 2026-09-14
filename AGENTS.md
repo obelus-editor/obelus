@@ -597,6 +597,21 @@ would have reached, a lock against the control, the whole row in the dim ink
 that means unusable everywhere else. Sublime's project settings win
 silently, and "I changed it and nothing happened" is the bug that follows.
 
+**A setting is a name and a gloss, not a sentence.** `Theme`, `Icons`,
+`Wrap`, `Blame`, with what each does in the dim colour beside it -- and
+nothing beside `Theme`, because a gloss reading "the colour theme" is the
+footnote this rule used to be written against. These were whole sentences
+("Who last changed the line the cursor is on") on the grounds that a name
+and a description side by side read as a heading and a footnote. True when
+the footnote says what the heading already had; what it produced instead was
+a page of prose, where a reader looking for one row had to read every row to
+find it. A column of names is *scanned*. The palette has been a name and a
+description since the beginning, and this is that row.
+
+What a row does starts in one column, two past the longest name on the page,
+rather than two past its own: four beginnings to find is four, and one is
+one. Which the keys page gets as well, out of the same drawing.
+
 **The configuration file holds preferences, not state.** `config.rs` is the
 whole of it — one table, `dirs` for where it lives, written the moment
 anything changes. Rebindable keys are still guaranteed by the key table being

@@ -252,7 +252,7 @@ impl Settings {
             .filter(|setting| group.is_some_and(|group| setting.group == group))
             .filter(|setting| {
                 query.is_empty()
-                    || setting.label.to_lowercase().contains(&query)
+                    || setting.name.to_lowercase().contains(&query)
                     || setting.key.contains(&query)
             })
             .collect()
@@ -346,18 +346,18 @@ impl Settings {
             .map(|at| at..at + query.len())
     }
 
-    /// Where what has been typed matched in a row's label, in characters.
+    /// Where what has been typed matched in a row's name, in characters.
     ///
     /// The filter is a plain substring, so a match is one run of them -- and
     /// the run is what the view colours. Without it a row in a narrowed list
     /// leaves the reader working out why it is there, which is the question
     /// the highlight answers everywhere else in obelus.
     ///
-    /// `None` for a row that matched on its key rather than on its label,
+    /// `None` for a row that matched on its key rather than on its name,
     /// and for no query at all: there is nothing on the row to point at.
     #[must_use]
     pub fn matched(&self, setting: &Setting) -> Option<std::ops::Range<usize>> {
-        self.matched_in(setting.label)
+        self.matched_in(setting.name)
     }
 
     /// What a row's control shows, from the config it is handed.
