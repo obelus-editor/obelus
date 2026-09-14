@@ -190,6 +190,8 @@ impl App {
         self.changes = None;
         self.blames.clear();
         self.asking_blame.clear();
+        // And a history on screen is about the repository that moved.
+        self.reread_history();
     }
 
     /// Asks git what has changed, if it has not already been asked about

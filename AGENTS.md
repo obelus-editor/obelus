@@ -140,6 +140,16 @@ costs about two seconds there and nothing at all at the key, so the bound
 had nothing left to buy. A limit on a list is a limit on what can be found
 in it: reach for a thread before reaching for a number.
 
+**An answer on screen is an answer about a moment, and the moment passes.**
+A history is read at a `HEAD`, and the reader commits in another window,
+amends, checks something out. The watcher already reports what git writes,
+so the list reads itself again -- but only when `HEAD` actually moved:
+`git add` writes the index on every use and changes no commit, and
+re-reading on that would throw away a walk in progress for nothing. Keep
+the commit the reader was on, not the row they were on: a re-read history
+is the same history with rows added on top, and row seven is a different
+commit afterwards.
+
 **A list that is still arriving must sit still.** `replace` is for a
 different list and starts at the top; `relist` is for the same list with
 more in it and keeps the row under the reader. And the history filters

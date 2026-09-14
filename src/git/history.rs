@@ -160,6 +160,18 @@ pub fn spawn_log(
 /// How often a walk in progress hands over what it has found.
 const TICK: Duration = Duration::from_millis(80);
 
+/// What `HEAD` points at, or `None` where there is nothing to point at.
+///
+/// Which commit a list was read at, so that a repository moving underneath
+/// it -- a commit in another window, an amend, a checkout -- can be told
+/// from the other things that move git's state. `git add` writes the index
+/// on every use and changes no history at all.
+#[must_use]
+pub fn head_of(within: &Path) -> Option<gix::ObjectId> {
+    let repository = super::repository(within)?;
+    repository.head_id().ok().map(gix::Id::detach)
+}
+
 /// One commit by its id, without a walk.
 ///
 /// A commit that is being shown is one the reader already chose from a list,

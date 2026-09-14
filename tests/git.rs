@@ -3100,3 +3100,65 @@ fn a_batch_landing_does_not_move_the_reader_off_their_row() {
         "a batch landing moved the reader off the row they chose"
     );
 }
+
+#[test]
+fn a_history_on_screen_notices_the_repository_moving() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer, event::Event};
+
+    let repository = Repository::new("history-moved", "one\n");
+    repository.write("two\n");
+    repository.commit("the second");
+    repository.write("three\n");
+    repository.commit("the third");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+
+    // The reader is on a commit, not on a row number.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(
+        app.picker()
+            .expect("the history")
+            .selected_item()
+            .expect("a row")
+            .label,
+        "the second"
+    );
+
+    // The index moves without a commit behind it, which is what `git add`
+    // does every time it is used.
+    let git = repository.directory().join(".git");
+    app.handle(Event::FileChanged {
+        path: git.join("index"),
+    });
+    assert!(
+        app.picker().expect("the history").is_filling().is_none(),
+        "the list was thrown away and read again for a staged file"
+    );
+
+    // And then a commit in another window.
+    repository.write("four\n");
+    repository.commit("the fourth");
+    app.handle(Event::FileChanged {
+        path: git.join("HEAD"),
+    });
+    support::read_history(&mut app, &events);
+
+    let picker = app.picker().expect("the history");
+    let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
+    assert_eq!(
+        rows,
+        ["the fourth", "the third", "the second", "committed"],
+        "the list did not notice the repository moving under it"
+    );
+    assert_eq!(
+        picker.selected_item().expect("a row").label,
+        "the second",
+        "the reader was left on a row number rather than on their commit"
+    );
+}

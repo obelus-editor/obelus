@@ -55,6 +55,20 @@ pub(super) struct Showing {
     /// rows are mostly somebody else's files, and the reader is looking for
     /// one thing.
     pub opened: Option<(gix::ObjectId, Vec<(PathBuf, git::FileStatus)>)>,
+    /// Which commit the list was read at.
+    ///
+    /// A history is an answer about a repository at a moment, and the
+    /// repository moves while it is on screen: a commit in another window,
+    /// an amend, a checkout. Remembered so that the list can be read again
+    /// when it has moved, and *only* when -- git rewrites its index on
+    /// every `git add`, and no commit changed.
+    pub head: Option<gix::ObjectId>,
+    /// A commit to put the reader back on when it turns up.
+    ///
+    /// A list re-read because `HEAD` moved is the same list with rows added
+    /// on top of it, and a reader ten rows down was looking at a commit,
+    /// not at a row number. Cleared once it has been honoured.
+    pub wanted: Option<gix::ObjectId>,
     /// How many commits the walk filling this list has looked at, and `None`
     /// once it has finished.
     ///
@@ -105,6 +119,8 @@ impl App {
             commits: Vec::new(),
             of: None,
             opened: None,
+            head: None,
+            wanted: None,
             reading: None,
             pushed: None,
             marking: true,
@@ -176,7 +192,49 @@ impl App {
         self.history.pushed = None;
         self.history.marking = true;
         self.history.reading = Some(0);
+        self.history.head = crate::git::history::head_of(&self.working_directory);
         self.start_reading_history(only.as_deref());
+        self.show_history();
+    }
+
+    /// Reads an open history again if the repository has moved under it.
+    ///
+    /// A list on screen is an answer about a repository at a moment, and the
+    /// moment passes: the reader commits in another window, amends, checks
+    /// something out. Leaving the list as it was would be showing them a
+    /// history that no longer exists, with their own newest commit missing
+    /// from the top of it.
+    ///
+    /// Only when `HEAD` has actually moved. Everything that writes git's
+    /// state arrives here, and `git add` writes the index on every use
+    /// without changing a single commit -- re-reading on that would throw
+    /// away a walk in progress for nothing.
+    pub(super) fn reread_history(&mut self) {
+        if self.picker.is_none() || self.history.radii.is_empty() {
+            return;
+        }
+        let head = crate::git::history::head_of(&self.working_directory);
+        if head == self.history.head {
+            return;
+        }
+        // Where the reader is, so the same commit is under them afterwards.
+        let wanted = self
+            .picker
+            .as_ref()
+            .and_then(Picker::selected_item)
+            .and_then(|item| match item.value {
+                PickerValue::Commit(id) => Some(id),
+                PickerValue::CommitFile { id, .. } => Some(id),
+                _ => None,
+            });
+        // And which commit was opened, which the re-read has no reason to
+        // close: it is the same commit, and its files are the same files.
+        // One that the move took away shows as nothing, because a row is
+        // only drawn under the commit it belongs to.
+        let opened = self.history.opened.take();
+        self.refresh_history();
+        self.history.opened = opened;
+        self.history.wanted = wanted;
         self.show_history();
     }
 
@@ -323,10 +381,27 @@ impl App {
             .history
             .reading
             .map(|walked| format!("{walked} commits read\u{2026}"));
+        let wanted = self.history.wanted;
+        let mut found = false;
         if let Some(picker) = self.picker.as_mut() {
             picker.relist(items);
             picker.when_empty(empty);
             picker.filling(filling);
+            // Once the commit the reader was on turns up, they are put back
+            // on it. Before that the list is a list they have not seen yet,
+            // and there is nothing to put them back on.
+            let row = wanted.and_then(|id| {
+                picker
+                    .matches()
+                    .position(|item| matches!(item.value, PickerValue::Commit(at) if at == id))
+            });
+            if let Some(row) = row {
+                picker.select_row(row);
+                found = true;
+            }
+        }
+        if found {
+            self.history.wanted = None;
         }
     }
 
