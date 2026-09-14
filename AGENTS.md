@@ -786,6 +786,13 @@ What is written above a key goes with it when it goes, except for whatever
 is above the last blank line: a comment touching a key is about that key,
 and a heading an empty line away is the file's own.
 
+What is watched is the file the tree *would* have, not the one it has. The
+ordinary project has no settings of its own until somebody gives it some --
+the window next door writing the first one, or a pull bringing it -- and
+watching only what was there at startup is the "read once at startup"
+mistake with a longer fuse, because it looks right until the file is
+created. The same path answers the change when it arrives.
+
 **The reader's settings are the layer the tree's is laid over, and obelus
 keeps both.** `readers_config` is what their file says; `config` is that
 with the tree's over it, rebuilt from the bottom every time either changes.

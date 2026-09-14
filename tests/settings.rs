@@ -854,6 +854,45 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// A tree that acquires settings while obelus is looking at it is heard.
+///
+/// Several obelus processes on one project is the ordinary way to work, and
+/// the ordinary project has no settings of its own until somebody gives it
+/// some -- from the window next door, or in a pull. Watching only the file
+/// that was there at startup is the "read once at startup" mistake with a
+/// longer fuse: it looks right until the file is created.
+///
+/// Broken deliberately by comparing the change against the file the tree
+/// *has* rather than the one it would have: the event matched nothing, the
+/// setting never arrived, and this failed.
+#[test]
+fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = std::env::temp_dir().join(format!("obelus-tree-later-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("a directory");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus::config::Config::default());
+    app.working_directory_for_test(root.clone());
+    assert!(!app.config().wrap, "the tree had settings already");
+
+    // Somebody else writes the project's first settings, and the watcher
+    // says so.
+    let path = root.join(".obelus.toml");
+    std::fs::write(&path, "wrap = true\n").expect("the file");
+    app.handle(Event::FileChanged { path });
+
+    assert!(
+        app.config().wrap,
+        "a tree that gained settings was not heard"
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// An application that was never told where its settings live does not write
 /// any: every test is one of those, and the reader's own file is not
 /// something a test may touch.

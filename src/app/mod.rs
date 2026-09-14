@@ -603,10 +603,14 @@ impl App {
         // And the tree's own settings, for the same reason twice over:
         // another obelus on this project may be looking at them, and a `git
         // pull` rewrites them under everybody.
-        if let Some(path) = self.tree_config.clone()
-            && let Err(error) = watcher.watch(&path)
-        {
-            tracing::warn!(%error, path = %path.display(), "not watching the tree's settings");
+        // The file the tree *would* have, not the one it has: watching only
+        // what was there at startup is the "read once" mistake with a longer
+        // fuse, because it looks right until somebody creates the file --
+        // the window next door writing the project's first setting, or a
+        // pull bringing one.
+        let tree = crate::config::tree_path_for(&self.working_directory);
+        if let Err(error) = watcher.watch(&tree) {
+            tracing::warn!(%error, path = %tree.display(), "not watching the tree's settings");
         }
         self.watcher = Some(watcher);
     }
@@ -910,11 +914,17 @@ impl App {
                 // reports whichever path the change arrived on, and a
                 // change that came from a repository arrives on the file
                 // the link points at rather than on the link.
-                if self
-                    .config_path
-                    .as_deref()
-                    .is_some_and(|config| path == config || path == crate::config::resolved(config))
-                {
+                let readers = self.config_path.as_deref().is_some_and(|config| {
+                    path == config || path == crate::config::resolved(config)
+                });
+                // Or the tree's own, which is a change to the settings just
+                // as much -- it is the layer over them. Against the file the
+                // tree *would* have rather than the one it has, so that the
+                // file appearing is a change like any other: the ordinary
+                // case is a project with no settings yet, and the moment
+                // worth hearing about is the one where it gets some.
+                let tree = path == crate::config::tree_path_for(&self.working_directory);
+                if readers || tree {
                     self.reread_config();
                 } else if crate::git::state_moved(&path) {
                     self.forget_what_git_said();
