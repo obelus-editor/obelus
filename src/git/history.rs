@@ -275,7 +275,7 @@ pub fn pushed(within: &Path, asked: &[gix::ObjectId]) -> Option<HashSet<gix::Obj
         .branch_remote_tracking_ref_name(name.as_ref(), gix::remote::Direction::Fetch)?
         .ok()?;
     let mut reference = repository.find_reference(tracking.as_ref()).ok()?;
-    let id = reference.peel_to_id_in_place().ok()?;
+    let id = reference.peel_to_id().ok()?;
     let walk = repository.rev_walk([id]).all().ok()?;
 
     let wanted: HashSet<gix::ObjectId> = asked.iter().copied().collect();

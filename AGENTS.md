@@ -116,6 +116,19 @@ keeps it apart from a hunk's removed lines -- a deletion is gone and reads
 red, a message is a note and reads raised -- and it is why replacing the
 diff closes the hunks and leaves the message where it is.
 
+**What the remote has not seen is marked, in the colour a new file wears.**
+The few commits a reader has not pushed are the ones still theirs to change,
+and they are what someone scanning a history is usually looking for -- the
+same argument the file list makes for colouring what git has not seen.
+Nothing is marked where the question does not arise: a branch that tracks
+nothing, or a repository with no remote at all, has every commit equally
+unpushed, and marking all of them says no more than marking none. It is
+walked from the tracking branch and stopped as soon as every commit on
+screen is accounted for, so the ordinary case -- a remote at or near `HEAD`
+-- costs about what the list itself did; a commit the walk did not reach
+before its budget ran out is left alone, because telling a reader their work
+is not on the remote when it is would be the worse lie.
+
 **A history is one view at two radii.** A file's commits and a project's
 differ only in which commits are listed, so they are two tabs of one list
 and `f9` and `f10` land on the tab they name -- the shape the finding keys
