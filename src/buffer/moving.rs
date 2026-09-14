@@ -850,8 +850,12 @@ fn move_within(
             remember(text, cursor, width);
             return moved(cursor);
         }
+        // The start of the *row*, which on an unwrapped line is the start
+        // of the line. A reader who wrapped their lines reads a row as a
+        // line -- it is what `home` looks like it means, and jumping to the
+        // far top of a paragraph is not what they pressed it for.
         Motion::LineStart => {
-            cursor.column = CharColumn::new(0);
+            cursor.column = row_of(text, cursor.line, row, width).0;
             remember(text, cursor, width);
             return moved(cursor);
         }
@@ -876,11 +880,28 @@ fn move_within(
             remember(text, cursor, width);
             return moved(cursor);
         }
-        // Past the last character, where a cursor legitimately sits. The
-        // end of the line, not of the visual row: a line is what the key
-        // is named after.
+        // Past the last character, where a cursor legitimately sits -- and
+        // of the row rather than the line, for the reason `home` is.
         Motion::LineEnd => {
-            cursor.column = text.line_length(cursor.line);
+            cursor.column = row_of(text, cursor.line, row, width).1;
+            remember(text, cursor, width);
+            return moved(cursor);
+        }
+        // A word at a time. What counts as one is the same rule every
+        // editor uses without saying so: a run of letters, digits and
+        // underscores is a word, a run of anything else that is not blank
+        // is a word, and blank is what lies between them.
+        Motion::WordLeft => {
+            let (line, column) = word_left(text, folds, cursor.line, cursor.column);
+            cursor.line = line;
+            cursor.column = column;
+            remember(text, cursor, width);
+            return moved(cursor);
+        }
+        Motion::WordRight => {
+            let (line, column) = word_right(text, folds, cursor.line, cursor.column);
+            cursor.line = line;
+            cursor.column = column;
             remember(text, cursor, width);
             return moved(cursor);
         }
@@ -892,6 +913,130 @@ fn move_within(
     // the row arrived at.
     cursor.column = text.column_in_row(line, row, cursor.remembered_cell, width);
     moved(cursor)
+}
+
+/// Where a visual row begins and ends, in the line's own columns.
+///
+/// The whole line where it is not wrapped, which is what makes `home` and
+/// `end` mean what they have always meant for a reader who left wrapping
+/// off.
+fn row_of(text: &Text, line: LineNumber, row: usize, width: u16) -> (CharColumn, CharColumn) {
+    let rows = text.wrap_rows(line, width);
+    rows.get(row).map_or_else(
+        || (CharColumn::new(0), text.line_length(line)),
+        |wrapped| (wrapped.first, wrapped.end),
+    )
+}
+
+/// Whether a character is part of a word rather than between words.
+fn wordish(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
+/// Which of the three kinds a character is, for telling one word from the
+/// next.
+///
+/// Three rather than two, so that `foo.bar` is three words rather than one:
+/// punctuation is not blank, and a reader stepping through code expects to
+/// stop at the dot.
+fn kind_of(character: char) -> u8 {
+    match character {
+        _ if character.is_whitespace() => 0,
+        _ if wordish(character) => 1,
+        _ => 2,
+    }
+}
+
+/// The characters of a line, as a vector the walks below can index.
+fn characters(text: &Text, line: LineNumber) -> Vec<char> {
+    text.line(line).chars().collect()
+}
+
+/// The start of the word to the left, stepping onto the line above where
+/// there is nothing to the left on this one.
+fn word_left(
+    text: &Text,
+    folds: &Folds,
+    mut line: LineNumber,
+    mut column: CharColumn,
+) -> (LineNumber, CharColumn) {
+    loop {
+        let characters = characters(text, line);
+        let mut at = column.get().min(characters.len());
+        // Over the blank behind the cursor, then over the run it lands in.
+        while at > 0 && kind_of(characters[at - 1]) == 0 {
+            at -= 1;
+        }
+        if at > 0 {
+            let kind = kind_of(characters[at - 1]);
+            while at > 0 && kind_of(characters[at - 1]) == kind {
+                at -= 1;
+            }
+            return (line, CharColumn::new(at));
+        }
+        // Nothing left on this line: the end of the line above, which is
+        // where the character to the left of column zero actually is.
+        let Some(above) = previous_line(folds, line) else {
+            return (line, CharColumn::new(0));
+        };
+        line = above;
+        column = text.line_length(line);
+        if column.get() > 0 {
+            continue;
+        }
+        return (line, column);
+    }
+}
+
+/// Past the end of the word to the right, stepping onto the line below.
+fn word_right(
+    text: &Text,
+    folds: &Folds,
+    mut line: LineNumber,
+    mut column: CharColumn,
+) -> (LineNumber, CharColumn) {
+    loop {
+        let characters = characters(text, line);
+        let mut at = column.get().min(characters.len());
+        while at < characters.len() && kind_of(characters[at]) == 0 {
+            at += 1;
+        }
+        if at < characters.len() {
+            let kind = kind_of(characters[at]);
+            while at < characters.len() && kind_of(characters[at]) == kind {
+                at += 1;
+            }
+            return (line, CharColumn::new(at));
+        }
+        let Some(below) = next_line(text, folds, line) else {
+            return (line, CharColumn::new(characters.len()));
+        };
+        line = below;
+        column = CharColumn::new(0);
+        if text.line_length(line).get() > 0 {
+            continue;
+        }
+        return (line, column);
+    }
+}
+
+/// The line above, skipping whatever a fold has hidden.
+fn previous_line(folds: &Folds, line: LineNumber) -> Option<LineNumber> {
+    let mut above = line.get().checked_sub(1)?;
+    while folds.hides(LineNumber::new(above)) {
+        above = above.checked_sub(1)?;
+    }
+    Some(LineNumber::new(above))
+}
+
+/// The line below, likewise.
+fn next_line(text: &Text, folds: &Folds, line: LineNumber) -> Option<LineNumber> {
+    let last = text.last_line().get();
+    let mut below = line.get() + 1;
+    while below <= last && folds.hides(LineNumber::new(below)) {
+        below += 1;
+    }
+    (below <= last).then(|| LineNumber::new(below))
 }
 
 /// Records the cell a cursor is at, as the column to aim for later.

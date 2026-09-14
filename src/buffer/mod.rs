@@ -146,6 +146,10 @@ pub enum Motion {
     LineStart,
     /// Past the last character of the line.
     LineEnd,
+    /// The start of the word to the left, or the one the cursor is in.
+    WordLeft,
+    /// Past the end of the word to the right.
+    WordRight,
     /// The start of the document.
     DocumentStart,
     /// The last line of the document.

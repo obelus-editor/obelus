@@ -53,6 +53,16 @@ pub(super) fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
         // Not `ctrl+PageUp`/`ctrl+PageDown`: those mean previous and next tab
         // almost everywhere, and the nearest thing obelus has to a tab is a
         // buffer, so they are worth leaving free.
+        // A word at a time, which is the other thing `ctrl` and an arrow
+        // mean everywhere a reader has been.
+        (KeyModifiers::CONTROL, KeyCode::Left) => Some((Motion::WordLeft, false)),
+        (KeyModifiers::CONTROL, KeyCode::Right) => Some((Motion::WordRight, false)),
+        (m, KeyCode::Left) if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+            Some((Motion::WordLeft, true))
+        }
+        (m, KeyCode::Right) if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+            Some((Motion::WordRight, true))
+        }
         (KeyModifiers::CONTROL, KeyCode::Home) => Some((Motion::DocumentStart, false)),
         (KeyModifiers::CONTROL, KeyCode::End) => Some((Motion::DocumentEnd, false)),
         // With shift as well, the same two motions extend the selection.

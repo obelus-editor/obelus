@@ -810,3 +810,118 @@ mod bytes {
         );
     }
 }
+
+/// Getting about: a word at a time, and the ends of a wrapped row.
+mod moving {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    use obelus::{app::App, buffer::Buffer};
+
+    use super::support;
+
+    fn reading(name: &str, contents: &str, width: u16) -> (support::Scratch, App) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, width, 12);
+        (scratch, app)
+    }
+
+    fn at(app: &App) -> (usize, usize) {
+        let cursor = app.current_buffer().expect("a buffer").cursor();
+        (cursor.line.get(), cursor.column.get())
+    }
+
+    fn control(app: &mut App, code: KeyCode) {
+        app.handle(obelus::event::Event::Key(crossterm::event::KeyEvent::new(
+            code,
+            KeyModifiers::CONTROL,
+        )));
+    }
+
+    /// `foo.bar` is three words, not one: punctuation is not blank, and a
+    /// reader stepping through code expects to stop at the dot.
+    #[test]
+    fn a_word_at_a_time_stops_at_punctuation() {
+        let (_scratch, mut app) = reading("move-words", "let x = foo.bar(y);\n", 80);
+        let mut stops = Vec::new();
+        for _ in 0..9 {
+            control(&mut app, KeyCode::Right);
+            stops.push(at(&app).1);
+        }
+        assert_eq!(stops, [3, 5, 7, 11, 12, 15, 16, 17, 19], "{stops:?}");
+
+        // And back the way it came.
+        let mut back = Vec::new();
+        for _ in 0..4 {
+            control(&mut app, KeyCode::Left);
+            back.push(at(&app).1);
+        }
+        assert_eq!(back, [17, 16, 15, 12], "{back:?}");
+    }
+
+    /// Nothing to the left on this line means the end of the line above,
+    /// which is where the character to the left of column zero really is.
+    #[test]
+    fn a_word_steps_over_the_end_of_a_line() {
+        let (_scratch, mut app) = reading("move-word-lines", "one\ntwo\n", 80);
+        control(&mut app, KeyCode::Right);
+        control(&mut app, KeyCode::Right);
+        assert_eq!(at(&app), (1, 3), "it did not step onto the next line");
+
+        control(&mut app, KeyCode::Left);
+        control(&mut app, KeyCode::Left);
+        assert_eq!(at(&app), (0, 0));
+    }
+
+    /// With wrapping on, a row is what a reader reads as a line -- and it
+    /// is what `home` looks like it means.
+    #[test]
+    fn home_and_end_are_about_the_row_when_a_line_wraps() {
+        // Narrow enough that the one line takes three rows.
+        let (_scratch, mut app) =
+            reading("move-wrapped", "alpha beta gamma delta epsilon zeta\n", 16);
+        app.configure(
+            obelus::config::Config {
+                wrap: true,
+                ..obelus::config::Config::default()
+            },
+            Vec::new(),
+        );
+        support::render(&mut app, 16, 12);
+
+        // Down twice puts the cursor on the third row of the same line.
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Down);
+        let (line, column) = at(&app);
+        assert_eq!(line, 0, "the sample is one line and the cursor left it");
+        assert!(column > 0, "the cursor did not reach a later row");
+
+        support::press(&mut app, KeyCode::Home);
+        let (_, start) = at(&app);
+        assert_ne!(
+            start, 0,
+            "home went to the top of the whole line rather than the row"
+        );
+
+        support::press(&mut app, KeyCode::End);
+        let (_, end) = at(&app);
+        assert!(
+            end < "alpha beta gamma delta epsilon zeta".len(),
+            "end went past the row to the end of the line"
+        );
+        assert!(end > start, "end landed before the row began");
+    }
+
+    /// And with wrapping off a row is a line, so the keys mean what they
+    /// always meant.
+    #[test]
+    fn home_and_end_are_about_the_line_when_nothing_wraps() {
+        let (_scratch, mut app) = reading("move-unwrapped", "alpha beta gamma\n", 80);
+        support::press(&mut app, KeyCode::End);
+        assert_eq!(at(&app), (0, 16));
+        support::press(&mut app, KeyCode::Home);
+        assert_eq!(at(&app), (0, 0));
+    }
+}
