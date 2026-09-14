@@ -369,6 +369,10 @@ impl App {
                 self.on_workspace_symbols(reply);
                 return;
             }
+            Asked::Formatting => {
+                self.on_formatting(question.buffer, question.version, reply);
+                return;
+            }
         };
         let indexing = self.server_working_on().is_some();
         match action::outcome_of(reply.result, question.version, now, indexing) {
@@ -685,6 +689,97 @@ impl App {
     }
 
     /// Sends `workspace/symbol`, and says whether the question got out.
+    /// Asks how the file should be laid out, so it can be written that way.
+    ///
+    /// Says whether anybody was asked. A save that nobody could format goes
+    /// ahead unformatted rather than waiting for an answer that is not
+    /// coming: the reader pressed save, and a setting they turned on is not
+    /// a reason to refuse them.
+    pub(super) fn ask_formatting(&mut self, index: usize) -> bool {
+        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+            return false;
+        };
+        let (Some(language), true) = (buffer.language(), buffer.content().is_file()) else {
+            return false;
+        };
+        let Ok(uri) = lsp::client::uri_for(buffer.path()) else {
+            return false;
+        };
+        let version = buffer.version();
+        let Some(client) = self.servers.get_mut(&language) else {
+            return false;
+        };
+        let params = serde_json::json!({
+            "textDocument": { "uri": uri },
+            "options": {
+                "tabSize": self.settled.config.tab_width,
+                "insertSpaces": true,
+            },
+        });
+        match client.request("textDocument/formatting", &params) {
+            Ok(request) => {
+                self.asked.insert(
+                    (language, request),
+                    Question {
+                        asked: Asked::Formatting,
+                        buffer: BufferId::new(index),
+                        version,
+                    },
+                );
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, "not asking how to lay the file out");
+                false
+            }
+        }
+    }
+
+    /// Lays the file out the way the server said, and then writes it.
+    ///
+    /// The edits come back in the coordinates of the document that was
+    /// asked about, so one that has moved since cannot take them -- and
+    /// applying them in order would be applying each one to a document the
+    /// last one changed, so they go in from the bottom up.
+    fn on_formatting(&mut self, id: BufferId, version: i32, reply: Reply) {
+        let now = self
+            .buffers
+            .get(id.get())
+            .and_then(Option::as_ref)
+            .map(Buffer::version);
+        if now != Some(version) {
+            tracing::debug!("the file changed while it was being laid out");
+            self.note = Some("the file changed while formatting".to_string());
+        } else if let Some(edits) = action::edits_in(reply.result.ok()) {
+            let encoding = self
+                .buffers
+                .get(id.get())
+                .and_then(Option::as_ref)
+                .and_then(Buffer::language)
+                .map_or_else(
+                    || lsp_types::PositionEncodingKind::UTF16,
+                    |language| self.encoding_for(language),
+                );
+            for edit in edits.into_iter().rev() {
+                if let Some(buffer) = self.buffers.get_mut(id.get()).and_then(Option::as_mut) {
+                    let text = buffer.text();
+                    let (line, column) = position::from_lsp(text, edit.range.start, &encoding);
+                    let (end_line, end_column) =
+                        position::from_lsp(text, edit.range.end, &encoding);
+                    let span = Span {
+                        line,
+                        column,
+                        end_line,
+                        end_column,
+                    };
+                    buffer.edit(span, &edit.new_text, crate::buffer::undo::Doing::Whole);
+                }
+            }
+            self.change_document(id.get());
+        }
+        self.write_now(id.get());
+    }
+
     pub(super) fn ask_workspace_symbols(&mut self, language: LanguageId, query: &str) -> bool {
         let Some(id) = self.current else { return false };
         let version = self
@@ -793,6 +888,9 @@ pub(super) enum Asked {
     Outline,
     /// The names the server knows across the project.
     Workspace,
+    /// How the file should be laid out, asked because it is about to be
+    /// written.
+    Formatting,
 }
 
 /// The name of the symbol the cursor is in, or the last one before it.

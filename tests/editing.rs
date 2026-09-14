@@ -1116,3 +1116,83 @@ mod agents {
         );
     }
 }
+
+/// Laying a file out before writing it.
+mod formatting {
+    use obelus::lsp::action;
+
+    /// A server saying "nothing to change" is not a server failing, and a
+    /// layout obelus cannot read is not half a layout to apply.
+    #[test]
+    fn only_a_layout_that_can_be_followed_is_followed() {
+        assert!(
+            action::edits_in(None).is_none(),
+            "a reply that failed was read as a layout"
+        );
+        assert!(
+            action::edits_in(Some(serde_json::Value::Null)).is_none(),
+            "null is a server with nothing to change"
+        );
+        assert!(
+            action::edits_in(Some(serde_json::json!([]))).is_none(),
+            "an empty list is nothing to change"
+        );
+        assert!(
+            action::edits_in(Some(serde_json::json!({ "not": "edits" }))).is_none(),
+            "something obelus cannot read was taken for a layout"
+        );
+
+        let edits = action::edits_in(Some(serde_json::json!([{
+            "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 4 },
+            },
+            "newText": "  ",
+        }])))
+        .expect("a layout");
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].new_text, "  ");
+    }
+}
+
+/// Saving with formatting turned on, when nobody can format.
+mod format_on_save {
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    /// A setting the reader turned on is not a reason to refuse them. With
+    /// no server to ask, the file is written as it is rather than waiting
+    /// for an answer that is not coming.
+    #[test]
+    fn a_file_nobody_can_lay_out_is_still_written() {
+        let scratch = support::Scratch::new("format-none");
+        // An extension no language server obelus knows is started for.
+        let path = scratch.path().join("sample.unknownlang");
+        std::fs::write(&path, "one\n").expect("writing it");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        app.configure(
+            obelus::config::Config {
+                format_on_save: true,
+                ..obelus::config::Config::default()
+            },
+            Vec::new(),
+        );
+        support::lay_out(&mut app, 70, 12);
+
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it back"),
+            "xone\n",
+            "a file nobody could lay out was never written"
+        );
+        assert!(!app.current_buffer().expect("a buffer").is_dirty());
+    }
+}

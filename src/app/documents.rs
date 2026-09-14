@@ -597,6 +597,25 @@ impl App {
             self.note = Some("changed on disk -- save again to overwrite".to_string());
             return;
         }
+        // Laid out first, where the reader asked for that and somebody can
+        // do it. The answer comes back later and writes the file then --
+        // the alternative is holding the whole program still waiting for
+        // another process to reply.
+        if self.settled.config.format_on_save && self.ask_formatting(index) {
+            self.note = Some("laying it out\u{2026}".to_string());
+            return;
+        }
+        self.write_now(index);
+    }
+
+    /// Writes a document that is ready to be written.
+    ///
+    /// Apart from the command because the formatting answer comes back here
+    /// too, and by then everything the command checked has been checked.
+    pub(super) fn write_now(&mut self, index: usize) {
+        let Some(buffer) = self.buffers.get_mut(index).and_then(Option::as_mut) else {
+            return;
+        };
         match buffer.save() {
             Ok(()) => {
                 self.note = Some("saved".to_string());

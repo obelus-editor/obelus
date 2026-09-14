@@ -181,6 +181,30 @@ pub struct Place {
     pub end_character: u32,
 }
 
+/// The text edits in a formatting answer, in the order the server gave
+/// them.
+///
+/// `null` is a server saying it has nothing to change, and is turned away
+/// before the parse so that it is not logged as a layout obelus could not
+/// read -- the answer is the same either way, and the line in the log is
+/// not. Anything else that will not parse is a server obelus cannot follow,
+/// and following half of a layout is worse than following none.
+#[must_use]
+pub fn edits_in(result: Option<serde_json::Value>) -> Option<Vec<lsp_types::TextEdit>> {
+    let result = result?;
+    if result.is_null() {
+        return None;
+    }
+    match serde_json::from_value::<Vec<lsp_types::TextEdit>>(result) {
+        Ok(edits) if !edits.is_empty() => Some(edits),
+        Ok(_) => None,
+        Err(error) => {
+            tracing::warn!(%error, "a layout obelus cannot read");
+            None
+        }
+    }
+}
+
 /// What to make of a reply.
 ///
 /// `asked_against` and `now` are the document version the question was asked
