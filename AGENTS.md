@@ -157,6 +157,11 @@ file's history can find nothing for a second and a half and still be
 working: without a number moving, "not found yet" and "not there" look the
 same.
 
+**Two buffers can wear one path, so a path alone cannot say which.** A file
+and that file as some commit had it live at the same path, and `read_at`
+matching on the path alone previewed one at the other's place in it. Match
+on the path *and* on which version it is -- `content().at()`.
+
 **Which tabs a view has must be a cheap question.** The search settles its
 scopes when it opens and the history settles its radii, and both settle them
 on facts they can have for nothing: is a file open, does the project have a

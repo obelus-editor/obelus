@@ -274,7 +274,7 @@ impl App {
             // read, when it is open at all.
             PickerValue::File(path) => {
                 let path = self.working_directory.join(path);
-                let at = self.read_at(&path);
+                let at = self.read_at(&path, None);
                 Some((Subject::File(path), at))
             }
             // A file already open is being read somewhere, and that is the
@@ -318,17 +318,24 @@ impl App {
             | PickerValue::Theme(_)
             | PickerValue::Setting { .. }
             | PickerValue::AgentValue { .. } => None,
-            // A commit is not a file, so what it has to show is what it
-            // said; one of its files is shown as that commit had it, which
-            // is what choosing the row gives.
-            PickerValue::Commit(id) => Some((Subject::Message(*id), Marked::top())),
-            PickerValue::CommitFile { id, path } => Some((
-                Subject::Commit {
-                    id: *id,
-                    path: self.working_directory.join(path),
-                },
-                Marked::top(),
-            )),
+            // What choosing the row gives, which is not the same thing in
+            // both radii. In a file's history it gives that file as the
+            // commit had it, message and all; in the project's it opens the
+            // commit's files under it, and until one of them is picked there
+            // is no file to show -- so what the commit said is all there is.
+            PickerValue::Commit(id) => Some(match self.commit_opens() {
+                Some(path) => {
+                    let path = self.working_directory.join(path);
+                    let at = self.read_at(&path, Some(*id));
+                    (Subject::Commit { id: *id, path }, at)
+                }
+                None => (Subject::Message(*id), Marked::top()),
+            }),
+            PickerValue::CommitFile { id, path } => {
+                let path = self.working_directory.join(path);
+                let at = self.read_at(&path, Some(*id));
+                Some((Subject::Commit { id: *id, path }, at))
+            }
             PickerValue::Nothing => None,
         }
     }
@@ -388,19 +395,24 @@ impl App {
         }
     }
 
-    /// Where a file should be shown: where it is being read if it is open,
-    /// and at the top if it is not.
+    /// Where a version of a file should be shown: where it is being read if
+    /// it is open, and at the top if it is not.
     ///
     /// The same answer the list of open files gives, because it is the same
     /// question -- a file's place in it is the thing a reader remembers it
     /// by, and choosing the row takes them back to exactly that. A list
     /// that previewed the top of a file the reader is twenty screens into
     /// would show them somewhere they have not been for an hour.
-    fn read_at(&self, path: &Path) -> Marked {
+    ///
+    /// `at` says which version: a commit's, or the one on disk. Both are
+    /// asked for, because two buffers can wear one path -- a file and that
+    /// same file as some commit had it -- and matching on the path alone
+    /// would show a reader the other one's place in it.
+    fn read_at(&self, path: &Path, at: Option<gix::ObjectId>) -> Marked {
         self.buffers
             .iter()
             .flatten()
-            .find(|buffer| buffer.path() == path)
+            .find(|buffer| buffer.path() == path && buffer.content().at() == at)
             .map_or_else(Marked::top, |buffer| Marked::on(&buffer.cursor()))
     }
 

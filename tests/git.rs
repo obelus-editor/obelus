@@ -2468,22 +2468,9 @@ fn the_history_previews_what_a_row_would_give() {
     let events = support::drive(&mut app);
     support::lay_out(&mut app, 60, 24);
     support::press_function(&mut app, 10);
-
-    /// The preview's own rows: a screen with a list on it has a rule under
-    /// the tabs, one between the list and the preview, and one above the
-    /// status row, so the preview is what lies between the last two.
-    fn previewed(dump: &str) -> String {
-        let rows: Vec<&str> = support::text_block(dump).lines().collect();
-        let rules: Vec<usize> = rows
-            .iter()
-            .enumerate()
-            .filter(|(_, row)| row.contains('\u{2500}'))
-            .map(|(at, _)| at)
-            .collect();
-        let (from, to) = (rules[rules.len() - 2] + 1, rules[rules.len() - 1]);
-        rows[from..to].join("\n")
-    }
     support::read_history(&mut app, &events);
+
+    use support::previewed;
 
     // A commit: what it said, from the first line of it.
     let dump = support::render(&mut app, 60, 24);
@@ -2840,6 +2827,95 @@ fn a_query_keeps_a_log_in_its_own_order() {
         rows,
         ["Fix the outline's depth", "Fold a line"],
         "the query ranked the log instead of filtering it"
+    );
+}
+
+#[test]
+fn a_files_history_previews_the_file_at_that_commit() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+    use support::previewed;
+
+    let repository = Repository::new("history-preview-of-a-file", "first\n");
+    repository.write("second\n");
+    repository.commit("A subject worth reading");
+    // The working tree is a third thing, so previewing the file on disk can
+    // be told from previewing the commit's version of it.
+    repository.write("uncommitted\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 24);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+
+    // The newest commit: this file as that commit had it, with the message
+    // above it -- which is what choosing the row opens.
+    let text = previewed(&support::render(&mut app, 60, 24));
+    assert!(
+        text.contains("A subject worth reading"),
+        "a file's history previewed no message:\n{text}"
+    );
+    assert!(
+        text.contains("second"),
+        "a file's history previewed the message alone, not the file:\n{text}"
+    );
+    assert!(
+        !text.contains("uncommitted"),
+        "the preview shows the file on disk rather than the commit's:\n{text}"
+    );
+
+    // The one before it, where the file said something else. The preview
+    // follows the row, or it is a preview of the list rather than of the row.
+    support::press(&mut app, KeyCode::Down);
+    let text = previewed(&support::render(&mut app, 60, 24));
+    assert!(
+        text.contains("first") && !text.contains("second"),
+        "the preview did not follow the row to its own version:\n{text}"
+    );
+}
+
+#[test]
+fn a_version_already_open_previews_where_it_is_open() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+    use support::previewed;
+
+    let repository = Repository::new("history-preview-open", "top\n");
+    // Long enough that a place in the middle is nowhere near the top, so
+    // previewing where the reader left it can be told from previewing the
+    // start of it.
+    let lines: String = (0..80).map(|line| format!("line {line}\n")).collect();
+    repository.write(&lines);
+    repository.commit("A subject worth reading");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 24);
+
+    // Open the newest commit's version and read down into it.
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Enter);
+    for _ in 0..60 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let read_at = support::render(&mut app, 60, 24);
+    assert!(
+        read_at.contains("line 55"),
+        "the version did not open and scroll:\n{read_at}"
+    );
+
+    // Ask for the history again. The row for that commit is the version
+    // that is open, so it previews where it is being read.
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    let text = previewed(&support::render(&mut app, 60, 24));
+    assert!(
+        text.contains("line 55"),
+        "the preview went back to the top of a version already open:\n{text}"
     );
 }
 

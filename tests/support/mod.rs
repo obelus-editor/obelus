@@ -303,6 +303,24 @@ impl Drop for Scratch {
     }
 }
 
+/// The preview's own rows, out of a rendered screen.
+///
+/// A screen with a list on it has a rule under the tabs, one between the
+/// list and the preview, and one above the status row, so the preview is
+/// what lies between the last two.
+#[allow(dead_code)]
+pub fn previewed(dump: &str) -> String {
+    let rows: Vec<&str> = text_block(dump).lines().collect();
+    let rules: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.contains('\u{2500}'))
+        .map(|(at, _)| at)
+        .collect();
+    let (from, to) = (rules[rules.len() - 2] + 1, rules[rules.len() - 1]);
+    rows[from..to].join("\n")
+}
+
 /// Gives the app a channel, so the walks it starts have somewhere to answer.
 ///
 /// The loop does this at startup; a test drives the app by hand and would
