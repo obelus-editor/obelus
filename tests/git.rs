@@ -3622,3 +3622,55 @@ fn a_query_for_a_name_finds_the_nearest_name() {
         "the name typed is not the first name offered: {rows:?}"
     );
 }
+
+#[test]
+fn the_commit_behind_a_line_can_be_asked_for_with_the_names_off() {
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    let repository = Repository::new("line-commit-no-names", "a\nb\n");
+    repository.write("x\na\nb\n");
+    repository.commit("Put one at the top");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    // The margin's names turned off, which is a question about the margin.
+    app.configure(obelus::config::Config {
+        blame: false,
+        ..Default::default()
+    });
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 74, 14);
+    support::render(&mut app, 74, 14);
+
+    // Nothing has been asked, so the first press is the asking -- and says
+    // so, which it could not while nothing was being read.
+    dispatch::dispatch(&mut app, Command::HistoryLine);
+    let dump = support::render(&mut app, 74, 14);
+    assert!(
+        support::text_block(&dump).contains("still reading who wrote this"),
+        "the key said nothing about what it had started:\n{dump}"
+    );
+
+    let at = std::time::Instant::now();
+    while app.blamed_lines().is_none() && at.elapsed() < std::time::Duration::from_secs(20) {
+        match events.recv_timeout(std::time::Duration::from_secs(20)) {
+            Ok(event) => app.handle(event),
+            Err(_) => break,
+        }
+    }
+    assert!(
+        app.blamed_lines().is_some(),
+        "the key that asked never got an answer"
+    );
+    // And with the answer in hand it opens the commit, names off or not.
+    dispatch::dispatch(&mut app, Command::HistoryLine);
+    let dump = support::render(&mut app, 74, 14);
+    assert!(
+        support::text_block(&dump).contains("Put one at the top"),
+        "the commit did not open with the margin's names off:\n{dump}"
+    );
+}

@@ -165,11 +165,24 @@ impl App {
         if !self.config.blame {
             return None;
         }
+        self.blamed_lines()
+    }
+
+    /// The blame of the version being read, whether or not its names are
+    /// wanted in the margin.
+    ///
+    /// The setting says whether to *write a name beside every line*, which
+    /// is a question about the margin. Whether the commit behind one line
+    /// can be asked for is a different question, and a reader who turned
+    /// the names off has not said they never want to know.
+    ///
+    /// The version as well as the path: a file and that file as some commit
+    /// had it share a path, and the answer about one laid beside the other
+    /// would name whoever last touched whatever is at those numbers in the
+    /// other -- a confident answer about the wrong lines.
+    #[must_use]
+    pub fn blamed_lines(&self) -> Option<&[Option<git::Blamed>]> {
         let buffer = self.current_buffer()?;
-        // The blame of *this* version. A file and that file as some commit
-        // had it share a path, and the answer about one laid beside the
-        // other would name whoever last touched whatever is at those
-        // numbers in the other -- a confident answer about the wrong lines.
         self.blames
             .get(&(buffer.path().to_path_buf(), buffer.content().at()))
             .map(Vec::as_slice)
@@ -186,14 +199,23 @@ impl App {
             .current_buffer()
             .is_some_and(|buffer| buffer.content().at().is_some());
         let at = git::blame::line_of(line, self.changes(), here)?;
-        self.blame()?.get(at.get())?.as_ref()
+        self.blamed_lines()?.get(at.get())?.as_ref()
     }
 
     /// Starts a walk of history for the file being read, once per file.
+    ///
+    /// Only when the names are wanted: a reader who turned them off is not
+    /// paying for a walk of every file they open. The key that asks about
+    /// one line asks for it itself.
     pub(super) fn refresh_blame(&mut self) {
         if !self.config.blame {
             return;
         }
+        self.ask_blame();
+    }
+
+    /// Asks who wrote the version being read, if nobody has asked yet.
+    pub(super) fn ask_blame(&mut self) {
         let Some(asked) = self
             .current_buffer()
             .map(|buffer| (buffer.path().to_path_buf(), buffer.content().at()))

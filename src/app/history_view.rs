@@ -612,7 +612,15 @@ impl App {
             // Two different nothings, and the reader is owed the
             // difference: a walk still running is worth waiting for, and a
             // line no commit accounts for is not.
-            self.note = Some(match self.blame().is_some() {
+            let walked = self.blamed_lines().is_some();
+            // And if nobody has asked yet -- which is every file, for a
+            // reader who keeps the margin's names off -- this is the asking.
+            // Saying "still reading" while nothing was being read was the
+            // one answer that was not true.
+            if !walked {
+                self.ask_blame();
+            }
+            self.note = Some(match walked {
                 true => "no commit has this line".to_string(),
                 false => "still reading who wrote this\u{2026}".to_string(),
             });

@@ -190,6 +190,14 @@ file's history can find nothing for a second and a half and still be
 working: without a number moving, "not found yet" and "not there" look the
 same.
 
+**A setting about how something is drawn is not a setting about whether it
+can be asked.** Turning the margin's names off turned off the walk that
+finds them, so the key that opens the commit behind a line went dead and
+said "still reading who wrote this" while nothing was being read -- the one
+answer that was false. The margin obeys the setting; the question does not,
+and the key starts the walk itself when nobody else has. A reader who wants
+no names in the margin has not said they never want to know.
+
 **The margin knew which commit and threw it away.** A blame walk finds the
 commit behind every line and `Blamed` kept only the name and the date, so
 "why is this line here" -- the question a code reader asks most -- had no
