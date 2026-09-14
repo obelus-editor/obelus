@@ -96,8 +96,8 @@ impl App {
                 // outside the repository has no tab at all.
                 Radius::File => self
                     .current_buffer()
-                    .is_some_and(|buffer| !self.history_of(Some(buffer.path())).is_empty()),
-                Radius::Project => !self.history_of(None).is_empty(),
+                    .is_some_and(|buffer| self.has_any(Some(buffer.path()))),
+                Radius::Project => self.has_any(None),
             })
             .collect()
     }
@@ -105,7 +105,18 @@ impl App {
     /// Whether the project has a history at all, for the key to be offered.
     #[must_use]
     pub(super) fn has_history(&self) -> bool {
-        !self.history_of(None).is_empty()
+        self.has_any(None)
+    }
+
+    /// Whether there is a single commit to be had at a radius.
+    ///
+    /// Asked with a limit of one, because that is the question. Asking for
+    /// the whole list and looking at its length costs a walk that finds two
+    /// hundred commits and a tree lookup for each of them -- ten times over
+    /// on this repository, and the answer was needed before the first row
+    /// could be drawn.
+    fn has_any(&self, only: Option<&Path>) -> bool {
+        !crate::git::history::of(&self.working_directory, only, 1).is_empty()
     }
 
     /// The commits at a radius, newest first.
