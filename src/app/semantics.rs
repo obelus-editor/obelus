@@ -182,18 +182,27 @@ impl App {
         if !buffer.content().is_file() {
             return;
         }
-        let text = buffer.text().rope().to_string();
         let version = buffer.version();
-
-        if let Some(client) = self.servers.get_mut(&language) {
-            let _ = client.notify(
-                "textDocument/didChange",
-                &serde_json::json!({
-                    "textDocument": { "uri": uri, "version": version },
-                    "contentChanges": [{ "text": text }],
-                }),
-            );
-        }
+        // The whole document, which is what obelus sends and means to: a
+        // range needs the *old* document's coordinates in the encoding the
+        // server agreed to, which is the shape every coordinate bug in this
+        // program has had.
+        //
+        // Copied out only where there is somebody to send it to, though.
+        // With no server running -- no language, none installed, one that
+        // died -- this was a copy of the file per keystroke that nothing
+        // ever read.
+        let Some(client) = self.servers.get_mut(&language) else {
+            return;
+        };
+        let text = buffer.text().rope().to_string();
+        let _ = client.notify(
+            "textDocument/didChange",
+            &serde_json::json!({
+                "textDocument": { "uri": uri, "version": version },
+                "contentChanges": [{ "text": text }],
+            }),
+        );
     }
 
     /// Offers what a language server can say about the symbol under the
@@ -203,6 +212,10 @@ impl App {
     /// take the same argument and differ only in what comes back, and a menu
     /// can say which ones this server actually answers.
     pub fn open_symbol_menu(&mut self) {
+        // Whatever the tree still owes, before it is asked what is under
+        // the cursor: this is a question the reader acts on, and a tenth of
+        // a second is nothing to pay for the right answer.
+        self.settle_syntax();
         let actions = match self.symbol_actions() {
             Ok(actions) => actions,
             // No menu at all. A list with one row explaining itself is still

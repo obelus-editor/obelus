@@ -226,6 +226,12 @@ pub struct App {
     /// Held so that dropping it stops the animation. There is nothing to
     /// animate once a file is open, and nothing over a network at all.
     ticker: Option<Ticker>,
+    /// Whether the last frame asked to be woken again.
+    ///
+    /// Beside the ticker rather than read off it: the ticker needs the
+    /// loop's channel, and the decision is the thing worth seeing -- an
+    /// application with no loop behind it still makes it.
+    waking: bool,
     /// What git says about the files in the tree, while a list of them is
     /// open.
     ///
@@ -368,6 +374,7 @@ impl App {
             preview: None,
             phase: 0,
             ticker: None,
+            waking: false,
             prompt: None,
             changes: None,
             statuses: std::collections::HashMap::new(),
@@ -483,7 +490,8 @@ impl App {
         self.buffers.get(self.current?.get())?.as_ref()
     }
 
-    fn current_buffer_mut(&mut self) -> Option<&mut Buffer> {
+    /// The same, to change.
+    pub fn current_buffer_mut(&mut self) -> Option<&mut Buffer> {
         self.buffers.get_mut(self.current?.get())?.as_mut()
     }
 
@@ -634,12 +642,41 @@ impl App {
         }
     }
 
+    /// Whether the last frame asked to be woken again.
+    ///
+    /// Which is the difference between a tree that catches up on its own
+    /// and one that waits for the reader to press something else.
+    #[must_use]
+    pub const fn is_waking(&self) -> bool {
+        self.waking
+    }
+
+    /// Whether any open document's tree is older than its text.
+    fn anything_behind(&self) -> bool {
+        self.buffers.iter().flatten().any(Buffer::syntax_is_behind)
+    }
+
+    /// Works out what every document that owes it means now.
+    ///
+    /// Everything open rather than what is on screen: a tree left behind on
+    /// a document nobody is looking at would keep the ticker awake for the
+    /// rest of the session.
+    pub(super) fn settle_syntax(&mut self) {
+        // Nothing else has to be told: the text did not move, only what
+        // obelus knows about it, so everything keyed on the version stays
+        // keyed on the version it already had.
+        for buffer in self.buffers.iter_mut().flatten() {
+            buffer.settle_syntax();
+        }
+    }
+
     /// Starts or stops the ticker, and does nothing where it is already
     /// what it should be.
     ///
     /// A thread waking twelve times a second to redraw a screen with
     /// nothing moving on it is the one cost an animation must not have.
     fn animate(&mut self, wanted: bool) {
+        self.waking = wanted;
         match (wanted, self.ticker.is_some()) {
             (true, false) => self.ticker = self.events.clone().and_then(Ticker::start),
             (false, true) => self.ticker = None,
@@ -787,7 +824,10 @@ impl App {
             | talking::Talking::Gone => None,
         };
         self.chat.doing(doing);
-        self.animate(self.wants_animating(doing.is_some()));
+        // A grammar too slow to keep up with typing leaves a tree owing an
+        // answer, and the ticker is what comes back for it: the reader
+        // stops, the next tick lands, and the colours catch up.
+        self.animate(self.wants_animating(doing.is_some()) || self.anything_behind());
 
         // Which rows the list will draw is what decides which rows need
         // their matched characters worked out, and only the geometry knows
@@ -937,7 +977,14 @@ impl App {
             // One change for the whole of it, so undoing a paste is one
             // step rather than however many lines it happened to be.
             Event::Paste(text) => self.paste_text(&text),
-            Event::Tick => self.phase = self.phase.wrapping_add(1),
+            Event::Tick => {
+                self.phase = self.phase.wrapping_add(1);
+                // The pause the slow grammars are waiting for. A tick that
+                // lands mid-word settles the tree that word began in, which
+                // is one parse for a burst of typing rather than one per
+                // key.
+                self.settle_syntax();
+            }
             Event::Matches {
                 generation,
                 hits,

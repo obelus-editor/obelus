@@ -14,6 +14,12 @@ pub struct SyntaxState {
     language: LanguageId,
     parser: Parser,
     tree: Tree,
+    /// Whether the tree has been told where the text moved but not what it
+    /// means there.
+    behind: bool,
+    /// How long the last parse took, which is what decides whether the next
+    /// one waits for a pause in the typing.
+    took: std::time::Duration,
 }
 
 impl std::fmt::Debug for SyntaxState {
@@ -38,11 +44,18 @@ impl SyntaxState {
         parser
             .set_language(grammar(language).language())
             .expect("a grammar shipped with obelus should load");
+        let started = std::time::Instant::now();
         let tree = parse(&mut parser, text.rope(), None)?;
         Some(Self {
             language,
             parser,
             tree,
+            behind: false,
+            // The first parse is the only measurement there is to go on,
+            // and it is the honest one: a grammar that takes ten
+            // milliseconds over a file does not take one over the same file
+            // a character later.
+            took: started.elapsed(),
         })
     }
 
@@ -107,12 +120,72 @@ impl SyntaxState {
     /// has already moved, and the result is a tree that parses cleanly and
     /// points at the wrong bytes.
     pub fn reparse(&mut self, text: &Text, edit: &Edit) {
+        self.note(edit);
+        self.settle(text);
+    }
+
+    /// Tells the tree where the text moved, without parsing it again.
+    ///
+    /// The cheap half, and the half that cannot wait: every node after the
+    /// edit is at a different offset now, and a tree that has not been told
+    /// points at the wrong bytes. What it does not do is work out what the
+    /// new bytes *mean*, which is the dear half.
+    pub fn note(&mut self, edit: &Edit) {
         self.tree.edit(&input_edit(edit));
+        self.behind = true;
+    }
+
+    /// Works out what the text means now, if that is still owed.
+    ///
+    /// Times itself, because whether this can be done between one keystroke
+    /// and the next is not a property of obelus -- it is a property of the
+    /// grammar, and they differ by two orders of magnitude.
+    pub fn settle(&mut self, text: &Text) {
+        if !self.behind {
+            return;
+        }
+        let started = std::time::Instant::now();
         if let Some(tree) = parse(&mut self.parser, text.rope(), Some(&self.tree)) {
             self.tree = tree;
         }
+        self.took = started.elapsed();
+        self.behind = false;
+    }
+
+    /// Whether the tree is older than the text.
+    #[must_use]
+    pub const fn is_behind(&self) -> bool {
+        self.behind
+    }
+
+    /// Says this grammar is too slow to keep up, whatever it really costs.
+    ///
+    /// A test cannot make a machine slow, and what is worth testing is not
+    /// the threshold but what happens on either side of it.
+    pub const fn hold_back_for_test(&mut self) {
+        self.took = std::time::Duration::from_secs(3600);
+    }
+
+    /// Whether this grammar answers fast enough to be asked on every
+    /// keystroke.
+    ///
+    /// From the last answer rather than from a list of grammars: a file's
+    /// size is half of the question, and no table of names knows it.
+    #[must_use]
+    pub const fn is_quick(&self) -> bool {
+        self.took.as_micros() < QUICK.as_micros()
     }
 }
+
+/// How long a reparse may take and still be worth doing between one
+/// keystroke and the next.
+///
+/// Two milliseconds: a comfortable share of a frame, and far above what
+/// every grammar here but one costs. Markdown's block grammar re-parses the
+/// whole section a heading opens, which in a document with a long one is
+/// six milliseconds a keystroke -- and a reader typing does not need the
+/// colours to have caught up, they need the letters to appear.
+const QUICK: std::time::Duration = std::time::Duration::from_millis(2);
 
 /// Runs the parser over a rope without flattening it into a `String`.
 ///

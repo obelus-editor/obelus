@@ -1258,9 +1258,43 @@ impl Buffer {
 
     /// Tells the parse about an edit, where there is a parse.
     fn reparse(&mut self, edit: &Edit) {
-        if let Some(state) = self.syntax.as_mut() {
-            state.reparse(&self.text, edit);
+        let Some(state) = self.syntax.as_mut() else {
+            return;
+        };
+        // Where the text moved, always: every node after the edit is at a
+        // different offset now, and a tree that has not been told points at
+        // the wrong bytes.
+        state.note(edit);
+        // What it means, only where the grammar can say between one
+        // keystroke and the next. Where it cannot, the reader carries on
+        // typing against the tree they had and it catches up when they
+        // stop: letters appearing is what they are waiting for, and
+        // colours a tenth of a second behind are colours nobody notices.
+        if state.is_quick() {
+            state.settle(&self.text);
         }
+    }
+
+    /// Works out what the text means, if a grammar too slow to keep up left
+    /// that owed.
+    pub fn settle_syntax(&mut self) {
+        if let Some(state) = self.syntax.as_mut() {
+            state.settle(&self.text);
+        }
+    }
+
+    /// Says this document's grammar is too slow to keep up, whatever it
+    /// really costs.
+    pub fn hold_syntax_back_for_test(&mut self) {
+        if let Some(state) = self.syntax.as_mut() {
+            state.hold_back_for_test();
+        }
+    }
+
+    /// Whether the tree is older than the text.
+    #[must_use]
+    pub fn syntax_is_behind(&self) -> bool {
+        self.syntax.as_ref().is_some_and(SyntaxState::is_behind)
     }
 
     /// Writes the document to the file it came from.

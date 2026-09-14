@@ -1,5 +1,7 @@
 //! Parsing, reparsing, and the highlight kinds that come out.
 
+mod support;
+
 use obelus::{
     coordinates::ByteOffset,
     syntax::{
@@ -491,4 +493,126 @@ fn a_keyword_is_not_a_name() {
     assert!(name_at(22), "the name of a variable is a name");
     assert!(!name_at(16), "`match` was taken for a name");
     assert!(!name_at(10), "a bracket was taken for a name");
+}
+
+/// A grammar that cannot reparse between one keystroke and the next does not
+/// get to make the reader wait for it.
+///
+/// Markdown's block grammar re-parses the whole section a heading opens, so
+/// in a long document a keystroke costs milliseconds -- and what a reader
+/// typing needs is the letters, not the colours. The tree is told where the
+/// text moved, which is cheap and keeps every node pointing at the right
+/// bytes, and what the text now *means* waits for a pause.
+mod catching_up {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer, event::Event};
+
+    use super::support;
+
+    fn editing(name: &str, file: &str, contents: &str) -> (support::Scratch, App) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join(file);
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 12);
+        (scratch, app)
+    }
+
+    const SOURCE: &str = "fn main() {\n    let greeting = \"hello\";\n}\n";
+
+    /// A grammar that keeps up is asked on every keystroke, as it always
+    /// was: nothing waits, and nothing is owed.
+    #[test]
+    fn a_grammar_that_keeps_up_is_not_held_back() {
+        let (_scratch, mut app) = editing("catch-quick", "sample.rs", SOURCE);
+        support::type_text(&mut app, "x");
+        assert!(
+            !app.current_buffer().expect("a buffer").syntax_is_behind(),
+            "a grammar that answers in microseconds was made to wait"
+        );
+    }
+
+    /// One that cannot keep up is left owing, and the tick that lands after
+    /// the reader stops is what comes back for it.
+    #[test]
+    fn a_slow_grammar_catches_up_on_the_next_tick() {
+        let (_scratch, mut app) = editing("catch-slow", "sample.rs", SOURCE);
+        app.current_buffer_mut()
+            .expect("a buffer")
+            .hold_syntax_back_for_test();
+
+        support::type_text(&mut app, "x");
+        assert!(
+            app.current_buffer().expect("a buffer").syntax_is_behind(),
+            "a grammar too slow to keep up was asked anyway"
+        );
+
+        app.handle(Event::Tick);
+        assert!(
+            !app.current_buffer().expect("a buffer").syntax_is_behind(),
+            "the tree never caught up"
+        );
+    }
+
+    /// And it wakes itself to do it. Without the ticker running, nothing
+    /// would come back for the tree until the reader pressed something
+    /// else -- which for the last keystroke of a paragraph is never.
+    #[test]
+    fn a_slow_grammar_keeps_the_ticker_awake_until_it_has_caught_up() {
+        let (_scratch, mut app) = editing("catch-ticker", "sample.rs", SOURCE);
+        app.current_buffer_mut()
+            .expect("a buffer")
+            .hold_syntax_back_for_test();
+        support::lay_out(&mut app, 60, 12);
+        assert!(!app.is_waking(), "something was already waking the screen");
+
+        support::type_text(&mut app, "x");
+        support::lay_out(&mut app, 60, 12);
+        assert!(
+            app.is_waking(),
+            "nothing will come back for the tree that was left behind"
+        );
+
+        app.handle(Event::Tick);
+        support::lay_out(&mut app, 60, 12);
+        assert!(
+            !app.is_waking(),
+            "the screen is still being woken for a tree that has caught up"
+        );
+    }
+
+    /// And what it catches up to is the screen it would have drawn all
+    /// along: waiting changes when the colours arrive, not what they are.
+    #[test]
+    fn what_it_catches_up_to_is_the_same_screen() {
+        let (_scratch, mut kept) = editing("catch-same-kept", "sample.rs", SOURCE);
+        let (_other, mut held) = editing("catch-same-held", "sample.rs", SOURCE);
+        held.current_buffer_mut()
+            .expect("a buffer")
+            .hold_syntax_back_for_test();
+
+        for app in [&mut kept, &mut held] {
+            support::press(app, KeyCode::Down);
+            support::press(app, KeyCode::End);
+            support::type_text(app, " // and a comment");
+        }
+        assert_ne!(
+            support::render(&mut kept, 60, 12),
+            support::render(&mut held, 60, 12),
+            "this test is about a difference that was not there"
+        );
+
+        held.handle(Event::Tick);
+        assert_eq!(
+            support::text_block(&support::render(&mut kept, 60, 12)),
+            support::text_block(&support::render(&mut held, 60, 12)),
+            "the text is not even the same"
+        );
+        assert_eq!(
+            support::style_block(&support::render(&mut kept, 60, 12)),
+            support::style_block(&support::render(&mut held, 60, 12)),
+            "the colours the tree caught up to are not the ones it would have had"
+        );
+    }
 }
