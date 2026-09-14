@@ -170,6 +170,33 @@ impl App {
                 });
                 (span, put_in(typing), crate::buffer::undo::Doing::Whole)
             }
+            // A closing bracket typed as the first thing on a line lines
+            // up with whatever opened the block, rather than sitting one
+            // step in from it -- which is where the indent this line
+            // inherited would have left it.
+            Typing::Character(character)
+                if crate::syntax::brackets::closes(character)
+                    && text
+                        .line(cursor.line)
+                        .chars()
+                        .take(cursor.column.get())
+                        .all(char::is_whitespace) =>
+            {
+                let out = cursor
+                    .column
+                    .get()
+                    .saturating_sub(crate::text::TAB_WIDTH.min(cursor.column.get()));
+                (
+                    crate::coordinates::Span {
+                        line: cursor.line,
+                        column: CharColumn::new(out),
+                        end_line: cursor.line,
+                        end_column: cursor.column,
+                    },
+                    character.to_string(),
+                    crate::buffer::undo::Doing::Whole,
+                )
+            }
             Typing::Character(_) | Typing::Newline | Typing::Tab => {
                 let at = crate::coordinates::Span {
                     line: cursor.line,
@@ -181,7 +208,13 @@ impl App {
                     Typing::Character(_) => crate::buffer::undo::Doing::Typing,
                     _ => crate::buffer::undo::Doing::Whole,
                 };
-                (at, put_in(typing), doing)
+                let what = match typing {
+                    Typing::Newline => {
+                        "\n".to_string() + &indent_after(text, cursor.line, cursor.column)
+                    }
+                    _ => put_in(typing),
+                };
+                (at, what, doing)
             }
             // The character behind the cursor, which is the end of the line
             // above when there is nothing behind it on this one.
@@ -253,6 +286,35 @@ impl App {
             // has. Everything else keyed on the version notices by itself.
             self.change_document(index);
         }
+    }
+}
+
+/// The blank a new line starts with, following the line it came off.
+///
+/// The indentation of the line the reader was on, and one step more where
+/// that line ended by opening something. Not from a grammar: tree-sitter has
+/// queries for this and obelus ships none of them, and the line above is
+/// what a reader would have copied by hand anyway. It is also the rule that
+/// is right in a file obelus cannot parse at all, which is the case a
+/// grammar cannot help with.
+fn indent_after(text: &crate::text::Text, line: LineNumber, column: CharColumn) -> String {
+    let characters: Vec<char> = text.line(line).chars().collect();
+    let blank: String = characters
+        .iter()
+        .take_while(|character| character.is_whitespace())
+        .collect();
+    // What was in front of the cursor is what moves down, so what is behind
+    // it is what decides the indent -- pressing return in the middle of a
+    // line does not indent by what came after.
+    let deeper = characters
+        .iter()
+        .take(column.get())
+        .rev()
+        .find(|character| !character.is_whitespace())
+        .is_some_and(|character| crate::syntax::brackets::opens(*character));
+    match deeper {
+        true => blank + &" ".repeat(crate::text::TAB_WIDTH),
+        false => blank,
     }
 }
 

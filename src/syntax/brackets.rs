@@ -31,6 +31,12 @@ pub fn closes(character: char) -> bool {
     PAIRS.iter().any(|(_, close)| *close == character)
 }
 
+/// Whether a character opens one of them.
+#[must_use]
+pub fn opens(character: char) -> bool {
+    PAIRS.iter().any(|(open, _)| *open == character)
+}
+
 /// The bracket at `at` and its partner, if there is one within `within`.
 ///
 /// `within` is the range on screen. A partner outside it needs no answer:

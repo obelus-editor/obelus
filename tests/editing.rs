@@ -925,3 +925,92 @@ mod moving {
         assert_eq!(at(&app), (0, 0));
     }
 }
+
+/// Where a new line starts, and where a closing bracket lands.
+mod indenting {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    use super::support;
+
+    fn reading(name: &str, contents: &str) -> (support::Scratch, App) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        (scratch, app)
+    }
+
+    fn text(app: &App) -> String {
+        app.current_buffer()
+            .expect("a buffer")
+            .text()
+            .rope()
+            .to_string()
+    }
+
+    #[test]
+    fn a_new_line_keeps_the_indent_of_the_one_above() {
+        let (_scratch, mut app) = reading("indent-keep", "    let x = 1;\n");
+        support::press(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Enter);
+        support::type_text(&mut app, "y");
+        assert_eq!(text(&app), "    let x = 1;\n    y\n");
+    }
+
+    #[test]
+    fn a_line_that_opened_something_indents_one_more() {
+        let (_scratch, mut app) = reading("indent-open", "    fn main() {\n");
+        support::press(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Enter);
+        support::type_text(&mut app, "body");
+        assert_eq!(text(&app), "    fn main() {\n        body\n");
+    }
+
+    /// What is in front of the cursor moves down; what is behind it decides
+    /// the indent.
+    #[test]
+    fn returning_inside_a_line_does_not_indent_by_what_came_after() {
+        let (_scratch, mut app) = reading("indent-middle", "    foo({ });\n");
+        // Just past the brace, so the brace is what is behind the cursor.
+        for _ in 0..9 {
+            support::press(&mut app, KeyCode::Right);
+        }
+        support::press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            text(&app),
+            // Eight of indent -- the line's four and one step more for the
+            // brace behind the cursor -- and then the space that was in
+            // front of it and moved down.
+            "    foo({\n         });\n",
+            "the indent was decided by what moved down rather than what stayed"
+        );
+    }
+
+    #[test]
+    fn a_closing_bracket_lines_up_with_what_it_closes() {
+        let (_scratch, mut app) = reading("indent-close", "fn main() {\n");
+        support::press(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Enter);
+        support::type_text(&mut app, "body");
+        support::press(&mut app, KeyCode::Enter);
+        support::type_text(&mut app, "}");
+        assert_eq!(
+            text(&app),
+            "fn main() {\n    body\n}\n",
+            "the closing bracket sat one step in from what it closes"
+        );
+    }
+
+    /// Only as the first thing on a line: a bracket in the middle of one is
+    /// a bracket, not a decision about indentation.
+    #[test]
+    fn a_closing_bracket_in_the_middle_of_a_line_is_just_a_bracket() {
+        let (_scratch, mut app) = reading("indent-inline", "    foo(bar\n");
+        support::press(&mut app, KeyCode::End);
+        support::type_text(&mut app, ")");
+        assert_eq!(text(&app), "    foo(bar)\n");
+    }
+}
