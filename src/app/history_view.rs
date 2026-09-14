@@ -100,12 +100,17 @@ impl App {
         Radius::ALL
             .into_iter()
             .filter(|radius| match radius {
-                // A file, and one git has heard of. A file with no commits
-                // behind it has an empty tab, which is an answer; a file
-                // outside the repository has no tab at all.
-                Radius::File => self
-                    .current_buffer()
-                    .is_some_and(|buffer| self.has_any(Some(buffer.path()))),
+                // A file being read is all this tab needs. Whether that
+                // file has any commits behind it is a question with a walk
+                // in it -- every commit has to be asked whether it touched
+                // this path -- and a tab that came and went with the answer
+                // would be a tab that disappears for the files nobody has
+                // edited lately, which are exactly the ones whose history a
+                // reader is curious about. An empty list saying so is an
+                // answer; a missing tab is a key that does nothing.
+                Radius::File => self.current_buffer().is_some(),
+                // The project's costs no such walk: the first commit the
+                // walk reaches is the answer.
                 Radius::Project => self.has_any(None),
             })
             .collect()
@@ -236,9 +241,15 @@ impl App {
                 }
             }
         }
+        let empty = match self.history.of.as_deref() {
+            // Said in the reader's terms: they pressed a key about *this*
+            // file, and the answer is about this file.
+            Some(_) => "no commit has touched this file",
+            None => "nothing in the history here",
+        };
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(items);
-            picker.when_empty("nothing in the history here");
+            picker.when_empty(empty);
         }
     }
 

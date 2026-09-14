@@ -2738,3 +2738,43 @@ fn a_commit_in_a_files_history_opens_that_file() {
         "the file on disk was opened instead"
     );
 }
+
+/// A file whose last change is a long way back still has a history.
+///
+/// Whether it has one is a question with a walk in it -- every commit has
+/// to be asked whether it touched this path -- and the walk is bounded, so
+/// asking it to decide whether the tab exists means the tab disappears for
+/// exactly the files nobody has edited lately, which are the ones whose
+/// history a reader is curious about.
+#[test]
+fn a_file_nobody_has_touched_lately_still_opens_its_history() {
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-far-back", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit("the one that touched it");
+    // And a long run of commits that leave it alone. Longer than the walk
+    // will look when it is asked for a single answer.
+    for commit in 0..60 {
+        std::fs::write(
+            repository.directory().join("other.rs"),
+            format!("elsewhere {commit}\n"),
+        )
+        .expect("the other file");
+        repository.commit_all(&format!("elsewhere {commit}"));
+    }
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 9);
+
+    let picker = app.picker().expect("the history");
+    assert_eq!(picker.tab(), 0, "the file's own tab is not there");
+    let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
+    assert_eq!(
+        rows,
+        ["the one that touched it", "committed"],
+        "the commits that touched it were not found"
+    );
+}

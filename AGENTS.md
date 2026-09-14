@@ -129,6 +129,16 @@ screen is accounted for, so the ordinary case -- a remote at or near `HEAD`
 before its budget ran out is left alone, because telling a reader their work
 is not on the remote when it is would be the worse lie.
 
+**Which tabs a view has must be a cheap question.** The search settles its
+scopes when it opens and the history settles its radii, and both settle them
+on facts they can have for nothing: is a file open, does the project have a
+commit. "Does *this file* have a commit" is not such a fact -- every commit
+has to be asked whether it touched that path, and the walk that asks is
+bounded -- so gating the tab on it made the tab vanish for files nobody had
+edited lately, which are exactly the ones whose history a reader goes
+looking for. An empty list saying "no commit has touched this file" is an
+answer; a missing tab is a key that does nothing.
+
 **A history is one view at two radii.** A file's commits and a project's
 differ only in which commits are listed, so they are two tabs of one list
 and `f9` and `f10` land on the tab they name -- the shape the finding keys
