@@ -184,6 +184,32 @@ impl Repository {
         self.directory.join("file.rs")
     }
 
+    /// The repository's own directory, for the questions that are about the
+    /// project rather than about one file in it.
+    fn directory(&self) -> std::path::PathBuf {
+        self.directory.clone()
+    }
+
+    /// Commits everything in the tree, for a test that changes more than
+    /// the one file.
+    fn commit_all(&self, message: &str) {
+        let git = |arguments: &[&str]| {
+            let outcome = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&self.directory)
+                .args(arguments)
+                .env("GIT_AUTHOR_NAME", "obelus")
+                .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+                .env("GIT_COMMITTER_NAME", "obelus")
+                .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+                .output()
+                .expect("running git");
+            assert!(outcome.status.success(), "git {arguments:?} failed");
+        };
+        git(&["add", "-A"]);
+        git(&["commit", "--quiet", "-m", message]);
+    }
+
     fn write(&self, contents: &str) {
         std::fs::write(self.path(), contents).expect("rewriting the file");
     }
@@ -1855,4 +1881,154 @@ fn a_selection_stays_in_the_block_it_was_made_in() {
         "the selection was drawn in the other block too:\n{}",
         support::text_block(&dump)
     );
+}
+
+/// A history is a walk of the commits, newest first, and asking about one
+/// path keeps the commits that changed it.
+#[test]
+fn a_history_is_the_commits_that_touched_it() {
+    use obelus::git::history;
+
+    let repository = Repository::new("history-walk", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit("the second");
+    // A commit that leaves the file alone: another file changes instead.
+    std::fs::write(repository.directory().join("other.rs"), "elsewhere\n").expect("the other");
+    repository.commit_all("something else");
+    repository.write("one\ntwo\nthree\n");
+    repository.commit("the third");
+
+    let root = repository.directory();
+    let whole: Vec<String> = history::of(&root, None, 10)
+        .iter()
+        .map(|commit| commit.subject.clone())
+        .collect();
+    assert_eq!(
+        whole,
+        ["the third", "something else", "the second", "committed"],
+        "not the project's commits, newest first"
+    );
+
+    let file: Vec<String> = history::of(&root, Some(&repository.path()), 10)
+        .iter()
+        .map(|commit| commit.subject.clone())
+        .collect();
+    assert_eq!(
+        file,
+        ["the third", "the second", "committed"],
+        "the commit that left this file alone is in its history"
+    );
+}
+
+/// A limit on the answer and a limit on the walk. A file touched once, a
+/// long way back, must not cost a walk of the whole project before a list
+/// of it can be drawn.
+#[test]
+fn a_history_stops_where_it_was_asked_to() {
+    use obelus::git::history;
+
+    let repository = Repository::new("history-limit", "one\n");
+    for line in 0..6 {
+        repository.write(&format!("one\n{line}\n"));
+        repository.commit(&format!("number {line}"));
+    }
+    let root = repository.directory();
+    let found = history::of(&root, None, 3);
+    assert_eq!(found.len(), 3, "the limit was not kept");
+    assert_eq!(found[0].subject, "number 5", "not the newest first");
+}
+
+/// What a commit says, split where a reader reads it: the first line is the
+/// row, the rest is what they open it to read.
+#[test]
+fn a_commits_message_is_a_subject_and_a_body() {
+    use obelus::git::history;
+
+    let repository = Repository::new("history-message", "one\n");
+    repository.write("two\n");
+    repository.commit("a subject line\n\nand a body,\nover two lines.\n");
+
+    let root = repository.directory();
+    let found = history::of(&root, None, 1);
+    assert_eq!(found[0].subject, "a subject line");
+    assert_eq!(found[0].body, "and a body,\nover two lines.");
+    assert_eq!(found[0].short().len(), 7, "not a short id");
+    assert_eq!(found[0].who, "obelus");
+}
+
+/// The files a commit changed, which is what a row of the project's history
+/// opens into -- and only the files. A directory turns up in the walk
+/// because the walk goes through it, and a row nobody can open is a row in
+/// the way.
+#[test]
+fn a_commit_opens_into_the_files_it_changed() {
+    use obelus::git::{FileStatus, history};
+
+    let repository = Repository::new("history-files", "one\n");
+    std::fs::create_dir_all(repository.directory().join("deep")).expect("a directory");
+    std::fs::write(repository.directory().join("deep/new.rs"), "new\n").expect("the new file");
+    repository.write("one\ntwo\n");
+    repository.commit_all("touching two");
+
+    let root = repository.directory();
+    let head = history::of(&root, None, 1);
+    let files = history::files_in(&root, head[0].id);
+    assert_eq!(
+        files,
+        [
+            (std::path::PathBuf::from("deep/new.rs"), FileStatus::New),
+            (std::path::PathBuf::from("file.rs"), FileStatus::Changed),
+        ],
+        "not the files it changed, and only the files"
+    );
+}
+
+/// A file as a commit had it, which is what choosing a row opens.
+#[test]
+fn a_file_can_be_read_as_a_commit_had_it() {
+    use obelus::git::history;
+
+    let repository = Repository::new("history-text", "first\n");
+    repository.write("second\n");
+    repository.commit("the second");
+
+    let root = repository.directory();
+    let found = history::of(&root, None, 2);
+    assert_eq!(
+        history::text_at(&root, found[0].id, &repository.path()).as_deref(),
+        Some("second\n"),
+        "not the file as the newest commit had it"
+    );
+    assert_eq!(
+        history::text_at(&root, found[1].id, &repository.path()).as_deref(),
+        Some("first\n"),
+        "not the file as the older commit had it"
+    );
+}
+
+/// Nothing to say, said as nothing: not a repository, and a path it has
+/// never heard of.
+#[test]
+fn a_history_with_no_answer_is_empty() {
+    use obelus::git::history;
+
+    let elsewhere = std::env::temp_dir().join(format!("obelus-nowhere-{}", std::process::id()));
+    std::fs::create_dir_all(&elsewhere).expect("a directory");
+    assert!(history::of(&elsewhere, None, 10).is_empty());
+
+    let repository = Repository::new("history-nothing", "one\n");
+    let root = repository.directory();
+    assert!(
+        history::of(&root, Some(&root.join("never.rs")), 10).is_empty(),
+        "a path git has never heard of has a history"
+    );
+    // And one that is not in this repository at all. Being unable to place
+    // a path must not quietly widen the question to the whole project: an
+    // answer about every commit, to a reader who asked about one file, is
+    // the wrong answer told confidently.
+    assert!(
+        history::of(&root, Some(&elsewhere.join("outside.rs")), 10).is_empty(),
+        "a path outside the repository was answered with the whole of it"
+    );
+    let _ = std::fs::remove_dir_all(&elsewhere);
 }

@@ -49,7 +49,17 @@ pub fn of(within: &Path, only: Option<&Path>, limit: usize) -> Vec<Commit> {
     let Some(repository) = super::repository(within) else {
         return Vec::new();
     };
-    let relative = only.and_then(|path| super::in_repository(&repository, path));
+    // A path that cannot be placed in the repository is not the whole
+    // project: asking about one file and being handed every commit is the
+    // wrong answer told confidently. Empty says what is true -- obelus has
+    // nothing to show about this path.
+    let relative = match only {
+        Some(path) => match within_repository(&repository, path) {
+            Some(relative) => Some(relative),
+            None => return Vec::new(),
+        },
+        None => None,
+    };
     let Ok(head) = repository.head_id() else {
         return Vec::new();
     };
@@ -89,6 +99,21 @@ pub fn of(within: &Path, only: Option<&Path>, limit: usize) -> Vec<Commit> {
         });
     }
     found
+}
+
+/// Where a path sits in its repository, for a path that may not be there.
+///
+/// A history is the one question that outlives the file: a reader can ask
+/// about something a commit deleted, and there is a good answer. So the
+/// resolved form is tried first -- it is the one that handles symlinks --
+/// and a plain strip of the working directory answers for the rest.
+fn within_repository(repository: &gix::Repository, path: &Path) -> Option<PathBuf> {
+    if let Some(relative) = super::in_repository(repository, path) {
+        return Some(relative);
+    }
+    let work_dir = repository.workdir()?.canonicalize().ok()?;
+    let path = std::path::absolute(path).ok()?;
+    Some(path.strip_prefix(work_dir).ok()?.to_path_buf())
 }
 
 /// How many commits may be looked at for each one the list keeps.
@@ -148,7 +173,11 @@ pub fn files_in(within: &Path, id: gix::ObjectId) -> Vec<(PathBuf, FileStatus)> 
         Some(parent) => {
             if let Ok(mut changes) = parent.changes() {
                 let _ = changes.for_each_to_obtain_tree(&tree, |change| {
-                    changed.push(file_of(&change));
+                    if let Some(file) = file_of(&change) {
+                        changed.push(file);
+                    }
+                    // Continue is what walks *into* a changed directory, so
+                    // the list is of files however deep they are.
                     Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
                 });
             }
@@ -167,21 +196,42 @@ pub fn files_in(within: &Path, id: gix::ObjectId) -> Vec<(PathBuf, FileStatus)> 
     changed
 }
 
-/// One change from a tree diff, as a path and what happened to it.
+/// One change from a tree diff, as a path and what happened to it, or
+/// `None` for a change to a directory.
+///
+/// A directory turns up in the walk because the walk goes through it: a
+/// commit that changes `src/keymap.rs` changes `src` as well, and a list
+/// with both in it is a list with a row nobody can open.
 ///
 /// `New` for a file the commit added and `Changed` for everything else,
-/// deletions included: the two are what the file list colours by, and a
+/// deletions included: those two are what the file list colours by, and a
 /// file a commit removed is a change to it as far as a reader scanning the
 /// list is concerned.
-fn file_of(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> (PathBuf, FileStatus) {
+fn file_of(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(PathBuf, FileStatus)> {
     use gix::object::tree::diff::Change;
-    let (location, status) = match change {
-        Change::Addition { location, .. } => (location, FileStatus::New),
-        Change::Deletion { location, .. }
-        | Change::Modification { location, .. }
-        | Change::Rewrite { location, .. } => (location, FileStatus::Changed),
+    let (location, mode, status) = match change {
+        Change::Addition {
+            location,
+            entry_mode,
+            ..
+        } => (location, entry_mode, FileStatus::New),
+        Change::Deletion {
+            location,
+            entry_mode,
+            ..
+        }
+        | Change::Modification {
+            location,
+            entry_mode,
+            ..
+        }
+        | Change::Rewrite {
+            location,
+            entry_mode,
+            ..
+        } => (location, entry_mode, FileStatus::Changed),
     };
-    (PathBuf::from(location.to_string()), status)
+    (!mode.is_tree()).then(|| (PathBuf::from(location.to_string()), status))
 }
 
 /// A file as a commit had it, or `None` where that question has no answer.
