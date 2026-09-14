@@ -22,6 +22,8 @@ pub enum Command {
     FileChanged,
     /// Re-read the current file from disk and reparse what changed.
     FileReload,
+    /// Write the current file back to disk.
+    FileSave,
     /// Choose among the files already open.
     BufferList,
     /// Stop showing the current file.
@@ -246,6 +248,11 @@ pub const ALL: &[CommandSpec] = &[
         command: Command::FileChanged,
         name: "open-changed-file",
         title: "Open a file that has changed",
+    },
+    CommandSpec {
+        command: Command::FileSave,
+        name: "save-file",
+        title: "Write this file back to disk",
     },
     CommandSpec {
         command: Command::FileReload,
@@ -494,6 +501,7 @@ impl Command {
             Self::FileOpen
             | Self::FileChanged
             | Self::FileReload
+            | Self::FileSave
             | Self::BufferList
             | Self::BufferClose
             | Self::PreviewToggle
@@ -562,6 +570,11 @@ impl Command {
             // Everything that acts on the file being read. With nothing
             // open, each of them is a key that reports why instead of doing
             // something.
+            // Save is offered whether or not there is anything to write.
+            // A reader who presses it on a file they have not touched has
+            // asked a reasonable question, and the answer is that it is
+            // already there rather than a key that does nothing.
+            Self::FileSave => Requires::AFileOpen,
             Self::FileReload | Self::BufferClose | Self::BufferList | Self::GoLine => {
                 Requires::AFileOpen
             }
@@ -695,6 +708,7 @@ mod tests {
             Command::FileOpen,
             Command::FileChanged,
             Command::FileReload,
+            Command::FileSave,
             Command::BufferList,
             Command::BufferClose,
             Command::PreviewToggle,

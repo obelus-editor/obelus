@@ -136,6 +136,33 @@ impl App {
     }
 
     /// Tells the server a document changed.
+    /// Tells a server the document has been written to disk.
+    ///
+    /// Some of them do work only then -- a linter that runs on save, a
+    /// formatter's idea of the last good version -- and none of them can
+    /// know from `didChange`, which says only that the text moved.
+    pub(super) fn saved_document(&mut self, index: usize) {
+        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+            return;
+        };
+        let Some(language) = buffer.language() else {
+            return;
+        };
+        let Ok(uri) = lsp::client::uri_for(buffer.path()) else {
+            return;
+        };
+        // Nothing about a commit's version, the same as its three siblings.
+        if !buffer.content().is_file() {
+            return;
+        }
+        if let Some(client) = self.servers.get_mut(&language) {
+            let _ = client.notify(
+                "textDocument/didSave",
+                &serde_json::json!({ "textDocument": { "uri": uri } }),
+            );
+        }
+    }
+
     pub(super) fn change_document(&mut self, index: usize) {
         let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
             return;

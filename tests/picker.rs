@@ -1135,7 +1135,9 @@ fn the_palette_reads_the_key_table() {
         KeyCode::Char('k'),
         KeyModifiers::ALT,
     )));
-    let dump = support::render(&mut app, 60, 12);
+    // Tall enough to reach the palette's own row: the list is in the order
+    // of the command table, and a command added above it pushes it down.
+    let dump = support::render(&mut app, 60, 20);
     let text = support::text_block(&dump);
 
     let rebound = KeyChord::new(KeyCode::Char('k'), KeyModifiers::ALT).label();

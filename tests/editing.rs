@@ -436,3 +436,207 @@ mod keys {
         assert!(app.offers(Command::Redo));
     }
 }
+
+/// Writing a document back, and what happens when the file moved first.
+mod saving {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    fn reading(name: &str, contents: &str) -> (support::Scratch, App, std::path::PathBuf) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        (scratch, app, path)
+    }
+
+    #[test]
+    fn what_was_typed_reaches_the_file() {
+        let (_scratch, mut app, path) = reading("save-basic", "fn main() {}\n");
+        support::type_text(&mut app, "// ");
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it back"),
+            "// fn main() {}\n"
+        );
+        // And it is no longer a document with something to write.
+        assert!(!app.current_buffer().expect("a buffer").is_dirty());
+    }
+
+    /// A fresh `fs::write` creates with default permissions, which would
+    /// quietly disarm a script.
+    #[cfg(unix)]
+    #[test]
+    fn an_executable_file_is_still_executable() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let (_scratch, mut app, path) = reading("save-mode", "#!/bin/sh\necho hello\n");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("making it executable");
+
+        support::type_text(&mut app, "#");
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        let mode = std::fs::metadata(&path)
+            .expect("its data")
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode & 0o777,
+            0o755,
+            "saving took the executable bit off, which disarms a script"
+        );
+    }
+
+    /// A rename replaces the *name*, and where the settings of a machine
+    /// live in a dotfiles repository the name is a link.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_is_still_a_link_and_what_it_points_at_is_written() {
+        let scratch = support::Scratch::new("save-link");
+        let real = scratch.path().join("elsewhere.rs");
+        let link = scratch.path().join("sample.rs");
+        std::fs::write(&real, "fn main() {}\n").expect("the real file");
+        std::os::unix::fs::symlink(&real, &link).expect("the link");
+
+        let mut app = App::new(vec![Buffer::open(&link).expect("opening the link")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        support::type_text(&mut app, "// ");
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .expect("the link")
+                .file_type()
+                .is_symlink(),
+            "the link was replaced by an ordinary file"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&real).expect("what it points at"),
+            "// fn main() {}\n",
+            "the file the link points at was not written"
+        );
+    }
+
+    /// The watcher exists so a file an agent rewrote comes back by itself.
+    /// Over a document somebody has edited that is losing their work.
+    #[test]
+    fn a_file_that_moves_under_an_edit_is_not_read_over_it() {
+        let (_scratch, mut app, path) = reading("save-moved", "mine\n");
+        support::type_text(&mut app, "x");
+
+        std::fs::write(&path, "somebody else's\n").expect("rewriting it");
+        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+
+        let buffer = app.current_buffer().expect("a buffer");
+        assert_eq!(
+            buffer.text().rope().to_string(),
+            "xmine\n",
+            "the edit was read over"
+        );
+        assert!(buffer.has_moved(), "the file moving was not noticed");
+    }
+
+    /// And a clean one still comes back by itself, which is the whole point
+    /// of watching at all.
+    #[test]
+    fn a_file_that_moves_under_no_edit_still_comes_back() {
+        let (_scratch, mut app, path) = reading("save-clean", "mine\n");
+        std::fs::write(&path, "somebody else's\n").expect("rewriting it");
+        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+
+        assert_eq!(
+            app.current_buffer()
+                .expect("a buffer")
+                .text()
+                .rope()
+                .to_string(),
+            "somebody else's\n",
+            "a clean buffer did not take the new file"
+        );
+    }
+
+    #[test]
+    fn saving_over_a_file_that_moved_takes_two_presses() {
+        let (_scratch, mut app, path) = reading("save-overwrite", "mine\n");
+        support::type_text(&mut app, "x");
+        std::fs::write(&path, "somebody else's\n").expect("rewriting it");
+        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+
+        // The first refuses and says why.
+        dispatch::dispatch(&mut app, Command::FileSave);
+        // On the status row, not merely set: a note too long for the row is
+        // dropped whole rather than half-drawn, and a warning nobody sees
+        // is not a warning.
+        let dump = support::render(&mut app, 70, 12);
+        assert!(
+            support::text_block(&dump).contains("changed on disk"),
+            "nothing was said about the file moving:\n{dump}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it"),
+            "somebody else's\n",
+            "the first press wrote over somebody else's file"
+        );
+
+        // The second goes through, which is what asking again means.
+        dispatch::dispatch(&mut app, Command::FileSave);
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it"),
+            "xmine\n",
+            "asking again did not overwrite"
+        );
+    }
+
+    /// Reloading is the other way out, and takes the file rather than the
+    /// edit.
+    #[test]
+    fn reloading_a_file_that_moved_takes_what_is_on_disk() {
+        let (_scratch, mut app, path) = reading("save-reload", "mine\n");
+        support::type_text(&mut app, "x");
+        std::fs::write(&path, "somebody else's\n").expect("rewriting it");
+        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+
+        dispatch::dispatch(&mut app, Command::FileReload);
+        let buffer = app.current_buffer().expect("a buffer");
+        assert_eq!(buffer.text().rope().to_string(), "somebody else's\n");
+        assert!(!buffer.is_dirty(), "what was read is not what is on disk");
+        assert!(!buffer.has_moved(), "the file is still said to have moved");
+    }
+
+    #[test]
+    fn a_commits_version_is_not_a_file_to_save() {
+        let (_scratch, mut app, path) = reading("save-commit", "mine\n");
+        let _ = KeyCode::Enter;
+        let version =
+            Buffer::at_commit(&path, gix::ObjectId::null(gix::hash::Kind::Sha1), "older\n");
+        app.open_buffer_for_test(version);
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it"),
+            "mine\n",
+            "a commit's version was written over the file"
+        );
+        // And told why, rather than "nothing to save". A commit's version
+        // can never be dirty -- editing it is refused a layer down -- so
+        // without this it would be turned away for the wrong reason, and a
+        // reader would go looking for the change they thought they lost.
+        assert!(
+            app.note()
+                .is_some_and(|note| note.contains("commit's version")),
+            "turned away for the wrong reason: {:?}",
+            app.note()
+        );
+    }
+}

@@ -230,6 +230,9 @@ pub fn for_command(command: crate::command::Command) -> char {
         // A folder with a pencil on it: the files being worked on.
         Command::FileChanged => '\u{f08de}',
         Command::FileReload => '\u{f0450}',
+        // A floppy disk, which nobody has seen for twenty years and
+        // everybody still reads as save.
+        Command::FileSave => '\u{f0193}',
         Command::BufferList => '\u{f0222}',
         Command::BufferClose => '\u{f0b98}',
         Command::PreviewToggle => '\u{f0354}',

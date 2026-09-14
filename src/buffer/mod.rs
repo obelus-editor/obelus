@@ -169,6 +169,30 @@ pub struct Cursor {
     remembered_cell: DisplayColumn,
 }
 
+/// What a file looked like from the outside when it was last read.
+///
+/// Two cheap facts rather than the bytes: a hash would be the whole file
+/// read again, and these two together miss only a change that kept the
+/// length and the timestamp, which no editor and no agent produces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Seen {
+    /// When it was last written, where the filesystem says.
+    modified: Option<std::time::SystemTime>,
+    /// How long it was.
+    length: u64,
+}
+
+impl Seen {
+    /// What the file at `path` looks like now, if it can be asked.
+    fn of(path: &std::path::Path) -> Option<Self> {
+        let data = std::fs::metadata(path).ok()?;
+        Some(Self {
+            modified: data.modified().ok(),
+            length: data.len(),
+        })
+    }
+}
+
 /// Which part of the document is on screen.
 ///
 /// A line and a visual row within it, because with wrapping a line can be
@@ -440,6 +464,33 @@ pub struct Buffer {
     blocks: Vec<Block>,
     /// And where the caret is in it, if the reader has walked in.
     in_block: Option<InBlock>,
+    /// What was on disk when this was last read or written.
+    ///
+    /// Nothing was kept about a file before, because nothing ever had to ask
+    /// whether it had moved: obelus re-read it and that was the whole of the
+    /// answer. A document somebody has edited cannot be re-read to find out,
+    /// so the question has to be asked of the file rather than of its text.
+    seen: Option<Seen>,
+    /// Whether the text has changed since it was last read or written.
+    ///
+    /// A third thing, and not either of the two beside it: `stale` means the
+    /// last re-read *failed*, and what git says has changed is about `HEAD`
+    /// rather than about disk.
+    dirty: bool,
+    /// Whether the file moved on disk while this was dirty.
+    ///
+    /// Set instead of re-reading, because re-reading over an edit is losing
+    /// it. What it is for is stopping the save that would lose the other
+    /// side instead.
+    moved: bool,
+    /// Whether the reader has been told the file moved under them.
+    ///
+    /// A save that found the file moved refuses once and says so; pressing
+    /// it again goes through. Two presses rather than a question, because
+    /// the status row asks for a line of text and this is not one -- and
+    /// because the answer to "are you sure" is the same key again in every
+    /// editor a reader has used.
+    warned: bool,
     /// Everything the reader can put back.
     ///
     /// A journal of changes rather than of documents: a copy of the whole
@@ -477,8 +528,10 @@ impl Buffer {
 
         let mut folds = folds::Folds::default();
         folds.offer(folds::of(&text));
+        let seen = Seen::of(&path);
 
         Ok(Self {
+            seen,
             path,
             content: Content::File,
             mode: Mode::Edit,
@@ -502,6 +555,9 @@ impl Buffer {
             blocks: Vec::new(),
             in_block: None,
             undo: undo::Undo::default(),
+            dirty: false,
+            moved: false,
+            warned: false,
         })
     }
 
@@ -638,6 +694,10 @@ impl Buffer {
             blocks: Vec::new(),
             in_block: None,
             undo: undo::Undo::default(),
+            seen: None,
+            dirty: false,
+            moved: false,
+            warned: false,
         }
     }
 
@@ -827,6 +887,54 @@ impl Buffer {
         &self.text
     }
 
+    /// Whether the text differs from what is on disk.
+    #[must_use]
+    pub const fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Whether the file moved on disk while this was being edited.
+    #[must_use]
+    pub const fn has_moved(&self) -> bool {
+        self.moved
+    }
+
+    /// Whether what is on disk is not what this was read from.
+    ///
+    /// Asked of the file rather than of the text: a document somebody has
+    /// edited differs from disk whether or not disk has moved, so the text
+    /// cannot answer it.
+    #[must_use]
+    pub fn file_moved(&self) -> bool {
+        Seen::of(&self.path) != self.seen
+    }
+
+    /// Says the file moved while this was dirty, so a save would lose it.
+    pub const fn mark_moved(&mut self) {
+        self.moved = true;
+        self.warned = false;
+    }
+
+    /// Whether a save has already refused once and said why.
+    #[must_use]
+    pub const fn was_warned(&self) -> bool {
+        self.warned
+    }
+
+    /// Says the reader has been told, so the next save goes through.
+    pub const fn warn(&mut self) {
+        self.warned = true;
+    }
+
+    /// Says the text is what is on disk, after writing it there.
+    pub fn settle(&mut self) {
+        self.seen = Seen::of(&self.path);
+        self.dirty = false;
+        self.moved = false;
+        self.warned = false;
+        self.undo.close();
+    }
+
     /// How many times this document has changed.
     #[must_use]
     pub const fn version(&self) -> i32 {
@@ -968,6 +1076,7 @@ impl Buffer {
         // reading, the diff against git, the rows of an in-file search --
         // and every one of them is wrong until it moves.
         self.version = self.version.saturating_add(1);
+        self.dirty = true;
 
         // What the reader folded, moved by however many lines the edit added
         // or took away. `offer` would be right for a re-read and is wrong
@@ -1006,6 +1115,48 @@ impl Buffer {
         if let Some(state) = self.syntax.as_mut() {
             state.reparse(&self.text, edit);
         }
+    }
+
+    /// Writes the document to the file it came from.
+    ///
+    /// Beside it and renamed over it, which is how obelus writes its own
+    /// settings and for the same reason: another program may be reading this
+    /// file at this moment, a plain write truncates first, and a reader
+    /// landing in that gap sees an empty file. A rename within one directory
+    /// is the one filesystem operation with no such gap, and the temporary
+    /// file is beside the target because rename is only atomic within a
+    /// filesystem.
+    ///
+    /// Two things a source file needs that a settings file did not. The
+    /// bytes are flushed to the disk before the rename, or a machine that
+    /// loses power between them has a name pointing at an empty file rather
+    /// than at either version. And the mode is carried over, or saving an
+    /// executable script quietly disarms it.
+    ///
+    /// Through a symlink rather than over it: a rename replaces the *name*,
+    /// and the name is the link.
+    pub fn save(&mut self) -> Result<()> {
+        let path = crate::config::resolved(&self.path);
+        let beside = path.with_extension("obelus-writing");
+
+        let mut file = std::fs::File::create(&beside)
+            .with_context(|| format!("writing beside {}", path.display()))?;
+        for chunk in self.text.rope().chunks() {
+            std::io::Write::write_all(&mut file, chunk.as_bytes())?;
+        }
+        file.sync_all()?;
+        // Whatever the file was allowed to be, it still is. A file that is
+        // not there yet has nothing to copy and keeps what the system gives.
+        if let Ok(data) = std::fs::metadata(&path) {
+            let _ = file.set_permissions(data.permissions());
+        }
+        drop(file);
+
+        std::fs::rename(&beside, &path)
+            .with_context(|| format!("putting {} in place", path.display()))?;
+        self.settle();
+        tracing::info!(path = %path.display(), bytes = self.text.byte_length().get(), "saved");
+        Ok(())
     }
 
     /// Re-reads the file and reparses the part that changed.
@@ -1056,6 +1207,10 @@ impl Buffer {
         // Whatever the reader could have put back was about the text that
         // has just been replaced.
         self.undo.forget();
+        // And what is on screen is what is on disk again.
+        self.seen = Seen::of(&self.path);
+        self.dirty = false;
+        self.moved = false;
 
         self.cursor.line = self.text.clamp_line(self.cursor.line);
         self.cursor.column = self.text.clamp_column(self.cursor.line, self.cursor.column);

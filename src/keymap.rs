@@ -405,6 +405,11 @@ impl Keymap {
                     chord: control('w'),
                 },
                 Binding {
+                    command: Command::FileSave,
+                    context: Context::Normal,
+                    chord: control('s'),
+                },
+                Binding {
                     command: Command::FileReload,
                     context: Context::Normal,
                     chord: control('r'),

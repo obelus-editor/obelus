@@ -10,14 +10,14 @@ screen 60x20  editor 60x18  status 60x1
  7|────────────────────────────────────────────────────────────
  8| 󰈞 open-file  Open a file                                󱊫 █
  9| 󰣞 open-changed-file  Open a file that has changed       󱊭 █
-10| 󰑐 reload-file  Re-read this file from disk            󰘴 r █
-11| 󰈢 switch-file  Switch to an open file                   󱊬 █
-12| 󰮘 close-file  Close this file                         󰘴 w █
-13| 󰍔 toggle-preview  Show this file rendered, or stop    󰘴 t █
-14| 󰏘 choose-theme  Change the colours                        █
-15| 󰆍 run-command  Run a command by name                  󰘴 p █
-16| 󰅴 ask-about-symbol  Ask about the symbol under the c  󰘵 󰌑 █
-17| 󰉹 show-outline  Everything this file defines            󱊱 █
+10| 󰆓 save-file  Write this file back to disk             󰘴 s █
+11| 󰑐 reload-file  Re-read this file from disk            󰘴 r █
+12| 󰈢 switch-file  Switch to an open file                   󱊬 █
+13| 󰮘 close-file  Close this file                         󰘴 w █
+14| 󰍔 toggle-preview  Show this file rendered, or stop    󰘴 t █
+15| 󰏘 choose-theme  Change the colours                        █
+16| 󰆍 run-command  Run a command by name                  󰘴 p █
+17| 󰅴 ask-about-symbol  Ask about the symbol under the c  󰘵 󰌑 █
 18|────────────────────────────────────────────────────────────
 19| 󰍉                                                          
 -- style --
@@ -31,14 +31,14 @@ screen 60x20  editor 60x18  status 60x1
  7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  8|gggggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggggghgb
  9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
-10|aaaaaaaaaaaaaaaacccccccccccccccccccccccccccaaaaaaaaaaaacccai
-11|aaaaaaaaaaaaaaaaccccccccccccccccccccccaaaaaaaaaaaaaaaaaaacai
-12|aaaaaaaaaaaaaaacccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaacccai
-13|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
-14|aaaaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaai
-15|aaaaaaaaaaaaaaaacccccccccccccccccccccaaaaaaaaaaaaaaaaaacccai
-16|aaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccaacccai
-17|aaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccaaaaaaaaaaaacai
+10|aaaaaaaaaaaaaaccccccccccccccccccccccccccccaaaaaaaaaaaaacccai
+11|aaaaaaaaaaaaaaaacccccccccccccccccccccccccccaaaaaaaaaaaacccai
+12|aaaaaaaaaaaaaaaaccccccccccccccccccccccaaaaaaaaaaaaaaaaaaacai
+13|aaaaaaaaaaaaaaacccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaacccai
+14|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
+15|aaaaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaai
+16|aaaaaaaaaaaaaaaacccccccccccccccccccccaaaaaaaaaaaaaaaaaacccai
+17|aaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccaacccai
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --

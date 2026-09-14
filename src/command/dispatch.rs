@@ -14,6 +14,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::FileOpen => app.open_file_picker(),
         Command::FileChanged => app.open_changed_files(),
         Command::FileReload => app.reload_current(),
+        Command::FileSave => app.save_current(),
         Command::BufferList => app.open_buffer_picker(),
         Command::BufferClose => app.close_current(),
         Command::PreviewToggle => app.toggle_preview(),

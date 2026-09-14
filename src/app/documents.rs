@@ -495,6 +495,21 @@ impl App {
     /// For a test: the lists that reach this are filled from a walk on
     /// another thread, and a test that pumped the walk to press one key
     /// would be a test of the walk.
+    /// Puts a buffer somebody else made into the list, for a test.
+    ///
+    /// A commit's version is made from bytes git handed over rather than
+    /// from a path, so there is no opening it.
+    pub fn open_buffer_for_test(&mut self, buffer: Buffer) {
+        self.buffers.push(Some(buffer));
+        let index = self.buffers.len() - 1;
+        self.go_to_buffer(BufferId::new(index));
+    }
+
+    /// Opens a path the way choosing it from a list does.
+    ///
+    /// For a test: the lists that reach this are filled from a walk on
+    /// another thread, and a test that pumped the walk to press one key
+    /// would be a test of the walk.
     pub fn open_for_test(&mut self, path: &Path) {
         self.open(path);
     }
@@ -508,8 +523,64 @@ impl App {
             // does: those bytes are what that commit said, and re-reading
             // over them would replace a document the reader chose with one
             // they did not.
-            if buffer.path() == path && buffer.content().is_file() && reload(buffer) {
+            if buffer.path() != path || !buffer.content().is_file() {
+                continue;
+            }
+            // An agent rewriting a file while it is open is the ordinary
+            // case and reloading by itself is the whole point of watching.
+            // Over a document somebody has edited it is losing their work,
+            // so a dirty buffer is marked and left alone: the save is where
+            // the two versions meet, and where the reader is asked.
+            if buffer.is_dirty() {
+                if buffer.file_moved() {
+                    buffer.mark_moved();
+                }
+                continue;
+            }
+            if reload(buffer) {
                 self.change_document(index);
+            }
+        }
+    }
+
+    /// Writes the file being read back to disk.
+    pub fn save_current(&mut self) {
+        let Some(index) = self.current.map(BufferId::get) else {
+            self.note = Some("no file open".to_string());
+            return;
+        };
+        let Some(buffer) = self.buffers.get_mut(index).and_then(Option::as_mut) else {
+            return;
+        };
+        // A commit's version is not a file anybody can write back, and the
+        // path it wears belongs to a different document.
+        if !buffer.content().is_file() {
+            self.note = Some("this is a commit's version, not the file".to_string());
+            return;
+        }
+        if !buffer.is_dirty() {
+            self.note = Some("nothing to save".to_string());
+            return;
+        }
+        // The file moved under the reader while they were editing it.
+        // Saving now would put their version over somebody else's without
+        // either of them being asked.
+        if buffer.has_moved() && !buffer.was_warned() {
+            buffer.warn();
+            // Short enough for a narrow status row: the row drops a note it
+            // cannot fit whole rather than half-drawing it, and a warning
+            // nobody sees is not a warning.
+            self.note = Some("changed on disk -- save again to overwrite".to_string());
+            return;
+        }
+        match buffer.save() {
+            Ok(()) => {
+                self.note = Some("saved".to_string());
+                self.saved_document(index);
+            }
+            Err(error) => {
+                tracing::warn!(%error, "saving failed");
+                self.note = Some(format!("not saved: {error}"));
             }
         }
     }
