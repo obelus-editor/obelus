@@ -112,6 +112,8 @@ impl App {
         // A log is read newest first, and a query asks which commits mention
         // something -- not which subject line scored best.
         picker.keeps_order();
+        // A commit's files hang under it: the query is about the commits.
+        picker.nests();
         picker.go_to_tab(tab);
         self.picker = Some(picker);
         self.history = Showing {

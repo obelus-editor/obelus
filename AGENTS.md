@@ -159,6 +159,14 @@ the commit the reader was on, not the row they were on: a re-read history
 is the same history with rows added on top, and row seven is a different
 commit afterwards.
 
+**A query is about the rows the list is a list of.** A commit's files hang
+under the commit, and "which commits mention folding" is not a question
+about filenames -- scoring them too pulls a file out from under a commit
+that did not match, and empties a commit that did of the files it was
+opened to show, so opening it looks like it does nothing. Indentation is
+not the test: an outline's nested symbols *are* what the reader is looking
+for. The list says which it is (`nests`).
+
 **A list that is still arriving must sit still.** `replace` is for a
 different list and starts at the top; `relist` is for the same list with
 more in it and keeps the row under the reader. And the history filters

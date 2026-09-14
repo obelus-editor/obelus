@@ -3264,3 +3264,69 @@ fn the_hunk_key_never_takes_a_commits_message_away() {
         "nothing said about why the hunk did not open:\n{dump}"
     );
 }
+
+#[test]
+fn a_query_about_a_history_is_a_question_about_commits() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-nested-query", "one\n");
+    // A commit whose subject shares nothing with the file it changed, and a
+    // file whose name shares nothing with the commit that changed it.
+    std::fs::write(repository.directory().join("kettle.rs"), "boil\n").expect("the other file");
+    repository.commit_all("Teach the parser to fold");
+    repository.write("two\n");
+    repository.commit("Something else entirely");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+
+    // Open the commit, so its files are rows of the list too.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the history")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert!(
+        rows.iter().any(|row| row.contains("kettle.rs")),
+        "the commit did not open its files: {rows:?}"
+    );
+
+    // A query is about the commits. The file it changed goes on hanging
+    // under it, whether or not its name has anything to do with the words
+    // the reader typed.
+    support::type_text(&mut app, "fold");
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the history")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        ["Teach the parser to fold", "kettle.rs"],
+        "a query emptied a matching commit of the files it was opened to show"
+    );
+
+    // And a query the commit does not answer takes its files with it: a row
+    // about a change with nothing on screen saying which change is not a
+    // row anybody can read.
+    support::type_text(&mut app, "\u{8}\u{8}\u{8}\u{8}kettle");
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the history")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert!(
+        rows.is_empty(),
+        "a file was left on screen without the commit it belongs to: {rows:?}"
+    );
+}

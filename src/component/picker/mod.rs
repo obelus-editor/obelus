@@ -307,6 +307,21 @@ pub struct Picker {
     prefer: Option<String>,
     layout: PickerLayout,
     matcher: Matcher,
+    /// Whether a row with a depth belongs to the row above it.
+    ///
+    /// A commit's files are listed under the commit, and a query about a
+    /// history is a question about commits -- which of them mention this.
+    /// Scoring the files as well pulls a file out from under a commit that
+    /// did not match, leaving a row about a change with nothing on screen
+    /// saying which change; and it empties a commit that *did* match of the
+    /// files it was opened to show, so opening it looks like it did nothing.
+    ///
+    /// Not true of every list that indents. An outline's nested symbols are
+    /// the things being looked for, not children of the row above them.
+    ///
+    /// Goes with [`keeps_order`](Self::keeps_order): a child follows its
+    /// parent, and a ranking that put one above the other would part them.
+    nests: bool,
     /// What is still arriving, drawn beside the tabs.
     ///
     /// A list that is still filling has to say so, and it has to say so
@@ -371,6 +386,7 @@ impl Picker {
             question: None,
             empty: "nothing to choose from".to_string(),
             prefer: None,
+            nests: false,
             filling: None,
             ordered: false,
             layout,
@@ -425,6 +441,12 @@ impl Picker {
     #[must_use]
     pub const fn is_searching(&self) -> bool {
         self.searching
+    }
+
+    /// Says a row with a depth belongs to the row above it, so a query asks
+    /// about the parents and a child is shown when its parent is.
+    pub const fn nests(&mut self) {
+        self.nests = true;
     }
 
     /// Says the list is still being filled, and what to show while it is.
@@ -1038,12 +1060,23 @@ impl Picker {
             );
         } else {
             let pattern = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
+            // Whether the last row a query could be about matched, for the
+            // rows that hang under it.
+            let mut parent = false;
             for (index, item) in self.items.iter().enumerate() {
                 if !showing(item) {
                     continue;
                 }
+                if self.nests && item.depth > 0 {
+                    if parent {
+                        self.matched.push((index, 0));
+                    }
+                    continue;
+                }
                 let haystack = Utf32Str::new(&item.label, &mut self.haystack);
-                if let Some(score) = pattern.score(haystack, &mut self.matcher) {
+                let score = pattern.score(haystack, &mut self.matcher);
+                parent = score.is_some();
+                if let Some(score) = score {
                     self.matched.push((index, score));
                 }
             }
