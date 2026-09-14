@@ -125,6 +125,19 @@ pub struct App {
     /// Bumped every time a file picker opens, so batches from a walk whose
     /// picker has already closed are recognizable and dropped.
     walk_generation: u64,
+    /// A line whose commit was asked for before anything knew who wrote it.
+    ///
+    /// The walk that names lines is only started for a reader who wants
+    /// names in the margin, so for everyone else the key that opens the
+    /// commit behind a line is the thing that starts it -- and an answer
+    /// that arrives after the key has already been let go is an answer to a
+    /// question nobody is still holding. Held here, and carried out when
+    /// the walk lands, so the key works on the first press for everybody.
+    asked_line: Option<(
+        PathBuf,
+        Option<gix::ObjectId>,
+        crate::coordinates::LineNumber,
+    )>,
     /// Which walk of the history the list is expecting batches from.
     ///
     /// Bumped every time a history starts being read -- a key, a tab, a
@@ -427,6 +440,7 @@ impl App {
             searched: None,
             search_generation: std::sync::Arc::default(),
             history_generation: std::sync::Arc::default(),
+            asked_line: None,
             rendered: None,
             theme_before: None,
             note: None,
@@ -969,7 +983,14 @@ impl App {
                 // file: they walked away from it while a walk of its history
                 // was running, and they will walk back.
                 self.asking_blame.remove(&(path.clone(), at));
-                self.blames.insert((path, at), lines);
+                self.blames.insert((path.clone(), at), lines);
+                // And if this is the answer somebody pressed a key for,
+                // that key finishes now rather than needing pressing again.
+                if let Some((asked, version, line)) = self.asked_line.take()
+                    && (asked, version) == (path, at)
+                {
+                    self.open_line_commit_at(line);
+                }
             }
             Event::Logged {
                 generation,

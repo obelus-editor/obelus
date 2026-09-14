@@ -603,11 +603,24 @@ impl App {
     /// it"), and the line it would land on is one this commit removed: it
     /// has no number in the file on screen.
     pub fn open_line_commit(&mut self) {
+        let Some(line) = self.current_buffer().map(|buffer| buffer.cursor().line) else {
+            self.note = Some("no file open".to_string());
+            return;
+        };
+        self.open_line_commit_at(line);
+    }
+
+    /// The same, for one line rather than for wherever the cursor is.
+    ///
+    /// Which is what the answer to a question asked before the walk had
+    /// run is about: the line the reader pressed on, not whichever line
+    /// they are on by the time it lands.
+    pub(super) fn open_line_commit_at(&mut self, line: LineNumber) {
         let Some(buffer) = self.current_buffer() else {
             self.note = Some("no file open".to_string());
             return;
         };
-        let (line, path) = (buffer.cursor().line, buffer.path().to_path_buf());
+        let (version, path) = (buffer.content().at(), buffer.path().to_path_buf());
         let Some(blamed) = self.blamed_at(line) else {
             // Two different nothings, and the reader is owed the
             // difference: a walk still running is worth waiting for, and a
@@ -616,8 +629,11 @@ impl App {
             // And if nobody has asked yet -- which is every file, for a
             // reader who keeps the margin's names off -- this is the asking.
             // Saying "still reading" while nothing was being read was the
-            // one answer that was not true.
+            // one answer that was not true. The question is held so that the
+            // answer finishes it: a key that has to be pressed twice for
+            // half the readers is a key that works for half the readers.
             if !walked {
+                self.asked_line = Some((path.clone(), version, line));
                 self.ask_blame();
             }
             self.note = Some(match walked {
@@ -638,6 +654,8 @@ impl App {
             self.note = Some("this commit wrote this line".to_string());
             return;
         }
+        // Whatever was being said about waiting for this is answered.
+        self.note = None;
         self.open_at_commit(id, &path, Some(at));
     }
 

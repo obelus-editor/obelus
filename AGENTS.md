@@ -198,6 +198,15 @@ answer that was false. The margin obeys the setting; the question does not,
 and the key starts the walk itself when nobody else has. A reader who wants
 no names in the margin has not said they never want to know.
 
+**Gate a command on the question, not on the answer.** `f11` was offered
+only once the blame naming that line had arrived -- which reads as
+precision and is a trap: for a reader with the margin's names off nothing
+ever starts that walk, so the row was greyed out for ever and the palette
+was the one place they could not get started from. Requirements have to be
+things that are known without doing the work. Then the key has to hold the
+question while the work runs, or it is a key that needs pressing twice for
+exactly the readers it was greyed out for.
+
 **The margin knew which commit and threw it away.** A blame walk finds the
 commit behind every line and `Blamed` kept only the name and the date, so
 "why is this line here" -- the question a code reader asks most -- had no

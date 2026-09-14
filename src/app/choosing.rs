@@ -213,9 +213,6 @@ impl App {
             // A walk of one commit, which is what "is there a history
             // here" costs: the same trade `AChangedFile` makes.
             Requires::AHistory => self.has_history(),
-            Requires::ACommitForThisLine => buffer
-                .map(|buffer| buffer.cursor().line)
-                .is_some_and(|line| self.blamed_at(line).is_some()),
             Requires::AFoldHere => self.current_buffer().is_some_and(|buffer| {
                 buffer.folds().is_folded_at(buffer.cursor().line)
                     || buffer.folds().offered_at(buffer.cursor().line).is_some()

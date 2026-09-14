@@ -3646,8 +3646,16 @@ fn the_commit_behind_a_line_can_be_asked_for_with_the_names_off() {
     support::lay_out(&mut app, 74, 14);
     support::render(&mut app, 74, 14);
 
-    // Nothing has been asked, so the first press is the asking -- and says
-    // so, which it could not while nothing was being read.
+    // The command is offered: whether this line has a commit behind it is
+    // the answer, and a row greyed until an answer nothing will ask for
+    // would be a row greyed for ever.
+    assert!(
+        app.offers(Command::HistoryLine),
+        "the command is greyed out for a reader who keeps the names off"
+    );
+
+    // One press. Nothing has been asked yet, so this is the asking -- and
+    // it says so, which it could not while nothing was being read.
     dispatch::dispatch(&mut app, Command::HistoryLine);
     let dump = support::render(&mut app, 74, 14);
     assert!(
@@ -3655,22 +3663,19 @@ fn the_commit_behind_a_line_can_be_asked_for_with_the_names_off() {
         "the key said nothing about what it had started:\n{dump}"
     );
 
+    // And the answer finishes it. No second press: a key that has to be
+    // pressed twice for the readers who turned the names off is a key that
+    // works for the readers who did not.
     let at = std::time::Instant::now();
-    while app.blamed_lines().is_none() && at.elapsed() < std::time::Duration::from_secs(20) {
+    while at.elapsed() < std::time::Duration::from_secs(20) {
         match events.recv_timeout(std::time::Duration::from_secs(20)) {
             Ok(event) => app.handle(event),
             Err(_) => break,
         }
+        if support::text_block(&support::render(&mut app, 74, 14)).contains("Put one at the top") {
+            return;
+        }
     }
-    assert!(
-        app.blamed_lines().is_some(),
-        "the key that asked never got an answer"
-    );
-    // And with the answer in hand it opens the commit, names off or not.
-    dispatch::dispatch(&mut app, Command::HistoryLine);
     let dump = support::render(&mut app, 74, 14);
-    assert!(
-        support::text_block(&dump).contains("Put one at the top"),
-        "the commit did not open with the margin's names off:\n{dump}"
-    );
+    panic!("the commit never opened with the margin's names off:\n{dump}");
 }

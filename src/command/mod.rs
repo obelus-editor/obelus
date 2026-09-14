@@ -165,9 +165,6 @@ pub enum Requires {
     ABracket,
     /// The project has to be a repository with something in it.
     AHistory,
-    /// The line under the cursor has to have a commit behind it, and the
-    /// blame that says so has to have arrived.
-    ACommitForThisLine,
     /// The cursor has to be in a run of lines that folds, or on a folded
     /// one.
     AFoldHere,
@@ -547,13 +544,13 @@ impl Command {
             // repository with a commit in it. Which of the two tabs can
             // answer is settled when the view opens, the way the search
             // settles its own.
-            Self::HistoryFile | Self::HistoryProject => Requires::AHistory,
-            // Not merely a history: *this line* has to have a commit behind
-            // it. A line nobody has committed has no answer, and a blame
-            // still being walked has none yet -- offering a row whose whole
-            // answer is "not that one" is the thing the fold commands are
-            // three commands to avoid.
-            Self::HistoryLine => Requires::ACommitForThisLine,
+            // All three want the same thing: a repository with a commit in
+            // it. Whether *this line* has a commit behind it is the answer
+            // rather than the question -- it takes a walk to find out, and
+            // a row greyed until that walk lands is a row greyed for ever
+            // for a reader who keeps the margin's names off, because then
+            // nothing starts one. The command says what it found.
+            Self::HistoryFile | Self::HistoryProject | Self::HistoryLine => Requires::AHistory,
             Self::Fold => Requires::AFoldHere,
             Self::FoldAll => Requires::AFoldableFile,
             Self::UnfoldAll => Requires::SomethingFolded,
