@@ -9,12 +9,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 
 use crate::{
-    coordinates::{CharColumn, DisplayColumn, LineNumber, Span},
+    coordinates::{CharColumn, CharOffset, DisplayColumn, LineNumber, Span},
     syntax::{
         LanguageId,
         parse::{self, SyntaxState},
     },
-    text::Text,
+    text::{Edit, Text},
 };
 
 /// Which open document, by position in the list.
@@ -843,6 +843,81 @@ impl Buffer {
     #[must_use]
     pub const fn syntax(&self) -> Option<&SyntaxState> {
         self.syntax.as_ref()
+    }
+
+    /// Replaces `span` with `with`, and keeps everything in step.
+    ///
+    /// The one way a document changes. Everything a buffer holds beside its
+    /// text is measured against the text -- the parse tree, the folds, the
+    /// blocks hanging between lines, the cursor, the version five caches key
+    /// on -- and every one of them is a thing somebody adds without
+    /// remembering the others. One door, and the list is here.
+    ///
+    /// Says whether anything changed. Replacing nothing with nothing did
+    /// not, and neither did anything at all to a document that is not a file
+    /// somebody could write.
+    pub fn edit(&mut self, span: Span, with: &str) -> bool {
+        // A commit's version is a document nobody can write, and a reading
+        // is a rendering of one rather than the bytes. The three guards on
+        // `Content::Commit` elsewhere -- the watcher, the language server,
+        // the list of open files -- are the same rule as this one.
+        if !self.content.is_file() || self.mode != Mode::Edit {
+            return false;
+        }
+        let empty = span.line == span.end_line && span.column == span.end_column;
+        if empty && with.is_empty() {
+            return false;
+        }
+
+        let lines_before = self.text.line_count();
+        if !empty {
+            let (_, edit) = self.text.remove(span);
+            self.reparse(&edit);
+        }
+        let at = self.text.char_offset(span.line, span.column);
+        if !with.is_empty() {
+            let edit = self.text.insert(at, with);
+            self.reparse(&edit);
+        }
+
+        // Five caches key on this -- the language server's idea of the
+        // document and whether an answer about it is stale, the rendered
+        // reading, the diff against git, the rows of an in-file search --
+        // and every one of them is wrong until it moves.
+        self.version = self.version.saturating_add(1);
+
+        // What the reader folded, moved by however many lines the edit added
+        // or took away. `offer` would be right for a re-read and is wrong
+        // here: it drops the lot, which per keystroke means a file that
+        // unfolds itself as it is typed into.
+        let moved = self.text.line_count() as isize - lines_before as isize;
+        self.folds
+            .keep_across(folds::of(&self.text), span.line, moved);
+
+        // The diff those came from is stale the instant the text moves, and
+        // they are anchored to line numbers the edit may have shifted.
+        // `refresh_changes` closes them for the first of those reasons
+        // already. A message block belongs to a commit's version, which the
+        // guard above refused.
+        self.close_blocks(Held::Removed);
+
+        // Where the reader is left: at the end of what they put in, which is
+        // where every editor leaves them and saves the caller doing this
+        // arithmetic a second time. `place_cursor` clears the selection,
+        // which an edit has just consumed.
+        let (line, column) = self
+            .text
+            .position(CharOffset::new(at.get() + with.chars().count()));
+        self.place_cursor(line, column);
+        self.viewport.top = self.text.clamp_line(self.viewport.top);
+        true
+    }
+
+    /// Tells the parse about an edit, where there is a parse.
+    fn reparse(&mut self, edit: &Edit) {
+        if let Some(state) = self.syntax.as_mut() {
+            state.reparse(&self.text, edit);
+        }
     }
 
     /// Re-reads the file and reparses the part that changed.

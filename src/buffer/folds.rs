@@ -191,6 +191,39 @@ impl Folds {
         self.hidden.clear();
     }
 
+    /// Takes what a fresh parse offers, keeping what the reader folded.
+    ///
+    /// For an edit rather than a re-read. A re-read replaces the whole file
+    /// and [`offer`](Self::offer) is right for it; an edit moves a known
+    /// number of lines at a known place, so a run the reader folded below
+    /// the edit is the same run one line further down and throwing it away
+    /// would unfold the file on every keystroke.
+    ///
+    /// Two kinds of fold do not survive: one the edit reached into, because
+    /// the run it described is not the run that is there now; and one the
+    /// fresh parse no longer offers at all, because a fold hiding lines
+    /// nothing says are foldable is a fold about a file that has gone.
+    pub fn keep_across(&mut self, offered: Vec<Fold>, after: LineNumber, moved: isize) {
+        let shift = |line: LineNumber| match line > after {
+            true => LineNumber::new(line.get().saturating_add_signed(moved)),
+            false => line,
+        };
+        self.offered = offered;
+        self.folded = std::mem::take(&mut self.folded)
+            .into_iter()
+            // The edit landed inside it, so what it covered is not what it
+            // covers.
+            .filter(|fold| !(fold.from <= after && after <= fold.to))
+            .map(|fold| Fold {
+                from: shift(fold.from),
+                to: shift(fold.to),
+                ..fold
+            })
+            .filter(|fold| self.offered.iter().any(|offer| offer.from == fold.from))
+            .collect();
+        self.remeasure();
+    }
+
     /// Whether the file has anything to fold at all.
     ///
     /// What decides whether the column is drawn: a file with nothing to
