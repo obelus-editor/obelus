@@ -54,11 +54,29 @@ impl App {
                     .or_else(|| buffer.block_below_cursor())
             })
         });
-        if let Some(above) = open
-            && let Some(buffer) = self.current_buffer_mut()
-        {
-            buffer.close_block(above);
-            return;
+        // Only rows this key put there answer to it. A commit's message is
+        // a block too, and it is the thing the reader opened this version of
+        // the file to read -- closing it to answer a question about one line
+        // would take away the answer to the question they came with.
+        if let Some(above) = open {
+            let kind = self
+                .current_buffer()
+                .and_then(|buffer| buffer.block_above(above))
+                .map(|block| block.kind);
+            if kind == Some(crate::buffer::Held::Removed)
+                && let Some(buffer) = self.current_buffer_mut()
+            {
+                buffer.close_block(above);
+                return;
+            }
+            if kind == Some(crate::buffer::Held::Message) {
+                // A line has room for one block, and this line's is spoken
+                // for. Said rather than done quietly: the margin says this
+                // line changed, so a key that asks what it changed *from*
+                // and appears to do nothing is a key that looks broken.
+                self.note = Some("the commit's message hangs where this hunk would".to_string());
+                return;
+            }
         }
         let Some(hunk) = hunk.as_ref() else {
             self.note = Some("nothing changed here".to_string());

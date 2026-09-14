@@ -3162,3 +3162,105 @@ fn a_history_on_screen_notices_the_repository_moving() {
         "the reader was left on a row number rather than on their commit"
     );
 }
+
+#[test]
+fn a_hunk_in_a_commits_version_is_what_that_commit_changed() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer, command::Command};
+
+    let repository = Repository::new("hunk-at-a-commit", "one\nold two\nthree\n");
+    repository.write("one\nnew two\nthree\n");
+    repository.commit("the second");
+    // And the working tree is a third thing, so a hunk about the commit can
+    // be told from a hunk about the file on disk.
+    repository.write("one\nworking two\nthree\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 52, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Enter);
+
+    // Down out of the message -- which is three rows that are not lines of
+    // the file -- and onto the line the commit changed.
+    for _ in 0..4 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let dump = support::render(&mut app, 52, 16);
+    assert!(
+        support::text_block(&dump)
+            .lines()
+            .next_back()
+            .is_some_and(|status| status.contains("2:1")),
+        "the caret is not on the line the commit changed:\n{dump}"
+    );
+
+    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    let opened = support::render(&mut app, 52, 16);
+    let rows: Vec<&str> = support::text_block(&opened).lines().collect();
+
+    // What the commit before it had there, above the line that replaced it.
+    let removed = rows
+        .iter()
+        .position(|row| row.contains("old two"))
+        .unwrap_or_else(|| panic!("the commit's own change did not open:\n{opened}"));
+    assert!(
+        rows[removed + 1].contains("new two"),
+        "the removed line is not above the line that replaced it:\n{opened}"
+    );
+    // And not a word about the file on disk: this buffer is a commit's
+    // version, and what it is measured against is the commit before it.
+    assert!(
+        !opened.contains("working two"),
+        "the hunk is against the working tree rather than the commit:\n{opened}"
+    );
+}
+
+#[test]
+fn the_hunk_key_never_takes_a_commits_message_away() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer, command::Command};
+
+    // The commit changes the first line, so the hunk it would open wants
+    // the very slot the message hangs in: a line has room for one block.
+    let repository = Repository::new("hunk-and-message", "old one\ntwo\n");
+    repository.write("new one\ntwo\n");
+    repository.commit("the second");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 100, 12);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Enter);
+
+    // The caret opens inside the message, which is where a reader lands and
+    // where they press keys before they have gone anywhere.
+    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    let dump = support::render(&mut app, 100, 12);
+    assert!(
+        support::text_block(&dump).contains("the second"),
+        "asking for a hunk from inside the message closed the message:\n{dump}"
+    );
+
+    // And from the line itself, whose own hunk has nowhere to go.
+    for _ in 0..3 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    let dump = support::render(&mut app, 100, 12);
+    assert!(
+        support::text_block(&dump).contains("the second"),
+        "asking for a hunk on the line below it closed the message:\n{dump}"
+    );
+    // Said rather than done quietly: the margin says the line changed, so a
+    // key that asks what it changed from and seems to do nothing looks
+    // broken.
+    assert!(
+        support::text_block(&dump).contains("message hangs where"),
+        "nothing said about why the hunk did not open:\n{dump}"
+    );
+}

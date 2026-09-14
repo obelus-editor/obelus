@@ -140,6 +140,15 @@ costs about two seconds there and nothing at all at the key, so the bound
 had nothing left to buy. A limit on a list is a limit on what can be found
 in it: reach for a thread before reaching for a number.
 
+**A key that opens a thing may only close that thing.** `alt+d` toggles a
+hunk by closing "the block in front of the reader" -- and in a commit's
+version the block in front of the reader is usually the commit's message,
+which is what they opened that version to read. It closed it. Blocks carry
+a `kind` for exactly this: ask it. And a line has room for one block, so a
+hunk on the first line of a commit's version has nowhere to go -- say so,
+because the margin says that line changed and a key that answers nothing
+looks broken.
+
 **An answer on screen is an answer about a moment, and the moment passes.**
 A history is read at a `HEAD`, and the reader commits in another window,
 amends, checks something out. The watcher already reports what git writes,
