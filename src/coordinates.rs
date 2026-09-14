@@ -128,6 +128,26 @@ impl CharColumn {
     }
 }
 
+/// A place in a document, in every unit that wants one.
+///
+/// The byte it begins at, and the row and byte-into-the-row a parser wants.
+/// All three together rather than one and a conversion, because a conversion
+/// needs the text and these are wanted at moments when the text is halfway
+/// through changing: an edit's old end does not exist any more once the edit
+/// has happened, and its new end did not exist before it.
+///
+/// `column` is **bytes** into the line, not characters -- tree-sitter's unit,
+/// and the one place in this program where a column is not a `char`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Place {
+    /// How far into the document, in bytes.
+    pub byte: ByteOffset,
+    /// Which line, counting from zero.
+    pub row: usize,
+    /// How far into that line, in bytes.
+    pub column: usize,
+}
+
 /// A run of characters in a document.
 ///
 /// Where the two ends are on the same line, which is nearly always, `line`

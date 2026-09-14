@@ -555,3 +555,117 @@ fn the_two_encodings_give_different_numbers_past_a_wide_character() {
     assert_eq!(bytes.character, 15, "three bytes each");
     assert_eq!(units.character, 11, "one code unit each");
 }
+
+/// An edit says where it happened in every unit at once, and the three
+/// places are taken while each of them still exists: the old end is gone
+/// once the edit has happened and the new end was not there before it.
+mod editing {
+    use obelus::{
+        coordinates::{CharColumn, CharOffset, LineNumber, Span},
+        text::Text,
+    };
+
+    use super::{SAMPLE, sample};
+
+    /// The whole point of the sample: a wide glyph means the byte a place
+    /// reports is not the character anybody counted.
+    #[test]
+    fn inserting_past_a_wide_glyph_answers_in_bytes() {
+        let mut text = sample();
+        // After the second 好, which is six bytes into the line but two
+        // characters into it.
+        let at = text.char_offset(LineNumber::new(1), CharColumn::new(6));
+        let edit = text.insert(at, "!");
+
+        assert_eq!(text.rope().to_string(), "fn main() {\n    你好! world\n}\n");
+        assert_eq!(edit.start.row, 1);
+        // Four spaces and two three-byte glyphs.
+        assert_eq!(edit.start.column, 10, "the column is not in bytes");
+        assert_eq!(edit.old_end, edit.start, "an insert took something out");
+        assert_eq!(edit.new_end.column, 11);
+        assert_eq!(edit.lines(), 0);
+    }
+
+    /// Where the new end has to be measured in the document as it is: a
+    /// newline puts it on a row that did not exist a moment ago, and the
+    /// same byte offset in the old text is still on the old row.
+    #[test]
+    fn inserting_a_line_break_ends_on_the_line_it_made() {
+        let mut text = sample();
+        let at = text.char_offset(LineNumber::new(1), CharColumn::new(6));
+        let edit = text.insert(at, "\n");
+
+        assert_eq!(edit.start.row, 1);
+        assert_eq!(edit.start.column, 10);
+        assert_eq!(
+            edit.new_end.row, 2,
+            "the new end was measured in the document as it was"
+        );
+        assert_eq!(edit.new_end.column, 0);
+        assert_eq!(edit.lines(), 1);
+    }
+
+    /// A span that ends on another line, which is the case every offset
+    /// arithmetic gets wrong first.
+    #[test]
+    fn removing_across_a_line_break_says_how_many_lines_went() {
+        let mut text = sample();
+        let (gone, edit) = text.remove(Span {
+            line: LineNumber::new(0),
+            column: CharColumn::new(10),
+            end_line: LineNumber::new(2),
+            end_column: CharColumn::new(0),
+        });
+
+        assert_eq!(gone, "{\n    你好 world\n");
+        assert_eq!(text.rope().to_string(), "fn main() }\n");
+        assert_eq!(edit.start.row, 0);
+        assert_eq!(edit.old_end.row, 2, "the old end is in the text as it was");
+        assert_eq!(
+            edit.new_end, edit.start,
+            "what is left does not begin where the span did"
+        );
+        assert_eq!(edit.lines(), -2, "two lines went and the count did not");
+    }
+
+    /// The end of the document is where a rope's bounds are easiest to walk
+    /// off, and where an editor spends a great deal of its time.
+    #[test]
+    fn an_edit_at_the_end_stays_inside_the_document() {
+        let mut text = sample();
+        let end = CharOffset::new(SAMPLE.chars().count());
+        let edit = text.insert(end, "\n");
+        assert_eq!(
+            text.rope().to_string(),
+            "fn main() {\n    你好 world\n}\n\n"
+        );
+        assert_eq!(edit.lines(), 1);
+
+        // And past the end, which a caller should not do and must not be
+        // able to make fail.
+        let mut text = sample();
+        let edit = text.insert(CharOffset::new(9_999), "x");
+        assert!(text.rope().to_string().ends_with("}\nx"));
+        assert_eq!(edit.lines(), 0);
+    }
+
+    /// Undoing is putting back exactly what came out, so what came out has
+    /// to be exactly what was there.
+    #[test]
+    fn what_a_removal_hands_back_puts_the_document_together_again() {
+        let span = Span {
+            line: LineNumber::new(1),
+            column: CharColumn::new(2),
+            end_line: LineNumber::new(1),
+            end_column: CharColumn::new(9),
+        };
+        let mut text = sample();
+        let (gone, edit) = text.remove(span);
+        let mut back = Text::from_string(&text.rope().to_string());
+        back.insert(
+            back.char_offset(LineNumber::new(edit.start.row), CharColumn::new(2)),
+            &gone,
+        );
+        assert_eq!(back.rope().to_string(), SAMPLE);
+    }
+}

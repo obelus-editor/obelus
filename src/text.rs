@@ -10,7 +10,7 @@ use unicode_linebreak::linebreaks;
 use unicode_width::UnicodeWidthChar;
 
 use crate::coordinates::{
-    ByteOffset, CharColumn, CharOffset, DisplayColumn, LineNumber, Span, Utf16Column,
+    ByteOffset, CharColumn, CharOffset, DisplayColumn, LineNumber, Place, Span, Utf16Column,
 };
 
 /// How many cells a tab advances to.
@@ -19,6 +19,33 @@ use crate::coordinates::{
 /// from the tool that wrote it is worse than one that picks a number, and four
 /// is the number the code obelus is written in uses.
 pub const TAB_WIDTH: usize = 4;
+
+/// What an edit did, in the units everything downstream measures in.
+///
+/// Three places: where it began, where what it replaced ended, and where
+/// what it put there ends. The first two are in the document as it was, the
+/// third in the document as it is -- which is why they are taken as the edit
+/// happens rather than worked out afterwards from two whole texts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Edit {
+    /// Where it began. The same in both documents: nothing before it moved.
+    pub start: Place,
+    /// Where what it took out ended, in the document as it was.
+    pub old_end: Place,
+    /// Where what it put in ends, in the document as it is.
+    pub new_end: Place,
+}
+
+impl Edit {
+    /// How many lines the document gained, or lost where it is negative.
+    ///
+    /// Everything below the edit that is remembered by line number -- a fold,
+    /// a block, a mark -- moves by this.
+    #[must_use]
+    pub const fn lines(&self) -> isize {
+        self.new_end.row as isize - self.old_end.row as isize
+    }
+}
 
 /// A document's text, plus the coordinate conversions over it.
 #[derive(Clone, Debug)]
@@ -39,6 +66,65 @@ impl Text {
     #[must_use]
     pub const fn rope(&self) -> &Rope {
         &self.rope
+    }
+
+    /// Puts `what` in at `at`, and says what that did.
+    ///
+    /// The one way text grows. Everything a document keeps beside its text is
+    /// measured in lines or bytes, so the answer has to be in both, and it
+    /// has to be taken while each end still exists: the new end is not there
+    /// to be measured until the rope has changed.
+    pub fn insert(&mut self, at: CharOffset, what: &str) -> Edit {
+        let at = CharOffset::new(at.get().min(self.rope.len_chars()));
+        let start = self.place(self.byte_of_char(at));
+        self.rope.insert(at.get(), what);
+        Edit {
+            start,
+            // Nothing was taken out, so the old end is where it began.
+            old_end: start,
+            new_end: self.place(ByteOffset::new(start.byte.get() + what.len())),
+        }
+    }
+
+    /// Takes `span` out, and hands back what was there.
+    ///
+    /// The other way round from [`insert`](Self::insert): the *old* end is
+    /// the one that has to be measured first, and afterwards both ends are
+    /// where the span began.
+    pub fn remove(&mut self, span: Span) -> (String, Edit) {
+        let from = self.char_offset(span.line, span.column);
+        let to = self.char_offset(span.end_line, span.end_column);
+        // A span whose ends arrive the wrong way round is a caller's slip,
+        // not a reason to take out the whole document.
+        let (from, to) = (from.min(to), from.max(to));
+        let start = self.place(self.byte_of_char(from));
+        let old_end = self.place(self.byte_of_char(to));
+        let removed = self.rope.slice(from.get()..to.get()).to_string();
+        self.rope.remove(from.get()..to.get());
+        (
+            removed,
+            Edit {
+                start,
+                old_end,
+                // What is left begins where the span did, and nothing before
+                // it moved, so the place is the same one.
+                new_end: start,
+            },
+        )
+    }
+
+    /// Where a byte is, in all three units at once.
+    ///
+    /// Taken together rather than one at a time, because the caller wanting
+    /// them is in the middle of changing the text and the other two answers
+    /// would be about a different document by the time it asked.
+    #[must_use]
+    pub fn place(&self, byte: ByteOffset) -> Place {
+        Place {
+            byte,
+            row: self.line_of_byte(byte).get(),
+            column: self.byte_column(byte),
+        }
     }
 
     /// How many lines the document has.
