@@ -58,6 +58,13 @@ impl App {
             tracing::debug!(path = %buffer.path().display(), "outside the root, so no server");
             return;
         }
+        // A commit's version of a file is not what that path holds. Telling
+        // a server otherwise makes every answer about it wrong -- the
+        // definitions it finds would be at lines of a file nobody has.
+        if !buffer.content().is_file() {
+            tracing::debug!(path = %buffer.path().display(), "read from a commit, so no server");
+            return;
+        }
         if self.stopped.contains(&language) {
             tracing::debug!(
                 language = language.name(),
@@ -104,6 +111,11 @@ impl App {
         let Ok(uri) = lsp::client::uri_for(buffer.path()) else {
             return;
         };
+        // Nothing about a commit's version of the file: the server is
+        // being told what is at this path, and this is not it.
+        if !buffer.content().is_file() {
+            return;
+        }
         let text = buffer.text().rope().to_string();
         let version = buffer.version();
         let name = language.name();
@@ -134,6 +146,11 @@ impl App {
         let Ok(uri) = lsp::client::uri_for(buffer.path()) else {
             return;
         };
+        // Nothing about a commit's version of the file: the server is
+        // being told what is at this path, and this is not it.
+        if !buffer.content().is_file() {
+            return;
+        }
         let text = buffer.text().rope().to_string();
         let version = buffer.version();
 

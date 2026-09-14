@@ -2215,3 +2215,213 @@ fn a_subject_is_cut_at_its_end() {
         "the row is wide enough for the whole subject, so this proves nothing:\n{row}"
     );
 }
+
+/// A commit's version of a file carries the commit's message above its
+/// first line, and the reader lands in it: they opened this to find out
+/// *why* it says what it says, and the file itself is a page down.
+#[test]
+fn a_commits_version_carries_what_the_commit_said() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-said", "first\n");
+    repository.write("second\n");
+    repository.commit("A subject worth reading\n\nAnd a body under it.\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 10);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+
+    let dump = support::render(&mut app, 60, 16);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("A subject worth reading"),
+        "the message is not above the file:\n{text}"
+    );
+    assert!(
+        text.contains("And a body under it."),
+        "only the subject came up:\n{text}"
+    );
+    assert!(
+        text.contains("second"),
+        "the file itself is not there:\n{text}"
+    );
+    // The caret is in the message, which has no line numbers of its own,
+    // so the status row says where it is and marks that it is not the
+    // file's own count.
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .expect("a status row")
+        .to_string();
+    assert!(
+        status.contains("-1:1"),
+        "the reader did not land in the message:\n{dump}"
+    );
+    // And which commit this is, where the mode and the staleness go.
+    let at = app
+        .current_buffer()
+        .expect("a file")
+        .content()
+        .short()
+        .expect("a commit");
+    assert!(
+        status.contains(&at),
+        "the status row does not say which commit:\n{dump}"
+    );
+}
+
+/// Everything that assumes a buffer's path is where its bytes came from has
+/// to ask first. A commit's version of a file shares a path with the file
+/// and is a different document.
+#[test]
+fn a_commits_version_is_not_the_file_at_that_path() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-apart", "first\n");
+    repository.write("second\n");
+    repository.commit("the second");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 10);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.current_buffer()
+            .expect("a file")
+            .text()
+            .rope()
+            .to_string(),
+        "first\n",
+        "not the older commit's version"
+    );
+
+    // The file changes on disk and is re-read: the commit's version is not
+    // touched, because those bytes are what that commit said.
+    repository.write("third\n");
+    app.handle(obelus::event::Event::FileChanged {
+        path: repository.path(),
+    });
+    assert_eq!(
+        app.current_buffer()
+            .expect("a file")
+            .text()
+            .rope()
+            .to_string(),
+        "first\n",
+        "a re-read of the file overwrote a commit's version of it"
+    );
+}
+
+/// Opening a file gives the file, not a buffer that happens to wear its
+/// name. A commit's version shares the path and is a different document.
+#[test]
+fn opening_a_file_does_not_find_a_commits_version_of_it() {
+    use crossterm::event::KeyCode;
+    use obelus::app::App;
+
+    let repository = Repository::new("history-reopen", "first\n");
+    repository.write("second\n");
+    repository.commit("the second");
+
+    // Nothing open, so the commit's version is the only buffer there is
+    // wearing that name -- otherwise the list finds the right answer for
+    // the wrong reason.
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 10);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    let buffer = app.current_buffer().expect("a file");
+    assert_eq!(buffer.text().rope().to_string(), "first\n");
+    assert!(buffer.content().at().is_some(), "not a commit's version");
+
+    app.open_for_test(&repository.path());
+    let buffer = app.current_buffer().expect("a file");
+    assert!(
+        buffer.content().is_file(),
+        "opening the file handed back a commit's version of it"
+    );
+    assert_eq!(buffer.text().rope().to_string(), "second\n");
+}
+
+/// The margin beside a commit's version says what *that commit* changed,
+/// not how it differs from the file today. The second is a question about a
+/// file the reader is not looking at.
+#[test]
+fn a_commits_version_is_marked_against_the_commit_before_it() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, coordinates::LineNumber, git::Marker};
+
+    let repository = Repository::new("history-margin", "one\ntwo\nthree\n");
+    repository.write("one\nCHANGED\nthree\n");
+    repository.commit("the middle line");
+    // And then a line the reader is not looking at changes, so "against
+    // today" and "against the commit before" give different answers.
+    repository.write("one\nCHANGED\nLATER\n");
+    repository.commit("the last line");
+
+    // The file itself first, and drawn, so that its own diff is worked out
+    // and remembered: a commit's version shares this path and starts at the
+    // same version number, so a remembered answer keyed on those two would
+    // be handed to it.
+    let mut app = App::new(vec![
+        obelus::buffer::Buffer::open(&repository.path()).expect("opening it"),
+    ]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 60, 16);
+    let _ = support::render(&mut app, 60, 16);
+
+    support::press_function(&mut app, 10);
+    // The middle commit, and the file as it had it.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    let _ = support::render(&mut app, 60, 16);
+
+    // And no blame beside it. A blame is a walk from `HEAD`, so its lines
+    // are the lines of the file as it is now; laid beside a file as it was
+    // they would name whoever last touched whatever sits at those numbers
+    // today -- a confident answer about the wrong lines. The answer is put
+    // in by hand, because it is worked out on a thread and this is not a
+    // test about that.
+    app.handle(obelus::event::Event::Blamed {
+        path: repository.path(),
+        lines: vec![
+            Some(obelus::git::Blamed {
+                who: "somebody".to_string(),
+                when: 0,
+            });
+            3
+        ],
+    });
+    assert!(
+        app.blame().is_none(),
+        "a commit's version was blamed as if it were the file"
+    );
+
+    let changes = app.changes().expect("what that commit changed");
+    assert_eq!(
+        changes.marker_at(LineNumber::new(1)),
+        Some(Marker::Modified),
+        "the line that commit changed is not marked"
+    );
+    assert_eq!(
+        changes.marker_at(LineNumber::new(2)),
+        None,
+        "a line changed by a later commit is marked against this one"
+    );
+}

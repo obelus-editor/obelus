@@ -202,6 +202,13 @@ impl StatusView<'_> {
         // than about where you are in it -- and a screen showing something
         // other than the file has to say so.
         let mut marker = String::new();
+        // Which commit this came from, where the mode and the staleness go:
+        // they are all the same kind of fact -- what is on screen is not
+        // simply the file at this path -- and the one thing a reader must
+        // not have to wonder about.
+        if let Some(at) = buffer.content().short() {
+            marker.push_str(&format!("  {at}"));
+        }
         if let Some(mode) = buffer.mode().name() {
             marker.push_str(&format!("  {mode}"));
         }

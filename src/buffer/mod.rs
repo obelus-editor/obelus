@@ -65,8 +65,8 @@ pub enum Content {
     /// not be told this is what that path holds, and a list of open files
     /// must not hand back this buffer to a reader who asked for the file.
     Commit {
-        /// Which commit, in the short form a reader recognises.
-        at: String,
+        /// Which commit.
+        id: gix::ObjectId,
     },
 }
 
@@ -79,11 +79,17 @@ impl Content {
 
     /// The commit this was read from, if it was read from one.
     #[must_use]
-    pub fn at(&self) -> Option<&str> {
+    pub const fn at(&self) -> Option<gix::ObjectId> {
         match self {
             Self::File => None,
-            Self::Commit { at } => Some(at),
+            Self::Commit { id } => Some(*id),
         }
+    }
+
+    /// That commit in the short form a reader recognises it by.
+    #[must_use]
+    pub fn short(&self) -> Option<String> {
+        Some(self.at()?.to_string().chars().take(7).collect())
     }
 }
 
@@ -205,6 +211,8 @@ pub struct Block {
     /// The alternative was a second, smaller set of all of that, and a
     /// second set is a second set of bugs.
     pub text: Text,
+    /// What kind of thing these rows are.
+    pub kind: Held,
     /// How many lines the hunk actually replaced.
     ///
     /// Kept apart from the text, which cannot tell "nothing was removed"
@@ -277,6 +285,20 @@ impl Block {
     pub fn is_empty(&self) -> bool {
         self.lines == 0
     }
+}
+
+/// What an opened block is holding.
+///
+/// Two things are drawn the same way -- rows of text the file does not have,
+/// between two lines it does -- and they are not the same thing, so they do
+/// not read the same: lines a commit removed are gone, and a commit's
+/// message is a note.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Held {
+    /// The lines a hunk replaced.
+    Removed,
+    /// What a commit said about itself.
+    Message,
 }
 
 /// Where the caret is while the reader is in an opened block.
@@ -553,9 +575,9 @@ impl Buffer {
     /// is different is [`Content::Commit`], which is how the rest of obelus
     /// knows these bytes are not the ones on disk.
     #[must_use]
-    pub fn at_commit(path: &Path, at: &str, contents: &str) -> Self {
+    pub fn at_commit(path: &Path, id: gix::ObjectId, contents: &str) -> Self {
         let mut buffer = Self::from_text(path, contents);
-        buffer.content = Content::Commit { at: at.to_string() };
+        buffer.content = Content::Commit { id };
         buffer
     }
 
@@ -601,8 +623,14 @@ impl Buffer {
     /// them: one for somewhere to stand, the other to count the rows the
     /// screen really has.
     pub fn open_block(&mut self, above: LineNumber, lines: &[String]) {
+        self.open_held(above, lines, Held::Removed);
+    }
+
+    /// The same, for rows that are not a hunk's.
+    pub fn open_held(&mut self, above: LineNumber, lines: &[String], kind: Held) {
         let block = Block {
             above,
+            kind,
             // Joined without a trailing newline: a text that ends in one
             // has an empty last line, and the block has exactly the lines
             // the hunk replaced.
@@ -630,13 +658,43 @@ impl Buffer {
         }
     }
 
-    /// Closes every one of them.
+    /// Closes every block holding one kind of thing.
     ///
-    /// For when the diff they came from is replaced: they are lines of a
-    /// file as it was, and the answer about what changed has moved on.
-    pub fn close_blocks(&mut self) {
-        self.blocks.clear();
-        self.in_block = None;
+    /// For when the diff they came from is replaced: a hunk's removed lines
+    /// are lines of a file as it was, and the answer about what changed has
+    /// moved on. A commit's message is not part of any diff and stays --
+    /// closing it would take away the one thing a reader opened this
+    /// version of the file to read.
+    pub fn close_blocks(&mut self, kind: Held) {
+        self.blocks.retain(|block| block.kind != kind);
+        if self
+            .in_block
+            .is_some_and(|at| self.block_above(at.above).is_none())
+        {
+            self.in_block = None;
+        }
+    }
+
+    /// Puts the caret at the top of a block, for a reader who is meant to
+    /// land in it.
+    ///
+    /// A commit's message hangs above the first line of the file, so a
+    /// cursor on that line is *below* the whole of it and the view scrolls
+    /// past it to keep the cursor on screen. What the reader asked for was
+    /// the message, so that is where the caret goes.
+    pub fn enter_block(&mut self, above: LineNumber) {
+        if self.block_above(above).is_none_or(Block::is_empty) {
+            return;
+        }
+        self.in_block = Some(InBlock {
+            above,
+            cursor: Cursor {
+                line: LineNumber::new(0),
+                column: CharColumn::new(0),
+                remembered_cell: DisplayColumn::new(0),
+            },
+            anchor: None,
+        });
     }
 
     /// The blocks this file has open, in the order they are drawn.

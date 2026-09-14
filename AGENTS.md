@@ -91,6 +91,31 @@ prefix off a string and guessing. The names are also what the config file's
 `[keys]` table is written in, so renaming one leaves an old file's line
 unbound with a word in the log.
 
+**A buffer's path is where it is *called*, not always where its bytes came
+from.** `Content` is what says which, and everything that assumed the two
+were the same had to be asked: the watcher must not re-read the file over a
+commit's version of it, opening the file must not hand back the buffer that
+happens to wear its name, the language server must not be told that this is
+what that path holds, the diff cache must key on the content as well as the
+path and the version -- both start at version one -- and a blame must not be
+laid beside it, because a blame is a walk from `HEAD` and its lines are the
+lines of the file as it is now. The status row says which commit, where the
+mode and the staleness go: they are all the same kind of fact, that what is
+on screen is not simply the file at this path.
+
+A commit's version is marked against the commit *before* it, so the margin
+says what that commit did rather than how it differs from today -- which is
+a question about a file the reader is not looking at.
+
+**A commit's message hangs above the first line of its file.** Rows on
+screen that the file does not have, with no line numbers, that the caret can
+walk into and copy from: obelus has one shape for that already, and this is
+it. The reader lands *in* it, because they opened this to find out why the
+file says what it says and the file itself is a page away. `Held` is what
+keeps it apart from a hunk's removed lines -- a deletion is gone and reads
+red, a message is a note and reads raised -- and it is why replacing the
+diff closes the hunks and leaves the message where it is.
+
 **A history is one view at two radii.** A file's commits and a project's
 differ only in which commits are listed, so they are two tabs of one list
 and `f9` and `f10` land on the tab they name -- the shape the finding keys

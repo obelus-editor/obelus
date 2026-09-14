@@ -250,6 +250,21 @@ pub fn text_at(within: &Path, id: gix::ObjectId, path: &Path) -> Option<String> 
     String::from_utf8(object.data.clone()).ok()
 }
 
+/// A file as the commit *before* one had it.
+///
+/// What a version of a file is compared against, so its margin says what
+/// that commit changed rather than how it differs from today. `None` where
+/// there is no such answer -- the first commit of a project, a file that
+/// commit added -- which is the same answer as an empty file: everything in
+/// it is new.
+#[must_use]
+pub fn text_before(within: &Path, id: gix::ObjectId, path: &Path) -> Option<String> {
+    let repository = super::repository(within)?;
+    let commit = repository.find_commit(id).ok()?;
+    let parent = commit.parent_ids().next()?;
+    text_at(within, parent.detach(), path)
+}
+
 /// The first line of a message, and the rest of it.
 ///
 /// The subject is what a row shows and the body is what the reader opens to

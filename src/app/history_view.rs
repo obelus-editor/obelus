@@ -256,12 +256,54 @@ impl App {
             self.note = Some("nothing to read there".to_string());
             return;
         };
-        let at = id.to_string().chars().take(7).collect::<String>();
         let from = self.here();
         self.record(from);
-        self.buffers
-            .push(Some(Buffer::at_commit(&full, &at, &text)));
+        let mut buffer = Buffer::at_commit(&full, id, &text);
+        // The message above the first line, so the reader lands on *why*
+        // and pages down to what. It is not a line of the file, and a
+        // block is exactly the shape obelus has for that -- rows on screen
+        // the file does not have, with no line numbers, that the caret can
+        // walk into and copy from.
+        if let Some(said) = self.said_at(id) {
+            buffer.open_held(LineNumber::new(0), &said, crate::buffer::Held::Message);
+            buffer.enter_block(LineNumber::new(0));
+        }
+        self.buffers.push(Some(buffer));
         let index = self.buffers.len() - 1;
         self.go_to_buffer(BufferId::new(index));
+    }
+}
+
+impl App {
+    /// What a commit said about itself, as the rows of a block.
+    ///
+    /// The first row names it -- the id, who wrote it, how long ago -- and
+    /// the rest is the message. A reader opening a file as a commit had it
+    /// is asking why it says what it says, and that is the answer.
+    fn said_at(&self, id: gix::ObjectId) -> Option<Vec<String>> {
+        let commit = crate::git::history::of(&self.working_directory, None, 1)
+            .into_iter()
+            .find(|commit| commit.id == id)
+            .or_else(|| {
+                crate::git::history::of(&self.working_directory, None, LISTED)
+                    .into_iter()
+                    .find(|commit| commit.id == id)
+            })?;
+        let now = std::time::SystemTime::now();
+        let mut said = vec![
+            format!(
+                "{}   {}   {}",
+                commit.short(),
+                commit.who,
+                crate::git::blame::how_long_ago(commit.when, now)
+            ),
+            String::new(),
+            commit.subject.clone(),
+        ];
+        if !commit.body.is_empty() {
+            said.push(String::new());
+            said.extend(commit.body.lines().map(str::to_string));
+        }
+        Some(said)
     }
 }

@@ -396,7 +396,14 @@ impl App {
         if let Some(index) = self
             .buffers
             .iter()
-            .position(|buffer| buffer.as_ref().is_some_and(|open| open.path() == path))
+            // The file on disk, not a commit's version of it: those share
+            // a path and are different documents, and a reader asking to
+            // open the file means the one they can edit elsewhere.
+            .position(|buffer| {
+                buffer
+                    .as_ref()
+                    .is_some_and(|open| open.path() == path && open.content().is_file())
+            })
         {
             let id = BufferId::new(index);
             if self.current != Some(id) {
@@ -463,12 +470,25 @@ impl App {
     ///
     /// The watch is on a directory, so most of what arrives here is about
     /// files obelus does not have open.
+    /// Opens a path the way choosing it from a list does.
+    ///
+    /// For a test: the lists that reach this are filled from a walk on
+    /// another thread, and a test that pumped the walk to press one key
+    /// would be a test of the walk.
+    pub fn open_for_test(&mut self, path: &Path) {
+        self.open(path);
+    }
+
     pub(super) fn reload_path(&mut self, path: &Path) {
         for index in 0..self.buffers.len() {
             let Some(buffer) = self.buffers[index].as_mut() else {
                 continue;
             };
-            if buffer.path() == path && reload(buffer) {
+            // A commit's version of a file does not change when the file
+            // does: those bytes are what that commit said, and re-reading
+            // over them would replace a document the reader chose with one
+            // they did not.
+            if buffer.path() == path && buffer.content().is_file() && reload(buffer) {
                 self.change_document(index);
             }
         }

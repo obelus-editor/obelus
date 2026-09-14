@@ -497,9 +497,15 @@ impl Widget for EditorView<'_> {
                                 width: gutter + width,
                                 height: 1,
                             },
-                            Style::new()
-                                .fg(self.theme.foreground)
-                                .bg(self.theme.change_removed_background),
+                            Style::new().fg(self.theme.foreground).bg(match block.kind {
+                                crate::buffer::Held::Removed => {
+                                    self.theme.change_removed_background
+                                }
+                                // A note, not a deletion: the colour
+                                // that says "this is obelus talking"
+                                // wherever else it does.
+                                crate::buffer::Held::Message => self.theme.raised_background,
+                            }),
                         );
                         // The bar a line on screen gets, not the boundary
                         // mark: `Marker::Removed`'s top edge exists because
@@ -510,7 +516,10 @@ impl Widget for EditorView<'_> {
                             area.x,
                             y,
                             Marker::Modified,
-                            self.theme.change_removed,
+                            match block.kind {
+                                crate::buffer::Held::Removed => self.theme.change_removed,
+                                crate::buffer::Held::Message => self.theme.gutter,
+                            },
                             cells,
                         );
                         // No line number: these lines have no number in

@@ -146,8 +146,16 @@ impl App {
         if !self.config.blame {
             return None;
         }
-        let path = self.current_buffer()?.path();
-        self.blames.get(path).map(Vec::as_slice)
+        let buffer = self.current_buffer()?;
+        // Not for a commit's version of a file. A blame is a walk from
+        // `HEAD`, so its lines are the lines of the file as it is now, and
+        // laid beside a file as it was they would name whoever last touched
+        // whatever is at those numbers today -- a confident answer about
+        // the wrong lines.
+        if !buffer.content().is_file() {
+            return None;
+        }
+        self.blames.get(buffer.path()).map(Vec::as_slice)
     }
 
     /// Starts a walk of history for the file being read, once per file.
@@ -191,7 +199,15 @@ impl App {
             self.changes = None;
             return;
         };
-        let at = (buffer.path().to_path_buf(), buffer.version());
+        // The content as well as the path and the version: a commit's
+        // version of a file and the file itself share a path, and both
+        // start at version one, so a key of the first two would hand one
+        // buffer's diff to the other.
+        let at = (
+            buffer.path().to_path_buf(),
+            buffer.version(),
+            buffer.content().clone(),
+        );
         if self
             .changes
             .as_ref()
@@ -200,10 +216,22 @@ impl App {
             return;
         }
 
-        // No committed text is every way this can have no answer -- not a
-        // repository, a file git has never heard of, no commits yet -- and
-        // they all mean the same thing in the margin: nothing to say.
-        let changes = git::head_text(buffer.path()).map(|committed| Changed {
+        // What this text is a change *from*. For the file on disk that is
+        // the last commit; for a commit's version of it that is the commit
+        // before -- so the margin beside it says what that commit did,
+        // rather than how it differs from today, which is a question about
+        // a file the reader is not looking at.
+        let before = match buffer.content().at() {
+            Some(id) => {
+                crate::git::history::text_before(&self.working_directory, id, buffer.path())
+            }
+            None => git::head_text(buffer.path()),
+        };
+        // No text to compare with is every way this can have no answer --
+        // not a repository, a file git has never heard of, no commits yet,
+        // a commit that added the file -- and they all mean the same thing
+        // in the margin: nothing to say.
+        let changes = before.map(|committed| Changed {
             changes: git::Changes::between(&committed, &buffer.text().rope().to_string()),
             at,
         });
@@ -220,7 +248,7 @@ impl App {
         // replaced. Leaving it open would show removed lines that are no
         // longer removed anywhere.
         if let Some(buffer) = self.current_buffer_mut() {
-            buffer.close_blocks();
+            buffer.close_blocks(crate::buffer::Held::Removed);
         }
     }
 }
@@ -229,5 +257,5 @@ impl App {
 #[derive(Debug)]
 pub(super) struct Changed {
     changes: git::Changes,
-    at: (PathBuf, i32),
+    at: (PathBuf, i32, crate::buffer::Content),
 }
