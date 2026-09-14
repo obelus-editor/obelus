@@ -42,6 +42,13 @@ pub(super) struct Showing {
     pub radii: Vec<Radius>,
     /// The commits of the tab that is showing.
     pub commits: Vec<Commit>,
+    /// Which file the list is about, when it is about one.
+    ///
+    /// A commit in that tab has nothing to open under it: it is already
+    /// about one file, and that file is this. Remembered rather than asked
+    /// again when a row is chosen, because by then the reader may be
+    /// looking at something else.
+    pub of: Option<PathBuf>,
     /// Which commit has been opened, and the files it changed.
     ///
     /// One at a time: a list where three commits are open is a list whose
@@ -62,9 +69,10 @@ impl App {
     pub fn open_history(&mut self, radius: Radius) {
         let radii = self.historic();
         let Some(tab) = radii.iter().position(|shown| *shown == radius) else {
-            self.note = Some(match radius {
-                Radius::File => "no file open".to_string(),
-                Radius::Project => "no history here".to_string(),
+            self.note = Some(match (radius, self.current_buffer().is_some()) {
+                (Radius::File, true) => "nothing in this file's history".to_string(),
+                (Radius::File, false) => "no file open".to_string(),
+                (Radius::Project, _) => "no history here".to_string(),
             });
             return;
         };
@@ -77,6 +85,7 @@ impl App {
         self.history = Showing {
             radii,
             commits: Vec::new(),
+            of: None,
             opened: None,
         };
         self.refresh_history();
@@ -140,6 +149,7 @@ impl App {
             Radius::Project => None,
         };
         self.history.commits = self.history_of(only.as_deref());
+        self.history.of = only.clone();
         // An opened commit belongs to the tab it was opened in.
         self.history.opened = None;
         self.show_history();
@@ -230,6 +240,17 @@ impl App {
             picker.replace(items);
             picker.when_empty("nothing in the history here");
         }
+    }
+
+    /// The file a commit's row names, when the list is about one file.
+    ///
+    /// A row in the file's own tab is a commit that changed *this* file, so
+    /// choosing it opens the file as that commit had it. There is nothing
+    /// to open under such a row -- the list of files it changed would be a
+    /// list with the tab's own name in it -- so this is what Enter means
+    /// there.
+    pub(super) fn commit_opens(&self) -> Option<PathBuf> {
+        self.history.of.clone()
     }
 
     /// Opens a commit's files under it, or closes them again.

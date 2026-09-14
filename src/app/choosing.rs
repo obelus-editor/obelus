@@ -232,10 +232,19 @@ impl App {
         // A commit is not somewhere to go: it opens its files under itself,
         // in place, and the list stays open around them. Asked before the
         // list is torn down, because the list is what it happens to.
-        if let PickerValue::Commit(id) = value
-            && self.expand_commit(id)
-        {
-            return;
+        // A commit opens its files under it where there are files to
+        // choose between, and opens *the* file where the list is already
+        // about one: a row in a file's own history names that file and that
+        // commit, which is a document, and nothing else needs choosing.
+        if let PickerValue::Commit(id) = value {
+            if self.expand_commit(id) {
+                return;
+            }
+            if let Some(path) = self.commit_opens() {
+                self.picker = None;
+                self.open_at_commit(id, &path);
+                return;
+            }
         }
         // Where the query matched in the selected row, for a list whose
         // rows are the lines they name. Worked out here rather than read

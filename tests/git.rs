@@ -2688,3 +2688,53 @@ fn a_repository_with_nowhere_to_push_marks_nothing() {
         "a repository with no remote marked its commits"
     );
 }
+
+/// A commit in a file's own history has nothing to open under it: it is
+/// already about one file. Choosing it opens that file as that commit had
+/// it -- the list of files it changed would be a list with the tab's own
+/// name in it.
+#[test]
+fn a_commit_in_a_files_history_opens_that_file() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-file-tab", "first\n");
+    repository.write("second\n");
+    repository.commit("the second");
+    repository.write("third\n");
+    repository.commit("the third");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 9);
+    assert_eq!(
+        app.picker().expect("the history").tab(),
+        0,
+        "not the file's own tab"
+    );
+    // No marks in this tab: there is nothing under these rows to open.
+    assert!(
+        app.picker()
+            .expect("the history")
+            .matches()
+            .all(|item| item.marker.is_none()),
+        "a row offered to open something under it"
+    );
+
+    // The commit before the last one.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the list stayed open");
+
+    let buffer = app.current_buffer().expect("a file");
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        "second\n",
+        "not the file as that commit had it"
+    );
+    assert!(
+        buffer.content().at().is_some(),
+        "the file on disk was opened instead"
+    );
+}

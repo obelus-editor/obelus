@@ -138,7 +138,10 @@ in the project without pressing a second key to get there.
 A commit in the project's tab is not a file, so there is nothing for
 choosing it to open. What it has is the list of files it changed, and that
 goes *under* it, in place, the way a run of tool calls opens in the
-transcript: one list, one selection, one Escape. The mark says so -- the
+transcript: one list, one selection, one Escape. In the file's own tab a
+commit *is* a document -- that file as that commit had it -- so choosing one
+opens it, and there is nothing to put underneath: a list of the files it
+changed would be a list with the tab's own name in it. The mark says so -- the
 same `▸`/`▾` the transcript and the fold column use, because a reader who
 has learned it in one place has learned it. The file's own tab has no marks
 at all: a commit there is already about one file, and offering to show
