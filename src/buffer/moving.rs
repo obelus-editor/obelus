@@ -59,8 +59,8 @@ impl Buffer {
     /// caret in is what they can take a copy of.
     #[must_use]
     pub fn selected_text(&self) -> Option<String> {
-        if let Some(block) = self.block.as_ref()
-            && let Some(selection) = self.block_selection()
+        if let Some((above, selection)) = self.block_selection()
+            && let Some(block) = self.block_above(above)
         {
             return Some(block.text.text_in(selection));
         }
@@ -160,9 +160,11 @@ impl Buffer {
             // Into the block, on the row it landed on and at the cell it
             // was aiming for -- a page keeps the reader's place on the
             // screen, and their column with it.
-            if let Some(block) = self.block.as_ref() {
+            if let Some(block) = self.block_above(landed.0) {
+                let above = block.above;
                 let (line, row) = block.place_at_row(landed.1, width);
                 self.in_block = Some(InBlock {
+                    above,
                     cursor: Cursor {
                         line,
                         column: block.text.column_in_row(
@@ -306,8 +308,9 @@ impl Buffer {
         // it was drawn above and the line before that, so it is entered
         // from either side -- going up off the top row of the line below
         // it, or down off the last row of the line above.
-        if let Some(entering) = self.entering_block(motion, area) {
+        if let Some((above, entering)) = self.entering_block(motion, area) {
             self.in_block = Some(InBlock {
+                above,
                 cursor: entering,
                 anchor: None,
             });
@@ -330,8 +333,17 @@ impl Buffer {
     /// at its last line; down from the last row of the line before it
     /// enters at its first. Every other motion, and every other place,
     /// leaves the block alone.
-    fn entering_block(&self, motion: Motion, area: TextArea) -> Option<Cursor> {
-        let block = self.block.as_ref().filter(|block| !block.is_empty())?;
+    fn entering_block(&self, motion: Motion, area: TextArea) -> Option<(LineNumber, Cursor)> {
+        // The one hanging above the cursor's own line, going up, and the
+        // one hanging above the line below it, going down -- a block sits
+        // between two lines and is entered from either side.
+        let below = self.next_shown(self.cursor.line, true, area);
+        let block = match motion {
+            Motion::Up => self.block_above(self.cursor.line),
+            Motion::Down => below.and_then(|line| self.block_above(line)),
+            _ => None,
+        }
+        .filter(|block| !block.is_empty())?;
         let width = area.wrap_width();
         let (row, _) = self
             .text
@@ -358,13 +370,16 @@ impl Buffer {
             Motion::Up => block.text.row_count(entered, width).saturating_sub(1),
             _ => 0,
         };
-        Some(Cursor {
-            line: entered,
-            column: block
-                .text
-                .column_in_row(entered, row, self.cursor.remembered_cell, width),
-            remembered_cell: self.cursor.remembered_cell,
-        })
+        Some((
+            block.above,
+            Cursor {
+                line: entered,
+                column: block
+                    .text
+                    .column_in_row(entered, row, self.cursor.remembered_cell, width),
+                remembered_cell: self.cursor.remembered_cell,
+            },
+        ))
     }
 
     /// Moves the caret about inside an opened block.
@@ -384,10 +399,10 @@ impl Buffer {
             at.anchor = None;
         }
         let width = area.wrap_width();
-        let Some(block) = self.block.as_ref() else {
+        let above = at.above;
+        let Some(block) = self.block_above(above) else {
             return;
         };
-        let above = block.above;
         // A block's own text has no folds of its own: it is a few lines
         // the file used to have, not a file.
         let unfolded = Folds::default();
@@ -487,10 +502,7 @@ impl Buffer {
     /// How many rows the view draws above a line, which is a hunk the
     /// reader has opened there and nothing else.
     fn rows_above(&self, line: LineNumber, width: u16) -> usize {
-        self.block
-            .as_ref()
-            .filter(|block| block.above == line)
-            .map_or(0, |block| block.rows(width))
+        self.block_above(line).map_or(0, |block| block.rows(width))
     }
 
     /// The row of the screen `rows` away, crossing line boundaries and
@@ -537,7 +549,9 @@ impl Buffer {
         // In the block, the caret is on one of the rows the view drew, and
         // those are the first rows of the line they were drawn above.
         let width = area.wrap_width();
-        if let (Some(block), Some(at)) = (self.block.as_ref(), self.in_block) {
+        if let Some(at) = self.in_block
+            && let Some(block) = self.block_above(at.above)
+        {
             let (row, _) = block
                 .text
                 .visual_position(at.cursor.line, at.cursor.column, width);
@@ -571,7 +585,10 @@ impl Buffer {
     /// a text like any other.
     fn caret_cell(&self, area: TextArea) -> DisplayColumn {
         let width = area.wrap_width();
-        match self.block.as_ref().zip(self.in_block) {
+        match self
+            .in_block
+            .and_then(|at| self.block_above(at.above).zip(Some(at)))
+        {
             Some((block, at)) => {
                 block
                     .text

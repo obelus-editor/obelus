@@ -166,11 +166,13 @@ impl App {
             // Or one already open, which this is also the key that closes
             // -- from wherever the reader has walked to inside it.
             Requires::AHunk => buffer.is_some_and(|buffer| {
-                buffer.block().is_some()
+                buffer.block_at_cursor().is_some()
+                    || buffer.block_below_cursor().is_some()
                     || self
                         .changes()
                         .and_then(|changes| changes.hunk_at(buffer.cursor().line))
                         .is_some()
+                    || buffer.caret_block().is_some()
             }),
             Requires::AHunkBefore => buffer.is_some_and(|buffer| {
                 self.changes()

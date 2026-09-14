@@ -170,8 +170,8 @@ pub struct EditorView<'a> {
     /// `None` for a file outside a repository, and then the margin takes no
     /// column at all.
     changes: Option<&'a Changes>,
-    /// The hunk the reader has opened, if any.
-    opened: Option<LineNumber>,
+    /// The hunks the reader has opened, by the line each hangs above.
+    opened: Vec<LineNumber>,
     /// Who last changed each line of the committed file, if obelus has been
     /// told and the reader wants to see it.
     blame: Option<&'a [Option<git::Blamed>]>,
@@ -280,7 +280,7 @@ impl<'a> EditorView<'a> {
             marked: &[],
             selection: app.current_buffer().and_then(Buffer::selection),
             changes: app.changes(),
-            opened: app.opened_hunk(),
+            opened: app.opened_hunks(),
             blame: app.blame(),
             wrap: app.config().wrap,
             editing: Editing::Allowed,
@@ -319,7 +319,7 @@ impl<'a> EditorView<'a> {
             // Everything that answers "where am I and what am I doing" is
             // the document's rather than a look at another one's.
             selection: None,
-            opened: None,
+            opened: Vec::new(),
             blame: None,
             // A preview always wraps: a line running off its edge with no
             // way to scroll it would be a line nobody can read.
@@ -413,18 +413,29 @@ impl Widget for EditorView<'_> {
         let at = text.byte_of_char(text.char_offset(cursor.line, cursor.column));
         let brackets = brackets::pair_at(text, self.highlights, at, visible);
 
-        // The hunk the reader has opened, worked out once: every row asks
-        // whether it is one of its lines.
-        let opened = self.opened.and_then(|anchor| {
-            self.changes
-                .and_then(|changes| changes.hunk_at(anchor))
-                .map(|hunk| (hunk, self.theme.marker_background(hunk.marker())))
-        });
-        let block = buffer.block();
+        // The hunks the reader has opened, worked out once: every row asks
+        // whether it is one of their lines.
+        let opened: Vec<(&crate::git::Hunk, Color)> = self
+            .opened
+            .iter()
+            .filter_map(|anchor| {
+                self.changes
+                    .and_then(|changes| changes.hunk_at(*anchor))
+                    .map(|hunk| (hunk, self.theme.marker_background(hunk.marker())))
+            })
+            .collect();
         // What the reader has selected inside it, in the block's own
         // coordinates -- the selection the rest of this draws is the
         // file's, and says nothing about lines the file does not have.
         let selected = buffer.block_selection();
+        // Whichever block the caret is in: the others are on screen with
+        // nothing selected in them, and a span from one drawn in another
+        // would mark lines nobody chose.
+        let selected_in = |above: LineNumber| {
+            selected
+                .filter(|(block, _)| *block == above)
+                .map(|(_, span)| span)
+        };
         // And nothing to colour those lines by: a block's text has no
         // syntax tree of its own, and the row's colour is what says the
         // lines are gone.
@@ -454,7 +465,7 @@ impl Widget for EditorView<'_> {
             // Nothing for a hunk that replaced nothing: an added one opens
             // like any other -- the tint behind its lines is what says what
             // kind of change it is -- and has no rows of its own to draw.
-            if let Some(block) = block.filter(|block| block.above == line && !block.is_empty()) {
+            if let Some(block) = buffer.block_above(line).filter(|block| !block.is_empty()) {
                 // The rows above this line are rows of the screen, so the
                 // viewport can be inside them: whatever the top row skips
                 // is spent here first, and the rest of the block is drawn
@@ -537,7 +548,7 @@ impl Widget for EditorView<'_> {
                                 highlights: &plain,
                                 theme: self.theme,
                                 marked: &[],
-                                selection: selected,
+                                selection: selected_in(block.above),
                                 brackets: None,
                             },
                         );
@@ -561,9 +572,8 @@ impl Widget for EditorView<'_> {
                 // not the bar, which have marks of their own to stay legible
                 // -- from the line number across to the end of the text, so
                 // the block reads as one thing.
-                if let Some((hunk, tint)) = opened
-                    && hunk.covers(line)
-                {
+                if let Some((_, tint)) = opened.iter().find(|(hunk, _)| hunk.covers(line)) {
+                    let tint = *tint;
                     fill(
                         cells,
                         Rect {

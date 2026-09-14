@@ -682,7 +682,7 @@ fn a_hunk_with_nothing_removed_is_not_walked_into() {
     dispatch::dispatch(&mut app, Command::GitHunk);
     let buffer = app.current_buffer().expect("a file");
     assert_eq!(
-        buffer.block().map(Block::is_empty),
+        buffer.blocks().first().map(Block::is_empty),
         Some(true),
         "the added hunk did not open"
     );
@@ -873,7 +873,7 @@ fn the_key_that_opened_a_hunk_closes_it_from_inside() {
     }
     assert_eq!(app.current_buffer().expect("a file").cursor().line.get(), 0);
     assert!(
-        app.current_buffer().expect("a file").block().is_some(),
+        !app.current_buffer().expect("a file").blocks().is_empty(),
         "the block closed on its own"
     );
     assert!(
@@ -882,7 +882,7 @@ fn the_key_that_opened_a_hunk_closes_it_from_inside() {
     );
     dispatch::dispatch(&mut app, Command::GitHunk);
     assert!(
-        app.current_buffer().expect("a file").block().is_none(),
+        app.current_buffer().expect("a file").blocks().is_empty(),
         "the hunk could not be closed from outside it"
     );
     assert_eq!(app.note(), None, "closing it said something");
@@ -1051,7 +1051,7 @@ fn the_caret_walks_the_lines_of_an_opened_hunk() {
     // the hunk.
     obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
     assert!(
-        app.opened_hunk().is_none(),
+        app.opened_hunks().is_empty(),
         "the last line of the hunk would not close it"
     );
     let closed = support::render(&mut app, 40, 16);
@@ -1742,5 +1742,117 @@ fn a_commit_from_somewhere_else_empties_the_margin() {
     assert!(
         app.changes().is_none_or(Changes::is_empty),
         "the margin is still drawing a diff against the old commit"
+    );
+}
+
+/// Two changes on one screen, which is what a reader comparing them needs.
+///
+/// One slot meant opening the second closed the first, and the two things
+/// a reader most wants side by side are the two they are deciding between.
+/// Each key closes the one it is pressed on and leaves the other alone.
+#[test]
+fn two_hunks_can_be_open_at_once() {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    let repository = Repository::new("two-hunks", "one\nold a\nthree\nfour\nfive\nold b\nseven\n");
+    repository.write("one\nnew a\nthree\nfour\nfive\nnew b\nseven\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 16);
+
+    // Down onto the first change and open it, then on to the second.
+    support::press(&mut app, KeyCode::Down);
+    dispatch::dispatch(&mut app, Command::GitHunk);
+    for _ in 0..4 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    dispatch::dispatch(&mut app, Command::GitHunk);
+
+    let dump = support::render(&mut app, 40, 16);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("old a") && text.contains("old b"),
+        "the second hunk closed the first:\n{text}"
+    );
+    assert_eq!(app.opened_hunks().len(), 2, "not two blocks open:\n{text}");
+
+    // The key closes the one it is pressed on, and only that one.
+    dispatch::dispatch(&mut app, Command::GitHunk);
+    let dump = support::render(&mut app, 40, 16);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("old a"),
+        "closing the second closed the first too:\n{text}"
+    );
+    assert!(
+        !text.contains("old b"),
+        "the second would not close:\n{text}"
+    );
+    assert_eq!(app.opened_hunks().len(), 1, "not one block left");
+}
+
+/// A selection made in one block is drawn in that block and nowhere else.
+///
+/// The blocks share nothing but a shape: a span is a pair of offsets into
+/// one text, and drawn against another it marks whichever characters
+/// happen to sit at those offsets -- lines nobody chose, in a block the
+/// reader is not even in.
+#[test]
+fn a_selection_stays_in_the_block_it_was_made_in() {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    let repository = Repository::new(
+        "two-selections",
+        "one\nold a\nthree\nfour\nfive\nold b\nseven\n",
+    );
+    repository.write("one\nnew a\nthree\nfour\nfive\nnew b\nseven\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 16);
+    support::press(&mut app, KeyCode::Down);
+    dispatch::dispatch(&mut app, Command::GitHunk);
+    for _ in 0..4 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    dispatch::dispatch(&mut app, Command::GitHunk);
+
+    /// The styles of the row holding a piece of text.
+    fn styles_of(dump: &str, needle: &str) -> String {
+        support::text_block(dump)
+            .lines()
+            .zip(support::style_block(dump).lines())
+            .find(|(row, _)| row.contains(needle))
+            .map(|(_, styles)| styles.to_string())
+            .expect("a row holding it")
+    }
+
+    let before = styles_of(&support::render(&mut app, 40, 16), "old a");
+
+    // Into the second block, and select a line of it.
+    support::press(&mut app, KeyCode::Up);
+    support::press_shift(&mut app, KeyCode::Right);
+    support::press_shift(&mut app, KeyCode::Right);
+    let dump = support::render(&mut app, 40, 16);
+    assert_ne!(
+        styles_of(&dump, "old b"),
+        before,
+        "nothing was selected anywhere:\n{}",
+        support::text_block(&dump)
+    );
+    assert_eq!(
+        styles_of(&dump, "old a"),
+        before,
+        "the selection was drawn in the other block too:\n{}",
+        support::text_block(&dump)
     );
 }

@@ -554,7 +554,7 @@ fn folding_over_an_opened_hunk_closes_it() {
         "the run did not hide the line the hunk hangs above"
     );
     assert!(
-        buffer.block().is_none(),
+        buffer.blocks().is_empty(),
         "the hunk is still open over a line that is not on screen"
     );
     assert!(

@@ -255,8 +255,22 @@ every row below it is a line two hundred further down, outside the range that
 was highlighted, and the whole of the rest of the screen is drawn in the
 plain foreground.
 
-**The caret can be in the block; the cursor never is.** `Buffer::block` is
-the opened hunk's lines *as a `Text`*, and `in_block` is a `Cursor` in it.
+**A hunk opens where it is, and so does the next one.** `Buffer::blocks` is a
+list by the line each hangs above, not one slot: a reader comparing two
+changes wants both on screen, and the two they most want side by side are the
+two they are deciding between. Which one a key acts on is then a question the
+key has to answer, and the answer is not simply "the one above this line":
+the caret's own block comes first, then the one belonging to the hunk the
+reader is standing in -- which hangs above that hunk's *first* line however
+far down it they have walked -- and then one hanging just below them, which
+is where a reader who walked out of the top of one is left. A selection is
+drawn in the block it was made in and nowhere else, because a span is a pair
+of offsets into one text and against another it marks whichever characters
+happen to sit there.
+
+**The caret can be in the block; the cursor never is.** `Buffer::block_above`
+is an opened hunk's lines *as a `Text`*, and `in_block` is a `Cursor` in one
+of them.
 A text, so those lines get everything the file's get from the same code: they
 wrap at the same width, their tabs reach the same stops, a wide glyph takes
 two cells, the caret moves by visual rows, a selection in them is a `Span`,

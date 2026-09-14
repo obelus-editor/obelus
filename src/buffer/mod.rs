@@ -263,6 +263,8 @@ impl Block {
 /// thing: a text with rows, columns and a cell to aim for.
 #[derive(Clone, Copy, Debug)]
 struct InBlock {
+    /// Which block, by the line it hangs above.
+    above: LineNumber,
     /// Where the caret is in the block's own text.
     cursor: Cursor,
     /// Where a selection started, if one has.
@@ -376,8 +378,14 @@ pub struct Buffer {
     /// fact about the file, and which of those runs are folded is the
     /// reader's, kept across everything except a re-read.
     folds: folds::Folds,
-    /// The hunk the reader has opened in this file, if any.
-    block: Option<Block>,
+    /// The hunks the reader has opened in this file, by the line each hangs
+    /// above.
+    ///
+    /// A list, because a reader comparing two changes wants both on screen:
+    /// one slot meant opening the second closed the first, and the two
+    /// things a reader most wants to see together are the two they are
+    /// deciding between.
+    blocks: Vec<Block>,
     /// And where the caret is in it, if the reader has walked in.
     in_block: Option<InBlock>,
 }
@@ -433,7 +441,7 @@ impl Buffer {
                 top: LineNumber::new(0),
                 top_row: 0,
             },
-            block: None,
+            blocks: Vec::new(),
             in_block: None,
         })
     }
@@ -483,12 +491,16 @@ impl Buffer {
         // `refresh_changes` does when the diff those lines came from is
         // replaced: the block belonged to something that is no longer
         // there.
-        if self
-            .block
-            .as_ref()
-            .is_some_and(|block| self.folds.hides(block.above))
-        {
-            self.close_block();
+        // Each block that has lost the line it hangs above, and only
+        // those: a run closed over one of them says nothing about the rest.
+        let hidden: Vec<LineNumber> = self
+            .blocks
+            .iter()
+            .map(|block| block.above)
+            .filter(|above| self.folds.hides(*above))
+            .collect();
+        for above in hidden {
+            self.close_block(above);
         }
         if !self.folds.hides(self.cursor.line) {
             return;
@@ -512,7 +524,7 @@ impl Buffer {
     /// them: one for somewhere to stand, the other to count the rows the
     /// screen really has.
     pub fn open_block(&mut self, above: LineNumber, lines: &[String]) {
-        self.block = Some(Block {
+        let block = Block {
             above,
             // Joined without a trailing newline: a text that ends in one
             // has an empty last line, and the block has exactly the lines
@@ -520,20 +532,49 @@ impl Buffer {
             text: Text::from_string(&lines.join("\n")),
             lines: lines.len(),
             rows: std::cell::Cell::new(None),
-        });
+        };
+        // Kept in the order they are drawn in, which is the order they are
+        // looked up in: one per line, because one hunk is what a line has.
+        match self
+            .blocks
+            .binary_search_by_key(&above, |block| block.above)
+        {
+            Ok(at) => self.blocks[at] = block,
+            Err(at) => self.blocks.insert(at, block),
+        }
         self.in_block = None;
     }
 
     /// Closes it, and brings the caret back to the file if it was in there.
-    pub fn close_block(&mut self) {
-        self.block = None;
+    pub fn close_block(&mut self, above: LineNumber) {
+        self.blocks.retain(|block| block.above != above);
+        if self.in_block.is_some_and(|at| at.above == above) {
+            self.in_block = None;
+        }
+    }
+
+    /// Closes every one of them.
+    ///
+    /// For when the diff they came from is replaced: they are lines of a
+    /// file as it was, and the answer about what changed has moved on.
+    pub fn close_blocks(&mut self) {
+        self.blocks.clear();
         self.in_block = None;
+    }
+
+    /// The blocks this file has open, in the order they are drawn.
+    #[must_use]
+    pub fn blocks(&self) -> &[Block] {
+        &self.blocks
     }
 
     /// The hunk opened in place, if one is.
     #[must_use]
-    pub const fn block(&self) -> Option<&Block> {
-        self.block.as_ref()
+    pub fn block_above(&self, line: LineNumber) -> Option<&Block> {
+        self.blocks
+            .binary_search_by_key(&line, |block| block.above)
+            .ok()
+            .map(|at| &self.blocks[at])
     }
 
     /// Where the caret is in that block, if the reader has walked into it.
@@ -542,12 +583,40 @@ impl Buffer {
         self.in_block.map(|at| (at.cursor.line, at.cursor.column))
     }
 
+    /// The block in front of the reader, by the line it hangs above.
+    ///
+    /// A block sits between two lines and is reached from either side, so
+    /// it is theirs from either side: the one the caret is inside, the one
+    /// hanging above the line they are on, or -- for a reader who has just
+    /// walked out of the top of one -- the one hanging above the line
+    /// below them. Standing on a line of the file with a block below it is
+    /// the weakest of the three, so a hunk the reader is actually on gets
+    /// to open before that one closes.
+    #[must_use]
+    pub fn block_at_cursor(&self) -> Option<LineNumber> {
+        self.caret_block()
+            .or_else(|| self.block_above(self.cursor.line).map(|block| block.above))
+    }
+
+    /// The block hanging just below the cursor, if one does.
+    #[must_use]
+    pub fn block_below_cursor(&self) -> Option<LineNumber> {
+        self.block_above(self.cursor.line.saturating_add(1))
+            .map(|block| block.above)
+    }
+
+    /// Which block the caret is in, if it is in one.
+    #[must_use]
+    pub fn caret_block(&self) -> Option<LineNumber> {
+        self.in_block.map(|at| at.above)
+    }
+
     /// What is selected inside the block, in the block's own coordinates.
     #[must_use]
-    pub fn block_selection(&self) -> Option<Span> {
+    pub fn block_selection(&self) -> Option<(LineNumber, Span)> {
         let at = self.in_block?;
         let anchor = at.anchor?;
-        span_between(anchor, at.cursor)
+        Some((at.above, span_between(anchor, at.cursor)?))
     }
 
     /// What the buffer holds.

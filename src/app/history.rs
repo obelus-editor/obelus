@@ -18,10 +18,10 @@ impl App {
     /// screen and a place its caret can be, so the two things that need
     /// them are both in there.
     #[must_use]
-    pub fn opened_hunk(&self) -> Option<LineNumber> {
-        self.current_buffer()
-            .and_then(Buffer::block)
-            .map(|block| block.above)
+    pub fn opened_hunks(&self) -> Vec<LineNumber> {
+        self.current_buffer().map_or_else(Vec::new, |buffer| {
+            buffer.blocks().iter().map(|block| block.above).collect()
+        })
     }
 
     /// Opens what changed at the cursor, in place, or closes it again.
@@ -35,19 +35,32 @@ impl App {
             self.note = Some("no file open".to_string());
             return;
         };
-        // An open one closes wherever the reader is standing. Walking into
-        // the block parks the cursor on the line it is anchored to, and
-        // walking in from above leaves it on the line before that -- from
-        // neither of which is "the hunk at the cursor" the hunk in front of
-        // them.
-        if let Some(buffer) = self
-            .current_buffer_mut()
-            .filter(|buffer| buffer.block().is_some())
+        // Which block is in front of the reader, and it is not always the
+        // one hanging above the line they are on. The caret's own comes
+        // first; then the one belonging to the hunk they are standing in,
+        // which hangs above that hunk's *first* line however far down it
+        // they have walked; then one hanging just below them, which is
+        // where a reader who walked out of the top of one is left.
+        let hunk = self
+            .changes()
+            .and_then(|changes| changes.hunk_at(line))
+            .cloned();
+        let anchor = hunk.as_ref().map(|hunk| hunk.line);
+        let open = self.current_buffer().and_then(|buffer| {
+            buffer.caret_block().or_else(|| {
+                anchor
+                    .filter(|anchor| buffer.block_above(*anchor).is_some())
+                    .or_else(|| buffer.block_at_cursor())
+                    .or_else(|| buffer.block_below_cursor())
+            })
+        });
+        if let Some(above) = open
+            && let Some(buffer) = self.current_buffer_mut()
         {
-            buffer.close_block();
+            buffer.close_block(above);
             return;
         }
-        let Some(hunk) = self.changes().and_then(|changes| changes.hunk_at(line)) else {
+        let Some(hunk) = hunk.as_ref() else {
             self.note = Some("nothing changed here".to_string());
             return;
         };
@@ -207,7 +220,7 @@ impl App {
         // replaced. Leaving it open would show removed lines that are no
         // longer removed anywhere.
         if let Some(buffer) = self.current_buffer_mut() {
-            buffer.close_block();
+            buffer.close_blocks();
         }
     }
 }
