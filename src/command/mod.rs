@@ -88,6 +88,8 @@ pub enum Command {
     ConfigFile,
     /// Open the settings.
     ConfigOpen,
+    /// Open the settings this tree carries of its own.
+    ConfigTree,
     /// Open the file obelus logs to.
     LogOpen,
     /// Open the file the language servers' side is logged to.
@@ -401,6 +403,15 @@ pub const ALL: &[CommandSpec] = &[
         title: "Change obelus's settings",
     },
     CommandSpec {
+        command: Command::ConfigTree,
+        // "project" rather than "tree", which is obelus's own word for it
+        // everywhere else: a name is what a reader types, and what they
+        // will type for the settings a repository carries is the word every
+        // other program has taught them.
+        name: "open-project-settings",
+        title: "Change the settings this project carries",
+    },
+    CommandSpec {
         command: Command::ConfigFile,
         name: "open-settings-file",
         title: "Open the settings file",
@@ -479,6 +490,7 @@ impl Command {
             | Self::LspStop
             | Self::AgentOpen
             | Self::ConfigOpen
+            | Self::ConfigTree
             | Self::ConfigFile
             | Self::LogOpen
             | Self::LogServers
@@ -560,6 +572,7 @@ impl Command {
             | Self::SymbolMenu
             | Self::AgentOpen
             | Self::ConfigOpen
+            | Self::ConfigTree
             | Self::ConfigFile
             | Self::LogOpen
             | Self::LspRestart

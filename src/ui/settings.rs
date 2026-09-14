@@ -47,6 +47,11 @@ pub struct SettingsView<'a> {
     images: &'a crate::ui::image::Images,
     /// Every command and the key it is on, for the keys page.
     keys: Vec<(crate::command::Command, Option<crate::keymap::KeyChord>)>,
+    /// The reader's own settings, under whatever the tree lays over them.
+    ///
+    /// What a row on the tree's page says beside a setting the tree has not
+    /// got: the value showing is the reader's, or nobody's.
+    readers: Config,
     /// The settings the tree has set, and the file it set them in.
     ///
     /// Written the way the reader would write it -- `.obelus.toml`, not the
@@ -68,12 +73,20 @@ impl<'a> SettingsView<'a> {
             failure: app.registry_failure(),
             images: app.images(),
             keys: app.settings()?.keys(app.keymap()),
+            readers: app.readers_config().clone(),
             pinned: app.pinned().to_vec(),
-            tree: app.tree_config().map(|path| {
-                crate::ui::relative_to(path, app.working_directory())
+            // The file the tree has, or the one it would get: the tree's
+            // page says which file it is writing before there is a file to
+            // write, because that is the question a reader opening it has.
+            tree: (app.settings().is_some_and(Settings::on_tree) || app.tree_config().is_some())
+                .then(|| {
+                    crate::ui::relative_to(
+                        &crate::config::tree_path_for(app.working_directory()),
+                        app.working_directory(),
+                    )
                     .display()
                     .to_string()
-            }),
+                }),
         })
     }
 }
@@ -100,6 +113,29 @@ impl Widget for SettingsView<'_> {
             self.settings.tab(),
             self.theme,
         );
+        // Which file a change on this page is written to, on the tab row
+        // and kept there: it is the whole of what makes this page different
+        // from the other one, and a reader who cannot see it is a reader
+        // editing something they have to remember.
+        if let Some(tree) = self
+            .settings
+            .on_tree()
+            .then_some(self.tree.as_deref())
+            .flatten()
+        {
+            // Past the arrows that walk the tabs, which sit at the edge.
+            let arrows = 4;
+            let width = u16::try_from(crate::ui::text_width(tree)).unwrap_or(0);
+            if area.width > width + arrows + 2 {
+                write(
+                    cells,
+                    area.right() - width - arrows - 2,
+                    area.y,
+                    tree,
+                    Style::new().fg(self.theme.gutter).bg(self.theme.background),
+                );
+            }
+        }
         rule(
             cells,
             Rect {
@@ -134,6 +170,26 @@ impl Widget for SettingsView<'_> {
         // The keys are a column of the same rows: a command, what it does,
         // and the key it is on -- with the row the reader is binding saying
         // so where its description was.
+        // A tree may not move the keys or choose the agent, so on its page
+        // those two tabs say so rather than showing rows nothing will
+        // accept: a page of controls that all refuse is a page that has to
+        // be tried before it can be understood.
+        if self.settings.on_tree() && (self.settings.on_keys() || self.settings.on_agents()) {
+            crate::ui::nothing(
+                cells,
+                Rect {
+                    height: 1,
+                    ..region
+                },
+                match self.settings.on_keys() {
+                    true => "a tree may not move the keys",
+                    false => "a tree may not choose the agent",
+                },
+                self.theme,
+            );
+            return;
+        }
+
         if self.settings.on_keys() {
             let rows: Vec<Row> = self
                 .keys
@@ -145,6 +201,7 @@ impl Widget for SettingsView<'_> {
                     aside: Aside::Words(chord.map(|chord| chord.label()).unwrap_or_default()),
                     body: Vec::new(),
                     pinned: None,
+                    inherited: None,
                 })
                 .collect();
             self.column(cells, region, &rows, "no command by that name");
@@ -167,10 +224,23 @@ impl Widget for SettingsView<'_> {
                     crate::component::settings::description_width(region.width),
                 ),
                 aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
-                pinned: self
-                    .pinned
-                    .contains(&setting.key)
-                    .then(|| self.tree.clone())
+                // On the reader's page, the file that has this one instead
+                // of them. On the tree's, nothing: a setting the tree has
+                // is exactly what that page is for.
+                pinned: (!self.settings.on_tree())
+                    .then(|| {
+                        self.pinned
+                            .contains(&setting.key)
+                            .then(|| self.tree.clone())
+                            .flatten()
+                    })
+                    .flatten(),
+                // And on the tree's page, whose value is showing where the
+                // tree has not set this one.
+                inherited: self
+                    .settings
+                    .on_tree()
+                    .then(|| self.inherited(setting))
                     .flatten(),
             })
             .collect();
@@ -188,6 +258,13 @@ struct Row {
     /// What it does, under the name and indented, already broken into the
     /// rows it takes. Empty on a page whose rows are one row each.
     body: Vec<String>,
+    /// Whose value is showing, on a page that is not the one that has the
+    /// setting.
+    ///
+    /// `None` where this page has it, which is what makes the row bright:
+    /// the ink says whether a row belongs to the page it is on, the way it
+    /// does everywhere else in obelus.
+    inherited: Option<&'static str>,
     /// The file that has this one, when it is not the reader's to change.
     ///
     /// Named on the row rather than said when the reader tries to move it:
@@ -287,8 +364,14 @@ impl SettingsView<'_> {
             // What the row says about where it came from, measured before
             // the name is: it is written between the two, so the name is cut
             // to what is left rather than to the whole row.
-            let lock = u16::from(crate::icons::enabled()) * 2;
-            let source = row.pinned.as_ref().map(|source| {
+            // The lock is the reader's page saying "not here". The tree's
+            // page has none: there, everything is here.
+            let lock = u16::from(crate::icons::enabled() && row.pinned.is_some()) * 2;
+            // Where the value showing comes from, on whichever page is not
+            // the one that has it: the file's name and a lock on the
+            // reader's, the word `yours` or `default` on the tree's. One
+            // column, because it is one question.
+            let source = row.pinned.as_deref().or(row.inherited).map(|source| {
                 let room = aside_at.saturating_sub(region.x + 4 + lock);
                 clipped(source, room)
             });
@@ -307,9 +390,9 @@ impl SettingsView<'_> {
             // everywhere here: a setting the tree has is not this reader's
             // to move, and a row that looked live until they pressed it
             // would be a row that lied.
-            let ink = match row.pinned {
-                Some(_) => plain.fg(self.theme.gutter),
-                None => plain,
+            let ink = match row.pinned.is_some() || row.inherited.is_some() {
+                true => plain.fg(self.theme.gutter),
+                false => plain,
             };
             let after = write_marked(
                 cells,
@@ -350,7 +433,7 @@ impl SettingsView<'_> {
                     source,
                     plain.fg(self.theme.gutter).bg(background),
                 );
-                if crate::icons::enabled() {
+                if crate::icons::enabled() && row.pinned.is_some() {
                     put(
                         cells,
                         aside_at.saturating_sub(2),
@@ -369,7 +452,7 @@ impl SettingsView<'_> {
                     value,
                     self.theme,
                     background,
-                    row.pinned.is_none(),
+                    row.pinned.is_none() && row.inherited.is_none(),
                 ),
                 Aside::Words(words) => {
                     write(
@@ -405,6 +488,26 @@ impl SettingsView<'_> {
             // makes an entry an entry.
             y += tall + u16::from(!row.body.is_empty());
         }
+    }
+
+    /// Whose value a row is showing, where this page is not the one that
+    /// has the setting.
+    ///
+    /// Two answers and not three: the reader's, or nobody's. "Nobody's" is
+    /// the default obelus ships with, and worth saying plainly -- a reader
+    /// looking at a tree's settings wants to know which of these anybody
+    /// has an opinion about at all.
+    fn inherited(&self, setting: &crate::config::Setting) -> Option<&'static str> {
+        if self.pinned.contains(&setting.key) {
+            return None;
+        }
+        let theirs = Settings::value_of(setting, &self.readers);
+        let default = Settings::value_of(setting, &Config::default());
+        Some(if theirs == default {
+            "default"
+        } else {
+            "yours"
+        })
     }
 
     /// What a command's row says beside its name.

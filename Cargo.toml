@@ -111,6 +111,13 @@ dirs = "7"
 # invites the question "why doesn't a section work", and the answer to
 # "is this valid" is not obelus's to own.
 toml = "1"
+
+# Editing a file somebody else wrote. The tree's own settings are written by
+# hand and committed, so they have comments and an order in them that a
+# round trip through a `toml::Table` would throw away -- obelus's own file
+# has neither, and is written whole. Already in the tree by way of another
+# dependency, so this costs a line rather than a build.
+toml_edit = "0.22"
 gix = { version = "0.87.1", default-features = false, features = ["blame", "status", "revision", "max-performance-safe", "sha1"] }
 # The agent registry, and the archives it points at. Blocking, because the
 # thread that fetches one has nothing else to do -- and small: a once-a-session

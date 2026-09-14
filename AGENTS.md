@@ -757,13 +757,41 @@ tree that could rebind them could put `quit` where a reader would find it by
 accident. VS Code learned this one the same way and calls it `machine`
 scope.
 
-Nothing is ever written to the tree's file -- it belongs to whoever wrote
-the tree, and a reader changing a theme would be editing a file their next
-commit carries. So a setting the tree has is not theirs to change here, and
-the row says so rather than doing nothing: the file's name sits where they
-would have reached, a lock against the control, the whole row in the dim ink
-that means unusable everywhere else. Sublime's project settings win
+**The tree's settings have a page of their own**, `open-project-settings`, a
+command rather than a fifth tab: the tabs there are *groups* of settings and
+a scope among them would be one list holding two kinds of thing. The same
+page otherwise -- same tabs, same rows, same keys -- because they are the
+same settings; what differs is the file a change is written to, which is on
+the tab row and stays there.
+
+On the reader's page a setting the tree has is not theirs to change, and the
+row says so rather than doing nothing when pressed: the file's name where
+they would have reached, a lock against the control, the whole row in the
+dim ink that means unusable everywhere else. Sublime's project settings win
 silently, and "I changed it and nothing happened" is the bug that follows.
+
+On the tree's page the same ink answers the other half: a row the tree has
+not got is dim and says whose value is showing -- `yours` or `default` -- and
+changing it writes it into the tree's file, which is how a setting becomes
+the project's. `delete` takes it out again, which is what that key means on
+the keys page too. The two tabs a tree may not have say so instead of
+showing controls that would all refuse.
+
+That file is *edited*, not rewritten. Obelus's own it writes whole, because
+obelus wrote all of it; a tree's is written by hand and committed, so it has
+comments in it, an order somebody chose, and possibly keys this version has
+never heard of -- `toml_edit` keeps all three where a round trip through a
+`toml::Table` would throw them away on the first switch a reader flipped.
+What is written above a key goes with it when it goes, except for whatever
+is above the last blank line: a comment touching a key is about that key,
+and a heading an empty line away is the file's own.
+
+**The reader's settings are the layer the tree's is laid over, and obelus
+keeps both.** `readers_config` is what their file says; `config` is that
+with the tree's over it, rebuilt from the bottom every time either changes.
+Laid over what is already there instead, a setting the tree has *stopped*
+naming would stay in force -- deleting a line from the tree's file would do
+nothing until obelus was started again.
 
 **A setting is two rows: a name, and what it does under it.** The name on
 its own row with its control at the right, what it does on the rows under

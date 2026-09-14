@@ -269,6 +269,12 @@ pub struct App {
     /// told -- which is every test, and is why a test cannot write over the
     /// reader's real settings.
     config_path: Option<PathBuf>,
+    /// The reader's own settings, before the tree's are laid over them.
+    ///
+    /// Kept so that the tree's page can say whose value a row is showing
+    /// when the tree has not set it: theirs, or nobody's. Worked out from
+    /// the merged config it cannot be -- by then the two are one.
+    readers_config: crate::config::Config,
     /// The tree's own settings file, while the tree has one.
     ///
     /// Read after the reader's and laid over it, so the tree says what it
@@ -405,6 +411,7 @@ impl App {
             config_is_readable: true,
             config: crate::config::Config::default(),
             config_path: None,
+            readers_config: crate::config::Config::default(),
             tree_config: None,
             pinned: Vec::new(),
             settings: None,
@@ -1115,6 +1122,10 @@ impl App {
                 }
                 SettingsOutcome::Changed(key, value) => {
                     self.change_setting(key, &value);
+                    return;
+                }
+                SettingsOutcome::Unset(key) => {
+                    self.unset_setting(key);
                     return;
                 }
                 SettingsOutcome::Bind(command, chord) => {

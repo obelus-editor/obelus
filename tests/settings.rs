@@ -683,6 +683,177 @@ fn a_setting_the_tree_has_cannot_be_changed_here() {
     );
 }
 
+/// The tree's own page writes to the tree's file, and leaves alone what it
+/// did not come for.
+///
+/// The file is written by hand and committed, so it has comments in it and
+/// an order somebody chose. Obelus's own file it writes whole; this one it
+/// edits.
+///
+/// Broken deliberately by writing the file from a `toml::Table`: the
+/// comments were gone on the first switch, and the last assertion failed.
+#[test]
+fn the_trees_page_edits_the_trees_file() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = tree(
+        "write",
+        "# what this project needs\n\nwrap = true\n# the margin is noisy here\nblame = false\n",
+    );
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus::config::Config::default());
+    app.working_directory_for_test(root.clone());
+    support::lay_out(&mut app, 76, 16);
+    dispatch::dispatch(&mut app, Command::ConfigTree);
+    support::press(&mut app, KeyCode::Right);
+
+    // Onto `blame` and turn it on.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+
+    let written = std::fs::read_to_string(root.join(".obelus.toml")).expect("the file");
+    assert!(written.contains("blame = true"), "not written: {written:?}");
+    assert!(
+        written.contains("# what this project needs"),
+        "the file's own heading is gone: {written:?}"
+    );
+    assert!(
+        written.contains("# the margin is noisy here"),
+        "a comment about a setting is gone: {written:?}"
+    );
+    // And it took, which is the whole point of writing it.
+    assert!(app.config().blame, "the setting did not take");
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Delete takes a setting out of the tree's file, and the file keeps its
+/// own heading.
+///
+/// `delete` means on this page what it means on the keys page: take this
+/// one out. What was written above the key goes with it -- a comment
+/// touching a key is about that key -- but whatever is an empty line away
+/// is the file's own and stays.
+///
+/// Broken deliberately by removing the key without carrying its prefix on:
+/// the heading went with the first key and the file lost it.
+#[test]
+fn delete_takes_a_setting_out_and_leaves_the_heading() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = tree(
+        "unset",
+        "# what this project needs\n\nwrap = true\nblame = true\n",
+    );
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus::config::Config::default());
+    app.working_directory_for_test(root.clone());
+    support::lay_out(&mut app, 76, 16);
+    dispatch::dispatch(&mut app, Command::ConfigTree);
+    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Delete);
+
+    let written = std::fs::read_to_string(root.join(".obelus.toml")).expect("the file");
+    assert!(!written.contains("wrap"), "still there: {written:?}");
+    assert!(
+        written.contains("blame = true"),
+        "took the wrong one: {written:?}"
+    );
+    assert!(
+        written.contains("# what this project needs"),
+        "the heading went with the key: {written:?}"
+    );
+    // And the reader's own answer is what is in force again.
+    assert!(!app.config().wrap, "the tree still has it");
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A tree that has no settings file gets one the moment something is set.
+///
+/// Broken deliberately by refusing to write when the file is not there:
+/// nothing happened and there was no file, which is a page that cannot be
+/// used until somebody makes a file by hand.
+#[test]
+fn a_tree_with_no_settings_gets_a_file_when_one_is_set() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = std::env::temp_dir().join(format!("obelus-tree-new-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("a directory");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus::config::Config::default());
+    app.working_directory_for_test(root.clone());
+    support::lay_out(&mut app, 76, 16);
+    dispatch::dispatch(&mut app, Command::ConfigTree);
+    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Enter);
+
+    let written = std::fs::read_to_string(root.join(".obelus.toml")).expect("no file was made");
+    assert!(written.contains("wrap = true"), "{written:?}");
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// On the tree's page, a setting the tree has not got says whose value is
+/// showing -- and the two tabs a tree may not have say so.
+///
+/// Broken deliberately by leaving `inherited` `None` for every row: the
+/// rows the tree does not set looked exactly like the one it does, and a
+/// reader could not tell what this project had actually decided.
+#[test]
+fn the_trees_page_says_which_settings_are_not_its_own() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = tree("whose", "wrap = true\n");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus::config::Config {
+        theme: "light".to_string(),
+        ..obelus::config::Config::default()
+    });
+    app.working_directory_for_test(root.clone());
+    support::lay_out(&mut app, 76, 16);
+    dispatch::dispatch(&mut app, Command::ConfigTree);
+
+    // The theme is the reader's; the glyphs are nobody's.
+    let dump = support::render(&mut app, 76, 16);
+    let text = support::text_block(&dump);
+    assert!(text.contains("yours"), "{dump}");
+    assert!(text.contains("default"), "{dump}");
+    // And the file it would be writing is named on the tab row.
+    assert!(text.contains(".obelus.toml"), "{dump}");
+
+    // The setting the tree does have says nothing beside it.
+    support::press(&mut app, KeyCode::Right);
+    let dump = support::render(&mut app, 76, 16);
+    let wrap = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Wrap long lines"))
+        .expect("the row");
+    assert!(
+        !wrap.contains("yours") && !wrap.contains("default"),
+        "a setting the tree has claims to come from somewhere else: {wrap:?}"
+    );
+
+    // And the two tabs a tree may not have.
+    support::press(&mut app, KeyCode::Right);
+    let dump = support::render(&mut app, 76, 16);
+    assert!(
+        support::text_block(&dump).contains("may not move the keys"),
+        "{dump}"
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// An application that was never told where its settings live does not write
 /// any: every test is one of those, and the reader's own file is not
 /// something a test may touch.

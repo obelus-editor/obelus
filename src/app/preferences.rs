@@ -32,6 +32,18 @@ impl App {
         self.settings = Some(Settings::new());
     }
 
+    /// Opens the tree's own settings, which are a page of the same shape.
+    ///
+    /// A command of its own rather than a tab on the other page: the tabs
+    /// there are *groups* of settings, and a scope among them would be one
+    /// list holding two kinds of thing.
+    pub fn open_project_settings(&mut self) {
+        self.picker = None;
+        self.prompt = None;
+        self.refresh_registry();
+        self.settings = Some(Settings::for_tree());
+    }
+
     /// Offers a setting's choices, as the ordinary compact list.
     ///
     /// The same list the symbol menu is, for the same reasons: it filters by
@@ -84,6 +96,14 @@ impl App {
     /// still leaves the reader with the setting they asked for until they
     /// restart -- and with a note saying it will not last.
     pub(super) fn change_setting(&mut self, key: &'static str, value: &crate::config::Value) {
+        // Which file this change is for is the page's own question: the
+        // reader's settings, or the tree's. Asked here rather than carried
+        // in the outcome, because it is a fact about what is open and not
+        // about which key was pressed.
+        if self.settings.as_ref().is_some_and(Settings::on_tree) {
+            self.write_to_tree(key, Some(value));
+            return;
+        }
         if let Some(path) = self.pinned_by(key) {
             // Nothing happens, and nothing needs saying: the row itself
             // carries the name of the file that has it, in the dim ink
@@ -91,8 +111,11 @@ impl App {
             tracing::debug!(key, path = %path.display(), "the tree has this one");
             return;
         }
-        self.config.set(key, value);
-        self.apply_config();
+        // The reader's own layer, and then the tree's back over it: a
+        // setting they change is theirs, and what the tree has is still the
+        // tree's.
+        self.readers_config.set(key, value);
+        self.apply_tree();
         let Some(path) = self.config_path.clone() else {
             // Nobody said where the file is, so there is nothing to write
             // to: an application that never read one does not write one.
@@ -105,12 +128,44 @@ impl App {
             self.note = Some("not saved: the settings will not read".to_string());
             return;
         }
-        if let Err(error) = crate::config::save_to(&path, &self.config) {
+        if let Err(error) = crate::config::save_to(&path, &self.readers_config) {
             tracing::warn!(%error, "not saving the configuration");
             self.note = Some(format!("not saved: {error}"));
         }
     }
 
+    /// Takes a setting out of the tree's file, from the tree's own page.
+    pub(super) fn unset_setting(&mut self, key: &'static str) {
+        self.write_to_tree(key, None);
+    }
+
+    /// Writes one key to the tree's settings, or takes it out.
+    ///
+    /// Making the file if the tree has none: a reader who has opened the
+    /// tree's settings and changed something has said plainly enough that
+    /// this tree should have them.
+    ///
+    /// What a tree may not set is refused here as well as when the file is
+    /// read. Refused rather than written and then ignored, which would be a
+    /// file that says something obelus will not do.
+    fn write_to_tree(&mut self, key: &'static str, value: Option<&crate::config::Value>) {
+        if crate::config::reach_of(key) != crate::config::Reach::Anywhere {
+            tracing::debug!(key, "a tree may not set this one");
+            return;
+        }
+        let path = crate::config::tree_path_for(&self.working_directory);
+        if let Err(error) = crate::config::write_tree(&path, key, value) {
+            tracing::warn!(%error, path = %path.display(), "not writing the tree's settings");
+            self.note = Some(format!("not saved: {error}"));
+            return;
+        }
+        // Read back the way any other change to that file arrives, so the
+        // page shows what the file says rather than what obelus meant to
+        // put in it.
+        self.reread_config();
+    }
+
+    /// Opens the settings file itself, for a reader who would rather see    ///
     /// Opens the settings file itself, for a reader who would rather see
     /// them all at once -- or edit one obelus has no control for.
     ///
@@ -213,9 +268,16 @@ impl App {
     /// a tree somebody else wrote has a typo in it would be the tree
     /// deciding something it was never given.
     pub(super) fn apply_tree(&mut self) {
+        // From the reader's own answers up, every time. Laid over what is
+        // already there instead, a setting the tree has *stopped* naming
+        // would stay in force: nothing would have put the reader's answer
+        // back underneath it, and deleting a line from the tree's file
+        // would do nothing until obelus was started again.
+        self.config = self.readers_config.clone();
         self.pinned.clear();
         self.tree_config = crate::config::tree_path(&self.working_directory);
         let Some(path) = self.tree_config.clone() else {
+            self.apply_config();
             return;
         };
         match crate::config::read_table(&path) {
@@ -227,13 +289,19 @@ impl App {
                     settings = ?self.pinned,
                     "the tree has settings of its own",
                 );
-                self.apply_config();
             }
             Ok(None) => {}
             Err(why) => {
                 tracing::warn!(path = %path.display(), why, "the tree's settings will not read");
             }
         }
+        self.apply_config();
+    }
+
+    /// The reader's own settings, under whatever the tree lays over them.
+    #[must_use]
+    pub const fn readers_config(&self) -> &crate::config::Config {
+        &self.readers_config
     }
 
     /// The settings the tree has set, which are the ones the reader cannot
@@ -272,6 +340,7 @@ impl App {
             match crate::config::read_from(&path) {
                 crate::config::Reading::Settings(config) => {
                     tracing::info!(path = %path.display(), "the settings changed under us");
+                    self.readers_config = config.clone();
                     self.config = config;
                     self.apply_config();
                     self.config_is_readable = true;
@@ -312,8 +381,12 @@ impl App {
     /// test that needs wrapping on, a file that has already been read.
     /// Nothing is written back unless a path has been named as well.
     pub fn configure(&mut self, config: crate::config::Config) {
+        // The reader's own layer, which is what the tree's is laid over --
+        // and what a setting goes back to when the tree stops naming it.
+        self.readers_config = config.clone();
         self.config = config;
         self.apply_config();
+        self.apply_tree();
     }
 
     /// Reads and writes settings at a path of the caller's choosing.

@@ -502,6 +502,94 @@ pub fn resolved(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// Sets or removes one key in a tree's own settings file.
+///
+/// Edited rather than rewritten. Obelus's own file it writes whole, because
+/// obelus wrote all of it; a tree's is written by hand and committed, so it
+/// has comments in it, an order somebody chose, and possibly keys this
+/// version has never heard of. A round trip through a `toml::Table` would
+/// throw all three away on the first switch a reader flipped.
+///
+/// `None` takes the key out, which is how a setting stops being the tree's
+/// and goes back to being the reader's.
+///
+/// The file need not exist: setting the first key makes it, which is the
+/// ordinary way a project acquires one.
+pub fn write_tree(path: &Path, key: &str, value: Option<&Value>) -> std::io::Result<()> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error),
+    };
+    let mut document = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+
+    match value {
+        Some(Value::Switch(on)) => document[key] = toml_edit::value(*on),
+        Some(Value::Choice(word)) => document[key] = toml_edit::value(word.clone()),
+        None => {
+            // What was written above the key goes with it, except for
+            // whatever is above the last blank line: a comment touching a
+            // key is about that key, and anything an empty line away from
+            // it is the file's own -- a heading, or a note about the lot.
+            // Removing the first key of a file took its heading with it.
+            let above = document
+                .as_table()
+                .get_key_value(key)
+                .and_then(|(key, _)| key.leaf_decor().prefix().cloned())
+                .and_then(|prefix| prefix.as_str().map(str::to_string));
+            document.remove(key);
+            let next = document
+                .as_table()
+                .iter()
+                .next()
+                .map(|(key, _)| key.to_string());
+            if let Some(above) = above
+                && let Some(end) = above.rfind("\n\n")
+                && let Some(next) = next
+                && let Some(mut next) = document.as_table_mut().key_mut(&next)
+            {
+                let kept = &above[..end + 2];
+                let already = next
+                    .leaf_decor()
+                    .prefix()
+                    .and_then(|prefix| prefix.as_str().map(str::to_string))
+                    .unwrap_or_default();
+                next.leaf_decor_mut().set_prefix(format!("{kept}{already}"));
+            }
+        }
+    }
+
+    let Some(directory) = path.parent() else {
+        return std::fs::write(path, document.to_string());
+    };
+    std::fs::create_dir_all(directory)?;
+    // Beside it and renamed over it, for the reason the reader's own file is
+    // written that way: another obelus on this tree may be reading it at
+    // this moment, and a plain write truncates first.
+    let beside = path.with_extension("toml.writing");
+    std::fs::write(&beside, document.to_string())?;
+    std::fs::rename(&beside, path)
+}
+
+/// Where a tree's settings *would* go, for a tree that has none yet.
+///
+/// The directory form when the tree already has that directory -- something
+/// else of obelus's is in there and this belongs beside it -- and the single
+/// file otherwise, because one line of settings does not earn a directory.
+#[must_use]
+pub fn tree_path_for(root: &Path) -> PathBuf {
+    if let Some(path) = tree_path(root) {
+        return path;
+    }
+    let directory = root.join(".obelus");
+    match directory.is_dir() {
+        true => directory.join("config.toml"),
+        false => root.join(".obelus.toml"),
+    }
+}
+
 /// Writes a config to a path, making its directory if it is not there.
 ///
 /// The path is passed in rather than looked up here, so that nothing can

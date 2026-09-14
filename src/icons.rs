@@ -282,6 +282,9 @@ pub fn for_command(command: crate::command::Command) -> char {
         // Sliders, because a cog is what everything else in this list would
         // fall back to and two rows with the same picture say less than one.
         Command::ConfigOpen => '\u{f062e}',
+        // A folder with a cog on it: the same settings, belonging to the
+        // tree rather than to the reader -- the folder is what says which.
+        Command::ConfigTree => '\u{f0ee5}',
         // A file with a cog on it: the settings themselves, as the file
         // they are kept in.
         Command::ConfigFile => '\u{f107b}',

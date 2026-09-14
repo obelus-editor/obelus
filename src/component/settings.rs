@@ -17,7 +17,7 @@ use crate::{
     app::agents::Listed as Agent,
     command::Command,
     component::window::{Move, Window, Wrap},
-    config::{self, Config, Group, Kind, Setting, Value},
+    config::{self, Config, Group, Kind, Setting, Value, Whose},
     keymap::{KeyChord, Keymap},
 };
 
@@ -30,6 +30,12 @@ pub enum SettingsOutcome {
     Consumed,
     /// A setting was changed, and this is what to.
     Changed(&'static str, Value),
+    /// A setting should stop being the tree's, and go back to being
+    /// whatever the reader has.
+    ///
+    /// Only from the tree's page, where `delete` means what it means on the
+    /// keys page: take this one out.
+    Unset(&'static str),
     /// An agent should be installed.
     Install(String),
     /// An agent should be the one obelus talks to.
@@ -99,6 +105,13 @@ pub struct Settings {
     /// this page's filter, and not as a passing note, which the next
     /// keystroke would clear before it had been read.
     refused: Option<(KeyChord, Refused)>,
+    /// Whose settings this page is: the reader's own, or the tree's.
+    ///
+    /// The same page either way -- the same tabs, the same rows, the same
+    /// keys -- because they are the same settings. What differs is which
+    /// file a change is written to, and what a row says when the file this
+    /// page is not about has the setting.
+    whose: Whose,
     /// Which group's tab is showing.
     group: usize,
     /// Which row has the focus and which is on top -- of the settings, or
@@ -124,9 +137,35 @@ impl Settings {
             query: String::new(),
             binding: None,
             refused: None,
+            whose: Whose::Reader,
             group: 0,
             window: Window::new(),
         }
+    }
+
+    /// The same page, over the tree's own settings file.
+    #[must_use]
+    pub const fn for_tree() -> Self {
+        Self {
+            query: String::new(),
+            binding: None,
+            refused: None,
+            whose: Whose::Tree,
+            group: 0,
+            window: Window::new(),
+        }
+    }
+
+    /// Whose settings this page is.
+    #[must_use]
+    pub const fn whose(&self) -> Whose {
+        self.whose
+    }
+
+    /// Whether this page is the tree's.
+    #[must_use]
+    pub const fn on_tree(&self) -> bool {
+        matches!(self.whose, Whose::Tree)
     }
 
     /// The tab names, in order.
@@ -559,6 +598,16 @@ impl Settings {
                 },
                 None => SettingsOutcome::Consumed,
             },
+            // Take it out of the tree's file, which is what `delete` means
+            // on the keys page too: this one is not set here any more.
+            // Only there -- the reader's own settings have no "unset", a
+            // setting they have not changed is simply the default.
+            KeyCode::Delete if bare && self.on_tree() && !self.on_keys() && !self.on_agents() => {
+                match rows.get(self.window.focus()) {
+                    Some(setting) => SettingsOutcome::Unset(setting.key),
+                    None => SettingsOutcome::Consumed,
+                }
+            }
             KeyCode::Backspace if bare => {
                 self.query.pop();
                 self.settle();
