@@ -126,7 +126,7 @@ swap and the only way through a long one.
 reading of them -- and *which* reading is the file's own business, not the
 mode's: markdown is laid out as prose, a log is put in columns, and a third
 mode would be `Mode` answering a question the format already answers. A file
-opens as its *bytes*, whatever reading it has, and `f10` asks for the
+opens as its *bytes*, whatever reading it has, and `ctrl+t` asks for the
 reading; the bytes are where the cursor, the selection and the copy live.
 
 It used to open in the reading when it had one, under a setting that was on
@@ -310,12 +310,14 @@ command is gone and `App::blame` reads the setting.
   one question at four radii -- this file or every file, its text or its
   names. Bare, never with a modifier: one terminal reports `shift+f5` and
   the next reports `f17` for the same press, so a modified function key is a
-  binding that works on one machine and not the next. `f9`-`f12` are empty
-  on purpose, for the views that will earn them -- a diff, a commit log, a
-  panel of references, a patch to review.
+  binding that works on one machine and not the next. `f9`-`f12` are git's,
+  and empty until each is earned -- a file's history and a project's, a
+  patch to review, a panel of what a commit touched.
 * **Control does something to the file in front of you**, on the letter of
-  the word: `p` the palette, `w` close, `r` re-read, `l` a line number, `a`
-  all of it, `c` copy, `q` leave.
+  the word: `p` the palette, `w` close, `r` re-read, `t` toggle the reading
+  its format has, `l` a line number, `a` all of it, `c` copy, `q` leave.
+  `ctrl+v` is left alone: obelus takes typed text in the agent's box, and
+  that is the one chord every reader will try there.
 * **Alt asks about the cursor, or walks what was found**: `alt+enter` the
   symbol under it (an IDE's context actions, and alt is the escape prefix so
   it arrives everywhere), `alt+d` its diff, `alt+b` its blame, `alt+f` the

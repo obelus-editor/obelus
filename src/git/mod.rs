@@ -15,6 +15,7 @@
 
 pub mod blame;
 pub mod change;
+pub mod history;
 
 use std::{
     collections::HashMap,

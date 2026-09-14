@@ -13,7 +13,7 @@ screen 60x20  editor 60x18  status 60x1
 10| 󰑐 reload-file  Re-read this file from disk            󰘴 r █
 11| 󰈢 switch-file  Switch to an open file                   󱊬 █
 12| 󰮘 close-file  Close this file                         󰘴 w █
-13| 󰍔 toggle-preview  Show this file rendered, or stop      󱊴 █
+13| 󰍔 toggle-preview  Show this file rendered, or stop    󰘴 t █
 14| 󰏘 choose-theme  Change the colours                        █
 15| 󰆍 run-command  Run a command by name                  󰘴 p █
 16| 󰅴 ask-about-symbol  Ask about the symbol under the c  󰘵 󰌑 █

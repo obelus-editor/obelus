@@ -357,14 +357,6 @@ impl Keymap {
                     context: Context::Normal,
                     chord: function(8),
                 },
-                // F10: the reading a file has, shown or stopped. It is a
-                // view, which is what this bank is for -- and the first of
-                // the four to be earned.
-                Binding {
-                    command: Command::PreviewToggle,
-                    context: Context::Normal,
-                    chord: function(10),
-                },
                 // Control, on the letter of the word. `ctrl+p` for the
                 // palette; `ctrl+w` is "close this" in every browser and
                 // most editors, and in a terminal it is also the shell's
@@ -394,6 +386,20 @@ impl Keymap {
                     command: Command::FileReload,
                     context: Context::Normal,
                     chord: control('r'),
+                },
+                // `ctrl+t` for toggle, which is what the command is
+                // called. It sat in the third bank of function keys until
+                // that bank was given to git, and it belongs here anyway:
+                // control does something to the file in front of the
+                // reader, and a reading of the file is that rather than a
+                // thing opened to look at. Not `p`, which is the palette,
+                // and not `v`, which is kept for a paste -- obelus takes
+                // typed text in the agent's box, and `ctrl+v` is the one
+                // chord every reader will try there.
+                Binding {
+                    command: Command::PreviewToggle,
+                    context: Context::Normal,
+                    chord: control('t'),
                 },
                 // `ctrl+l` for a line. Free in a full-screen program: the
                 // shell's `ctrl+l` clears a screen obelus is drawing.
@@ -879,12 +885,12 @@ mod tests {
                 "f{number} does nothing, in the middle of a bank that does"
             );
         }
-        // The third bank is where a view earns a key, and one has.
         assert_eq!(
-            keymap.command_on(KeyChord::new(KeyCode::F(10), KeyModifiers::NONE)),
+            keymap.command_on(super::control('t')),
             Some(crate::command::Command::PreviewToggle)
         );
-        for number in [9, 11, 12] {
+        // The third bank is git's, and none of it is earned yet.
+        for number in [9, 10, 11, 12] {
             assert!(
                 keymap
                     .command_on(KeyChord::new(KeyCode::F(number), KeyModifiers::NONE))

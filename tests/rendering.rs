@@ -1977,7 +1977,7 @@ fn a_screen_with_no_room_for_the_text_still_draws() {
 /// A log reads as a log: columns, and the levels in colour.
 ///
 /// Asked for, not applied: a file opens as its bytes, whatever reading it
-/// has, and `f10` is how to ask for the reading.
+/// has, and `ctrl+t` is how to ask for the reading.
 #[test]
 fn a_log_opens_in_its_own_reading() {
     let path = std::env::temp_dir().join(format!("obelus-reading-{}.log", std::process::id()));
@@ -1999,7 +1999,7 @@ fn a_log_opens_in_its_own_reading() {
         obelus::buffer::Mode::Edit,
         "a file was put into a reading nobody asked for"
     );
-    support::press_function(&mut app, 10);
+    support::press_control(&mut app, 't');
     assert_eq!(
         app.current_buffer().expect("a buffer").mode(),
         obelus::buffer::Mode::Preview,
@@ -2053,8 +2053,8 @@ fn a_log_opens_in_its_own_reading() {
     // No cursor in a reading: the rows are not the file's lines.
     assert_eq!(support::cursor_line(&dump), "none", "{dump}");
 
-    // And `f10` puts the bytes back, with the caret in them.
-    support::press_function(&mut app, 10);
+    // And `ctrl+t` puts the bytes back, with the caret in them.
+    support::press_control(&mut app, 't');
     let text = support::render(&mut app, 76, 10);
     assert_eq!(
         app.current_buffer().expect("a buffer").mode(),
@@ -2124,7 +2124,7 @@ fn a_file_with_a_reading_still_opens_as_its_bytes() {
         "the reading was shown to a reader who asked for the file"
     );
     // Asked for, it is there.
-    support::press_function(&mut app, 10);
+    support::press_control(&mut app, 't');
     assert_eq!(
         app.current_buffer().expect("a buffer").mode(),
         obelus::buffer::Mode::Preview
@@ -2161,7 +2161,7 @@ fn the_end_of_a_reading_is_its_last_screenful() {
     support::lay_out(&mut app, 60, 8);
     // The reading is asked for: a file opens as its bytes. Drawn again
     // afterwards, because the rows of a reading are worked out for a frame.
-    support::press_function(&mut app, 10);
+    support::press_control(&mut app, 't');
     support::lay_out(&mut app, 60, 8);
 
     // The premise: more rows than lines, which is what made the end
