@@ -4,9 +4,9 @@ use ropey::Rope;
 use tree_sitter::{InputEdit, Parser, Point, Tree};
 
 use crate::{
-    coordinates::ByteOffset,
+    coordinates::{ByteOffset, Place},
     syntax::{LanguageId, grammar},
-    text::Text,
+    text::{Edit, Text},
 };
 
 /// A parsed document, kept alongside its text.
@@ -97,8 +97,8 @@ impl SyntaxState {
     /// `Tree::edit` first, tree-sitter reuses nodes whose positions the edit
     /// has already moved, and the result is a tree that parses cleanly and
     /// points at the wrong bytes.
-    pub fn reparse(&mut self, text: &Text, edit: &InputEdit) {
-        self.tree.edit(edit);
+    pub fn reparse(&mut self, text: &Text, edit: &Edit) {
+        self.tree.edit(&input_edit(edit));
         if let Some(tree) = parse(&mut self.parser, text.rope(), Some(&self.tree)) {
             self.tree = tree;
         }
@@ -132,7 +132,7 @@ fn parse(parser: &mut Parser, rope: &Rope, old: Option<&Tree>) -> Option<Tree> {
 /// Returns `None` when the two are identical, since there is nothing to
 /// reparse.
 #[must_use]
-pub fn edit_between(old: &Text, new: &Text) -> Option<InputEdit> {
+pub fn edit_between(old: &Text, new: &Text) -> Option<Edit> {
     let prefix = old.common_prefix(new);
     let suffix = old.common_suffix(new, prefix);
 
@@ -142,20 +142,34 @@ pub fn edit_between(old: &Text, new: &Text) -> Option<InputEdit> {
         return None;
     }
 
-    Some(InputEdit {
-        start_byte: prefix.get(),
-        old_end_byte: old_end.get(),
-        new_end_byte: new_end.get(),
-        start_position: point(old, prefix),
-        old_end_position: point(old, old_end),
-        new_end_position: point(new, new_end),
+    Some(Edit {
+        start: old.place(prefix),
+        old_end: old.place(old_end),
+        new_end: new.place(new_end),
     })
 }
 
-/// A position as tree-sitter counts it: a line, and bytes into that line.
-fn point(text: &Text, byte: ByteOffset) -> Point {
+/// An edit as tree-sitter wants it.
+///
+/// The translation is nothing but renaming, which is the point: the places
+/// were taken by whoever made the edit, at the moment each of them still
+/// existed, and nothing here has to work any of them out again.
+#[must_use]
+fn input_edit(edit: &Edit) -> InputEdit {
+    InputEdit {
+        start_byte: edit.start.byte.get(),
+        old_end_byte: edit.old_end.byte.get(),
+        new_end_byte: edit.new_end.byte.get(),
+        start_position: point(edit.start),
+        old_end_position: point(edit.old_end),
+        new_end_position: point(edit.new_end),
+    }
+}
+
+/// A place as tree-sitter's `Point`, which is a row and a *byte* into it.
+const fn point(place: Place) -> Point {
     Point {
-        row: text.line_of_byte(byte).get(),
-        column: text.byte_column(byte),
+        row: place.row,
+        column: place.column,
     }
 }

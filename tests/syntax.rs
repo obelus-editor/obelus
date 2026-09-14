@@ -165,25 +165,26 @@ fn the_trimmed_region_starts_and_ends_on_character_boundaries() {
         let edit = parse::edit_between(&before, &after).expect("an edit");
 
         assert!(
-            on_boundary(&before, edit.start_byte),
+            on_boundary(&before, edit.start.byte.get()),
             "{what}: start_byte {} splits a character",
-            edit.start_byte
+            edit.start.byte.get()
         );
         assert!(
-            on_boundary(&before, edit.old_end_byte),
+            on_boundary(&before, edit.old_end.byte.get()),
             "{what}: old_end_byte {} splits a character",
-            edit.old_end_byte
+            edit.old_end.byte.get()
         );
         assert!(
-            on_boundary(&after, edit.new_end_byte),
+            on_boundary(&after, edit.new_end.byte.get()),
             "{what}: new_end_byte {} splits a character",
-            edit.new_end_byte
+            edit.new_end.byte.get()
         );
 
         // And it still has to be an edit: rounding outwards must not collapse
         // the region to nothing.
         assert!(
-            edit.start_byte < edit.old_end_byte || edit.start_byte < edit.new_end_byte,
+            edit.start.byte.get() < edit.old_end.byte.get()
+                || edit.start.byte.get() < edit.new_end.byte.get(),
             "{what}: rounding collapsed the edit"
         );
     }
@@ -232,17 +233,14 @@ fn an_edits_points_are_byte_columns_not_character_columns() {
     // `let s = "` is nine bytes and nine characters; the two wide glyphs after
     // it are six bytes and two characters. So the edit starts at byte fifteen
     // and at character eleven, and only one of those is the right answer.
-    assert_eq!(edit.start_byte, 15);
+    assert_eq!(edit.start.byte.get(), 15);
+    assert_eq!(edit.start.column, 15, "the start column must count bytes");
+    assert_eq!(edit.old_end.column, 15);
     assert_eq!(
-        edit.start_position.column, 15,
-        "start_position.column must count bytes"
-    );
-    assert_eq!(edit.old_end_position.column, 15);
-    assert_eq!(
-        edit.new_end_position.column, 21,
+        edit.new_end.column, 21,
         "the replacement is two glyphs, so six bytes, longer"
     );
-    assert_eq!(edit.start_position.row, 0);
+    assert_eq!(edit.start.row, 0);
 }
 
 /// Every language actually produces highlights.
