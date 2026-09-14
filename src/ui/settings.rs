@@ -201,7 +201,7 @@ impl Widget for SettingsView<'_> {
                     aside: Aside::Words(chord.map(|chord| chord.label()).unwrap_or_default()),
                     body: Vec::new(),
                     pinned: None,
-                    inherited: None,
+                    scope: None,
                 })
                 .collect();
             self.column(cells, region, &rows, "no command by that name");
@@ -235,13 +235,9 @@ impl Widget for SettingsView<'_> {
                             .flatten()
                     })
                     .flatten(),
-                // And on the tree's page, whose value is showing where the
-                // tree has not set this one.
-                inherited: self
-                    .settings
-                    .on_tree()
-                    .then(|| self.inherited(setting))
-                    .flatten(),
+                // And on the tree's page, which layer the value showing
+                // comes from -- the project's own included.
+                scope: self.settings.on_tree().then(|| self.scope(setting)),
             })
             .collect();
         self.column(cells, region, &rows, "no setting by that name");
@@ -258,13 +254,12 @@ struct Row {
     /// What it does, under the name and indented, already broken into the
     /// rows it takes. Empty on a page whose rows are one row each.
     body: Vec<String>,
-    /// Whose value is showing, on a page that is not the one that has the
-    /// setting.
+    /// Which layer the value showing comes from, on the tree's page.
     ///
-    /// `None` where this page has it, which is what makes the row bright:
-    /// the ink says whether a row belongs to the page it is on, the way it
-    /// does everywhere else in obelus.
-    inherited: Option<&'static str>,
+    /// `None` on the reader's, where the question is the other one: not
+    /// "whose is this" but "who has taken it from me", which the file's
+    /// name and a lock answer.
+    scope: Option<Scope>,
     /// The file that has this one, when it is not the reader's to change.
     ///
     /// Named on the row rather than said when the reader tries to move it:
@@ -272,6 +267,32 @@ struct Row {
     /// other until it is, and what a reader wants to know here is which of
     /// these are theirs.
     pinned: Option<String>,
+}
+
+/// Which of the three layers a value comes from.
+///
+/// The reader's own is `global`, which is the word `git config` has taught
+/// everybody who works in a repository, and is less slippery than "yours" on
+/// a page where everything is in some sense theirs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Scope {
+    /// This tree's own settings file.
+    Project,
+    /// The reader's, wherever this system keeps them.
+    Global,
+    /// Nobody's: what obelus ships with.
+    Default,
+}
+
+impl Scope {
+    /// The word for it.
+    const fn word(self) -> &'static str {
+        match self {
+            Self::Project => "project",
+            Self::Global => "global",
+            Self::Default => "default",
+        }
+    }
 }
 
 /// What a row shows on the right.
@@ -371,10 +392,14 @@ impl SettingsView<'_> {
             // the one that has it: the file's name and a lock on the
             // reader's, the word `yours` or `default` on the tree's. One
             // column, because it is one question.
-            let source = row.pinned.as_deref().or(row.inherited).map(|source| {
-                let room = aside_at.saturating_sub(region.x + 4 + lock);
-                clipped(source, room)
-            });
+            let source = row
+                .pinned
+                .as_deref()
+                .or(row.scope.map(Scope::word))
+                .map(|source| {
+                    let room = aside_at.saturating_sub(region.x + 4 + lock);
+                    clipped(source, room)
+                });
             let reserved = source.as_deref().map_or(0, |source| {
                 u16::try_from(crate::ui::text_width(source)).unwrap_or(0) + lock + 1
             });
@@ -401,6 +426,13 @@ impl SettingsView<'_> {
             let ink = match row.pinned {
                 Some(_) => plain.fg(self.theme.gutter),
                 None => plain,
+            };
+            // The word saying which layer a value comes from is dim where
+            // that layer is not this page's, and ordinary where it is: the
+            // column is then read down for what this project has decided.
+            let said = match row.scope {
+                Some(Scope::Project) | None => plain,
+                Some(_) => plain.fg(self.theme.gutter),
             };
             let after = write_marked(
                 cells,
@@ -439,7 +471,12 @@ impl SettingsView<'_> {
                     aside_at.saturating_sub(width + lock + 1),
                     y,
                     source,
-                    plain.fg(self.theme.gutter).bg(background),
+                    said.fg(if row.pinned.is_some() {
+                        self.theme.gutter
+                    } else {
+                        said.fg.unwrap_or(self.theme.foreground)
+                    })
+                    .bg(background),
                 );
                 if crate::icons::enabled() && row.pinned.is_some() {
                     put(
@@ -460,7 +497,7 @@ impl SettingsView<'_> {
                     value,
                     self.theme,
                     background,
-                    row.pinned.is_none() && row.inherited.is_none(),
+                    row.pinned.is_none() && row.scope != Some(Scope::Project),
                 ),
                 Aside::Words(words) => {
                     write(
@@ -498,27 +535,26 @@ impl SettingsView<'_> {
         }
     }
 
-    /// Whose value a row is showing, where this page is not the one that
-    /// has the setting.
+    /// Which layer the value on a row comes from, on the tree's page.
     ///
-    /// Two answers and not three: the reader's, or nobody's. "Nobody's" is
-    /// the default obelus ships with, and worth saying plainly -- a reader
-    /// looking at a tree's settings wants to know which of these anybody
-    /// has an opinion about at all.
-    fn inherited(&self, setting: &crate::config::Setting) -> Option<&'static str> {
+    /// All three, including the tree's own: a column where two of the three
+    /// have a word and the third is blank asks the reader to read an
+    /// absence. `git config --global` against a repository's own is the
+    /// vocabulary they already have for this.
+    fn scope(&self, setting: &crate::config::Setting) -> Scope {
         if self.pinned.contains(&setting.key) {
-            return None;
+            return Scope::Project;
         }
         let theirs = Settings::value_of(setting, &self.readers);
         let default = Settings::value_of(setting, &Config::default());
-        Some(if theirs == default {
-            "default"
-        } else {
-            "yours"
-        })
+        match theirs == default {
+            true => Scope::Default,
+            false => Scope::Global,
+        }
     }
 
-    /// What a command's row says beside its name.
+    /// What a command's row says beside its name.    /// What a command's row
+    /// says beside its name.
     ///
     /// What it does, unless the reader is binding it: then it is what the
     /// page is waiting for, or why the key they pressed will not do. On the

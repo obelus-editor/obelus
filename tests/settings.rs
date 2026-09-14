@@ -818,12 +818,14 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     // The theme is the reader's; the glyphs are nobody's.
     let dump = support::render(&mut app, 76, 16);
     let text = support::text_block(&dump);
-    assert!(text.contains("yours"), "{dump}");
+    assert!(text.contains("global"), "{dump}");
     assert!(text.contains("default"), "{dump}");
     // And the file it would be writing is named on the tab row.
     assert!(text.contains(".obelus.toml"), "{dump}");
 
-    // The setting the tree does have says nothing beside it.
+    // And the setting the tree does have says so, in the same column: a
+    // column where two of the three layers have a word and the third is
+    // blank asks the reader to read an absence.
     support::press(&mut app, KeyCode::Right);
     let dump = support::render(&mut app, 76, 16);
     let wrap = support::text_block(&dump)
@@ -831,8 +833,8 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         .find(|row| row.contains("Wrap long lines"))
         .expect("the row");
     assert!(
-        !wrap.contains("yours") && !wrap.contains("default"),
-        "a setting the tree has claims to come from somewhere else: {wrap:?}"
+        wrap.contains("project"),
+        "a setting the tree has does not say so: {wrap:?}"
     );
 
     // And the two tabs a tree may not have.
