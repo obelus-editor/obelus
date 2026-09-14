@@ -54,6 +54,10 @@ pub enum Command {
     GoLine,
     /// Go to the bracket that matches the one under the cursor.
     GoBracket,
+    /// Every commit that changed the file being read.
+    HistoryFile,
+    /// Every commit in the project.
+    HistoryProject,
     /// Fold the run of lines the cursor is in, or unfold the one it is on.
     Fold,
     /// Fold every run in the file.
@@ -155,6 +159,8 @@ pub enum Requires {
     APreview,
     /// The cursor has to be on a bracket.
     ABracket,
+    /// The project has to be a repository with something in it.
+    AHistory,
     /// The cursor has to be in a run of lines that folds, or on a folded
     /// one.
     AFoldHere,
@@ -315,6 +321,16 @@ pub const ALL: &[CommandSpec] = &[
         title: "Go to the matching bracket",
     },
     CommandSpec {
+        command: Command::HistoryFile,
+        name: "show-file-history",
+        title: "Every commit that changed this file",
+    },
+    CommandSpec {
+        command: Command::HistoryProject,
+        name: "show-project-history",
+        title: "Every commit in this project",
+    },
+    CommandSpec {
         command: Command::Fold,
         name: "fold",
         title: "Fold what is here, or unfold it",
@@ -446,6 +462,8 @@ impl Command {
             | Self::SearchSymbols
             | Self::GoLine
             | Self::GoBracket
+            | Self::HistoryFile
+            | Self::HistoryProject
             | Self::Fold
             | Self::FoldAll
             | Self::UnfoldAll
@@ -502,6 +520,11 @@ impl Command {
             // nothing to fold on the line the reader is on, and a key that
             // is offered everywhere and works in places is worse than one
             // that says where it works.
+            // Both, because both tabs of the view need the same thing: a
+            // repository with a commit in it. Which of the two tabs can
+            // answer is settled when the view opens, the way the search
+            // settles its own.
+            Self::HistoryFile | Self::HistoryProject => Requires::AHistory,
             Self::Fold => Requires::AFoldHere,
             Self::FoldAll => Requires::AFoldableFile,
             Self::UnfoldAll => Requires::SomethingFolded,

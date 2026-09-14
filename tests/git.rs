@@ -2032,3 +2032,186 @@ fn a_history_with_no_answer_is_empty() {
     );
     let _ = std::fs::remove_dir_all(&elsewhere);
 }
+
+/// The history is one view at two radii, and the keys land on the tab they
+/// name.
+#[test]
+fn the_history_opens_at_the_radius_its_key_names() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-view", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit("the second");
+    std::fs::write(repository.directory().join("other.rs"), "elsewhere\n").expect("the other");
+    repository.commit_all("something else");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 70, 16);
+
+    support::press_function(&mut app, 9);
+    let picker = app.picker().expect("the history");
+    assert_eq!(picker.tabs(), ["this file", "the project"]);
+    assert_eq!(picker.tab(), 0, "f9 did not open the file's own tab");
+    let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
+    assert_eq!(
+        rows,
+        ["the second", "committed"],
+        "not the commits that changed this file"
+    );
+
+    // A commit in this tab has nothing to open: it is already about one
+    // file, and a mark offering to show which file that is would be a mark
+    // repeating the tab's own name.
+    assert!(
+        app.picker()
+            .expect("the history")
+            .matches()
+            .all(|item| item.marker.is_none()),
+        "the file's own tab offers to open a commit"
+    );
+
+    // The other tab is a walk away, and walking onto it asks its question.
+    support::press(&mut app, KeyCode::Right);
+    assert!(
+        app.picker()
+            .expect("the history")
+            .matches()
+            .any(|item| item.marker.is_some()),
+        "the project's tab does not say its rows open"
+    );
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the history")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        ["something else", "the second", "committed"],
+        "the other tab shows the same commits"
+    );
+}
+
+/// A commit in the project's tab is not a file, so it has nothing to open.
+/// What it has is the files it changed, and they go under it in place: one
+/// list, one selection, one Escape.
+#[test]
+fn a_commit_opens_its_files_under_it() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-expand", "one\n");
+    std::fs::write(repository.directory().join("other.rs"), "elsewhere\n").expect("the other");
+    repository.write("one\ntwo\n");
+    repository.commit_all("touching two");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 70, 16);
+    support::press_function(&mut app, 10);
+
+    let rows = |app: &App| -> Vec<String> {
+        app.picker()
+            .expect("the history")
+            .matches()
+            .map(|item| item.label.clone())
+            .collect()
+    };
+    assert_eq!(rows(&app), ["touching two", "committed"]);
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        rows(&app),
+        ["touching two", "file.rs", "other.rs", "committed"],
+        "the commit did not open its files under it"
+    );
+    assert_eq!(
+        app.picker().expect("the history").selected(),
+        0,
+        "the selection left the row the key was pressed on"
+    );
+
+    // And the same key closes it again.
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        rows(&app),
+        ["touching two", "committed"],
+        "it would not close"
+    );
+}
+
+/// Choosing one of a commit's files opens the file as that commit had it --
+/// not the file on disk, which is a different document that happens to
+/// share a name.
+#[test]
+fn a_file_of_a_commit_opens_as_that_commit_had_it() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-open", "first\n");
+    repository.write("second\n");
+    repository.commit("the second");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 70, 16);
+    support::press_function(&mut app, 10);
+    // The older commit, opened, and its one file chosen.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+
+    let buffer = app.current_buffer().expect("a file");
+    assert_eq!(
+        buffer.text().rope().to_string(),
+        "first\n",
+        "not the file as that commit had it"
+    );
+    assert!(
+        buffer.content().at().is_some(),
+        "the buffer does not know it came from a commit"
+    );
+    assert_eq!(
+        buffer.path(),
+        repository.path(),
+        "the buffer lost the file's own name"
+    );
+}
+
+/// A subject too long for the row loses its end, not its head.
+///
+/// The rest of a picker's rows are names -- a path, a symbol -- where the
+/// end is what is being looked for and the head is already known. A
+/// sentence is the other way round: "Fold away the block the cursor is in"
+/// cut to "…the block the cursor is in" has lost the half that says which
+/// commit this is.
+#[test]
+fn a_subject_is_cut_at_its_end() {
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-cut", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit("Give the third bank of function keys to git, and move the reading");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 50, 10);
+    support::press_function(&mut app, 9);
+
+    let dump = support::render(&mut app, 50, 10);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Give the third"))
+        .expect("the commit's row");
+    assert!(
+        !row.contains('\u{2026}'),
+        "the subject was cut at its head:\n{row}"
+    );
+    assert!(
+        !row.contains("and move the reading"),
+        "the row is wide enough for the whole subject, so this proves nothing:\n{row}"
+    );
+}

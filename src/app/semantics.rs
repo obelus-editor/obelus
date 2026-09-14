@@ -174,6 +174,8 @@ impl App {
             .map(|action| {
                 let command = action.command();
                 PickerItem {
+                    prose: false,
+                    marker: None,
                     icon: icons::enabled().then(|| icons::for_command(command)),
                     label: command.spec().name.to_string(),
                     detail: Some(command.spec().title.to_string()),
@@ -482,6 +484,8 @@ impl App {
                 let (line, character) = (at.line, at.character);
                 let end_character = end.character;
                 PickerItem {
+                    prose: false,
+                    marker: None,
                     icon: icons::enabled().then(|| icons::for_kind(symbol.kind)),
                     enabled: true,
                     colours: None,
@@ -587,6 +591,8 @@ impl App {
         let items: Vec<PickerItem> = symbols
             .iter()
             .map(|symbol| PickerItem {
+                prose: false,
+                marker: None,
                 icon: icons::enabled().then(|| icons::for_kind(symbol.kind)),
                 enabled: true,
                 colours: None,
@@ -684,6 +690,8 @@ impl App {
         let items: Vec<PickerItem> = symbols
             .iter()
             .map(|symbol| PickerItem {
+                prose: false,
+                marker: None,
                 icon: icons::enabled().then(|| icons::for_kind(symbol.kind)),
                 enabled: true,
                 colours: None,
@@ -798,6 +806,8 @@ fn place_rows(places: &[crate::lsp::action::Place], root: &Path) -> Vec<PickerIt
                 place.line.saturating_add(1)
             );
             PickerItem {
+                prose: false,
+                marker: None,
                 // No glyph. The file is named on the right of the row, and a
                 // column of the same glyph down a list of references says
                 // nothing.

@@ -165,6 +165,8 @@ impl App {
             .values
             .iter()
             .map(|value| PickerItem {
+                prose: false,
+                marker: None,
                 icon: None,
                 label: value.name.clone(),
                 detail: value.about.clone(),
@@ -330,6 +332,8 @@ impl App {
             .agent_orders()
             .iter()
             .map(|order| PickerItem {
+                prose: false,
+                marker: None,
                 // No glyph: a column of the same one down a list says
                 // nothing, and the slash in front of the name is what says
                 // what these rows are.

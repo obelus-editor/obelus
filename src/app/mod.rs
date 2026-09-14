@@ -18,6 +18,8 @@ mod choosing;
 mod counting;
 mod documents;
 mod history;
+mod history_view;
+pub use history_view::Radius;
 mod keys;
 mod moving;
 mod preferences;
@@ -286,6 +288,8 @@ pub struct App {
     /// The changed listing has a tab only when something has changed, so
     /// which tab is which listing is not fixed.
     listing: Vec<Listing>,
+    /// The commits an open history view is showing, and what is open in it.
+    history: history_view::Showing,
     /// Which scopes the open search is showing, in tab order.
     ///
     /// The tabs are only the scopes that can answer, so which tab is which
@@ -399,6 +403,7 @@ impl App {
             screen_area: Rect::ZERO,
             given_statuses: None,
             listing: Vec::new(),
+            history: history_view::Showing::default(),
             searching: Vec::new(),
             blames: std::collections::HashMap::new(),
             asking_blame: std::collections::HashSet::new(),
@@ -931,6 +936,8 @@ impl App {
                     let statuses = &self.statuses;
                     let root = &self.working_directory;
                     picker.extend(paths.into_iter().map(|path| PickerItem {
+                        prose: false,
+                        marker: None,
                         icon: Some(icons::for_path(&path)),
                         label: path.display().to_string(),
                         detail: None,
@@ -991,6 +998,10 @@ impl App {
             // rather than the picker reporting it.
             let searching = picker.is_searching();
             let listing = picker.is_listing();
+            // A history has tabs too, and walking onto one is what asks its
+            // question: the commits of a file and of a project are two
+            // answers, not two views of one.
+            let historic = !self.history.radii.is_empty();
             let before = (picker.tab(), picker.query().to_string());
             let outcome = picker.handle_key(&key, page);
             let after = (picker.tab(), picker.query().to_string());
@@ -1002,10 +1013,14 @@ impl App {
                     if listing && after.0 != before.0 {
                         self.refresh_listing();
                     }
+                    if historic && after.0 != before.0 {
+                        self.refresh_history();
+                    }
                     return;
                 }
                 PickerOutcome::Cancelled => {
                     self.picker = None;
+                    self.history = history_view::Showing::default();
                     // A list that was an agent's question has to be
                     // answered even when the reader walks away from it: an
                     // agent whose permission request goes unanswered waits

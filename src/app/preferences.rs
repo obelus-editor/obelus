@@ -46,6 +46,8 @@ impl App {
         let items: Vec<PickerItem> = choices
             .iter()
             .map(|choice| PickerItem {
+                prose: false,
+                marker: None,
                 icon: None,
                 label: (*choice).to_string(),
                 detail: None,

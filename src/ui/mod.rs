@@ -445,6 +445,25 @@ pub(crate) fn scrollbar(
 /// Shared by the bar and the change map beside it so that a change is level
 /// with the part of the bar it belongs to; two roundings would put them a
 /// row apart on tall files, which is exactly where anyone would notice.
+/// What a row that folds something away carries: turned right for a run
+/// that is closed, turned down for one that is open.
+///
+/// One pair for the three places that fold: a run of lines in a file, a run
+/// of tool calls in the transcript, a commit's files in a list. They are
+/// the same act -- one row standing in for several, and a key that opens it
+/// -- and a reader who learns the mark in one place has learned it.
+pub(crate) const FOLDED: char = '\u{25b8}';
+pub(crate) const UNFOLDED: char = '\u{25be}';
+
+/// Whichever of the two says how a row stands.
+#[must_use]
+pub(crate) const fn opens(open: bool) -> char {
+    match open {
+        true => UNFOLDED,
+        false => FOLDED,
+    }
+}
+
 pub(crate) fn bar_row(line: usize, total: usize, height: u16) -> u16 {
     let height = usize::from(height);
     let row = line * height / total.max(1);

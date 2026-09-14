@@ -227,10 +227,6 @@ const SEPARATOR: &str = " \u{b7} ";
 /// How many cells that takes.
 const SEPARATOR_WIDTH: usize = 3;
 
-/// What says the thing under the focus has a list behind it -- the same
-/// mark a settings row and an agent's card use for the same promise.
-const OPENS: &str = " \u{25b8}";
-
 /// The frames the row that says something is happening turns through.
 ///
 /// Braille, which needs no particular font: a terminal that cannot draw
@@ -252,15 +248,9 @@ fn spinning(phase: u32) -> char {
 /// carries in a file.
 const BAR: char = '\u{2590}';
 
-/// The same, turned down, for something already open.
-const OPENED: &str = " \u{25be}";
-
 /// Which mark a row that folds something carries.
-const fn opens(open: bool) -> &'static str {
-    match open {
-        true => OPENED,
-        false => OPENS,
-    }
+fn opens(open: bool) -> String {
+    format!(" {}", crate::ui::opens(open))
 }
 
 /// What says the row holds more than it had room to draw.
@@ -520,7 +510,7 @@ impl ChatView<'_> {
             // the same mark a settings row and a card use for the same
             // promise, turned down when what it holds is open.
             if row.folds.is_some() {
-                ended = write(cells, ended + 1, y, opens(row.open), dim);
+                ended = write(cells, ended + 1, y, &opens(row.open), dim);
             }
             // How much it changes, which is what a reader reads first: the
             // shape of the change before any of its lines.
@@ -675,7 +665,7 @@ impl ChatView<'_> {
             .map(|(index, setting)| {
                 let (mut word, on) = said(setting);
                 if Some(index) == chosen && setting.kind == acp::Kind::Select {
-                    word.push_str(OPENS);
+                    word.push_str(&opens(false));
                 }
                 (word, on)
             })

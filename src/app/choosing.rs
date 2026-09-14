@@ -20,6 +20,8 @@ impl App {
         let items = builtin::ALL
             .iter()
             .map(|theme| PickerItem {
+                prose: false,
+                marker: None,
                 // The same glyph on every row, which is the honest one: what
                 // distinguishes two themes is the colours, and the row's own
                 // name is what says which.
@@ -55,6 +57,8 @@ impl App {
         let items = crate::command::ALL
             .iter()
             .map(|spec| PickerItem {
+                prose: false,
+                marker: None,
                 icon: icons::enabled().then(|| icons::for_command(spec.command)),
                 enabled: self.offers(spec.command),
                 colours: None,
@@ -206,6 +210,9 @@ impl App {
             // a question about this file and this line rather than about
             // the language: a file obelus parses can still have nothing to
             // fold where the reader is standing.
+            // A walk of one commit, which is what "is there a history
+            // here" costs: the same trade `AChangedFile` makes.
+            Requires::AHistory => self.has_history(),
             Requires::AFoldHere => self.current_buffer().is_some_and(|buffer| {
                 buffer.folds().is_folded_at(buffer.cursor().line)
                     || buffer.folds().offered_at(buffer.cursor().line).is_some()
@@ -222,6 +229,14 @@ impl App {
     }
 
     pub(super) fn accept(&mut self, value: PickerValue) {
+        // A commit is not somewhere to go: it opens its files under itself,
+        // in place, and the list stays open around them. Asked before the
+        // list is torn down, because the list is what it happens to.
+        if let PickerValue::Commit(id) = value
+            && self.expand_commit(id)
+        {
+            return;
+        }
         // Where the query matched in the selected row, for a list whose
         // rows are the lines they name. Worked out here rather than read
         // from the last frame, because a key can arrive before one has been
@@ -236,6 +251,9 @@ impl App {
                 .map(|column| *column as usize)
         });
         self.picker = None;
+        // The history goes with its list: the radii are what says a history
+        // is open at all.
+        self.history = crate::app::history_view::Showing::default();
         // A theme worn while walking a list is the reader's choice now,
         // whichever list it was, so there is nothing left to put back. Here
         // rather than on the theme's own arm because the settings page
@@ -282,6 +300,11 @@ impl App {
             PickerValue::AgentValue { setting, value } => {
                 self.set_agent_setting(&setting, &value);
             }
+            // Dealt with before the list is closed: a commit opens its
+            // files under it rather than going anywhere, and a file of one
+            // is opened as that commit had it.
+            PickerValue::Commit(_) => {}
+            PickerValue::CommitFile { id, path } => self.open_at_commit(id, &path),
             PickerValue::Nothing => {}
         }
     }

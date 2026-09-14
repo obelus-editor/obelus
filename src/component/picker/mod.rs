@@ -73,6 +73,19 @@ pub enum PickerValue {
         /// Which value, by the agent's id for it.
         value: String,
     },
+    /// Open a commit's files under it, or close them again.
+    ///
+    /// A commit is not a file, so there is nothing for choosing it to open:
+    /// what it has is the list of files it changed, and that goes under it
+    /// in place rather than in a second list with its own Escape.
+    Commit(gix::ObjectId),
+    /// Read a file as a commit had it.
+    CommitFile {
+        /// Which commit.
+        id: gix::ObjectId,
+        /// Which of the files it changed, relative to the repository.
+        path: PathBuf,
+    },
     /// Nothing. A row that is there to say why the list is short.
     Nothing,
 }
@@ -124,6 +137,21 @@ pub struct PickerItem {
     /// Shown dimmed after the label. Not matched: a command's description is
     /// there to be read once, not to be searched.
     pub detail: Option<String>,
+    /// Whether the label is a sentence rather than a name.
+    ///
+    /// A row too narrow for a *name* loses its head: the file name is what
+    /// is being looked for and the directories above it are already known.
+    /// A sentence is the other way round -- "Fold away the block the cursor
+    /// is in" cut to "…the block the cursor is in" has lost the half that
+    /// tells a reader which commit this is.
+    pub prose: bool,
+    /// A mark before the icon, for a row that holds something.
+    ///
+    /// Its own field rather than the icon's, because the icon comes and
+    /// goes with the reader's font and this does not: "there is more behind
+    /// this row" is the only way folding is discovered, and a reader with
+    /// no nerd font has to be told it too.
+    pub marker: Option<String>,
     /// Shown dimmed and right-aligned at the end of the row.
     ///
     /// Its width is taken out of the label's before the label is truncated, so
@@ -891,6 +919,16 @@ impl Picker {
     }
 
     /// Selects a row outright.
+    /// Puts the selection on a row, for a caller that has just replaced the
+    /// list under it.
+    ///
+    /// Opening a commit's files puts rows below the row the key was pressed
+    /// on; a selection that jumped to the top would leave the reader
+    /// somewhere they did not ask to be.
+    pub fn select_row(&mut self, row: usize) {
+        self.select(row);
+    }
+
     fn select(&mut self, row: usize) {
         let row = row.min(self.matched.len().saturating_sub(1));
         // Onwards from where it was asked for, so `ctrl+home` lands on the
@@ -996,6 +1034,8 @@ mod tests {
         let rows = ["one", "two", "three"]
             .into_iter()
             .map(|name| PickerItem {
+                prose: false,
+                marker: None,
                 icon: None,
                 label: name.to_string(),
                 detail: None,

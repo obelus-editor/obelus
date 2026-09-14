@@ -803,6 +803,8 @@ fn a_jump_lands_in_the_middle_of_the_screen() {
 
     app.open_picker_for_test(
         vec![PickerItem {
+            prose: false,
+            marker: None,
             icon: None,
             label: "many_lines.rs:31".to_string(),
             detail: None,
@@ -868,6 +870,8 @@ fn a_jump_back_lands_in_the_middle_too() {
     let left_behind = app.current_buffer().expect("a buffer").cursor().line.get();
     app.open_picker_for_test(
         vec![PickerItem {
+            prose: false,
+            marker: None,
             icon: None,
             label: "many_lines.rs:31".to_string(),
             detail: None,

@@ -54,15 +54,12 @@ pub const FOLD_WIDTH: u16 = 1;
 
 /// What a folded line carries in that column, and what an open one does.
 ///
-/// The marks the transcript folds a run of tool calls with, because it is
-/// the same act: one row standing in for several, and a key that opens it.
-/// Both states are marked, because a reader cannot press a key on a line
-/// that never said it had anything behind it -- and the one turned down is
-/// the quieter of the two, which is the right way round: most runs are open
-/// most of the time.
-const FOLDED: char = '\u{25b8}';
-const OPENS: char = '\u{25be}';
-
+/// [`crate::ui::opens`], because folding a run of lines, a run of tool
+/// calls and a commit's files are the same act. Both states are marked,
+/// because a reader cannot press a key on a line that never said it had
+/// anything behind it -- and the one turned down is the quieter of the two,
+/// which is the right way round: most runs are open most of the time.
+///
 /// What a folded run leaves on the line it folds into.
 ///
 /// Drawn after the line's own text, dim, because it is not what the file
@@ -604,9 +601,9 @@ impl Widget for EditorView<'_> {
                 // the row that says so is the row the run starts on.
                 if folds > 0 && index == 0 {
                     let mark = if buffer.folds().is_folded_at(line) {
-                        Some((FOLDED, self.theme.gutter_current))
+                        Some((crate::ui::FOLDED, self.theme.gutter_current))
                     } else if buffer.folds().opens_at(line) {
-                        Some((OPENS, self.theme.gutter))
+                        Some((crate::ui::UNFOLDED, self.theme.gutter))
                     } else {
                         None
                     };

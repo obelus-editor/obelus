@@ -326,6 +326,23 @@ impl PickerView<'_> {
         // spend: an outline of deeply nested code otherwise pushes the names
         // off the row it is meant to be showing.
         let mut column = 1u16.saturating_add(item.depth.saturating_mul(2).min(area.width / 3));
+        // Before the icon and dimmed, because it is not part of the name:
+        // it says the row holds something, which is a fact about the row
+        // rather than about the thing it names.
+        if let Some(marker) = item.marker.as_deref() {
+            // With a blank column after it, the way the icon has one: two
+            // glyphs touching read as one glyph nobody has seen before.
+            let marker = format!("{marker} ");
+            column = at(
+                cells,
+                area,
+                column,
+                y,
+                &marker,
+                style.fg(self.theme.gutter),
+                &Marked::plain(),
+            );
+        }
         if let Some(icon) = item.icon {
             let mut glyph = String::new();
             glyph.push(icon);
@@ -369,9 +386,15 @@ impl PickerView<'_> {
         };
 
         // A path too long for the row loses its head, not its tail: the file
-        // name is the part being looked for, and the directories above it are
-        // the part already known.
-        let dropped = drop_from_left(&item.label, usize::from(limit.saturating_sub(column)));
+        // name is the part being looked for, and the directories above it
+        // are the part already known. A sentence is the other way round and
+        // says so, and loses its end -- which `at` does by simply running
+        // out of row.
+        let room = usize::from(limit.saturating_sub(column));
+        let dropped = match item.prose {
+            true => 0,
+            false => drop_from_left(&item.label, room),
+        };
         if dropped >= item.label.chars().count() {
             // Not even room for the ellipsis.
             return;

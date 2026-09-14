@@ -24,6 +24,8 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
     labels
         .iter()
         .map(|label| PickerItem {
+            prose: false,
+            marker: None,
             icon: None,
             label: (*label).to_string(),
             detail: None,
@@ -53,6 +55,8 @@ const PAGE: u16 = 10;
 fn many(count: usize) -> Vec<PickerItem> {
     (0..count)
         .map(|index| PickerItem {
+            prose: false,
+            marker: None,
             icon: None,
             label: format!("item-{index:03}"),
             detail: None,
@@ -1352,21 +1356,21 @@ fn the_selection_walks_past_what_cannot_be_chosen() {
     }
 
     // A query narrows the list under the selection, and the selection comes
-    // to rest on a row that can be chosen: "sec" matches the searches and
-    // the selection commands, and with nothing open the project's search is
-    // the one of them that can run.
+    // to rest on a row that can be chosen: "sec" matches the searches, the
+    // selection commands and the project's history, and some of those can
+    // run with nothing open while others cannot.
     type_text(&mut app, "sec");
-    assert_eq!(
-        chosen(&app),
-        Some(("search-project".to_string(), true)),
-        "the selection stayed on a row that cannot be chosen"
+    let (label, enabled) = chosen(&app).expect("a row");
+    assert!(
+        enabled,
+        "the selection stayed on {label}, which cannot be chosen"
     );
     // Both ends of the narrowed list are dim rows, and neither end key
     // lands on one.
     press_control_key(&mut app, KeyCode::Home);
-    assert_eq!(chosen(&app), Some(("search-project".to_string(), true)));
+    assert!(chosen(&app).expect("a row").1, "home landed on a dim row");
     press_control_key(&mut app, KeyCode::End);
-    assert_eq!(chosen(&app), Some(("search-project".to_string(), true)));
+    assert!(chosen(&app).expect("a row").1, "end landed on a dim row");
     for _ in 0.."sec".len() {
         press(&mut app, KeyCode::Backspace);
     }
@@ -1719,6 +1723,8 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
     // characters six to eleven.
     app.open_picker_for_test(
         vec![PickerItem {
+            prose: false,
+            marker: None,
             icon: None,
             label: "long.rs:2:7".to_string(),
             detail: None,
@@ -1989,6 +1995,8 @@ fn moving_the_selection_forgets_the_scrolling() {
     let path =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
     let place = |line: u32| PickerItem {
+        prose: false,
+        marker: None,
         icon: None,
         label: format!("many_lines.rs:{}", line + 1),
         detail: None,
@@ -2079,6 +2087,8 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
     let mut app = app();
     app.open_picker_for_test(
         vec![PickerItem {
+            prose: false,
+            marker: None,
             icon: None,
             label: "many_lines.rs:31".to_string(),
             detail: None,

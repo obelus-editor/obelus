@@ -30,6 +30,8 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::SearchSymbols => app.open_search(Scope::Symbols),
         Command::GoLine => app.open_line_prompt(),
         Command::GoBracket => app.go_to_bracket(),
+        Command::HistoryFile => app.open_history(crate::app::Radius::File),
+        Command::HistoryProject => app.open_history(crate::app::Radius::Project),
         Command::Fold => app.toggle_fold(),
         Command::FoldAll => app.fold_all(),
         Command::UnfoldAll => app.unfold_all(),

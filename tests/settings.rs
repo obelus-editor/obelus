@@ -1346,8 +1346,9 @@ fn a_key_that_could_never_fire_is_refused() {
     }
 
     // And a key from one of the families is taken, from the same row: the
-    // refusals did not leave it in a state where nothing works.
-    support::press_function(&mut app, 9);
+    // refusals did not leave it in a state where nothing works. `f12` is
+    // the one of the four in git's bank that nothing has earned yet.
+    support::press_function(&mut app, 12);
     assert!(
         app.keymap().chord_for(Command::ThemeSelect).is_some(),
         "the row would not take a key it should"

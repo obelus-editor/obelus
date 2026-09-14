@@ -51,11 +51,40 @@ impl BufferId {
 /// Deliberately not built out yet. A second variant means the text, the
 /// syntax and the reload path move inside this one, which is a change worth
 /// making when there is something to put beside them and not before.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Content {
     /// A file on disk.
     #[default]
     File,
+    /// A file as a commit had it.
+    ///
+    /// The path is still the file's own -- the highlighting, the icon and
+    /// the name on the status bar all come from it -- but the bytes are
+    /// not what is on disk, and everything that assumes otherwise has to
+    /// ask. The watcher must not re-read over it, the language server must
+    /// not be told this is what that path holds, and a list of open files
+    /// must not hand back this buffer to a reader who asked for the file.
+    Commit {
+        /// Which commit, in the short form a reader recognises.
+        at: String,
+    },
+}
+
+impl Content {
+    /// Whether these bytes are the file on disk.
+    #[must_use]
+    pub const fn is_file(&self) -> bool {
+        matches!(self, Self::File)
+    }
+
+    /// The commit this was read from, if it was read from one.
+    #[must_use]
+    pub fn at(&self) -> Option<&str> {
+        match self {
+            Self::File => None,
+            Self::Commit { at } => Some(at),
+        }
+    }
 }
 
 /// How a buffer is being shown.
@@ -517,6 +546,54 @@ impl Buffer {
         self.folds.reveal(line)
     }
 
+    /// Reads a file as a commit had it.
+    ///
+    /// The path is the file's own so that everything which reads a name --
+    /// the highlighting, the icon, the status bar -- goes on working. What
+    /// is different is [`Content::Commit`], which is how the rest of obelus
+    /// knows these bytes are not the ones on disk.
+    #[must_use]
+    pub fn at_commit(path: &Path, at: &str, contents: &str) -> Self {
+        let mut buffer = Self::from_text(path, contents);
+        buffer.content = Content::Commit { at: at.to_string() };
+        buffer
+    }
+
+    /// A buffer holding text that did not come from the path it names.
+    fn from_text(path: &Path, contents: &str) -> Self {
+        let text = Text::from_string(contents);
+        let syntax =
+            LanguageId::for_path(path).and_then(|language| SyntaxState::new(language, &text));
+        let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        let mut folds = folds::Folds::default();
+        folds.offer(folds::of(&text));
+
+        Self {
+            path,
+            content: Content::File,
+            mode: Mode::Edit,
+            text,
+            syntax,
+            stale: false,
+            version: 1,
+            cursor: Cursor {
+                line: LineNumber::new(0),
+                column: CharColumn::new(0),
+                remembered_cell: DisplayColumn::new(0),
+            },
+            selection_anchor: None,
+            folds,
+            detached: false,
+            viewport: Viewport {
+                left: 0,
+                top: LineNumber::new(0),
+                top_row: 0,
+            },
+            blocks: Vec::new(),
+            in_block: None,
+        }
+    }
+
     /// Opens a hunk's removed lines in place, above the line that replaced
     /// them.
     ///
@@ -621,8 +698,8 @@ impl Buffer {
 
     /// What the buffer holds.
     #[must_use]
-    pub const fn content(&self) -> Content {
-        self.content
+    pub const fn content(&self) -> &Content {
+        &self.content
     }
 
     /// How it is being shown.

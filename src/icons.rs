@@ -111,6 +111,8 @@ pub mod key {
 
 /// The glyphs the views use for things that are not files.
 pub mod ui {
+    /// One commit, as a row of a history.
+    pub const COMMIT: char = '\u{f0718}';
     /// A prompt. Every picker filters by typing, so all of them get this
     /// one -- a magnifier, because what typing does there is *find*.
     pub const PROMPT: char = '\u{f0349}';
@@ -251,6 +253,10 @@ pub fn for_command(command: crate::command::Command) -> char {
         // The branching lines every git tool uses for itself.
         // A chevron folded down onto itself, which is the shape the mark
         // in the fold column has.
+        // A history is a line of commits; the file's is that line with a
+        // document on it.
+        Command::HistoryFile => '\u{f0214}',
+        Command::HistoryProject => '\u{f02a1}',
         Command::Fold => '\u{f0374}',
         Command::FoldAll => '\u{f0376}',
         Command::UnfoldAll => '\u{f0377}',

@@ -325,6 +325,8 @@ impl App {
                 let at = position::to_lsp(text, line, CharColumn::new(0), &encoding);
                 let end = position::to_lsp(text, line, text.line_length(line), &encoding);
                 PickerItem {
+                    prose: false,
+                    marker: None,
                     icon: None,
                     enabled: true,
                     colours: None,
@@ -419,6 +421,8 @@ impl App {
             return;
         }
         picker.extend(hits.into_iter().map(|hit| PickerItem {
+            prose: false,
+            marker: None,
             icon: None,
             enabled: true,
             colours: None,

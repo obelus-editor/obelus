@@ -132,6 +132,8 @@ impl App {
                 let items = rows
                     .into_iter()
                     .map(|(name, status)| PickerItem {
+                        prose: false,
+                        marker: None,
                         icon: Some(icons::for_path(std::path::Path::new(&name))),
                         enabled: true,
                         colours: None,
@@ -174,6 +176,8 @@ impl App {
         let statuses = &self.statuses;
         let items = open
             .map(|(index, buffer)| PickerItem {
+                prose: false,
+                marker: None,
                 icon: Some(icons::for_path(buffer.path())),
                 label: relative(buffer.path(), &self.working_directory),
                 detail: None,

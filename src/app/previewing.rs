@@ -308,6 +308,11 @@ impl App {
             | PickerValue::Theme(_)
             | PickerValue::Setting { .. }
             | PickerValue::AgentValue { .. }
+            // A commit is not a place in a file, and a file of one is not
+            // the file on disk. Both are previewed by what they open, which
+            // is not built yet.
+            | PickerValue::Commit(_)
+            | PickerValue::CommitFile { .. }
             | PickerValue::Nothing => None,
         }
     }
