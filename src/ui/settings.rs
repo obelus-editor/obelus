@@ -106,7 +106,9 @@ impl Widget for SettingsView<'_> {
 
         // The tabs, through the same function every other tab row goes
         // through: what a tab looks like is not this page's business.
-        crate::ui::tabs(
+        // Where the tabs end, which is what says whether anything else
+        // fits on this row.
+        let after = crate::ui::tabs(
             cells,
             area,
             &Settings::tabs(),
@@ -123,13 +125,18 @@ impl Widget for SettingsView<'_> {
             .then_some(self.tree.as_deref())
             .flatten()
         {
-            // Past the arrows that walk the tabs, which sit at the edge.
+            // Past the arrows that walk the tabs, which sit at the edge --
+            // and only where the tabs themselves have left room for it.
+            // Fitting on the row is not the question: a name that fits and
+            // starts before the tabs end is a name written over them, which
+            // is what a narrow screen got.
             let arrows = 4;
             let width = u16::try_from(crate::ui::text_width(tree)).unwrap_or(0);
-            if area.width > width + arrows + 2 {
+            let at = area.right().saturating_sub(width + arrows + 2);
+            if at > after + 1 {
                 write(
                     cells,
-                    area.right() - width - arrows - 2,
+                    at,
                     area.y,
                     tree,
                     Style::new().fg(self.theme.gutter).bg(self.theme.background),

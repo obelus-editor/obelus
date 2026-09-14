@@ -945,6 +945,57 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
     );
 }
 
+/// The file the project's page writes to is named on the tab row, and only
+/// where the tabs have left room for it.
+///
+/// Broken deliberately by asking whether the name *fits on the row* rather
+/// than whether it starts after the tabs end: on a narrow screen it was
+/// written over them, and `appearance  r.obelus/config.tomls` is what the
+/// reader got.
+#[test]
+fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = support::Scratch::new("corner");
+    // The longer of the two forms, which is the one that will not fit.
+    root.write(".obelus/config.toml", "wrap = true\n");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus::config::Config::default());
+    app.working_directory_for_test(root.path().to_path_buf());
+    support::lay_out(&mut app, 76, 10);
+    dispatch::dispatch(&mut app, Command::ConfigTree);
+
+    let tabs = |app: &mut App, width: u16| -> String {
+        let dump = support::render(app, width, 10);
+        support::text_block(&dump)
+            .lines()
+            .find(|row| row.contains("appearance"))
+            .expect("the tab row")
+            .to_string()
+    };
+
+    // Wide: the name is there, after the tabs.
+    let wide = tabs(&mut app, 76);
+    assert!(wide.contains(".obelus/config.toml"), "{wide:?}");
+    assert!(
+        wide.find("agents") < wide.find(".obelus"),
+        "the name is not after the tabs: {wide:?}"
+    );
+
+    // Narrow: the tabs are whole, and the name is simply not there.
+    let narrow = tabs(&mut app, 40);
+    assert!(
+        narrow.contains("appearance") && narrow.contains("agents"),
+        "the tabs were written over: {narrow:?}"
+    );
+    assert!(
+        !narrow.contains(".obelus"),
+        "the name was squeezed in anyway: {narrow:?}"
+    );
+}
+
 /// An application that was never told where its settings live does not write
 /// any: every test is one of those, and the reader's own file is not
 /// something a test may touch.
