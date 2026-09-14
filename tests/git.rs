@@ -1697,7 +1697,7 @@ fn the_names_can_be_turned_off() {
     assert!(support::text_block(&support::render(&mut app, 44, 8)).contains("Ada"));
 
     app.configure(Config {
-        blame: false,
+        blame_margin: false,
         ..Config::default()
     });
     let off = support::render(&mut app, 44, 8);
@@ -3639,7 +3639,7 @@ fn the_commit_behind_a_line_can_be_asked_for_with_the_names_off() {
     app.working_directory_for_test(repository.directory());
     // The margin's names turned off, which is a question about the margin.
     app.configure(obelus::config::Config {
-        blame: false,
+        blame_margin: false,
         ..Default::default()
     });
     let events = support::drive(&mut app);

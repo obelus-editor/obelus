@@ -413,12 +413,15 @@ fn the_view_closes_and_the_file_is_what_it_shows() {
 
     // A file written by someone else -- an editor, another obelus -- is what
     // a fresh application reads.
-    std::fs::write(&file, "theme = \"light\"\nicons = false\nblame = false\n")
-        .expect("writing the file");
+    std::fs::write(
+        &file,
+        "theme = \"light\"\nicons = false\nblame_margin = false\n",
+    )
+    .expect("writing the file");
     let mut second = App::new(vec![support::open_fixture("sample.rs")]);
     second.config_file_for_test(file.clone());
     assert_eq!(second.theme().name, "light");
-    assert!(!second.config().blame);
+    assert!(!second.config().blame_margin);
     obelus::icons::use_glyphs(true);
 }
 
@@ -699,7 +702,7 @@ fn the_trees_page_edits_the_trees_file() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let root = tree(
         "write",
-        "# what this project needs\n\nwrap = true\n# the margin is noisy here\nblame = false\n",
+        "# what this project needs\n\nwrap = true\n# the margin is noisy here\nblame_margin = false\n",
     );
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -709,12 +712,15 @@ fn the_trees_page_edits_the_trees_file() {
     dispatch::dispatch(&mut app, Command::ConfigTree);
     support::press(&mut app, KeyCode::Right);
 
-    // Onto `blame` and turn it on.
+    // Onto `blame_margin` and turn it on.
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
 
     let written = std::fs::read_to_string(root.join(".obelus.toml")).expect("the file");
-    assert!(written.contains("blame = true"), "not written: {written:?}");
+    assert!(
+        written.contains("blame_margin = true"),
+        "not written: {written:?}"
+    );
     assert!(
         written.contains("# what this project needs"),
         "the file's own heading is gone: {written:?}"
@@ -724,7 +730,7 @@ fn the_trees_page_edits_the_trees_file() {
         "a comment about a setting is gone: {written:?}"
     );
     // And it took, which is the whole point of writing it.
-    assert!(app.config().blame, "the setting did not take");
+    assert!(app.config().blame_margin, "the setting did not take");
 }
 
 /// Delete takes a setting out of the tree's file, and the file keeps its
@@ -744,7 +750,7 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let root = tree(
         "unset",
-        "# what this project needs\n\nwrap = true\nblame = true\n",
+        "# what this project needs\n\nwrap = true\nblame_margin = true\n",
     );
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -758,7 +764,7 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
     let written = std::fs::read_to_string(root.join(".obelus.toml")).expect("the file");
     assert!(!written.contains("wrap"), "still there: {written:?}");
     assert!(
-        written.contains("blame = true"),
+        written.contains("blame_margin = true"),
         "took the wrong one: {written:?}"
     );
     assert!(

@@ -162,7 +162,7 @@ impl App {
     /// changed, and then went back without a word.
     #[must_use]
     pub fn blame(&self) -> Option<&[Option<git::Blamed>]> {
-        if !self.config.blame {
+        if !self.config.blame_margin {
             return None;
         }
         self.blamed_lines()
@@ -208,7 +208,7 @@ impl App {
     /// paying for a walk of every file they open. The key that asks about
     /// one line asks for it itself.
     pub(super) fn refresh_blame(&mut self) {
-        if !self.config.blame {
+        if !self.config.blame_margin {
             return;
         }
         self.ask_blame();

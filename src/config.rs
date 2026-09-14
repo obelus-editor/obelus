@@ -23,8 +23,12 @@ pub struct Config {
     pub theme: String,
     /// Whether to draw Nerd Font glyphs.
     pub icons: bool,
-    /// Whether to say who last changed the line the cursor is on.
-    pub blame: bool,
+    /// Whether the margin says who last changed each line.
+    ///
+    /// About the margin, not about blame: whether the commit behind one
+    /// line can be asked for is a different question, and a reader who
+    /// wants no names beside their code has not said never to ask it.
+    pub blame_margin: bool,
     /// Whether a line too long for the screen continues on the next row.
     pub wrap: bool,
     /// Whether a file that has a reading opens in it.
@@ -47,7 +51,7 @@ impl Default for Config {
         Self {
             theme: crate::theme::builtin::DARK.name.to_string(),
             icons: true,
-            blame: true,
+            blame_margin: true,
             // Off, so a line is a line: a reader counting rows, comparing
             // two files side by side, or looking at a table in a comment is
             // reading something the screen has not rearranged. The reader
@@ -217,7 +221,7 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Switch,
     },
     Setting {
-        key: "blame",
+        key: "blame_margin",
         name: "Blame in the margin",
         about: "who last changed the line the cursor is on",
         group: Group::Reading,
@@ -236,7 +240,7 @@ impl Config {
         match key {
             "theme" => Some(Value::Choice(self.theme.clone())),
             "icons" => Some(Value::Switch(self.icons)),
-            "blame" => Some(Value::Switch(self.blame)),
+            "blame_margin" => Some(Value::Switch(self.blame_margin)),
             "wrap" => Some(Value::Switch(self.wrap)),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
@@ -248,7 +252,7 @@ impl Config {
         match (key, value) {
             ("theme", Value::Choice(word)) => self.theme = word.clone(),
             ("icons", Value::Switch(on)) => self.icons = *on,
-            ("blame", Value::Switch(on)) => self.blame = *on,
+            ("blame_margin", Value::Switch(on)) => self.blame_margin = *on,
             ("wrap", Value::Switch(on)) => self.wrap = *on,
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
@@ -426,10 +430,10 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     {
         config.icons = on;
     }
-    if let Some(on) = table.get("blame").and_then(toml::Value::as_bool)
-        && allowed("blame")
+    if let Some(on) = table.get("blame_margin").and_then(toml::Value::as_bool)
+        && allowed("blame_margin")
     {
-        config.blame = on;
+        config.blame_margin = on;
     }
     if let Some(on) = table.get("wrap").and_then(toml::Value::as_bool)
         && allowed("wrap")
@@ -462,7 +466,7 @@ pub fn to_toml(config: &Config) -> String {
     let mut table = toml::Table::new();
     table.insert("theme".to_string(), config.theme.clone().into());
     table.insert("icons".to_string(), config.icons.into());
-    table.insert("blame".to_string(), config.blame.into());
+    table.insert("blame_margin".to_string(), config.blame_margin.into());
     table.insert("wrap".to_string(), config.wrap.into());
     // Written even when there is nobody, so the file says what obelus read
     // rather than leaving the reader to wonder whether it noticed.
@@ -735,7 +739,7 @@ mod tests {
         let config = Config {
             theme: "light".to_string(),
             icons: false,
-            blame: false,
+            blame_margin: false,
             wrap: true,
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and
