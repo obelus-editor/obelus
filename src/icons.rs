@@ -134,6 +134,8 @@ pub mod ui {
     pub const SERVER_STARTING: char = '\u{f031a}';
     /// One whose process is gone.
     pub const SERVER_GONE: char = '\u{f0319}';
+    /// A document with changes that are not on disk.
+    pub const UNSAVED: char = '\u{f0766}';
     /// A file that can no longer be read from disk.
     pub const STALE: char = '\u{f0a4b}';
     /// A set of colours.

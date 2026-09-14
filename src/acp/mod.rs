@@ -22,8 +22,12 @@
 //!
 //! What obelus tells an agent about itself is the shape of the product: it
 //! will read a file out -- from a buffer, so an agent sees what the reader
-//! sees -- and it will not write one. A code reader that let an agent write
-//! through it would be a code editor with no undo.
+//! sees -- and it will not write one. That was once because obelus wrote
+//! nothing at all, and letting an agent write through it would have been a
+//! code editor with no undo. Obelus has an undo now, and the reason has
+//! changed rather than gone: a change the reader did not make is a change
+//! they cannot see arriving, and the one thing an editor owes them is that
+//! what is on screen is what they did to it.
 
 pub mod link;
 

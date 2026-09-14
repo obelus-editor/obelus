@@ -212,6 +212,22 @@ impl StatusView<'_> {
         if let Some(mode) = buffer.mode().name() {
             marker.push_str(&format!("  {mode}"));
         }
+        // Unsaved work, and the file having moved under it. Both are the
+        // same kind of fact as the three above -- what is on screen is not
+        // simply the file at this path -- and the second is the one a
+        // reader must know before they press save.
+        if buffer.is_dirty() {
+            marker.push_str(&match icons::enabled() {
+                true => format!(" {}  unsaved", icons::ui::UNSAVED),
+                false => " [unsaved]".to_string(),
+            });
+        }
+        if buffer.has_moved() {
+            marker.push_str(&match icons::enabled() {
+                true => format!(" {}  moved", icons::ui::STALE),
+                false => " [moved]".to_string(),
+            });
+        }
         if buffer.is_stale() {
             marker.push_str(&match icons::enabled() {
                 true => format!(" {}  stale", icons::ui::STALE),

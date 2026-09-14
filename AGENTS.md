@@ -129,6 +129,46 @@ screen is accounted for, so the ordinary case -- a remote at or near `HEAD`
 before its budget ran out is left alone, because telling a reader their work
 is not on the remote when it is would be the worse lie.
 
+**A document has one door to change through.** A buffer holds a great deal
+beside its text -- a parse tree, the folds, the blocks hanging between lines,
+the cursor, a version five separate caches key on -- and every one of them is
+measured against the text. Spread the changing across the program and each of
+those becomes a thing somebody adds without remembering the others.
+`Buffer::edit` is the door and the list lives there.
+
+**An edit knows where it happened; do not work it out again afterwards.**
+`edit_between` recovers a change by trimming two whole documents, which is
+right for a file that was replaced under obelus and wasteful for a keystroke.
+The three places an edit needs -- where it began, where what it replaced
+ended, where what it put there ends -- have to be taken *as it happens*,
+because two of them stop existing: the old end is gone once the edit has
+happened, and the new end was not there before. A newline is where that
+bites.
+
+**A fold across an edit is not a fold across a re-read.** `offer` throws away
+everything the reader folded, which is right when the lines were replaced and
+unusable per keystroke -- it means a file that unfolds itself as it is typed
+into. `keep_across` moves them instead.
+
+**Undo groups by what the reader was doing, not by when.** A pause is not a
+decision, and a test of one cannot be written without sleeping in it.
+
+**A key that cannot be a command goes where the motions go.** `why_not`
+refuses `Enter`, `Tab`, `Backspace` and `Delete` because every list and box
+takes them itself, and a printable character is not a name anybody would type
+into a palette.
+
+**Do not read over an edit.** The watcher reloads by itself because an agent
+rewriting a file while it is open is the ordinary case; over a document
+somebody has edited that is losing their work. Mark it and stop at the save,
+which is where the two versions meet.
+
+**"Are you sure" is the same key again.** The status row takes a line of
+text, not an answer, and pressing save or quit twice is what every editor a
+reader has used already means by it. The sentence has to fit a narrow row:
+one that does not is dropped whole, and a warning nobody sees is not a
+warning.
+
 **A list long enough to be worth searching is long enough to be worth
 threading.** The history used to ask for two hundred commits on the main
 thread. Both halves of that were wrong, and wrong together: the bound made
@@ -752,7 +792,7 @@ dozen lines obelus has of its own. `logging::is_server` decides by the
 event's target, which `tracing` takes from the module it came from, so a
 call site needs to know nothing and a module moved into `lsp` takes its
 lines with it. `open-log` and `open-server-log` open them; both are ordinary
-buffers, because obelus is a reader.
+buffers, like anything else obelus opens.
 
 The default filter names **`ob` as well as `obelus`**: the binary is its own
 crate, so everything `main` logged -- what started, and that it left -- was

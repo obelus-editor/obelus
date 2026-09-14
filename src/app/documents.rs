@@ -189,7 +189,12 @@ impl App {
         let items = open
             .map(|(index, buffer)| PickerItem {
                 prose: false,
-                marker: None,
+                // A dot for a document with changes that are not on disk.
+                // `marker` rather than `status`, which is git's and colours
+                // the whole row: "git says this file changed" and "obelus
+                // has not written this" are two different things, and
+                // telling them apart is what this is for.
+                marker: buffer.is_dirty().then(|| "\u{2022}".to_string()),
                 icon: Some(icons::for_path(buffer.path())),
                 label: relative(buffer.path(), &self.working_directory),
                 detail: None,
@@ -231,6 +236,19 @@ impl App {
     /// the watch on it -- and the reader is left on whichever file is
     /// nearest, or on the welcome screen if that was the last one.
     pub fn close_current(&mut self) {
+        // The same two presses leaving asks for, for the same reason: a
+        // closed buffer takes its undo with it.
+        let unsaved = self
+            .selected_buffer()
+            .or(self.current)
+            .and_then(|id| self.buffers.get(id.get()))
+            .and_then(Option::as_ref)
+            .is_some_and(Buffer::is_dirty);
+        if unsaved && !self.warned_about_quitting {
+            self.warned_about_quitting = true;
+            self.note = Some("this file is unsaved -- press again to close it".to_string());
+            return;
+        }
         // Whichever file the screen is about. With the buffer list open that
         // is the row under the selection, not the file behind it: the list is
         // what the reader is pointing at, and one key that means "close this"
@@ -576,6 +594,7 @@ impl App {
         match buffer.save() {
             Ok(()) => {
                 self.note = Some("saved".to_string());
+                self.warned_about_quitting = false;
                 self.saved_document(index);
             }
             Err(error) => {

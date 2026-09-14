@@ -614,10 +614,13 @@ async fn talk(
         .on_receive_request(
             async move |_request: WriteTextFileRequest, responder, _connection| {
                 // Refused here rather than reported: the answer does not
-                // depend on anything the view knows. obelus does not write
-                // files, and said so in the handshake.
+                // depend on anything the view knows, and the handshake has
+                // already said so. Obelus writes files the reader asked it
+                // to -- it does not write files somebody else asked it to.
                 tracing::info!("the agent tried to write a file");
-                responder.respond_with_error(refusal("obelus is a reader and does not write files"))
+                responder.respond_with_error(refusal(
+                    "obelus writes what the reader edits, and nothing an agent asks for",
+                ))
             },
             agent_client_protocol::on_receive_request!(),
         )

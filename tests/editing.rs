@@ -640,3 +640,119 @@ mod saving {
         );
     }
 }
+
+/// Saying what is unwritten, and not throwing it away by accident.
+mod saying {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    fn reading(name: &str, contents: &str) -> (support::Scratch, App, std::path::PathBuf) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        (scratch, app, path)
+    }
+
+    #[test]
+    fn the_status_row_says_a_document_is_unwritten() {
+        let (_scratch, mut app, _path) = reading("say-status", "fn main() {}\n");
+        let clean = support::render(&mut app, 70, 12);
+        assert!(!support::text_block(&clean).contains("unsaved"));
+
+        support::type_text(&mut app, "x");
+        let dirty = support::render(&mut app, 70, 12);
+        assert!(
+            support::text_block(&dirty).contains("unsaved"),
+            "nothing says the document has changes that are not on disk:\n{dirty}"
+        );
+
+        dispatch::dispatch(&mut app, Command::FileSave);
+        let saved = support::render(&mut app, 70, 12);
+        assert!(
+            !support::text_block(&saved).contains("unsaved"),
+            "it still says unsaved after being written:\n{saved}"
+        );
+    }
+
+    #[test]
+    fn the_status_row_says_the_file_moved() {
+        let (_scratch, mut app, path) = reading("say-moved", "mine\n");
+        support::type_text(&mut app, "x");
+        std::fs::write(&path, "somebody else's\n").expect("rewriting it");
+        app.handle(obelus::event::Event::FileChanged { path });
+
+        let dump = support::render(&mut app, 70, 12);
+        assert!(
+            support::text_block(&dump).contains("moved"),
+            "nothing says the file moved under the edit:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn the_buffer_list_marks_what_is_unwritten() {
+        let (_scratch, mut app, _path) = reading("say-list", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::BufferList);
+
+        let marked: Vec<bool> = app
+            .picker()
+            .expect("the list")
+            .matches()
+            .map(|item| item.marker.is_some())
+            .collect();
+        assert_eq!(marked, [true], "the row does not say the file is unwritten");
+    }
+
+    #[test]
+    fn leaving_with_something_unwritten_takes_two_presses() {
+        let (_scratch, mut app, _path) = reading("say-quit", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+
+        dispatch::dispatch(&mut app, Command::Quit);
+        assert!(!app.should_quit(), "it left with an unwritten document");
+        let dump = support::render(&mut app, 70, 12);
+        assert!(
+            support::text_block(&dump).contains("unsaved"),
+            "nothing was said about what leaving would lose:\n{dump}"
+        );
+
+        dispatch::dispatch(&mut app, Command::Quit);
+        assert!(app.should_quit(), "asking again did not leave");
+    }
+
+    /// The warning is about the files as they are, not as they were.
+    #[test]
+    fn typing_after_being_warned_asks_again() {
+        let (_scratch, mut app, _path) = reading("say-again", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::Quit);
+        assert!(!app.should_quit());
+
+        support::type_text(&mut app, "y");
+        dispatch::dispatch(&mut app, Command::Quit);
+        assert!(
+            !app.should_quit(),
+            "a warning given before the last change was taken for this one"
+        );
+    }
+
+    #[test]
+    fn leaving_with_nothing_unwritten_goes_at_once() {
+        let (_scratch, mut app, _path) = reading("say-clean", "fn main() {}\n");
+        let _ = KeyCode::Enter;
+        dispatch::dispatch(&mut app, Command::Quit);
+        assert!(
+            app.should_quit(),
+            "it asked about a document nobody changed"
+        );
+    }
+}

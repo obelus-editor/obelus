@@ -236,6 +236,9 @@ impl App {
             .and_then(Option::as_mut)
             .is_some_and(|buffer| buffer.edit(span, with, doing));
         if changed {
+            // There is something else to lose now, so a warning about
+            // leaving was about a different set of files.
+            self.warned_about_quitting = false;
             // The server's copy of this document is now a document nobody
             // has. Everything else keyed on the version notices by itself.
             self.change_document(index);
