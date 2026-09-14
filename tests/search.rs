@@ -193,8 +193,8 @@ fn the_file_scope_lists_its_lines_and_narrows_to_the_query() {
 /// file under the reader is the ordinary case here, not an exotic one.
 #[test]
 fn the_rows_follow_the_file_when_it_changes() {
-    let root = temporary("reload");
-    let path = root.join("f.rs");
+    let scratch = temporary("reload");
+    let path = scratch.path().join("f.rs");
     std::fs::write(&path, "fn alpha() {}\n").expect("writing");
     let mut app = App::new(vec![obelus::buffer::Buffer::open(&path).expect("opening")]);
     support::lay_out(&mut app, 60, 16);
@@ -469,9 +469,13 @@ fn one_letter_is_a_search_and_nothing_is_not() {
 /// interrupted from outside, so the thread reads the generation itself.
 #[test]
 fn a_scan_that_has_been_typed_past_stops() {
-    let root = temporary("cancel");
+    let scratch = temporary("cancel");
     for file in 0..40 {
-        std::fs::write(root.join(format!("f{file}.rs")), "fn needle() {}\n").expect("writing");
+        std::fs::write(
+            scratch.path().join(format!("f{file}.rs")),
+            "fn needle() {}\n",
+        )
+        .expect("writing");
     }
 
     // Stale before it starts, which is the same state a scan reaches when
@@ -479,7 +483,7 @@ fn a_scan_that_has_been_typed_past_stops() {
     // to find that out.
     let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(9));
     let (sender, events) = obelus::event::channel();
-    search::spawn_scan(&root, "needle", 4, &current, sender);
+    search::spawn_scan(scratch.path(), "needle", 4, &current, sender);
 
     // The thread owns the only sender, so its return closes the channel.
     // Nothing at all comes through: not even the batch that says it is
@@ -493,7 +497,7 @@ fn a_scan_that_has_been_typed_past_stops() {
     // While the generation it was started under does run to the end.
     let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(4));
     let (sender, events) = obelus::event::channel();
-    search::spawn_scan(&root, "needle", 4, &current, sender);
+    search::spawn_scan(scratch.path(), "needle", 4, &current, sender);
     let mut found = 0;
     loop {
         match events.recv_timeout(std::time::Duration::from_secs(10)) {
@@ -691,25 +695,37 @@ fn searching_a_file_needs_a_file() {
 /// that it says when it is finished.
 #[test]
 fn the_scan_finds_lines_and_finishes() {
-    let root = temporary("scan");
+    let scratch = temporary("scan");
     // A repository, because `.gitignore` is a git file: `ignore` applies it
     // where git would, and a bare directory is not somewhere git would.
     std::process::Command::new("git")
         .arg("-C")
-        .arg(&root)
+        .arg(scratch.path())
         .args(["init", "--quiet"])
         .output()
         .expect("git init");
-    std::fs::write(root.join("one.rs"), "fn alpha() {}\nfn beta() {}\n").expect("writing");
-    std::fs::write(root.join("two.rs"), "// beta again\n").expect("writing");
+    std::fs::write(
+        scratch.path().join("one.rs"),
+        "fn alpha() {}\nfn beta() {}\n",
+    )
+    .expect("writing");
+    std::fs::write(scratch.path().join("two.rs"), "// beta again\n").expect("writing");
     // Not UTF-8 is a binary file, and a reader searching for a word is not
     // searching those.
-    std::fs::write(root.join("blob.bin"), [0xff, 0xfe, b'b', b'e', b't', b'a']).expect("writing");
-    std::fs::write(root.join(".gitignore"), "ignored/\n").expect("writing");
-    std::fs::create_dir(root.join("ignored")).expect("a directory");
-    std::fs::write(root.join("ignored/three.rs"), "fn beta_ignored() {}\n").expect("writing");
+    std::fs::write(
+        scratch.path().join("blob.bin"),
+        [0xff, 0xfe, b'b', b'e', b't', b'a'],
+    )
+    .expect("writing");
+    std::fs::write(scratch.path().join(".gitignore"), "ignored/\n").expect("writing");
+    std::fs::create_dir(scratch.path().join("ignored")).expect("a directory");
+    std::fs::write(
+        scratch.path().join("ignored/three.rs"),
+        "fn beta_ignored() {}\n",
+    )
+    .expect("writing");
 
-    let hits = scan(&root, "beta");
+    let hits = scan(scratch.path(), "beta");
     let mut found: Vec<String> = hits
         .iter()
         .map(|hit| format!("{}:{}:{}", hit.path.display(), hit.line, hit.text))
@@ -726,15 +742,19 @@ fn the_scan_finds_lines_and_finishes() {
 /// case matches either case, and a query with a capital in it means it.
 #[test]
 fn the_scan_takes_a_capital_seriously() {
-    let root = temporary("case");
-    std::fs::write(root.join("f.rs"), "let alpha = 1;\nlet Alpha = 2;\n").expect("writing");
+    let scratch = temporary("case");
+    std::fs::write(
+        scratch.path().join("f.rs"),
+        "let alpha = 1;\nlet Alpha = 2;\n",
+    )
+    .expect("writing");
 
     assert_eq!(
-        scan(&root, "alpha").len(),
+        scan(scratch.path(), "alpha").len(),
         2,
         "lower case did not match both"
     );
-    let strict = scan(&root, "Alpha");
+    let strict = scan(scratch.path(), "Alpha");
     assert_eq!(strict.len(), 1, "a capital matched either case");
     assert_eq!(strict[0].line, 1);
 }
@@ -744,16 +764,16 @@ fn the_scan_takes_a_capital_seriously() {
 /// megabytes of one line nobody is searching.
 #[test]
 fn the_scan_trims_what_a_row_cannot_show() {
-    let root = temporary("wide");
+    let scratch = temporary("wide");
     let long = format!("let x = \"{}needle\";", "a".repeat(600));
-    std::fs::write(root.join("wide.rs"), format!("{long}\n")).expect("writing");
+    std::fs::write(scratch.path().join("wide.rs"), format!("{long}\n")).expect("writing");
     std::fs::write(
-        root.join("huge.rs"),
+        scratch.path().join("huge.rs"),
         format!("// needle\n{}", "x".repeat(3 * 1024 * 1024)),
     )
     .expect("writing");
 
-    let hits = scan(&root, "let x");
+    let hits = scan(scratch.path(), "let x");
     assert_eq!(hits.len(), 1, "the wide line was not found");
     assert!(
         hits[0].text.chars().count() <= 300,
@@ -761,7 +781,7 @@ fn the_scan_trims_what_a_row_cannot_show() {
         hits[0].text.chars().count()
     );
     assert!(
-        scan(&root, "needle")
+        scan(scratch.path(), "needle")
             .iter()
             .all(|hit| hit.path != std::path::Path::new("huge.rs")),
         "a three-megabyte file was read"
@@ -796,11 +816,8 @@ fn scan(root: &std::path::Path, query: &str) -> Vec<Hit> {
 }
 
 /// A directory of its own for one test, emptied first so a rerun is clean.
-fn temporary(name: &str) -> std::path::PathBuf {
-    let root = std::env::temp_dir().join(format!("obelus-search-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("a directory");
-    root
+fn temporary(name: &str) -> support::Scratch {
+    support::Scratch::new(&format!("search-{name}"))
 }
 
 /// The preview marks the characters the query matched, and nothing else.

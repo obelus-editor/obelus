@@ -22,7 +22,11 @@
 //! occupies the two columns the pair really covers and the block stays
 //! aligned.
 
-use std::{fmt::Write as _, fs, path::PathBuf};
+use std::{
+    fmt::Write as _,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus::{app::App, buffer::Buffer, event::Event, ui};
@@ -236,5 +240,65 @@ fn colour(colour: Color) -> String {
         Color::Rgb(red, green, blue) => format!("#{red:02x}{green:02x}{blue:02x}"),
         Color::Reset => "reset".to_string(),
         other => format!("{other:?}"),
+    }
+}
+
+/// A directory of its own for one test, cleaned up when the test passes.
+///
+/// Named after the test, so what a failure leaves behind says which one it
+/// was -- and it is left behind only then. A passing test that kept its
+/// scratch directory leaves one per run, and `/tmp` is a ramdisk on the
+/// machines this is written on: a suite run a few hundred times over an
+/// afternoon was holding most of a gigabyte of nothing.
+///
+/// The process id is in the name so that two runs at once do not clear each
+/// other's ground, which is a failure that looks like a flaky test.
+pub struct Scratch {
+    path: PathBuf,
+    name: String,
+}
+
+impl Scratch {
+    /// An empty directory, whatever was there before.
+    pub fn new(name: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("obelus-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("a scratch directory");
+        Self {
+            path,
+            name: name.to_string(),
+        }
+    }
+
+    /// The directory itself.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// A path inside it, which need not exist.
+    pub fn join(&self, name: &str) -> PathBuf {
+        self.path.join(name)
+    }
+
+    /// Writes a file inside it, making any directories on the way.
+    pub fn write(&self, name: &str, contents: &str) -> PathBuf {
+        let path = self.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("a directory");
+        }
+        std::fs::write(&path, contents).expect("writing a scratch file");
+        path
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        // A test that is failing is a test whose evidence is worth more
+        // than the disk it sits on.
+        if std::thread::panicking() {
+            eprintln!("left {} behind, for {}", self.path.display(), self.name);
+            return;
+        }
+        let _ = std::fs::remove_dir_all(&self.path);
     }
 }

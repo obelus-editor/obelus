@@ -459,8 +459,8 @@ fn the_caret_sits_on_the_row_the_line_is_drawn_on() {
 /// fold.
 #[test]
 fn re_reading_the_file_drops_what_was_folded() {
-    let path = std::env::temp_dir().join(format!("obelus-folds-{}.rs", std::process::id()));
-    std::fs::write(&path, "fn one() {\n    1;\n}\n").expect("writing the scratch file");
+    let scratch = support::Scratch::new("folds");
+    let path = scratch.write("one.rs", "fn one() {\n    1;\n}\n");
     let mut buffer = Buffer::open(&path).expect("opening it");
 
     assert!(buffer.toggle_fold(LineNumber::new(0)), "nothing folded");
@@ -483,7 +483,6 @@ fn re_reading_the_file_drops_what_was_folded() {
         buffer.folds().offered_at(LineNumber::new(2)).is_some(),
         "the new text was not asked what it folds"
     );
-    let _ = std::fs::remove_file(&path);
 }
 
 /// What is highlighted is what is *drawn*, not the first screenful of
@@ -530,9 +529,11 @@ fn what_is_below_a_fold_is_still_coloured() {
 fn folding_over_an_opened_hunk_closes_it() {
     use obelus::buffer::{Motion, TextArea};
 
-    let path = std::env::temp_dir().join(format!("obelus-blockfold-{}.rs", std::process::id()));
-    std::fs::write(&path, "fn outer() {\n    let a = 1;\n    let b = 2;\n}\n")
-        .expect("writing the scratch file");
+    let scratch = support::Scratch::new("blockfold");
+    let path = scratch.write(
+        "outer.rs",
+        "fn outer() {\n    let a = 1;\n    let b = 2;\n}\n",
+    );
     let mut buffer = Buffer::open(&path).expect("opening it");
 
     // A hunk opened above line three, with the caret walked into it.
@@ -561,7 +562,6 @@ fn folding_over_an_opened_hunk_closes_it() {
         buffer.in_block().is_none(),
         "the caret was left in rows nobody draws"
     );
-    let _ = std::fs::remove_file(&path);
 }
 
 /// The scrollbar is a picture of the document at the height of the screen,
@@ -570,7 +570,7 @@ fn folding_over_an_opened_hunk_closes_it() {
 /// while the whole of it is in front of them.
 #[test]
 fn the_scrollbar_measures_what_is_shown() {
-    let path = std::env::temp_dir().join(format!("obelus-bar-{}.rs", std::process::id()));
+    let scratch = support::Scratch::new("bar");
     let mut source = String::from("fn wrapping() {\n");
     for line in 0..30 {
         source.push_str(&format!("    let a{line} = {line};\n"));
@@ -579,7 +579,7 @@ fn the_scrollbar_measures_what_is_shown() {
     for line in 0..28 {
         source.push_str(&format!("const B{line}: u32 = {line};\n"));
     }
-    std::fs::write(&path, &source).expect("writing the scratch file");
+    let path = scratch.write("wrapping.rs", &source);
 
     let mut app = App::new(vec![Buffer::open(&path).expect("opening")]);
     support::lay_out(&mut app, 50, 10);
@@ -616,7 +616,6 @@ fn the_scrollbar_measures_what_is_shown() {
          {after} after:\n{}",
         support::text_block(&dump)
     );
-    let _ = std::fs::remove_file(&path);
 }
 
 /// The width the cursor counts in has to be the width the view draws in.
@@ -627,10 +626,12 @@ fn the_scrollbar_measures_what_is_shown() {
 /// scrollbar, where the character it claims to be on is never drawn.
 #[test]
 fn the_cursor_counts_in_the_width_the_view_draws() {
-    let path = std::env::temp_dir().join(format!("obelus-width-{}.rs", std::process::id()));
+    let scratch = support::Scratch::new("width");
     let wide: String = std::iter::repeat_n('x', 60).collect();
-    std::fs::write(&path, format!("fn f() {{\n    let a = \"{wide}\";\n}}\n"))
-        .expect("writing the scratch file");
+    let path = scratch.write(
+        "wide.rs",
+        &format!("fn f() {{\n    let a = \"{wide}\";\n}}\n"),
+    );
     let mut app = App::new(vec![Buffer::open(&path).expect("opening")]);
     support::lay_out(&mut app, 40, 10);
 
@@ -653,7 +654,6 @@ fn the_cursor_counts_in_the_width_the_view_draws() {
         "the caret is on the scrollbar's column:\n{}",
         support::text_block(&dump)
     );
-    let _ = std::fs::remove_file(&path);
 }
 
 /// Walking up out of an opened hunk lands on the first line that is shown,
@@ -664,13 +664,13 @@ fn the_cursor_counts_in_the_width_the_view_draws() {
 fn walking_up_out_of_a_hunk_clears_what_is_folded() {
     use obelus::buffer::{Motion, TextArea};
 
-    let path = std::env::temp_dir().join(format!("obelus-upfold-{}.rs", std::process::id()));
+    let scratch = support::Scratch::new("upfold");
     let mut source = String::from("fn hidden() {\n");
     for line in 0..6 {
         source.push_str(&format!("    let a{line} = {line};\n"));
     }
     source.push_str("}\nlet after = 1;\n");
-    std::fs::write(&path, &source).expect("writing the scratch file");
+    let path = scratch.write("hidden.rs", &source);
     let mut buffer = Buffer::open(&path).expect("opening it");
 
     // The run hides lines two to eight, and the hunk hangs above line nine
@@ -699,7 +699,6 @@ fn walking_up_out_of_a_hunk_clears_what_is_folded() {
         "the caret left the hunk onto a line that is folded away: {:?}",
         buffer.cursor().line
     );
-    let _ = std::fs::remove_file(&path);
 }
 
 /// A block with nothing in it is not a run. The line below it is no deeper,

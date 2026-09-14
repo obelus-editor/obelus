@@ -16,22 +16,24 @@ use obelus::{
 /// and every test here applies a setting.
 static SETTINGS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// A directory of its own for one test.
-fn temporary(name: &str) -> std::path::PathBuf {
-    let directory =
-        std::env::temp_dir().join(format!("obelus-settings-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).expect("a directory");
-    directory.join("config.toml")
+/// A settings file of its own for one test.
+///
+/// The guard is returned rather than just the path, and has to be held: it
+/// is what takes the directory away again when the test passes.
+fn temporary(name: &str) -> support::Scratch {
+    support::Scratch::new(&format!("settings-{name}"))
+}
+
+/// Where that test's settings file goes.
+fn settings_file(scratch: &support::Scratch) -> std::path::PathBuf {
+    scratch.join("config.toml")
 }
 
 /// A tree of its own for one test, with a `.obelus.toml` in it.
-fn tree(name: &str, contents: &str) -> std::path::PathBuf {
-    let root = std::env::temp_dir().join(format!("obelus-tree-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("a directory");
-    std::fs::write(root.join(".obelus.toml"), contents).expect("the tree's settings");
-    root
+fn tree(name: &str, contents: &str) -> support::Scratch {
+    let scratch = support::Scratch::new(&format!("tree-{name}"));
+    scratch.write(".obelus.toml", contents);
+    scratch
 }
 
 fn open(file: &std::path::Path) -> App {
@@ -46,7 +48,8 @@ fn open(file: &std::path::Path) -> App {
 #[test]
 fn nothing_of_obeluss_own_opens_over_the_settings() {
     let _taken = SETTINGS.lock().expect("the lock");
-    let mut app = open(&temporary("modal"));
+    let scratch = temporary("modal");
+    let mut app = open(&settings_file(&scratch));
     let page = support::render(&mut app, 66, 12);
     for key in ['o', 'e', 'p', 'q'] {
         support::press_control(&mut app, key);
@@ -68,7 +71,8 @@ fn a_switch_takes_effect_and_is_written_down() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("switch");
+    let scratch = temporary("switch");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
 
     // Down onto the second row of the appearance tab, which is the glyphs.
@@ -107,7 +111,8 @@ fn a_choice_opens_the_list_every_other_choice_uses() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("droplist");
+    let scratch = temporary("droplist");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
 
     // The theme is the first row.
@@ -164,7 +169,8 @@ fn walking_the_theme_list_wears_each_one() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("theme-droplist");
+    let scratch = temporary("theme-droplist");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
 
     // The page as it stands, to come back to.
@@ -234,7 +240,8 @@ fn a_switch_is_a_slider_that_enter_flips() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("slider");
+    let scratch = temporary("slider");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Down);
 
@@ -272,7 +279,8 @@ fn the_tabs_are_the_groups() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("tabs");
+    let scratch = temporary("tabs");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
 
     let rows = |app: &App| {
@@ -324,7 +332,8 @@ fn typing_narrows_the_settings() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("filter");
+    let scratch = temporary("filter");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
 
     support::type_text(&mut app, "theme");
@@ -396,7 +405,8 @@ fn the_view_closes_and_the_file_is_what_it_shows() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("closes");
+    let scratch = temporary("closes");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Esc);
     assert!(app.settings().is_none(), "the view stayed open");
@@ -430,8 +440,8 @@ fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-    let directory = std::env::temp_dir().join(format!("obelus-linked-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
+    let scratch = support::Scratch::new("linked");
+    let directory = scratch.path().to_path_buf();
     let repository = directory.join("dotfiles");
     let config_home = directory.join("config");
     std::fs::create_dir_all(&repository).expect("a directory");
@@ -456,8 +466,6 @@ fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
         "light",
         "a setting that arrived through the link was not picked up"
     );
-
-    let _ = std::fs::remove_dir_all(&directory);
 }
 
 /// What a setting does goes under its name, indented, and carries onto
@@ -476,7 +484,8 @@ fn what_a_setting_does_goes_under_it_and_wraps() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("under");
+    let scratch = temporary("under");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
 
     let dump = support::render(&mut app, 66, 14);
@@ -526,7 +535,8 @@ fn the_last_setting_can_be_walked_to_on_a_short_screen() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("short");
+    let scratch = temporary("short");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Right);
 
@@ -559,7 +569,8 @@ fn a_tree_lays_its_own_settings_over_the_readers() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = tree("over", "wrap = true\n");
+    let scratch = tree("over", "wrap = true\n");
+    let root = scratch.path().to_path_buf();
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     // The reader's own, as they would have come from their file.
@@ -576,8 +587,6 @@ fn a_tree_lays_its_own_settings_over_the_readers() {
         "light",
         "the tree took away a setting it never named"
     );
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// A tree may not choose the agent, or rebind a key.
@@ -593,10 +602,11 @@ fn a_tree_may_not_start_an_agent_or_move_a_key() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = tree(
+    let scratch = tree(
         "reach",
         "agent = \"claude-acp\"\n[keys]\nquit = \"ctrl+x\"\n",
     );
+    let root = scratch.path().to_path_buf();
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(obelus::config::Config::default());
@@ -608,8 +618,6 @@ fn a_tree_may_not_start_an_agent_or_move_a_key() {
         "a tree moved a key: {:?}",
         app.config().keys
     );
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// The directory form is the one with room in it, so it is the one that
@@ -623,7 +631,8 @@ fn the_directory_wins_over_the_file_beside_it() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = tree("both", "theme = \"light\"\n");
+    let scratch = tree("both", "theme = \"light\"\n");
+    let root = scratch.path().to_path_buf();
     std::fs::create_dir_all(root.join(".obelus")).expect("a directory");
     std::fs::write(
         root.join(".obelus").join("config.toml"),
@@ -636,8 +645,6 @@ fn the_directory_wins_over_the_file_beside_it() {
     app.working_directory_for_test(root.clone());
 
     assert_eq!(app.theme().name, "dark", "the stray file won");
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// A setting the tree has is not the reader's to change, and the row says
@@ -651,7 +658,8 @@ fn a_setting_the_tree_has_cannot_be_changed_here() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = tree("pinned", "wrap = true\n");
+    let scratch = tree("pinned", "wrap = true\n");
+    let root = scratch.path().to_path_buf();
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(obelus::config::Config::default());
@@ -673,8 +681,6 @@ fn a_setting_the_tree_has_cannot_be_changed_here() {
         support::text_block(&dump).contains(".obelus.toml"),
         "the row does not say which file has it:\n{dump}"
     );
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// An application that was never told where its settings live does not write
@@ -704,7 +710,8 @@ fn the_theme_picker_writes_its_choice_down() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("theme-picker");
+    let scratch = temporary("theme-picker");
+    let file = settings_file(&scratch);
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(file.clone());
     support::lay_out(&mut app, 60, 12);
@@ -730,7 +737,8 @@ fn the_ends_and_the_pages_are_reachable() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("ends");
+    let scratch = temporary("ends");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
     let focus = |app: &App| app.settings().expect("the settings").focus();
 
@@ -762,7 +770,8 @@ fn the_agents_page_is_a_list_of_cards() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("cards");
+    let scratch = temporary("cards");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
     // Onto the agents tab, which is the last one.
     support::press(&mut app, KeyCode::Left);
@@ -847,7 +856,8 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("registry");
+    let scratch = temporary("registry");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Left);
     assert!(app.settings().expect("the settings").on_agents());
@@ -937,7 +947,8 @@ fn the_cards_scroll_only_at_an_edge() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("window");
+    let scratch = temporary("window");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Left);
 
@@ -1029,7 +1040,8 @@ fn the_first_agent_installed_is_the_one_in_use() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("installed");
+    let scratch = temporary("installed");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
     let root = file.with_file_name("agents");
     app.agents_root_for_test(root.clone());
@@ -1133,7 +1145,8 @@ fn an_agent_that_is_not_installed_is_not_in_use() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("stuck");
+    let scratch = temporary("stuck");
+    let file = settings_file(&scratch);
     // The settings say an agent is in use, from some earlier session.
     std::fs::write(&file, "agent = \"agent-0\"\n").expect("the file");
     let mut app = open(&file);
@@ -1202,7 +1215,8 @@ fn a_command_can_be_put_on_another_key() {
     use obelus::{command::Command, keymap::KeyChord};
 
     let _taken = SETTINGS.lock().expect("the lock");
-    let file = temporary("bind");
+    let scratch = temporary("bind");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
     // The keys tab: appearance, reading, keys, agents.
     support::press(&mut app, KeyCode::Right);
@@ -1260,7 +1274,8 @@ fn a_key_that_is_taken_says_so_on_the_row() {
     use obelus::command::Command;
 
     let _taken = SETTINGS.lock().expect("the lock");
-    let mut app = open(&temporary("taken"));
+    let scratch = temporary("taken");
+    let mut app = open(&settings_file(&scratch));
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
     support::type_text(&mut app, "choose-theme");
@@ -1313,7 +1328,8 @@ fn a_key_that_could_never_fire_is_refused() {
     use obelus::{command::Command, event::Event};
 
     let _taken = SETTINGS.lock().expect("the lock");
-    let mut app = open(&temporary("never"));
+    let scratch = temporary("never");
+    let mut app = open(&settings_file(&scratch));
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
     support::type_text(&mut app, "choose-theme");
@@ -1361,7 +1377,8 @@ fn delete_takes_a_key_away() {
     use obelus::command::Command;
 
     let _taken = SETTINGS.lock().expect("the lock");
-    let file = temporary("unbind");
+    let scratch = temporary("unbind");
+    let file = settings_file(&scratch);
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
@@ -1396,7 +1413,8 @@ fn delete_takes_a_key_away() {
 #[test]
 fn the_settings_file_itself_can_be_read() {
     let _taken = SETTINGS.lock().expect("the lock");
-    let file = temporary("file");
+    let scratch = temporary("file");
+    let file = settings_file(&scratch);
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(file.clone());
     support::lay_out(&mut app, 66, 12);
@@ -1430,7 +1448,8 @@ fn a_setting_changed_by_another_obelus_arrives_here() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("shared");
+    let scratch = temporary("shared");
+    let file = settings_file(&scratch);
     std::fs::write(&file, "theme = \"light\"\n").expect("a settings file");
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(file.clone());
@@ -1459,7 +1478,8 @@ fn a_settings_file_that_will_not_read_is_not_written_over() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("broken");
+    let scratch = temporary("broken");
+    let file = settings_file(&scratch);
     let kept = "theme = \"light\"\nthis file is half written";
     std::fs::write(&file, kept).expect("a settings file");
 

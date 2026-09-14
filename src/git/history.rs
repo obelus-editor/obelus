@@ -9,7 +9,10 @@
 //! The list says where it stopped rather than pretending it is the whole
 //! of the history.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use crate::git::FileStatus;
 
@@ -249,6 +252,57 @@ pub fn text_at(within: &Path, id: gix::ObjectId, path: &Path) -> Option<String> 
     let object = entry.object().ok()?;
     String::from_utf8(object.data.clone()).ok()
 }
+
+/// Which of these commits the remote already has.
+///
+/// `None` where the question does not arise: no remote, or a branch that
+/// tracks nothing. Every commit is then equally unpushed, and marking all
+/// of them says no more than marking none.
+///
+/// Walked from the tracking branch rather than compared commit by commit,
+/// and stopped as soon as every commit asked about is accounted for --
+/// which in the ordinary case, where the remote is at or near `HEAD`, is
+/// after about as many commits as were asked about. A commit the walk did
+/// not reach before its budget ran out is left alone rather than marked:
+/// telling a reader their work is not on the remote when it is would be a
+/// worse lie than saying nothing.
+#[must_use]
+pub fn pushed(within: &Path, asked: &[gix::ObjectId]) -> Option<HashSet<gix::ObjectId>> {
+    let repository = super::repository(within)?;
+    let head = repository.head_ref().ok()??;
+    let name = head.name().to_owned();
+    let tracking = repository
+        .branch_remote_tracking_ref_name(name.as_ref(), gix::remote::Direction::Fetch)?
+        .ok()?;
+    let mut reference = repository.find_reference(tracking.as_ref()).ok()?;
+    let id = reference.peel_to_id_in_place().ok()?;
+    let walk = repository.rev_walk([id]).all().ok()?;
+
+    let wanted: HashSet<gix::ObjectId> = asked.iter().copied().collect();
+    let mut found = HashSet::new();
+    let mut seen = 0;
+    for info in walk.flatten() {
+        seen += 1;
+        if wanted.contains(&info.id) {
+            found.insert(info.id);
+            if found.len() == wanted.len() {
+                break;
+            }
+        }
+        if seen > asked.len().saturating_mul(BEHIND) {
+            break;
+        }
+    }
+    Some(found)
+}
+
+/// How far behind the remote may be before obelus stops looking.
+///
+/// A branch that is a few commits ahead is the ordinary case and stops at
+/// once. One that is thousands behind is a reader who has not fetched in
+/// months, and walking all of it to colour twenty rows is not worth a key
+/// press.
+const BEHIND: usize = 4;
 
 /// A file as the commit *before* one had it.
 ///

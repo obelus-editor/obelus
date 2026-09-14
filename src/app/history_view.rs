@@ -154,6 +154,12 @@ impl App {
             .and_then(|picker| self.history.radii.get(picker.tab()).copied())
             == Some(Radius::Project);
         let now = std::time::SystemTime::now();
+        // Which of them the remote already has. `None` where the question
+        // does not arise -- no remote, or a branch tracking nothing -- and
+        // then nothing is marked: every commit is equally unpushed, and
+        // marking all of them says no more than marking none.
+        let asked: Vec<gix::ObjectId> = self.history.commits.iter().map(|c| c.id).collect();
+        let pushed = crate::git::history::pushed(&self.working_directory, &asked);
         let mut items: Vec<PickerItem> = Vec::new();
         for commit in &self.history.commits {
             let open = self
@@ -183,7 +189,14 @@ impl App {
                 )),
                 value: PickerValue::Commit(commit.id),
                 depth: 0,
-                status: None,
+                // Not on the remote yet, which is the same colour a file
+                // git has not seen wears, and for the same reason: it is
+                // the one still to be dealt with, and the few of them are
+                // what a reader scanning the list is looking for.
+                status: pushed
+                    .as_ref()
+                    .filter(|pushed| !pushed.contains(&commit.id))
+                    .map(|_| git::FileStatus::New),
                 enabled: true,
                 colours: None,
                 kind: None,

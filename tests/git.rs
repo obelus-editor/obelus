@@ -2012,8 +2012,8 @@ fn a_file_can_be_read_as_a_commit_had_it() {
 fn a_history_with_no_answer_is_empty() {
     use obelus::git::history;
 
-    let elsewhere = std::env::temp_dir().join(format!("obelus-nowhere-{}", std::process::id()));
-    std::fs::create_dir_all(&elsewhere).expect("a directory");
+    let outside = support::Scratch::new("nowhere");
+    let elsewhere = outside.path().to_path_buf();
     assert!(history::of(&elsewhere, None, 10).is_empty());
 
     let repository = Repository::new("history-nothing", "one\n");
@@ -2030,7 +2030,6 @@ fn a_history_with_no_answer_is_empty() {
         history::of(&root, Some(&elsewhere.join("outside.rs")), 10).is_empty(),
         "a path outside the repository was answered with the whole of it"
     );
-    let _ = std::fs::remove_dir_all(&elsewhere);
 }
 
 /// The history is one view at two radii, and the keys land on the tab they
@@ -2561,5 +2560,131 @@ fn the_open_files_say_which_commit_they_came_from() {
     assert_eq!(
         rows[0].0, rows[1].0,
         "they were telling themselves apart some other way, and this test proves nothing"
+    );
+}
+
+/// A repository with somewhere to push to, and a branch that tracks it.
+struct Pushed {
+    directory: std::path::PathBuf,
+    work: std::path::PathBuf,
+}
+
+impl Pushed {
+    /// Three commits pushed, then `ahead` more that the remote has never
+    /// seen.
+    fn new(name: &str, ahead: usize) -> Self {
+        let directory =
+            std::env::temp_dir().join(format!("obelus-push-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let (bare, work) = (directory.join("remote.git"), directory.join("work"));
+        std::fs::create_dir_all(&work).expect("a directory");
+        std::process::Command::new("git")
+            .args(["init", "--bare", "--quiet"])
+            .arg(&bare)
+            .output()
+            .expect("a remote");
+
+        let git = |at: &std::path::Path, arguments: &[&str]| {
+            let outcome = std::process::Command::new("git")
+                .arg("-C")
+                .arg(at)
+                .args(arguments)
+                .env("GIT_AUTHOR_NAME", "obelus")
+                .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+                .env("GIT_COMMITTER_NAME", "obelus")
+                .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+                .output()
+                .expect("running git");
+            assert!(outcome.status.success(), "git {arguments:?} failed");
+        };
+        git(&work, &["init", "--quiet"]);
+        for commit in 0..3 {
+            std::fs::write(work.join("file.rs"), format!("line {commit}\n")).expect("the file");
+            git(&work, &["add", "-A"]);
+            git(
+                &work,
+                &["commit", "--quiet", "-m", &format!("pushed {commit}")],
+            );
+        }
+        git(
+            &work,
+            &["remote", "add", "origin", bare.to_str().expect("a path")],
+        );
+        git(&work, &["push", "--quiet", "-u", "origin", "HEAD"]);
+        for commit in 0..ahead {
+            std::fs::write(work.join("file.rs"), format!("later {commit}\n")).expect("the file");
+            git(&work, &["add", "-A"]);
+            git(
+                &work,
+                &["commit", "--quiet", "-m", &format!("ahead {commit}")],
+            );
+        }
+        Self { directory, work }
+    }
+
+    fn path(&self) -> std::path::PathBuf {
+        self.work.join("file.rs")
+    }
+}
+
+impl Drop for Pushed {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
+}
+
+/// What the remote has not seen is what is still the reader's to change, and
+/// the list says so in the colour a file git has not seen wears.
+#[test]
+fn the_commits_the_remote_has_not_seen_are_marked() {
+    use obelus::{app::App, buffer::Buffer, git::FileStatus};
+
+    let repository = Pushed::new("marked", 2);
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.work.clone());
+    support::lay_out(&mut app, 64, 14);
+    support::press_function(&mut app, 10);
+
+    let rows: Vec<(String, Option<FileStatus>)> = app
+        .picker()
+        .expect("the history")
+        .matches()
+        .map(|item| (item.label.clone(), item.status))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("ahead 1".to_string(), Some(FileStatus::New)),
+            ("ahead 0".to_string(), Some(FileStatus::New)),
+            ("pushed 2".to_string(), None),
+            ("pushed 1".to_string(), None),
+            ("pushed 0".to_string(), None),
+        ],
+        "not the two the remote has never seen"
+    );
+}
+
+/// Nothing is marked where the question does not arise. Every commit is
+/// then equally unpushed, and marking all of them says no more than marking
+/// none -- and obelus's own repository, which has no remote at all, would
+/// otherwise be a wall of one colour.
+#[test]
+fn a_repository_with_nowhere_to_push_marks_nothing() {
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("nowhere-to-push", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit("the second");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 64, 14);
+    support::press_function(&mut app, 10);
+    assert!(
+        app.picker()
+            .expect("the history")
+            .matches()
+            .all(|item| item.status.is_none()),
+        "a repository with no remote marked its commits"
     );
 }

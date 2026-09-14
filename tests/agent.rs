@@ -1717,10 +1717,7 @@ fn talking_to_an_agent_that_stopped_starts_it_again() {
     // Started the way a reader's is -- an installed agent named in the
     // settings -- because that is what starting it *again* goes through.
     let (mut app, events) = wired();
-    let directory =
-        std::env::temp_dir().join(format!("obelus-agent-restart-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).expect("a directory");
+    let directory = support::Scratch::new("agent-restart");
     let root = directory.join("agents");
     obelus::agent::remember(
         "fake",
