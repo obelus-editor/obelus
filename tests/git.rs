@@ -2511,3 +2511,55 @@ fn the_history_previews_what_a_row_would_give() {
         "the preview did not start at the top of the message:\n{first}"
     );
 }
+
+/// Two buffers can wear one path -- the file, and the file as some commit
+/// had it -- and the list of open files has to say which is which. They
+/// differ in what they say, in whether they follow the disk, and in what
+/// the margin beside them means, and a reader picking between two identical
+/// rows is picking blind.
+#[test]
+fn the_open_files_say_which_commit_they_came_from() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("open-files-commit", "first\n");
+    repository.write("second\n");
+    repository.commit("the second");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 60, 14);
+    support::press_function(&mut app, 10);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    let at = app
+        .current_buffer()
+        .expect("a file")
+        .content()
+        .short()
+        .expect("a commit");
+
+    support::press_function(&mut app, 2);
+    let rows: Vec<(String, Option<String>)> = app
+        .picker()
+        .expect("the open files")
+        .matches()
+        .map(|item| (item.label.clone(), item.trailing.clone()))
+        .collect();
+    assert_eq!(rows.len(), 2, "not both of them: {rows:?}");
+    assert_eq!(
+        rows[0].1, None,
+        "the file on disk is marked as if it came from a commit"
+    );
+    assert_eq!(
+        rows[1].1.as_deref(),
+        Some(at.as_str()),
+        "the commit's version does not say which commit"
+    );
+    assert_eq!(
+        rows[0].0, rows[1].0,
+        "they were telling themselves apart some other way, and this test proves nothing"
+    );
+}

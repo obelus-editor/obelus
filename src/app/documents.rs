@@ -181,7 +181,15 @@ impl App {
                 icon: Some(icons::for_path(buffer.path())),
                 label: relative(buffer.path(), &self.working_directory),
                 detail: None,
-                trailing: None,
+                // Which commit, for a buffer read from one. Two buffers can
+                // wear a path -- the file, and the file as some commit had
+                // it -- and without this they are two rows a reader has no
+                // way to tell apart, of documents that differ in what they
+                // say, in whether they follow the disk, and in what the
+                // margin beside them means. The short id and no more: the
+                // status row marks the same fact in the same words, so a
+                // reader who has seen one has read the other.
+                trailing: buffer.content().short(),
                 value: PickerValue::Buffer(BufferId::new(index)),
                 enabled: true,
                 colours: None,

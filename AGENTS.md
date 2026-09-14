@@ -139,6 +139,14 @@ and the short id go on the right, where the width is taken out of the
 subject's before it is truncated: what must survive the cut is how to find
 this commit again.
 
+**Two buffers can wear one path, so a list of them says which is which.**
+The file and the file as some commit had it differ in what they say, in
+whether they follow the disk, and in what the margin beside them means; two
+rows reading `src/parser.rs` are two rows a reader picks between blind. The
+short id on the right and no more -- the status row marks the same fact in
+the same words, so a reader who has seen one has read the other, and the
+list's own job is still to show paths.
+
 **A preview is of a subject, not of a path.** A row does not always name a
 file on disk: a commit names what it said, and one of a commit's files names
 that file as the commit had it -- a different document from the one at the
