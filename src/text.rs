@@ -519,6 +519,18 @@ impl Text {
     #[must_use]
     pub fn wrap_rows(&self, line: LineNumber, width: u16) -> Vec<WrapRow> {
         let width = width.max(1);
+        // Nothing wraps at this width, and the answer is the whole line --
+        // which is what `wrap_width` says when the reader has wrapping off.
+        // Worth its own arm: this is asked twice for every row of every
+        // frame, and the general answer walks the line measuring glyphs to
+        // find the break it will not need.
+        if width == u16::MAX {
+            return vec![WrapRow {
+                first: CharColumn::new(0),
+                end: self.line_length(line),
+                indent: 0,
+            }];
+        }
         let glyphs: Vec<Glyph> = self.glyphs(line).collect();
         if glyphs.is_empty() {
             // The one row an empty line gets.

@@ -927,6 +927,10 @@ fn draw_row(
     // side. With wrapping the second is always zero, by construction: the
     // row is exactly the characters that fit.
     let start = usize::from(text.display_column(line, row.first).get()) + left;
+    // Where the row stops, worked out once. Asked inside the loop below it
+    // was a walk of the line per glyph of the line, which is what a row of
+    // text cost to draw: the square of its length, forty times a frame.
+    let stop = usize::from(text.display_column(line, row.end).get());
     let indent = usize::from(row.indent);
     let mut ended = indent.try_into().unwrap_or(u16::MAX);
 
@@ -944,7 +948,7 @@ fn draw_row(
         if glyph.first_cell < start {
             continue;
         }
-        if glyph.first_cell >= usize::from(text.display_column(line, row.end).get()) {
+        if glyph.first_cell >= stop {
             break;
         }
         let Ok(offset) = u16::try_from(indent + glyph.first_cell - start) else {
