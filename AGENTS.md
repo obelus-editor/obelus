@@ -129,6 +129,25 @@ screen is accounted for, so the ordinary case -- a remote at or near `HEAD`
 before its budget ran out is left alone, because telling a reader their work
 is not on the remote when it is would be the worse lie.
 
+**A global is right when the thing is a decision the whole program shares.**
+How wide a tab is drawn is measured by nine methods on `Text` and every
+caller of each; threading it through would put a parameter on the arithmetic
+rather than on the setting. The glyph switch is the precedent. The cost is
+paid by the tests, which have to take turns -- and go in a binary of their
+own, because a test beside them that sets a config moves it underneath.
+
+**An agent may change what the reader is looking at, and nothing else.** The
+refusal was never that an agent should not write. It was that a reader could
+not see the change arrive or take it back, which an undo answers: a write
+goes through the buffer as one change, and `ctrl+z` is what it was.
+A fake agent that asks to write a file in the repository is a test that
+rewrites the repository -- it asks about a path outside the tree instead.
+
+**A setting the reader turned on is not a reason to refuse them.** Saving
+with formatting on and no server to ask writes the file unformatted. The
+alternative is a file that is never written because of something the reader
+cannot see.
+
 **A document has one door to change through.** A buffer holds a great deal
 beside its text -- a parse tree, the folds, the blocks hanging between lines,
 the cursor, a version five separate caches key on -- and every one of them is
