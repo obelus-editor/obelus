@@ -909,7 +909,30 @@ fn move_within(
         // Past the last character, where a cursor legitimately sits -- and
         // of the row rather than the line, for the reason `home` is.
         Motion::LineEnd => {
-            cursor.column = row_of(text, cursor.line, row, width).1;
+            let (first, end) = row_of(text, cursor.line, row, width);
+            // In front of the row's last character, on a row that is not
+            // the line's last. Past it is where the row below begins: one
+            // place with two names, and a caret standing there is drawn on
+            // the row below, which reads as the key having missed. On a row
+            // that fills the screen it is worse -- there is no cell out
+            // past the last column, and the caret is not drawn at all.
+            //
+            // Zed does the same and for the same reason, though it draws in
+            // pixels and could put a caret out there: its `line_end` clips
+            // the position with `Bias::Left`, which steps back a column
+            // when it lands on the break a soft wrap inserted. Movement
+            // there is in display coordinates, where the two places are
+            // different -- but the selection is stored as a position in the
+            // text, where they are one, and stepping back is what keeps the
+            // caret off the seam entirely. Nothing then has to remember
+            // which side of it the reader meant.
+            //
+            // The last row of a line keeps the end it has always had: there
+            // is no row below for that place to belong to.
+            cursor.column = match row + 1 < text.row_count(cursor.line, width) {
+                true => CharColumn::new(end.get().saturating_sub(1)).max(first),
+                false => end,
+            };
             remember(text, cursor, width);
             return moved(cursor);
         }

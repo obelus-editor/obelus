@@ -1500,6 +1500,106 @@ mod moving {
         assert!(end > start, "end landed before the row began");
     }
 
+    /// And the caret stays on that row rather than landing on the next one.
+    ///
+    /// Past the last character of a wrapped row is where the row below
+    /// begins: one place with two names, which the text has no way to tell
+    /// apart. So `end` stops in front of that character, which is a place
+    /// on the row the key was pressed on and nowhere else. Zed clips its
+    /// own `line_end` back by a column for the same reason.
+    #[test]
+    fn end_leaves_the_caret_on_the_row_it_was_pressed_on() {
+        let (_scratch, mut app) =
+            reading("move-wrap-caret", "alpha beta gamma delta epsilon\n", 16);
+        app.configure(
+            obelus::config::Config {
+                wrap: true,
+                ..obelus::config::Config::default()
+            },
+            Vec::new(),
+        );
+        let row_of = |app: &mut App| {
+            let dump = support::render(app, 16, 12);
+            support::cursor_line(&dump)
+                .split_once(',')
+                .map(|(_, row)| row.parse::<u16>().expect("a row"))
+                .unwrap_or_else(|| panic!("the caret is not on screen:\n{dump}"))
+        };
+        assert_eq!(row_of(&mut app), 0, "not where this test meant to start");
+
+        support::press(&mut app, KeyCode::End);
+        assert_eq!(
+            row_of(&mut app),
+            0,
+            "end sent the caret to the start of the row below"
+        );
+        // In front of the row's last character, which is as far along the
+        // row as there is an unambiguous place to be.
+        assert_eq!(at(&app).1, 5, "end did not reach the end of the row");
+
+        // And down from there stays on the row below rather than falling
+        // through it.
+        support::press(&mut app, KeyCode::Down);
+        assert_eq!(
+            row_of(&mut app),
+            1,
+            "down from the end of a row skipped one"
+        );
+
+        // And home from there is the start of that row.
+        support::press(&mut app, KeyCode::Home);
+        assert_eq!(
+            row_of(&mut app),
+            1,
+            "home left the caret at the end of the row above"
+        );
+    }
+
+    /// A row with nowhere to break fills the screen, and then the place
+    /// past its last character has no cell at all: a terminal draws its
+    /// cursor in a cell, and out past the last column there is none. The
+    /// same rule covers it -- stop in front of that character -- and what
+    /// makes it worth its own test is that claiming the place left the
+    /// caret undrawn, which a reader sees as the cursor vanishing.
+    #[test]
+    fn end_of_a_row_that_fills_the_screen_stays_on_screen() {
+        let (_scratch, mut app) = reading(
+            "move-wrap-full",
+            "abcdefghijklmnopqrstuvwxyz0123456789\n",
+            16,
+        );
+        app.configure(
+            obelus::config::Config {
+                wrap: true,
+                ..obelus::config::Config::default()
+            },
+            Vec::new(),
+        );
+        support::render(&mut app, 16, 12);
+
+        support::press(&mut app, KeyCode::End);
+        let dump = support::render(&mut app, 16, 12);
+        // "none" is what the dump records for a caret the view could not
+        // place, which is what a reader sees as it vanishing.
+        assert_ne!(
+            support::cursor_line(&dump),
+            "none",
+            "the caret is not on screen at all:\n{dump}"
+        );
+        // On the row it was pressed on.
+        let rows = support::text_block(&dump);
+        let caret = support::cursor_line(&dump)
+            .split_once(',')
+            .map(|(_, row)| row.parse::<u16>().expect("a row"))
+            .expect("the caret is on screen");
+        assert_eq!(
+            caret, 0,
+            "the caret left the row end was pressed on:\n{rows}"
+        );
+        // In front of its last character, which is as far as the row goes.
+        assert_eq!(at(&app).1, 9, "end did not reach the end of the row");
+    }
+
     /// And with wrapping off a row is a line, so the keys mean what they
     /// always meant.
     #[test]
