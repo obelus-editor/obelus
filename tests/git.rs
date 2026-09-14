@@ -3688,3 +3688,40 @@ fn the_commit_behind_a_line_can_be_asked_for_with_the_names_off() {
     let dump = support::render(&mut app, 74, 14);
     panic!("the commit never opened with the margin's names off:\n{dump}");
 }
+
+#[test]
+fn the_short_answer_about_a_tree_agrees_with_the_long_one() {
+    use obelus::git::{anything_changed, statuses};
+
+    let repository = Repository::new("anything-changed", "one\n");
+    let root = repository.directory();
+    assert_eq!(
+        anything_changed(&root),
+        !statuses(&root).is_empty(),
+        "a clean tree is two different answers"
+    );
+
+    // One file the reader has touched, which is the case the short answer
+    // exists for: it stops at the first, where the long one goes on to
+    // build a map of every path to be asked its length.
+    repository.write("two\n");
+    assert!(
+        anything_changed(&root),
+        "a changed tree says nothing changed"
+    );
+    assert_eq!(
+        anything_changed(&root),
+        !statuses(&root).is_empty(),
+        "a changed tree is two different answers"
+    );
+
+    // And a file git has never seen, which arrives by a different door.
+    repository.commit("the second");
+    std::fs::write(root.join("unseen.rs"), "new\n").expect("the new file");
+    assert_eq!(
+        anything_changed(&root),
+        !statuses(&root).is_empty(),
+        "a tree with something new in it is two different answers"
+    );
+    assert!(anything_changed(&root), "a new file is nothing changed");
+}

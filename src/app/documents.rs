@@ -34,6 +34,18 @@ impl App {
         }
     }
 
+    /// Whether git says anything in the tree has changed.
+    ///
+    /// What a test said, where a test said anything: the same door
+    /// `tree_statuses` goes through, so a test that sets up a clean tree
+    /// gets a clean answer here too.
+    pub(super) fn anything_changed(&self) -> bool {
+        match &self.given_statuses {
+            Some(given) => !given.is_empty(),
+            None => git::anything_changed(&self.working_directory),
+        }
+    }
+
     /// Says what git would say about the tree, for a test.
     ///
     /// The tests run in a checkout whose dirtiness is not theirs to depend

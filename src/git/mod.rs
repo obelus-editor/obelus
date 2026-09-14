@@ -110,19 +110,30 @@ pub enum FileStatus {
     New,
 }
 
-/// What git says about every file in the repository `root` is in.
+/// Whether git says anything in the tree has changed.
 ///
-/// One walk rather than one question per file: it is a walk of the whole
-/// tree with every ignore rule applied, which is a great deal of work to
-/// repeat for each of ten thousand rows.
-///
-/// Keyed by absolute path. Git works in paths relative to the repository
-/// root, which is not necessarily the directory obelus was started in, and a
-/// map keyed by one and read with the other silently matches nothing.
-///
-/// Empty for anything that is not a repository, which is the same thing it
-/// means for a file: nothing to say.
+/// A yes or a no, and it stops at the first answer.
 #[must_use]
+pub fn anything_changed(root: &Path) -> bool {
+    let Some(repository) = repository(root) else {
+        return false;
+    };
+    let Ok(platform) = repository.status(gix::progress::Discard) else {
+        return false;
+    };
+    let Ok(iterator) = platform.into_iter(None) else {
+        return false;
+    };
+    // The first one is the whole answer, and stopping there is the
+    // difference between a walk of the tree and a glance at it. Asking
+    // `statuses` and looking at its length builds a map of every changed
+    // path to find out whether there is one, which is the same trade the
+    // history makes when it asks for a single commit to find out whether
+    // there is a history at all.
+    iterator.filter_map(Result::ok).next().is_some()
+}
+
+/// Everything git says has changed in a tree, by path.
 pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
     let mut statuses = HashMap::new();
     let Some(repository) = repository(root) else {

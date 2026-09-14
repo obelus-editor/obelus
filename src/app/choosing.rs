@@ -223,7 +223,10 @@ impl App {
             Requires::SomethingFolded => self
                 .current_buffer()
                 .is_some_and(|buffer| buffer.folds().any_folded()),
-            Requires::AChangedFile => !self.tree_statuses().is_empty(),
+            // Whether there is one, not what they all are: this is asked
+            // for every row of the palette, and building a map of every
+            // changed path to look at its length walks the tree each time.
+            Requires::AChangedFile => self.anything_changed(),
             Requires::AServerLog => crate::logging::current_file(crate::logging::SERVERS).is_some(),
         }
     }

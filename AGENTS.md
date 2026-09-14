@@ -199,6 +199,16 @@ so `ctrl+t` was greyed out on it. A format with a writer and a reader in
 the same program has a test that the one reads the other, or they drift and
 the symptom turns up somewhere that looks unrelated.
 
+**Ask the question you mean.** A gate that wants to know *whether* anything
+in the tree has changed was building a map of every changed path and taking
+its length -- on every command in the palette. The history already makes
+this distinction (`has_any` asks for one commit), and now the tree does.
+Measured afterwards, and honestly: it is two and a half times cheaper on a
+tree with something in it and no cheaper at all on a clean one, because the
+walk has to reach the end to find nothing. The phrasing was wrong; the cost
+lives in the walk, and saying otherwise would have been a win claimed
+rather than got.
+
 **Do not delete what you do not recognise.** Obelus wrote its own settings
 file whole, on the grounds that obelus wrote all of it. That is not true --
 readers put lines in by hand -- so writing it whole silently took out

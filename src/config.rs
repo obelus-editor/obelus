@@ -31,8 +31,6 @@ pub struct Config {
     pub blame_margin: bool,
     /// Whether a line too long for the screen continues on the next row.
     pub wrap: bool,
-    /// Whether a file that has a reading opens in it.
-    ///
     /// Which agent obelus talks to, by the registry's own name for it.
     ///
     /// One, or none. Two would mean every question having to say which
@@ -58,8 +56,6 @@ impl Default for Config {
             // who wants it can say so, and then it is a line's own choice
             // no longer.
             wrap: false,
-            // On: a file with a reading has one because reading it that way
-            // is better, and `f10` is how to see the bytes instead.
             // None until the reader installs one: obelus does not choose an
             // agent for anybody.
             agent: None,
@@ -468,7 +464,27 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
             }
         }
     }
+
+    // And a word for the lines obelus walked past. A key it has never heard
+    // of -- a setting that has gone, a name that has changed, a word spelled
+    // wrong -- is read, ignored, and from the outside looks exactly like one
+    // that was obeyed. The line above says as much when a tree oversteps,
+    // for the same reason: from the outside it is a line that did nothing,
+    // and that is worth being able to find out about.
+    for key in table.keys() {
+        if !known(key) {
+            tracing::warn!(key, "no setting by this name, so the line does nothing");
+        }
+    }
     set
+}
+
+/// Whether a key in a settings file names a setting obelus has.
+///
+/// The two that never appear on the settings page count: they are settings
+/// a reader writes by hand, not settings obelus has stopped having.
+fn known(key: &str) -> bool {
+    matches!(key, "agent" | "keys") || Setting::named(key).is_some()
 }
 
 /// The file's contents for a config, with nothing else in it.
@@ -660,7 +676,7 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, Value, from_toml, save_to, to_toml};
+    use super::{Config, Value, from_toml, known, save_to, to_toml};
 
     /// A path that is a link is written *through*, not over.
     ///
@@ -763,6 +779,20 @@ mod tests {
             .collect();
         assert!(beside.is_empty(), "it left {beside:?} behind");
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A key obelus has never heard of is a line that did nothing, and the
+    /// only way to find out from the outside is to be told.
+    #[test]
+    fn a_key_obelus_does_not_know_is_reported() {
+        assert!(known("theme"), "a setting on the page is not known");
+        assert!(known("agent"), "a setting written by hand is not known");
+        assert!(known("keys"), "the key table is not known");
+        assert!(
+            !known("blame"),
+            "a name obelus has stopped using is still known"
+        );
+        assert!(!known("prevlew"), "a name spelled wrong is known");
     }
 
     /// Written and read back is the same config: the file is the only place
