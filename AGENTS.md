@@ -139,6 +139,16 @@ and the short id go on the right, where the width is taken out of the
 subject's before it is truncated: what must survive the cut is how to find
 this commit again.
 
+**A preview is of a subject, not of a path.** A row does not always name a
+file on disk: a commit names what it said, and one of a commit's files names
+that file as the commit had it -- a different document from the one at the
+same path in the working tree. `Subject` is what a row resolves to, and the
+preview is built from it the way the editor would build it, message block and
+all, because a preview that showed something other than what choosing the row
+gives is a promise obelus does not keep. A commit's message previews as a
+block over an empty buffer, which is how it gets no line numbers: a message
+has no lines of its own to go to.
+
 **A file that is open is previewed where it is being read.** Whichever list
 names it -- the open files, or the whole tree -- because it is one question
 with one answer: a file's own place in it is the thing a reader remembers it

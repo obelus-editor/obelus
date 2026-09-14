@@ -280,7 +280,7 @@ impl App {
     /// The first row names it -- the id, who wrote it, how long ago -- and
     /// the rest is the message. A reader opening a file as a commit had it
     /// is asking why it says what it says, and that is the answer.
-    fn said_at(&self, id: gix::ObjectId) -> Option<Vec<String>> {
+    pub(super) fn said_at(&self, id: gix::ObjectId) -> Option<Vec<String>> {
         let commit = crate::git::history::of(&self.working_directory, None, 1)
             .into_iter()
             .find(|commit| commit.id == id)

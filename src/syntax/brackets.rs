@@ -17,7 +17,19 @@ use crate::{
 };
 
 /// The pairs obelus matches.
-const PAIRS: [(char, char); 3] = [('(', ')'), ('[', ']'), ('{', '}')];
+///
+/// Public because folding needs the closing half of them: a line that
+/// *begins* with one closes something, whatever was opened and wherever.
+/// Two lists would be two lists to keep right, and the day one grew a pair
+/// the other did not would be the day folding stopped closing a block the
+/// key could still jump across.
+pub const PAIRS: [(char, char); 3] = [('(', ')'), ('[', ']'), ('{', '}')];
+
+/// Whether a character closes one of them.
+#[must_use]
+pub fn closes(character: char) -> bool {
+    PAIRS.iter().any(|(_, close)| *close == character)
+}
 
 /// The bracket at `at` and its partner, if there is one within `within`.
 ///

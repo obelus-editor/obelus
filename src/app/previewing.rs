@@ -73,31 +73,21 @@ impl App {
             self.preview = None;
             return;
         };
-        let Some((path, marked)) = self.preview_target() else {
+        let Some((subject, marked)) = self.preview_target() else {
             self.preview = None;
             return;
         };
 
-        if self.preview.as_ref().map(|preview| preview.path.as_path()) != Some(path.as_path()) {
-            self.preview = match Buffer::open(&path) {
-                Ok(buffer) => Some(Preview {
-                    path: path.clone(),
-                    changes: git::head_text(&path).map(|committed| {
-                        git::Changes::between(&committed, &buffer.text().rope().to_string())
-                    }),
-                    buffer,
-                    highlights: Highlights::default(),
-                    marked: Vec::new(),
-                    target: marked.at(),
-                    scrolled: 0,
-                }),
-                // A file that has gone, or one this reader cannot read. No
-                // preview rather than a message: the list is the subject here.
-                Err(error) => {
-                    tracing::debug!(%error, "no preview");
-                    None
-                }
-            };
+        if self.preview.as_ref().map(|preview| &preview.subject) != Some(&subject) {
+            self.preview = self.read(&subject).map(|(buffer, changes)| Preview {
+                subject: subject.clone(),
+                changes,
+                buffer,
+                highlights: Highlights::default(),
+                marked: Vec::new(),
+                target: marked.at(),
+                scrolled: 0,
+            });
         }
 
         // Whichever encoding the server for this language agreed to. Nothing
@@ -154,6 +144,14 @@ impl App {
             wrap: true,
         };
         preview.buffer.place_cursor(target, CharColumn::new(0));
+        // Being put somewhere clears the caret out of any block, which is
+        // right for a reader who asked to go to a line and wrong here: a
+        // commit's message hangs above the first line, so a preview aimed
+        // at that line shows the *end* of the message and calls it the
+        // beginning of the file. Aimed at the top, the top is the message.
+        if target == LineNumber::new(0) {
+            preview.buffer.enter_block(LineNumber::new(0));
+        }
         preview.buffer.center_on_cursor(text);
         // Stored back, so rows the file does not have are not banked against
         // the next press the other way.
@@ -248,7 +246,7 @@ impl App {
     }
 
     /// The file, and the part of it, the picker's selection is about.
-    fn preview_target(&self) -> Option<(PathBuf, Marked)> {
+    fn preview_target(&self) -> Option<(Subject, Marked)> {
         let picker = self.picker.as_ref()?;
         // Nothing chosen, because there is nothing to choose: a search with
         // nothing typed into it yet, or a query that matches none of the
@@ -277,18 +275,30 @@ impl App {
             PickerValue::File(path) => {
                 let path = self.working_directory.join(path);
                 let at = self.read_at(&path);
-                Some((path, at))
+                Some((Subject::File(path), at))
             }
             // A file already open is being read somewhere, and that is the
             // part of it to show: choosing the row takes the reader back to
             // exactly this, so the list reads as something folded over the
             // file rather than as a way to somewhere new.
-            PickerValue::Buffer(id) => self
-                .buffers
-                .get(id.get())
-                .and_then(Option::as_ref)
-                .map(|buffer| (buffer.path().to_path_buf(), Marked::on(&buffer.cursor()))),
-            PickerValue::Place { path, line, .. } if lines => Some((path.clone(), matched(*line))),
+            PickerValue::Buffer(id) => {
+                self.buffers
+                    .get(id.get())
+                    .and_then(Option::as_ref)
+                    .map(|buffer| {
+                        let subject = match buffer.content().at() {
+                            Some(id) => Subject::Commit {
+                                id,
+                                path: buffer.path().to_path_buf(),
+                            },
+                            None => Subject::File(buffer.path().to_path_buf()),
+                        };
+                        (subject, Marked::on(&buffer.cursor()))
+                    })
+            }
+            PickerValue::Place { path, line, .. } if lines => {
+                Some((Subject::File(path.clone()), matched(*line)))
+            }
             PickerValue::Place {
                 path,
                 line,
@@ -296,7 +306,7 @@ impl App {
                 end_line,
                 end_character,
             } => Some((
-                path.clone(),
+                Subject::File(path.clone()),
                 Marked::Span {
                     line: *line,
                     character: *character,
@@ -307,18 +317,77 @@ impl App {
             PickerValue::Command(_)
             | PickerValue::Theme(_)
             | PickerValue::Setting { .. }
-            | PickerValue::AgentValue { .. }
-            // A commit is not a place in a file, and a file of one is not
-            // the file on disk. Both are previewed by what they open, which
-            // is not built yet.
-            | PickerValue::Commit(_)
-            | PickerValue::CommitFile { .. }
-            | PickerValue::Nothing => None,
+            | PickerValue::AgentValue { .. } => None,
+            // A commit is not a file, so what it has to show is what it
+            // said; one of its files is shown as that commit had it, which
+            // is what choosing the row gives.
+            PickerValue::Commit(id) => Some((Subject::Message(*id), Marked::top())),
+            PickerValue::CommitFile { id, path } => Some((
+                Subject::Commit {
+                    id: *id,
+                    path: self.working_directory.join(path),
+                },
+                Marked::top(),
+            )),
+            PickerValue::Nothing => None,
         }
     }
 }
 
 impl App {
+    /// The buffer a subject is previewed as, and what git says about it.
+    ///
+    /// The same two answers the editor works from, so a preview of a
+    /// commit's file carries the message above it and the margin beside it
+    /// that opening the row would give: a preview that showed something
+    /// else would be a promise obelus does not keep.
+    fn read(&self, subject: &Subject) -> Option<(Buffer, Option<git::Changes>)> {
+        match subject {
+            Subject::File(path) => match Buffer::open(path) {
+                Ok(buffer) => {
+                    let changes = git::head_text(path).map(|committed| {
+                        git::Changes::between(&committed, &buffer.text().rope().to_string())
+                    });
+                    Some((buffer, changes))
+                }
+                // A file that has gone, or one this reader cannot read. No
+                // preview rather than a message: the list is the subject
+                // here.
+                Err(error) => {
+                    tracing::debug!(%error, "no preview");
+                    None
+                }
+            },
+            Subject::Commit { id, path } => {
+                let text = crate::git::history::text_at(&self.working_directory, *id, path)?;
+                let mut buffer = Buffer::at_commit(path, *id, &text);
+                if let Some(said) = self.said_at(*id) {
+                    buffer.open_held(
+                        crate::coordinates::LineNumber::new(0),
+                        &said,
+                        crate::buffer::Held::Message,
+                    );
+                    // Landing where opening the row would land: in the
+                    // message, at its top. A preview that started at the
+                    // file's first line would show the end of the message
+                    // and call it the beginning of the file.
+                    buffer.enter_block(crate::coordinates::LineNumber::new(0));
+                }
+                let changes = crate::git::history::text_before(&self.working_directory, *id, path)
+                    .map(|before| {
+                        git::Changes::between(&before, &buffer.text().rope().to_string())
+                    });
+                Some((buffer, changes))
+            }
+            // A message on its own, with no file under it: a commit is not
+            // a file, and what it has to show is what it said.
+            Subject::Message(id) => {
+                let said = self.said_at(*id)?;
+                Some((Buffer::from_message(&said), None))
+            }
+        }
+    }
+
     /// Where a file should be shown: where it is being read if it is open,
     /// and at the top if it is not.
     ///
@@ -337,16 +406,46 @@ impl App {
 
     /// The file being read and the line it is being read at, as a preview's
     /// subject.
-    fn reading_now(&self) -> Option<(PathBuf, Marked)> {
+    fn reading_now(&self) -> Option<(Subject, Marked)> {
         let buffer = self.current_buffer()?;
-        Some((buffer.path().to_path_buf(), Marked::on(&buffer.cursor())))
+        let subject = match buffer.content().at() {
+            Some(id) => Subject::Commit {
+                id,
+                path: buffer.path().to_path_buf(),
+            },
+            None => Subject::File(buffer.path().to_path_buf()),
+        };
+        Some((subject, Marked::on(&buffer.cursor())))
     }
+}
+
+/// What a preview is of.
+///
+/// Not a path, because a row does not always name a file on disk: a commit
+/// names a message, and one of a commit's files names the file as that
+/// commit had it -- a different document from the one at the same path in
+/// the working tree. The preview shows what choosing the row would give,
+/// which is the whole point of a preview, so it has to be able to say the
+/// same things a buffer can.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum Subject {
+    /// A file on disk.
+    File(PathBuf),
+    /// A file as a commit had it.
+    Commit {
+        /// Which commit.
+        id: gix::ObjectId,
+        /// Which file, by the name it has on disk.
+        path: PathBuf,
+    },
+    /// What a commit said about itself.
+    Message(gix::ObjectId),
 }
 
 /// A file read so that the picker's selection can be shown.
 #[derive(Debug)]
 pub(super) struct Preview {
-    path: PathBuf,
+    subject: Subject,
     buffer: Buffer,
     highlights: Highlights,
     /// What git says about this file, so the preview carries the same

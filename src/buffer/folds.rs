@@ -38,14 +38,6 @@ pub struct Fold {
     pub tail: Option<CharColumn>,
 }
 
-/// The brackets a closing line may begin with.
-///
-/// The same three [`crate::syntax::brackets`] pairs. What is wanted here is
-/// narrower than matching them: a line that *begins* with one of these is a
-/// line that closes something, and that is true of `}`, `);` and `]` alike
-/// without knowing what was opened or where.
-const CLOSERS: [char; 3] = [')', ']', '}'];
-
 /// Every run of lines this file offers to fold, one per line they start
 /// on and in the order they start.
 ///
@@ -159,11 +151,16 @@ fn indent_of(text: &Text, line: LineNumber) -> Option<usize> {
 }
 
 /// Whether a line begins with something that closes a block.
+///
+/// The closing half of the pairs [`crate::syntax::brackets`] matches. What
+/// is wanted here is narrower than matching them: a line that *begins* with
+/// one closes something, and that is true of `}`, `);` and `]` alike
+/// without knowing what was opened or where.
 fn starts_closed(text: &Text, line: LineNumber) -> bool {
     text.line(line)
         .chars()
         .find(|character| !character.is_whitespace())
-        .is_some_and(|character| CLOSERS.contains(&character))
+        .is_some_and(crate::syntax::brackets::closes)
 }
 
 /// Which lines of a file are folded away.

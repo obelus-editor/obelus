@@ -581,6 +581,22 @@ impl Buffer {
         buffer
     }
 
+    /// A buffer holding a commit's message and nothing else.
+    ///
+    /// No path, because there is no file: a commit is not one, and what it
+    /// has to show is what it said. The message is a *block* rather than
+    /// the buffer's text, for the reason it is one above a file: it has no
+    /// lines of its own to go to, so it gets no line numbers -- and it is
+    /// then the same rows, drawn the same way, whether the reader is
+    /// looking at a commit or at one of its files.
+    #[must_use]
+    pub fn from_message(said: &[String]) -> Self {
+        let mut buffer = Self::from_text(Path::new(""), "");
+        buffer.open_held(LineNumber::new(0), said, Held::Message);
+        buffer.enter_block(LineNumber::new(0));
+        buffer
+    }
+
     /// A buffer holding text that did not come from the path it names.
     fn from_text(path: &Path, contents: &str) -> Self {
         let text = Text::from_string(contents);

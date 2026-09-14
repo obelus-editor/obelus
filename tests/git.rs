@@ -2425,3 +2425,89 @@ fn a_commits_version_is_marked_against_the_commit_before_it() {
         "a line changed by a later commit is marked against this one"
     );
 }
+
+/// A list previews what choosing a row would give, and a history's rows are
+/// not files on disk: a commit is a message, and one of its files is that
+/// file as the commit had it.
+#[test]
+fn the_history_previews_what_a_row_would_give() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer, git::history};
+
+    let repository = Repository::new("history-preview", "first\n");
+    repository.write("second\n");
+    // A body longer than the preview has room for, so that starting at the
+    // top of the message can be told from starting anywhere else in it.
+    let body: String = (0..20).map(|line| format!("Body line {line}.\n")).collect();
+    repository.commit(&format!("A subject worth reading\n\n{body}"));
+
+    // The working tree is a third thing, so that previewing the file on
+    // disk can be told from previewing the commit's version of it.
+    repository.write("uncommitted\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 60, 24);
+    support::press_function(&mut app, 10);
+
+    /// The preview's own rows: a screen with a list on it has a rule under
+    /// the tabs, one between the list and the preview, and one above the
+    /// status row, so the preview is what lies between the last two.
+    fn previewed(dump: &str) -> String {
+        let rows: Vec<&str> = support::text_block(dump).lines().collect();
+        let rules: Vec<usize> = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.contains('\u{2500}'))
+            .map(|(at, _)| at)
+            .collect();
+        let (from, to) = (rules[rules.len() - 2] + 1, rules[rules.len() - 1]);
+        rows[from..to].join("\n")
+    }
+
+    // A commit: what it said, from the first line of it.
+    let dump = support::render(&mut app, 60, 24);
+    let text = previewed(&dump);
+    assert!(
+        text.contains("A subject worth reading") && text.contains("Body line 0."),
+        "a commit's row does not preview what it said:\n{text}"
+    );
+    assert!(
+        !text.contains("second"),
+        "a commit previewed a file it is not:\n{text}"
+    );
+    // Drawn as a block, so it has no line numbers: a message has no lines
+    // of its own to go to.
+    assert!(
+        text.lines()
+            .next()
+            .expect("a first row")
+            .contains('\u{2590}'),
+        "the message is numbered as if it were a file:\n{text}"
+    );
+
+    // One of its files: the file as that commit had it, message and all --
+    // which is what choosing the row opens.
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    let dump = support::render(&mut app, 60, 24);
+    let text = previewed(&dump);
+    assert!(
+        text.contains("A subject worth reading"),
+        "the file's preview lost the message:\n{text}"
+    );
+    assert!(
+        !text.contains("uncommitted"),
+        "the preview shows the file on disk rather than the commit's:\n{text}"
+    );
+
+    // And it starts at the top of the message, not somewhere in the middle
+    // of it: the first row of the preview is the line that names the
+    // commit, and the message is taller than the room there is.
+    let first = text.lines().next().expect("a first row").to_string();
+    let at = history::of(&repository.directory(), None, 1)[0].short();
+    assert!(
+        first.contains(&at),
+        "the preview did not start at the top of the message:\n{first}"
+    );
+}
