@@ -825,10 +825,14 @@ they would have reached, a lock against the control, the whole row in the
 dim ink that means unusable everywhere else. Sublime's project settings win
 silently, and "I changed it and nothing happened" is the bug that follows.
 
-On the tree's page the same ink answers the other half: a row the tree has
-not got is dim and says whose value is showing -- `yours` or `default` -- and
-changing it writes it into the tree's file, which is how a setting becomes
-the project's. `delete` takes it out again, which is what that key means on
+On the tree's page the ink goes the *other* way, because dim means "not
+yours to use here" and there a row the tree has not got is the one thing a
+reader can do something to: pressing it is how a setting becomes the
+project's. So the row is ordinary and only the word saying where the value
+showing comes from -- `yours`, or `default` -- is dim, with the control it
+belongs to. Drawn like the reader's page, a fresh project was a page of grey
+with nothing on it to look at, which is a rule applied past the point where
+it still meant anything. `delete` takes it out again, which is what that key means on
 the keys page too. The two tabs a tree may not have say so instead of
 showing controls that would all refuse.
 

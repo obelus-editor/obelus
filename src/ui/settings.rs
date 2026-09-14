@@ -390,9 +390,17 @@ impl SettingsView<'_> {
             // everywhere here: a setting the tree has is not this reader's
             // to move, and a row that looked live until they pressed it
             // would be a row that lied.
-            let ink = match row.pinned.is_some() || row.inherited.is_some() {
-                true => plain.fg(self.theme.gutter),
-                false => plain,
+            // Dim says "not yours to use here", which on the reader's page
+            // is exactly what a setting the tree has taken is. On the
+            // tree's page it would be the opposite of the truth: a row the
+            // tree has not got is the one thing on that page a reader *can*
+            // do something to -- pressing it is how a setting becomes the
+            // project's. So there the row is ordinary, and what is dim is
+            // the word saying where the value showing comes from, and the
+            // control showing it.
+            let ink = match row.pinned {
+                Some(_) => plain.fg(self.theme.gutter),
+                None => plain,
             };
             let after = write_marked(
                 cells,

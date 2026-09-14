@@ -879,6 +879,70 @@ fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
     );
 }
 
+/// Dim means "not yours to use here", so the two pages use it the opposite
+/// way round.
+///
+/// On the reader's page a setting the tree has taken is unusable, and the
+/// whole row says so. On the tree's page a setting the tree has *not* got is
+/// the one thing a reader can do something to -- pressing it is how a
+/// setting becomes the project's -- so the row is ordinary there, and only
+/// the word saying where the value comes from is dim. Drawn the other way,
+/// a fresh project was a page of grey with nothing on it to look at.
+///
+/// Broken deliberately by dimming a row with an inherited value: the name
+/// came out the same colour as the word beside it, and the first assertion
+/// failed.
+#[test]
+fn the_trees_page_does_not_grey_out_what_can_be_set() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = tree("grey", "wrap = true\n");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus::config::Config::default());
+    app.working_directory_for_test(root.path().to_path_buf());
+    support::lay_out(&mut app, 76, 16);
+
+    // The style letter of the first character of a run, on the row holding
+    // it: two runs in one colour share a letter and two in different
+    // colours cannot.
+    let letter = |dump: &str, row_with: &str, needle: &str| -> char {
+        let rows: Vec<&str> = support::text_block(dump).lines().collect();
+        let styles: Vec<&str> = support::style_block(dump).lines().collect();
+        let at = rows
+            .iter()
+            .position(|row| row.contains(row_with))
+            .unwrap_or_else(|| panic!("{row_with:?} is not on screen:\n{dump}"));
+        let column = rows[at]
+            .find(needle)
+            .map(|byte| rows[at][..byte].chars().count())
+            .unwrap_or_else(|| panic!("{needle:?} is not on that row:\n{dump}"));
+        styles[at].chars().nth(column).expect("a style")
+    };
+
+    // The tree's page: the name is ordinary ink, the word beside it is not.
+    dispatch::dispatch(&mut app, Command::ConfigTree);
+    support::press(&mut app, KeyCode::Right);
+    let dump = support::render(&mut app, 76, 16);
+    assert_ne!(
+        letter(&dump, "Blame in the margin", "Blame"),
+        letter(&dump, "Blame in the margin", "default"),
+        "the name is as dim as the word saying the value is not the tree's:\n{dump}"
+    );
+
+    // The reader's page: a setting the tree has taken is dim throughout,
+    // name and all, because there it really cannot be used.
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, KeyCode::Right);
+    let dump = support::render(&mut app, 76, 16);
+    assert_eq!(
+        letter(&dump, "Wrap long lines", "Wrap"),
+        letter(&dump, "Wrap long lines", ".obelus.toml"),
+        "a row the reader cannot use is not dim throughout:\n{dump}"
+    );
+}
+
 /// An application that was never told where its settings live does not write
 /// any: every test is one of those, and the reader's own file is not
 /// something a test may touch.
