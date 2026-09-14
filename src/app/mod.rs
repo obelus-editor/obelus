@@ -19,7 +19,7 @@ mod counting;
 mod documents;
 mod history;
 mod history_view;
-pub use history_view::Radius;
+pub use history_view::About;
 mod keys;
 mod moving;
 mod preferences;

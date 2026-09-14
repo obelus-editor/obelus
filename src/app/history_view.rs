@@ -14,22 +14,34 @@ use crate::git::history::Commit;
 
 /// Which commits a list is showing, in the order their tabs sit in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Radius {
-    /// The commits that changed the file being read.
+pub enum About {
+    /// Every commit that changed the file being read.
     File,
+    /// Every name in the repository that points at a commit, so the file
+    /// being read can be seen as any of them has it.
+    Refs,
     /// Every commit in the project.
     Project,
 }
 
-impl Radius {
-    /// Both, in tab order.
-    pub const ALL: [Self; 2] = [Self::File, Self::Project];
+impl About {
+    /// What `f9` opens: the file being read, over time and over the places
+    /// it can be seen from. Two answers of one shape -- a version of this
+    /// file -- so the arrow between them stays inside one errand.
+    pub const OF_A_FILE: [Self; 2] = [Self::File, Self::Refs];
+
+    /// What `f10` opens. Its own key rather than a third tab, because it is
+    /// the one view here that stops being about the file on screen: its
+    /// rows are the project's commits, and what hangs under them is
+    /// somebody else's files.
+    pub const OF_A_PROJECT: [Self; 1] = [Self::Project];
 
     /// The tab's name.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
             Self::File => "this file",
+            Self::Refs => "the refs",
             Self::Project => "the project",
         }
     }
@@ -39,7 +51,13 @@ impl Radius {
 #[derive(Debug, Default)]
 pub(super) struct Showing {
     /// Which radii have tabs, in tab order.
-    pub radii: Vec<Radius>,
+    pub radii: Vec<About>,
+    /// The names that point at commits, for the tab that lists them.
+    ///
+    /// Kept apart from the commits: a ref is a commit with a name on it, and
+    /// a list of them is read by the names -- which of a thousand tags is
+    /// `v2.1` -- while a log is read by what the commits said.
+    pub refs: Vec<crate::git::history::Reference>,
     /// The commits of the tab that is showing.
     pub commits: Vec<Commit>,
     /// Which file the list is about, when it is about one.
@@ -94,14 +112,13 @@ pub(super) struct Showing {
 }
 
 impl App {
-    /// Opens the history at the radius a key names.
-    pub fn open_history(&mut self, radius: Radius) {
-        let radii = self.historic();
-        let Some(tab) = radii.iter().position(|shown| *shown == radius) else {
-            self.note = Some(match (radius, self.current_buffer().is_some()) {
-                (Radius::File, true) => "nothing in this file's history".to_string(),
-                (Radius::File, false) => "no file open".to_string(),
-                (Radius::Project, _) => "no history here".to_string(),
+    /// Opens the view a key names, on the tab it names.
+    pub fn open_history(&mut self, about: About) {
+        let radii = self.historic(about);
+        let Some(tab) = radii.iter().position(|shown| *shown == about) else {
+            self.note = Some(match about {
+                About::File | About::Refs => "no file open".to_string(),
+                About::Project => "no history here".to_string(),
             });
             return;
         };
@@ -109,9 +126,6 @@ impl App {
         let names: Vec<&str> = radii.iter().map(|radius| radius.label()).collect();
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
         picker.with_scopes(&names);
-        // A log is read newest first, and a query asks which commits mention
-        // something -- not which subject line scored best.
-        picker.keeps_order();
         // A commit's files hang under it: the query is about the commits.
         picker.nests();
         picker.go_to_tab(tab);
@@ -119,6 +133,7 @@ impl App {
         self.history = Showing {
             radii,
             commits: Vec::new(),
+            refs: Vec::new(),
             of: None,
             opened: None,
             head: None,
@@ -135,11 +150,16 @@ impl App {
     /// Settled when the view opens rather than watched while it is open, for
     /// the reason the search settles its own: tabs appearing under the arrow
     /// keys would move the ground while a reader walks it.
-    fn historic(&self) -> Vec<Radius> {
-        Radius::ALL
-            .into_iter()
+    fn historic(&self, about: About) -> Vec<About> {
+        let wanted: &[About] = match about {
+            About::File | About::Refs => &About::OF_A_FILE,
+            About::Project => &About::OF_A_PROJECT,
+        };
+        wanted
+            .iter()
+            .copied()
             .filter(|radius| match radius {
-                // A file being read is all this tab needs. Whether that
+                // A file being read is all these tabs need. Whether that
                 // file has any commits behind it is a question with a walk
                 // in it -- every commit has to be asked whether it touched
                 // this path -- and a tab that came and went with the answer
@@ -147,10 +167,10 @@ impl App {
                 // edited lately, which are exactly the ones whose history a
                 // reader is curious about. An empty list saying so is an
                 // answer; a missing tab is a key that does nothing.
-                Radius::File => self.current_buffer().is_some(),
+                About::File | About::Refs => self.current_buffer().is_some(),
                 // The project's costs no such walk: the first commit the
                 // walk reaches is the answer.
-                Radius::Project => self.has_any(),
+                About::Project => self.has_any(),
             })
             .collect()
     }
@@ -182,20 +202,46 @@ impl App {
             return;
         };
         let only = match radius {
-            Radius::File => self
+            // The refs tab is about the file too: its rows are places to
+            // see *this file* from, so a row opens the same thing a row of
+            // its own history does.
+            About::File | About::Refs => self
                 .current_buffer()
                 .map(|buffer| buffer.path().to_path_buf()),
-            Radius::Project => None,
+            About::Project => None,
         };
         self.history.commits = Vec::new();
+        self.history.refs = Vec::new();
         self.history.of = only.clone();
         // An opened commit belongs to the tab it was opened in.
         self.history.opened = None;
         self.history.pushed = None;
         self.history.marking = true;
-        self.history.reading = Some(0);
         self.history.head = crate::git::history::head_of(&self.working_directory);
-        self.start_reading_history(only.as_deref());
+        if let Some(picker) = self.picker.as_mut() {
+            // A log is read newest first, and a query asks which commits
+            // mention something -- not which subject line scored best. A
+            // list of names is the other way about: a reader typing `v0.1`
+            // wants the tag of that name, not whichever name containing
+            // those letters was pushed most recently.
+            picker.keeps_order(radius != About::Refs);
+        }
+        match radius {
+            // No walk at all: each name is one commit to decode and no tree
+            // is looked at on the way. A project with three thousand of
+            // them answers in forty milliseconds, which is a key press.
+            About::Refs => {
+                // The generation moves anyway, so a walk the other tab
+                // started cannot arrive into this list.
+                self.next_history_walk();
+                self.history.reading = None;
+                self.history.refs = crate::git::history::refs_of(&self.working_directory);
+            }
+            About::File | About::Project => {
+                self.history.reading = Some(0);
+                self.start_reading_history(only.as_deref());
+            }
+        }
         self.show_history();
     }
 
@@ -245,10 +291,7 @@ impl App {
     /// Bumping the generation first is what tells the walk before it --
     /// another tab, another file -- that nobody is waiting for it any more.
     fn start_reading_history(&mut self, only: Option<&Path>) {
-        let generation = self
-            .history_generation
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            + 1;
+        let generation = self.next_history_walk();
         let Some(sender) = self.events.clone() else {
             // No loop to answer into: the tests that drive the app by hand
             // read the history themselves.
@@ -261,6 +304,17 @@ impl App {
             &self.history_generation,
             sender,
         );
+    }
+
+    /// Says that whatever a walk is answering, nobody is waiting for it.
+    ///
+    /// Every way of filling this list bumps the generation, including the
+    /// ways that need no walk: a list of refs left the previous tab's walk
+    /// running, and its batches would arrive into a list they are not about.
+    fn next_history_walk(&mut self) -> u64 {
+        self.history_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1
     }
 
     /// Puts a batch of commits into the list waiting for them.
@@ -293,14 +347,47 @@ impl App {
     /// Puts the commits, and whatever is open under one of them, into the
     /// list.
     fn show_history(&mut self) {
-        let expands = self
+        let showing = self
             .picker
             .as_ref()
-            .and_then(|picker| self.history.radii.get(picker.tab()).copied())
-            == Some(Radius::Project);
+            .and_then(|picker| self.history.radii.get(picker.tab()).copied());
+        let expands = showing == Some(About::Project);
         let now = std::time::SystemTime::now();
         let pushed = self.history.pushed.clone();
         let mut items: Vec<PickerItem> = Vec::new();
+        for reference in &self.history.refs {
+            use crate::git::history::RefKind;
+            items.push(PickerItem {
+                // A name, and names lose their head rather than their tail:
+                // `origin/kb/some-long-branch` is told from its fellows at
+                // the end, not the beginning.
+                prose: false,
+                icon: icons::enabled().then_some(match reference.kind {
+                    RefKind::Branch => icons::ui::BRANCH,
+                    RefKind::Remote => icons::ui::REMOTE,
+                    RefKind::Tag => icons::ui::TAG,
+                }),
+                // Where the reader is, which is the one row in a list of
+                // places that they do not need to go to.
+                marker: reference.head.then(|| "\u{2022}".to_string()),
+                label: reference.name.clone(),
+                // What it points at, after the name: a name says which
+                // place, and a subject says what is there.
+                detail: Some(reference.at.subject.clone()),
+                trailing: Some(format!(
+                    "{} \u{b7} {}",
+                    crate::git::blame::how_long_ago(reference.at.when, now),
+                    reference.at.short()
+                )),
+                value: PickerValue::Commit(reference.at.id),
+                depth: 0,
+                status: None,
+                enabled: true,
+                colours: None,
+                kind: None,
+                tab: None,
+            });
+        }
         for commit in &self.history.commits {
             let open = self
                 .history
@@ -367,6 +454,7 @@ impl App {
             }
         }
         let empty = match (self.history.reading.is_some(), self.history.of.as_deref()) {
+            _ if showing == Some(About::Refs) => "nothing points at a commit here",
             // Still looking. A file's history is every commit that ever
             // touched it, and nothing found yet is not nothing to find.
             (true, _) => "reading the history\u{2026}",
@@ -427,7 +515,7 @@ impl App {
             .picker
             .as_ref()
             .and_then(|picker| self.history.radii.get(picker.tab()).copied())
-            == Some(Radius::Project);
+            == Some(About::Project);
         if !expands {
             return false;
         }

@@ -181,7 +181,15 @@ pub fn head_of(within: &Path) -> Option<gix::ObjectId> {
 /// exactly when a reader most wants to be told what it said.
 #[must_use]
 pub fn one(within: &Path, id: gix::ObjectId) -> Option<Commit> {
-    let repository = super::repository(within)?;
+    commit_in(&super::repository(within)?, id)
+}
+
+/// One commit out of a repository that is already open.
+///
+/// The repository is the expensive part of asking -- discovering it and
+/// opening it -- so anything asking about more than one commit holds it and
+/// calls this.
+fn commit_in(repository: &gix::Repository, id: gix::ObjectId) -> Option<Commit> {
     let commit = repository.find_commit(id).ok()?;
     let author = commit.author().ok()?;
     let message = commit.message_raw_sloppy().to_string();
@@ -461,6 +469,112 @@ pub fn text_before(within: &Path, id: gix::ObjectId, path: &Path) -> Option<Stri
     let commit = repository.find_commit(id).ok()?;
     let parent = commit.parent_ids().next()?;
     text_at(within, parent.detach(), path)
+}
+
+/// What kind of name points at a commit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RefKind {
+    /// A branch in this repository.
+    Branch,
+    /// A branch as a remote last had it.
+    Remote,
+    /// A tag.
+    Tag,
+}
+
+/// A name that points at a commit.
+#[derive(Clone, Debug)]
+pub struct Reference {
+    /// As a reader knows it: `master`, `origin/master`, `v1.0`.
+    pub name: String,
+    /// Which kind of name it is.
+    pub kind: RefKind,
+    /// The commit it points at, fully peeled -- an annotated tag names a tag
+    /// object, and what a reader wants to see is the commit under it.
+    pub at: Commit,
+    /// Whether this is the one `HEAD` is on.
+    pub head: bool,
+}
+
+/// Every name in the repository that points at a commit.
+///
+/// Branches first, then remote branches, then tags, and newest first within
+/// each -- a reader has a handful of branches and may have a thousand tags,
+/// and the handful is what they came for. No walk: each name is one commit
+/// to decode, and no tree is looked at.
+#[must_use]
+pub fn refs_of(within: &Path) -> Vec<Reference> {
+    let Some(repository) = super::repository(within) else {
+        return Vec::new();
+    };
+    let on = repository
+        .head_ref()
+        .ok()
+        .flatten()
+        .map(|head| head.name().as_bstr().to_string());
+    let Ok(platform) = repository.references() else {
+        return Vec::new();
+    };
+    let Ok(all) = platform.all() else {
+        return Vec::new();
+    };
+
+    let mut found = Vec::new();
+    for reference in all.flatten() {
+        let full = reference.name().as_bstr().to_string();
+        let Some((kind, name)) = named(&full) else {
+            continue;
+        };
+        let Ok(id) = reference.clone().into_fully_peeled_id() else {
+            continue;
+        };
+        // Read straight from the repository already open. Asking for each
+        // commit by path would discover and open the repository once per
+        // name, which on a project with a thousand tags is the whole cost
+        // of the list.
+        let Some(at) = commit_in(&repository, id.detach()) else {
+            continue;
+        };
+        found.push(Reference {
+            name,
+            kind,
+            at,
+            head: on.as_deref() == Some(full.as_str()),
+        });
+    }
+    // The kind first, because that is the order of how much a reader is
+    // likely to want them; then newest first, which is the order every
+    // other list of commits here is in.
+    found.sort_by(|left, right| {
+        left.kind
+            .cmp(&right.kind)
+            .then(right.at.when.cmp(&left.at.when))
+            .then(left.name.cmp(&right.name))
+    });
+    found
+}
+
+/// The kind of a full ref name, and the short form a reader knows it by.
+///
+/// `None` for everything that is not a name for a commit -- `HEAD` itself,
+/// notes, stash, whatever else a tool has left in there -- because a list
+/// of places to read this file from is not a list of git's bookkeeping.
+fn named(full: &str) -> Option<(RefKind, String)> {
+    for (prefix, kind) in [
+        ("refs/heads/", RefKind::Branch),
+        ("refs/remotes/", RefKind::Remote),
+        ("refs/tags/", RefKind::Tag),
+    ] {
+        if let Some(name) = full.strip_prefix(prefix) {
+            // A remote's own `HEAD` is a pointer at one of its branches,
+            // not a place of its own.
+            if kind == RefKind::Remote && name.ends_with("/HEAD") {
+                return None;
+            }
+            return Some((kind, name.to_string()));
+        }
+    }
+    None
 }
 
 /// The first line of a message, and the rest of it.

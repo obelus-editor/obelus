@@ -190,24 +190,27 @@ impl Repository {
         self.directory.clone()
     }
 
+    /// Runs git in the repository, for the things a test sets up that
+    /// obelus itself never does: a branch, a checkout.
+    fn run(&self, arguments: &[&str]) {
+        let outcome = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&self.directory)
+            .args(arguments)
+            .env("GIT_AUTHOR_NAME", "obelus")
+            .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+            .env("GIT_COMMITTER_NAME", "obelus")
+            .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+            .output()
+            .expect("running git");
+        assert!(outcome.status.success(), "git {arguments:?} failed");
+    }
+
     /// Commits everything in the tree, for a test that changes more than
     /// the one file.
     fn commit_all(&self, message: &str) {
-        let git = |arguments: &[&str]| {
-            let outcome = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&self.directory)
-                .args(arguments)
-                .env("GIT_AUTHOR_NAME", "obelus")
-                .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
-                .env("GIT_COMMITTER_NAME", "obelus")
-                .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
-                .output()
-                .expect("running git");
-            assert!(outcome.status.success(), "git {arguments:?} failed");
-        };
-        git(&["add", "-A"]);
-        git(&["commit", "--quiet", "-m", message]);
+        self.run(&["add", "-A"]);
+        self.run(&["commit", "--quiet", "-m", message]);
     }
 
     fn write(&self, contents: &str) {
@@ -2066,7 +2069,11 @@ fn the_history_opens_at_the_radius_its_key_names() {
 
     support::read_history(&mut app, &events);
     let picker = app.picker().expect("the history");
-    assert_eq!(picker.tabs(), ["this file", "the project"]);
+    // Two tabs about the file being read, and the arrow between them stays
+    // inside one errand: its own history, and the places it can be seen
+    // from. The project is the one view that stops being about this file,
+    // and it has a key rather than a tab.
+    assert_eq!(picker.tabs(), ["this file", "the refs"]);
     assert_eq!(picker.tab(), 0, "f9 did not open the file's own tab");
     let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
     assert_eq!(
@@ -2086,26 +2093,35 @@ fn the_history_opens_at_the_radius_its_key_names() {
         "the file's own tab offers to open a commit"
     );
 
-    // The other tab is a walk away, and walking onto it asks its question.
+    // The other tab is a walk away, and walking onto it asks its own
+    // question: not which commits changed this file, but which names point
+    // at a commit it can be read from.
     support::press(&mut app, KeyCode::Right);
-    support::read_history(&mut app, &events);
-    assert!(
-        app.picker()
-            .expect("the history")
-            .matches()
-            .any(|item| item.marker.is_some()),
-        "the project's tab does not say its rows open"
-    );
     let rows: Vec<String> = app
         .picker()
         .expect("the history")
         .matches()
         .map(|item| item.label.clone())
         .collect();
+    assert_eq!(rows, ["master"], "the refs tab shows the same commits");
+
+    // The project is its own key, its own view, and its own single tab --
+    // reached by leaving this one first, because obelus's commands do not
+    // run from inside a list.
+    support::press(&mut app, KeyCode::Esc);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+    let picker = app.picker().expect("the history");
+    assert_eq!(picker.tabs(), ["the project"]);
+    assert!(
+        picker.matches().any(|item| item.marker.is_some()),
+        "the project's rows do not say they open"
+    );
+    let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
     assert_eq!(
         rows,
         ["something else", "the second", "committed"],
-        "the other tab shows the same commits"
+        "the project's view shows only this file's commits"
     );
 }
 
@@ -3037,9 +3053,11 @@ fn a_walk_the_reader_moved_off_does_not_fill_the_list_it_left() {
     support::lay_out(&mut app, 60, 16);
 
     // Both walks are started before either is heard from, which is what a
-    // reader does when they press a key and immediately press another.
+    // reader does when they press a key, change their mind and press
+    // another.
     support::press_function(&mut app, 9);
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Esc);
+    support::press_function(&mut app, 10);
 
     // Everything both walks sent, so a batch that should be dropped has
     // every chance to land.
@@ -3491,5 +3509,116 @@ fn the_commit_that_wrote_a_line_is_where_the_walk_stops() {
         app.buffer_count_for_test(),
         opened,
         "a buffer was opened for every press that had nowhere to go"
+    );
+}
+
+#[test]
+fn the_refs_tab_opens_this_file_as_a_name_has_it() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("refs-tab", "on master\n");
+    // A branch with its own version of the file, and no commit of it
+    // reachable from where the reader stands: a history of this file cannot
+    // list it, because a history is walked from `HEAD`.
+    repository.run(&["checkout", "-q", "-b", "side"]);
+    repository.write("on the side\n");
+    repository.commit("What the side did");
+    repository.run(&["checkout", "-q", "master"]);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 74, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+
+    // The file's own history knows nothing of the branch.
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the history")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(rows, ["committed"], "a walk from HEAD reached the branch");
+
+    // The refs tab does: both names, and the one being read marked. Not in
+    // a fixed order -- two branches committed in the same second are two
+    // commits of the same age, and the tie goes to the name.
+    support::press(&mut app, KeyCode::Right);
+    let picker = app.picker().expect("the history");
+    let rows: Vec<(String, bool)> = picker
+        .matches()
+        .map(|item| (item.label.clone(), item.marker.is_some()))
+        .collect();
+    let mut names: Vec<&str> = rows.iter().map(|(name, _)| name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["master", "side"], "the refs are not both there");
+    assert_eq!(
+        rows.iter()
+            .filter(|(_, marked)| *marked)
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        ["master"],
+        "the mark is not on the name being read"
+    );
+
+    // And choosing one opens this file as that name has it, in a buffer of
+    // its own -- without checking anything out.
+    let side = rows
+        .iter()
+        .position(|(name, _)| name == "side")
+        .expect("the branch");
+    for _ in 0..side {
+        support::press(&mut app, KeyCode::Down);
+    }
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, 74, 16);
+    assert!(
+        support::text_block(&dump).contains("on the side"),
+        "the branch's version did not open:\n{dump}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repository.path()).expect("the file on disk"),
+        "on master\n",
+        "reading a branch changed the working tree"
+    );
+}
+
+#[test]
+fn a_query_for_a_name_finds_the_nearest_name() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("refs-query", "one\n");
+    // A name that is exactly what a reader would type, made first, and
+    // names that merely contain those letters made after it. In a list that
+    // kept its own order the newest of those would come first and the one
+    // asked for would be last.
+    repository.run(&["tag", "v0.1"]);
+    repository.write("two\n");
+    repository.commit("the second");
+    repository.run(&["branch", "cherry-pick-v0.123.x"]);
+    repository.run(&["branch", "revert-v0.144.x-something"]);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 74, 16);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Right);
+    support::type_text(&mut app, "v0.1");
+
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the history")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows.first().map(String::as_str),
+        Some("v0.1"),
+        "the name typed is not the first name offered: {rows:?}"
     );
 }

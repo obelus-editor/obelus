@@ -159,6 +159,12 @@ the commit the reader was on, not the row they were on: a re-read history
 is the same history with rows added on top, and row seven is a different
 commit afterwards.
 
+**Whether a query ranks depends on what the rows are, so it is settled per
+tab.** A log is a timeline and reads newest first whatever is typed at it; a
+list of names is read by the names, and a reader typing `v0.1` wants the tag
+of that name, not whichever branch containing those letters was pushed most
+recently. One view holds both, so the flag moves when the tab does.
+
 **A query is about the rows the list is a list of.** A commit's files hang
 under the commit, and "which commits mention folding" is not a question
 about filenames -- scoring them too pulls a file out from under a commit
@@ -221,6 +227,15 @@ bounded -- so gating the tab on it made the tab vanish for files nobody had
 edited lately, which are exactly the ones whose history a reader goes
 looking for. An empty list saying "no commit has touched this file" is an
 answer; a missing tab is a key that does nothing.
+
+**A view is split by the errand, not by the shape of the answer.** `f9` and
+the refs tab both end in the same thing -- a version of the file being read,
+one found by time and one by place -- so the arrow between them stays inside
+one errand. The project's commits are the odd one out: its rows stop being
+about the file on screen, and what hangs under them is somebody else's
+files. That is a key of its own (`f10`), not a third tab. The cost is real
+and was taken deliberately: obelus's commands do not run from inside a list,
+so reaching the project's history from a file's is escape and then `f10`.
 
 **A history is one view at two radii.** A file's commits and a project's
 differ only in which commits are listed, so they are two tabs of one list

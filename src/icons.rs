@@ -113,6 +113,12 @@ pub mod key {
 pub mod ui {
     /// One commit, as a row of a history.
     pub const COMMIT: char = '\u{f0718}';
+    /// A branch, for a name that points at a commit.
+    pub const BRANCH: char = '\u{f062c}';
+    /// A branch as a remote last had it.
+    pub const REMOTE: char = '\u{f02a1}';
+    /// A tag.
+    pub const TAG: char = '\u{f04fb}';
     /// A prompt. Every picker filters by typing, so all of them get this
     /// one -- a magnifier, because what typing does there is *find*.
     pub const PROMPT: char = '\u{f0349}';

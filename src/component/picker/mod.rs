@@ -462,10 +462,18 @@ impl Picker {
         self.filling.as_deref()
     }
 
-    /// Says this list's own order is an answer, so a query filters the rows
-    /// without reordering them.
-    pub const fn keeps_order(&mut self) {
-        self.ordered = true;
+    /// Says whether this list's own order is an answer, so that a query
+    /// filters the rows without reordering them.
+    ///
+    /// Not settled once for a list whose tabs hold different kinds of
+    /// thing: a log is a timeline and reads newest first whatever is typed
+    /// at it, while a list of names is read by the names, and a reader
+    /// typing one wants the nearest name rather than the newest.
+    pub fn keeps_order(&mut self, keeps: bool) {
+        if self.ordered != keeps {
+            self.ordered = keeps;
+            self.refilter();
+        }
     }
 
     /// Says this list is a list of files, whose rows the application
