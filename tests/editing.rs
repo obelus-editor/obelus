@@ -756,3 +756,57 @@ mod saying {
         );
     }
 }
+
+/// What a file was written with, it is written back with.
+mod bytes {
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    /// Saving writes the rope rather than the lines, so what a line ends
+    /// with is whatever it ended with. `Text::line` strips `\r\n` on the way
+    /// out, and a save built from lines would turn a CRLF file into an LF
+    /// one without saying so.
+    #[test]
+    fn a_files_line_endings_survive_being_saved() {
+        let scratch = support::Scratch::new("bytes-crlf");
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, "one\r\ntwo\r\n").expect("writing it");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it back"),
+            "xone\r\ntwo\r\n",
+            "the line endings were changed by saving"
+        );
+    }
+
+    /// A file with no newline at the end had none for a reason.
+    #[test]
+    fn a_file_that_ended_without_a_newline_still_does() {
+        let scratch = support::Scratch::new("bytes-no-newline");
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, "no newline here").expect("writing it");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it back"),
+            "xno newline here",
+            "saving put a newline on the end of a file that had none"
+        );
+    }
+}

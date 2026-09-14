@@ -306,7 +306,13 @@ impl App {
         // Tell the server before dropping it: the message needs the path, and
         // a server left believing a file is open answers questions about a
         // version that no longer exists anywhere.
-        if let Some(language) = buffer.language()
+        //
+        // Not for a commit's version, which was never opened to it -- the
+        // three notifications that go the other way all refuse one, and a
+        // close for a document nobody announced tells a server to forget
+        // the *file* at that path, which is open.
+        if buffer.content().is_file()
+            && let Some(language) = buffer.language()
             && let Some(client) = self.servers.get_mut(&language)
             && let Ok(uri) = lsp::client::uri_for(buffer.path())
         {
