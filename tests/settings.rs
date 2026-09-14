@@ -704,7 +704,7 @@ fn the_trees_page_edits_the_trees_file() {
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(obelus::config::Config::default());
-    app.working_directory_for_test(root.clone());
+    app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
     support::press(&mut app, KeyCode::Right);
@@ -725,8 +725,6 @@ fn the_trees_page_edits_the_trees_file() {
     );
     // And it took, which is the whole point of writing it.
     assert!(app.config().blame, "the setting did not take");
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// Delete takes a setting out of the tree's file, and the file keeps its
@@ -751,7 +749,7 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(obelus::config::Config::default());
-    app.working_directory_for_test(root.clone());
+    app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
     support::press(&mut app, KeyCode::Right);
@@ -769,8 +767,6 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
     );
     // And the reader's own answer is what is in force again.
     assert!(!app.config().wrap, "the tree still has it");
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// A tree that has no settings file gets one the moment something is set.
@@ -783,13 +779,11 @@ fn a_tree_with_no_settings_gets_a_file_when_one_is_set() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = std::env::temp_dir().join(format!("obelus-tree-new-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("a directory");
+    let root = support::Scratch::new("tree-new");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(obelus::config::Config::default());
-    app.working_directory_for_test(root.clone());
+    app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
     support::press(&mut app, KeyCode::Right);
@@ -797,8 +791,6 @@ fn a_tree_with_no_settings_gets_a_file_when_one_is_set() {
 
     let written = std::fs::read_to_string(root.join(".obelus.toml")).expect("no file was made");
     assert!(written.contains("wrap = true"), "{written:?}");
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// On the tree's page, a setting the tree has not got says whose value is
@@ -819,7 +811,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         theme: "light".to_string(),
         ..obelus::config::Config::default()
     });
-    app.working_directory_for_test(root.clone());
+    app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
 
@@ -850,8 +842,6 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         support::text_block(&dump).contains("may not move the keys"),
         "{dump}"
     );
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// A tree that acquires settings while obelus is looking at it is heard.
@@ -870,13 +860,11 @@ fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = std::env::temp_dir().join(format!("obelus-tree-later-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("a directory");
+    let root = support::Scratch::new("tree-later");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(obelus::config::Config::default());
-    app.working_directory_for_test(root.clone());
+    app.working_directory_for_test(root.path().to_path_buf());
     assert!(!app.config().wrap, "the tree had settings already");
 
     // Somebody else writes the project's first settings, and the watcher
@@ -889,8 +877,6 @@ fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
         app.config().wrap,
         "a tree that gained settings was not heard"
     );
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// An application that was never told where its settings live does not write
