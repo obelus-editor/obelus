@@ -110,6 +110,40 @@ pub enum FileStatus {
     New,
 }
 
+/// How long ago something happened, in the fewest words that are true.
+///
+/// One unit, always the largest that gives a number of at least one: "3
+/// days" rather than "3 days 4 hours", because this sits at the end of a
+/// line of code and its job is to be readable at a glance rather than
+/// precise. Rounded down, the way people say it.
+#[must_use]
+pub fn how_long_ago(when: i64, now: std::time::SystemTime) -> String {
+    let now = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64);
+    let seconds = now.saturating_sub(when);
+    // A commit from the future is a clock that disagrees, not a fact about
+    // the file. "Just now" is the least wrong thing to say about it.
+    if seconds < 60 {
+        return "just now".to_string();
+    }
+    for (unit, name) in [
+        (60 * 60 * 24 * 365, "year"),
+        (60 * 60 * 24 * 30, "month"),
+        (60 * 60 * 24 * 7, "week"),
+        (60 * 60 * 24, "day"),
+        (60 * 60, "hour"),
+        (60, "minute"),
+    ] {
+        let count = seconds / unit;
+        if count >= 1 {
+            let plural = if count == 1 { "" } else { "s" };
+            return format!("{count} {name}{plural} ago");
+        }
+    }
+    "just now".to_string()
+}
+
 /// Whether git says anything in the tree has changed.
 ///
 /// A yes or a no, and it stops at the first answer.

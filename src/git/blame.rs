@@ -4,12 +4,7 @@
 //! is about the *committed* file: blame is a question about commits, and the
 //! lines a reader has changed since are not in any of them.
 
-use std::{
-    collections::HashMap,
-    path::Path,
-    sync::mpsc::Sender,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::HashMap, path::Path, sync::mpsc::Sender, time::SystemTime};
 
 use crate::event::Event;
 
@@ -141,40 +136,6 @@ pub fn lines_of(path: &Path, at: Option<gix::ObjectId>) -> Option<Vec<Option<Bla
     Some(lines)
 }
 
-/// How long ago something happened, in the fewest words that are true.
-///
-/// One unit, always the largest that gives a number of at least one: "3
-/// days" rather than "3 days 4 hours", because this sits at the end of a
-/// line of code and its job is to be readable at a glance rather than
-/// precise. Rounded down, the way people say it.
-#[must_use]
-pub fn how_long_ago(when: i64, now: SystemTime) -> String {
-    let now = now
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs() as i64);
-    let seconds = now.saturating_sub(when);
-    // A commit from the future is a clock that disagrees, not a fact about
-    // the file. "Just now" is the least wrong thing to say about it.
-    if seconds < 60 {
-        return "just now".to_string();
-    }
-    for (unit, name) in [
-        (60 * 60 * 24 * 365, "year"),
-        (60 * 60 * 24 * 30, "month"),
-        (60 * 60 * 24 * 7, "week"),
-        (60 * 60 * 24, "day"),
-        (60 * 60, "hour"),
-        (60, "minute"),
-    ] {
-        let count = seconds / unit;
-        if count >= 1 {
-            let plural = if count == 1 { "" } else { "s" };
-            return format!("{count} {name}{plural} ago");
-        }
-    }
-    "just now".to_string()
-}
-
 /// What to show at the end of a line, or nothing for a line no commit
 /// accounts for.
 #[must_use]
@@ -183,7 +144,7 @@ pub fn label(blamed: Option<&Blamed>, now: SystemTime) -> Option<String> {
     Some(format!(
         "{} \u{b7} {}",
         blamed.who,
-        how_long_ago(blamed.when, now)
+        crate::git::how_long_ago(blamed.when, now)
     ))
 }
 
@@ -191,14 +152,12 @@ pub fn label(blamed: Option<&Blamed>, now: SystemTime) -> Option<String> {
 mod tests {
     use std::time::{Duration, UNIX_EPOCH};
 
-    use super::how_long_ago;
-
     /// One unit, the largest that is at least one, rounded down: this sits
     /// at the end of a line of code, where a glance is all it gets.
     #[test]
     fn a_time_is_said_in_one_unit() {
         let now = UNIX_EPOCH + Duration::from_secs(1_000_000_000);
-        let ago = |seconds: i64| how_long_ago(1_000_000_000 - seconds, now);
+        let ago = |seconds: i64| crate::git::how_long_ago(1_000_000_000 - seconds, now);
 
         assert_eq!(ago(5), "just now");
         assert_eq!(ago(59), "just now");
@@ -216,6 +175,6 @@ mod tests {
     #[test]
     fn a_commit_from_the_future_is_just_now() {
         let now = UNIX_EPOCH + Duration::from_secs(1_000);
-        assert_eq!(how_long_ago(2_000, now), "just now");
+        assert_eq!(crate::git::how_long_ago(2_000, now), "just now");
     }
 }

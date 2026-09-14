@@ -5,10 +5,7 @@
 //! block is code, that a bullet is drawn at all, and that no row is wider
 //! than the width it was laid out for.
 
-use obelus::{
-    markdown::render,
-    reading::{Ink, Row},
-};
+use obelus::reading::{Ink, Row, markdown::render};
 
 /// Every span of a row, joined.
 fn text(row: &Row) -> String {
@@ -277,7 +274,7 @@ fn a_quote_reflows_as_one_paragraph() {
 
 #[test]
 fn obelus_can_read_its_own_log() {
-    use obelus::log::{Format, format_of};
+    use obelus::reading::log::{Format, format_of};
 
     // Exactly what the subscriber writes: the process first, because one
     // file holds every session and several of them run at once.

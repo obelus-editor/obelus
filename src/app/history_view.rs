@@ -376,7 +376,7 @@ impl App {
                 detail: Some(reference.at.subject.clone()),
                 trailing: Some(format!(
                     "{} \u{b7} {}",
-                    crate::git::blame::how_long_ago(reference.at.when, now),
+                    crate::git::how_long_ago(reference.at.when, now),
                     reference.at.short()
                 )),
                 value: PickerValue::Commit(reference.at.id),
@@ -411,7 +411,7 @@ impl App {
                 // is how to find this commit again.
                 trailing: Some(format!(
                     "{} \u{b7} {}",
-                    crate::git::blame::how_long_ago(commit.when, now),
+                    crate::git::how_long_ago(commit.when, now),
                     commit.short()
                 )),
                 value: PickerValue::Commit(commit.id),
@@ -672,7 +672,7 @@ impl App {
                 "{}   {}   {}",
                 commit.short(),
                 commit.who,
-                crate::git::blame::how_long_ago(commit.when, now)
+                crate::git::how_long_ago(commit.when, now)
             ),
             String::new(),
             commit.subject.clone(),

@@ -11,6 +11,14 @@
 //! a look. So one piece of code draws either, and adding a reading is a
 //! `render` arm rather than a view of its own.
 
+/// A log file, read as the entries it is made of.
+///
+/// Not [`crate::logging`], which is the log obelus *writes* about itself.
+/// This one is a file somebody opens.
+pub mod log;
+/// Markdown, rendered rather than shown as its own source.
+pub mod markdown;
+
 use crate::buffer::Buffer;
 
 /// What a run of text looks like.
@@ -118,7 +126,7 @@ pub fn of(buffer: &Buffer) -> Option<Reading> {
         .take(HEAD_LINES)
         .map(|line| line.to_string())
         .collect();
-    crate::log::format_of(&head).map(|_| Reading::Log)
+    crate::reading::log::format_of(&head).map(|_| Reading::Log)
 }
 
 /// Lays a reading out for a width.
@@ -129,8 +137,8 @@ pub fn of(buffer: &Buffer) -> Option<Reading> {
 #[must_use]
 pub fn render(reading: Reading, source: &str, width: u16) -> Vec<Row> {
     match reading {
-        Reading::Markdown => crate::markdown::render(source, width),
-        Reading::Log => crate::log::render(source, width),
+        Reading::Markdown => crate::reading::markdown::render(source, width),
+        Reading::Log => crate::reading::log::render(source, width),
     }
 }
 
