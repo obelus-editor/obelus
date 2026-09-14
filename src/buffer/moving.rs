@@ -141,7 +141,28 @@ impl Buffer {
             .map_or(0, |(row, _)| isize::try_from(row).unwrap_or(0));
 
         let rows = isize::try_from(area.height.max(1)).unwrap_or(isize::MAX);
+        let was = (self.viewport.top, self.viewport.top_row);
         self.move_viewport(pages.saturating_mul(rows), area);
+
+        // Where on the new screen to land. The reader's own row -- unless
+        // there was no new screen, because the view was already showing the
+        // end they asked to go towards. A cursor keeping its row then does
+        // not move at all, which makes it a key that does nothing on the
+        // last screenful of every file, leaving the lines past the cursor
+        // reachable one at a time and no other way.
+        //
+        // So where the view cannot go on, the cursor goes to the end
+        // instead. Which is what paging a list does: the focus moves a
+        // screenful and stops at the last row, rather than the window
+        // moving and the focus riding along.
+        let screen_row = match (
+            (self.viewport.top, self.viewport.top_row) == was,
+            pages >= 0,
+        ) {
+            (false, _) => screen_row,
+            (true, true) => rows.saturating_sub(1),
+            (true, false) => 0,
+        };
 
         let landed =
             self.step_screen_rows((self.viewport.top, self.viewport.top_row), screen_row, area);
@@ -235,18 +256,23 @@ impl Buffer {
     fn move_viewport(&mut self, rows: isize, area: TextArea) {
         self.scroll_rows(rows, area);
 
-        // The last screenful is as far down as it goes. `scroll_rows` stops
-        // at the last *line*, which for a reader means a page too far: a
-        // screen holding one line of text and ten of nothing, with nothing
-        // saying which way is back.
-        let last = self.text.last_line();
-        let last_row = self.screen_rows_of(last, area).saturating_sub(1);
-        let back = isize::try_from(usize::from(area.height.max(1)) - 1).unwrap_or(isize::MAX);
-        let limit = self.step_screen_rows((last, last_row), -back, area);
+        let limit = self.last_top(area);
         if (self.viewport.top, self.viewport.top_row) > limit {
             self.viewport.top = limit.0;
             self.viewport.top_row = limit.1;
         }
+    }
+
+    /// As far down as the viewport goes: the top of the last screenful.
+    ///
+    /// Scrolling stops at the last *line*, which for a reader is a page too
+    /// far: a screen holding one line of text and ten of nothing, with
+    /// nothing saying which way is back.
+    fn last_top(&self, area: TextArea) -> (LineNumber, usize) {
+        let last = self.text.last_line();
+        let last_row = self.screen_rows_of(last, area).saturating_sub(1);
+        let back = isize::try_from(usize::from(area.height.max(1)) - 1).unwrap_or(isize::MAX);
+        self.step_screen_rows((last, last_row), -back, area)
     }
 
     /// Whether the viewport has been scrolled away from the cursor.

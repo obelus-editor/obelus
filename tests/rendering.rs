@@ -1055,6 +1055,36 @@ fn paging_keeps_the_cursor_on_the_same_row_of_the_screen() {
     // twelve rows of the screen less the status bar and the rule over it.
     assert_eq!(line_of(&app) - line, 10, "not a screenful");
 
+    // Where the view cannot go further, the cursor goes instead: otherwise
+    // the last screenful of every file is a key that does nothing, and the
+    // lines past the cursor are reachable one at a time and no other way.
+    for _ in 0..10 {
+        press(&mut app, KeyCode::PageDown);
+    }
+    let bottom = support::render(&mut app, 40, 12);
+    assert_eq!(
+        line_of(&app),
+        app.current_buffer()
+            .expect("a buffer")
+            .text()
+            .last_line()
+            .get(),
+        "paging stopped short of the end of the file:\n{bottom}"
+    );
+    for _ in 0..10 {
+        press(&mut app, KeyCode::PageUp);
+    }
+    let start = support::render(&mut app, 40, 12);
+    assert_eq!(
+        line_of(&app),
+        0,
+        "paging stopped short of the top:\n{start}"
+    );
+    for _ in 0..5 {
+        press(&mut app, KeyCode::Down);
+    }
+    press(&mut app, KeyCode::PageDown);
+
     // And back, to exactly where it was: a page down and a page up is
     // nowhere.
     press(&mut app, KeyCode::PageUp);

@@ -972,10 +972,30 @@ fn a_deletion_taller_than_the_screen_can_be_read() {
         "the top of the deletion is out of reach:\n{top}"
     );
     support::press(&mut app, KeyCode::PageUp);
+    let again = screen(&mut app);
+    // The rows, not the whole screen: there is nowhere above this to go, so
+    // what is drawn stays put -- but the caret walks up to the first row of
+    // it, the way it walks to the first line of a file that cannot scroll
+    // any further.
+    let rows = |screen: &str| {
+        screen
+            .lines()
+            .take_while(|line| !line.contains('\u{2500}'))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     assert_eq!(
-        screen(&mut app),
-        top,
+        rows(&again),
+        rows(&top),
         "the top of the deletion is not where it stopped"
+    );
+    assert_eq!(
+        app.current_buffer()
+            .expect("a file")
+            .in_block()
+            .map(|(line, _)| line.get()),
+        Some(0),
+        "the caret did not walk up to the first row it could reach"
     );
 
     // And the middle, which is the part that had no way of being seen: a
@@ -992,14 +1012,14 @@ fn a_deletion_taller_than_the_screen_can_be_read() {
     );
 
     // The caret went with it, keeping its place on the screen the way it
-    // does through any page: it began nine rows down, on the line that
-    // replaced the block, and it is nine rows down the block now. Which is
-    // what makes the next arrow key carry on from where the reader is
-    // looking rather than from the file below.
+    // does through any page: it was on the block's first row, and it is on
+    // the first row of what is drawn now. Which is what makes the next
+    // arrow key carry on from where the reader is looking rather than from
+    // the file below.
     let buffer = app.current_buffer().expect("a file");
     assert_eq!(
         buffer.in_block().map(|(line, _)| line.get()),
-        Some(19),
+        Some(10),
         "the caret did not go where the page went"
     );
     // And the cursor stayed on the line the block belongs to. Those lines
