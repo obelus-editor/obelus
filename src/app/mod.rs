@@ -680,19 +680,29 @@ impl App {
     pub fn text_area(&self) -> TextArea {
         let width = match self.current_buffer() {
             Some(buffer) => {
-                let gutter = ui::editor::gutter_width(buffer.text().line_count());
                 // The margin on the left and the change map on the right
                 // both appear only for a file in a repository, and they
                 // appear together: they are the same answer at two scales.
-                let margins = if self.changes.is_some() {
-                    ui::editor::MARGIN_WIDTH + ui::editor::CHANGE_MAP_WIDTH
+                // The fold column is its own condition, and it is asked
+                // through `text_offset` so that this and the view cannot
+                // disagree about what comes before the text -- a width one
+                // cell wider than the view draws wraps a line here and not
+                // there, and the caret then sits a row below the character
+                // it is on.
+                let before = ui::editor::text_offset(
+                    buffer.text().line_count(),
+                    self.changes.is_some(),
+                    !buffer.folds().is_empty(),
+                );
+                let after = if self.changes.is_some() {
+                    ui::editor::CHANGE_MAP_WIDTH
                 } else {
                     0
                 };
                 self.editor_area
                     .width
-                    .saturating_sub(margins)
-                    .saturating_sub(gutter)
+                    .saturating_sub(before)
+                    .saturating_sub(after)
                     .saturating_sub(ui::editor::SCROLLBAR_WIDTH)
             }
             None => self.editor_area.width,

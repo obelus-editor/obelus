@@ -92,7 +92,7 @@ fn at(text: &Text, row: LineNumber) -> Option<Fold> {
             break false;
         }
         match indent_of(text, below) {
-            Some(next) => break next >= indent,
+            Some(next) => break next > indent,
             None => below = below.saturating_add(1),
         }
     };
@@ -147,21 +147,23 @@ fn ending(text: &Text, row: LineNumber, until: LineNumber) -> Option<Fold> {
 }
 
 /// How far a line is indented, or `None` for one with nothing on it.
+///
+/// Counted off the rope rather than off a copy of the line. This is asked
+/// at least twice for every line of a file when it is opened and again
+/// whenever it is re-read, and a `String` per question is an allocation per
+/// line of a file nobody asked to have copied.
 fn indent_of(text: &Text, line: LineNumber) -> Option<usize> {
-    let text = text.line(line).to_string();
-    let indent = text
+    text.line(line)
         .chars()
-        .take_while(|character| character.is_whitespace());
-    let indent = indent.count();
-    (indent < text.chars().count()).then_some(indent)
+        .position(|character| !character.is_whitespace())
 }
 
 /// Whether a line begins with something that closes a block.
 fn starts_closed(text: &Text, line: LineNumber) -> bool {
     text.line(line)
-        .to_string()
-        .trim_start()
-        .starts_with(CLOSERS)
+        .chars()
+        .find(|character| !character.is_whitespace())
+        .is_some_and(|character| CLOSERS.contains(&character))
 }
 
 /// Which lines of a file are folded away.

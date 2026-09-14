@@ -407,7 +407,14 @@ impl Buffer {
             Motion::Up if above.get() == 0 => self.in_block = Some(at),
             Motion::Up => {
                 self.in_block = None;
-                let line = above.saturating_sub(1);
+                // The first line above that is on screen, not simply the
+                // line before: a run folded away above the hunk would
+                // otherwise take the caret with it, onto a line the status
+                // bar names and nobody can see.
+                let Some(line) = self.next_shown(above, false, area) else {
+                    self.in_block = Some(at);
+                    return;
+                };
                 let last = self.text.row_count(line, width).saturating_sub(1);
                 self.cursor.line = line;
                 self.cursor.column =

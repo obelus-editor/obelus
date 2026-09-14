@@ -618,3 +618,99 @@ fn the_scrollbar_measures_what_is_shown() {
     );
     let _ = std::fs::remove_file(&path);
 }
+
+/// The width the cursor counts in has to be the width the view draws in.
+///
+/// `App::text_area` and `EditorView::render` both work out what comes
+/// before and after the text, and a fold column counted by one and not the
+/// other puts the caret a cell past the end of the text -- into the
+/// scrollbar, where the character it claims to be on is never drawn.
+#[test]
+fn the_cursor_counts_in_the_width_the_view_draws() {
+    let path = std::env::temp_dir().join(format!("obelus-width-{}.rs", std::process::id()));
+    let wide: String = std::iter::repeat_n('x', 60).collect();
+    std::fs::write(&path, format!("fn f() {{\n    let a = \"{wide}\";\n}}\n"))
+        .expect("writing the scratch file");
+    let mut app = App::new(vec![Buffer::open(&path).expect("opening")]);
+    support::lay_out(&mut app, 40, 10);
+
+    // Down onto the long line, then out along it past the width of the
+    // text: the view has to scroll sideways, and the caret has to stay
+    // inside the text rather than stepping onto the bar.
+    support::press(&mut app, KeyCode::Down);
+    for _ in 0..40 {
+        support::press(&mut app, KeyCode::Right);
+    }
+    let dump = support::render(&mut app, 40, 10);
+    let cell: u16 = support::cursor_line(&dump)
+        .split(',')
+        .next()
+        .expect("a cell")
+        .parse()
+        .expect("a number");
+    assert!(
+        cell < 39,
+        "the caret is on the scrollbar's column:\n{}",
+        support::text_block(&dump)
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Walking up out of an opened hunk lands on the first line that is shown,
+/// not simply the line before it: a run folded away above the hunk would
+/// otherwise take the caret with it, onto a line the status bar names and
+/// nobody can see.
+#[test]
+fn walking_up_out_of_a_hunk_clears_what_is_folded() {
+    use obelus::buffer::{Motion, TextArea};
+
+    let path = std::env::temp_dir().join(format!("obelus-upfold-{}.rs", std::process::id()));
+    let mut source = String::from("fn hidden() {\n");
+    for line in 0..6 {
+        source.push_str(&format!("    let a{line} = {line};\n"));
+    }
+    source.push_str("}\nlet after = 1;\n");
+    std::fs::write(&path, &source).expect("writing the scratch file");
+    let mut buffer = Buffer::open(&path).expect("opening it");
+
+    // The run hides lines two to eight, and the hunk hangs above line nine
+    // -- the first line below the run, so the line *before* it is one of
+    // the ones that went.
+    assert!(buffer.toggle_fold(LineNumber::new(0)), "nothing folded");
+    assert!(
+        buffer.folds().hides(LineNumber::new(7)),
+        "the run did not hide the line above the hunk"
+    );
+    buffer.open_block(LineNumber::new(8), &["    let gone = 0;".to_string()]);
+    buffer.place_cursor(LineNumber::new(8), obelus::coordinates::CharColumn::new(0));
+    let area = TextArea {
+        width: 40,
+        height: 10,
+        wrap: false,
+    };
+    buffer.move_cursor(Motion::Up, area);
+    assert!(buffer.in_block().is_some(), "the caret did not walk in");
+
+    // Up again, out of the top of the block.
+    buffer.move_cursor(Motion::Up, area);
+    assert!(buffer.in_block().is_none(), "the caret did not walk out");
+    assert!(
+        !buffer.folds().hides(buffer.cursor().line),
+        "the caret left the hunk onto a line that is folded away: {:?}",
+        buffer.cursor().line
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A block with nothing in it is not a run. The line below it is no deeper,
+/// so there is nothing between the two to hide -- and a mark offering to
+/// fold `fn a() {}` into `fn a() { … }`, where the mark stands for no lines
+/// at all, is a mark that lies about what it is for.
+#[test]
+fn an_empty_block_is_not_a_run() {
+    assert!(runs("fn a() {\n}\n").is_empty(), "an empty block folded");
+    assert!(
+        runs("foo(\n)\n").is_empty(),
+        "an empty argument list folded"
+    );
+}
