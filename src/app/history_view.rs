@@ -460,7 +460,15 @@ impl App {
     /// A buffer of its own rather than the file on disk: what the reader
     /// asked for is what that commit said, and the file in the working tree
     /// is a different document that happens to share a name.
-    pub(super) fn open_at_commit(&mut self, id: gix::ObjectId, path: &Path) {
+    /// `at` is the line to land on, for a reader who asked about one line
+    /// rather than about the commit. `None` lands in the message, which is
+    /// what a reader who chose a commit from a list asked to read.
+    pub(super) fn open_at_commit(
+        &mut self,
+        id: gix::ObjectId,
+        path: &Path,
+        at: Option<LineNumber>,
+    ) {
         let full = self.working_directory.join(path);
         let Some(text) = crate::git::history::text_at(&self.working_directory, id, &full) else {
             self.note = Some("nothing to read there".to_string());
@@ -478,6 +486,13 @@ impl App {
             buffer.open_held(LineNumber::new(0), &said, crate::buffer::Held::Message);
             buffer.enter_block(LineNumber::new(0));
         }
+        // A reader who asked about a line is put on that line, where it was
+        // then -- which is not where it is now, because everything added
+        // above it since has pushed it down. The message stays above the
+        // first line, a page away, for when they want it.
+        if let Some(line) = at {
+            buffer.place_cursor(line, crate::coordinates::CharColumn::new(0));
+        }
         self.buffers.push(Some(buffer));
         let index = self.buffers.len() - 1;
         self.go_to_buffer(BufferId::new(index));
@@ -485,6 +500,51 @@ impl App {
 }
 
 impl App {
+    /// Opens the commit that wrote the line under the cursor.
+    ///
+    /// The direct answer to "why is this line here", which is the question a
+    /// reader asks most often and the one obelus could not answer: the
+    /// margin said who and when, and there was no way from a line to the
+    /// commit behind it. A list would be ceremony -- one line has one
+    /// commit.
+    ///
+    /// Pressing it again in what it opens walks back another step -- the
+    /// version it opened has a blame of its own -- until the line reaches
+    /// the commit that wrote it, which is where it stops. Going past that
+    /// is a different question ("what was here before this commit touched
+    /// it"), and the line it would land on is one this commit removed: it
+    /// has no number in the file on screen.
+    pub fn open_line_commit(&mut self) {
+        let Some(buffer) = self.current_buffer() else {
+            self.note = Some("no file open".to_string());
+            return;
+        };
+        let (line, path) = (buffer.cursor().line, buffer.path().to_path_buf());
+        let Some(blamed) = self.blamed_at(line) else {
+            // Two different nothings, and the reader is owed the
+            // difference: a walk still running is worth waiting for, and a
+            // line no commit accounts for is not.
+            self.note = Some(match self.blame().is_some() {
+                true => "no commit has this line".to_string(),
+                false => "still reading who wrote this\u{2026}".to_string(),
+            });
+            return;
+        };
+        let (id, at) = (blamed.id, LineNumber::new(blamed.line as usize));
+        // Already there. Opening a second buffer on the same version of the
+        // same file, with the caret where it already is, is a key that
+        // looks broken and leaves a buffer behind every time it is pressed.
+        if self
+            .current_buffer()
+            .and_then(|buffer| buffer.content().at())
+            == Some(id)
+        {
+            self.note = Some("this commit wrote this line".to_string());
+            return;
+        }
+        self.open_at_commit(id, &path, Some(at));
+    }
+
     /// What a commit said about itself, as the rows of a block.
     ///
     /// The first row names it -- the id, who wrote it, how long ago -- and

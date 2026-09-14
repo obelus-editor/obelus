@@ -243,15 +243,7 @@ impl EditorView<'_> {
     /// about the line that is.
     fn blame_at(&self, line: LineNumber, now: std::time::SystemTime) -> Option<String> {
         let blame = self.blame?;
-        // Through the working-tree changes, because the blame is about the
-        // committed file: without this every uncommitted line above shifts
-        // every name below it. Not for a version that *is* what was blamed
-        // -- there the changes are against the commit before, and carrying
-        // a line back through them would look it up in the wrong file.
-        let at = match self.changes {
-            Some(changes) if !self.blamed_here => changes.committed_line(line)?,
-            _ => line,
-        };
+        let at = git::blame::line_of(line, self.changes, self.blamed_here)?;
         git::blame::label(blame.get(at.get())?.as_ref(), now)
     }
 }

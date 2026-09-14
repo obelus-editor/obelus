@@ -58,6 +58,8 @@ pub enum Command {
     HistoryFile,
     /// Every commit in the project.
     HistoryProject,
+    /// The commit that wrote the line under the cursor.
+    HistoryLine,
     /// Fold the run of lines the cursor is in, or unfold the one it is on.
     Fold,
     /// Fold every run in the file.
@@ -163,6 +165,9 @@ pub enum Requires {
     ABracket,
     /// The project has to be a repository with something in it.
     AHistory,
+    /// The line under the cursor has to have a commit behind it, and the
+    /// blame that says so has to have arrived.
+    ACommitForThisLine,
     /// The cursor has to be in a run of lines that folds, or on a folded
     /// one.
     AFoldHere,
@@ -333,6 +338,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Every commit in this project",
     },
     CommandSpec {
+        command: Command::HistoryLine,
+        name: "show-line-commit",
+        title: "Open the commit that wrote this line",
+    },
+    CommandSpec {
         command: Command::Fold,
         name: "fold",
         title: "Fold what is here, or unfold it",
@@ -475,6 +485,7 @@ impl Command {
             | Self::GoBracket
             | Self::HistoryFile
             | Self::HistoryProject
+            | Self::HistoryLine
             | Self::Fold
             | Self::FoldAll
             | Self::UnfoldAll
@@ -537,6 +548,12 @@ impl Command {
             // answer is settled when the view opens, the way the search
             // settles its own.
             Self::HistoryFile | Self::HistoryProject => Requires::AHistory,
+            // Not merely a history: *this line* has to have a commit behind
+            // it. A line nobody has committed has no answer, and a blame
+            // still being walked has none yet -- offering a row whose whole
+            // answer is "not that one" is the thing the fold commands are
+            // three commands to avoid.
+            Self::HistoryLine => Requires::ACommitForThisLine,
             Self::Fold => Requires::AFoldHere,
             Self::FoldAll => Requires::AFoldableFile,
             Self::UnfoldAll => Requires::SomethingFolded,

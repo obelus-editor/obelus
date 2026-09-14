@@ -540,6 +540,13 @@ impl App {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// How many buffers are open, for a test that wants to know whether a
+    /// key that had nowhere to go left one behind anyway.
+    #[must_use]
+    pub fn buffer_count_for_test(&self) -> usize {
+        self.buffers.iter().flatten().count()
+    }
+
     /// Puts the application on a tree of the test's choosing.
     ///
     /// The working directory is read from the process once, at startup, and

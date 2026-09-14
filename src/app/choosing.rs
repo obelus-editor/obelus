@@ -213,6 +213,9 @@ impl App {
             // A walk of one commit, which is what "is there a history
             // here" costs: the same trade `AChangedFile` makes.
             Requires::AHistory => self.has_history(),
+            Requires::ACommitForThisLine => buffer
+                .map(|buffer| buffer.cursor().line)
+                .is_some_and(|line| self.blamed_at(line).is_some()),
             Requires::AFoldHere => self.current_buffer().is_some_and(|buffer| {
                 buffer.folds().is_folded_at(buffer.cursor().line)
                     || buffer.folds().offered_at(buffer.cursor().line).is_some()
@@ -242,7 +245,7 @@ impl App {
             }
             if let Some(path) = self.commit_opens() {
                 self.picker = None;
-                self.open_at_commit(id, &path);
+                self.open_at_commit(id, &path, None);
                 return;
             }
         }
@@ -313,7 +316,7 @@ impl App {
             // files under it rather than going anywhere, and a file of one
             // is opened as that commit had it.
             PickerValue::Commit(_) => {}
-            PickerValue::CommitFile { id, path } => self.open_at_commit(id, &path),
+            PickerValue::CommitFile { id, path } => self.open_at_commit(id, &path, None),
             PickerValue::Nothing => {}
         }
     }

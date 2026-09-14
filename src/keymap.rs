@@ -371,6 +371,14 @@ impl Keymap {
                     context: Context::Normal,
                     chord: function(10),
                 },
+                // `f11` beside them, because it is the same subject asked
+                // at the narrowest width there is: not this file's commits
+                // but this *line's* one.
+                Binding {
+                    command: Command::HistoryLine,
+                    context: Context::Normal,
+                    chord: function(11),
+                },
                 // Control, on the letter of the word. `ctrl+p` for the
                 // palette; `ctrl+w` is "close this" in every browser and
                 // most editors, and in a terminal it is also the shell's
@@ -903,7 +911,9 @@ mod tests {
             keymap.command_on(super::control('t')),
             Some(crate::command::Command::PreviewToggle)
         );
-        // The third bank is git's, and two of the four are earned.
+        // The third bank is git's, and three of the four are earned: the
+        // same subject at three widths -- this line, this file, the
+        // project.
         assert_eq!(
             keymap.command_on(KeyChord::new(KeyCode::F(9), KeyModifiers::NONE)),
             Some(crate::command::Command::HistoryFile)
@@ -912,14 +922,16 @@ mod tests {
             keymap.command_on(KeyChord::new(KeyCode::F(10), KeyModifiers::NONE)),
             Some(crate::command::Command::HistoryProject)
         );
-        for number in [11, 12] {
-            assert!(
-                keymap
-                    .command_on(KeyChord::new(KeyCode::F(number), KeyModifiers::NONE))
-                    .is_none(),
-                "f{number} is bound, and that bank is being kept for the views that will earn it"
-            );
-        }
+        assert_eq!(
+            keymap.command_on(KeyChord::new(KeyCode::F(11), KeyModifiers::NONE)),
+            Some(crate::command::Command::HistoryLine)
+        );
+        assert!(
+            keymap
+                .command_on(KeyChord::new(KeyCode::F(12), KeyModifiers::NONE))
+                .is_none(),
+            "f12 is bound, and that key is being kept for the view that will earn it"
+        );
     }
 
     /// The context every command with no default binding would land in.

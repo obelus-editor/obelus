@@ -175,6 +175,20 @@ impl App {
             .map(Vec::as_slice)
     }
 
+    /// What the blame says about one line of the text on screen.
+    ///
+    /// The line is carried onto the version that was blamed first, which is
+    /// the same arithmetic the margin does -- and the same call, so the two
+    /// cannot come to disagree about which line a name belongs to.
+    #[must_use]
+    pub fn blamed_at(&self, line: crate::coordinates::LineNumber) -> Option<&git::Blamed> {
+        let here = self
+            .current_buffer()
+            .is_some_and(|buffer| buffer.content().at().is_some());
+        let at = git::blame::line_of(line, self.changes(), here)?;
+        self.blame()?.get(at.get())?.as_ref()
+    }
+
     /// Starts a walk of history for the file being read, once per file.
     pub(super) fn refresh_blame(&mut self) {
         if !self.config.blame {

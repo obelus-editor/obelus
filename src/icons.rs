@@ -257,6 +257,8 @@ pub fn for_command(command: crate::command::Command) -> char {
         // document on it.
         Command::HistoryFile => '\u{f0214}',
         Command::HistoryProject => '\u{f02a1}',
+        // One commit, which is what a line has.
+        Command::HistoryLine => '\u{f0aa0}',
         Command::Fold => '\u{f0374}',
         Command::FoldAll => '\u{f0376}',
         Command::UnfoldAll => '\u{f0377}',

@@ -23,6 +23,38 @@ pub struct Blamed {
     pub who: String,
     /// When they wrote it, in seconds since the epoch.
     pub when: i64,
+    /// Which commit wrote it, for going there and asking why.
+    pub id: gix::ObjectId,
+    /// Which line this was in that commit's version of the file.
+    ///
+    /// Not the line it is on now: everything added above it since has
+    /// pushed it down. Kept per line rather than worked out later, because
+    /// the blame is the only thing that knows, and it knows while it is
+    /// being read.
+    pub line: u32,
+}
+
+/// Which line of the blamed version a line of the text on screen is.
+///
+/// One implementation, because two callers need it -- the margin, to write
+/// a name beside a line, and the key that opens the commit that wrote it --
+/// and two would drift into disagreeing about which line a name belongs to.
+///
+/// `blamed_here` says the text on screen *is* what was blamed, which is
+/// true of a commit's own version: its lines line up. A file on disk has
+/// moved on from the commit it was blamed at, so its lines are carried back
+/// through the changes, or everything added since shifts every name below
+/// it.
+#[must_use]
+pub fn line_of(
+    line: crate::coordinates::LineNumber,
+    changes: Option<&crate::git::Changes>,
+    blamed_here: bool,
+) -> Option<crate::coordinates::LineNumber> {
+    match changes {
+        Some(changes) if !blamed_here => changes.committed_line(line),
+        _ => Some(line),
+    }
 }
 
 /// Blames a version of a file on its own thread.
@@ -77,18 +109,15 @@ pub fn lines_of(path: &Path, at: Option<gix::ObjectId>) -> Option<Vec<Option<Bla
 
     // One lookup per commit rather than per hunk: a file whose every line
     // came from the same commit would otherwise decode it once a hunk.
-    let mut authors: HashMap<gix::ObjectId, Option<Blamed>> = HashMap::new();
+    let mut authors: HashMap<gix::ObjectId, Option<(String, i64)>> = HashMap::new();
     let mut lines: Vec<Option<Blamed>> = Vec::new();
     for entry in &outcome.entries {
-        let blamed = authors
+        let author = authors
             .entry(entry.commit_id)
             .or_insert_with(|| {
                 let commit = repository.find_commit(entry.commit_id).ok()?;
                 let author = commit.author().ok()?;
-                Some(Blamed {
-                    who: author.name.to_string(),
-                    when: author.time().ok()?.seconds,
-                })
+                Some((author.name.to_string(), author.time().ok()?.seconds))
             })
             .clone();
 
@@ -97,8 +126,16 @@ pub fn lines_of(path: &Path, at: Option<gix::ObjectId>) -> Option<Vec<Option<Bla
         if lines.len() < end {
             lines.resize(end, None);
         }
-        for line in &mut lines[start..end] {
-            *line = blamed.clone();
+        // Per line rather than per run, because where a line sits in the
+        // commit that wrote it is its own: the run began somewhere else in
+        // that file, and every line of it has moved by the same amount.
+        for (offset, line) in lines[start..end].iter_mut().enumerate() {
+            *line = author.as_ref().map(|(who, when)| Blamed {
+                who: who.clone(),
+                when: *when,
+                id: entry.commit_id,
+                line: entry.start_in_source_file + offset as u32,
+            });
         }
     }
     Some(lines)

@@ -1498,6 +1498,8 @@ fn the_blame_sits_at_the_end_of_the_cursor_line() {
         path,
         lines: vec![
             Some(Blamed {
+                id: gix::ObjectId::null(gix::hash::Kind::Sha1),
+                line: 0,
                 who: "Ada".to_string(),
                 when: long_ago,
             }),
@@ -1579,6 +1581,8 @@ fn a_line_the_reader_changed_has_no_name() {
 
     let who = |name: &str| {
         Some(Blamed {
+            id: gix::ObjectId::null(gix::hash::Kind::Sha1),
+            line: 0,
             who: name.to_string(),
             when: 1,
         })
@@ -1635,6 +1639,8 @@ fn a_line_too_long_for_a_note_keeps_its_code() {
         at: None,
         path,
         lines: vec![Some(Blamed {
+            id: gix::ObjectId::null(gix::hash::Kind::Sha1),
+            line: 0,
             who: "Ada".to_string(),
             when: 1,
         })],
@@ -1679,6 +1685,8 @@ fn the_names_can_be_turned_off() {
         at: None,
         path,
         lines: vec![Some(Blamed {
+            id: gix::ObjectId::null(gix::hash::Kind::Sha1),
+            line: 0,
             who: "Ada".to_string(),
             when: 1,
         })],
@@ -2425,6 +2433,8 @@ fn a_commits_version_is_marked_against_the_commit_before_it() {
         path: repository.path(),
         lines: vec![
             Some(obelus::git::Blamed {
+                id: gix::ObjectId::null(gix::hash::Kind::Sha1),
+                line: 0,
                 who: "somebody".to_string(),
                 when: 0,
             });
@@ -3375,5 +3385,111 @@ fn a_blame_is_about_the_version_on_screen() {
         blame.len(),
         2,
         "the blame is of a different version than the one on screen"
+    );
+}
+
+#[test]
+fn a_line_opens_the_commit_that_wrote_it() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("line-commit", "a\nb\n");
+    // Two lines committed above the old ones, so the line a reader points
+    // at is not the line it was in the commit that wrote it.
+    repository.write("x\ny\na\nb\n");
+    repository.commit("Put two at the top");
+    // And one more that is not committed at all, so the line is not even
+    // where the blame has it: a name laid beside it has to be carried back
+    // through the changes first, and so does the line this key opens.
+    repository.write("u\nx\ny\na\nb\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 14);
+    support::render(&mut app, 70, 14);
+    let at = std::time::Instant::now();
+    while app.blame().is_none() && at.elapsed() < std::time::Duration::from_secs(20) {
+        match events.recv_timeout(std::time::Duration::from_secs(20)) {
+            Ok(event) => app.handle(event),
+            Err(_) => break,
+        }
+    }
+    assert!(app.blame().is_some(), "the blame never arrived");
+
+    // Onto "b": the fifth line on screen, the fourth the last commit has,
+    // and the *second* line of the run that came from the commit that
+    // wrote it -- where it was the second line of a two-line file.
+    for _ in 0..4 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::HistoryLine);
+
+    let dump = support::render(&mut app, 70, 14);
+    let text = support::text_block(&dump);
+    // The commit that wrote it, not the one that pushed it down.
+    assert!(
+        text.contains("committed") && !text.contains("Put two at the top"),
+        "the line opened the wrong commit:\n{dump}"
+    );
+    // And on that line as that commit had it: the second of two, not the
+    // fifth of a file that did not exist yet.
+    assert!(
+        text.lines()
+            .next_back()
+            .is_some_and(|status| status.contains("2:1")),
+        "the caret did not land on the line as that commit had it:\n{dump}"
+    );
+}
+
+#[test]
+fn the_commit_that_wrote_a_line_is_where_the_walk_stops() {
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    let repository = Repository::new("line-commit-end", "a\nb\n");
+    repository.write("x\ny\na\nb\n");
+    repository.commit("Put two at the top");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 14);
+    let settle = |app: &mut App| {
+        support::render(app, 70, 14);
+        let at = std::time::Instant::now();
+        while app.blame().is_none() && at.elapsed() < std::time::Duration::from_secs(20) {
+            match events.recv_timeout(std::time::Duration::from_secs(20)) {
+                Ok(event) => app.handle(event),
+                Err(_) => break,
+            }
+        }
+        support::render(app, 70, 14);
+    };
+    settle(&mut app);
+
+    // Onto "x", which the newest commit wrote.
+    dispatch::dispatch(&mut app, Command::HistoryLine);
+    settle(&mut app);
+    let opened = app.buffer_count_for_test();
+
+    // The version it opened is the one that wrote that line, so asking
+    // again has nowhere to go. It says so, and it does not leave another
+    // buffer behind for every press.
+    for _ in 0..3 {
+        dispatch::dispatch(&mut app, Command::HistoryLine);
+    }
+    let dump = support::render(&mut app, 70, 14);
+    assert!(
+        support::text_block(&dump).contains("this commit wrote this line"),
+        "pressing on says nothing about why nothing happened:\n{dump}"
+    );
+    assert_eq!(
+        app.buffer_count_for_test(),
+        opened,
+        "a buffer was opened for every press that had nowhere to go"
     );
 }
