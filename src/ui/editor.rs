@@ -169,9 +169,17 @@ pub struct EditorView<'a> {
     changes: Option<&'a Changes>,
     /// The hunks the reader has opened, by the line each hangs above.
     opened: Vec<LineNumber>,
-    /// Who last changed each line of the committed file, if obelus has been
-    /// told and the reader wants to see it.
+    /// Who last changed each line of the version that was blamed, if obelus
+    /// has been told and the reader wants to see it.
     blame: Option<&'a [Option<git::Blamed>]>,
+    /// Whether that version is the text on screen, line for line.
+    ///
+    /// A commit's version *is* what was blamed, so its lines line up. A file
+    /// on disk may have moved on from the commit it was blamed at, and then
+    /// every uncommitted line above it shifts every name below, so a line
+    /// has to be carried back through the changes before it can be looked
+    /// up.
+    blamed_here: bool,
     /// Whether a line too long for the width continues on the next row.
     wrap: bool,
     /// Whether this is the document being read or a look at another one.
@@ -237,10 +245,12 @@ impl EditorView<'_> {
         let blame = self.blame?;
         // Through the working-tree changes, because the blame is about the
         // committed file: without this every uncommitted line above shifts
-        // every name below it.
+        // every name below it. Not for a version that *is* what was blamed
+        // -- there the changes are against the commit before, and carrying
+        // a line back through them would look it up in the wrong file.
         let at = match self.changes {
-            Some(changes) => changes.committed_line(line)?,
-            None => line,
+            Some(changes) if !self.blamed_here => changes.committed_line(line)?,
+            _ => line,
         };
         git::blame::label(blame.get(at.get())?.as_ref(), now)
     }
@@ -279,6 +289,9 @@ impl<'a> EditorView<'a> {
             changes: app.changes(),
             opened: app.opened_hunks(),
             blame: app.blame(),
+            blamed_here: app
+                .current_buffer()
+                .is_some_and(|buffer| buffer.content().at().is_some()),
             wrap: app.config().wrap,
             editing: Editing::Allowed,
         }
@@ -318,6 +331,7 @@ impl<'a> EditorView<'a> {
             selection: None,
             opened: Vec::new(),
             blame: None,
+            blamed_here: false,
             // A preview always wraps: a line running off its edge with no
             // way to scroll it would be a line nobody can read.
             wrap: true,

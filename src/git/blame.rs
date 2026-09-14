@@ -25,44 +25,52 @@ pub struct Blamed {
     pub when: i64,
 }
 
-/// Blames a file on its own thread.
+/// Blames a version of a file on its own thread.
 ///
-/// One question per file, because that is what a blame is: the whole file at
-/// once, from one walk of the history that reaches it. The answer arrives as
-/// an event like a language server's would, and the path comes back with it
-/// because the reader may be somewhere else by then.
-pub fn spawn_blame(path: &Path, sender: Sender<Event>) {
+/// One question per version, because that is what a blame is: a whole file
+/// at once, from one walk of the history that reaches it. `at` is the commit
+/// to look back from, or `None` for `HEAD` -- a file and that same file as
+/// some commit had it are two different questions with two different
+/// answers, and they share a path.
+///
+/// The answer arrives as an event like a language server's would, and says
+/// what it is about, because the reader may be somewhere else by then.
+pub fn spawn_blame(path: &Path, at: Option<gix::ObjectId>, sender: Sender<Event>) {
     let path = path.to_path_buf();
     let outcome = std::thread::Builder::new()
         .name("obelus-blame".to_string())
         .spawn(move || {
-            let lines = lines_of(&path).unwrap_or_default();
-            let _ = sender.send(Event::Blamed { path, lines });
+            let lines = lines_of(&path, at).unwrap_or_default();
+            let _ = sender.send(Event::Blamed { path, at, lines });
         });
     if let Err(error) = outcome {
         tracing::warn!(%error, "not blaming");
     }
 }
 
-/// Who changed each line of the file as the last commit has it.
+/// Who changed each line of a version of a file.
 ///
-/// One entry per line of the *committed* file, from its first line. `None`
-/// for a line no commit accounts for, which the blame can return for a file
-/// that is only partly in history.
+/// One entry per line of the file *as `at` had it*, from its first line --
+/// or as the last commit has it, where `at` is `None`. `None` for a line no
+/// commit accounts for, which the blame can return for a file that is only
+/// partly in history.
 ///
 /// `None` overall for every ordinary way this has no answer: not a
 /// repository, a file git has never seen, a repository with no commits.
 #[must_use]
-pub fn lines_of(path: &Path) -> Option<Vec<Option<Blamed>>> {
+pub fn lines_of(path: &Path, at: Option<gix::ObjectId>) -> Option<Vec<Option<Blamed>>> {
     let repository = super::repository(path)?;
     let relative = super::in_repository(&repository, path)?;
     let relative = gix::path::into_bstr(relative.as_path());
-    let head = repository.head_id().ok()?;
+    let from = match at {
+        Some(id) => id,
+        None => repository.head_id().ok()?.detach(),
+    };
 
     let outcome = repository
         .blame_file(
             relative.as_ref(),
-            head,
+            from,
             gix::repository::blame_file::Options::default(),
         )
         .ok()?;

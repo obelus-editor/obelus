@@ -316,10 +316,10 @@ pub struct App {
     /// between two files and a blame is a walk of history: asking again for
     /// one they left a moment ago would spend that walk twice. Bounded by
     /// the files opened in a session, which is tens of them.
-    blames: std::collections::HashMap<PathBuf, Vec<Option<git::Blamed>>>,
+    blames: std::collections::HashMap<(PathBuf, Option<gix::ObjectId>), Vec<Option<git::Blamed>>>,
     /// Which files have been asked about and have not answered yet, so a
     /// frame does not start a second walk of the same history.
-    asking_blame: std::collections::HashSet<PathBuf>,
+    asking_blame: std::collections::HashSet<(PathBuf, Option<gix::ObjectId>)>,
     /// Files parsed only to colour a search's rows.
     ///
     /// A search of a project answers with lines from files that are not
@@ -957,12 +957,12 @@ impl App {
             Event::Icon { id, svg } => self.on_icon(id, svg),
             Event::Installing { id, progress } => self.on_installing(id, progress),
             Event::Installed { id, failure } => self.on_installed(id, failure),
-            Event::Blamed { path, lines } => {
+            Event::Blamed { path, at, lines } => {
                 // Kept whether or not the reader is still looking at that
                 // file: they walked away from it while a walk of its history
                 // was running, and they will walk back.
-                self.asking_blame.remove(&path);
-                self.blames.insert(path, lines);
+                self.asking_blame.remove(&(path.clone(), at));
+                self.blames.insert((path, at), lines);
             }
             Event::Logged {
                 generation,

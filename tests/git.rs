@@ -1494,6 +1494,7 @@ fn the_blame_sits_at_the_end_of_the_cursor_line() {
 
     let long_ago = 1;
     app.handle(Event::Blamed {
+        at: None,
         path,
         lines: vec![
             Some(Blamed {
@@ -1583,6 +1584,7 @@ fn a_line_the_reader_changed_has_no_name() {
         })
     };
     app.handle(Event::Blamed {
+        at: None,
         path,
         lines: vec![who("Ada"), who("Bob"), who("Cai")],
     });
@@ -1630,6 +1632,7 @@ fn a_line_too_long_for_a_note_keeps_its_code() {
     let mut app = App::new(vec![buffer]);
     support::lay_out(&mut app, 44, 8);
     app.handle(Event::Blamed {
+        at: None,
         path,
         lines: vec![Some(Blamed {
             who: "Ada".to_string(),
@@ -1673,6 +1676,7 @@ fn the_names_can_be_turned_off() {
     let mut app = App::new(vec![buffer]);
     support::lay_out(&mut app, 44, 8);
     app.handle(Event::Blamed {
+        at: None,
         path,
         lines: vec![Some(Blamed {
             who: "Ada".to_string(),
@@ -1709,7 +1713,7 @@ fn a_real_repository_gives_a_real_blame() {
     repository.write("first\nchanged\n");
     repository.commit("the second commit");
 
-    let lines = obelus::git::blame::lines_of(&repository.path()).expect("a blame");
+    let lines = obelus::git::blame::lines_of(&repository.path(), None).expect("a blame");
     assert_eq!(lines.len(), 2, "not one entry per line");
     let who: Vec<Option<String>> = lines
         .iter()
@@ -1736,7 +1740,7 @@ fn a_real_repository_gives_a_real_blame() {
     // different thing from an empty one.
     let stranger = repository.directory.join("unknown.rs");
     std::fs::write(&stranger, "nothing\n").expect("writing");
-    assert!(obelus::git::blame::lines_of(&stranger).is_none());
+    assert!(obelus::git::blame::lines_of(&stranger, None).is_none());
 }
 
 /// A commit in another window is a commit in this one.
@@ -2417,6 +2421,7 @@ fn a_commits_version_is_marked_against_the_commit_before_it() {
     // in by hand, because it is worked out on a thread and this is not a
     // test about that.
     app.handle(obelus::event::Event::Blamed {
+        at: None,
         path: repository.path(),
         lines: vec![
             Some(obelus::git::Blamed {
@@ -3328,5 +3333,47 @@ fn a_query_about_a_history_is_a_question_about_commits() {
     assert!(
         rows.is_empty(),
         "a file was left on screen without the commit it belongs to: {rows:?}"
+    );
+}
+
+#[test]
+fn a_blame_is_about_the_version_on_screen() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("blame-of-a-version", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit("the second");
+    repository.write("one\ntwo\nthree\n");
+    repository.commit("the third");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 14);
+
+    // A version of the file has a blame of its own -- it used to have none
+    // at all, because a blame was a walk from `HEAD` and its lines would
+    // have named whoever last touched those numbers today.
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    // The walk is asked for while drawing, which is where obelus finds out
+    // what is on screen to be asked about.
+    support::render(&mut app, 70, 14);
+    let at = std::time::Instant::now();
+    while app.blame().is_none() && at.elapsed() < std::time::Duration::from_secs(20) {
+        match events.recv_timeout(std::time::Duration::from_secs(20)) {
+            Ok(event) => app.handle(event),
+            Err(_) => break,
+        }
+    }
+    let blame = app.blame().expect("a blame of the version");
+    // The version opened is the one before the last, which had two lines.
+    assert_eq!(
+        blame.len(),
+        2,
+        "the blame is of a different version than the one on screen"
     );
 }

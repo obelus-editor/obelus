@@ -151,9 +151,10 @@ impl App {
     /// Who last changed each line of the file being read, if the answer has
     /// arrived and the reader wants to see it.
     ///
-    /// One entry per line of the *committed* file: the caller maps a line of
-    /// the working tree onto it, because the two are not the same file once
-    /// the reader has changed anything.
+    /// One entry per line of the version that was blamed: for the file on
+    /// disk the caller maps a line onto it, because the two are not the same
+    /// file once anything has changed since the commit; for a commit's own
+    /// version they are the same file and the lines line up.
     /// Read straight from the setting, which is the only thing that says
     /// whether the names are wanted. It was a field here as well, set from
     /// the setting at startup and flipped by a command -- so the command's
@@ -165,15 +166,13 @@ impl App {
             return None;
         }
         let buffer = self.current_buffer()?;
-        // Not for a commit's version of a file. A blame is a walk from
-        // `HEAD`, so its lines are the lines of the file as it is now, and
-        // laid beside a file as it was they would name whoever last touched
-        // whatever is at those numbers today -- a confident answer about
-        // the wrong lines.
-        if !buffer.content().is_file() {
-            return None;
-        }
-        self.blames.get(buffer.path()).map(Vec::as_slice)
+        // The blame of *this* version. A file and that file as some commit
+        // had it share a path, and the answer about one laid beside the
+        // other would name whoever last touched whatever is at those
+        // numbers in the other -- a confident answer about the wrong lines.
+        self.blames
+            .get(&(buffer.path().to_path_buf(), buffer.content().at()))
+            .map(Vec::as_slice)
     }
 
     /// Starts a walk of history for the file being read, once per file.
@@ -181,17 +180,17 @@ impl App {
         if !self.config.blame {
             return;
         }
-        let Some(path) = self
+        let Some(asked) = self
             .current_buffer()
-            .map(|buffer| buffer.path().to_path_buf())
+            .map(|buffer| (buffer.path().to_path_buf(), buffer.content().at()))
         else {
             return;
         };
-        if self.blames.contains_key(&path) || !self.asking_blame.insert(path.clone()) {
+        if self.blames.contains_key(&asked) || !self.asking_blame.insert(asked.clone()) {
             return;
         }
         if let Some(sender) = self.events.clone() {
-            git::blame::spawn_blame(&path, sender);
+            git::blame::spawn_blame(&asked.0, asked.1, sender);
         }
     }
 

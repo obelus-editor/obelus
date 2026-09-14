@@ -184,6 +184,15 @@ file's history can find nothing for a second and a half and still be
 working: without a number moving, "not found yet" and "not there" look the
 same.
 
+**A blame is about a version, not about a path.** It was a walk from `HEAD`
+keyed by path, so a commit's version of a file could only be given no blame
+at all -- the names would have been of whoever last touched those line
+numbers today. `blame_file` takes the commit to look back from, so ask it
+for the version on screen and key the answer on both. The line mapping goes
+with it: a working file has moved on from the commit it was blamed at and
+its lines must be carried back through the changes, while a commit's
+version *is* what was blamed and its lines line up.
+
 **Two buffers can wear one path, so a path alone cannot say which.** A file
 and that file as some commit had it live at the same path, and `read_at`
 matching on the path alone previewed one at the other's place in it. Match

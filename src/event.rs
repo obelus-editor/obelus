@@ -89,8 +89,12 @@ pub enum Event {
         /// Which file it is about: a blame is a walk of history, and the
         /// reader may be looking at something else by the time it lands.
         path: std::path::PathBuf,
-        /// One entry per line of the *committed* file, from its first.
-        /// `None` for a line no commit accounts for.
+        /// Which version of it: a commit's, or the one the last commit has.
+        /// A file and that file as some commit had it share a path and have
+        /// different answers, so the answer has to say which it is.
+        at: Option<gix::ObjectId>,
+        /// One entry per line of the file as that version has it, from its
+        /// first. `None` for a line no commit accounts for.
         lines: Vec<Option<crate::git::Blamed>>,
     },
     /// The agent registry, from the disk or from the network.
