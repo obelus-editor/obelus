@@ -544,7 +544,11 @@ mod saving {
             "xmine\n",
             "the edit was read over"
         );
-        assert!(buffer.has_moved(), "the file moving was not noticed");
+        assert_eq!(
+            buffer.on_disk(),
+            obelus::buffer::Disk::Written,
+            "the file moving was not noticed"
+        );
     }
 
     /// And a clean one still comes back by itself, which is the whole point
@@ -567,34 +571,245 @@ mod saving {
     }
 
     #[test]
-    fn saving_over_a_file_that_moved_takes_two_presses() {
+    fn saving_over_a_file_that_moved_asks_first() {
         let (_scratch, mut app, path) = reading("save-overwrite", "mine\n");
         support::type_text(&mut app, "x");
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
         app.handle(obelus::event::Event::FileChanged { path: path.clone() });
 
-        // The first refuses and says why.
+        // It stops and asks, rather than writing over somebody else's file.
         dispatch::dispatch(&mut app, Command::FileSave);
-        // On the status row, not merely set: a note too long for the row is
-        // dropped whole rather than half-drawn, and a warning nobody sees
-        // is not a warning.
+        // On the screen, not merely in a field: a question nobody can read
+        // is not a question.
         let dump = support::render(&mut app, 70, 12);
         assert!(
-            support::text_block(&dump).contains("changed on disk"),
-            "nothing was said about the file moving:\n{dump}"
+            support::text_block(&dump).contains("sample.rs changed on disk"),
+            "the question does not say which file moved:\n{dump}"
         );
         assert_eq!(
             std::fs::read_to_string(&path).expect("reading it"),
             "somebody else's\n",
-            "the first press wrote over somebody else's file"
+            "it wrote over somebody else's file instead of asking"
         );
 
-        // The second goes through, which is what asking again means.
+        // Each way out says what it loses, because neither is the safe one.
+        assert!(
+            support::text_block(&dump).contains("loses what was written there"),
+            "the ways out do not say what they lose:\n{dump}"
+        );
+
+        support::answer(&mut app, "save mine over it");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it"),
+            "xmine\n",
+            "answering did not overwrite"
+        );
+    }
+
+    /// obelus recognises the file it just wrote, so its own save arriving
+    /// back through the watcher is answered by one `stat` rather than by
+    /// reading the file again.
+    #[test]
+    fn a_save_leaves_the_file_recognisable() {
+        let (_scratch, mut app, _path) = reading("save-recognise", "mine\n");
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        assert!(
+            !app.current_buffer().expect("a buffer").file_touched(),
+            "obelus does not recognise the file it just wrote"
+        );
+    }
+
+    /// A reader may have four files called `mod.rs` open, and only one of
+    /// them is the one about to be written over.
+    #[test]
+    fn the_conflict_says_which_file_it_is_about() {
+        let scratch = support::Scratch::new("save-which");
+        let inner = scratch.path().join("inner");
+        std::fs::create_dir(&inner).expect("the directory");
+        let path = inner.join("sample.rs");
+        std::fs::write(&path, "mine\n").expect("the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        support::type_text(&mut app, "x");
+        std::fs::write(&path, "somebody else's\n").expect("rewriting it");
+        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+
+        dispatch::dispatch(&mut app, Command::FileSave);
+        let dump = support::render(&mut app, 70, 12);
+        assert!(
+            support::said(&dump).contains("inner/sample.rs changed on disk"),
+            "the question does not say which of the files called sample.rs:\n{dump}"
+        );
+    }
+
+    /// A file somebody took away is a different question: there is nothing
+    /// on disk to take instead, and nothing there to write *over*.
+    #[test]
+    fn saving_a_file_that_was_deleted_asks_a_different_question() {
+        let (_scratch, mut app, path) = reading("save-deleted", "mine\n");
+        support::type_text(&mut app, "x");
+        std::fs::remove_file(&path).expect("deleting it");
+        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+
+        dispatch::dispatch(&mut app, Command::FileSave);
+        let dump = support::render(&mut app, 70, 12);
+        let text = support::text_block(&dump);
+        assert!(
+            text.contains("sample.rs was deleted"),
+            "it did not say the file was deleted:\n{dump}"
+        );
+        let ways = support::ways(&app);
+        assert!(
+            !ways.iter().any(|way| way.contains("on disk")),
+            "it offered to take what is on a disk with nothing on it: {ways:?}"
+        );
+
+        support::answer(&mut app, "write it back");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it"),
+            "xmine\n",
+            "it did not put the file back"
+        );
+    }
+
+    /// The other way out accepts the deletion and takes the document with it.
+    #[test]
+    fn a_deleted_file_can_be_let_go() {
+        let (_scratch, mut app, path) = reading("save-letgo", "mine\n");
+        support::type_text(&mut app, "x");
+        std::fs::remove_file(&path).expect("deleting it");
+
+        dispatch::dispatch(&mut app, Command::FileSave);
+        support::answer(&mut app, "close it and let it go");
+
+        assert!(app.current_buffer().is_none(), "it kept the document");
+        assert!(
+            !std::fs::exists(&path).expect("asking"),
+            "letting it go put the file back"
+        );
+    }
+
+    /// Nobody watched, nobody marked -- and the save still asks. The
+    /// watcher is allowed to miss things; this is the place that is not.
+    #[test]
+    fn a_save_asks_disk_rather_than_the_mark() {
+        let (_scratch, mut app, path) = reading("save-unwatched", "mine\n");
+        support::type_text(&mut app, "x");
+        // Written behind obelus's back, with no `FileChanged` fed in: this
+        // is what an overflowed watcher queue or a filesystem that reports
+        // nothing looks like from in here.
+        std::fs::write(&path, "somebody else's\n").expect("rewriting it");
+
+        dispatch::dispatch(&mut app, Command::FileSave);
+        let dump = support::render(&mut app, 70, 12);
+        assert!(
+            support::text_block(&dump).contains("changed on disk"),
+            "it wrote over a change nobody had told it about:\n{dump}"
+        );
+    }
+
+    /// And a file that was touched without being changed is not a conflict.
+    #[test]
+    fn a_file_rewritten_with_what_it_had_is_not_a_conflict() {
+        let (_scratch, mut app, path) = reading("save-same", "mine\n");
+        support::type_text(&mut app, "x");
+        // What a formatter that found nothing to change does, and what a
+        // checkout of the commit the file was already on does.
+        std::fs::write(&path, "mine\n").expect("rewriting it with what it had");
+        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+
         dispatch::dispatch(&mut app, Command::FileSave);
         assert_eq!(
             std::fs::read_to_string(&path).expect("reading it"),
             "xmine\n",
-            "asking again did not overwrite"
+            "it asked about a file whose bytes nobody changed"
+        );
+    }
+
+    /// The other way out, which keeps the file and loses the edit.
+    #[test]
+    fn taking_what_is_on_disk_throws_the_edit_away() {
+        let (_scratch, mut app, path) = reading("save-theirs", "mine\n");
+        support::type_text(&mut app, "x");
+        std::fs::write(&path, "somebody else's\n").expect("rewriting it");
+        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+
+        dispatch::dispatch(&mut app, Command::FileSave);
+        support::answer(&mut app, "take what is on disk");
+
+        let buffer = app.current_buffer().expect("a buffer");
+        assert_eq!(
+            buffer.text().rope().to_string(),
+            "somebody else's\n",
+            "it kept the edit it was told to throw away"
+        );
+        assert!(!buffer.is_dirty(), "it is still unwritten after re-reading");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it"),
+            "somebody else's\n",
+            "re-reading wrote something"
+        );
+    }
+
+    /// And it is a choice rather than an accident: the version it replaced
+    /// is one undo away. A re-read would have forgotten it.
+    #[test]
+    fn taking_what_is_on_disk_can_be_undone() {
+        let (_scratch, mut app, path) = reading("save-theirs-undo", "mine\n");
+        support::type_text(&mut app, "x");
+        std::fs::write(&path, "somebody else's\n").expect("rewriting it");
+        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+
+        dispatch::dispatch(&mut app, Command::FileSave);
+        support::answer(&mut app, "take what is on disk");
+        assert!(
+            !app.current_buffer().expect("a buffer").is_dirty(),
+            "what came off disk was called unwritten"
+        );
+
+        dispatch::dispatch(&mut app, Command::Undo);
+        let buffer = app.current_buffer().expect("a buffer");
+        assert_eq!(
+            buffer.text().rope().to_string(),
+            "xmine\n",
+            "undo did not bring back the version that was replaced"
+        );
+        assert!(
+            buffer.is_dirty(),
+            "the version that is not on disk was called written"
+        );
+    }
+
+    /// Cancelling keeps both versions, which is the point of offering it.
+    #[test]
+    fn cancelling_keeps_the_edit_and_the_file() {
+        let (_scratch, mut app, path) = reading("save-cancel", "mine\n");
+        support::type_text(&mut app, "x");
+        std::fs::write(&path, "somebody else's\n").expect("rewriting it");
+        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+
+        dispatch::dispatch(&mut app, Command::FileSave);
+        support::answer(&mut app, "cancel");
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it"),
+            "somebody else's\n",
+            "cancelling wrote the file anyway"
+        );
+        let buffer = app.current_buffer().expect("a buffer");
+        assert_eq!(buffer.text().rope().to_string(), "xmine\n");
+        assert!(buffer.is_dirty(), "cancelling lost the edit");
+
+        // And it asks again next time, because nothing was settled.
+        dispatch::dispatch(&mut app, Command::FileSave);
+        assert!(
+            support::ways(&app)
+                .iter()
+                .any(|way| way == "save mine over it"),
+            "the second save went through without asking"
         );
     }
 
@@ -611,7 +826,11 @@ mod saving {
         let buffer = app.current_buffer().expect("a buffer");
         assert_eq!(buffer.text().rope().to_string(), "somebody else's\n");
         assert!(!buffer.is_dirty(), "what was read is not what is on disk");
-        assert!(!buffer.has_moved(), "the file is still said to have moved");
+        assert_eq!(
+            buffer.on_disk(),
+            obelus::buffer::Disk::Unchanged,
+            "the file is still said to have moved"
+        );
     }
 
     #[test]
@@ -712,36 +931,158 @@ mod saying {
         assert_eq!(marked, [true], "the row does not say the file is unwritten");
     }
 
+    /// And it has to be visible. The mark spent its first day in the
+    /// gutter's grey -- the colour of a line number, picked to recede -- and
+    /// a reader looking straight at the list did not see it.
     #[test]
-    fn leaving_with_something_unwritten_takes_two_presses() {
+    fn the_mark_is_the_one_the_status_row_uses() {
+        let scratch = support::Scratch::new("say-list-golden");
+        let one = scratch.path().join("written.rs");
+        let two = scratch.path().join("unwritten.rs");
+        std::fs::write(&one, "fn one() {}\n").expect("the first file");
+        std::fs::write(&two, "fn two() {}\n").expect("the second file");
+        let mut app = App::new(vec![Buffer::open(&one).expect("opening the first")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 12);
+        app.open_buffer_for_test(Buffer::open(&two).expect("opening the second"));
+        support::lay_out(&mut app, 60, 12);
+        support::type_text(&mut app, "x");
+
+        dispatch::dispatch(&mut app, Command::BufferList);
+        let dump = support::render(&mut app, 60, 12);
+
+        // The mark has a column of its own, kept on the rows that have
+        // nothing to put in it: a name that sat two columns right of its
+        // neighbours because that file is unwritten says the same thing
+        // twice, in a way that makes the list harder to read down.
+        // In characters, not bytes: the mark is a multi-byte glyph, and a
+        // byte offset would call the row it is on two columns wider than it
+        // is drawn.
+        let column = |name: &str| {
+            support::text_block(&dump)
+                .lines()
+                .find_map(|line| line.find(name).map(|at| line[..at].chars().count()))
+                .unwrap_or_else(|| panic!("no row for {name} in:\n{dump}"))
+        };
+        assert_eq!(
+            column("written.rs"),
+            column("unwritten.rs"),
+            "the marked row's name does not line up with the others:\n{dump}"
+        );
+
+        support::check("buffers_unsaved_60x12", &dump);
+    }
+
+    #[test]
+    fn leaving_with_something_unwritten_asks_first() {
         let (_scratch, mut app, _path) = reading("say-quit", "fn main() {}\n");
         support::type_text(&mut app, "x");
 
         dispatch::dispatch(&mut app, Command::Quit);
         assert!(!app.should_quit(), "it left with an unwritten document");
+        // Which one. With a single file there is room to say, and the
+        // reader is about to decide whether to write it.
         let dump = support::render(&mut app, 70, 12);
         assert!(
-            support::text_block(&dump).contains("unsaved"),
-            "nothing was said about what leaving would lose:\n{dump}"
+            support::said(&dump).contains("sample.rs is unsaved"),
+            "it did not say which file leaving would lose:\n{dump}"
         );
 
-        dispatch::dispatch(&mut app, Command::Quit);
-        assert!(app.should_quit(), "asking again did not leave");
+        support::answer(&mut app, "leave without saving");
+        assert!(app.should_quit(), "answering did not leave");
     }
 
-    /// The warning is about the files as they are, not as they were.
+    /// The other way out writes everything first.
     #[test]
-    fn typing_after_being_warned_asks_again() {
-        let (_scratch, mut app, _path) = reading("say-again", "fn main() {}\n");
+    fn leaving_can_write_everything_on_the_way_out() {
+        let scratch = support::Scratch::new("say-quit-save");
+        let one = scratch.path().join("one.rs");
+        let two = scratch.path().join("two.rs");
+        std::fs::write(&one, "fn one() {}\n").expect("the first file");
+        std::fs::write(&two, "fn two() {}\n").expect("the second file");
+        let mut app = App::new(vec![Buffer::open(&one).expect("opening the first")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
         support::type_text(&mut app, "x");
-        dispatch::dispatch(&mut app, Command::Quit);
-        assert!(!app.should_quit());
 
+        app.open_buffer_for_test(Buffer::open(&two).expect("opening the second"));
+        support::lay_out(&mut app, 70, 12);
         support::type_text(&mut app, "y");
+
         dispatch::dispatch(&mut app, Command::Quit);
+        // And with more than one, the count: naming them would be a list
+        // nobody reads before pressing enter.
+        let dump = support::render(&mut app, 70, 12);
+        let said = support::said(&dump);
+        assert!(
+            said.contains("2 files are unsaved"),
+            "it did not say how many files leaving would lose:\n{dump}"
+        );
+        assert!(
+            !said.contains("one.rs"),
+            "it named the files instead of counting them:\n{dump}"
+        );
+
+        support::answer(&mut app, "save everything and leave");
+
+        assert!(app.should_quit(), "it wrote everything and then stayed");
+        assert_eq!(
+            std::fs::read_to_string(&one).expect("reading the first"),
+            "xfn one() {}\n",
+            "the file that was not in front of the reader was not written"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&two).expect("reading the second"),
+            "yfn two() {}\n"
+        );
+    }
+
+    /// A save that failed is the whole reason for asking: leaving anyway
+    /// would throw away exactly what the reader just said to keep.
+    #[test]
+    fn a_save_that_fails_on_the_way_out_stays() {
+        let scratch = support::Scratch::new("say-quit-fail");
+        let gone = scratch.path().join("gone");
+        std::fs::create_dir(&gone).expect("the directory");
+        let path = gone.join("sample.rs");
+        std::fs::write(&path, "fn main() {}\n").expect("the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        support::type_text(&mut app, "x");
+        std::fs::remove_dir_all(&gone).expect("taking the directory away");
+
+        dispatch::dispatch(&mut app, Command::Quit);
+        support::answer(&mut app, "save everything and leave");
+
         assert!(
             !app.should_quit(),
-            "a warning given before the last change was taken for this one"
+            "it left with the save it promised undone"
+        );
+        let dump = support::render(&mut app, 70, 12);
+        assert!(
+            support::text_block(&dump).contains("sample.rs: not saved"),
+            "it did not say which file would not go:\n{dump}"
+        );
+    }
+
+    /// Cancelling stays, and the next attempt asks again: there is no
+    /// remembered warning to spend.
+    #[test]
+    fn cancelling_stays_and_asks_again() {
+        let (_scratch, mut app, _path) = reading("say-again", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+
+        dispatch::dispatch(&mut app, Command::Quit);
+        support::answer(&mut app, "cancel");
+        assert!(!app.should_quit(), "cancelling left anyway");
+
+        dispatch::dispatch(&mut app, Command::Quit);
+        assert!(
+            support::ways(&app)
+                .iter()
+                .any(|way| way == "leave without saving"),
+            "the second attempt left without asking"
         );
     }
 
@@ -752,6 +1093,251 @@ mod saying {
         dispatch::dispatch(&mut app, Command::Quit);
         assert!(
             app.should_quit(),
+            "it asked about a document nobody changed"
+        );
+    }
+}
+
+/// Whether a document differs from what is on disk is a question about
+/// where it is in its own history, not about whether anybody has typed.
+mod unwritten {
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    fn reading(name: &str, contents: &str) -> (support::Scratch, App, std::path::PathBuf) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        (scratch, app, path)
+    }
+
+    fn unwritten(app: &App) -> bool {
+        app.current_buffer().expect("a buffer").is_dirty()
+    }
+
+    #[test]
+    fn undoing_back_to_what_is_on_disk_is_not_unwritten() {
+        let (_scratch, mut app, _path) = reading("undo-clean", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+        assert!(unwritten(&app), "typing did not make it unwritten");
+
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert!(
+            !unwritten(&app),
+            "it is still marked unwritten after being put back to what is on disk"
+        );
+    }
+
+    /// However many it takes. A flag that an edit set and one undo cleared
+    /// would call a half-undone document written.
+    #[test]
+    fn it_takes_as_many_undos_as_it_took_edits() {
+        let (_scratch, mut app, _path) = reading("undo-several", "fn main() {}\n");
+        support::type_text(&mut app, "one");
+        support::press(&mut app, crossterm::event::KeyCode::Enter);
+        support::type_text(&mut app, "two");
+
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert!(unwritten(&app), "one undo of three edits called it written");
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert!(
+            unwritten(&app),
+            "two undos of three edits called it written"
+        );
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert!(!unwritten(&app), "undoing all of it left it unwritten");
+    }
+
+    /// Redoing puts it back to a document that is not on disk.
+    #[test]
+    fn redoing_makes_it_unwritten_again() {
+        let (_scratch, mut app, _path) = reading("undo-redo", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::Undo);
+        dispatch::dispatch(&mut app, Command::Redo);
+        assert!(
+            unwritten(&app),
+            "redoing the edit did not make it unwritten"
+        );
+    }
+
+    /// Saving moves the mark: what is on disk is what is in front of the
+    /// reader, and undoing past *that* is unwritten again.
+    #[test]
+    fn saving_moves_where_the_document_counts_as_written() {
+        let (_scratch, mut app, _path) = reading("undo-saved", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::FileSave);
+        assert!(!unwritten(&app), "saving did not settle it");
+
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert!(
+            unwritten(&app),
+            "undoing past what was written left it counted as written"
+        );
+
+        dispatch::dispatch(&mut app, Command::Redo);
+        assert!(
+            !unwritten(&app),
+            "coming back to what was written did not settle it"
+        );
+    }
+
+    /// New work after an undo is not the work that was written, even where
+    /// it leaves the history the same length.
+    #[test]
+    fn work_done_after_an_undo_is_not_the_work_that_was_written() {
+        let (_scratch, mut app, _path) = reading("undo-branch", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        dispatch::dispatch(&mut app, Command::Undo);
+        support::type_text(&mut app, "y");
+        assert!(
+            unwritten(&app),
+            "a document with different text than disk was called written"
+        );
+    }
+}
+
+/// Closing a document with something unwritten in it.
+///
+/// Its own question because a closed buffer takes its undo with it: there
+/// is no other way back to what was in it.
+mod closing {
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    fn reading(name: &str, contents: &str) -> (support::Scratch, App, std::path::PathBuf) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        (scratch, app, path)
+    }
+
+    /// Above the ways out, not under them: the prompt row sits below the
+    /// rows, and a question found there has been read after its answers.
+    #[test]
+    fn the_question_is_read_before_its_answers() {
+        let (_scratch, mut app, _path) = reading("close-order", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::BufferClose);
+
+        let dump = support::render(&mut app, 70, 12);
+        let text = support::text_block(&dump);
+        let row = |what: &str| {
+            text.lines()
+                .position(|line| line.contains(what))
+                .unwrap_or_else(|| panic!("no row saying {what:?} in:\n{dump}"))
+        };
+        assert!(
+            row("is unsaved") < row("save and close it"),
+            "the question is drawn under the answers to it:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn closing_something_unwritten_asks_first() {
+        let (_scratch, mut app, _path) = reading("close-ask", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+
+        dispatch::dispatch(&mut app, Command::BufferClose);
+        assert!(
+            app.current_buffer().is_some(),
+            "it closed an unwritten document without asking"
+        );
+        let dump = support::render(&mut app, 70, 12);
+        let text = support::text_block(&dump);
+        assert!(
+            text.contains("sample.rs is unsaved"),
+            "the question does not name the file closing would lose:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn closing_can_write_it_first() {
+        let (_scratch, mut app, path) = reading("close-save", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+
+        dispatch::dispatch(&mut app, Command::BufferClose);
+        support::answer(&mut app, "save and close it");
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it"),
+            "xfn main() {}\n",
+            "it closed without writing what it said it would write"
+        );
+        assert!(
+            app.current_buffer().is_none(),
+            "it wrote it and then stayed"
+        );
+    }
+
+    #[test]
+    fn closing_can_throw_it_away() {
+        let (_scratch, mut app, path) = reading("close-discard", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+
+        dispatch::dispatch(&mut app, Command::BufferClose);
+        support::answer(&mut app, "close it without saving");
+
+        assert!(app.current_buffer().is_none(), "it did not close");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it"),
+            "fn main() {}\n",
+            "it wrote the file it was told to throw away"
+        );
+    }
+
+    /// A save that did not happen leaves the document open. Closing on the
+    /// strength of a write that failed loses exactly what the reader chose
+    /// to keep.
+    #[test]
+    fn closing_stays_open_when_the_write_does_not_go() {
+        let scratch = support::Scratch::new("close-fail");
+        let gone = scratch.path().join("gone");
+        std::fs::create_dir(&gone).expect("the directory");
+        let path = gone.join("sample.rs");
+        std::fs::write(&path, "fn main() {}\n").expect("the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+        support::type_text(&mut app, "x");
+        std::fs::remove_dir_all(&gone).expect("taking the directory away");
+
+        dispatch::dispatch(&mut app, Command::BufferClose);
+        support::answer(&mut app, "save and close it");
+
+        assert!(
+            app.current_buffer().is_some(),
+            "it closed a document whose save failed, losing the edit"
+        );
+    }
+
+    /// A document with nothing unwritten in it closes on the key, with no
+    /// question in the way.
+    #[test]
+    fn closing_something_written_asks_nothing() {
+        let (_scratch, mut app, _path) = reading("close-clean", "fn main() {}\n");
+        dispatch::dispatch(&mut app, Command::BufferClose);
+        assert!(
+            app.current_buffer().is_none(),
             "it asked about a document nobody changed"
         );
     }

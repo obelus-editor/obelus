@@ -5,6 +5,7 @@
 //! them changes on disk.
 
 use super::*;
+use crate::buffer::Disk;
 
 impl App {
     /// Offers every file under the working directory.
@@ -189,12 +190,19 @@ impl App {
         let items = open
             .map(|(index, buffer)| PickerItem {
                 prose: false,
-                // A dot for a document with changes that are not on disk.
+                // A mark for a document with changes that are not on disk.
                 // `marker` rather than `status`, which is git's and colours
                 // the whole row: "git says this file changed" and "obelus
                 // has not written this" are two different things, and
                 // telling them apart is what this is for.
-                marker: buffer.is_dirty().then(|| "\u{2022}".to_string()),
+                //
+                // The glyph the status row uses for the same fact, so that
+                // the file on screen and its row in the list are visibly
+                // saying one thing rather than two.
+                marker: buffer.is_dirty().then(|| match icons::enabled() {
+                    true => icons::ui::UNSAVED.to_string(),
+                    false => "\u{2022}".to_string(),
+                }),
                 icon: Some(icons::for_path(buffer.path())),
                 label: relative(buffer.path(), &self.working_directory),
                 detail: None,
@@ -236,17 +244,17 @@ impl App {
     /// the watch on it -- and the reader is left on whichever file is
     /// nearest, or on the welcome screen if that was the last one.
     pub fn close_current(&mut self) {
-        // The same two presses leaving asks for, for the same reason: a
-        // closed buffer takes its undo with it.
-        let unsaved = self
-            .selected_buffer()
-            .or(self.current)
+        // Asked about rather than done, for the reason leaving is asked
+        // about: a closed buffer takes its undo with it.
+        let which = self.selected_buffer().or(self.current);
+        let unsaved = which
             .and_then(|id| self.buffers.get(id.get()))
             .and_then(Option::as_ref)
             .is_some_and(Buffer::is_dirty);
-        if unsaved && !self.warned_about_quitting {
-            self.warned_about_quitting = true;
-            self.note = Some("this file is unsaved -- press again to close it".to_string());
+        if let Some(id) = which
+            && unsaved
+        {
+            self.ask_before_closing(id);
             return;
         }
         // Whichever file the screen is about. With the buffer list open that
@@ -298,7 +306,7 @@ impl App {
     }
 
     /// Stops showing one file, whichever the reader is on.
-    fn close(&mut self, id: BufferId) {
+    pub(super) fn close(&mut self, id: BufferId) {
         let Some(buffer) = self.buffers.get_mut(id.get()).and_then(Option::take) else {
             return;
         };
@@ -550,15 +558,26 @@ impl App {
             if buffer.path() != path || !buffer.content().is_file() {
                 continue;
             }
+            // The commonest change reported about an open file is obelus's
+            // own save arriving back, and that one looks exactly like the
+            // file that was just recorded. Asked before anything is read,
+            // because it is one `stat` and the alternative is reading the
+            // whole file to learn nothing.
+            if !buffer.file_touched() {
+                continue;
+            }
             // An agent rewriting a file while it is open is the ordinary
             // case and reloading by itself is the whole point of watching.
             // Over a document somebody has edited it is losing their work,
             // so a dirty buffer is marked and left alone: the save is where
             // the two versions meet, and where the reader is asked.
             if buffer.is_dirty() {
-                if buffer.file_moved() {
-                    buffer.mark_moved();
-                }
+                // The same question the save will ask, asked early so the
+                // screen can say so. Worth one read of the file: the mark
+                // is what tells the reader they will have to choose, and a
+                // `touch` or a formatter that changed nothing is not a
+                // choice.
+                buffer.conflicted();
                 continue;
             }
             if reload(buffer) {
@@ -588,15 +607,26 @@ impl App {
         }
         // The file moved under the reader while they were editing it.
         // Saving now would put their version over somebody else's without
-        // either of them being asked.
-        if buffer.has_moved() && !buffer.was_warned() {
-            buffer.warn();
-            // Short enough for a narrow status row: the row drops a note it
-            // cannot fit whole rather than half-drawing it, and a warning
-            // nobody sees is not a warning.
-            self.note = Some("changed on disk -- save again to overwrite".to_string());
-            return;
+        // either of them being asked, so the reader is asked.
+        //
+        // Asked of disk here rather than of the flag the watcher set: a
+        // file is written once, and the watcher is allowed to have missed
+        // it. It is also the place to find out that the file moved back.
+        match buffer.conflicted() {
+            Disk::Unchanged => self.save_now(index),
+            Disk::Written => self.ask_before_saving(BufferId::new(index)),
+            // A different question with different answers: there is nothing
+            // on a disk that has nothing on it to take instead.
+            Disk::Deleted => self.ask_before_writing_back(BufferId::new(index)),
         }
+    }
+
+    /// Lays a document out, if that was asked for, and writes it.
+    ///
+    /// Apart from the command because the answer to a question about a file
+    /// that moved comes back here too, having settled the one thing the
+    /// command stopped for.
+    pub(super) fn save_now(&mut self, index: usize) {
         // Laid out first, where the reader asked for that and somebody can
         // do it. The answer comes back later and writes the file then --
         // the alternative is holding the whole program still waiting for
@@ -608,23 +638,59 @@ impl App {
         self.write_now(index);
     }
 
-    /// Writes a document that is ready to be written.
+    /// Throws away what the reader wrote and re-reads the file.
+    ///
+    /// One of the two ways out of a file that moved. The undo goes with it:
+    /// [`Buffer::reload`] forgets, because what could have been put back was
+    /// about text that is not there any more.
+    pub(super) fn take_what_is_on_disk(&mut self, index: usize) {
+        let Some(buffer) = self.buffers.get_mut(index).and_then(Option::as_mut) else {
+            return;
+        };
+        match buffer.take_from_disk() {
+            Ok(changed) => {
+                if changed {
+                    self.change_document(index);
+                }
+                self.note = Some("took what is on disk -- undo brings yours back".to_string());
+            }
+            Err(error) => {
+                tracing::warn!(%error, "taking what is on disk failed");
+                self.note = Some("could not read it".to_string());
+            }
+        }
+    }
+
+    /// Writes a document that is ready to be written, and says whether it
+    /// went.
     ///
     /// Apart from the command because the formatting answer comes back here
     /// too, and by then everything the command checked has been checked.
-    pub(super) fn write_now(&mut self, index: usize) {
+    /// It reports because leaving depends on the answer: a save that failed
+    /// on the way out is the whole reason the reader was asked.
+    pub(super) fn write_now(&mut self, index: usize) -> bool {
         let Some(buffer) = self.buffers.get_mut(index).and_then(Option::as_mut) else {
-            return;
+            return false;
         };
         match buffer.save() {
             Ok(()) => {
                 self.note = Some("saved".to_string());
-                self.warned_about_quitting = false;
                 self.saved_document(index);
+                true
             }
             Err(error) => {
-                tracing::warn!(%error, "saving failed");
-                self.note = Some(format!("not saved: {error}"));
+                tracing::warn!(%error, path = %buffer.path().display(), "saving failed");
+                // Which file, and nothing else. Why it would not go is a
+                // path and an error chain, which is longer than the status
+                // row has and so would be dropped whole -- and a reader
+                // leaving with four files open needs the name most. The
+                // whole of it is in the log.
+                let name = buffer
+                    .path()
+                    .file_name()
+                    .map_or_else(String::new, |name| format!("{}: ", name.to_string_lossy()));
+                self.note = Some(format!("{name}not saved"));
+                false
             }
         }
     }

@@ -222,10 +222,17 @@ impl StatusView<'_> {
                 false => " [unsaved]".to_string(),
             });
         }
-        if buffer.has_moved() {
+        let away = match buffer.on_disk() {
+            crate::buffer::Disk::Unchanged => None,
+            crate::buffer::Disk::Written => Some("moved"),
+            // Said in its own word. A reader who is told their file
+            // "moved" when it is gone will go looking for it.
+            crate::buffer::Disk::Deleted => Some("deleted"),
+        };
+        if let Some(away) = away {
             marker.push_str(&match icons::enabled() {
-                true => format!(" {}  moved", icons::ui::STALE),
-                false => " [moved]".to_string(),
+                true => format!(" {}  {away}", icons::ui::STALE),
+                false => format!(" [{away}]"),
             });
         }
         if buffer.is_stale() {

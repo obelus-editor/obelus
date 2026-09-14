@@ -188,15 +188,19 @@ fn highlighting_still_works_after_a_reload() {
     );
 }
 
-/// The buffer keeps its contents when the file goes away, so the only way the
-/// reader learns about it is the status bar.
+/// The buffer keeps its contents when the file can no longer be read, so the
+/// only way the reader learns about it is the status bar.
+///
+/// Unreadable rather than deleted: a file that is gone is a fact obelus can
+/// state, and it says "deleted". `stale` is for the case it cannot -- here,
+/// bytes that are not text.
 #[test]
 fn a_failed_reload_marks_the_buffer_stale() {
     let scratch = Scratch::new("stale-flag", BEFORE);
     let mut buffer = Buffer::open(&scratch.path).expect("opening");
     assert!(!buffer.is_stale(), "a freshly opened file is not stale");
 
-    fs::remove_file(&scratch.path).expect("deleting");
+    fs::write(&scratch.path, [0xff, 0xfe, 0xfd]).expect("writing bytes that are not text");
     assert!(buffer.reload().is_err());
     assert!(buffer.is_stale());
 
@@ -214,13 +218,54 @@ fn an_unchanged_reload_clears_staleness() {
     let scratch = Scratch::new("stale-cleared", BEFORE);
     let mut buffer = Buffer::open(&scratch.path).expect("opening");
 
-    fs::remove_file(&scratch.path).expect("deleting");
+    fs::write(&scratch.path, [0xff, 0xfe, 0xfd]).expect("writing bytes that are not text");
     assert!(buffer.reload().is_err());
     assert!(buffer.is_stale());
 
     scratch.write(BEFORE);
     assert!(!buffer.reload().expect("reloading"), "same bytes as before");
     assert!(!buffer.is_stale());
+}
+
+/// A file that is gone says so in its own word: a reader told their file is
+/// "stale" when it has been deleted will go looking for it.
+#[test]
+fn a_deleted_file_says_it_was_deleted() {
+    let scratch = Scratch::new("deleted-word", BEFORE);
+    let mut buffer = Buffer::open(&scratch.path).expect("opening");
+    fs::remove_file(&scratch.path).expect("deleting");
+    assert!(buffer.reload().is_err());
+
+    assert_eq!(buffer.on_disk(), obelus::buffer::Disk::Deleted);
+    assert!(
+        !buffer.is_stale(),
+        "a file obelus knows the fate of was called stale"
+    );
+
+    let mut app = obelus::app::App::new(vec![buffer]);
+    let dump = support::render(&mut app, 60, 5);
+    assert!(
+        support::text_block(&dump).contains("deleted"),
+        "the status row does not say the file was deleted:\n{dump}"
+    );
+}
+
+/// And it stops saying so when the file comes back with what it had.
+#[test]
+fn a_file_that_comes_back_unchanged_is_not_deleted_any_more() {
+    let scratch = Scratch::new("deleted-back", BEFORE);
+    let mut buffer = Buffer::open(&scratch.path).expect("opening");
+    fs::remove_file(&scratch.path).expect("deleting");
+    assert!(buffer.reload().is_err());
+    assert_eq!(buffer.on_disk(), obelus::buffer::Disk::Deleted);
+
+    scratch.write(BEFORE);
+    assert!(!buffer.reload().expect("reloading"), "same bytes as before");
+    assert_eq!(
+        buffer.on_disk(),
+        obelus::buffer::Disk::Unchanged,
+        "a file that came back is still called deleted"
+    );
 }
 
 /// A file whose path is a temporary one cannot be pinned by a fixture — the
@@ -231,7 +276,7 @@ fn stale_app(name: &str) -> (Scratch, obelus::app::App) {
     // scratch file means one recreates the file the other just deleted.
     let scratch = Scratch::new(name, BEFORE);
     let mut buffer = Buffer::open(&scratch.path).expect("opening");
-    fs::remove_file(&scratch.path).expect("deleting");
+    fs::write(&scratch.path, [0xff, 0xfe, 0xfd]).expect("writing bytes that are not text");
     assert!(buffer.reload().is_err());
     assert!(buffer.is_stale());
     (scratch, obelus::app::App::new(vec![buffer]))

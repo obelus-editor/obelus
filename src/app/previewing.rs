@@ -336,7 +336,10 @@ impl App {
                 let at = self.read_at(&path, Some(*id));
                 Some((Subject::Commit { id: *id, path }, at))
             }
-            PickerValue::Nothing => None,
+            // A question is about what is already on screen, and the reader
+            // has to be able to see it to answer: a preview would cover the
+            // file whose fate is being asked about.
+            PickerValue::Answer(_) | PickerValue::Nothing => None,
         }
     }
 }

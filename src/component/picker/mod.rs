@@ -24,6 +24,7 @@ use crate::{
     buffer::BufferId,
     command::Command,
     component::window::{Move, Window, Wrap},
+    question::Question,
     theme::Theme,
 };
 
@@ -86,6 +87,8 @@ pub enum PickerValue {
         /// Which of the files it changed, relative to the repository.
         path: PathBuf,
     },
+    /// One of the ways out of a question obelus stopped to ask.
+    Answer(crate::question::Answer),
     /// Nothing. A row that is there to say why the list is short.
     Nothing,
 }
@@ -285,6 +288,14 @@ pub struct Picker {
     /// Whether this list is a list of files, whose rows are refilled when
     /// the tab moves.
     listing: bool,
+    /// Whether any row carries a mark, and so whether every row leaves a
+    /// column for one.
+    ///
+    /// Over all the rows rather than the matching ones: a column that came
+    /// and went as the reader typed would slide the whole list sideways
+    /// under them, and the mark is there to be glanced at rather than
+    /// hunted for.
+    marked: bool,
     /// Whether the empty reason is about the world rather than about there
     /// being nothing to list, and so wins over "no match".
     explains: bool,
@@ -383,6 +394,7 @@ impl Picker {
             searching: false,
             listing: false,
             explains: false,
+            marked: false,
             question: None,
             empty: "nothing to choose from".to_string(),
             prefer: None,
@@ -394,6 +406,61 @@ impl Picker {
             haystack: Vec::new(),
         };
         picker.refilter();
+        picker
+    }
+
+    /// The list a question is.
+    ///
+    /// One row per way out, in the order the question offers them, and a
+    /// last row for cancelling -- which every question has, which means the
+    /// same thing in all of them, and which escape does as well. As tall as
+    /// it has rows: a question small enough to answer is small enough to
+    /// show whole, and one that scrolled would be hiding one of its answers.
+    ///
+    /// The rows are built here rather than by the caller because a question
+    /// has no business knowing what a row is made of. What every question
+    /// gets for free is exactly this function.
+    #[must_use]
+    pub fn asking(question: &Question) -> Self {
+        let row = |label: String, about: Option<String>, answer| PickerItem {
+            // A sentence rather than a name: "close without saving" cut to
+            // "\u{2026}without saving" has lost the half that says what it
+            // does, which is the other way round from a file path.
+            prose: true,
+            marker: None,
+            // No icon. A question's rows are not things of a kind the way
+            // files and commands are, and a glyph on each would be three
+            // decorations standing in for three different meanings.
+            icon: None,
+            label,
+            detail: about,
+            trailing: None,
+            value: PickerValue::Answer(answer),
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            kind: None,
+            tab: None,
+        };
+        let items: Vec<_> = question
+            .ways()
+            .iter()
+            .map(|way| row(way.label.clone(), way.detail.clone(), way.answer))
+            .chain(std::iter::once(row(
+                "cancel".to_string(),
+                None,
+                crate::question::Answer::Cancel,
+            )))
+            .collect();
+        let rows = u16::try_from(items.len()).unwrap_or(u16::MAX);
+        let mut picker = Self::new(items, PickerLayout::Compact { rows });
+        // Above the ways out rather than in front of the prompt, which is
+        // where a list that is being searched says what it is searching.
+        // A question is read before its answers, not after them, and the
+        // prompt sits *under* the rows: a reader who found the question
+        // there had already read the three things they could do about it.
+        picker.about(question.prompt());
         picker
     }
 
@@ -534,7 +601,12 @@ impl Picker {
         let Some(about) = self.about.as_deref() else {
             return 0;
         };
-        let rows = u16::try_from(crate::text::wrapped(about, width).len()).unwrap_or(MOST_ABOUT);
+        // Wrapped at the width the drawing wraps at, which is two columns
+        // in from the edge. Counted at the full width instead, a sentence
+        // that needs one more row than the count says loses its tail --
+        // and loses it silently, which is worse than not saying it.
+        let inside = width.saturating_sub(2);
+        let rows = u16::try_from(crate::text::wrapped(about, inside).len()).unwrap_or(MOST_ABOUT);
         rows.clamp(1, MOST_ABOUT).saturating_add(1)
     }
 
@@ -616,6 +688,13 @@ impl Picker {
     /// missing.
     pub fn ask(&mut self, question: &str) {
         self.question = Some(question.to_string());
+    }
+
+    /// Whether any row carries a mark, and so whether every row leaves a
+    /// column for one.
+    #[must_use]
+    pub const fn marked(&self) -> bool {
+        self.marked
     }
 
     /// The question this list is answering, if it is answering one.
@@ -1045,6 +1124,10 @@ impl Picker {
 
     fn refilter(&mut self) {
         self.matched.clear();
+        // One more pass over a list this function already walks whole, and
+        // the only place that knows about every row rather than the visible
+        // ones.
+        self.marked = self.items.iter().any(|item| item.marker.is_some());
 
         // The first tab is every row; any other one is its own. Scope tabs
         // do not filter at all -- every row in the list belongs to the scope

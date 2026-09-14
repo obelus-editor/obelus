@@ -25,6 +25,7 @@ pub mod jump;
 pub mod keymap;
 pub mod logging;
 pub mod lsp;
+pub mod question;
 pub mod reading;
 pub mod search;
 pub mod syntax;

@@ -14,6 +14,7 @@
 //! obelus does with what it reads. What is left in this file is the state
 //! itself, the keys, the frame, and the loop.
 pub mod agents;
+mod asking;
 mod choosing;
 mod counting;
 mod documents;
@@ -337,11 +338,6 @@ pub struct App {
     editor_area: Rect,
     working_directory: PathBuf,
     should_quit: bool,
-    /// Whether the reader has been told that leaving would lose something.
-    ///
-    /// Cleared by anything that changes what there is to lose, so the
-    /// warning is about the files as they are rather than as they were.
-    warned_about_quitting: bool,
 }
 
 impl App {
@@ -403,7 +399,6 @@ impl App {
             // directory.
             working_directory: std::env::current_dir().unwrap_or_default(),
             should_quit: false,
-            warned_about_quitting: false,
         }
     }
 
@@ -415,23 +410,18 @@ impl App {
 
     /// Asks the loop to stop after this iteration.
     pub fn request_quit(&mut self) {
-        // Not while something is unwritten. Said once and then obeyed: a
-        // reader who meant it presses again, and one who did not has been
-        // told what they were about to throw away. The same shape as saving
-        // over a file that moved, and for the same reason -- the status row
-        // takes a line of text, not an answer.
+        // Not while something is unwritten: the reader is asked, because
+        // "press it again" is an answer that has to be guessed at, and the
+        // two things they might have meant -- write them, or let them go --
+        // are not the same key twice.
         let unsaved = self
             .buffers
             .iter()
             .flatten()
             .filter(|buffer| buffer.is_dirty())
             .count();
-        if unsaved > 0 && !self.warned_about_quitting {
-            self.warned_about_quitting = true;
-            self.note = Some(match unsaved {
-                1 => "one file is unsaved -- press again to leave it".to_string(),
-                many => format!("{many} files are unsaved -- press again to leave them"),
-            });
+        if unsaved > 0 {
+            self.ask_before_leaving(unsaved);
             return;
         }
         self.should_quit = true;

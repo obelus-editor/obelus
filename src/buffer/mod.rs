@@ -173,20 +173,38 @@ pub struct Cursor {
     remembered_cell: DisplayColumn,
 }
 
-/// What a file looked like from the outside when it was last read.
+/// What somebody else has done to a file since a document and it were the
+/// same bytes.
 ///
-/// Two cheap facts rather than the bytes: a hash would be the whole file
-/// read again, and these two together miss only a change that kept the
-/// length and the timestamp, which no editor and no agent produces.
+/// Three states and not a flag, because the ways out of them are different:
+/// a file that was written over can be taken instead of the document, and a
+/// file that is gone cannot -- there is nothing there to take.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Disk {
+    /// Nothing. What is there is what this was read from or written to.
+    #[default]
+    Unchanged,
+    /// Written over by somebody else.
+    Written,
+    /// Taken away.
+    Deleted,
+}
+
+/// What `stat` says about a file: the cheap half of "has it changed".
+///
+/// Cheap and not conclusive in either direction. `touch` moves the
+/// timestamp without moving a byte, and a write that kept the length inside
+/// one tick of the timestamp's resolution moves neither. It is what gets
+/// asked first, and what says whether the other half is worth paying for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Seen {
+struct Stat {
     /// When it was last written, where the filesystem says.
     modified: Option<std::time::SystemTime>,
     /// How long it was.
     length: u64,
 }
 
-impl Seen {
+impl Stat {
     /// What the file at `path` looks like now, if it can be asked.
     fn of(path: &std::path::Path) -> Option<Self> {
         let data = std::fs::metadata(path).ok()?;
@@ -195,6 +213,51 @@ impl Seen {
             length: data.len(),
         })
     }
+}
+
+/// What the file was, the last time the document and the file were the same
+/// bytes.
+///
+/// Which is the only moment this is recorded: opening, saving, and taking
+/// what is on disk. So the digest costs nothing to take -- the bytes are
+/// already in hand -- and reading the file to compare against it is paid
+/// for only when [`Stat`] has already said something moved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Seen {
+    /// What `stat` said then.
+    stat: Option<Stat>,
+    /// What was in it then.
+    digest: u64,
+}
+
+/// A digest of some bytes, for telling one version of a file from another.
+///
+/// Sixty-four bits of `SipHash`, which is what a `HashMap` key gets. Two
+/// different files colliding would mean a save that went over somebody's
+/// change without asking, so it is worth saying what the odds are: this is
+/// asked once per save of files that are almost always the same file, and a
+/// collision needs someone to have gone looking for one.
+fn digest_of(bytes: &[u8]) -> u64 {
+    use std::hash::Hasher as _;
+
+    // `write` rather than `Hash::hash`, which adds a terminator per string
+    // it is given: a rope that has been edited is chunked differently from
+    // one just read, and the digest has to be about the bytes rather than
+    // about where ropey happened to cut them.
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    hasher.write(bytes);
+    hasher.finish()
+}
+
+/// The same, of a document.
+fn digest_of_text(text: &Text) -> u64 {
+    use std::hash::Hasher as _;
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for chunk in text.rope().chunks() {
+        hasher.write(chunk.as_bytes());
+    }
+    hasher.finish()
 }
 
 /// Which part of the document is on screen.
@@ -475,26 +538,12 @@ pub struct Buffer {
     /// answer. A document somebody has edited cannot be re-read to find out,
     /// so the question has to be asked of the file rather than of its text.
     seen: Option<Seen>,
-    /// Whether the text has changed since it was last read or written.
-    ///
-    /// A third thing, and not either of the two beside it: `stale` means the
-    /// last re-read *failed*, and what git says has changed is about `HEAD`
-    /// rather than about disk.
-    dirty: bool,
-    /// Whether the file moved on disk while this was dirty.
+    /// What somebody else has done to the file while this was dirty.
     ///
     /// Set instead of re-reading, because re-reading over an edit is losing
     /// it. What it is for is stopping the save that would lose the other
     /// side instead.
-    moved: bool,
-    /// Whether the reader has been told the file moved under them.
-    ///
-    /// A save that found the file moved refuses once and says so; pressing
-    /// it again goes through. Two presses rather than a question, because
-    /// the status row asks for a line of text and this is not one -- and
-    /// because the answer to "are you sure" is the same key again in every
-    /// editor a reader has used.
-    warned: bool,
+    disk: Disk,
     /// Everything the reader can put back.
     ///
     /// A journal of changes rather than of documents: a copy of the whole
@@ -532,7 +581,10 @@ impl Buffer {
 
         let mut folds = folds::Folds::default();
         folds.offer(folds::of(&text));
-        let seen = Seen::of(&path);
+        let seen = Some(Seen {
+            stat: Stat::of(&path),
+            digest: digest_of_text(&text),
+        });
 
         Ok(Self {
             seen,
@@ -559,9 +611,7 @@ impl Buffer {
             blocks: Vec::new(),
             in_block: None,
             undo: undo::Undo::default(),
-            dirty: false,
-            moved: false,
-            warned: false,
+            disk: Disk::Unchanged,
         })
     }
 
@@ -699,9 +749,7 @@ impl Buffer {
             in_block: None,
             undo: undo::Undo::default(),
             seen: None,
-            dirty: false,
-            moved: false,
-            warned: false,
+            disk: Disk::Unchanged,
         }
     }
 
@@ -892,51 +940,117 @@ impl Buffer {
     }
 
     /// Whether the text differs from what is on disk.
+    ///
+    /// Asked of the journal rather than kept as a flag beside it. A flag is
+    /// set by an edit and would have to be *un*set by undoing back to what
+    /// was written -- which is not "one undo" but however many it takes,
+    /// and which a flag has no way of recognising. The journal knows, so it
+    /// is the one that answers.
+    ///
+    /// A third thing, and not either of the two beside it: `stale` means
+    /// the last re-read *failed*, and what git says has changed is about
+    /// `HEAD` rather than about disk.
     #[must_use]
-    pub const fn is_dirty(&self) -> bool {
-        self.dirty
+    pub fn is_dirty(&self) -> bool {
+        self.undo.changed()
     }
 
-    /// Whether the file moved on disk while this was being edited.
+    /// What somebody else has done to the file, as last established.
+    ///
+    /// Remembered rather than asked, because the status row and the list of
+    /// open files draw it on every frame and asking means a `stat` per row
+    /// -- which on a network filesystem is not a microsecond but a wait the
+    /// reader can feel. What sets it is the watcher and the save, both of
+    /// which are already doing I/O.
     #[must_use]
-    pub const fn has_moved(&self) -> bool {
-        self.moved
+    pub const fn on_disk(&self) -> Disk {
+        self.disk
     }
 
-    /// Whether what is on disk is not what this was read from.
+    /// Whether the file is definitely not there any more.
+    ///
+    /// Definitely: a path that cannot be asked about -- a directory along
+    /// it that cannot be searched, say -- is not a deletion, and treating
+    /// it as one would offer to write the file back somewhere it cannot go.
+    #[must_use]
+    pub fn file_gone(&self) -> bool {
+        matches!(self.path.try_exists(), Ok(false))
+    }
+
+    /// Whether `stat` says the file is not the one that was read or written.
+    ///
+    /// Cheap, and wrong in both directions -- see [`Stat`]. What it is for
+    /// is skipping the read: the commonest change reported about an open
+    /// file is obelus's own save arriving back through the watcher, and
+    /// that one looks exactly like what was just recorded.
+    #[must_use]
+    pub fn file_touched(&self) -> bool {
+        Stat::of(&self.path) != self.seen.and_then(|seen| seen.stat)
+    }
+
+    /// Whether what is on disk is not what was last read or written.
+    ///
+    /// The honest question, and it reads the file to answer -- but only
+    /// when the cheap one has already said something moved. A file that was
+    /// touched, or rewritten with the bytes it already had (a formatter
+    /// that found nothing to change, a checkout of the commit it was
+    /// already on), is not something to make anybody choose about.
     ///
     /// Asked of the file rather than of the text: a document somebody has
     /// edited differs from disk whether or not disk has moved, so the text
     /// cannot answer it.
     #[must_use]
-    pub fn file_moved(&self) -> bool {
-        Seen::of(&self.path) != self.seen
+    pub fn file_differs(&self) -> bool {
+        if !self.file_touched() {
+            return false;
+        }
+        let Some(seen) = self.seen else {
+            return true;
+        };
+        match std::fs::read_to_string(&self.path) {
+            Ok(contents) => digest_of(contents.as_bytes()) != seen.digest,
+            // Gone, or no longer something obelus can read. Either way it is
+            // not what was read from.
+            Err(_) => true,
+        }
     }
 
-    /// Says the file moved while this was dirty, so a save would lose it.
-    pub const fn mark_moved(&mut self) {
-        self.moved = true;
-        self.warned = false;
+    /// Whether writing now would go over somebody else's change.
+    ///
+    /// Asked of disk at the moment of asking rather than of the flag the
+    /// watcher sets, because the watcher is allowed to miss things: its
+    /// events are dropped on queue overflow, never arrive at all over NFS
+    /// and the like, and cannot report what happened before obelus started.
+    /// A file is only ever written once, so this is the one place that has
+    /// to be right.
+    ///
+    /// It corrects the flag on the way through, so a file that moved and
+    /// then moved back stops asking.
+    pub fn conflicted(&mut self) -> Disk {
+        // Gone first: a file that is not there also "differs", and the two
+        // have different answers -- there is nothing to take from a disk
+        // with nothing on it.
+        self.disk = match () {
+            () if self.file_gone() => Disk::Deleted,
+            () if self.file_differs() => Disk::Written,
+            () => Disk::Unchanged,
+        };
+        self.disk
     }
 
-    /// Whether a save has already refused once and said why.
-    #[must_use]
-    pub const fn was_warned(&self) -> bool {
-        self.warned
-    }
-
-    /// Says the reader has been told, so the next save goes through.
-    pub const fn warn(&mut self) {
-        self.warned = true;
+    /// Says what somebody else did, so the screen can say it too.
+    pub const fn mark_on_disk(&mut self, disk: Disk) {
+        self.disk = disk;
     }
 
     /// Says the text is what is on disk, after writing it there.
     pub fn settle(&mut self) {
-        self.seen = Seen::of(&self.path);
-        self.dirty = false;
-        self.moved = false;
-        self.warned = false;
-        self.undo.close();
+        self.seen = Some(Seen {
+            stat: Stat::of(&self.path),
+            digest: digest_of_text(&self.text),
+        });
+        self.disk = Disk::Unchanged;
+        self.undo.settled();
     }
 
     /// How many times this document has changed.
@@ -1095,7 +1209,6 @@ impl Buffer {
         // reading, the diff against git, the rows of an in-file search --
         // and every one of them is wrong until it moves.
         self.version = self.version.saturating_add(1);
-        self.dirty = true;
 
         // What the reader folded, moved by however many lines the edit added
         // or took away. `offer` would be right for a re-read and is wrong
@@ -1178,6 +1291,37 @@ impl Buffer {
         Ok(())
     }
 
+    /// Replaces the document with what is on disk, keeping the way back.
+    ///
+    /// One of the two ways out of a file that moved under an edit, and the
+    /// dangerous-looking one. An *edit* rather than a re-read, so that it
+    /// goes into the journal and undo brings the reader's version back:
+    /// [`reload`](Self::reload) forgets, which is right for a document
+    /// nobody had changed and would be throwing work away here. It is the
+    /// difference between a choice and an accident.
+    ///
+    /// The document counts as written from here, because what is on screen
+    /// is now what is on disk -- and undoing past it makes it unwritten
+    /// again, because then it is not.
+    pub fn take_from_disk(&mut self) -> Result<bool> {
+        let contents = std::fs::read_to_string(&self.path)
+            .with_context(|| format!("re-reading {}", self.path.display()))?;
+        // Where the reader was. `edit` leaves the cursor after what it put
+        // in, which for the whole file is the end of it -- and somebody who
+        // asked to see the other version wants to see the part they were
+        // looking at.
+        let cursor = self.cursor;
+        let top = self.viewport.top;
+
+        let changed = self.edit(self.spanning_all(), &contents, undo::Doing::Whole);
+        self.cursor.line = self.text.clamp_line(cursor.line);
+        self.cursor.column = self.text.clamp_column(self.cursor.line, cursor.column);
+        self.viewport.top = self.text.clamp_line(top);
+        self.settle();
+        self.stale = false;
+        Ok(changed)
+    }
+
     /// Re-reads the file and reparses the part that changed.
     ///
     /// Returns whether anything changed. A watcher fires for `touch`, for a
@@ -1191,7 +1335,13 @@ impl Buffer {
         let contents = match std::fs::read_to_string(&self.path) {
             Ok(contents) => contents,
             Err(error) => {
-                self.stale = true;
+                // A file that is simply gone is not a re-read that went
+                // wrong: `stale` means obelus could not find out what is
+                // there, and here it has found out.
+                match self.file_gone() {
+                    true => self.disk = Disk::Deleted,
+                    false => self.stale = true,
+                }
                 return Err(error).with_context(|| format!("re-reading {}", self.path.display()));
             }
         };
@@ -1199,6 +1349,11 @@ impl Buffer {
         self.stale = false;
         let new = Text::from_string(&contents);
         if new.rope() == self.text.rope() {
+            // The bytes are what this was read from after all: a `touch`, a
+            // formatter that found nothing to change, a checkout of the
+            // commit it was already on. Recorded, so the next event about
+            // this file is answered by one `stat` instead of another read.
+            self.settle();
             return Ok(false);
         }
 
@@ -1227,9 +1382,7 @@ impl Buffer {
         // has just been replaced.
         self.undo.forget();
         // And what is on screen is what is on disk again.
-        self.seen = Seen::of(&self.path);
-        self.dirty = false;
-        self.moved = false;
+        self.settle();
 
         self.cursor.line = self.text.clamp_line(self.cursor.line);
         self.cursor.column = self.text.clamp_column(self.cursor.line, self.cursor.column);

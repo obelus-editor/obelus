@@ -26,6 +26,14 @@ use crate::{
 /// meant ten rows to walk.
 const LIST_ROWS: u16 = 10;
 
+/// How wide the column in front of the icon is, where a row that has one
+/// puts its mark.
+///
+/// The glyph and a blank after it, which is what the icon beside it gets.
+/// Every mark obelus draws is one cell; a wider one would push its own row
+/// along rather than everybody's.
+const MARKER_COLUMNS: u16 = 2;
+
 /// How tall the whole list is: its rows, and the tabs over them.
 fn list_region_rows(picker: &Picker, width: u16) -> u16 {
     LIST_ROWS
@@ -351,9 +359,14 @@ impl PickerView<'_> {
         // spend: an outline of deeply nested code otherwise pushes the names
         // off the row it is meant to be showing.
         let mut column = 1u16.saturating_add(item.depth.saturating_mul(2).min(area.width / 3));
-        // Before the icon and dimmed, because it is not part of the name:
-        // it says the row holds something, which is a fact about the row
-        // rather than about the thing it names.
+        // Before the icon, because it is not part of the name: it says
+        // something about the row rather than about the thing it names.
+        //
+        // In the colour the status row marks the same facts in, and not
+        // dimmed. A mark for work that is not on disk is the one thing in a
+        // list of files a reader must not miss, and the gutter's grey --
+        // which is the colour of a line number, chosen to recede -- made it
+        // something to notice only once it was pointed out.
         if let Some(marker) = item.marker.as_deref() {
             // With a blank column after it, the way the icon has one: two
             // glyphs touching read as one glyph nobody has seen before.
@@ -364,9 +377,16 @@ impl PickerView<'_> {
                 column,
                 y,
                 &marker,
-                style.fg(self.theme.gutter),
+                style.fg(self.theme.status_stale),
                 &Marked::plain(),
             );
+        } else if self.picker.marked() {
+            // The column is kept on the rows that have nothing to put in
+            // it, so that the icons and the names of a list line up. A name
+            // that sat two columns right of its neighbours because that
+            // file is unwritten says the same thing twice, and says it in a
+            // way that makes the list harder to read down.
+            column = column.saturating_add(MARKER_COLUMNS);
         }
         if let Some(icon) = item.icon {
             let mut glyph = String::new();

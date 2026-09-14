@@ -354,3 +354,48 @@ pub fn read_history(app: &mut App, events: &std::sync::mpsc::Receiver<obelus::ev
     }
     panic!("the history never finished arriving");
 }
+
+/// The ways out of the question obelus is asking, in the order offered.
+///
+/// Panics if it is not asking one: a test that walks past a question it did
+/// not expect would go on to assert about a screen nobody is looking at.
+pub fn ways(app: &App) -> Vec<String> {
+    app.picker()
+        .expect("a question is being asked")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect()
+}
+
+/// Answers the question obelus is asking, by walking to a way out and
+/// choosing it.
+///
+/// Through the arrow keys and enter rather than by reaching for the value,
+/// so that what a test answers is what a reader could answer.
+pub fn answer(app: &mut App, way: &str) {
+    let ways = ways(app);
+    let at = ways
+        .iter()
+        .position(|label| label == way)
+        .unwrap_or_else(|| panic!("no way out called {way:?} among {ways:?}"));
+    for _ in 0..at {
+        press(app, KeyCode::Down);
+    }
+    press(app, KeyCode::Enter);
+}
+
+/// The text block as one line, with runs of blanks collapsed.
+///
+/// For asserting on a sentence the screen wrapped. A phrase broken across
+/// two rows is still the phrase the reader read, and a test that missed it
+/// would be testing the width of the screen.
+pub fn said(dump: &str) -> String {
+    text_block(dump)
+        .lines()
+        // Past the row number the dump puts in front of every row, which
+        // would otherwise land in the middle of a wrapped sentence.
+        .filter_map(|line| line.split_once('|'))
+        .flat_map(|(_, row)| row.split_whitespace())
+        .collect::<Vec<_>>()
+        .join(" ")
+}

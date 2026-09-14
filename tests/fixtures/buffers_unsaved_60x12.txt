@@ -1,0 +1,35 @@
+screen 60x12  editor 60x10  status 60x1
+-- text --
+ 0|    written.rs                                             
+ 1| 󰝦  unwritten.rs                                           
+ 2|                                                            
+ 3|                                                            
+ 4|                                                            
+ 5|                                                            
+ 6|                                                            
+ 7|                                                            
+ 8|                                                            
+ 9|                                                            
+10|────────────────────────────────────────────────────────────
+11| 󰍉                                                          
+-- style --
+ 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|bccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbba
+ 2|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+10|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+11|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#e4e4e7 bg=#27272a
+c fg=#f87171 bg=#27272a
+d fg=#52525b bg=#18181b
+e fg=#d4d4d8 bg=#18181b
+-- cursor --
+4,11

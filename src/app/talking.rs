@@ -1051,7 +1051,6 @@ impl App {
                 });
                 if changed {
                     self.change_document(index);
-                    self.warned_about_quitting = false;
                     self.note = Some("the agent changed this file".to_string());
                 }
                 // A write of what is already there changed nothing and is
