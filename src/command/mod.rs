@@ -54,6 +54,12 @@ pub enum Command {
     GoLine,
     /// Go to the bracket that matches the one under the cursor.
     GoBracket,
+    /// Fold the run of lines the cursor is in, or unfold the one it is on.
+    Fold,
+    /// Fold every run in the file.
+    FoldAll,
+    /// Unfold everything that is folded.
+    UnfoldAll,
     /// Open what changed here, in place, or close it again.
     GitHunk,
     /// Go to the change above the cursor.
@@ -149,6 +155,17 @@ pub enum Requires {
     APreview,
     /// The cursor has to be on a bracket.
     ABracket,
+    /// The cursor has to be in a run of lines that folds, or on a folded
+    /// one.
+    AFoldHere,
+    /// The file has to have something left to fold.
+    ///
+    /// Three conditions rather than one about folding, for the reason the
+    /// hunks have three: a reader whose file is folded flat should not be
+    /// offered a row whose whole answer is "everything already is".
+    AFoldableFile,
+    /// Something in the file has to be folded.
+    SomethingFolded,
     /// The cursor has to be in something that changed since the last
     /// commit.
     AHunk,
@@ -298,6 +315,21 @@ pub const ALL: &[CommandSpec] = &[
         title: "Go to the matching bracket",
     },
     CommandSpec {
+        command: Command::Fold,
+        name: "fold",
+        title: "Fold what is here, or unfold it",
+    },
+    CommandSpec {
+        command: Command::FoldAll,
+        name: "fold-all",
+        title: "Fold everything this file offers",
+    },
+    CommandSpec {
+        command: Command::UnfoldAll,
+        name: "unfold-all",
+        title: "Unfold everything that is folded",
+    },
+    CommandSpec {
         command: Command::GitHunk,
         name: "show-change",
         title: "Show what changed here",
@@ -414,6 +446,9 @@ impl Command {
             | Self::SearchSymbols
             | Self::GoLine
             | Self::GoBracket
+            | Self::Fold
+            | Self::FoldAll
+            | Self::UnfoldAll
             | Self::GitHunk
             | Self::GitPrevious
             | Self::GitNext
@@ -463,6 +498,13 @@ impl Command {
             // off again for one already showing as markdown.
             Self::PreviewToggle => Requires::APreview,
             Self::GoBracket => Requires::ABracket,
+            // Not `AKnownLanguage`: a file obelus can parse can still have
+            // nothing to fold on the line the reader is on, and a key that
+            // is offered everywhere and works in places is worse than one
+            // that says where it works.
+            Self::Fold => Requires::AFoldHere,
+            Self::FoldAll => Requires::AFoldableFile,
+            Self::UnfoldAll => Requires::SomethingFolded,
             // One scope needs a file, one needs nothing but the tree, and
             // one needs a server -- but all three open the same view, whose
             // other tabs are a left or a right away. What each key requires

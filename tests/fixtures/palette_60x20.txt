@@ -1,9 +1,9 @@
 screen 60x20  editor 60x18  status 60x1
 -- text --
- 0|    1 fn main() {                                           
- 1|    2     let greeting = "你好";                            
- 2|    3     println!("{greeting} world");                     
- 3|    4 }                                                     
+ 0|    1 ▾fn main() {                                          
+ 1|    2      let greeting = "你好";                           
+ 2|    3      println!("{greeting} world");                    
+ 3|    4  }                                                    
  4|    5                                                       
  5|────────────────────────────────────────────────────────────
  6|  all  files  code  obelus                              ← → 
@@ -21,32 +21,32 @@ screen 60x20  editor 60x18  status 60x1
 18|────────────────────────────────────────────────────────────
 19| 󰍉                                                          
 -- style --
- 0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|aaaaeaaaaaddddddddbffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaaa
- 3|aaaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|aaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 5|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
- 6|egggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
- 7|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 0|aaaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaacaaaaaadddaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaaacaaaaaaeeeeeeeebffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaa
+ 3|aaaacaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 6|cgggggcccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  8|gggggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggggghgb
- 9|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeb
-10|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeeeai
-11|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaeai
-12|aaaaaaaaaaaaaaaeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaaaeeeai
-13|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeei
-14|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaaaaaaai
-15|aaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaaaaaaaeeeai
-16|aaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaeeeai
-17|aaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeaaaaaaaaaaaaeai
-18|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
+10|aaaaaaaaaaaaaaaacccccccccccccccccccccccccccaaaaaaaaaaaacccai
+11|aaaaaaaaaaaaaaaaccccccccccccccccccccccaaaaaaaaaaaaaaaaaaacai
+12|aaaaaaaaaaaaaaacccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaacccai
+13|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
+14|aaaaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaai
+15|aaaaaaaaaaaaaaaacccccccccccccccccccccaaaaaaaaaaaaaaaaaacccai
+16|aaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccaacccai
+17|aaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccaaaaaaaaaaaacai
+18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#a1a1aa bg=#18181b
-c fg=#c084fc bg=#18181b
-d fg=#60a5fa bg=#18181b
-e fg=#52525b bg=#18181b
+c fg=#52525b bg=#18181b
+d fg=#c084fc bg=#18181b
+e fg=#60a5fa bg=#18181b
 f fg=#a3e635 bg=#18181b
 g fg=#e4e4e7 bg=#27272a
 h fg=#52525b bg=#27272a

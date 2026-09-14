@@ -160,9 +160,14 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
     if buffer.mode() != crate::buffer::Mode::Edit {
         return None;
     }
-    // Everything the editor draws before the text: the change margin and
-    // the gutter, from the function the editor lays them out with.
-    let offset = editor::text_offset(buffer.text().line_count(), app.changes().is_some());
+    // Everything the editor draws before the text: the change margin, the
+    // gutter and the fold marks, from the function the editor lays them out
+    // with.
+    let offset = editor::text_offset(
+        buffer.text().line_count(),
+        app.changes().is_some(),
+        !buffer.folds().is_empty(),
+    );
     if offset >= regions.editor.width {
         return None;
     }

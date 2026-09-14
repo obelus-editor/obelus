@@ -445,6 +445,14 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('d'), KeyModifiers::ALT),
                 },
+                // `alt+f` for fold, on the letter of the word like the
+                // rest of this family. What it folds is whatever the
+                // cursor is inside, which is the question alt asks.
+                Binding {
+                    command: Command::Fold,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('f'), KeyModifiers::ALT),
+                },
                 // `alt+m` for match, which is what this is called
                 // everywhere. Not `%`: obelus binds no bare keys, because
                 // the day it takes typed text is the day every one of them

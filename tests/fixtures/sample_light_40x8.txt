@@ -1,29 +1,29 @@
 screen 40x8  editor 40x6  status 40x1
 -- text --
- 0|    1 fn main() {                       
- 1|    2     let greeting = "你好";        
- 2|    3     println!("{greeting} world")  
- 3|    4 }                                 
+ 0|    1 ▾fn main() {                      
+ 1|    2      let greeting = "你好";       
+ 2|    3      println!("{greeting} world"  
+ 3|    4  }                                
  4|    5                                   
  5|                                        
  6|────────────────────────────────────────
  7|   tests/fixtures/sample.rs        1:1 
 -- style --
- 0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaa
- 1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaa
- 2|aaaaeaaaaaddddddddbffffffffffffffffffbaa
- 3|aaaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|aaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|aaaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaacaaaaaadddaaaaaaaaaaaaffffffbaaaaaaa
+ 2|aaaacaaaaaaeeeeeeeebffffffffffffffffffaa
+ 3|aaaacaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 6|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 6|cccccccccccccccccccccccccccccccccccccccc
  7|gggggggggggggggggggggggggggggggggggggggg
 -- legend --
 a fg=#18181b bg=#fafafa
 b fg=#52525b bg=#fafafa
-c fg=#7e22ce bg=#fafafa
-d fg=#1d4ed8 bg=#fafafa
-e fg=#a1a1aa bg=#fafafa
+c fg=#a1a1aa bg=#fafafa
+d fg=#7e22ce bg=#fafafa
+e fg=#1d4ed8 bg=#fafafa
 f fg=#3f6212 bg=#fafafa
 g fg=#27272a bg=#fafafa
 -- cursor --
-6,0
+7,0

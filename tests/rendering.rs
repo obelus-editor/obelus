@@ -259,9 +259,9 @@ fn the_terminal_is_told_where_to_put_its_cursor() {
     let mut app = app();
     let dump = support::render(&mut app, WIDTH, HEIGHT);
 
-    // A five-cell gutter and the change margin before it, so the first
-    // character of the first line is cell six.
-    assert_eq!(support::cursor_line(&dump), "6,0", "{dump}");
+    // A five-cell gutter, the change margin before it and the fold column
+    // after it, so the first character of the first line is cell seven.
+    assert_eq!(support::cursor_line(&dump), "7,0", "{dump}");
     support::check("sample_40x8", &dump);
 }
 
@@ -275,10 +275,10 @@ fn the_cursor_follows_the_keys() {
 
     // Line 1 is `\tlet greeting = ...`. The tab is four cells, then `let `
     // is four more, so character five sits at cell eight — and the change
-    // margin and the gutter are six columns before that. The tab is why the
-    // two numbers differ.
+    // margin, the gutter and the fold column are seven columns before that.
+    // The tab is why the two numbers differ.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
-    assert_eq!(support::cursor_line(&dump), "14,1", "{dump}");
+    assert_eq!(support::cursor_line(&dump), "15,1", "{dump}");
 }
 
 /// Shift extends the selection from where the reader began, while an ordinary
@@ -317,7 +317,11 @@ fn shift_arrows_select_and_plain_motion_clears_the_selection() {
         .lines()
         .find(|row| !row.is_empty())
         .expect("its styles");
-    let at = row.find("fn main").expect("the code");
+    // Counted in characters, not bytes: the style row is one character per
+    // cell, and what sits before the code -- the gutter, a fold mark -- is
+    // not all one byte wide.
+    let bytes = row.find("fn main").expect("the code");
+    let at = row[..bytes].chars().count();
     let style_at = |x: usize| styles.chars().nth(x).expect("a style cell");
 
     assert_eq!(

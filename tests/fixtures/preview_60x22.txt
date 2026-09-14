@@ -11,10 +11,10 @@ screen 60x22  editor 60x20  status 60x1
  8|                                                            
  9|                                                            
 10|────────────────────────────────────────────────────────────
-11|    1 fn main() {                                           
-12|    2     let greeting = "你好";                            
-13|    3     println!("{greeting} world");                     
-14|    4 }                                                     
+11|    1 ▾fn main() {                                          
+12|    2      let greeting = "你好";                           
+13|    3      println!("{greeting} world");                    
+14|    4  }                                                    
 15|    5                                                       
 16|                                                            
 17|                                                            
@@ -34,10 +34,10 @@ screen 60x22  editor 60x20  status 60x1
  8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
  9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-11|bbbbdbeebffffddbdbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-12|bbbbcbbbbbeeebbbbbbbbbbbbggggggdbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-13|bbbbcbbbbbffffffffdggggggggggggggggggddbbbbbbbbbbbbbbbbbbbbb
-14|bbbbcbdbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+11|bbbbdbceebffffddbdbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+12|bbbbcbbbbbbeeebbbbbbbbbbbbggggggdbbbbbbbbbbbbbbbbbbbbbbbbbbb
+13|bbbbcbbbbbbffffffffdggggggggggggggggggddbbbbbbbbbbbbbbbbbbbb
+14|bbbbcbbdbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 15|bbbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 16|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 17|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb

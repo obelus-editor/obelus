@@ -442,6 +442,36 @@ impl App {
         }
     }
 
+    /// Folds what the cursor is in, or unfolds what it is on.
+    ///
+    /// Silent when there is nothing here to fold, because `AFoldHere` has
+    /// already answered that: the key is dim and does nothing, and a note
+    /// saying so would be the third answer to a question the palette
+    /// settled.
+    pub fn toggle_fold(&mut self) {
+        let line = self.current_buffer().map(|buffer| buffer.cursor().line);
+        if let (Some(buffer), Some(line)) = (self.current_buffer_mut(), line) {
+            buffer.toggle_fold(line);
+        }
+    }
+
+    /// Folds every run the file offers.
+    ///
+    /// The cursor comes out with the lines, the same as folding one run
+    /// does: there is nowhere inside to stand.
+    pub fn fold_all(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.fold_all();
+        }
+    }
+
+    /// Opens everything that is folded.
+    pub fn unfold_all(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.unfold_all();
+        }
+    }
+
     /// Re-reads whichever open buffers came from `path`.
     ///
     /// The watch is on a directory, so most of what arrives here is about

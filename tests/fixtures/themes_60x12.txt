@@ -1,9 +1,9 @@
 screen 60x12  editor 60x10  status 60x1
 -- text --
- 0|    1 fn main() {                                           
- 1|    2     let greeting = "你好";                            
- 2|    3     println!("{greeting} world");                     
- 3|    4 }                                                     
+ 0|    1 ▾fn main() {                                          
+ 1|    2      let greeting = "你好";                           
+ 2|    3      println!("{greeting} world");                    
+ 3|    4  }                                                    
  4|    5                                                       
  5|                                                            
  6|                                                            
@@ -13,24 +13,24 @@ screen 60x12  editor 60x10  status 60x1
 10|────────────────────────────────────────────────────────────
 11| 󰍉                                                          
 -- style --
- 0|aaaabaccaddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 1|aaaaeaaaaacccaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|aaaaeaaaaaddddddddbffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaaa
- 3|aaaaeabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|aaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|aaaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaacaaaaaadddaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaaacaaaaaaeeeeeeeebffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaa
+ 3|aaaacaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 7|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  8|ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggga
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-10|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 11|hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#a1a1aa bg=#18181b
-c fg=#c084fc bg=#18181b
-d fg=#60a5fa bg=#18181b
-e fg=#52525b bg=#18181b
+c fg=#52525b bg=#18181b
+d fg=#c084fc bg=#18181b
+e fg=#60a5fa bg=#18181b
 f fg=#a3e635 bg=#18181b
 g fg=#e4e4e7 bg=#27272a
 h fg=#d4d4d8 bg=#18181b

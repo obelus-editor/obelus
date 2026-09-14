@@ -5,7 +5,7 @@
 //! all of this is about keeping the two agreeing -- while lines wrap or do
 //! not, and while the reader moves through them.
 
-use super::*;
+use super::{folds::Folds, *};
 
 impl Buffer {
     /// Where the cursor is.
@@ -92,6 +92,12 @@ impl Buffer {
         self.detached = false;
         self.in_block = None;
         self.selection_anchor = None;
+        // And it opens whatever was hiding the place. A reader who asked to
+        // be taken somewhere has said the destination is worth seeing;
+        // leaving them on the folded line above it, with the status row
+        // naming a line that is not on screen, answers a different request.
+        // Walking there is the other thing, and walks around a fold.
+        self.folds.reveal(self.text.clamp_line(line));
         self.cursor.line = self.text.clamp_line(line);
         self.cursor.column = self.text.clamp_column(self.cursor.line, column);
         // The remembered cell is recomputed on the next vertical move, which
@@ -308,7 +314,13 @@ impl Buffer {
             self.selection_anchor = None;
             return;
         }
-        move_within(&self.text, &mut self.cursor, motion, area.wrap_width());
+        move_within(
+            &self.text,
+            &self.folds,
+            &mut self.cursor,
+            motion,
+            area.wrap_width(),
+        );
     }
 
     /// Which line of an opened block a motion walks into, if it walks into
@@ -376,7 +388,10 @@ impl Buffer {
             return;
         };
         let above = block.above;
-        let moved = move_within(&block.text, &mut at.cursor, motion, width);
+        // A block's own text has no folds of its own: it is a few lines
+        // the file used to have, not a file.
+        let unfolded = Folds::default();
+        let moved = move_within(&block.text, &unfolded, &mut at.cursor, motion, width);
         if moved || !matches!(motion, Motion::Up | Motion::Down) {
             self.in_block = Some(at);
             return;
@@ -426,7 +441,40 @@ impl Buffer {
     /// screen -- and one function answering both is what let an opened hunk
     /// be drawn where the viewport could not reach it.
     fn screen_rows_of(&self, line: LineNumber, area: TextArea) -> usize {
+        // A folded-away line is a line with no rows. Everything that counts
+        // rows -- the caret, the paging, the scrolling, the view -- counts
+        // with this one function, so folding is that one term going to zero
+        // rather than a second set of arithmetic beside the first.
+        if self.folds.hides(line) {
+            return 0;
+        }
         self.rows_above(line, area.wrap_width()) + self.text.row_count(line, area.wrap_width())
+    }
+
+    /// The next line with rows of its own, in either direction.
+    ///
+    /// `None` at the end of what is visible, which is not always the end of
+    /// the file: a folded run reaching the last line leaves its own first
+    /// line as the last one there is.
+    fn next_shown(&self, line: LineNumber, down: bool, area: TextArea) -> Option<LineNumber> {
+        let last = self.text.last_line();
+        let mut at = line;
+        loop {
+            if down {
+                if at >= last {
+                    return None;
+                }
+                at = at.saturating_add(1);
+            } else {
+                if at.get() == 0 {
+                    return None;
+                }
+                at = at.saturating_sub(1);
+            }
+            if self.screen_rows_of(at, area) > 0 {
+                return Some(at);
+            }
+        }
     }
 
     /// How many rows the view draws above a line, which is a hunk the
@@ -451,21 +499,20 @@ impl Buffer {
         area: TextArea,
     ) -> (LineNumber, usize) {
         let (mut line, mut row) = at;
-        let last = self.text.last_line();
         for _ in 0..rows.unsigned_abs() {
             if rows > 0 {
                 if row + 1 < self.screen_rows_of(line, area) {
                     row += 1;
-                } else if line < last {
-                    line = line.saturating_add(1);
+                } else if let Some(next) = self.next_shown(line, true, area) {
+                    line = next;
                     row = 0;
                 } else {
                     break;
                 }
             } else if row > 0 {
                 row -= 1;
-            } else if line.get() > 0 {
-                line = line.saturating_sub(1);
+            } else if let Some(above) = self.next_shown(line, false, area) {
+                line = above;
                 row = self.screen_rows_of(line, area).saturating_sub(1);
             } else {
                 break;
@@ -693,26 +740,50 @@ impl Buffer {
 /// stopping at either end of it.
 fn step_rows(
     text: &Text,
+    folds: &Folds,
     mut line: LineNumber,
     mut row: usize,
     rows: isize,
     width: u16,
 ) -> (LineNumber, usize) {
-    let last = text.last_line();
+    // The line this many lines on that is not folded away, or the end of
+    // what is shown. A folded run is not somewhere the cursor can rest: its
+    // lines are not on the screen, and a cursor the reader cannot see is a
+    // cursor they have lost.
+    let shown = |from: LineNumber, down: bool| {
+        let last = text.last_line();
+        let mut at = from;
+        loop {
+            if down {
+                if at >= last {
+                    return None;
+                }
+                at = at.saturating_add(1);
+            } else {
+                if at.get() == 0 {
+                    return None;
+                }
+                at = at.saturating_sub(1);
+            }
+            if !folds.hides(at) {
+                return Some(at);
+            }
+        }
+    };
     for _ in 0..rows.unsigned_abs() {
         if rows > 0 {
             if row + 1 < text.row_count(line, width) {
                 row += 1;
-            } else if line < last {
-                line = line.saturating_add(1);
+            } else if let Some(next) = shown(line, true) {
+                line = next;
                 row = 0;
             } else {
                 break;
             }
         } else if row > 0 {
             row -= 1;
-        } else if line.get() > 0 {
-            line = line.saturating_sub(1);
+        } else if let Some(above) = shown(line, false) {
+            line = above;
             row = text.row_count(line, width).saturating_sub(1);
         } else {
             break;
@@ -731,7 +802,13 @@ fn step_rows(
 /// Up and down step one *visual* row, not one line. With wrapping on, a
 /// long line is many rows tall, and stepping over all of them at once is
 /// not what pressing down once looks like it should do.
-fn move_within(text: &Text, cursor: &mut Cursor, motion: Motion, width: u16) -> bool {
+fn move_within(
+    text: &Text,
+    folds: &Folds,
+    cursor: &mut Cursor,
+    motion: Motion,
+    width: u16,
+) -> bool {
     let was = (cursor.line, cursor.column);
     let (row, _) = text.visual_position(cursor.line, cursor.column, width);
     let moved = |cursor: &Cursor| (cursor.line, cursor.column) != was;
@@ -765,7 +842,12 @@ fn move_within(text: &Text, cursor: &mut Cursor, motion: Motion, width: u16) -> 
             return moved(cursor);
         }
         Motion::DocumentEnd => {
+            // The last line there is to stand on, which is not the last
+            // line of the file when a fold reaches it.
             cursor.line = text.last_line();
+            while folds.hides(cursor.line) && cursor.line.get() > 0 {
+                cursor.line = cursor.line.saturating_sub(1);
+            }
             cursor.column = CharColumn::new(0);
             remember(text, cursor, width);
             return moved(cursor);
@@ -780,7 +862,7 @@ fn move_within(text: &Text, cursor: &mut Cursor, motion: Motion, width: u16) -> 
         }
     };
 
-    let (line, row) = step_rows(text, cursor.line, row, rows, width);
+    let (line, row) = step_rows(text, folds, cursor.line, row, rows, width);
     cursor.line = line;
     // Aim for the remembered cell, then take whatever column covers it on
     // the row arrived at.

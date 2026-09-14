@@ -1,29 +1,29 @@
 screen 46x8  editor 46x6  status 46x1
 -- text --
- 0|    1 fn outer() {                           █
- 1|    2     if condition {                     █
- 2|    3         println!("{} {} {} {}",        █
- 3|              alpha, beta, gamma, delta,     █
- 4|              epsilon, zeta);                █
- 5|    4     }                                  █
+ 0|    1 ▾fn outer() {                          █
+ 1|    2 ▾    if condition {                    █
+ 2|    3          println!("{} {} {} {}",       █
+ 3|               alpha, beta, gamma, delta,    █
+ 4|               epsilon, zeta);               █
+ 5|    4      }                                 █
  6|──────────────────────────────────────────────
  7|   tests/fixtures/indented.rs            1:1 
 -- style --
- 0|aaaabaccadddddbbabaaaaaaaaaaaaaaaaaaaaaaaaaaab
- 1|aaaaeaaaaaccaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaab
- 2|aaaaeaaaaaaaaaddddddddbfffffffffffffbaaaaaaaab
- 3|aaaaaaaaaaaaaaaaaaabaaaaabaaaaaabaaaaaabaaaaab
- 4|aaaaaaaaaaaaaaaaaaaaabaaaaabbaaaaaaaaaaaaaaaab
- 5|aaaaeaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
- 6|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+ 0|aaaabacddaeeeeebbabaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 1|aaaacacaaaaddaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaab
+ 2|aaaacaaaaaaaaaaeeeeeeeebfffffffffffffbaaaaaaab
+ 3|aaaaaaaaaaaaaaaaaaaabaaaaabaaaaaabaaaaaabaaaab
+ 4|aaaaaaaaaaaaaaaaaaaaaabaaaaabbaaaaaaaaaaaaaaab
+ 5|aaaacaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+ 6|cccccccccccccccccccccccccccccccccccccccccccccc
  7|gggggggggggggggggggggggggggggggggggggggggggggg
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#a1a1aa bg=#18181b
-c fg=#c084fc bg=#18181b
-d fg=#60a5fa bg=#18181b
-e fg=#52525b bg=#18181b
+c fg=#52525b bg=#18181b
+d fg=#c084fc bg=#18181b
+e fg=#60a5fa bg=#18181b
 f fg=#a3e635 bg=#18181b
 g fg=#d4d4d8 bg=#18181b
 -- cursor --
-6,0
+7,0

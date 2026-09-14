@@ -184,6 +184,72 @@ not express being inside it, and two patches -- a row count re-derived in
 scrolling -- kept the caret honest without making the rows reachable. Both
 are gone.
 
+**A folded line is a line with no rows.** Folding hides lines; an opened
+hunk adds rows the file does not have. Both are the same arithmetic --
+`screen_rows_of` and `step_rows` are where a view asks how tall a line is --
+so folding is that one term going to zero rather than a second set of counts
+beside the first. Everything falls out of it: the caret lands on the row the
+line is drawn on, paging moves by what is on screen, the view walks past
+what is hidden. What does *not* fall out is where the cursor may rest, which
+is why folding over the reader walks them back to the line the run starts on
+-- the one line of it still there -- and why arriving somewhere
+(`place_cursor`) opens whatever hid it. Walking is the other thing: a step
+goes around a fold, because the reader asked for the next line they can see.
+
+**What folds comes from the indentation, and where it ends comes from the
+bracket.** Two other sources were built and thrown away, and the reason both
+failed is the same half of the question. Deriving *which* lines fold from
+tree-sitter's node shapes works; deriving what the folded row should then
+*show* does not, because that needs to know a Rust block closes with `}` and
+a Python one closes with nothing -- a table per language, wrong the day a
+grammar changes, and every rule that guessed it from the text was wrong
+somewhere (a "closing mark is at most four characters" test reads the `def`
+at the end of a Python function as one). Asking a language server answers
+both, but only for files a server will answer about, and its ranges are its
+own: rust-analyzer ends a block one character *past* the `}`, so taking the
+range at its word drops the brace, and it sends two runs for an `if` -- one
+from the keyword, one from the brace.
+
+Indentation gives both halves at once, and it is what Zed settled on too. A
+run opens on a line whose next non-blank line is deeper, and closes on the
+first line that is no deeper. It starts at the *end* of the line that opens
+it, so that line stays whole, `{` and all. It ends just before the closing
+bracket when the line it closes on begins with one -- so the bracket comes up
+beside the mark and the row reads as `if ready { … }` -- and at the last line
+with anything on it when there is none, which is how `def ready(): …` comes
+out of the same rule without a word about Python in it. Blank lines are
+walked past inside a run and left outside it at the end: they belong to
+whatever comes next.
+
+The price is that a file with nothing indented folds nowhere. A TOML file is
+a list of tables at column zero, and so is most markdown and so is a
+paragraph of `///` comments: there is no block for a reader to close, and a
+mark offering to hide "the rest of the file from here" is a different offer.
+
+`syntax::brackets` knows the three pairs already, for the key that matches
+them. What folding needs of it is narrower still -- a line that *begins* with
+one of `)`, `]` or `}` closes something -- and that is true without knowing
+what was opened or where.
+
+**What the bar measures is what is shown.** The scrollbar and the change map
+are pictures of the document at the height of the screen, and a closed run
+makes the document shorter: drawn from the file's own line numbers they say
+the reader is at the top of something long while the whole of it is in front
+of them. Both count in lines that are shown, which is why `Folds` can say how
+many are hidden above a line and how many altogether. An opened hunk closes
+when a fold hides the line it hangs above, for the same reason
+`refresh_changes` closes it when the diff is replaced: its rows belong to
+something that is no longer on screen, and a caret in them is a caret nobody
+can see.
+
+**What is highlighted is what is drawn.** `visible_bytes` walks past folded
+runs the way the view does, rather than counting `height` lines down from the
+top. It is the same arithmetic as everywhere else here, and getting it wrong
+is not subtle: with a two-hundred-line run closed at the top of the screen,
+every row below it is a line two hundred further down, outside the range that
+was highlighted, and the whole of the rest of the screen is drawn in the
+plain foreground.
+
 **The caret can be in the block; the cursor never is.** `Buffer::block` is
 the opened hunk's lines *as a `Text`*, and `in_block` is a `Cursor` in it.
 A text, so those lines get everything the file's get from the same code: they
@@ -233,9 +299,10 @@ command is gone and `App::blame` reads the setting.
   all of it, `c` copy, `q` leave.
 * **Alt asks about the cursor, or walks what was found**: `alt+enter` the
   symbol under it (an IDE's context actions, and alt is the escape prefix so
-  it arrives everywhere), `alt+d` its diff, `alt+b` its blame, `alt+m` its
-  matching bracket, and the arrows -- up and down between changes, left and
-  right through the places the reader has been.
+  it arrives everywhere), `alt+d` its diff, `alt+b` its blame, `alt+f` the
+  run of lines it is inside, `alt+m` its matching bracket, and the arrows --
+  up and down between changes, left and right through the places the reader
+  has been.
 * **Shift never names a command.** It only extends (`shift` plus an arrow)
   or reverses (`shift+tab`), which leaves it meaning one thing everywhere.
   **Escape always gives up on the nearest thing**, and everything else is
@@ -335,6 +402,30 @@ A rule runs its whole width in one glyph; a block column meets it and needs
 nothing from it. The one row of the block that the rule takes is the
 boundary between two bars -- a list's and its preview's -- which are two
 controls over two different things, and reading as two is right.
+
+**A column a file might need is reserved for the whole file, not for the
+lines that need it.** The change margin is there whenever git can answer
+about the file, empty rows included; the fold column is there whenever the
+file has anything to fold, whether or not anything is folded. A column that
+arrived when the reader pressed a key would rewrap the text under them as it
+came. What goes *in* the column is every run, open or folded: a reader
+cannot press a key on a line that never said it had anything behind it, so
+the mark is how folding is discovered at all. The one turned down is the
+quieter of the two, which is the right way round -- most runs are open most
+of the time, and the eye should be caught by the lines that are hiding
+something. The column is decided when the file is read and stays decided,
+so nothing a reader does to a fold ever moves the text sideways under them.
+
+A folded run also says so on the row it folded into: the view's mark after
+the line's own text, and then whatever is left of the run's last line. That
+is the whole rule -- no test for what a closing mark looks like, no table per
+language -- because the run was *built* to stop before the bracket. A run
+that closes with nothing leaves the mark on its own.
+
+Two colours, because they are two different things. The mark is obelus's own
+and is drawn the way its notes are; the closing text *is* the file's and
+keeps the colour the highlighting gives it where it really lives. A brace
+that changed colour on its way up the screen would read as something else.
 
 **Everything that scrolls says so, in the last column of the region it is
 in.** A file, a preview, a list, a page of settings, a conversation -- the

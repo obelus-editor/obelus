@@ -127,11 +127,26 @@ impl App {
         // read for the context around a line, so putting the line at the top
         // spends half the room on the half that was not asked for.
         let target = LineNumber::new(marked.line() as usize);
+        // Everything the editor draws around the text, because the editor
+        // is what draws this: the change margin and the fold column before
+        // it, the change map and the bar after. A width that counted only
+        // the gutter would wrap the preview at a column wider than the room
+        // it is given, and the last cells of a wrapped line would fall off
+        // the edge.
+        let changes = preview.changes.is_some();
+        let aside = ui::editor::text_offset(
+            preview.buffer.text().line_count(),
+            changes,
+            !preview.buffer.folds().is_empty(),
+        )
+        .saturating_add(if changes {
+            ui::editor::CHANGE_MAP_WIDTH
+        } else {
+            0
+        })
+        .saturating_add(ui::editor::SCROLLBAR_WIDTH);
         let text = TextArea {
-            width: area
-                .width
-                .saturating_sub(ui::editor::gutter_width(preview.buffer.text().line_count()))
-                .saturating_sub(ui::editor::SCROLLBAR_WIDTH),
+            width: area.width.saturating_sub(aside),
             height: area.height,
             // A preview always wraps: it is a few lines of somewhere else,
             // and a line running off its right-hand edge with no way to

@@ -39,8 +39,48 @@ const MINIMUM_GUTTER_WIDTH: u16 = 5;
 /// depends only on which file is open does not.
 pub const MARGIN_WIDTH: u16 = 1;
 
-/// How many columns come before the text: the change margin, then the
-/// gutter.
+/// The column the fold marks take, between the gutter and the text.
+///
+/// Reserved whenever the file has anything to fold, not when something is
+/// folded: a column that appeared the moment a reader pressed the key would
+/// rewrap the text under them as it arrived. The same rule the change
+/// margin follows, for the same reason.
+///
+/// To the right of the numbers because it says what the *line* is -- one
+/// that has more behind it -- and to the left of the text because it is not
+/// part of what the file says. Numbers, then a mark about the line, then
+/// the line.
+pub const FOLD_WIDTH: u16 = 1;
+
+/// What a folded line carries in that column, and what an open one does.
+///
+/// The marks the transcript folds a run of tool calls with, because it is
+/// the same act: one row standing in for several, and a key that opens it.
+/// Both states are marked, because a reader cannot press a key on a line
+/// that never said it had anything behind it -- and the one turned down is
+/// the quieter of the two, which is the right way round: most runs are open
+/// most of the time.
+const FOLDED: char = '\u{25b8}';
+const OPENS: char = '\u{25be}';
+
+/// What a folded run leaves on the line it folds into.
+///
+/// Drawn after the line's own text, dim, because it is not what the file
+/// says: the file says `fn shout(&self) -> String {` and the view is adding
+/// that the rest is here. The closing line comes along when it is short
+/// enough to be a closing mark -- `}`, `);`, `end` -- because then the row
+/// reads as a whole construct, `{ … }`, spaced the way the file spaces it.
+///
+/// A run with no such line -- a paragraph of comments, a block whose last
+/// line is code in its own right -- takes the mark against its text with no
+/// gap, `and what is left to see…`, because there it stands for the rest of
+/// a sentence rather than for the inside of something, and a sentence
+/// trails off where it stops. The last line stays hidden either way: the
+/// row is a summary, not two lines pretending to be one.
+const ELIDED: &str = "\u{2026}";
+
+/// How many columns come before the text: the change margin, the gutter,
+/// then the fold marks.
 ///
 /// One function, because two of them disagreed. The caret's own position
 /// used the gutter alone while the text is drawn after the margin as well,
@@ -48,9 +88,12 @@ pub const MARGIN_WIDTH: u16 = 1;
 /// the character it was on -- which is what choosing a search match looks
 /// like when the match is the thing you are staring at.
 #[must_use]
-pub fn text_offset(lines: usize, changes: bool) -> u16 {
+pub fn text_offset(lines: usize, changes: bool, folds: bool) -> u16 {
     let margin = if changes { MARGIN_WIDTH } else { 0 };
-    margin.saturating_add(gutter_width(lines))
+    let folding = if folds { FOLD_WIDTH } else { 0 };
+    margin
+        .saturating_add(gutter_width(lines))
+        .saturating_add(folding)
 }
 
 /// The column the change map takes, just inside the scrollbar.
@@ -156,16 +199,25 @@ impl EditorView<'_> {
         let Some(changes) = self.changes else {
             return;
         };
-        let total = buffer.text().line_count();
+        // The same picture at the same scale as the bar beside it, so the
+        // same count: what is folded away is not part of the document this
+        // is a picture of, and a change inside a closed run sits at the row
+        // the run folded into.
+        let folds = buffer.folds();
+        let shown = |line: LineNumber| line.get() - folds.hidden_before(line);
+        let total = buffer.text().line_count() - folds.hidden_total();
         for hunk in changes.hunks() {
             let marker = hunk.marker();
-            let first = crate::ui::bar_row(hunk.line.get(), total, area.height);
+            let first = crate::ui::bar_row(shown(hunk.line), total, area.height);
             // At least the row it starts on, so a change of one line is not
             // lost to the arithmetic, and every row a long one covers, so
             // that a rewrite does not read like a one-line fix.
-            let last =
-                crate::ui::bar_row(hunk.line.get() + hunk.lines.max(1) - 1, total, area.height)
-                    .max(first);
+            let last = crate::ui::bar_row(
+                shown(hunk.line.saturating_add(hunk.lines.max(1) - 1)),
+                total,
+                area.height,
+            )
+            .max(first);
             for row in first..=last {
                 put(
                     cells,
@@ -313,10 +365,16 @@ impl Widget for EditorView<'_> {
         // clamps them away, and `cursor_position` draws nothing there: what
         // the two would disagree about is a caret neither of them puts on
         // the screen.
-        let before = text_offset(text.line_count(), self.changes.is_some());
+        let folding = !buffer.folds().is_empty();
+        let before = text_offset(text.line_count(), self.changes.is_some(), folding);
         let gutter = gutter_width(text.line_count()).min(area.width - margin);
+        let folds = if folding {
+            FOLD_WIDTH.min(area.width - margin - gutter)
+        } else {
+            0
+        };
         let map = if self.changes.is_some() {
-            CHANGE_MAP_WIDTH.min(area.width - margin - gutter)
+            CHANGE_MAP_WIDTH.min(area.width - margin - gutter - folds)
         } else {
             0
         };
@@ -327,11 +385,11 @@ impl Widget for EditorView<'_> {
         // the two would disagree about is a caret neither of them puts on
         // the screen.
         debug_assert!(
-            before >= area.width || before == margin + gutter,
+            before >= area.width || before == margin + gutter + folds,
             "the caret and the text disagree about what comes before the text"
         );
-        let bar = SCROLLBAR_WIDTH.min(area.width - margin - gutter - map);
-        let width = area.width - margin - gutter - bar - map;
+        let bar = SCROLLBAR_WIDTH.min(area.width - margin - gutter - folds - map);
+        let width = area.width - margin - gutter - folds - bar - map;
         if width == 0 {
             return;
         }
@@ -382,6 +440,13 @@ impl Widget for EditorView<'_> {
         let mut skip = viewport.top_row;
 
         while screen_row < area.height && line.get() < text.line_count() {
+            // Past whatever is folded away here. Not a `continue` per line:
+            // a file folded down to a dozen rows would otherwise walk every
+            // line it is hiding, once per frame.
+            line = buffer.folds().first_shown(line);
+            if line.get() >= text.line_count() {
+                break;
+            }
             // What this line replaced, if the reader has opened it. Above the
             // line, because that is where it was, and pushing the file down
             // rather than overwriting anything: text that is not in the file
@@ -454,7 +519,7 @@ impl Widget for EditorView<'_> {
                         // saying different ones.
                         draw_row(
                             Placement {
-                                x: area.x + margin + gutter,
+                                x: area.x + margin + gutter + folds,
                                 y,
                                 width,
                                 row: wrap,
@@ -504,7 +569,7 @@ impl Widget for EditorView<'_> {
                         Rect {
                             x: area.x + margin,
                             y,
-                            width: gutter + width,
+                            width: gutter + folds + width,
                             height: 1,
                         },
                         Style::new().fg(self.theme.foreground).bg(tint),
@@ -524,6 +589,28 @@ impl Widget for EditorView<'_> {
                     draw_marker(area.x, y, marker, self.theme.marker_colour(marker), cells);
                 }
 
+                // Beside the number, and on the numbered row only: a
+                // folded run stands for lines that are not on screen, and
+                // the row that says so is the row the run starts on.
+                if folds > 0 && index == 0 {
+                    let mark = if buffer.folds().is_folded_at(line) {
+                        Some((FOLDED, self.theme.gutter_current))
+                    } else if buffer.folds().opens_at(line) {
+                        Some((OPENS, self.theme.gutter))
+                    } else {
+                        None
+                    };
+                    if let Some((glyph, colour)) = mark {
+                        put(
+                            cells,
+                            area.x + margin + gutter,
+                            y,
+                            glyph,
+                            Style::new().fg(colour),
+                        );
+                    }
+                }
+
                 if index == 0 {
                     draw_line_number(
                         area.x + margin,
@@ -540,7 +627,7 @@ impl Widget for EditorView<'_> {
                 }
 
                 let placement = Placement {
-                    x: area.x + margin + gutter,
+                    x: area.x + margin + gutter + folds,
                     y,
                     width,
                     row: wrap,
@@ -569,12 +656,50 @@ impl Widget for EditorView<'_> {
                 // a reader who wants the name for a line can put the cursor
                 // on it, which is where their attention already is.
                 let last_row = index + 1 == text.row_count(line, wrap_width);
+                // What is folded away here, said on the row it folded into.
+                //
+                // Two colours, because they are two different things. The
+                // mark is the view's -- it is not in the file, and it is
+                // drawn the way every other note obelus adds is. The
+                // closing line *is* in the file, so it is drawn the colour
+                // it would be at home: a brace that changed colour on its
+                // way up the screen would read as something else.
+                if folds > 0
+                    && last_row
+                    && let Some(fold) = buffer.folds().folded_at(line)
+                {
+                    let elision = elided(text, &fold);
+                    let at = area.x + margin + gutter + folds + ended;
+                    let mark_width =
+                        u16::try_from(crate::ui::text_width(&elision.mark)).unwrap_or(width);
+                    let closing_width =
+                        u16::try_from(crate::ui::text_width(&elision.closing)).unwrap_or(width);
+                    if ended + mark_width + closing_width <= width {
+                        crate::ui::write(
+                            cells,
+                            at,
+                            y,
+                            &elision.mark,
+                            Style::new().fg(self.theme.gutter),
+                        );
+                        if !elision.closing.is_empty() {
+                            crate::ui::write(
+                                cells,
+                                at + mark_width,
+                                y,
+                                &elision.closing,
+                                Style::new()
+                                    .fg(self.theme.colour_for(self.highlights.kind_at(elision.at))),
+                            );
+                        }
+                    }
+                }
                 if line == cursor.line
                     && last_row
                     && let Some(label) = self.blame_at(line, now)
                 {
                     draw_blame(
-                        area.x + margin + gutter,
+                        area.x + margin + gutter + folds,
                         y,
                         width,
                         ended,
@@ -594,21 +719,84 @@ impl Widget for EditorView<'_> {
         // before the screen does, or the screen before the file, and with
         // wrapping on neither follows from the number of lines. A track
         // with no thumb on it is a control that does not work.
-        let more_below = line.get() < text.line_count();
+        let more_below = buffer.folds().first_shown(line).get() < text.line_count();
         let scrolled = viewport.top.get() > 0 || viewport.top_row > 0;
         if bar > 0 && (more_below || scrolled) {
             // The whole region, so the bar is in the last column of it --
             // which is where every list in obelus puts its own, and what
             // keeps them in one line when a list opens over a file.
+            // Counted in the lines that are *shown*: the bar answers how
+            // much of this there is and which part of it is in front of
+            // you, and with a run closed the document is shorter and the
+            // reader is further into it than the file's own numbers say.
+            let folds = buffer.folds();
             crate::ui::scrollbar(
                 cells,
                 area,
-                viewport.top.get(),
-                text.line_count(),
+                viewport.top.get() - folds.hidden_before(viewport.top),
+                text.line_count() - folds.hidden_total(),
                 self.theme,
             );
         }
     }
+}
+
+/// What to draw after the line a folded run folds into: the view's mark,
+/// and the run's closing line when it has one worth showing.
+///
+/// Two pieces rather than one string because they are coloured
+/// differently: the mark is obelus's and the closing line is the file's.
+/// The closing line comes along only when it is short enough to read as a
+/// closing mark rather than as code in its own right.
+fn elided(text: &crate::text::Text, fold: &crate::buffer::folds::Fold) -> Elision {
+    let line = text.line(fold.to).to_string();
+    // What is left of the run's last line, past where the run stops on it.
+    // No rule about what a closing mark looks like and no table per
+    // language: the run was built to stop before the bracket, so this is
+    // simply what is on the other side of where it stops.
+    let left = fold.tail.map(|tail| {
+        line.chars()
+            .skip(tail.get())
+            .collect::<String>()
+            .trim_end()
+            .to_string()
+    });
+    // Nothing left when the run ends at the end of its last line, which is
+    // what a block with no closing bracket does: the row has the mark and
+    // nothing else, and `def ready(): ...` is the whole of what a language
+    // that closes its blocks with nothing has to show.
+    let closing = left.unwrap_or_default();
+    if closing.is_empty() {
+        return Elision {
+            mark: format!(" {ELIDED}"),
+            closing,
+            at: ByteOffset::new(0),
+        };
+    }
+    // Where that text sits in the file, so the highlighting can be asked
+    // what colour it is at home: a brace that changed colour on its way up
+    // the screen would read as something else.
+    let indent = line.chars().count() - line.trim_start().chars().count();
+    let at = match fold.tail.filter(|tail| tail.get() < indent) {
+        Some(tail) => tail,
+        None => CharColumn::new(indent),
+    };
+    Elision {
+        mark: format!(" {ELIDED} "),
+        closing,
+        at: text.byte_of_char(text.char_offset(fold.to, at)),
+    }
+}
+
+/// What a folded row draws after its own text.
+struct Elision {
+    /// The view's own mark, drawn the way obelus draws its notes.
+    mark: String,
+    /// What is left of the run's last line, or nothing when the server did
+    /// not say where the run stops on it.
+    closing: String,
+    /// Where that text begins in the file, for its colour.
+    at: ByteOffset,
 }
 
 /// Writes a right-aligned line number, one-based, with a trailing space.

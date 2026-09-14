@@ -1,6 +1,7 @@
 //! An open document: its text, where the cursor is, and what part of it is on
 //! screen.
 
+pub mod folds;
 mod moving;
 
 use std::path::{Path, PathBuf};
@@ -369,6 +370,12 @@ pub struct Buffer {
     /// it, because paging takes the cursor along.
     detached: bool,
     viewport: Viewport,
+    /// What can be folded away, and what the reader has folded.
+    ///
+    /// Beside the syntax rather than inside it: what a parse offers is a
+    /// fact about the file, and which of those runs are folded is the
+    /// reader's, kept across everything except a re-read.
+    folds: folds::Folds,
     /// The hunk the reader has opened in this file, if any.
     block: Option<Block>,
     /// And where the caret is in it, if the reader has walked in.
@@ -402,6 +409,9 @@ impl Buffer {
             "opened"
         );
 
+        let mut folds = folds::Folds::default();
+        folds.offer(folds::of(&text));
+
         Ok(Self {
             path,
             content: Content::File,
@@ -416,6 +426,7 @@ impl Buffer {
                 remembered_cell: DisplayColumn::new(0),
             },
             selection_anchor: None,
+            folds,
             detached: false,
             viewport: Viewport {
                 left: 0,
@@ -425,6 +436,73 @@ impl Buffer {
             block: None,
             in_block: None,
         })
+    }
+
+    /// What can be folded here, and what is folded.
+    #[must_use]
+    pub const fn folds(&self) -> &folds::Folds {
+        &self.folds
+    }
+
+    /// Folds the run at a line, or unfolds the one that starts there.
+    ///
+    /// The cursor comes with it: a fold whose lines are hidden cannot be
+    /// left with the cursor inside them, and the line the reader pressed on
+    /// is where the run now is.
+    pub fn toggle_fold(&mut self, line: LineNumber) -> bool {
+        if !self.folds.toggle(line) {
+            return false;
+        }
+        self.bring_the_cursor_out();
+        true
+    }
+
+    /// Folds every run the file offers, bringing the cursor out with them.
+    pub fn fold_all(&mut self) -> bool {
+        if !self.folds.fold_all() {
+            return false;
+        }
+        self.bring_the_cursor_out();
+        true
+    }
+
+    /// Opens everything that is folded.
+    pub fn unfold_all(&mut self) -> bool {
+        self.folds.unfold_all()
+    }
+
+    /// Walks the cursor back to the first line of whatever now hides it.
+    ///
+    /// A cursor on a line that is not on screen is a cursor the reader has
+    /// lost, and the line a run starts on is the one line of it still
+    /// there.
+    fn bring_the_cursor_out(&mut self) {
+        // An opened hunk hangs above a line, so folding that line away
+        // leaves its rows undrawn -- and a caret in them is a caret nobody
+        // can see, on a row the status bar would still name. The same thing
+        // `refresh_changes` does when the diff those lines came from is
+        // replaced: the block belonged to something that is no longer
+        // there.
+        if self
+            .block
+            .as_ref()
+            .is_some_and(|block| self.folds.hides(block.above))
+        {
+            self.close_block();
+        }
+        if !self.folds.hides(self.cursor.line) {
+            return;
+        }
+        while self.folds.hides(self.cursor.line) && self.cursor.line.get() > 0 {
+            self.cursor.line = self.cursor.line.saturating_sub(1);
+        }
+        self.cursor.column = self.text.clamp_column(self.cursor.line, self.cursor.column);
+        self.clear_selection();
+    }
+
+    /// Unfolds whatever hides a line, for arriving at it.
+    pub fn reveal(&mut self, line: LineNumber) -> bool {
+        self.folds.reveal(line)
     }
 
     /// Opens a hunk's removed lines in place, above the line that replaced
@@ -585,6 +663,13 @@ impl Buffer {
             }
             (None, _) => {}
         }
+
+        // Whatever was folded was folded in the file that has just been
+        // replaced: a run kept across a re-read would hide whichever lines
+        // now sit at those numbers, which is a different file's fold. The
+        // new text is asked what it offers, which is the same question the
+        // open asked.
+        self.folds.offer(folds::of(&self.text));
 
         self.cursor.line = self.text.clamp_line(self.cursor.line);
         self.cursor.column = self.text.clamp_column(self.cursor.line, self.cursor.column);

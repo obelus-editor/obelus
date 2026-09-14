@@ -861,7 +861,8 @@ impl App {
                 // Everything the protocol needs rather than obelus — the
                 // handshake, progress, the server's own log lines — is dealt
                 // with in there.
-                if let Some(reply) = client.on_message(&message) {
+                let reply = client.on_message(&message);
+                if let Some(reply) = reply {
                     self.on_reply(language, reply);
                 }
             }
@@ -1250,13 +1251,31 @@ pub(super) fn relative(path: &Path, root: &Path) -> String {
 /// the first visible row.
 pub(crate) fn visible_bytes(buffer: &Buffer, height: u16) -> std::ops::Range<ByteOffset> {
     let text = buffer.text();
+    let folds = buffer.folds();
     let top = buffer.viewport().top;
-    let bottom = top.saturating_add(usize::from(height));
+    // Walked the way the view walks it, past whatever is folded away. A
+    // count of `height` *file* lines is the same thing only while nothing
+    // is folded: with a run of two hundred lines closed at the top of the
+    // screen, the rows below it are lines two hundred further down, and a
+    // range that stopped at `top + height` would leave every one of them
+    // outside what has been highlighted -- which is not a subtle failure.
+    // The code below the fold is simply drawn in the plain foreground.
+    //
+    // A bound rather than an exact answer: a wrapped line takes more than
+    // one row, so this can reach further than the screen does. Covering too
+    // much costs a little query time and nothing else; covering too little
+    // costs the colours.
+    let mut line = folds.first_shown(top);
+    let mut rows = 0;
+    while rows < usize::from(height) && line.get() < text.line_count() {
+        rows += 1;
+        line = folds.first_shown(line.saturating_add(1));
+    }
     let start = text.line_start_byte(top);
-    let end = if bottom.get() >= text.line_count() {
+    let end = if line.get() >= text.line_count() {
         text.byte_length()
     } else {
-        text.line_start_byte(bottom)
+        text.line_start_byte(line)
     };
     start..end
 }

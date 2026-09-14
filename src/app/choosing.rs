@@ -200,6 +200,20 @@ impl App {
             // press of the key it is on -- this repository answers in two
             // milliseconds, which is worth paying to stop offering a row
             // whose whole answer would be "nothing has changed".
+            // What the tree offers on the line the cursor is on, which is
+            // a question about this file and this line rather than about
+            // the language: a file obelus parses can still have nothing to
+            // fold where the reader is standing.
+            Requires::AFoldHere => self.current_buffer().is_some_and(|buffer| {
+                buffer.folds().is_folded_at(buffer.cursor().line)
+                    || buffer.folds().offered_at(buffer.cursor().line).is_some()
+            }),
+            Requires::AFoldableFile => self
+                .current_buffer()
+                .is_some_and(|buffer| !buffer.folds().is_empty() && !buffer.folds().all_folded()),
+            Requires::SomethingFolded => self
+                .current_buffer()
+                .is_some_and(|buffer| buffer.folds().any_folded()),
             Requires::AChangedFile => !self.tree_statuses().is_empty(),
             Requires::AServerLog => crate::logging::current_file(crate::logging::SERVERS).is_some(),
         }

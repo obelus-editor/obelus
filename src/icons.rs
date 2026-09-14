@@ -249,6 +249,11 @@ pub fn for_command(command: crate::command::Command) -> char {
         Command::GoLine => '\u{f03a0}',
         Command::GoBracket => '\u{f0172}',
         // The branching lines every git tool uses for itself.
+        // A chevron folded down onto itself, which is the shape the mark
+        // in the fold column has.
+        Command::Fold => '\u{f0374}',
+        Command::FoldAll => '\u{f0376}',
+        Command::UnfoldAll => '\u{f0377}',
         Command::GitHunk => '\u{f02a2}',
         // Arrows, because these two move the reader: the diff is what they
         // step through, and the git glyph is already on the command that
