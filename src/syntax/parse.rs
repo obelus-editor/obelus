@@ -83,6 +83,15 @@ impl SyntaxState {
         if node.child_count() > 0 {
             return false;
         }
+        // A keyword is a leaf made of letters, so the test below takes
+        // `match` and `return` for names -- and then every question in the
+        // menu is offered on them, goes to the server, and comes back with
+        // nothing. Tree-sitter already tells them apart: what a grammar
+        // gives a name to is a thing in the language, and a keyword is
+        // spelled by the grammar rather than by whoever wrote the file.
+        if !node.is_named() {
+            return false;
+        }
         text.rope()
             .byte_slice(node.start_byte()..node.end_byte())
             .chars()

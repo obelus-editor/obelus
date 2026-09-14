@@ -476,3 +476,19 @@ fn an_empty_range_colours_nothing() {
         "nothing was coloured after an empty range"
     );
 }
+
+/// The questions in the symbol menu are all about a thing the reader wrote,
+/// and a keyword is not one. It is a leaf made of letters, which is what
+/// tells a name from a bracket -- so without this every question would be
+/// offered on `match`, asked of the server, and answered with nothing.
+#[test]
+fn a_keyword_is_not_a_name() {
+    let text = Text::from_string("fn main() {\n    match x {\n        _ => {}\n    }\n}\n");
+    let state = SyntaxState::new(LanguageId::Rust, &text).expect("a parse");
+    let name_at = |byte: usize| state.is_name_at(&text, ByteOffset::new(byte));
+
+    assert!(name_at(3), "the name of a function is a name");
+    assert!(name_at(22), "the name of a variable is a name");
+    assert!(!name_at(16), "`match` was taken for a name");
+    assert!(!name_at(10), "a bracket was taken for a name");
+}

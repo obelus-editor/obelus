@@ -170,6 +170,14 @@ pub struct App {
     /// or one restarted, otherwise hand out the same id twice, and the second
     /// answer would be matched to the first question.
     asked: HashMap<(LanguageId, i64), Question>,
+    /// What each open file's tokens are, as its server last described them.
+    ///
+    /// Keyed by path rather than by buffer, because a buffer is a slot that
+    /// is reused: a closed file's classification would otherwise answer
+    /// about whatever is opened into its place. Each carries the document
+    /// version it describes and is ignored once the document has moved past
+    /// it, so a stale entry is inert rather than wrong.
+    tokens: HashMap<PathBuf, crate::lsp::tokens::Tokens>,
     /// Where the reader has been.
     jumps: JumpList,
     /// The file the picker's selection names, opened so it can be shown.
@@ -355,6 +363,7 @@ impl App {
             servers: HashMap::new(),
             stopped: HashSet::new(),
             asked: HashMap::new(),
+            tokens: HashMap::new(),
             jumps: JumpList::default(),
             preview: None,
             phase: 0,

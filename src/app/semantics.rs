@@ -133,6 +133,7 @@ impl App {
                 }),
             );
         }
+        self.ask_tokens(index);
     }
 
     /// Tells the server a document changed.
@@ -161,6 +162,9 @@ impl App {
                 &serde_json::json!({ "textDocument": { "uri": uri } }),
             );
         }
+        // The document has stopped moving, which is when a classification
+        // of it is worth having: see [`App::ask_tokens`].
+        self.ask_tokens(index);
     }
 
     pub(super) fn change_document(&mut self, index: usize) {
@@ -255,14 +259,7 @@ impl App {
         // different ways. Asked first because it is the reason a reader can
         // act on -- move the cursor -- where the others are about the
         // machine.
-        let cursor = buffer.cursor();
-        let at = buffer
-            .text()
-            .byte_of_char(buffer.text().char_offset(cursor.line, cursor.column));
-        if !buffer
-            .syntax()
-            .is_some_and(|state| state.is_name_at(buffer.text(), at))
-        {
+        if !self.name_at(buffer) {
             return Err("no symbol here".to_string());
         }
 
@@ -285,6 +282,126 @@ impl App {
             return Err("the language server answers none of these".to_string());
         }
         Ok(actions)
+    }
+
+    /// Asks the server to classify every token in a document.
+    ///
+    /// Not on every change, which is what a `didChange` would suggest: the
+    /// answer describes one version, an edit invalidates all of it, and a
+    /// full-file classification per keystroke is work the server does and
+    /// throws away. It is asked where a document stops moving -- opened,
+    /// re-read, written -- which is also where a reader starts looking
+    /// around it. While they are typing, the answer goes stale and
+    /// [`App::name_at`] falls back to the tree obelus parses itself.
+    pub(super) fn ask_tokens(&mut self, index: usize) {
+        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+            return;
+        };
+        let Some(language) = buffer.language() else {
+            return;
+        };
+        // Nothing about a commit's version, the same as its siblings.
+        if !buffer.content().is_file() {
+            return;
+        }
+        let Ok(uri) = lsp::client::uri_for(buffer.path()) else {
+            return;
+        };
+        let version = buffer.version();
+        let id = BufferId::new(index);
+        let Some(client) = self.servers.get_mut(&language) else {
+            return;
+        };
+        if !client
+            .capabilities()
+            .is_some_and(|capabilities| capabilities.semantic_tokens_provider.is_some())
+        {
+            return;
+        }
+        let params = serde_json::json!({ "textDocument": { "uri": uri } });
+        if let Ok(request) = client.request("textDocument/semanticTokens/full", &params) {
+            self.asked.insert(
+                (language, request),
+                Question {
+                    asked: Asked::Tokens,
+                    buffer: id,
+                    version,
+                },
+            );
+        }
+    }
+
+    /// Keeps a classification of a document, if it is still about it.
+    fn on_tokens(
+        &mut self,
+        id: BufferId,
+        version: i32,
+        language: LanguageId,
+        reply: lsp::client::Reply,
+    ) {
+        let Ok(result) = reply.result else {
+            return;
+        };
+        let Some(data) = result.get("data").and_then(|data| data.as_array()) else {
+            return;
+        };
+        let Some(client) = self.servers.get(&language) else {
+            return;
+        };
+        let Some(legend) = client
+            .capabilities()
+            .and_then(|capabilities| capabilities.semantic_tokens_provider.as_ref())
+            .map(|provider| match provider {
+                lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(options) => {
+                    &options.legend
+                }
+                lsp_types::SemanticTokensServerCapabilities::SemanticTokensRegistrationOptions(
+                    options,
+                ) => &options.semantic_tokens_options.legend,
+            })
+        else {
+            return;
+        };
+        let numbers: Vec<u32> = data
+            .iter()
+            .filter_map(serde_json::Value::as_u64)
+            .map(|number| u32::try_from(number).unwrap_or(u32::MAX))
+            .collect();
+        let tokens =
+            lsp::tokens::Tokens::decode(&numbers, legend, client.encoding().clone(), version);
+        let Some(path) = self
+            .buffers
+            .get(id.get())
+            .and_then(Option::as_ref)
+            .map(|buffer| buffer.path().to_path_buf())
+        else {
+            return;
+        };
+        self.tokens.insert(path, tokens);
+    }
+
+    /// Whether the thing under the cursor is a name anybody could ask about.
+    ///
+    /// The server's answer where it has given one about this very version of
+    /// the document, and the parse tree's where it has not. They disagree in
+    /// one place that matters: a keyword is a leaf made of letters, so the
+    /// tree can only say it is *shaped* like a name, while the server knows
+    /// what it is.
+    pub(super) fn name_at(&self, buffer: &Buffer) -> bool {
+        let cursor = buffer.cursor();
+        let from_server = self.tokens.get(buffer.path()).and_then(|tokens| {
+            let at =
+                lsp::position::to_lsp(buffer.text(), cursor.line, cursor.column, tokens.encoding());
+            tokens.name_at(buffer.version(), at)
+        });
+        from_server.unwrap_or_else(|| {
+            let at = buffer
+                .text()
+                .byte_of_char(buffer.text().char_offset(cursor.line, cursor.column));
+            buffer
+                .syntax()
+                .is_some_and(|state| state.is_name_at(buffer.text(), at))
+        })
     }
 
     /// Asks whichever question a command names.
@@ -371,6 +488,10 @@ impl App {
             }
             Asked::Formatting => {
                 self.on_formatting(question.buffer, question.version, reply);
+                return;
+            }
+            Asked::Tokens => {
+                self.on_tokens(question.buffer, question.version, language, reply);
                 return;
             }
         };
@@ -891,6 +1012,8 @@ pub(super) enum Asked {
     /// How the file should be laid out, asked because it is about to be
     /// written.
     Formatting,
+    /// What every token in the file is.
+    Tokens,
 }
 
 /// The name of the symbol the cursor is in, or the last one before it.

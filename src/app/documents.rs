@@ -332,6 +332,10 @@ impl App {
         if let Some(watcher) = self.watcher.as_mut() {
             watcher.unwatch(buffer.path());
         }
+        // What the server said this file's tokens were goes with it. The
+        // entry would answer correctly for as long as the file stayed shut,
+        // and then be one version behind whoever opened it next.
+        self.tokens.remove(buffer.path());
         self.note = Some(format!(
             "closed {}",
             relative(buffer.path(), &self.working_directory)
@@ -582,6 +586,9 @@ impl App {
             }
             if reload(buffer) {
                 self.change_document(index);
+                // The document has stopped moving on a version nobody has
+                // classified, which is where the server is worth asking.
+                self.ask_tokens(index);
             }
         }
     }
@@ -651,6 +658,7 @@ impl App {
             Ok(changed) => {
                 if changed {
                     self.change_document(index);
+                    self.ask_tokens(index);
                 }
                 self.note = Some("took what is on disk -- undo brings yours back".to_string());
             }
@@ -704,6 +712,7 @@ impl App {
             && reload(buffer)
         {
             self.change_document(index);
+            self.ask_tokens(index);
         }
     }
 }
