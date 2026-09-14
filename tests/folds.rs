@@ -713,3 +713,145 @@ fn an_empty_block_is_not_a_run() {
         "an empty argument list folded"
     );
 }
+
+/// What a file offers to fold has to follow every edit -- and working it
+/// out is a pass over the whole file, so it is skipped where the edit
+/// cannot have moved anything. That shortcut is only worth having if it is
+/// never wrong, which is a thing to check against the answer it skipped.
+mod after_an_edit {
+    use super::{App, Buffer, Command, KeyCode, LineNumber, folds, support};
+
+    /// Every run the file offers, as the fold machinery has them.
+    fn offered(app: &App) -> Vec<folds::Fold> {
+        let buffer = app.current_buffer().expect("a buffer");
+        (0..buffer.text().line_count())
+            .filter_map(|line| {
+                // The one that *starts* here: `offered_at` answers about
+                // the line, and a run covers all of its own.
+                buffer
+                    .folds()
+                    .offered_at(LineNumber::new(line))
+                    .filter(|fold| fold.from.get() == line)
+            })
+            .collect()
+    }
+
+    /// And as a fresh reading of the file gives them.
+    fn fresh(app: &App) -> Vec<folds::Fold> {
+        folds::of(app.current_buffer().expect("a buffer").text())
+    }
+
+    fn editing(name: &str, source: &str) -> (support::Scratch, App) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, source).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 12);
+        (scratch, app)
+    }
+
+    const SOURCE: &str =
+        "fn one() {\n    let a = 1;\n    let b = 2;\n}\n\nfn two() {\n    three();\n}\n";
+
+    /// Typing inside a line moves nothing, and the shortcut takes it.
+    #[test]
+    fn typing_inside_a_line_leaves_the_runs_where_they_were() {
+        let (_scratch, mut app) = editing("fold-typing", SOURCE);
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::End);
+        support::type_text(&mut app, "; // a note");
+        assert_eq!(offered(&app), fresh(&app));
+    }
+
+    /// Typing a bracket at the head of a line changes what closes a run,
+    /// which changes where the run stops.
+    #[test]
+    fn a_bracket_at_the_head_of_a_line_changes_where_a_run_stops() {
+        let (_scratch, mut app) = editing("fold-bracket", SOURCE);
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Home);
+        support::type_text(&mut app, "}");
+        assert_eq!(offered(&app), fresh(&app));
+    }
+
+    /// A line can keep its indent and still stop closing anything: what a
+    /// run ends on is the line that *starts* with a bracket, and putting
+    /// something in front of that bracket is not the same line any more.
+    #[test]
+    fn what_a_line_starts_with_changes_where_a_run_stops() {
+        let (_scratch, mut app) = editing(
+            "fold-closer",
+            "fn one() {\n    if a {\n        b();\n    }\n}\n",
+        );
+        for _ in 0..3 {
+            support::press(&mut app, KeyCode::Down);
+        }
+        support::press(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Left);
+        support::type_text(&mut app, "x");
+        assert_eq!(
+            app.current_buffer()
+                .expect("a buffer")
+                .text()
+                .line(LineNumber::new(3))
+                .to_string(),
+            "    x}",
+            "not the edit this test meant to make"
+        );
+        assert_eq!(offered(&app), fresh(&app));
+    }
+
+    /// Typing a space in front of a line indents it, which is the whole of
+    /// what a run is made of.
+    #[test]
+    fn indenting_a_line_changes_the_runs() {
+        let (_scratch, mut app) = editing("fold-indent", SOURCE);
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Home);
+        support::type_text(&mut app, "    ");
+        assert_eq!(offered(&app), fresh(&app));
+    }
+
+    /// And a new line is a line every run under it has to count.
+    #[test]
+    fn splitting_a_line_changes_the_runs() {
+        let (_scratch, mut app) = editing("fold-split", SOURCE);
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Enter);
+        assert_eq!(offered(&app), fresh(&app));
+    }
+
+    /// Emptying a line takes it out of every run's reckoning: a line with
+    /// nothing on it says nothing about how deep anything is.
+    #[test]
+    fn emptying_a_line_changes_the_runs() {
+        let (_scratch, mut app) = editing("fold-empty", SOURCE);
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::End);
+        for _ in 0..40 {
+            support::press(&mut app, KeyCode::Backspace);
+        }
+        assert_eq!(offered(&app), fresh(&app));
+    }
+
+    /// Whatever the reader folded is still folded, which is why this is not
+    /// simply re-offered from scratch every time.
+    #[test]
+    fn what_the_reader_folded_survives_typing() {
+        let (_scratch, mut app) = editing("fold-kept", SOURCE);
+        obelus::command::dispatch::dispatch(&mut app, Command::Fold);
+        assert!(
+            app.current_buffer().expect("a buffer").folds().any_folded(),
+            "nothing was folded to begin with"
+        );
+
+        support::press(&mut app, KeyCode::Down);
+        support::type_text(&mut app, "x");
+        assert!(
+            app.current_buffer().expect("a buffer").folds().any_folded(),
+            "typing unfolded what the reader had folded"
+        );
+    }
+}

@@ -1190,6 +1190,12 @@ impl Buffer {
         }
 
         let lines_before = self.text.line_count();
+        // What the edited line contributed to the runs around it, before it
+        // was edited. An edit inside a line changes neither how far the line
+        // is indented nor what it starts with -- which is most of what
+        // typing is -- and then every run in the file is where it was.
+        let one_line = span.line == span.end_line && !with.contains('\n');
+        let shape = one_line.then(|| folds::shape_of(&self.text, span.line));
         let at = self.text.char_offset(span.line, span.column);
         let removed = match empty {
             true => String::new(),
@@ -1214,9 +1220,17 @@ impl Buffer {
         // or took away. `offer` would be right for a re-read and is wrong
         // here: it drops the lot, which per keystroke means a file that
         // unfolds itself as it is typed into.
-        let moved = self.text.line_count() as isize - lines_before as isize;
-        self.folds
-            .keep_across(folds::of(&self.text), span.line, moved);
+        //
+        // And only where the runs could have moved at all. Working them out
+        // is a pass over the whole file, and it was by a long way the
+        // slowest thing a keystroke did -- for an answer that, while
+        // somebody types inside a line, is the answer it already had.
+        let same_shape = shape.is_some_and(|was| was == folds::shape_of(&self.text, span.line));
+        if !same_shape {
+            let moved = self.text.line_count() as isize - lines_before as isize;
+            self.folds
+                .keep_across(folds::of(&self.text), span.line, moved);
+        }
 
         // The diff those came from is stale the instant the text moves, and
         // they are anchored to line numbers the edit may have shifted.

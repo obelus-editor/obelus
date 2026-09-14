@@ -61,14 +61,220 @@ pub struct Fold {
 /// file is a list of tables at column zero, and so is most markdown: there
 /// is no block for a reader to close, and a mark offering to hide "the rest
 /// of the file from here" is not the same offer.
+///
+/// Worked out for the whole file in one pass over it, because it is asked
+/// again after every edit: the shape of a run depends on the lines under it,
+/// and asking that line by line is a scan down the file per line -- which on
+/// a file of any size is the slowest thing a keystroke does. Everything the
+/// answer needs is gathered first, and then the runs fall out of it.
 #[must_use]
 pub fn of(text: &Text) -> Vec<Fold> {
-    (0..text.line_count())
-        .filter_map(|row| at(text, LineNumber::new(row)))
+    let last = text.line_count().saturating_sub(1);
+    let shapes = Shapes::of(text);
+    (0..last)
+        .filter_map(|row| shapes.run_at(row, last))
         .collect()
 }
 
+/// A line number, or none, in four bytes.
+///
+/// [`Shapes`] is five arrays the length of the file, built and thrown away
+/// whenever a line's shape changes. `Option<usize>` says the same thing in
+/// sixteen bytes a line, and a file of any size is better off not moving
+/// four times the memory to say it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Row(u32);
+
+impl Row {
+    /// No line. A file with four billion lines in it is not a file.
+    const NONE: Self = Self(u32::MAX);
+
+    fn at(row: usize) -> Self {
+        u32::try_from(row).map_or(Self::NONE, Self)
+    }
+
+    const fn get(self) -> Option<usize> {
+        match self.0 {
+            u32::MAX => None,
+            row => Some(row as usize),
+        }
+    }
+}
+
+/// What every line of a file says about the runs around it, and the three
+/// questions a run's own shape needs asked of the lines under it.
+///
+/// Gathered for the whole file in a few passes over it rather than asked
+/// line by line, because the shape of a run depends on the lines under it:
+/// asking one line at a time is a scan down the file per line, which on a
+/// file of any size was the slowest thing a keystroke did.
+struct Shapes {
+    /// How far each line is indented, or [`Row::NONE`] for one with nothing
+    /// on it. A line number's worth of room, holding a column: the same
+    /// four bytes, and the same "there is no answer".
+    indents: Vec<Row>,
+    /// Whether what each line starts with closes a block.
+    closes: Vec<bool>,
+    /// The next line with anything on it, which is the one that says
+    /// whether a line opens anything: blank lines say nothing either way.
+    below: Vec<Row>,
+    /// The last line with anything on it at or above each line, for
+    /// trimming the blanks off the end of a run: they belong to whatever
+    /// comes next rather than to the run above them.
+    above: Vec<Row>,
+    /// Where each run ends: the first line under it that is no deeper.
+    shallower: Vec<Row>,
+}
+
+impl Shapes {
+    fn of(text: &Text) -> Self {
+        // One walk down the rope rather than a descent of its tree per
+        // line, asking each line the only two things a run is made of.
+        let lines = text.line_count();
+        let mut indents = Vec::with_capacity(lines);
+        let mut closes = Vec::with_capacity(lines);
+        for line in text.rope().lines() {
+            let (indent, closed) = shape(line.chars());
+            indents.push(indent.map_or(Row::NONE, Row::at));
+            closes.push(closed);
+        }
+        Self {
+            below: nearest_below(&indents),
+            above: nearest_above(&indents),
+            shallower: shallower_than(&indents),
+            indents,
+            closes,
+        }
+    }
+
+    /// The run starting on a line, if one does.
+    fn run_at(&self, row: usize, last: usize) -> Option<Fold> {
+        let indent = self.indents[row];
+        if indent == Row::NONE {
+            return None;
+        }
+        // What follows has to be deeper for this line to be opening
+        // anything.
+        let under = self.below[row].get()?;
+        if self.indents[under].0 <= indent.0 {
+            return None;
+        }
+        match self.shallower[row].get() {
+            // Closed by a bracket: the run stops just before it, so the
+            // bracket is what is left of that line and comes up beside the
+            // mark.
+            Some(line) if self.closes[line] => Some(Fold {
+                from: LineNumber::new(row),
+                to: LineNumber::new(line),
+                tail: self.indents[line].get().map(CharColumn::new),
+            }),
+            // Closed by something else: the run takes everything down to
+            // the last line with anything on it, and the row has only the
+            // mark.
+            Some(line) => self.ending(row, line.saturating_sub(1)),
+            None => self.ending(row, last),
+        }
+    }
+
+    /// A run from `row` down to the last line at or above `until` that has
+    /// anything on it.
+    fn ending(&self, row: usize, until: usize) -> Option<Fold> {
+        self.above[until]
+            .get()
+            .filter(|to| *to > row)
+            .map(|to| Fold {
+                from: LineNumber::new(row),
+                to: LineNumber::new(to),
+                tail: None,
+            })
+    }
+}
+
+/// What a line contributes to the shape of the runs around it.
+///
+/// How far it is indented -- `None` for a line with nothing on it -- and
+/// whether what it starts with closes a block. Those two are the whole of
+/// what [`of`] reads, so two versions of a file whose lines all agree on
+/// this offer exactly the same runs.
+#[must_use]
+pub fn shape_of(text: &Text, line: LineNumber) -> (Option<usize>, bool) {
+    shape(text.line(line).chars())
+}
+
+/// The same, of characters already in hand.
+fn shape(characters: impl Iterator<Item = char>) -> (Option<usize>, bool) {
+    let first = characters
+        .enumerate()
+        .find(|(_, character)| !character.is_whitespace());
+    (
+        first.map(|(at, _)| at),
+        first.is_some_and(|(_, character)| crate::syntax::brackets::closes(character)),
+    )
+}
+
+/// For each line, the next one under it with anything on it.
+fn nearest_below(indents: &[Row]) -> Vec<Row> {
+    let mut below = vec![Row::NONE; indents.len()];
+    let mut nearest = Row::NONE;
+    for row in (0..indents.len()).rev() {
+        below[row] = nearest;
+        if indents[row] != Row::NONE {
+            nearest = Row::at(row);
+        }
+    }
+    below
+}
+
+/// For each line, the last one at or above it with anything on it.
+fn nearest_above(indents: &[Row]) -> Vec<Row> {
+    let mut above = vec![Row::NONE; indents.len()];
+    let mut nearest = Row::NONE;
+    for (row, last_seen) in above.iter_mut().enumerate() {
+        if indents[row] != Row::NONE {
+            nearest = Row::at(row);
+        }
+        *last_seen = nearest;
+    }
+    above
+}
+
+/// For each line, the next one under it that is no deeper.
+///
+/// A stack of the lines still looking for one, deepest on top, so that every
+/// line is pushed and popped once rather than scanned towards.
+fn shallower_than(indents: &[Row]) -> Vec<Row> {
+    let mut shallower = vec![Row::NONE; indents.len()];
+    let mut waiting: Vec<usize> = Vec::new();
+    for row in (0..indents.len()).rev() {
+        let indent = indents[row];
+        // A line with nothing on it says nothing about how deep anything
+        // is, so it never goes on the stack and is never an answer. No test
+        // can tell this apart from leaving it out -- `Row::NONE` is the
+        // largest number there is, so a blank on the stack would be popped
+        // before it could be read -- and relying on that would be relying
+        // on a coincidence of the sentinel's value.
+        if indent == Row::NONE {
+            continue;
+        }
+        while waiting
+            .last()
+            .is_some_and(|line| indents[*line].0 > indent.0)
+        {
+            waiting.pop();
+        }
+        shallower[row] = waiting.last().map_or(Row::NONE, |line| Row::at(*line));
+        waiting.push(row);
+    }
+    shallower
+}
+
 /// The run starting on a line, if one does.
+///
+/// The plain reading of the rule, a line at a time and scanning down the
+/// file for the answer. Kept because it is the plain reading: [`of`] is the
+/// same rule arranged so that nothing is scanned twice, and a test holds the
+/// two to each other.
+#[cfg(test)]
 fn at(text: &Text, row: LineNumber) -> Option<Fold> {
     let last = text.last_line();
     if row >= last {
@@ -126,6 +332,7 @@ fn at(text: &Text, row: LineNumber) -> Option<Fold> {
 ///
 /// Trailing blank lines belong to whatever comes next, not to the run above
 /// them: folding them away would close the gap between two items.
+#[cfg(test)]
 fn ending(text: &Text, row: LineNumber, until: LineNumber) -> Option<Fold> {
     let mut to = until;
     while to > row && indent_of(text, to).is_none() {
@@ -144,6 +351,7 @@ fn ending(text: &Text, row: LineNumber, until: LineNumber) -> Option<Fold> {
 /// at least twice for every line of a file when it is opened and again
 /// whenever it is re-read, and a `String` per question is an allocation per
 /// line of a file nobody asked to have copied.
+#[cfg(test)]
 fn indent_of(text: &Text, line: LineNumber) -> Option<usize> {
     text.line(line)
         .chars()
@@ -156,6 +364,7 @@ fn indent_of(text: &Text, line: LineNumber) -> Option<usize> {
 /// is wanted here is narrower than matching them: a line that *begins* with
 /// one closes something, and that is true of `}`, `);` and `]` alike
 /// without knowing what was opened or where.
+#[cfg(test)]
 fn starts_closed(text: &Text, line: LineNumber) -> bool {
     text.line(line)
         .chars()
@@ -436,5 +645,63 @@ impl Folds {
             }
         }
         self.hidden = merged;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The one-pass reading and the line-at-a-time one are the same rule,
+    /// and a file is the only place to find out.
+    fn agrees(source: &str) {
+        let text = Text::from_string(source);
+        let slow: Vec<Fold> = (0..text.line_count())
+            .filter_map(|row| at(&text, LineNumber::new(row)))
+            .collect();
+        assert_eq!(of(&text), slow, "in:\n{source}");
+    }
+
+    #[test]
+    fn the_two_readings_agree() {
+        for source in [
+            "",
+            "\n",
+            "one\n",
+            "fn main() {\n    let x = 1;\n}\n",
+            // A run closed by a bracket, and one closed by running out.
+            "fn a() {\n    if b {\n        c();\n    }\n}\n\ndef d():\n    e()\n",
+            // Blank lines inside a run and trailing it.
+            "a:\n\n    b\n\n    c\n\n\nd:\n    e\n",
+            // Nothing indented at all, which offers nothing.
+            "one\ntwo\nthree\n",
+            // Deeper and deeper, then out in one step.
+            "a\n b\n  c\n   d\ne\n",
+            // Out by more than one level at a time.
+            "a\n    b\n        c\n    d\n",
+            // No trailing newline.
+            "a\n    b",
+            // A line that is only blanks, which is not a line with
+            // something on it however wide it is.
+            "a\n    \n    b\n",
+        ] {
+            agrees(source);
+        }
+    }
+
+    /// And on real files, which have shapes nobody writes into a test.
+    #[test]
+    fn the_two_readings_agree_on_this_repository() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for file in [
+            "src/app/mod.rs",
+            "src/buffer/folds.rs",
+            "src/text.rs",
+            "Cargo.toml",
+            "AGENTS.md",
+        ] {
+            let source = std::fs::read_to_string(root.join(file)).expect("a file of this repo");
+            agrees(&source);
+        }
     }
 }
