@@ -298,7 +298,15 @@ fn the_tabs_are_the_groups() {
     support::press(&mut app, KeyCode::Down);
     assert_eq!(app.settings().expect("the settings").focus(), 1);
     support::press(&mut app, KeyCode::Right);
-    assert_eq!(rows(&app), ["Wrap long lines", "Blame in the margin"]);
+    assert_eq!(
+        rows(&app),
+        [
+            "Wrap long lines",
+            "Blame in the margin",
+            "Tab width",
+            "Format when saving"
+        ]
+    );
     assert!(
         app.settings().expect("the settings").focus() < 2,
         "the focus is on a row this tab does not have"

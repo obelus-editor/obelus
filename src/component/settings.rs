@@ -424,6 +424,12 @@ impl Settings {
                     .map(|first| (*first).to_string())
                     .unwrap_or_default(),
             ),
+            Kind::Count(counts) => Value::Count(
+                counts
+                    .first()
+                    .and_then(|first| first.parse().ok())
+                    .unwrap_or(1),
+            ),
         })
     }
 
@@ -588,9 +594,13 @@ impl Settings {
                         let on = matches!(Self::value_of(setting, config), Value::Switch(true));
                         SettingsOutcome::Changed(setting.key, Value::Switch(!on))
                     }
-                    Kind::Choice(choices) => {
+                    // Both open the same short list. A number is picked
+                    // from one the way a word is, and the only difference
+                    // is what it is written down as.
+                    Kind::Choice(choices) | Kind::Count(choices) => {
                         let word = match Self::value_of(setting, config) {
                             Value::Choice(word) => word,
+                            Value::Count(count) => count.to_string(),
                             Value::Switch(_) => String::new(),
                         };
                         SettingsOutcome::Choose(setting.key, choices, word)

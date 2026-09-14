@@ -31,6 +31,10 @@ pub struct Config {
     pub blame_margin: bool,
     /// Whether a line too long for the screen continues on the next row.
     pub wrap: bool,
+    /// How wide a tab is drawn, and how many spaces the tab key puts in.
+    pub tab_width: usize,
+    /// Whether to ask a language server to lay the file out before writing.
+    pub format_on_save: bool,
     /// Which agent obelus talks to, by the registry's own name for it.
     ///
     /// One, or none. Two would mean every question having to say which
@@ -56,6 +60,14 @@ impl Default for Config {
             // who wants it can say so, and then it is a line's own choice
             // no longer.
             wrap: false,
+            // What the code obelus is written in uses, which is also what
+            // the rest of the program laid a tab out at before a reader
+            // could say otherwise.
+            tab_width: crate::text::TAB_WIDTH,
+            // Off: a formatter that ran without being asked would rewrite
+            // a file somebody opened to read, and the first they would know
+            // of it is the diff.
+            format_on_save: false,
             // None until the reader installs one: obelus does not choose an
             // agent for anybody.
             agent: None,
@@ -72,6 +84,12 @@ pub enum Value {
     Switch(bool),
     /// One of a list of words.
     Choice(String),
+    /// A number.
+    ///
+    /// Its own thing rather than a `Choice` that happens to spell a number:
+    /// a reader opening the file sees `tab_width = 4` rather than `"4"`, and
+    /// what uses it wants a number rather than a parse.
+    Count(usize),
 }
 
 /// What sort of control a setting gets.
@@ -81,6 +99,12 @@ pub enum Kind {
     Switch,
     /// One of a fixed list of words.
     Choice(&'static [&'static str]),
+    /// A number, offered as the few that anybody picks.
+    ///
+    /// The same control a choice gets, because picking from a short list is
+    /// what a reader is doing either way -- and a spinner for a number with
+    /// three sensible values is a control nobody needs.
+    Count(&'static [&'static str]),
 }
 
 /// Which group of settings a setting belongs to.
@@ -190,6 +214,9 @@ impl Setting {
 /// The themes a reader can choose between.
 const THEMES: &[&str] = &["dark", "light"];
 
+/// The tab widths anybody sets.
+const WIDTHS: &[&str] = &["2", "4", "8"];
+
 /// Every setting obelus has.
 pub const ALL: &[Setting] = &[
     Setting {
@@ -224,6 +251,22 @@ pub const ALL: &[Setting] = &[
         reach: Reach::Anywhere,
         kind: Kind::Switch,
     },
+    Setting {
+        key: "tab_width",
+        name: "Tab width",
+        about: "how wide a tab is drawn, and how many spaces one puts in",
+        group: Group::Reading,
+        reach: Reach::Anywhere,
+        kind: Kind::Count(WIDTHS),
+    },
+    Setting {
+        key: "format_on_save",
+        name: "Format when saving",
+        about: "ask the language server to lay the file out before writing it",
+        group: Group::Reading,
+        reach: Reach::Anywhere,
+        kind: Kind::Switch,
+    },
 ];
 
 impl Config {
@@ -238,6 +281,8 @@ impl Config {
             "icons" => Some(Value::Switch(self.icons)),
             "blame_margin" => Some(Value::Switch(self.blame_margin)),
             "wrap" => Some(Value::Switch(self.wrap)),
+            "tab_width" => Some(Value::Count(self.tab_width)),
+            "format_on_save" => Some(Value::Switch(self.format_on_save)),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
         }
@@ -250,6 +295,10 @@ impl Config {
             ("icons", Value::Switch(on)) => self.icons = *on,
             ("blame_margin", Value::Switch(on)) => self.blame_margin = *on,
             ("wrap", Value::Switch(on)) => self.wrap = *on,
+            // Clamped where it is read rather than refused here: a file
+            // somebody typed `0` into should not make every tab nothing.
+            ("tab_width", Value::Count(width)) => self.tab_width = *width,
+            ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
             ("agent", Value::Choice(word)) => {
@@ -447,6 +496,16 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     {
         config.wrap = on;
     }
+    if let Some(width) = table.get("tab_width").and_then(toml::Value::as_integer)
+        && allowed("tab_width")
+    {
+        config.tab_width = usize::try_from(width).unwrap_or(crate::text::TAB_WIDTH);
+    }
+    if let Some(on) = table.get("format_on_save").and_then(toml::Value::as_bool)
+        && allowed("format_on_save")
+    {
+        config.format_on_save = on;
+    }
     if let Some(word) = table.get("agent").and_then(toml::Value::as_str)
         && allowed("agent")
     {
@@ -515,6 +574,8 @@ pub fn over(existing: &str, config: &Config) -> String {
     document["icons"] = toml_edit::value(config.icons);
     document["blame_margin"] = toml_edit::value(config.blame_margin);
     document["wrap"] = toml_edit::value(config.wrap);
+    document["tab_width"] = toml_edit::value(i64::try_from(config.tab_width).unwrap_or(4));
+    document["format_on_save"] = toml_edit::value(config.format_on_save);
     // Written even when there is nobody, so the file says what obelus read
     // rather than leaving the reader to wonder whether it noticed.
     document["agent"] = toml_edit::value(config.agent.clone().unwrap_or_default());
@@ -578,6 +639,9 @@ pub fn write_tree(path: &Path, key: &str, value: Option<&Value>) -> std::io::Res
     match value {
         Some(Value::Switch(on)) => document[key] = toml_edit::value(*on),
         Some(Value::Choice(word)) => document[key] = toml_edit::value(word.clone()),
+        Some(Value::Count(count)) => {
+            document[key] = toml_edit::value(i64::try_from(*count).unwrap_or(0));
+        }
         None => {
             // What was written above the key goes with it, except for
             // whatever is above the last blank line: a comment touching a
@@ -805,6 +869,8 @@ mod tests {
             icons: false,
             blame_margin: false,
             wrap: true,
+            tab_width: 8,
+            format_on_save: true,
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and
             // both have to survive the file or the reader makes them again
@@ -869,6 +935,23 @@ mod tests {
                     "{} defaults to {word:?}, which is not one of its choices",
                     setting.key
                 ),
+                (super::Kind::Count(counts), Value::Count(count)) => {
+                    assert!(
+                        counts.contains(&count.to_string().as_str()),
+                        "{} defaults to {count}, which is not one of its choices",
+                        setting.key
+                    );
+                    // The list is spelled, because the control that offers
+                    // it offers words. Every one of them has to be a number
+                    // or the reader picks something that parses to nothing.
+                    for offered in counts {
+                        assert!(
+                            offered.parse::<usize>().is_ok(),
+                            "{} offers {offered:?}, which is not a number",
+                            setting.key
+                        );
+                    }
+                }
                 (kind, value) => {
                     panic!("{} is a {kind:?} holding a {value:?}", setting.key)
                 }

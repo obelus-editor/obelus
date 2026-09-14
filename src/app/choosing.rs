@@ -309,7 +309,15 @@ impl App {
                 None => self.go_to(&path, line, character),
             },
             PickerValue::Setting { key, word } => {
-                self.change_setting(key, &crate::config::Value::Choice(word));
+                // A number is written down as one. The list it was picked
+                // from spells them, because a list is words either way.
+                let value = match crate::config::Setting::named(key).map(|setting| setting.kind) {
+                    Some(crate::config::Kind::Count(_)) => {
+                        crate::config::Value::Count(word.parse().unwrap_or(1))
+                    }
+                    _ => crate::config::Value::Choice(word),
+                };
+                self.change_setting(key, &value);
             }
             PickerValue::AgentValue { setting, value } => {
                 self.set_agent_setting(&setting, &value);

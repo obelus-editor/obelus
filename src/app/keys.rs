@@ -185,7 +185,7 @@ impl App {
                 let out = cursor
                     .column
                     .get()
-                    .saturating_sub(crate::text::TAB_WIDTH.min(cursor.column.get()));
+                    .saturating_sub(crate::text::tab_width().min(cursor.column.get()));
                 (
                     crate::coordinates::Span {
                         line: cursor.line,
@@ -313,21 +313,21 @@ fn indent_after(text: &crate::text::Text, line: LineNumber, column: CharColumn) 
         .find(|character| !character.is_whitespace())
         .is_some_and(|character| crate::syntax::brackets::opens(*character));
     match deeper {
-        true => blank + &" ".repeat(crate::text::TAB_WIDTH),
+        true => blank + &" ".repeat(crate::text::tab_width()),
         false => blank,
     }
 }
 
 /// What a key puts in, where it puts anything.
 ///
-/// Spaces for a tab, as many as the width obelus lays a tab out at. Which
-/// the reader cannot yet choose -- a number is not a shape the settings page
-/// has -- so it is the one the rest of the program already uses.
+/// Spaces for a tab, as many as the width tabs are laid out at -- so what
+/// the key puts in looks the same as what a tab in the file already there
+/// looks like.
 fn put_in(typing: Typing) -> String {
     match typing {
         Typing::Character(character) => character.to_string(),
         Typing::Newline => "\n".to_string(),
-        Typing::Tab => " ".repeat(crate::text::TAB_WIDTH),
+        Typing::Tab => " ".repeat(crate::text::tab_width()),
         Typing::Backward | Typing::Forward => String::new(),
     }
 }

@@ -20,6 +20,30 @@ use crate::coordinates::{
 /// is the number the code obelus is written in uses.
 pub const TAB_WIDTH: usize = 4;
 
+/// How wide a tab is laid out, while the reader has said something else.
+///
+/// A global for the reason the glyph switch is one: it is a drawing
+/// decision the whole program shares, and threading it through every method
+/// here that measures a line -- nine of them, and every caller of each --
+/// would put a parameter on the arithmetic rather than on the setting.
+/// Written once at startup and once per change of the setting, read while
+/// measuring.
+static TABS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(TAB_WIDTH);
+
+/// Lays tabs out at `width` from now on.
+///
+/// Clamped, because a tab of nothing is a character that cannot be stepped
+/// over and a file somebody typed `0` into should not produce one.
+pub fn lay_tabs_at(width: usize) {
+    TABS.store(width.clamp(1, 16), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// How wide a tab is being laid out.
+#[must_use]
+pub fn tab_width() -> usize {
+    TABS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// What an edit did, in the units everything downstream measures in.
 ///
 /// Three places: where it began, where what it replaced ended, and where
@@ -429,7 +453,8 @@ fn continuation_indent(glyphs: &[Glyph], width: u16) -> u16 {
 /// also how a terminal treats them.
 fn char_width(character: char, width: usize) -> usize {
     if character == '\t' {
-        TAB_WIDTH - (width % TAB_WIDTH)
+        let tabs = tab_width();
+        tabs - (width % tabs)
     } else {
         character.width().unwrap_or(0)
     }

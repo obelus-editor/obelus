@@ -284,6 +284,7 @@ impl App {
             self.theme = theme;
         }
         icons::use_glyphs(self.settled.config.icons);
+        crate::text::lay_tabs_at(self.settled.config.tab_width);
         // The table the reader's own bindings leave. Built rather than
         // patched: what is in the file is a list of changes over the
         // defaults, and applying them to a table that has already had them

@@ -919,6 +919,10 @@ fn draw_control(
                 );
             }
         }
+        (Kind::Count(_), Value::Count(count)) => {
+            let after = write(cells, x, y, &count.to_string(), style.fg(ink));
+            put(cells, after + 1, y, '\u{25b8}', style.fg(theme.gutter));
+        }
         (Kind::Choice(_), Value::Choice(word)) => {
             let after = write(cells, x, y, word, style.fg(ink));
             // Pointing right, at the value: the list it opens is the
