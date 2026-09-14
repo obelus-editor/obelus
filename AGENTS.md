@@ -190,6 +190,15 @@ file's history can find nothing for a second and a half and still be
 working: without a number moving, "not found yet" and "not there" look the
 same.
 
+**What obelus writes, obelus has to be able to read.** The log gained a
+process id at the front of every line so that sessions running at once
+could be told apart; the reader of that format was not told. It splits on
+the first space expecting a timestamp, got a number, refused every line,
+and the file obelus writes was the one file it could not give a reading --
+so `ctrl+t` was greyed out on it. A format with a writer and a reader in
+the same program has a test that the one reads the other, or they drift and
+the symptom turns up somewhere that looks unrelated.
+
 **Do not delete what you do not recognise.** Obelus wrote its own settings
 file whole, on the grounds that obelus wrote all of it. That is not true --
 readers put lines in by hand -- so writing it whole silently took out

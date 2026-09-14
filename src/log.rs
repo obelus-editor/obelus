@@ -179,6 +179,17 @@ pub fn format_of(source: &str) -> Option<Format> {
 
 /// `2026-09-11T02:49:00.854699Z  INFO obelus::app: said this key=value`
 fn ours(line: &str) -> Option<Entry> {
+    // Which obelus said it, first: one file holds every session, and
+    // several of them run at once -- a reader following one has to be able
+    // to tell it from the others. Written by the subscriber, so it is there
+    // on every line of obelus's own; kept as a field, where the rest of
+    // what a line carries by name already goes.
+    let (whose, line) = match line.split_once(' ') {
+        Some((first, rest)) if first.bytes().all(|byte| byte.is_ascii_digit()) => {
+            (Some(first), rest)
+        }
+        _ => (None, line),
+    };
     let (stamp, rest) = line.split_once(' ')?;
     // A timestamp, and a strict one: this is the format obelus writes, so
     // there is no need to guess at what a date looks like.
@@ -193,7 +204,10 @@ fn ours(line: &str) -> Option<Entry> {
         _ => return None,
     };
     let (who, said) = rest.trim_start().split_once(": ")?;
-    let (said, fields) = split_fields(said);
+    let (said, mut fields) = split_fields(said);
+    if let Some(whose) = whose {
+        fields.insert(0, ("pid".to_string(), whose.to_string()));
+    }
     Some(Entry {
         when,
         level: Some(level),
