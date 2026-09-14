@@ -9,7 +9,7 @@ use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets:
 
 use crate::{
     app::{App, agents::Listed},
-    component::settings::{Refused, Settings},
+    component::settings::{DESCRIPTION_INDENT, Refused, Settings},
     config::{Config, Kind, Value},
     theme::Theme,
     ui::{Marked, Matched, fill, put, rule, text_width, write, write_marked},
@@ -143,6 +143,7 @@ impl Widget for SettingsView<'_> {
                     matched: self.settings.matched_in(command.name()),
                     detail: self.saying(*command),
                     aside: Aside::Words(chord.map(|chord| chord.label()).unwrap_or_default()),
+                    body: Vec::new(),
                     pinned: None,
                 })
                 .collect();
@@ -156,10 +157,15 @@ impl Widget for SettingsView<'_> {
             .map(|setting| Row {
                 label: setting.name.to_string(),
                 matched: self.settings.matched(setting),
-                // What it does, after the name and in the dim colour, which
-                // is the shape a palette row has had all along.
-                detail: (!setting.about.is_empty())
-                    .then(|| (setting.about.to_string(), self.theme.gutter)),
+                detail: None,
+                // What it does, on its own rows under the name: beside it,
+                // the two were competing for one row -- and the one that
+                // lost was the description, cut off with an ellipsis on
+                // exactly the rows that had most to explain.
+                body: self.settings.wrapped(
+                    setting.about,
+                    crate::component::settings::description_width(region.width),
+                ),
                 aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
                 pinned: self
                     .pinned
@@ -179,6 +185,9 @@ struct Row {
     matched: Option<std::ops::Range<usize>>,
     detail: Option<(String, ratatui::style::Color)>,
     aside: Aside,
+    /// What it does, under the name and indented, already broken into the
+    /// rows it takes. Empty on a page whose rows are one row each.
+    body: Vec<String>,
     /// The file that has this one, when it is not the reader's to change.
     ///
     /// Named on the row rather than said when the reader tries to move it:
@@ -245,18 +254,14 @@ impl SettingsView<'_> {
             .max()
             .unwrap_or(0);
         let detail_at = region.x + 1 + u16::try_from(names).unwrap_or(0) + 2;
-        let showing = window.visible(region.height);
-        for (offset, (index, row)) in rows
-            .iter()
-            .enumerate()
-            .skip(showing.start)
-            .take(showing.len())
-            .enumerate()
-        {
-            let Ok(offset) = u16::try_from(offset) else {
-                break;
-            };
-            let y = region.y + offset;
+        // Walked by height rather than by row, because an entry is as tall
+        // as what it has to say: a name, the rows its description takes, and
+        // a blank so that the next name is not read as part of it. Every
+        // height here is one on the pages whose rows are one row each, which
+        // is the same walk it always was.
+        let first = window.top().min(window.focus());
+        let mut y = region.y;
+        for (index, row) in rows.iter().enumerate().skip(first) {
             if y >= region.bottom() {
                 break;
             }
@@ -266,13 +271,18 @@ impl SettingsView<'_> {
             } else {
                 self.theme.background
             };
+            // The background covers the name and what it says, but not the
+            // blank under them: a run of colour that reached into the gap
+            // would close it up again.
+            let tall = u16::try_from(row.body.len()).unwrap_or(0) + 1;
             let area = Rect {
                 y,
-                height: 1,
+                height: tall.min(region.bottom().saturating_sub(y)),
                 width: room,
                 ..region
             };
             fill(cells, area, plain.bg(background));
+            let area = Rect { height: 1, ..area };
 
             // What the row says about where it came from, measured before
             // the name is: it is written between the two, so the name is cut
@@ -371,6 +381,29 @@ impl SettingsView<'_> {
                     );
                 }
             }
+
+            // What it does, under its name and indented under it, in the
+            // dim colour: it is the answer to a question the name has
+            // already asked, so it is read after the name or not at all.
+            for (offset, line) in row.body.iter().enumerate() {
+                let Ok(offset) = u16::try_from(offset + 1) else {
+                    break;
+                };
+                if y + offset >= region.bottom() {
+                    break;
+                }
+                write(
+                    cells,
+                    region.x + DESCRIPTION_INDENT,
+                    y + offset,
+                    line,
+                    plain.fg(self.theme.gutter).bg(background),
+                );
+            }
+
+            // And a blank before the next one, which is the whole of what
+            // makes an entry an entry.
+            y += tall + u16::from(!row.body.is_empty());
         }
     }
 

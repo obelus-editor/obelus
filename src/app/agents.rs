@@ -204,11 +204,12 @@ impl App {
         if let Some(settings) = self.settings.as_mut() {
             match cards {
                 true => settings.settle_cards(&listed, room),
-                // A group of settings is a dozen rows and they all fit
+                // A group of settings is a dozen entries and they all fit
                 // today. It has a window anyway: a group that grows past
                 // the screen should scroll rather than lose its last rows
-                // silently.
-                false => settings.settle_rows(room.1.saturating_sub(2)),
+                // silently -- and an entry is as tall as what it has to
+                // say, so the window is settled by height like the cards.
+                false => settings.settle_rows(room),
             }
         }
     }

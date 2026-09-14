@@ -61,6 +61,20 @@ pub enum Refused {
     Never(&'static str),
 }
 
+/// How wide a setting's description is drawn, in a page this wide.
+///
+/// Indented under the name and stopping short of the right-hand edge, so a
+/// paragraph under a name reads as belonging to it rather than as a row of
+/// its own. Here rather than in the view because the window has to know how
+/// tall an entry is before anything is drawn.
+#[must_use]
+pub fn description_width(room: u16) -> u16 {
+    room.saturating_sub(DESCRIPTION_INDENT + 2).max(8)
+}
+
+/// How far a description sits in from the name above it.
+pub const DESCRIPTION_INDENT: u16 = 3;
+
 /// How many rows of a description a card will show.
 ///
 /// Three: enough for the longest in the registry, and a limit so that one
@@ -605,9 +619,31 @@ impl Settings {
             .settle_by_height(&heights, room.1.saturating_sub(2));
     }
 
-    /// And the same for a page of settings, whose rows are one row each.
-    pub fn settle_rows(&mut self, room: u16) {
-        self.window.set_count(self.row_count());
-        self.window.settle(room);
+    /// And the same for a page of settings, whose entries are as tall as
+    /// what they have to say.
+    pub fn settle_rows(&mut self, room: (u16, u16)) {
+        let heights: Vec<u16> = match self.on_keys() {
+            // A key is a name and a chord: one row, the way it always was.
+            true => vec![1; self.row_count()],
+            false => self
+                .rows()
+                .iter()
+                .map(|setting| self.setting_rows(setting, description_width(room.0)))
+                .collect(),
+        };
+        self.window
+            .settle_by_height(&heights, room.1.saturating_sub(2));
+    }
+
+    /// How many rows one setting takes: its name, what it does, and the
+    /// blank that keeps it from running into the next one.
+    ///
+    /// Asked by the page that lays them out and by the window that decides
+    /// which of them are on screen, so the two cannot disagree about where
+    /// an entry ends.
+    #[must_use]
+    pub fn setting_rows(&self, setting: &Setting, width: u16) -> u16 {
+        let about = u16::try_from(self.wrapped(setting.about, width).len()).unwrap_or(0);
+        1 + about + 1
     }
 }

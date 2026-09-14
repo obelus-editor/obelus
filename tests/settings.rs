@@ -283,14 +283,14 @@ fn the_tabs_are_the_groups() {
             .map(|setting| setting.name.to_string())
             .collect::<Vec<_>>()
     };
-    assert_eq!(rows(&app), ["Theme", "Icons"]);
+    assert_eq!(rows(&app), ["Colour theme", "Nerd Font glyphs"]);
 
     // Onto the last row, then to the next tab: the focus cannot stay on a
     // row the new tab does not have.
     support::press(&mut app, KeyCode::Down);
     assert_eq!(app.settings().expect("the settings").focus(), 1);
     support::press(&mut app, KeyCode::Right);
-    assert_eq!(rows(&app), ["Wrap", "Blame"]);
+    assert_eq!(rows(&app), ["Wrap long lines", "Blame in the margin"]);
     assert!(
         app.settings().expect("the settings").focus() < 2,
         "the focus is on a row this tab does not have"
@@ -299,7 +299,7 @@ fn the_tabs_are_the_groups() {
     // Left goes back, and once more reaches the agents -- which is a tab
     // and not a group of settings, so it has no rows of this kind at all.
     support::press(&mut app, KeyCode::Left);
-    assert_eq!(rows(&app), ["Theme", "Icons"]);
+    assert_eq!(rows(&app), ["Colour theme", "Nerd Font glyphs"]);
     support::press(&mut app, KeyCode::Left);
     assert!(
         app.settings().expect("the settings").on_agents(),
@@ -327,10 +327,7 @@ fn typing_narrows_the_settings() {
     let file = temporary("filter");
     let mut app = open(&file);
 
-    // Three of the five characters of "Theme", so there is a run to see and
-    // something outside it: a query that covered the whole name would mark
-    // the whole row and prove nothing about where the run is.
-    support::type_text(&mut app, "the");
+    support::type_text(&mut app, "theme");
     let dump = support::render(&mut app, 66, 12);
     assert_eq!(
         app.settings().expect("the settings").rows().len(),
@@ -338,7 +335,7 @@ fn typing_narrows_the_settings() {
         "the query narrowed nothing:\n{dump}"
     );
     assert!(
-        support::text_block(&dump).contains("Theme"),
+        support::text_block(&dump).contains("Colour theme"),
         "not the row that matched:\n{dump}"
     );
     assert!(
@@ -356,25 +353,25 @@ fn typing_narrows_the_settings() {
     let row = support::text_block(&dump)
         .lines()
         .filter(|row| !row.is_empty())
-        .position(|row| row.contains("Theme"))
+        .position(|row| row.contains("Colour theme"))
         .expect("the row that matched");
-    // Cell one is the "T" of "Theme" -- cell zero is the row's own left-hand
-    // padding -- and cell five is its last character.
-    let letters: Vec<char> = styles[row].chars().skip(3 + 1).take(5).collect();
+    // Cell one is the "C" of "Colour theme" -- cell zero is the row's own
+    // left-hand padding -- and cell twelve is its last character.
+    let letters: Vec<char> = styles[row].chars().skip(3 + 1).take(12).collect();
     let marked: std::collections::HashSet<char> = letters.iter().copied().collect();
     assert!(
         marked.len() > 1,
         "the whole name is one colour, so nothing was marked:\n{dump}"
     );
-    // "the" is the first three characters, so the run is at the start and
-    // the last two are outside it.
-    assert_eq!(
-        letters[0], letters[2],
-        "the run is not the three characters that matched:\n{dump}"
-    );
+    // "theme" is the last five characters of the name, so the run is at its
+    // end and its first character is not in it.
     assert_ne!(
-        letters[0], letters[4],
+        letters[0], letters[11],
         "the marked run covers the whole name:\n{dump}"
+    );
+    assert_eq!(
+        letters[7], letters[11],
+        "the run is not the five characters that matched:\n{dump}"
     );
 
     // Nothing matches: the view says so rather than showing an empty screen.
@@ -463,42 +460,93 @@ fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
     let _ = std::fs::remove_dir_all(&directory);
 }
 
-/// What each setting does starts in one column, whatever its name is as
-/// long as.
+/// What a setting does goes under its name, indented, and carries onto
+/// another row rather than being cut.
 ///
-/// A column of names is read down, and prose that began at a different
-/// column on every row would be four beginnings to find rather than one.
+/// Beside the name the two were competing for one row, and the one that lost
+/// was the description -- cut off with an ellipsis on exactly the rows that
+/// had most to explain, and cut off further still on a row the tree had
+/// pinned, where the file's name takes the space as well.
 ///
-/// Broken deliberately by writing each description two columns after its own
-/// name: `Wrap` is a character shorter than `Blame`, so the two started a
-/// column apart and this failed.
+/// Broken deliberately by clipping the description to one row instead of
+/// wrapping it: the tail of the sentence was nowhere on screen and the last
+/// assertion failed.
 #[test]
-fn what_a_setting_does_starts_in_a_column_of_its_own() {
+fn what_a_setting_does_goes_under_it_and_wraps() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let file = temporary("column");
+    let file = temporary("under");
+    let mut app = open(&file);
+
+    let dump = support::render(&mut app, 66, 14);
+    let rows: Vec<&str> = support::text_block(&dump).lines().collect();
+    let name = rows
+        .iter()
+        .position(|row| row.contains("Nerd Font glyphs"))
+        .expect("the row");
+
+    // Under it, and indented from it.
+    let at = |row: &str, needle: &str| row.find(needle).map(|byte| row[..byte].chars().count());
+    assert!(
+        at(rows[name + 1], "in lists").is_some(),
+        "what it does is not under its name:\n{dump}"
+    );
+    assert!(
+        at(rows[name + 1], "in lists") > at(rows[name], "Nerd Font"),
+        "it is not indented under the name:\n{dump}"
+    );
+
+    // And the whole sentence is there, carried onto as many rows as it
+    // takes rather than cut off with an ellipsis.
+    let said: String = rows[name + 1..name + 4].concat();
+    assert!(
+        said.contains("draws a box instead"),
+        "the end of the sentence is nowhere:\n{dump}"
+    );
+    assert!(
+        !said.contains('\u{2026}'),
+        "it was cut rather than wrapped:\n{dump}"
+    );
+}
+
+/// Walking to the last setting brings it on screen, however tall the
+/// entries are.
+///
+/// The window is settled by *height* here, like the page of cards: an entry
+/// is a name, the rows its description takes and a blank, so a page that
+/// counted them as a row each would think four of them fit in four rows --
+/// and the reader walking to the last one would be standing on something
+/// that is not drawn.
+///
+/// Broken deliberately by settling with a height of one per entry: the
+/// fourth name was nowhere on the screen it is focused on.
+#[test]
+fn the_last_setting_can_be_walked_to_on_a_short_screen() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let file = temporary("short");
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Right);
 
-    let dump = support::render(&mut app, 76, 12);
-    let at = |needle: &str| {
-        support::text_block(&dump)
-            .lines()
-            .find_map(|row| row.find(needle).map(|byte| row[..byte].chars().count()))
-            .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"))
-    };
-    assert_eq!(
-        at("a line too long"),
-        at("who last changed"),
-        "the descriptions do not start together:\n{dump}"
+    // A region of three rows, which is shorter than the first entry is
+    // tall: walking to the second has to move the window or the reader is
+    // standing on something nobody drew.
+    support::lay_out(&mut app, 66, 7);
+    support::press(&mut app, KeyCode::Down);
+    let dump = support::render(&mut app, 66, 7);
+    let focused = app.settings().expect("the settings").focus();
+    let rows = app.settings().expect("the settings").rows();
+    let name = rows[focused.min(rows.len() - 1)].name;
+    assert!(
+        support::text_block(&dump).contains(name),
+        "the entry the keys are on is not on screen: {name}\n{dump}"
     );
-    // And they really are a column away from the names, not level with them.
-    assert!(at("a line too long") > at("Blame"), "{dump}");
 }
 
-/// A tree can carry settings of its own, and they win where they say
-/// anything.
+/// A tree can carry settings of its own/// A tree can carry settings of its
+/// own, and they win where they say anything.
 ///
 /// Which is what a project is for: everybody reading this repository gets
 /// its wrapped lines, whatever they have set for themselves elsewhere.
