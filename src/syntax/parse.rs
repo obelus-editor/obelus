@@ -173,3 +173,57 @@ const fn point(place: Place) -> Point {
         column: place.column,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Text, edit_between, input_edit};
+
+    /// What tree-sitter is handed, rather than what the edit says.
+    ///
+    /// The two are one renaming apart, and a renaming is exactly the kind of
+    /// thing that can be got wrong without anything else noticing: a tree
+    /// built on a column that counted characters parses cleanly and points at
+    /// the wrong bytes. Asserted here rather than on the `Edit` because the
+    /// `Edit` is not what the parser reads.
+    #[test]
+    fn the_parser_is_handed_byte_columns() {
+        // `let s = "` is nine bytes and nine characters; the two glyphs after
+        // it are six bytes and two characters. Only one of those numbers is
+        // the answer, and on ASCII they would be the same number.
+        let before = Text::from_string("let s = \"\u{4f60}\u{597d}\";\n");
+        let after = Text::from_string("let s = \"\u{4f60}\u{597d}\u{4e16}\u{754c}\";\n");
+        let edit = input_edit(&edit_between(&before, &after).expect("an edit"));
+
+        assert_eq!(edit.start_byte, 15);
+        // The two ends, which are a pair it is easy to hand over the wrong
+        // way round: nothing was taken out, so the old end is the start, and
+        // the new end is six bytes past it.
+        assert_eq!(edit.old_end_byte, 15, "the old end is not where it was");
+        assert_eq!(edit.new_end_byte, 21, "the new end is not where it is");
+        assert_eq!(
+            edit.start_position.column, 15,
+            "the parser was handed a character column"
+        );
+        assert_eq!(edit.start_position.row, 0);
+        assert_eq!(edit.old_end_position.column, 15);
+        assert_eq!(
+            edit.new_end_position.column, 21,
+            "the replacement is two glyphs longer, which is six bytes"
+        );
+    }
+
+    /// A place on a later row, where a row and a column can be swapped
+    /// without the numbers looking wrong.
+    #[test]
+    fn a_row_and_a_column_are_not_interchangeable() {
+        let before = Text::from_string("one\ntwo\nthree\n");
+        let after = Text::from_string("one\ntwo\nthr!ee\n");
+        let edit = input_edit(&edit_between(&before, &after).expect("an edit"));
+
+        assert_eq!(edit.start_position.row, 2, "the row is not the row");
+        assert_eq!(
+            edit.start_position.column, 3,
+            "the column is not the column"
+        );
+    }
+}
