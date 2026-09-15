@@ -745,6 +745,44 @@ pub fn drop_from_left(contents: &str, cells: usize) -> usize {
     total - kept
 }
 
+/// How many trailing characters to drop so the rest of `contents` fits in
+/// `cells`, with one cell left for the ellipsis that marks the cut.
+///
+/// The mirror of [`drop_from_left`], for a sentence rather than a name. A
+/// name is told from its fellows at the end -- the file, the last component
+/// of a symbol -- and a sentence at the beginning: a commit subject cut to
+/// its last few words has lost the half that said which commit it was.
+///
+/// Measured in cells for the same reason, which matters more here: a subject
+/// written in Chinese is one character to two columns, and counting
+/// characters would cut it at half the row.
+///
+/// Zero when it already fits. Everything when there is no room even for the
+/// ellipsis, so the caller can draw nothing rather than a lone `…`.
+#[must_use]
+pub fn drop_from_right(contents: &str, cells: usize) -> usize {
+    if text_width(contents) <= cells {
+        return 0;
+    }
+    let total = contents.chars().count();
+    if cells <= 1 {
+        return total;
+    }
+
+    let budget = cells - 1;
+    let mut kept = 0usize;
+    let mut width = 0usize;
+    for character in contents.chars() {
+        let character_width = character.width().unwrap_or(0);
+        if width + character_width > budget {
+            break;
+        }
+        width += character_width;
+        kept += 1;
+    }
+    total - kept
+}
+
 /// `contents` with its head replaced by an ellipsis if it does not fit.
 #[must_use]
 pub fn truncate_from_left(contents: &str, cells: usize) -> String {
@@ -763,7 +801,7 @@ pub fn truncate_from_left(contents: &str, cells: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{drop_from_left, truncate_from_left};
+    use super::{drop_from_left, drop_from_right, truncate_from_left};
 
     #[test]
     fn a_path_that_fits_is_left_alone() {
@@ -818,5 +856,70 @@ mod tests {
     fn nothing_fits_in_one_cell() {
         assert_eq!(drop_from_left("src/app.rs", 1), 10);
         assert_eq!(truncate_from_left("src/app.rs", 1), "");
+        assert_eq!(drop_from_right("src/app.rs", 1), 10);
+    }
+
+    /// A sentence keeps its beginning, which is the half that says which
+    /// sentence it is.
+    #[test]
+    fn a_sentence_that_fits_is_left_alone() {
+        assert_eq!(drop_from_right("Let a page reach the end", 30), 0);
+    }
+
+    /// One cell of what fits goes to the mark, the way it does from the left.
+    #[test]
+    fn the_beginning_survives_the_cut() {
+        let subject = "Stop and ask, instead of counting presses";
+        let dropped = drop_from_right(subject, 12);
+        let kept: String = subject
+            .chars()
+            .take(subject.chars().count() - dropped)
+            .collect();
+        assert_eq!(kept, "Stop and as");
+        assert_eq!(super::text_width(&kept) + 1, 12);
+    }
+
+    /// Cells here too, and it matters more: a subject written in Chinese is
+    /// one character to two columns, so counting characters would cut it at
+    /// half the row it was given.
+    #[test]
+    fn a_wide_sentence_is_counted_by_the_cells_it_takes() {
+        let subject = "\u{4fee}\u{590d}\u{4e00}\u{4e2a}\u{95ee}\u{9898}";
+        let dropped = drop_from_right(subject, 7);
+        let kept: String = subject
+            .chars()
+            .take(subject.chars().count() - dropped)
+            .collect();
+        // Six cells for three glyphs, and the seventh for the mark.
+        assert_eq!(kept, "\u{4fee}\u{590d}\u{4e00}");
+        assert_eq!(super::text_width(&kept), 6);
+    }
+
+    /// The same property the other direction has to hold: what is kept, plus
+    /// the cell the mark takes, fits in the room it was given.
+    #[test]
+    fn what_is_kept_from_the_left_never_exceeds_the_room() {
+        let samples = [
+            "Stop and ask, instead of counting presses",
+            "\u{4fee}\u{590d}\u{4e00}\u{4e2a}\u{95ee}\u{9898}",
+            "mixed \u{4e2d}\u{6587} and latin",
+            "\tindented",
+            "",
+        ];
+        for contents in samples {
+            let total = contents.chars().count();
+            for cells in 0..40usize {
+                let dropped = drop_from_right(contents, cells);
+                if dropped >= total {
+                    continue;
+                }
+                let kept: String = contents.chars().take(total - dropped).collect();
+                let width = super::text_width(&kept) + usize::from(dropped > 0);
+                assert!(
+                    width <= cells,
+                    "{contents:?} at {cells} cells kept {width} cells' worth"
+                );
+            }
+        }
     }
 }

@@ -2201,6 +2201,55 @@ fn a_commit_opens_its_files_under_it() {
     );
 }
 
+/// A subject too long for the row says so. Running out of row looks exactly
+/// like a subject that ends there, and a reader cannot tell a commit called
+/// "Stop and ask" from one called "Stop and ask, instead of counting
+/// presses" if the row is narrow enough.
+#[test]
+fn a_subject_too_long_for_the_row_ends_in_an_ellipsis() {
+    use obelus::{app::App, buffer::Buffer};
+
+    let subject = "Take the whole of a very long summary of what this commit did";
+    let repository = Repository::new("history-elide", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit_all(subject);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 16);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+
+    let dump = support::render(&mut app, 60, 16);
+    let text = support::text_block(&dump);
+    let row = text
+        .lines()
+        .find(|line| line.contains("Take the whole"))
+        .unwrap_or_else(|| panic!("the commit is not on screen:\n{text}"));
+
+    assert!(
+        !row.contains(subject),
+        "the row is wide enough to hold it all, so this proves nothing:\n{row}"
+    );
+    assert!(
+        row.contains('\u{2026}'),
+        "the subject was cut without saying so:\n{row}"
+    );
+
+    // And what is kept is the *beginning* of the subject, up to the mark: a
+    // sentence cut from the front would have lost the half that says which
+    // commit this is.
+    let from = row.find("Take").expect("the subject");
+    let cut = row.find('\u{2026}').expect("the mark");
+    let kept = &row[from..cut];
+    assert!(
+        subject.starts_with(kept),
+        "what was kept is not the beginning of the subject: {kept:?}"
+    );
+    assert!(kept.len() > 10, "almost nothing survived the cut: {kept:?}");
+}
+
 /// The arrow that says a commit has files behind it is the arrow the gutter
 /// and the transcript draw, and it recedes there. A mark is coloured by what
 /// it says, and this one says "there is more here", not "look at this".
@@ -2285,6 +2334,9 @@ fn a_file_of_a_commit_opens_as_that_commit_had_it() {
 /// sentence is the other way round: "Fold away the block the cursor is in"
 /// cut to "…the block the cursor is in" has lost the half that says which
 /// commit this is.
+///
+/// Which end the mark is on, then. That there *is* one is
+/// `a_subject_too_long_for_the_row_ends_in_an_ellipsis`.
 #[test]
 fn a_subject_is_cut_at_its_end() {
     use obelus::{app::App, buffer::Buffer};
@@ -2305,8 +2357,12 @@ fn a_subject_is_cut_at_its_end() {
         .lines()
         .find(|row| row.contains("Give the third"))
         .expect("the commit's row");
+    // Nothing before the subject's first words, which is where the mark
+    // would be if this row were cut the way a path is. Not "no mark
+    // anywhere" -- there is one now, on the other end, which is the point.
+    let head = row.find("Give the third").expect("the subject's opening");
     assert!(
-        !row.contains('\u{2026}'),
+        !row[..head].contains('\u{2026}'),
         "the subject was cut at its head:\n{row}"
     );
     assert!(

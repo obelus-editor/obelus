@@ -11,7 +11,9 @@ use crate::{
     component::picker::{Marking, Picker, PickerItem, PickerLayout},
     git::FileStatus,
     theme::Theme,
-    ui::{Marked, Matched, drop_from_left, editor::SCROLLBAR_WIDTH, fill, text_width},
+    ui::{
+        Marked, Matched, drop_from_left, drop_from_right, editor::SCROLLBAR_WIDTH, fill, text_width,
+    },
 };
 
 /// How many rows of the list a reader gets to walk.
@@ -445,26 +447,46 @@ impl PickerView<'_> {
         // A path too long for the row loses its head, not its tail: the file
         // name is the part being looked for, and the directories above it
         // are the part already known. A sentence is the other way round and
-        // says so, and loses its end -- which `at` does by simply running
-        // out of row.
+        // loses its end, where the words it can spare are.
+        //
+        // Either way the cut is marked. It used to be that a sentence simply
+        // ran out of row, which a reader cannot tell from a sentence that
+        // ends there: a commit subject stopping mid-word reads as a subject
+        // whose author stopped mid-word.
         let room = usize::from(limit.saturating_sub(column));
-        let dropped = match item.prose {
-            true => 0,
-            false => drop_from_left(&item.label, room),
+        let total = item.label.chars().count();
+        let (dropped, elided) = match item.prose {
+            true => (0, drop_from_right(&item.label, room)),
+            false => (drop_from_left(&item.label, room), 0),
         };
-        if dropped >= item.label.chars().count() {
+        if dropped >= total || elided >= total {
             // Not even room for the ellipsis.
             return;
         }
         if dropped > 0 {
             column = at(cells, inner, column, y, "\u{2026}", style, &Marked::plain());
         }
+        // Cut before it is written rather than left to run off the edge, so
+        // there is a column for the mark. The characters kept are the ones
+        // the label started with, so the matched indices and the syntax runs
+        // -- which count from the front -- still land where they belong.
+        let shown = match elided {
+            0 => item.label.as_str(),
+            _ => {
+                let end = item
+                    .label
+                    .char_indices()
+                    .nth(total - elided)
+                    .map_or(item.label.len(), |(index, _)| index);
+                &item.label[..end]
+            }
+        };
         column = at(
             cells,
             inner,
             column,
             y,
-            &item.label,
+            shown,
             label_style,
             &Marked {
                 matched: Matched::Indices(matched),
@@ -477,6 +499,12 @@ impl PickerView<'_> {
                 skip: dropped,
             },
         );
+        // In the row's own style and not the label's: the mark says the row
+        // ran out of room, which is a fact about the row and not part of
+        // what it says. The same reason the one in front of a path is.
+        if elided > 0 {
+            column = at(cells, inner, column, y, "\u{2026}", style, &Marked::plain());
+        }
 
         let dim = style.fg(self.theme.gutter);
         if let Some(detail) = &item.detail {
