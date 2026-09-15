@@ -16,13 +16,17 @@
 //! choosing a language would be a one-way door onto a fraction of the files,
 //! since the tab beside it is the page a reader just left.
 
-use std::path::PathBuf;
+use std::{
+    collections::{BTreeMap, HashSet},
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
     component::window::{Move, Window, Wrap},
-    counts::{Counted, Tally},
+    counts::{Counted, File, Tally},
 };
 
 /// Which page is showing.
@@ -43,6 +47,12 @@ pub enum Go {
     Language(&'static str),
     /// Open this file.
     File(PathBuf),
+    /// Show what this directory holds, or stop showing it.
+    ///
+    /// Somewhere to go like the others: a directory is a row a reader presses
+    /// a key on and something happens, which is the rule this pagefollows
+    /// for what may hold the selection.
+    Fold(PathBuf),
 }
 
 /// One row of either page.
@@ -58,6 +68,15 @@ pub struct Row {
     pub name: String,
     /// How far the row is indented, in levels.
     pub depth: u16,
+    /// Whether it is showing what it holds, for a row that holds anything.
+    ///
+    /// `None` for a row that is not a directory. Drawn where a file's glyph
+    /// goes, rather than beside one: the branch in front of the row already
+    /// says what it hangs under, and a folder glyph next to an arrow that
+    /// opens it would be the third thing on one row saying the same thing.
+    /// It is also the half that survives a reader with no Nerd Font, which
+    /// is the half that has to.
+    pub open: Option<bool>,
     /// How many files the row counts, where that is a question about it.
     /// A file row has no answer to it, which is not the same as one.
     pub files: Option<usize>,
@@ -98,6 +117,144 @@ pub struct Counts {
     /// Which row is selected and which is on top -- the window every list
     /// here has, for the reason every list here has it.
     window: Window,
+    /// The directories showing what they hold, by their path in the tree.
+    ///
+    /// What is open rather than what is closed, so the page opens at its top
+    /// level with nothing walked into: a set that started full would have to
+    /// be built from a walk before the first frame, and a project is mostly
+    /// directories a reader is not asking about.
+    ///
+    /// By path rather than by row, because the rows are rebuilt whenever
+    /// anything changes and a row's number is not a name for anything.
+    opened: HashSet<PathBuf>,
+}
+
+/// A directory while the rows are being built: what is under it, and what it
+/// all adds up to.
+///
+/// The counts arrive as a flat list of paths, which is the shape tokei
+/// answers in and the shape the page showed until it grew a tree. Building
+/// this each time the rows are is cheap beside the walk that produced them,
+/// and it means there is one copy of the truth rather than a tree kept in
+/// step with a list.
+#[derive(Debug, Default)]
+struct Node {
+    /// What it holds, by name. Sorted by name here and by size on the way
+    /// out: a `BTreeMap` is how two files of the same name in two places
+    /// stay apart, not how the reader will see them.
+    directories: BTreeMap<OsString, Node>,
+    /// The files directly in it, as name, glyph and lines.
+    files: Vec<(OsString, PathBuf, Tally)>,
+    /// Everything under it, however deep.
+    tally: Tally,
+    /// And how many files that is.
+    count: usize,
+}
+
+impl Node {
+    /// The tree these files make.
+    fn of<'a>(files: impl Iterator<Item = &'a File>) -> Self {
+        let mut root = Self::default();
+        for file in files {
+            root.add(file);
+        }
+        root
+    }
+
+    /// Puts one file in, adding its lines to every directory above it.
+    fn add(&mut self, file: &File) {
+        let mut here = &mut *self;
+        here.tally.add(file.tally);
+        here.count += 1;
+        let mut walked = PathBuf::new();
+        let components: Vec<_> = file.path.components().collect();
+        let Some((name, directories)) = components.split_last() else {
+            return;
+        };
+        for directory in directories {
+            walked.push(directory);
+            here = here
+                .directories
+                .entry(directory.as_os_str().to_os_string())
+                .or_default();
+            here.tally.add(file.tally);
+            here.count += 1;
+        }
+        here.files.push((
+            name.as_os_str().to_os_string(),
+            file.path.clone(),
+            file.tally,
+        ));
+    }
+
+    /// Lays the tree out as rows, deepest-first where a directory is open.
+    ///
+    /// Siblings biggest first, directories and files together. The page asks
+    /// how much code is where, not what kind of thing each row is, and
+    /// putting the directories above the files would be sorting by kind
+    /// before sorting by the thing being asked about.
+    fn rows_into(&self, rows: &mut Vec<Row>, at: &Path, depth: u16, opened: &HashSet<PathBuf>) {
+        enum Child<'a> {
+            Directory(&'a OsString, &'a Node),
+            File(&'a OsString, &'a PathBuf, Tally),
+        }
+        let mut children: Vec<(usize, Child<'_>)> = Vec::new();
+        for (name, node) in &self.directories {
+            children.push((node.tally.lines(), Child::Directory(name, node)));
+        }
+        for (name, path, tally) in &self.files {
+            children.push((tally.lines(), Child::File(name, path, *tally)));
+        }
+        // By size, and by name where two are the same size, so a list of
+        // empty files is in an order a reader can predict rather than in
+        // whatever order the walk happened to find them.
+        children.sort_by(|left, right| {
+            right
+                .0
+                .cmp(&left.0)
+                .then_with(|| match (&left.1, &right.1) {
+                    (
+                        Child::Directory(left, _) | Child::File(left, _, _),
+                        Child::Directory(right, _) | Child::File(right, _, _),
+                    ) => left.cmp(right),
+                })
+        });
+
+        for (_, child) in children {
+            match child {
+                Child::Directory(name, node) => {
+                    let path = at.join(name);
+                    let open = opened.contains(&path);
+                    rows.push(Row {
+                        // No glyph: the arrow is in this column, and it says
+                        // both that the row holds something and whether it
+                        // is showing it.
+                        icon: None,
+                        name: name.to_string_lossy().into_owned(),
+                        depth,
+                        open: Some(open),
+                        files: Some(node.count),
+                        tally: node.tally,
+                        go: Some(Go::Fold(path.clone())),
+                    });
+                    if open {
+                        node.rows_into(rows, &path, depth + 1, opened);
+                    }
+                }
+                Child::File(name, path, tally) => rows.push(Row {
+                    icon: crate::icons::enabled().then(|| crate::icons::for_path(path)),
+                    name: name.to_string_lossy().into_owned(),
+                    depth,
+                    open: None,
+                    // A file is one file, which is not an answer to "how
+                    // many are in here" so much as a restatement of the row.
+                    files: None,
+                    tally,
+                    go: Some(Go::File(path.clone())),
+                }),
+            }
+        }
+    }
 }
 
 impl Default for Counts {
@@ -109,13 +266,14 @@ impl Default for Counts {
 impl Counts {
     /// Opens the view with nothing in it yet.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             counted: None,
             page: Page::Languages,
             only: None,
             rows: Vec::new(),
             window: Window::new(),
+            opened: HashSet::new(),
         }
     }
 
@@ -205,6 +363,7 @@ impl Counts {
                         // it sits in that column and is read down it.
                         name: "All".to_string(),
                         depth: 0,
+                        open: None,
                         files: Some(counted.files.len()),
                         tally: counted.total,
                         go: Some(Go::Everything),
@@ -216,6 +375,7 @@ impl Counts {
                             }),
                             name: language.name.to_string(),
                             depth: 1,
+                            open: None,
                             files: Some(language.files),
                             tally: language.tally,
                             go: Some(Go::Language(language.name)),
@@ -229,6 +389,7 @@ impl Counts {
                                 icon: None,
                                 name: child.name.to_string(),
                                 depth: 2,
+                                open: None,
                                 files: Some(child.files),
                                 tally: child.tally,
                                 go: None,
@@ -237,20 +398,17 @@ impl Counts {
                     }
                 }
                 Page::Files => {
-                    for file in &counted.files {
-                        if self.only.is_some_and(|only| only != file.language) {
-                            continue;
-                        }
-                        rows.push(Row {
-                            icon: crate::icons::enabled()
-                                .then(|| crate::icons::for_path(&file.path)),
-                            name: file.path.display().to_string(),
-                            depth: 0,
-                            files: None,
-                            tally: file.tally,
-                            go: Some(Go::File(file.path.clone())),
-                        });
-                    }
+                    // A tree rather than a list of whole paths: a project is
+                    // written in directories, and the question this page
+                    // asks -- where is the code -- is mostly a question
+                    // about them.
+                    let tree = Node::of(
+                        counted
+                            .files
+                            .iter()
+                            .filter(|file| self.only.is_none_or(|only| only == file.language)),
+                    );
+                    tree.rows_into(&mut rows, &PathBuf::new(), 0, &self.opened);
                 }
             }
         }
@@ -261,6 +419,31 @@ impl Counts {
         // the first row: a view that opened with the selection on a row
         // enter does nothing to would be teaching the wrong thing about it.
         self.window.set_focus(self.choosable(0, true).unwrap_or(0));
+    }
+
+    /// Shows what a directory holds, or stops showing it.
+    ///
+    /// The selection stays on the directory rather than on whichever row
+    /// happens to land under it: it is the row the key was pressed on, and
+    /// folding one closed while the cursor was inside has nowhere else to
+    /// put it -- there is nowhere inside to stand.
+    fn fold(&mut self, path: &Path) {
+        if !self.opened.remove(path) {
+            self.opened.insert(path.to_path_buf());
+        }
+        let on = self
+            .rows
+            .get(self.window.focus())
+            .map(|row| row.name.clone());
+        self.rebuild();
+        if let Some(name) = on
+            && let Some(at) = self
+                .rows
+                .iter()
+                .position(|row| row.go == Some(Go::Fold(path.to_path_buf())) || row.name == name)
+        {
+            self.window.set_focus(at);
+        }
     }
 
     /// Whether the row at `at` is one enter does something to.
@@ -344,6 +527,24 @@ impl Counts {
                 self.step_page();
                 CountsOutcome::Consumed
             }
+            // The mark on the row says this: the same arrow the gutter, the
+            // transcript and a commit's files turn, and the same key that
+            // turns them. Taken here rather than left to the command table
+            // because the counts are a dialog, and obelus's own commands do
+            // not run from inside one.
+            KeyCode::Char('f') if key.modifiers == KeyModifiers::ALT => {
+                match self
+                    .rows
+                    .get(self.window.focus())
+                    .and_then(|row| row.go.clone())
+                {
+                    Some(Go::Fold(path)) => {
+                        self.fold(&path);
+                        CountsOutcome::Consumed
+                    }
+                    _ => CountsOutcome::Ignored,
+                }
+            }
             KeyCode::Enter if bare => {
                 match self
                     .rows
@@ -351,6 +552,10 @@ impl Counts {
                     .and_then(|row| row.go.clone())
                 {
                     Some(Go::File(path)) => CountsOutcome::Open(path),
+                    Some(Go::Fold(path)) => {
+                        self.fold(&path);
+                        CountsOutcome::Consumed
+                    }
                     Some(go @ (Go::Everything | Go::Language(_))) => {
                         self.only = match go {
                             Go::Language(name) => Some(name),
@@ -530,7 +735,10 @@ mod tests {
 
         counts.handle_key(&press(KeyCode::Enter), 10);
         assert_eq!(counts.page(), Page::Files);
-        assert_eq!(counts.rows().len(), 3, "not every file came back");
+        // The top of the tree: `src`, holding two, and the lone `Cargo.toml`.
+        assert_eq!(counts.rows().len(), 2, "not the top of the tree");
+        assert_eq!(counts.rows()[0].name, "src");
+        assert_eq!(counts.rows()[0].files, Some(2), "the directory miscounts");
         assert_eq!(counts.tabs()[1], "files", "the tab claims a language");
     }
 
@@ -548,12 +756,14 @@ mod tests {
         counts.handle_key(&press(KeyCode::Down), 10);
         counts.handle_key(&press(KeyCode::Enter), 10);
         assert_eq!(counts.page(), Page::Files);
+        // Only Rust, so `Cargo.toml` is gone and `src` holds what is left.
         assert_eq!(
             counts.rows().len(),
-            2,
+            1,
             "a language's files were not filtered to it"
         );
-        assert!(counts.rows().iter().all(|row| row.name.ends_with(".rs")));
+        assert_eq!(counts.rows()[0].name, "src");
+        assert_eq!(counts.rows()[0].files, Some(2));
         assert_eq!(
             counts.tabs()[1],
             "rust",
@@ -563,7 +773,8 @@ mod tests {
         // And walking to the files tab is the other way back to all of them.
         counts.handle_key(&press(KeyCode::Left), 10);
         counts.handle_key(&press(KeyCode::Right), 10);
-        assert_eq!(counts.rows().len(), 3, "walking kept the narrowing");
+        // `Cargo.toml` is back beside `src`, so the narrowing is gone.
+        assert_eq!(counts.rows().len(), 2, "walking kept the narrowing");
         assert_eq!(counts.tabs()[1], "files");
 
         // Escape gives up on the language first, not on the whole view.
@@ -615,12 +826,64 @@ mod tests {
         // the whole list.
         counts.handle_key(&press(KeyCode::Right), 10);
         assert_eq!(counts.page(), Page::Files);
-        assert_eq!(counts.rows().len(), 3, "the tab was reached narrowed");
+        assert_eq!(counts.rows().len(), 2, "the tab was reached narrowed");
 
+        // Enter on the directory opens it rather than a file, which is the
+        // other half of this: the selection stays where the key was pressed.
+        match counts.handle_key(&press(KeyCode::Enter), 10) {
+            CountsOutcome::Consumed => {}
+            outcome => panic!("enter on a directory answered {outcome:?}"),
+        }
+        assert_eq!(counts.rows()[counts.window().focus()].name, "src");
+        assert_eq!(counts.rows().len(), 4, "the directory did not open");
+
+        counts.handle_key(&press(KeyCode::Down), 10);
         match counts.handle_key(&press(KeyCode::Enter), 10) {
             CountsOutcome::Open(path) => assert_eq!(path, Path::new("src/main.rs")),
             outcome => panic!("enter on a file answered {outcome:?}"),
         }
+    }
+
+    /// A directory folds, and the same key folds it back.
+    ///
+    /// Broken deliberately by having `fold` always insert: the second press
+    /// did nothing and the row count never came back down.
+    #[test]
+    fn a_directory_opens_and_closes_on_the_same_key() {
+        let mut counts = Counts::new();
+        counts.show(counted());
+        counts.handle_key(&press(KeyCode::Right), 10);
+
+        let shut = counts.rows().len();
+        assert_eq!(counts.rows()[0].open, Some(false), "it opened opened");
+        assert!(counts.rows()[1].open.is_none(), "a file says it folds");
+
+        counts.handle_key(&press(KeyCode::Enter), 10);
+        assert_eq!(counts.rows()[0].open, Some(true));
+        assert_eq!(counts.rows().len(), shut + 2, "not its two files");
+        assert_eq!(counts.rows()[1].depth, 1, "its files are not indented");
+
+        // `alt+f` is the same act, and the mark on the row says so.
+        counts.handle_key(&KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT), 10);
+        assert_eq!(counts.rows()[0].open, Some(false));
+        assert_eq!(counts.rows().len(), shut, "it would not fold back");
+    }
+
+    /// Siblings are ordered by what the page is about, biggest first, with
+    /// directories and files in one ordering rather than two.
+    #[test]
+    fn a_directory_sits_among_the_files_by_size() {
+        let mut counts = Counts::new();
+        counts.show(counted());
+        counts.handle_key(&press(KeyCode::Right), 10);
+
+        // `src` holds a hundred lines and `Cargo.toml` five.
+        let names: Vec<&str> = counts.rows().iter().map(|row| row.name.as_str()).collect();
+        assert_eq!(names, ["src", "Cargo.toml"]);
+
+        counts.handle_key(&press(KeyCode::Enter), 10);
+        let names: Vec<&str> = counts.rows().iter().map(|row| row.name.as_str()).collect();
+        assert_eq!(names, ["src", "main.rs", "lib.rs", "Cargo.toml"]);
     }
 
     /// A key the view does not know is left for the key table.

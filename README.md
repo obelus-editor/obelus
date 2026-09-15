@@ -26,11 +26,13 @@ ob                  # or nothing, and pick one from the welcome screen
   terminal font, and is the first thing here that will want a config file.
 - Two built-in themes, `dark` and `light`, switched without a reparse
 - **How much code is here.** `count-lines` counts the tree with tokei and
-  puts it in two pages: the languages, biggest first, with a bar against the
-  biggest of them and the prose that is written *inside* each one on a row of
-  its own — 90 of this repository's Rust files carry 7,000 lines of Markdown
-  — and the files, where `enter` opens the one under the cursor. The first
-  row is the whole tree, and choosing a language leaves only its files.
+  puts it in two pages: the languages, biggest first, with the prose that is
+  written *inside* each one on a row of its own — 90 of this repository's
+  Rust files carry 7,000 lines of Markdown — and the files, as a tree of
+  directories that folds. `enter` opens a directory or reads a file, `alt+f`
+  does the folding, and siblings are ordered by size whichever they are. The
+  first row of the languages is the whole tree, and choosing a language
+  leaves only its files.
 
 Long lines wrap on word boundaries, using the Unicode line breaking algorithm
 — so Chinese, which has no spaces, breaks between characters, and an English

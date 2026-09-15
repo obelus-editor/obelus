@@ -2,10 +2,10 @@ screen 76x24  editor 76x22  status 76x1
 -- text --
  0|  languages  files                                                      ← → 
  1|────────────────────────────────────────────────────────────────────────────
- 2|                                                      code comments  blank  
- 3|  src/app/mod.rs           ██████████████████████     742     192      60  
- 4|  src/log.rs               ██████████████████         749      23      23  
- 5|  Cargo.toml               ████                        63      76      12  
+ 2|                                     files   lines    code comments  blank  
+ 3| ▸ src                                   2    1789    1491     215      83  
+ 4|  Cargo.toml                                  151      63      76      12  
+ 5|                                                                            
  6|                                                                            
  7|                                                                            
  8|                                                                            
@@ -27,10 +27,10 @@ screen 76x24  editor 76x22  status 76x1
 -- style --
  0|aaaaaaaaaaaabbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|ccccccccccccccccccccccccccccccccccccccccccccccccccccccddddcddddddddccdddddcc
- 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbc
- 4|ccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccc
- 5|ccccccccccccccccccccccccccccaaaacccccccccccccccccccccccccccccccccccccccccccc
+ 2|cccccccccccccccccccccccccccccccccccccdddddcccdddddccccddddcddddddddccdddddcc
+ 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbc
+ 4|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
@@ -54,6 +54,5 @@ a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
 c fg=#e4e4e7 bg=#18181b
 d fg=#71717a bg=#18181b
-e fg=#52525b bg=#27272a
 -- cursor --
 none

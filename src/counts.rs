@@ -46,7 +46,7 @@ impl Tally {
     }
 
     /// Adds another tally into this one.
-    fn add(&mut self, other: Self) {
+    pub fn add(&mut self, other: Self) {
         self.code += other.code;
         self.comments += other.comments;
         self.blanks += other.blanks;

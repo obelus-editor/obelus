@@ -138,6 +138,11 @@ fn many_files(width: u16, height: u16) -> App {
 #[test]
 fn a_list_longer_than_the_screen_gets_a_scrollbar() {
     let mut app = many_files(76, 14);
+    // Down into `src/module`, which is where the forty of them are: a tree
+    // that opens closed has one row on it, and one row does not scroll.
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
     let dump = support::render(&mut app, 76, 14);
     assert!(
         support::text_block(&dump).contains('\u{2588}'),
@@ -261,12 +266,19 @@ fn choosing_a_language_leaves_its_own_files() {
 
     assert!(text.contains("rust"), "the tab did not say rust:\n{dump}");
     assert!(
-        text.contains("src/log.rs"),
-        "a Rust file is missing:\n{dump}"
-    );
-    assert!(
         !text.contains("Cargo.toml"),
         "a file of another language stayed:\n{dump}"
+    );
+
+    // And the files themselves are a directory down, named by what they are
+    // called rather than by the whole path to them.
+    press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, 76, 24);
+    let text = support::text_block(&dump);
+    assert!(text.contains("log.rs"), "a Rust file is missing:\n{dump}");
+    assert!(
+        !text.contains("src/log.rs"),
+        "a row still carries the whole path:\n{dump}"
     );
 }
 
@@ -328,6 +340,12 @@ fn enter_on_a_file_opens_it() {
     })));
 
     press(&mut app, KeyCode::Right);
+    // `tests`, then `fixtures`, then the file: enter opens a directory and
+    // stays on it, so the way down is a step and a press at each level.
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Enter);
 
     assert!(app.counts().is_none(), "the view stayed over the file");

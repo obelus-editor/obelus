@@ -2,12 +2,12 @@ screen 76x24  editor 76x22  status 76x1
 -- text --
  0|  languages  files                                                      ← → 
  1|────────────────────────────────────────────────────────────────────────────
- 2|                                             files    code comments  blank  
- 3| 󰉋 All                                           3   31564    4765    3215  
- 4| ├  Rust             ██████████████████████    94   31501    3638    3203  
- 5| │ ╰   Markdown                                 90       0    7036    1044  
- 6| ├  Plain Text       █                         23       0    1051       0  
- 7| ╰  TOML             █                          2      63      76      12  
+ 2|                                     files   lines    code comments  blank  
+ 3| 󰉋 All                                   3   39544   31564    4765    3215  
+ 4| ├  Rust                               94   38342   31501    3638    3203  
+ 5| │ ╰   Markdown                         90    8080       0    7036    1044  
+ 6| ├  Plain Text                         23    1051       0    1051       0  
+ 7| ╰  TOML                                2     151      63      76      12  
  8|                                                                            
  9|                                                                            
 10|                                                                            
@@ -27,12 +27,12 @@ screen 76x24  editor 76x22  status 76x1
 -- style --
  0|abbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|cccccccccccccccccccccccccccccccccccccccccccccdddddccccddddcddddddddccdddddcc
+ 2|cccccccccccccccccccccccccccccccccccccdddddcccdddddccccddddcddddddddccdddddcc
  3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbc
- 4|caccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccccc
- 5|cacacccddddddddcccccccccccccccccccccccccccccccccddcccccccdccccddddccccddddcc
- 6|caccccccccccccccccccccaccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 7|caccccccccccccccccccccaccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 4|cacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 5|cacacccddddddddcccccccccccccccccccccccccddccccddddcccccccdccccddddccccddddcc
+ 6|cacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 7|cacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc

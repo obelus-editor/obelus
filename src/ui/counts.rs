@@ -1,21 +1,28 @@
 //! The line counts, drawn.
 //!
-//! A tab row, a rule, a column of names with a bar against the biggest of
-//! them, the numbers in fixed columns on the right, and the whole tree's
-//! total under a rule at the foot. The bar is drawn in ink rather than as a
-//! row's background: a background here means one thing only, which is that
-//! the keys are going to that row.
+//! A tab row, a rule, a column of names, and the numbers in fixed columns on
+//! the right.
+//!
+//! There was a share bar beside each name, drawn against the biggest row.
+//! The files page is a tree now, and a bar in a tree has no honest scale: the
+//! biggest row is a top directory, against which every file is a single cell,
+//! and a bar scoped to a row's siblings means a different thing at every
+//! level. What it encoded was `Tally::lines`, so that is a column instead,
+//! and the twenty-two cells it took go back to the names -- which is what a
+//! tree of directories wants most.
 //!
 //! The columns are fixed so they line up down the screen, and they are given
 //! up from the right as the terminal narrows -- the blanks first, then the
-//! comments, then the bar. What is never given up is the name and the code
-//! column, which is the answer to the question the view was opened to ask.
+//! comments, then the code. What is never given up is the name, the file
+//! count and the lines: a directory's lines are the only total it can
+//! honestly carry, and the one the rows are ordered by. Its `code` reads
+//! zero for a directory of Markdown that is plainly not empty.
 
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
 use crate::{
     app::App,
-    component::counts::{Counts, Go, Row},
+    component::counts::{Counts, Row},
     counts::Tally,
     theme::Theme,
     ui::{editor::SCROLLBAR_WIDTH, fill, put, rule, text_width, write},
@@ -32,12 +39,7 @@ const FILES_WIDTH: u16 = 6;
 const NUMBER_WIDTH: u16 = 8;
 /// The gap between the name and whatever is right of it.
 const GAP: u16 = 2;
-/// How wide the share bar is allowed to get.
-///
-/// Wide enough to read proportions off and no wider: past this it stops
-/// being a bar beside a name and becomes the row.
-const BAR_WIDTH: u16 = 22;
-/// How much room the names need before the bar is worth drawing at all.
+/// How much room the names are never squeezed below.
 const LEAST_NAME: u16 = 16;
 /// The rows that are not the list: the tabs, the rule under them, and the
 /// row of column names.
@@ -79,13 +81,14 @@ pub fn list_height(area: Rect) -> u16 {
 /// cannot disagree about where a column starts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Columns {
-    /// How wide the bar is, or zero for a screen with no room for one.
-    pub bar: u16,
     /// Whether the column of file counts is drawn.
     ///
-    /// Asked for by the page -- the file page has no use for it -- and
-    /// refused by a screen too narrow to hold it.
+    /// Refused by a screen too narrow to hold it. Both pages have one now:
+    /// the files page grew directories, and how many files are under one is
+    /// a question about it.
     pub files: bool,
+    /// Whether the code column is drawn.
+    pub code: bool,
     /// Whether the comments column is drawn.
     pub comments: bool,
     /// And the blanks.
@@ -103,24 +106,26 @@ impl Columns {
     pub fn fit(width: u16, files: bool) -> Self {
         let room = width.saturating_sub(SCROLLBAR_WIDTH);
         // Given up from the right, least interesting first: the blanks, then
-        // the comments, then how many files a language is in. The code
-        // column is never given up -- it is the answer to the question the
-        // view was opened to ask -- and neither is the name, which keeps its
-        // room for as long as there is any room to keep.
+        // the comments, then the code. What is left is the name, the file
+        // count and the lines -- the total every row can carry and the one
+        // they are ordered by.
         let mut columns = Self {
-            bar: 0,
             files,
+            code: true,
             comments: true,
             blanks: true,
             numbers: 0,
-            width: if files { FILES_WIDTH } else { 0 } + NUMBER_WIDTH * 3,
+            width: if files { FILES_WIDTH } else { 0 } + NUMBER_WIDTH * 4,
         };
-        if room < LEAST_NAME + columns.width {
-            columns.blanks = false;
-            columns.width -= NUMBER_WIDTH;
-        }
-        if room < LEAST_NAME + columns.width {
-            columns.comments = false;
+        for giving_up in [
+            &mut columns.blanks,
+            &mut columns.comments,
+            &mut columns.code,
+        ] {
+            if room >= LEAST_NAME + columns.width {
+                break;
+            }
+            *giving_up = false;
             columns.width -= NUMBER_WIDTH;
         }
         if room < LEAST_NAME + columns.width && columns.files {
@@ -128,9 +133,6 @@ impl Columns {
             columns.width -= FILES_WIDTH;
         }
         columns.numbers = room.saturating_sub(columns.width);
-        // And the bar out of whatever is left once the names have had their
-        // share, which on a narrow screen is nothing.
-        columns.bar = columns.numbers.saturating_sub(LEAST_NAME).min(BAR_WIDTH);
         columns
     }
 }
@@ -145,8 +147,6 @@ impl Columns {
 struct Layout {
     /// Which columns fit.
     columns: Columns,
-    /// The biggest row on the page, for the bars to be drawn against.
-    widest: usize,
 }
 
 impl Layout {
@@ -155,11 +155,14 @@ impl Layout {
     /// One list, walked by the header and by every row, so a heading cannot
     /// end up over a different column from the numbers under it.
     fn headings(self) -> Vec<(&'static str, u16)> {
-        let mut headings = Vec::with_capacity(4);
+        let mut headings = Vec::with_capacity(5);
         if self.columns.files {
             headings.push(("files", FILES_WIDTH));
         }
-        headings.push(("code", NUMBER_WIDTH));
+        headings.push(("lines", NUMBER_WIDTH));
+        if self.columns.code {
+            headings.push(("code", NUMBER_WIDTH));
+        }
         if self.columns.comments {
             headings.push(("comments", NUMBER_WIDTH));
         }
@@ -212,21 +215,10 @@ impl Widget for CountsView<'_> {
         // The languages page counts files as well as lines; the file page's
         // rows are the files, and a column of ones would be a column saying
         // the same thing on every row.
-        let files = self.counts.page() == crate::component::counts::Page::Languages;
+        // Both pages have a file count now: a language is written across so
+        // many files, and a directory holds so many.
         let layout = Layout {
-            columns: Columns::fit(area.width, files),
-            // Against the biggest *row*, and the tree's own row is not one
-            // of them: it is the sum of the rest, so measuring against it
-            // would make every bar on the page a share of a row that is
-            // always full.
-            widest: self
-                .counts
-                .rows()
-                .iter()
-                .filter(|row| !matches!(row.go, Some(Go::Everything)))
-                .map(|row| row.tally.lines())
-                .max()
-                .unwrap_or(0),
+            columns: Columns::fit(area.width, true),
         };
         // The header, on the row under the rule: the numbers in a column
         // are not self-describing the way a time or a level is, and three
@@ -361,7 +353,15 @@ impl CountsView<'_> {
         // row that skipped this column would put its name back level with
         // the names above it -- which is what the language written inside
         // another did, flush with the languages it is not one of.
-        if crate::icons::enabled() {
+        // A directory's mark goes in the glyph's column rather than beside
+        // one. The branch in front of the row already says what it hangs
+        // under and a folder glyph would say it a third time -- and this is
+        // the half that survives a reader with no Nerd Font, which is the
+        // half that has to: folding is discovered by seeing the mark.
+        if let Some(open) = row.open {
+            put(cells, x, y, crate::ui::opens(open), style);
+            x += 2;
+        } else if crate::icons::enabled() {
             if let Some(icon) = row.icon {
                 put(cells, x, y, icon, style);
             }
@@ -371,12 +371,8 @@ impl CountsView<'_> {
             x += 2;
         }
 
-        // The name, clipped where the bar or the numbers begin.
-        let edge = area.x
-            + layout
-                .columns
-                .numbers
-                .saturating_sub(layout.columns.bar + GAP);
+        // The name, clipped where the numbers begin.
+        let edge = area.x + layout.columns.numbers.saturating_sub(GAP);
         write(
             cells,
             x,
@@ -384,25 +380,6 @@ impl CountsView<'_> {
             &clipped(&row.name, usize::from(edge.saturating_sub(x))),
             style,
         );
-
-        // A bar is a share of the page, so two rows do not get one: the
-        // child, whose lines are already inside its parent's on the row
-        // above, and the tree itself, whose share is all of it.
-        let shares = matches!(row.go, Some(Go::Language(_) | Go::File(_)));
-        if layout.columns.bar > 0 && shares {
-            self.bar(
-                cells,
-                Rect {
-                    x: area.x + layout.columns.numbers - layout.columns.bar - 1,
-                    width: layout.columns.bar,
-                    y,
-                    height: 1,
-                },
-                row.tally.lines(),
-                layout.widest,
-                background,
-            );
-        }
 
         self.numbers(
             cells,
@@ -412,43 +389,11 @@ impl CountsView<'_> {
                 width: layout.columns.width,
                 height: 1,
             },
-            layout.columns.files.then_some(row.files).flatten(),
+            row.files,
             row.tally,
             layout,
             style,
         );
-    }
-
-    /// The share bar: how big this row is against the biggest one.
-    ///
-    /// In the gutter's own colour, which is what obelus draws every other
-    /// measure of "how much of this" in.
-    fn bar(
-        &self,
-        cells: &mut CellBuffer,
-        area: Rect,
-        lines: usize,
-        widest: usize,
-        background: ratatui::style::Color,
-    ) {
-        if widest == 0 || lines == 0 {
-            return;
-        }
-        // At least one cell for a row that has any lines at all: a row drawn
-        // with no bar reads as a row with nothing in it.
-        let filled = (usize::from(area.width) * lines).div_ceil(widest.max(1));
-        let filled = u16::try_from(filled)
-            .unwrap_or(area.width)
-            .clamp(1, area.width);
-        for column in 0..filled {
-            put(
-                cells,
-                area.x + column,
-                area.y,
-                '\u{2588}',
-                Style::new().fg(self.theme.gutter).bg(background),
-            );
-        }
     }
 
     /// The columns of numbers, from the left edge of the number block.
@@ -461,15 +406,31 @@ impl CountsView<'_> {
         layout: Layout,
         style: Style,
     ) {
-        let written = [
-            files.map(|files| files.to_string()),
-            Some(tally.code.to_string()),
-            layout.columns.comments.then(|| tally.comments.to_string()),
-            layout.columns.blanks.then(|| tally.blanks.to_string()),
-        ];
+        // One entry per column that is *drawn*, so this list and the headings
+        // are the same length by construction. A column the row has nothing
+        // for is a blank in that column -- a file has no answer to how many
+        // files are under it -- and not a column that closes up: closing one
+        // up would slide every number left into the heading beside it.
+        let mut written: Vec<Option<String>> = Vec::with_capacity(5);
+        if layout.columns.files {
+            written.push(files.map(|files| files.to_string()));
+        }
+        written.push(Some(tally.lines().to_string()));
+        if layout.columns.code {
+            written.push(Some(tally.code.to_string()));
+        }
+        if layout.columns.comments {
+            written.push(Some(tally.comments.to_string()));
+        }
+        if layout.columns.blanks {
+            written.push(Some(tally.blanks.to_string()));
+        }
+
         let mut x = area.x;
-        for ((_, width), contents) in layout.headings().into_iter().zip(written.iter().flatten()) {
-            right(cells, x, area.y, width, contents, style);
+        for ((_, width), contents) in layout.headings().into_iter().zip(written) {
+            if let Some(contents) = contents {
+                right(cells, x, area.y, width, &contents, style);
+            }
             x += width;
         }
     }
@@ -552,45 +513,49 @@ mod tests {
 
     /// The columns are given up from the right as the screen narrows.
     ///
-    /// Broken deliberately by dropping the three `room <` checks, so every
-    /// column was always drawn: on a narrow screen the numbers then started
-    /// four cells in, leaving a column of names with nothing in it, and the
-    /// last assertion failed.
+    /// Broken deliberately by dropping the `room <` checks, so every column
+    /// was always drawn: on a narrow screen the numbers then started four
+    /// cells in, leaving a column of names with nothing in it, and the last
+    /// assertion failed.
     #[test]
     fn a_narrow_screen_gives_up_the_least_interesting_columns_first() {
         // Wide: everything.
         let wide = Columns::fit(100, true);
-        assert!(wide.files && wide.comments && wide.blanks);
-        assert!(wide.bar > 0, "a wide screen drew no bar");
+        assert!(wide.files && wide.code && wide.comments && wide.blanks);
 
-        // Narrower: the bar is the first thing to go, and the numbers keep
-        // their columns.
-        let middling = Columns::fit(50, true);
-        assert!(middling.comments, "the comments went before the bar did");
-        assert!(middling.bar <= wide.bar);
+        // Narrower, and still every number: what a screen buys first is the
+        // names, which a tree of directories wants more than a fifth column.
+        let middling = Columns::fit(60, true);
+        assert!(middling.comments && middling.code);
 
-        // Narrow: the blanks, then the comments, then the file counts.
+        // Narrow: the blanks, then the comments, then the code, then the
+        // file counts.
         assert!(
-            !Columns::fit(34, true).blanks,
-            "the blanks survived a 34-column screen"
+            !Columns::fit(42, true).blanks,
+            "the blanks survived a 42-column screen"
         );
         assert!(
-            !Columns::fit(26, true).comments,
-            "the comments survived a 26-column screen"
+            !Columns::fit(34, true).comments,
+            "the comments survived a 34-column screen"
+        );
+        assert!(
+            !Columns::fit(26, true).code,
+            "the code column survived a 26-column screen"
         );
         assert!(
             !Columns::fit(20, true).files,
             "the file counts survived a 20-column screen"
         );
 
-        // Whatever goes, the code column stays and the names keep their room
-        // for as long as the screen has any to give them.
+        // Whatever goes, the lines column stays -- it is the total every row
+        // can carry and the one they are ordered by -- and the names keep
+        // their room for as long as the screen has any to give them.
         for width in 20..120u16 {
             let columns = Columns::fit(width, true);
             let room = width - SCROLLBAR_WIDTH;
             assert!(
                 columns.width >= NUMBER_WIDTH,
-                "at {width} columns the code column went"
+                "at {width} columns the lines column went"
             );
             assert!(
                 columns.numbers >= LEAST_NAME.min(room.saturating_sub(NUMBER_WIDTH)),
