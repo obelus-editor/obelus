@@ -207,23 +207,94 @@ impl App {
     /// are, because a reader who cannot read the screen cannot fix the file.
     #[must_use]
     pub fn theme_called(&mut self, name: &str) -> Option<Theme> {
-        for directory in self.theme_directories() {
-            let Some((_, path)) = crate::theme::written::found_in(&directory)
-                .into_iter()
-                .find(|(called, _)| called == name)
-            else {
-                continue;
-            };
-            match crate::theme::written::read(&path) {
-                Ok(theme) => return Some(theme),
-                Err(error) => {
-                    tracing::warn!(%error, "a theme that would not read");
-                    self.note = Some(format!("{name} will not read"));
-                    return None;
-                }
+        let Some(path) = self.theme_file(name) else {
+            return builtin::by_name(name).copied();
+        };
+        match crate::theme::written::read(&path) {
+            Ok(theme) => Some(theme),
+            Err(error) => {
+                tracing::warn!(%error, "a theme that would not read");
+                self.note = Some(format!("{name} will not read"));
+                None
             }
         }
-        builtin::by_name(name).copied()
+    }
+
+    /// The file a name is written in, where one is.
+    #[must_use]
+    fn theme_file(&self, name: &str) -> Option<PathBuf> {
+        self.theme_directories().into_iter().find_map(|directory| {
+            crate::theme::written::found_in(&directory)
+                .into_iter()
+                .find(|(called, _)| called == name)
+                .map(|(_, path)| path)
+        })
+    }
+
+    /// The directories a change to the theme in force could arrive in.
+    ///
+    /// The two themes are looked for in, and wherever the one in force
+    /// really lives. That last one is the whole reason this is not simply
+    /// the first two: a theme file is often a link into a directory
+    /// something else owns -- a dotfiles repository, or a desktop that
+    /// themes every program it has -- and what rewrites it rewrites that
+    /// directory, which a watch on the link's own would never hear about.
+    pub(super) fn theme_watches(&self) -> Vec<PathBuf> {
+        let mut directories = self.theme_directories();
+        if let Some(path) = self.theme_file(&self.settled.config.theme)
+            && let Some(parent) = crate::config::resolved(&path).parent()
+        {
+            directories.push(parent.to_path_buf());
+        }
+        directories
+    }
+
+    /// Whether a path that changed is one of the theme's.
+    pub(super) fn is_a_theme(&self, path: &Path) -> bool {
+        self.theme_watches()
+            .iter()
+            .any(|directory| path.starts_with(directory))
+    }
+
+    /// Watches wherever a change to the theme would arrive, giving up
+    /// whatever was being watched for it before.
+    ///
+    /// Taken up again on every re-read rather than once at startup, because
+    /// the directory a theme really lives in can be *replaced* -- which is
+    /// how a desktop swaps a whole theme at once, and which leaves the watch
+    /// pointing at a directory nothing will ever write to again.
+    pub(super) fn watch_theme(&mut self) {
+        let wanted = self.theme_watches();
+        let held = std::mem::take(&mut self.theme_watched);
+        let Some(watcher) = self.watcher.as_mut() else {
+            return;
+        };
+        for directory in held {
+            watcher.unwatch_directory(&directory);
+        }
+        for directory in &wanted {
+            if let Err(error) = watcher.watch_directory(directory) {
+                tracing::debug!(%error, directory = %directory.display(), "not watching for themes");
+            }
+        }
+        self.theme_watched = wanted;
+    }
+
+    /// Reads the theme in force again, because its file has changed.
+    ///
+    /// The name in the settings has not moved -- nobody chose anything --
+    /// and what that name stands for has. Which is the whole of what a
+    /// desktop that themes every program it has does to obelus: it writes
+    /// the file, and obelus is wearing the colours a moment later without
+    /// anybody having to tell it.
+    pub(super) fn reread_theme(&mut self) {
+        let called = self.settled.config.theme.clone();
+        if let Some(theme) = self.theme_called(&called) {
+            self.set_theme(&called, theme);
+        }
+        // And wherever it lives now, which a swap of the whole directory has
+        // just moved out from under the old watch.
+        self.watch_theme();
     }
 
     /// Applies a setting the settings view changed, and writes the file.
@@ -362,6 +433,9 @@ impl App {
         if let Some(theme) = self.theme_called(&called) {
             self.set_theme(&called, theme);
         }
+        // A theme chosen is a theme living somewhere else, so what is
+        // watched for a change to it moves with it.
+        self.watch_theme();
         icons::use_glyphs(self.settled.config.icons);
         crate::text::lay_tabs_at(self.settled.config.tab_width);
         // The table the reader's own bindings leave. Built rather than
@@ -556,8 +630,13 @@ impl App {
             crate::config::Reading::Settings(_, named) => named,
             _ => Vec::new(),
         };
-        self.configure(crate::config::from_toml(&text), named);
+        // Where the file is, before what is in it: applying a setting can
+        // send obelus looking beside that file for something -- a theme is
+        // in the directory next to it -- and a path set afterwards is a
+        // path that was not there when it was needed. The real way in sets
+        // it first for the same reason.
         self.settled.path = Some(path);
         self.settled.readable = true;
+        self.configure(crate::config::from_toml(&text), named);
     }
 }

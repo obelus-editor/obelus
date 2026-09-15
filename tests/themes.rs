@@ -11,6 +11,7 @@ use crossterm::event::KeyCode;
 use obelus::{
     app::App,
     command::{Command, dispatch},
+    event::Event,
     theme::{builtin, written},
 };
 
@@ -193,4 +194,76 @@ fn a_colour_is_written_the_way_everybody_writes_one() {
     assert!(written::hex("blue").is_none());
     assert!(written::hex("#12345").is_none());
     assert!(written::hex("#gggggg").is_none());
+}
+
+/// A theme rewritten on disk is a theme the screen is already wearing.
+///
+/// Which is the whole of what a desktop that themes every program it has
+/// does to obelus: it writes the file. Nobody chose anything, the name in
+/// the settings has not moved, and what that name stands for has.
+#[test]
+fn a_theme_rewritten_on_disk_arrives_here() {
+    let scratch = reader("rewritten");
+    let file = scratch.join("themes/omarchy.toml");
+    std::fs::write(&file, "base = \"dark\"\nbackground = \"#121212\"\n").expect("the theme");
+    std::fs::write(scratch.join("config.toml"), "theme = \"omarchy\"\n").expect("the settings");
+
+    let mut app = open(&scratch);
+    assert_eq!(
+        app.theme().background,
+        written::hex("#121212").expect("a colour"),
+        "the file was not read at startup"
+    );
+
+    // Somebody else writes it: another obelus, the reader's own editor, or
+    // the thing that themes everything on their desktop.
+    std::fs::write(&file, "base = \"dark\"\nbackground = \"#241f31\"\n").expect("rewriting");
+    app.handle(Event::FileChanged { path: file });
+    assert_eq!(
+        app.theme().background,
+        written::hex("#241f31").expect("a colour"),
+        "the rewritten theme did not arrive"
+    );
+}
+
+/// And so is one whose whole directory was replaced under it.
+///
+/// A theme file is often a link into a directory something else owns, and
+/// what rewrites it replaces that directory rather than the file: a change
+/// arrives on a path inside the directory the link points into, which a
+/// watch on the link's own would never have been looking at.
+#[test]
+fn a_theme_whose_directory_is_replaced_arrives_here() {
+    let scratch = reader("replaced");
+    let state = support::Scratch::new("theme-state");
+    std::fs::create_dir_all(state.join("current/theme")).expect("the directory");
+    let real = state.join("current/theme/obelus.toml");
+    std::fs::write(&real, "base = \"dark\"\nbackground = \"#121212\"\n").expect("the theme");
+    std::os::unix::fs::symlink(&real, scratch.join("themes/omarchy.toml")).expect("the link");
+    std::fs::write(scratch.join("config.toml"), "theme = \"omarchy\"\n").expect("the settings");
+
+    let mut app = open(&scratch);
+    assert_eq!(
+        app.theme().background,
+        written::hex("#121212").expect("a colour")
+    );
+
+    // Staged beside it and moved into place, which is how a theme is
+    // swapped whole: the directory the link points into is a different
+    // directory afterwards, and the change arrives on a path inside it.
+    std::fs::create_dir_all(state.join("next-theme")).expect("the directory");
+    std::fs::write(
+        state.join("next-theme/obelus.toml"),
+        "base = \"dark\"\nbackground = \"#241f31\"\n",
+    )
+    .expect("the theme");
+    std::fs::remove_dir_all(state.join("current/theme")).expect("the old one");
+    std::fs::rename(state.join("next-theme"), state.join("current/theme")).expect("the swap");
+
+    app.handle(Event::FileChanged { path: real });
+    assert_eq!(
+        app.theme().background,
+        written::hex("#241f31").expect("a colour"),
+        "the swapped theme did not arrive"
+    );
 }

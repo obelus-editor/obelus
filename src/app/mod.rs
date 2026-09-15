@@ -430,6 +430,12 @@ pub struct App {
     /// unavailable — the watcher failed to start, most likely against an
     /// inotify limit — and `reload-file` still works.
     watcher: Option<Watcher>,
+    /// The directories being watched for a change to the theme.
+    ///
+    /// Kept because they are given up and taken again on every re-read:
+    /// where a theme really lives moves when the reader chooses another one,
+    /// and the directory itself is replaced when a desktop swaps a theme.
+    theme_watched: Vec<PathBuf>,
     /// The highlight kinds for what is on screen.
     ///
     /// Recomputed every frame from the tree and kept here so the allocation is
@@ -512,6 +518,7 @@ impl App {
             walk_generation: 0,
             events: None,
             watcher: None,
+            theme_watched: Vec::new(),
             highlights: Highlights::default(),
             editor_area: Rect::ZERO,
             // Read once. Nothing later asks the operating system again, so
@@ -741,6 +748,10 @@ impl App {
             tracing::warn!(%error, path = %tree.display(), "not watching the tree's settings");
         }
         self.watcher = Some(watcher);
+        // And wherever the colours come from, which is its own question:
+        // a theme is a file obelus never writes and something else may
+        // replace under it.
+        self.watch_theme();
     }
 
     /// The open picker, for the renderer.
@@ -1183,6 +1194,11 @@ impl App {
                 let tree = path == crate::config::tree_path_for(&self.working_directory);
                 if readers || tree {
                     self.reread_config();
+                } else if self.is_a_theme(&path) {
+                    // The colours the reader is already wearing, read again:
+                    // the name in the settings has not moved, and what it
+                    // stands for has.
+                    self.reread_theme();
                 } else if crate::git::state_moved(&path) {
                     self.forget_what_git_said();
                 } else {

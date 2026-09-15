@@ -102,8 +102,17 @@ impl Watcher {
         let Some(directory) = directory_of(path) else {
             return Ok(());
         };
-        let directory = directory.as_path();
+        self.watch_directory(&directory)
+    }
 
+    /// Watches a directory itself, for whatever turns up in it.
+    ///
+    /// [`Watcher::watch`] is about one file and watches the directory
+    /// holding it, which is how a rename into place is heard. This is about
+    /// the directory: what is wanted from it is every file it has and every
+    /// file it is about to have, and the one the reader will ask for next
+    /// may not be there yet.
+    pub fn watch_directory(&mut self, directory: &Path) -> Result<()> {
         // Counted, not just remembered: two open files in one directory are
         // one watch, and closing the first of them must not take the watch
         // away from the second.
@@ -126,6 +135,12 @@ impl Watcher {
         let Some(directory) = directory_of(path) else {
             return;
         };
+        self.unwatch_directory(&directory);
+    }
+
+    /// The same, for a directory watched as itself.
+    pub fn unwatch_directory(&mut self, directory: &Path) {
+        let directory = directory.to_path_buf();
         let Some(count) = self.directories.get_mut(&directory) else {
             return;
         };
