@@ -882,20 +882,21 @@ What is *not* shared is worth saying too: a language server and an agent per
 process, which is the cost of not having panes. Three windows on one Rust
 project is three rust-analyzers.
 
-**A tree may carry settings, and a tree is not the reader.** `.obelus/config.toml`
-in the working directory, or `.obelus.toml` beside it, laid *over* the
-reader's own file key by key: the tree says what this project needs -- wrapped
-lines, a theme -- and says nothing about everything else, which stays
-theirs. Read into a fresh config instead of over theirs and a tree with one
-line in it would turn off a reader's wrapping, which is what every "project
-settings" feature that replaces rather than layers actually does.
+**A tree may carry settings, and a tree is not the reader.**
+`.obelus/config.toml` in the working directory, laid *over* the reader's own
+file key by key: the tree says what this project needs -- wrapped lines, a
+theme -- and says nothing about everything else, which stays theirs. Read
+into a fresh config instead of over theirs and a tree with one line in it
+would turn off a reader's wrapping, which is what every "project settings"
+feature that replaces rather than layers actually does.
 
-The directory form is looked for first, because it is the form with room in
-it: a theme belonging to the tree will go beside the config in there. The
-single file stays, because making a directory to set one line is asking too
-much. Only the working directory itself, never walking up: obelus has one
-answer to which tree it is on -- the file list walks it, the counts count
-it, git is read from it.
+A directory rather than a dotfile, because settings are not the only thing a
+tree will keep for obelus -- a theme of its own, whatever comes after it --
+and one directory is one thing to find, to copy between machines and to name
+in a `.gitignore`, where a dotfile per kind of thing is a row of them at the
+top of every listing. Only the working directory itself, never walking up:
+obelus has one answer to which tree it is on -- the file list walks it, the
+counts count it, git is read from it.
 
 **What a tree may set is a property of the setting**, `Reach`, not a list of
 exceptions somewhere: the next setting a stranger should not be trusted with

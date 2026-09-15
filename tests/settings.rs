@@ -29,10 +29,11 @@ fn settings_file(scratch: &support::Scratch) -> std::path::PathBuf {
     scratch.join("config.toml")
 }
 
-/// A tree of its own for one test, with a `.obelus.toml` in it.
+/// A tree of its own for one test, with settings in it.
 fn tree(name: &str, contents: &str) -> support::Scratch {
     let scratch = support::Scratch::new(&format!("tree-{name}"));
-    scratch.write(".obelus.toml", contents);
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(scratch.path().join(".obelus").join("config.toml"), contents).expect("the file");
     scratch
 }
 
@@ -634,33 +635,6 @@ fn a_tree_may_not_start_an_agent_or_move_a_key() {
     );
 }
 
-/// The directory form is the one with room in it, so it is the one that
-/// wins.
-///
-/// Broken deliberately by looking for `.obelus.toml` first: the stray file
-/// won over the directory, and a tree that had grown past one file would
-/// have been read out of the one it left behind.
-#[test]
-fn the_directory_wins_over_the_file_beside_it() {
-    let _turn = SETTINGS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let scratch = tree("both", "theme = \"light\"\n");
-    let root = scratch.path().to_path_buf();
-    std::fs::create_dir_all(root.join(".obelus")).expect("a directory");
-    std::fs::write(
-        root.join(".obelus").join("config.toml"),
-        "theme = \"dark\"\n",
-    )
-    .expect("the file");
-
-    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.configure(obelus::config::Config::default(), Vec::new());
-    app.working_directory_for_test(root.clone());
-
-    assert_eq!(app.theme().name, "dark", "the stray file won");
-}
-
 /// A setting the tree has is not the reader's to change, and the row says
 /// which file has it.
 ///
@@ -692,7 +666,7 @@ fn a_setting_the_tree_has_cannot_be_changed_here() {
     // And the row says where it comes from.
     let dump = support::render(&mut app, 76, 12);
     assert!(
-        support::text_block(&dump).contains(".obelus.toml"),
+        support::text_block(&dump).contains(".obelus/config.toml"),
         "the row does not say which file has it:\n{dump}"
     );
 }
@@ -727,7 +701,8 @@ fn the_trees_page_edits_the_trees_file() {
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
 
-    let written = std::fs::read_to_string(root.join(".obelus.toml")).expect("the file");
+    let written =
+        std::fs::read_to_string(root.join(".obelus").join("config.toml")).expect("the file");
     assert!(
         written.contains("blame_margin = true"),
         "not written: {written:?}"
@@ -772,7 +747,8 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Delete);
 
-    let written = std::fs::read_to_string(root.join(".obelus.toml")).expect("the file");
+    let written =
+        std::fs::read_to_string(root.join(".obelus").join("config.toml")).expect("the file");
     assert!(!written.contains("wrap"), "still there: {written:?}");
     assert!(
         written.contains("blame_margin = true"),
@@ -806,7 +782,8 @@ fn a_tree_with_no_settings_gets_a_file_when_one_is_set() {
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Enter);
 
-    let written = std::fs::read_to_string(root.join(".obelus.toml")).expect("no file was made");
+    let written = std::fs::read_to_string(root.join(".obelus").join("config.toml"))
+        .expect("no file was made");
     assert!(written.contains("wrap = true"), "{written:?}");
 }
 
@@ -845,7 +822,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     assert!(text.contains("global"), "{dump}");
     assert!(text.contains("default"), "{dump}");
     // And the file it would be writing is named on the tab row.
-    assert!(text.contains(".obelus.toml"), "{dump}");
+    assert!(text.contains(".obelus/config.toml"), "{dump}");
 
     // And the setting the tree does have says so, in the same column: a
     // column where two of the three layers have a word and the third is
@@ -909,7 +886,8 @@ fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
 
     // Somebody else writes the project's first settings, and the watcher
     // says so.
-    let path = root.join(".obelus.toml");
+    let path = root.join(".obelus").join("config.toml");
+    std::fs::create_dir_all(root.join(".obelus")).expect("the directory");
     std::fs::write(&path, "wrap = true\n").expect("the file");
     app.handle(Event::FileChanged { path });
 
@@ -978,7 +956,7 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
     let dump = support::render(&mut app, 76, 16);
     assert_eq!(
         letter(&dump, "Wrap long lines", "Wrap"),
-        letter(&dump, "Wrap long lines", ".obelus.toml"),
+        letter(&dump, "Wrap long lines", ".obelus/config.toml"),
         "a row the reader cannot use is not dim throughout:\n{dump}"
     );
 }

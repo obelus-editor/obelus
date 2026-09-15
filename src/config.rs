@@ -321,12 +321,11 @@ pub fn path() -> Option<PathBuf> {
 
 /// Where a tree keeps settings of its own, if it keeps any.
 ///
-/// `.obelus/config.toml` first and `.obelus.toml` after it: the directory is
-/// the form with room in it -- a theme belonging to the tree will go beside
-/// the config in there -- and the single file is for a tree that only ever
-/// wants the one line. Both, because making a directory to set one line is
-/// asking too much, and a tree that has grown past one file should not have
-/// to keep a stray dotfile beside the directory holding the rest.
+/// `.obelus/config.toml`, and only that. A tree keeps more than settings for
+/// obelus -- a theme of its own, whatever comes after it -- and one
+/// directory holding all of it is one thing to find, to copy between
+/// machines and to name in a `.gitignore`, where a dotfile per kind of thing
+/// is a row of them at the top of every listing of the tree.
 ///
 /// The working directory itself, without walking up: obelus has one answer
 /// to which tree it is on -- the file list walks it, the counts count it,
@@ -335,11 +334,7 @@ pub fn path() -> Option<PathBuf> {
 #[must_use]
 pub fn tree_path(root: &Path) -> Option<PathBuf> {
     let inside = root.join(".obelus").join("config.toml");
-    if inside.is_file() {
-        return Some(inside);
-    }
-    let beside = root.join(".obelus.toml");
-    beside.is_file().then_some(beside)
+    inside.is_file().then_some(inside)
 }
 
 /// The table a file holds, for a caller that means to lay it over something.
@@ -689,19 +684,15 @@ pub fn write_tree(path: &Path, key: &str, value: Option<&Value>) -> std::io::Res
 
 /// Where a tree's settings *would* go, for a tree that has none yet.
 ///
-/// The directory form when the tree already has that directory -- something
-/// else of obelus's is in there and this belongs beside it -- and the single
-/// file otherwise, because one line of settings does not earn a directory.
+/// The directory, always. A tree keeps more than settings for obelus -- a
+/// theme of its own, whatever comes after it -- and one directory holding
+/// all of it is one thing to find, to copy between machines and to put in a
+/// `.gitignore`, where a dotfile per kind of thing is a row of them at the
+/// top of every listing of the tree.
+///
 #[must_use]
 pub fn tree_path_for(root: &Path) -> PathBuf {
-    if let Some(path) = tree_path(root) {
-        return path;
-    }
-    let directory = root.join(".obelus");
-    match directory.is_dir() {
-        true => directory.join("config.toml"),
-        false => root.join(".obelus.toml"),
-    }
+    root.join(".obelus").join("config.toml")
 }
 
 /// Writes a config to a path, making its directory if it is not there.

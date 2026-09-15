@@ -49,8 +49,9 @@ pub struct SettingsView<'a> {
     keys: Vec<(crate::command::Command, Option<crate::keymap::KeyChord>)>,
     /// The settings the tree has set, and the file it set them in.
     ///
-    /// Written the way the reader would write it -- `.obelus.toml`, not the
-    /// whole path -- because it is a file in the tree they are looking at.
+    /// Written the way the reader would write it -- `.obelus/config.toml`,
+    /// not the whole path -- because it is a file in the tree they are
+    /// looking at.
     pinned: Vec<&'static str>,
     /// Which settings the reader's own file named.
     named: Vec<&'static str>,
