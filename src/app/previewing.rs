@@ -404,13 +404,22 @@ impl App {
                 Some((buffer, changes))
             }
             // A message on its own, with no file under it: a commit is not
-            // a file, and what it has to show is what it said. No file, so
-            // no count of what it did to one -- and nothing to fold it away
-            // in favour of, because the message is the whole of what is
-            // there.
+            // a file, and what it has to show is what it said. Nothing to
+            // fold it away in favour of, either, because the message is the
+            // whole of what is there.
+            //
+            // The count is of the whole commit, because that is what this row
+            // is: in a file's history the same number is about the file, and
+            // in both places it answers the question the row asks. About two
+            // milliseconds for a commit of this project's size, paid once
+            // when the selection lands rather than per keystroke.
             Subject::Message(id) => {
                 let said = self.said_at(*id)?;
-                Some((Buffer::from_message(&said), None))
+                let mut buffer = Buffer::from_message(&said);
+                if let Some(changed) = git::history::counted_in(&self.working_directory, *id) {
+                    buffer.mark_block_change(crate::coordinates::LineNumber::new(0), changed);
+                }
+                Some((buffer, None))
             }
         }
     }

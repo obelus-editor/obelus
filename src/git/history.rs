@@ -389,6 +389,83 @@ fn file_of(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(Path
     (!mode.is_tree()).then(|| (PathBuf::from(location.to_string()), status))
 }
 
+/// How many lines a commit added and took away, over everything it touched.
+///
+/// One walk of the tree diff, with the blobs taken from the walk itself. The
+/// obvious way -- ask `files_in` what changed, then `text_before` and
+/// `text_at` for each -- reopens the repository and walks the tree twice per
+/// file, which for a commit touching a dozen of them is two dozen of the
+/// most expensive thing here.
+///
+/// A commit with no parent counts as all additions: there was nothing there
+/// before it, and that is what it did.
+///
+/// What is not text is not counted. A line is the unit, and a PNG has none;
+/// counting its bytes as lines would put a number beside a commit that means
+/// nothing.
+#[must_use]
+pub fn counted_in(within: &Path, id: gix::ObjectId) -> Option<(usize, usize)> {
+    let repository = super::repository(within)?;
+    let commit = repository.find_commit(id).ok()?;
+    let tree = commit.tree().ok()?;
+    let before = commit
+        .parent_ids()
+        .next()
+        .and_then(|parent| repository.find_commit(parent.detach()).ok())
+        .and_then(|parent| parent.tree().ok())
+        .unwrap_or_else(|| repository.empty_tree());
+
+    let mut added = 0usize;
+    let mut removed = 0usize;
+    let mut changes = before.changes().ok()?;
+    let _ = changes.for_each_to_obtain_tree(&tree, |change| {
+        if let Some((was, now)) = texts_of(change) {
+            let (up, down) = super::change::counted(&super::change::drawn(&was, &now));
+            added += up;
+            removed += down;
+        }
+        Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::<()>::Continue(()))
+    });
+    Some((added, removed))
+}
+
+/// What a change had on either side of it, where both sides are text.
+fn texts_of(change: gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(String, String)> {
+    use gix::object::tree::diff::Change;
+    let text = |id: gix::Id<'_>| {
+        id.object()
+            .ok()
+            .and_then(|object| String::from_utf8(object.data.clone()).ok())
+    };
+    let (was, now, mode) = match change {
+        Change::Addition { id, entry_mode, .. } => (None, Some(id), entry_mode),
+        Change::Deletion { id, entry_mode, .. } => (Some(id), None, entry_mode),
+        Change::Modification {
+            previous_id,
+            id,
+            entry_mode,
+            ..
+        } => (Some(previous_id), Some(id), entry_mode),
+        Change::Rewrite {
+            source_id,
+            id,
+            entry_mode,
+            ..
+        } => (Some(source_id), Some(id), entry_mode),
+    };
+    if mode.is_tree() {
+        return None;
+    }
+    // Either side may be missing -- a file arriving has no before, one going
+    // has no after -- but a side that is there and is not text means this is
+    // not a thing with lines, and it is left out altogether.
+    let side = |id: Option<gix::Id<'_>>| match id {
+        None => Some(String::new()),
+        Some(id) => text(id),
+    };
+    Some((side(was)?, side(now)?))
+}
+
 /// A file as a commit had it, or `None` where that question has no answer.
 ///
 /// Not a repository, a commit that is not there, a path the commit does not

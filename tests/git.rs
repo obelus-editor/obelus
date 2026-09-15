@@ -2295,6 +2295,50 @@ fn a_message_with_nothing_to_hide_is_not_folded() {
     );
 }
 
+/// A commit chosen from the project's history has no file under it, so the
+/// count beside it is the whole commit's -- which is what that row is. In a
+/// file's history the same number is about the file. Both answer the question
+/// their row asks.
+#[test]
+fn a_commit_alone_says_what_it_did_to_everything() {
+    use obelus::theme::builtin::DARK;
+
+    let repository = Repository::new("history-whole", "one\ntwo\nthree\n");
+    // A second file, so the count cannot be one file's by accident.
+    std::fs::write(repository.directory().join("other.rs"), "a\nb\n").expect("the other");
+    // `file.rs`: two lines replaced and one added. `other.rs`: two arriving.
+    repository.write("one\nTWO\nfour\nfive\n");
+    repository.commit_all("Change two files at once");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 24);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+
+    let dump = support::render(&mut app, 60, 24);
+    let shown = support::previewed(&dump);
+    assert!(
+        shown.contains("Change two files at once"),
+        "the project's history previewed no message:\n{shown}"
+    );
+    assert!(
+        shown.contains("+5") && shown.contains("\u{2212}2"),
+        "not what the commit did to the whole tree:\n{shown}"
+    );
+
+    // Same two colours as everywhere else the same two facts are marked.
+    assert_eq!(
+        support::colour_under(&dump, '+'),
+        support::spelled(DARK.change_added)
+    );
+    assert_eq!(
+        support::colour_under(&dump, '\u{2212}'),
+        support::spelled(DARK.change_removed)
+    );
+}
+
 /// Beside who wrote it: what it did to *this* file. The block hangs above one
 /// file, and the question there is what this commit did to that -- not what it
 /// did to the tree, which is a number about a diff the reader is not looking
