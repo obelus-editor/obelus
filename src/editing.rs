@@ -611,8 +611,17 @@ impl Editing {
     /// One holding this text, with the caret at the start of it.
     #[must_use]
     pub fn new(said: &str) -> Self {
+        Self::over(Text::from_string(said))
+    }
+
+    /// The same, over a text that is already made.
+    ///
+    /// What a file needs: its language and its folds are both read off the
+    /// text, and they are read before there is anywhere for a caret to be.
+    #[must_use]
+    pub fn over(text: Text) -> Self {
         Self {
-            text: Text::from_string(said),
+            text,
             cursor: Cursor::start(),
             anchor: None,
         }
@@ -635,11 +644,32 @@ impl Editing {
         self.cursor
     }
 
-    /// Puts it somewhere, clamped to a place the text has.
-    pub fn place(&mut self, line: LineNumber, column: CharColumn, width: u16) {
+    /// The same, for a holder doing arithmetic of its own with it.
+    ///
+    /// What a viewport, a fold and an opened block make necessary: those
+    /// work out a place in rows and cells that this knows nothing about,
+    /// and then the caret has to go there.
+    pub const fn cursor_mut(&mut self) -> &mut Cursor {
+        &mut self.cursor
+    }
+
+    /// Puts the caret somewhere, clamped to a place the text has.
+    ///
+    /// Arriving rather than moving: the cell a vertical move aims for is
+    /// left alone, because that is what the reader was last aiming at along
+    /// a line and being *put* somewhere is not a step along one.
+    pub fn arrive(&mut self, line: LineNumber, column: CharColumn) {
         let line = self.text.clamp_line(line);
         self.cursor.line = line;
         self.cursor.column = self.text.clamp_column(line, column);
+    }
+
+    /// The same, and the caret is now aiming at the cell it landed on.
+    ///
+    /// For a caret that got there by typing: what was typed is where the
+    /// reader is, so it is what down should aim for.
+    pub fn place(&mut self, line: LineNumber, column: CharColumn, width: u16) {
+        self.arrive(line, column);
         remember(&self.text, &mut self.cursor, width.max(1));
     }
 
@@ -663,18 +693,36 @@ impl Editing {
         self.text.rope().to_string().trim().is_empty()
     }
 
+    /// Moves the caret, leaving hold of anything alone.
+    ///
+    /// The two below are this with the anchor dropped or kept. Both are
+    /// here separately because a holder with its own rules about when a
+    /// selection starts -- the file has them, because a caret in an opened
+    /// block selects in the block and not in the file -- wants neither.
+    pub fn step(&mut self, motion: Motion, hides: &dyn Hides, width: u16) -> bool {
+        move_within(&self.text, hides, &mut self.cursor, motion, width.max(1))
+    }
+
     /// Moves the caret, and says whether it moved at all.
     pub fn move_to(&mut self, motion: Motion, hides: &dyn Hides, width: u16) -> bool {
         self.anchor = None;
-        move_within(&self.text, hides, &mut self.cursor, motion, width.max(1))
+        self.step(motion, hides, width)
     }
 
     /// The same, dragging a selection behind it.
     pub fn extend_to(&mut self, motion: Motion, hides: &dyn Hides, width: u16) -> bool {
-        let anchor = self.anchor.unwrap_or(self.cursor);
-        let moved = move_within(&self.text, hides, &mut self.cursor, motion, width.max(1));
+        self.hold();
+        self.step(motion, hides, width)
+    }
+
+    /// Takes hold from here, unless it is holding something already.
+    pub fn hold(&mut self) {
+        self.anchor.get_or_insert(self.cursor);
+    }
+
+    /// Takes hold from there, whatever it was holding.
+    pub const fn hold_from(&mut self, anchor: Cursor) {
         self.anchor = Some(anchor);
-        moved
     }
 
     /// What is selected, if anything is.

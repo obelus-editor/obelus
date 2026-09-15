@@ -543,7 +543,13 @@ pub struct Buffer {
     content: Content,
     /// How it is being shown.
     mode: Mode,
-    text: Text,
+    /// What it says, where the caret is in it, and what is selected.
+    ///
+    /// The three as one thing, because they are one thing: every answer
+    /// about any of them is an answer about the other two. The same
+    /// [`Editing`] the box a note is written in holds, which is why the
+    /// keys that walk a word work the same in both.
+    editing: Editing,
     syntax: Option<SyntaxState>,
     /// Whether the last attempt to re-read the file failed.
     ///
@@ -565,13 +571,6 @@ pub struct Buffer {
     /// negotiated. That is the shape every coordinate bug in this program has
     /// had, and a source file down a pipe costs nothing.
     version: i32,
-    cursor: Cursor,
-    /// Where the current selection started, if the reader is extending one.
-    ///
-    /// The cursor is the other end. Keeping the anchor rather than a range
-    /// means changing direction naturally shrinks the selection and can pass
-    /// back through it without a special case.
-    selection_anchor: Option<Cursor>,
     /// Whether the viewport has been scrolled away from the cursor on
     /// purpose.
     ///
@@ -674,16 +673,10 @@ impl Buffer {
             path,
             content: Content::File,
             mode: Mode::Edit,
-            text,
+            editing: Editing::over(text),
             syntax,
             stale: false,
             version: 1,
-            cursor: Cursor {
-                line: LineNumber::new(0),
-                column: CharColumn::new(0),
-                remembered_cell: DisplayColumn::new(0),
-            },
-            selection_anchor: None,
             folds,
             detached: false,
             viewport: Viewport {
@@ -756,13 +749,15 @@ impl Buffer {
         for above in hidden {
             self.close_block(above);
         }
-        if !self.folds.hides(self.cursor.line) {
+        let cursor = self.editing.cursor();
+        if !self.folds.hides(cursor.line) {
             return;
         }
-        while self.folds.hides(self.cursor.line) && self.cursor.line.get() > 0 {
-            self.cursor.line = self.cursor.line.saturating_sub(1);
+        let mut line = cursor.line;
+        while self.folds.hides(line) && line.get() > 0 {
+            line = line.saturating_sub(1);
         }
-        self.cursor.column = self.text.clamp_column(self.cursor.line, self.cursor.column);
+        self.editing.arrive(line, cursor.column);
         self.clear_selection();
     }
 
@@ -813,16 +808,10 @@ impl Buffer {
             path,
             content: Content::File,
             mode: Mode::Edit,
-            text,
+            editing: Editing::over(text),
             syntax,
             stale: false,
             version: 1,
-            cursor: Cursor {
-                line: LineNumber::new(0),
-                column: CharColumn::new(0),
-                remembered_cell: DisplayColumn::new(0),
-            },
-            selection_anchor: None,
             folds,
             detached: false,
             viewport: Viewport {
@@ -969,11 +958,7 @@ impl Buffer {
         }
         self.in_block = Some(InBlock {
             above,
-            cursor: Cursor {
-                line: LineNumber::new(0),
-                column: CharColumn::new(0),
-                remembered_cell: DisplayColumn::new(0),
-            },
+            cursor: Cursor::start(),
             anchor: None,
         });
     }
@@ -1010,14 +995,15 @@ impl Buffer {
     /// to open before that one closes.
     #[must_use]
     pub fn block_at_cursor(&self) -> Option<LineNumber> {
+        let line = self.editing.cursor().line;
         self.caret_block()
-            .or_else(|| self.block_above(self.cursor.line).map(|block| block.above))
+            .or_else(|| self.block_above(line).map(|block| block.above))
     }
 
     /// The block hanging just below the cursor, if one does.
     #[must_use]
     pub fn block_below_cursor(&self) -> Option<LineNumber> {
-        self.block_above(self.cursor.line.saturating_add(1))
+        self.block_above(self.editing.cursor().line.saturating_add(1))
             .map(|block| block.above)
     }
 
@@ -1080,7 +1066,7 @@ impl Buffer {
     /// The document's text.
     #[must_use]
     pub const fn text(&self) -> &Text {
-        &self.text
+        self.editing.text()
     }
 
     /// Whether the text differs from what is on disk.
@@ -1118,8 +1104,8 @@ impl Buffer {
             self.dirty = true;
             return;
         };
-        self.dirty = self.text.byte_length().get() != seen.length
-            || digest_of_text(&self.text) != seen.digest;
+        self.dirty = self.editing.text().byte_length().get() != seen.length
+            || digest_of_text(self.editing.text()) != seen.digest;
     }
 
     /// What somebody else has done to the file, as last established.
@@ -1224,43 +1210,35 @@ impl Buffer {
 
     /// Selects a span, as though the reader had dragged across it.
     pub fn select(&mut self, span: Span) {
-        self.selection_anchor = Some(Cursor {
+        let from = Cursor {
             line: span.line,
             column: span.column,
-            ..self.cursor
-        });
-        self.cursor.line = span.end_line;
-        self.cursor.column = span.end_column;
+            ..self.editing.cursor()
+        };
+        self.editing.arrive(span.end_line, span.end_column);
+        self.editing.hold_from(from);
     }
 
     /// Where the word before the cursor begins.
     #[must_use]
     pub fn word_before(&self) -> (LineNumber, CharColumn) {
-        crate::editing::word_left(
-            &self.text,
-            &self.folds,
-            self.cursor.line,
-            self.cursor.column,
-        )
+        let cursor = self.editing.cursor();
+        crate::editing::word_left(self.editing.text(), &self.folds, cursor.line, cursor.column)
     }
 
     /// Where the word after the cursor ends.
     #[must_use]
     pub fn word_after(&self) -> (LineNumber, CharColumn) {
-        crate::editing::word_right(
-            &self.text,
-            &self.folds,
-            self.cursor.line,
-            self.cursor.column,
-        )
+        let cursor = self.editing.cursor();
+        crate::editing::word_right(self.editing.text(), &self.folds, cursor.line, cursor.column)
     }
 
     /// Says the text is what is on disk, after writing it there.
     pub fn settle(&mut self) {
         self.seen = Some(Seen {
             stat: Stat::of(&self.path),
-            digest: digest_of_text(&self.text),
-            length: self.text.byte_length().get(),
+            digest: digest_of_text(self.editing.text()),
+            length: self.editing.text().byte_length().get(),
         });
         self.disk = Disk::Unchanged;
         // A save is something the reader did between one edit and the next:
@@ -1367,19 +1345,21 @@ impl Buffer {
     /// to undo rather than however many lines it touched.
     #[must_use]
     pub fn spanning_all(&self) -> Span {
-        let last = self.text.last_line();
+        let text = self.editing.text();
+        let last = text.last_line();
         Span {
             line: LineNumber::new(0),
             column: CharColumn::new(0),
             end_line: last,
-            end_column: self.text.line_length(last),
+            end_column: text.line_length(last),
         }
     }
 
     /// A span from an offset and a length in characters.
     fn spanning(&self, at: CharOffset, characters: usize) -> Span {
-        let (line, column) = self.text.position(at);
-        let (end_line, end_column) = self.text.position(CharOffset::new(at.get() + characters));
+        let text = self.editing.text();
+        let (line, column) = text.position(at);
+        let (end_line, end_column) = text.position(CharOffset::new(at.get() + characters));
         Span {
             line,
             column,
@@ -1406,24 +1386,24 @@ impl Buffer {
             return None;
         }
 
-        let lines_before = self.text.line_count();
+        let lines_before = self.editing.text().line_count();
         // What the edited line contributed to the runs around it, before it
         // was edited. An edit inside a line changes neither how far the line
         // is indented nor what it starts with -- which is most of what
         // typing is -- and then every run in the file is where it was.
         let one_line = span.line == span.end_line && !with.contains('\n');
-        let shape = one_line.then(|| folds::shape_of(&self.text, span.line));
-        let at = self.text.char_offset(span.line, span.column);
+        let shape = one_line.then(|| folds::shape_of(self.editing.text(), span.line));
+        let at = self.editing.text().char_offset(span.line, span.column);
         let removed = match empty {
             true => String::new(),
             false => {
-                let (removed, edit) = self.text.remove(span);
+                let (removed, edit) = self.editing.text_mut().remove(span);
                 self.reparse(&edit);
                 removed
             }
         };
         if !with.is_empty() {
-            let edit = self.text.insert(at, with);
+            let edit = self.editing.text_mut().insert(at, with);
             self.reparse(&edit);
         }
 
@@ -1446,11 +1426,12 @@ impl Buffer {
         // is a pass over the whole file, and it was by a long way the
         // slowest thing a keystroke did -- for an answer that, while
         // somebody types inside a line, is the answer it already had.
-        let same_shape = shape.is_some_and(|was| was == folds::shape_of(&self.text, span.line));
+        let same_shape =
+            shape.is_some_and(|was| was == folds::shape_of(self.editing.text(), span.line));
         if !same_shape {
-            let moved = self.text.line_count() as isize - lines_before as isize;
+            let moved = self.editing.text().line_count() as isize - lines_before as isize;
             self.folds
-                .keep_across(folds::of(&self.text), span.line, moved);
+                .keep_across(folds::of(self.editing.text()), span.line, moved);
         }
 
         // The diff those came from is stale the instant the text moves, and
@@ -1465,10 +1446,11 @@ impl Buffer {
         // arithmetic a second time. `place_cursor` clears the selection,
         // which an edit has just consumed.
         let (line, column) = self
-            .text
+            .editing
+            .text()
             .position(CharOffset::new(at.get() + with.chars().count()));
         self.place_cursor(line, column);
-        self.viewport.top = self.text.clamp_line(self.viewport.top);
+        self.viewport.top = self.editing.text().clamp_line(self.viewport.top);
         Some(undo::Step {
             at,
             removed,
@@ -1492,7 +1474,7 @@ impl Buffer {
         // stop: letters appearing is what they are waiting for, and
         // colours a tenth of a second behind are colours nobody notices.
         if state.is_quick() {
-            state.settle(&self.text);
+            state.settle(self.editing.text());
         }
     }
 
@@ -1500,7 +1482,7 @@ impl Buffer {
     /// that owed.
     pub fn settle_syntax(&mut self) {
         if let Some(state) = self.syntax.as_mut() {
-            state.settle(&self.text);
+            state.settle(self.editing.text());
         }
     }
 
@@ -1542,7 +1524,7 @@ impl Buffer {
 
         let mut file = std::fs::File::create(&beside)
             .with_context(|| format!("writing beside {}", path.display()))?;
-        for chunk in self.text.rope().chunks() {
+        for chunk in self.editing.text().rope().chunks() {
             std::io::Write::write_all(&mut file, chunk.as_bytes())?;
         }
         file.sync_all()?;
@@ -1556,7 +1538,7 @@ impl Buffer {
         std::fs::rename(&beside, &path)
             .with_context(|| format!("putting {} in place", path.display()))?;
         self.settle();
-        tracing::info!(path = %path.display(), bytes = self.text.byte_length().get(), "saved");
+        tracing::info!(path = %path.display(), bytes = self.editing.text().byte_length().get(), "saved");
         Ok(())
     }
 
@@ -1579,13 +1561,12 @@ impl Buffer {
         // in, which for the whole file is the end of it -- and somebody who
         // asked to see the other version wants to see the part they were
         // looking at.
-        let cursor = self.cursor;
+        let cursor = self.editing.cursor();
         let top = self.viewport.top;
 
         let changed = self.edit(self.spanning_all(), &contents, undo::Doing::Whole);
-        self.cursor.line = self.text.clamp_line(cursor.line);
-        self.cursor.column = self.text.clamp_column(self.cursor.line, cursor.column);
-        self.viewport.top = self.text.clamp_line(top);
+        self.editing.arrive(cursor.line, cursor.column);
+        self.viewport.top = self.editing.text().clamp_line(top);
         self.settle();
         self.stale = false;
         Ok(changed)
@@ -1617,7 +1598,7 @@ impl Buffer {
         // The file read, so whatever was wrong with it no longer is.
         self.stale = false;
         let new = Text::from_string(&contents);
-        if new.rope() == self.text.rope() {
+        if new.rope() == self.editing.text().rope() {
             // The bytes are what this was read from after all: a `touch`, a
             // formatter that found nothing to change, a checkout of the
             // commit it was already on. Recorded, so the next event about
@@ -1626,17 +1607,17 @@ impl Buffer {
             return Ok(false);
         }
 
-        let edit = parse::edit_between(&self.text, &new);
-        self.text = new;
+        let edit = parse::edit_between(self.editing.text(), &new);
+        *self.editing.text_mut() = new;
         self.version = self.version.saturating_add(1);
 
         match (self.syntax.as_mut(), edit) {
-            (Some(state), Some(edit)) => state.reparse(&self.text, &edit),
+            (Some(state), Some(edit)) => state.reparse(self.editing.text(), &edit),
             // Nothing shared to reuse, so start over. Reached only if the
             // trimming above found no common region at all.
             (Some(state), None) => {
                 let language = state.language();
-                self.syntax = SyntaxState::new(language, &self.text);
+                self.syntax = SyntaxState::new(language, self.editing.text());
             }
             (None, _) => {}
         }
@@ -1646,17 +1627,17 @@ impl Buffer {
         // now sit at those numbers, which is a different file's fold. The
         // new text is asked what it offers, which is the same question the
         // open asked.
-        self.folds.offer(folds::of(&self.text));
+        self.folds.offer(folds::of(self.editing.text()));
         // Whatever the reader could have put back was about the text that
         // has just been replaced.
         self.undo.forget();
         // And what is on screen is what is on disk again.
         self.settle();
 
-        self.cursor.line = self.text.clamp_line(self.cursor.line);
-        self.cursor.column = self.text.clamp_column(self.cursor.line, self.cursor.column);
+        let cursor = self.editing.cursor();
+        self.editing.arrive(cursor.line, cursor.column);
         // `top_row` is clamped by `scroll_into_view`, which knows the width.
-        self.viewport.top = self.text.clamp_line(self.viewport.top);
+        self.viewport.top = self.editing.text().clamp_line(self.viewport.top);
         Ok(true)
     }
 }

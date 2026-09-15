@@ -12,7 +12,7 @@ impl Buffer {
     /// Where the cursor is.
     #[must_use]
     pub const fn cursor(&self) -> Cursor {
-        self.cursor
+        self.editing.cursor()
     }
 
     /// Forgets the anchor, so nothing is selected.
@@ -20,7 +20,7 @@ impl Buffer {
     /// Either anchor: a selection made inside an opened hunk is a
     /// selection, and the key that gives up on one has to reach it.
     pub const fn clear_selection(&mut self) {
-        self.selection_anchor = None;
+        self.editing.clear_selection();
         if let Some(at) = self.in_block.as_mut() {
             at.anchor = None;
         }
@@ -34,23 +34,22 @@ impl Buffer {
     /// reader who has just taken all of it is looking.
     pub fn select_all(&mut self) {
         // Through the ordinary way of arriving somewhere, which clamps into
-        // the document and keeps the remembered cell honest. The anchor is
-        // set between the two arrivals because arriving clears it: the first
-        // call puts the cursor on the first character, and the second takes
-        // it to the last with the anchor left behind.
-        let last = LineNumber::new(self.text.line_count().saturating_sub(1));
-        let end = self.text.line_length(last);
+        // the document. The anchor is taken after both arrivals because
+        // arriving lets go of one: the first call puts the cursor on the
+        // first character, the second takes it to the last, and the anchor
+        // is then put back where the first left it.
+        let last = self.editing.text().last_line();
+        let end = self.editing.text().line_length(last);
         self.place_cursor(LineNumber::new(0), CharColumn::new(0));
-        self.selection_anchor = Some(self.cursor);
-        let anchor = self.selection_anchor;
+        let anchor = self.editing.cursor();
         self.place_cursor(last, end);
-        self.selection_anchor = anchor;
+        self.editing.hold_from(anchor);
     }
 
     /// The selected characters, if the cursor has moved away from its anchor.
     #[must_use]
     pub fn selection(&self) -> Option<Span> {
-        span_between(self.selection_anchor?, self.cursor)
+        self.editing.selection()
     }
 
     /// Puts the caret where a pointer landed, or drags the selection out
@@ -97,15 +96,15 @@ impl Buffer {
                 cursor,
                 anchor,
             });
-            self.selection_anchor = None;
+            self.editing.clear_selection();
             return;
         };
-        let column = self.text.column_in_row(line, row, cell, width);
+        let column = self.editing.text().column_in_row(line, row, cell, width);
         match extend {
             true => self.extend_to(line, column),
             false => {
                 self.place_cursor(line, column);
-                self.cursor.remembered_cell = cell;
+                self.editing.cursor_mut().remembered_cell = cell;
             }
         }
     }
@@ -115,10 +114,8 @@ impl Buffer {
     /// What a pointer dragged across the text means, and what a click with
     /// shift held means: the place the reader started from stays put.
     pub fn extend_to(&mut self, line: LineNumber, column: CharColumn) {
-        let anchor = self.selection_anchor.unwrap_or(self.cursor);
-        self.cursor.line = line;
-        self.cursor.column = self.text.clamp_column(line, column);
-        self.selection_anchor = Some(anchor);
+        self.editing.hold();
+        self.editing.arrive(line, column);
         self.detached = false;
         self.in_block = None;
     }
@@ -129,9 +126,9 @@ impl Buffer {
     /// rather than the middle of one -- the same rule `copy` follows when
     /// nothing is selected.
     pub fn select_line(&mut self, line: LineNumber) {
-        let last = self.text.last_line();
+        let last = self.editing.text().last_line();
         let (end_line, end_column) = match line >= last {
-            true => (line, self.text.line_length(line)),
+            true => (line, self.editing.text().line_length(line)),
             false => (line.saturating_add(1), CharColumn::new(0)),
         };
         self.select(Span {
@@ -175,8 +172,9 @@ impl Buffer {
     /// Both, because a caret sits *between* characters: with `word|` a
     /// reader means that word, and so they do with `|word` and `wo|rd`.
     fn word_span(&self) -> Option<Span> {
-        let characters: Vec<char> = self.text.line(self.cursor.line).chars().collect();
-        let at = self.cursor.column.get().min(characters.len());
+        let cursor = self.editing.cursor();
+        let characters: Vec<char> = self.editing.text().line(cursor.line).chars().collect();
+        let at = cursor.column.get().min(characters.len());
         let inside = |at: usize| characters.get(at).copied().is_some_and(wordish);
         let start = match inside(at) || (at > 0 && inside(at - 1)) {
             true => at,
@@ -191,21 +189,18 @@ impl Buffer {
             to += 1;
         }
         (from < to).then_some(Span {
-            line: self.cursor.line,
+            line: cursor.line,
             column: CharColumn::new(from),
-            end_line: self.cursor.line,
+            end_line: cursor.line,
             end_column: CharColumn::new(to),
         })
     }
 
     /// The smallest span that holds `span` and is bigger than it.
     fn wider_than(&self, span: Span) -> Option<Span> {
-        let from = self
-            .text
-            .byte_of_char(self.text.char_offset(span.line, span.column));
-        let to = self
-            .text
-            .byte_of_char(self.text.char_offset(span.end_line, span.end_column));
+        let text = self.editing.text();
+        let from = text.byte_of_char(text.char_offset(span.line, span.column));
+        let to = text.byte_of_char(text.char_offset(span.end_line, span.end_column));
         if let Some(state) = self.syntax.as_ref() {
             let mut node = state
                 .tree()
@@ -216,15 +211,13 @@ impl Buffer {
             // be a key press that changed nothing.
             loop {
                 if node.start_byte() < from.get() || node.end_byte() > to.get() {
-                    let (line, column) = self.text.position(
-                        self.text
-                            .char_of_byte(crate::coordinates::ByteOffset::new(node.start_byte())),
+                    let text = self.editing.text();
+                    let (line, column) = text.position(
+                        text.char_of_byte(crate::coordinates::ByteOffset::new(node.start_byte())),
                     );
-                    let (end_line, end_column) =
-                        self.text
-                            .position(self.text.char_of_byte(crate::coordinates::ByteOffset::new(
-                                node.end_byte(),
-                            )));
+                    let (end_line, end_column) = text.position(
+                        text.char_of_byte(crate::coordinates::ByteOffset::new(node.end_byte())),
+                    );
                     return Some(Span {
                         line,
                         column,
@@ -242,7 +235,7 @@ impl Buffer {
             line: span.line,
             column: CharColumn::new(0),
             end_line: span.line,
-            end_column: self.text.line_length(span.line),
+            end_column: self.editing.text().line_length(span.line),
         };
         match span == line || span.line != span.end_line {
             true => (span != whole).then_some(whole),
@@ -263,7 +256,7 @@ impl Buffer {
             return Some(block.text.text_in(selection));
         }
         self.selection()
-            .map(|selection| self.text.text_in(selection))
+            .map(|selection| self.editing.text().text_in(selection))
     }
 
     /// Whether anything is selected, in the file or in an opened block.
@@ -289,15 +282,14 @@ impl Buffer {
         // hunk's removed lines.
         self.detached = false;
         self.in_block = None;
-        self.selection_anchor = None;
+        self.editing.clear_selection();
         // And it opens whatever was hiding the place. A reader who asked to
         // be taken somewhere has said the destination is worth seeing;
         // leaving them on the folded line above it, with the status row
         // naming a line that is not on screen, answers a different request.
         // Walking there is the other thing, and walks around a fold.
-        self.folds.reveal(self.text.clamp_line(line));
-        self.cursor.line = self.text.clamp_line(line);
-        self.cursor.column = self.text.clamp_column(self.cursor.line, column);
+        self.folds.reveal(self.editing.text().clamp_line(line));
+        self.editing.arrive(line, column);
         // The remembered cell is recomputed on the next vertical move, which
         // needs the width; leaving it is right, arriving is not a move along
         // a line.
@@ -326,9 +318,9 @@ impl Buffer {
 
     fn page_with_selection(&mut self, pages: isize, area: TextArea, extend_selection: bool) {
         if extend_selection {
-            self.selection_anchor.get_or_insert(self.cursor);
+            self.editing.hold();
         } else {
-            self.selection_anchor = None;
+            self.editing.clear_selection();
         }
         let width = area.wrap_width();
         // Where on the screen the cursor is now, which is what has to hold.
@@ -375,6 +367,7 @@ impl Buffer {
         // have -- inside a hunk the reader has opened. The caret goes there
         // instead: those rows are where a page through a long deletion
         // lands, and the cursor stays on the line the block belongs to.
+        let aim = self.editing.cursor().remembered_cell;
         let Some((line, row)) = self.text_row_at(landed, area) else {
             // Into the block, on the row it landed on and at the cell it
             // was aiming for -- a page keeps the reader's place on the
@@ -386,13 +379,8 @@ impl Buffer {
                     above,
                     cursor: Cursor {
                         line,
-                        column: block.text.column_in_row(
-                            line,
-                            row,
-                            self.cursor.remembered_cell,
-                            width,
-                        ),
-                        remembered_cell: self.cursor.remembered_cell,
+                        column: block.text.column_in_row(line, row, aim, width),
+                        remembered_cell: aim,
                     },
                     anchor: None,
                 });
@@ -401,16 +389,14 @@ impl Buffer {
             // and the caret has just left it: a selection with one end in
             // the file and the other in lines the file does not have is
             // not a thing either half could be asked about.
-            self.selection_anchor = None;
+            self.editing.clear_selection();
             self.detached = false;
             return;
         };
         self.in_block = None;
-        self.cursor.line = line;
         // The remembered cell, like a vertical move: paging is one.
-        self.cursor.column = self
-            .text
-            .column_in_row(line, row, self.cursor.remembered_cell, width);
+        let column = self.editing.text().column_in_row(line, row, aim, width);
+        self.editing.arrive(line, column);
         // On screen again, wherever the wheel had left it.
         self.detached = false;
     }
@@ -467,7 +453,7 @@ impl Buffer {
     /// far: a screen holding one line of text and ten of nothing, with
     /// nothing saying which way is back.
     fn last_top(&self, area: TextArea) -> (LineNumber, usize) {
-        let last = self.text.last_line();
+        let last = self.editing.text().last_line();
         let last_row = self.screen_rows_of(last, area).saturating_sub(1);
         let back = isize::try_from(usize::from(area.height.max(1)) - 1).unwrap_or(isize::MAX);
         self.step_screen_rows((last, last_row), -back, area)
@@ -525,9 +511,9 @@ impl Buffer {
         // wherever it steps out.
         if self.in_block.is_none() {
             if extend_selection {
-                self.selection_anchor.get_or_insert(self.cursor);
+                self.editing.hold();
             } else {
-                self.selection_anchor = None;
+                self.editing.clear_selection();
             }
         }
         if self.detached {
@@ -553,16 +539,10 @@ impl Buffer {
                 cursor: entering,
                 anchor: None,
             });
-            self.selection_anchor = None;
+            self.editing.clear_selection();
             return;
         }
-        move_within(
-            &self.text,
-            &self.folds,
-            &mut self.cursor,
-            motion,
-            area.wrap_width(),
-        );
+        self.editing.step(motion, &self.folds, area.wrap_width());
     }
 
     /// Which line of an opened block a motion walks into, if it walks into
@@ -576,25 +556,27 @@ impl Buffer {
         // The one hanging above the cursor's own line, going up, and the
         // one hanging above the line below it, going down -- a block sits
         // between two lines and is entered from either side.
-        let below = self.next_shown(self.cursor.line, true, area);
+        let cursor = self.editing.cursor();
+        let below = self.next_shown(cursor.line, true, area);
         let block = match motion {
-            Motion::Up => self.block_above(self.cursor.line),
+            Motion::Up => self.block_above(cursor.line),
             Motion::Down => below.and_then(|line| self.block_above(line)),
             _ => None,
         }
         .filter(|block| !block.is_empty())?;
         let width = area.wrap_width();
         let (row, _) = self
-            .text
-            .visual_position(self.cursor.line, self.cursor.column, width);
+            .editing
+            .text()
+            .visual_position(cursor.line, cursor.column, width);
         let entered = match motion {
-            Motion::Up if self.cursor.line == block.above && row == 0 => {
+            Motion::Up if cursor.line == block.above && row == 0 => {
                 LineNumber::new(block.text.line_count().saturating_sub(1))
             }
             Motion::Down
                 if block.above.get() > 0
-                    && self.cursor.line.get() + 1 == block.above.get()
-                    && row + 1 == self.text.row_count(self.cursor.line, width) =>
+                    && cursor.line.get() + 1 == block.above.get()
+                    && row + 1 == self.editing.text().row_count(cursor.line, width) =>
             {
                 LineNumber::new(0)
             }
@@ -615,8 +597,8 @@ impl Buffer {
                 line: entered,
                 column: block
                     .text
-                    .column_in_row(entered, row, self.cursor.remembered_cell, width),
-                remembered_cell: self.cursor.remembered_cell,
+                    .column_in_row(entered, row, cursor.remembered_cell, width),
+                remembered_cell: cursor.remembered_cell,
             },
         ))
     }
@@ -669,12 +651,13 @@ impl Buffer {
                     self.in_block = Some(at);
                     return;
                 };
-                let last = self.text.row_count(line, width).saturating_sub(1);
-                self.cursor.line = line;
-                self.cursor.column =
-                    self.text
+                let last = self.editing.text().row_count(line, width).saturating_sub(1);
+                let column =
+                    self.editing
+                        .text()
                         .column_in_row(line, last, at.cursor.remembered_cell, width);
-                self.cursor.remembered_cell = at.cursor.remembered_cell;
+                self.editing.arrive(line, column);
+                self.editing.cursor_mut().remembered_cell = at.cursor.remembered_cell;
             }
             // Out of the bottom, onto the line the block was drawn above.
             // Said rather than assumed: the cursor is only already there
@@ -684,11 +667,12 @@ impl Buffer {
             // past it.
             _ => {
                 self.in_block = None;
-                self.cursor.line = above;
-                self.cursor.column =
-                    self.text
+                let column =
+                    self.editing
+                        .text()
                         .column_in_row(above, 0, at.cursor.remembered_cell, width);
-                self.cursor.remembered_cell = at.cursor.remembered_cell;
+                self.editing.arrive(above, column);
+                self.editing.cursor_mut().remembered_cell = at.cursor.remembered_cell;
             }
         }
     }
@@ -709,7 +693,8 @@ impl Buffer {
         if self.folds.hides(line) {
             return 0;
         }
-        self.rows_above(line, area.wrap_width()) + self.text.row_count(line, area.wrap_width())
+        self.rows_above(line, area.wrap_width())
+            + self.editing.text().row_count(line, area.wrap_width())
     }
 
     /// The next line with rows of its own, in either direction.
@@ -718,7 +703,7 @@ impl Buffer {
     /// the file: a folded run reaching the last line leaves its own first
     /// line as the last one there is.
     fn next_shown(&self, line: LineNumber, down: bool, area: TextArea) -> Option<LineNumber> {
-        let last = self.text.last_line();
+        let last = self.editing.text().last_line();
         let mut at = line;
         loop {
             if down {
@@ -796,13 +781,12 @@ impl Buffer {
                 .visual_position(at.cursor.line, at.cursor.column, width);
             return (block.above, block.rows_before(at.cursor.line, width) + row);
         }
+        let cursor = self.editing.cursor();
         let (row, _) = self
-            .text
-            .visual_position(self.cursor.line, self.cursor.column, width);
-        (
-            self.cursor.line,
-            self.rows_above(self.cursor.line, width) + row,
-        )
+            .editing
+            .text()
+            .visual_position(cursor.line, cursor.column, width);
+        (cursor.line, self.rows_above(cursor.line, width) + row)
     }
 
     /// The place in the *text* a row of the screen is on, or `None` for a
@@ -835,8 +819,10 @@ impl Buffer {
                     .1
             }
             None => {
-                self.text
-                    .visual_position(self.cursor.line, self.cursor.column, width)
+                let cursor = self.editing.cursor();
+                self.editing
+                    .text()
+                    .visual_position(cursor.line, cursor.column, width)
                     .1
             }
         }
@@ -955,7 +941,7 @@ impl Buffer {
         self.scroll_sideways(area);
 
         // A reload or a resize can leave the anchor past the end of its line.
-        self.viewport.top = self.text.clamp_line(self.viewport.top);
+        self.viewport.top = self.editing.text().clamp_line(self.viewport.top);
         self.viewport.top_row = self.viewport.top_row.min(
             self.screen_rows_of(self.viewport.top, area)
                 .saturating_sub(1),
