@@ -1182,7 +1182,11 @@ impl App {
                     self.on_logged(commits, walked, done);
                 }
             }
-            Event::FilesFound { generation, paths } => {
+            Event::FilesFound {
+                generation,
+                paths,
+                ignored,
+            } => {
                 // A batch from a walk whose picker is gone, or from one
                 // superseded by a later open.
                 if generation != self.walk_generation {
@@ -1202,7 +1206,13 @@ impl App {
                         value: PickerValue::File(path.clone()),
                         enabled: true,
                         colours: None,
-                        status: statuses.get(&root.join(&path)).copied(),
+                        // Git says nothing about a file it was told to
+                        // ignore -- `git status` leaves them out -- so the
+                        // walk that went looking is what says it.
+                        status: match ignored {
+                            true => Some(crate::git::FileStatus::Ignored),
+                            false => statuses.get(&root.join(&path)).copied(),
+                        },
                         depth: 0,
                         kind: None,
                         tab: None,

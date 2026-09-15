@@ -48,6 +48,12 @@ pub enum Event {
         generation: u64,
         /// The paths, relative to the walk's root.
         paths: Vec<PathBuf>,
+        /// Whether these are files the tree said it does not keep.
+        ///
+        /// Their own batches rather than a flag per path: a walk sends one
+        /// kind or the other and never a mixture, because it is two walks
+        /// -- one that obeys the ignore rules and one that does not.
+        ignored: bool,
     },
     /// A batch of matching lines from a search of the tree.
     Matches {

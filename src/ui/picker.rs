@@ -420,6 +420,11 @@ impl PickerView<'_> {
             // few that have been are what a reader is looking for.
             (Some(FileStatus::Changed), _) => style.fg(self.theme.change_modified),
             (Some(FileStatus::New), _) => style.fg(self.theme.change_added),
+            // Dim, because the tree said it does not keep this one: it is
+            // in the list only because the reader asked for the ignored
+            // ones too, and a build artefact in the same ink as the source
+            // beside it is a list that has stopped saying which is which.
+            (Some(FileStatus::Ignored), _) => style.fg(self.theme.gutter),
             (None, Some(kind)) => style.fg(self.theme.syntax.colour(kind)),
             (None, None) => style,
         };

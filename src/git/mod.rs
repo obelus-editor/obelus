@@ -99,15 +99,23 @@ pub fn state_moved(path: &Path) -> bool {
 
 /// What git says about a file in the working tree.
 ///
-/// Only the two states a reader cares about while choosing a file to read:
-/// one they have changed, and one that is not committed at all. Staged or
-/// not is a distinction for committing, which obelus does not do.
+/// Only the states a reader cares about while choosing a file to read: one
+/// they have changed, one that is not committed at all, and one the tree
+/// has said it does not keep. Staged or not is a distinction for
+/// committing, which obelus does not do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileStatus {
     /// Tracked, and different from the last commit.
     Changed,
     /// Not in the last commit at all.
     New,
+    /// Kept out of the tree by `.gitignore` and friends.
+    ///
+    /// Never from [`statuses`], which does not ask about them -- `git
+    /// status` leaves them out and so does obelus. It comes from the file
+    /// walk, which is the only thing that goes looking for them, and only
+    /// when the reader has asked to be offered them.
+    Ignored,
 }
 
 /// How long ago something happened, in the fewest words that are true.

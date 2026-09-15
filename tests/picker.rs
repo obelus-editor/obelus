@@ -215,6 +215,7 @@ fn the_matched_characters_of_every_visible_row_are_coloured() {
             "src/three/gamma.rs".into(),
             "src/four/delta.rs".into(),
         ],
+        ignored: false,
     });
     type_text(&mut app, "src");
 
@@ -242,6 +243,7 @@ fn the_matched_characters_of_every_visible_row_are_coloured() {
         paths: (0..40)
             .map(|number| format!("src/dir_{number:02}/file.rs").into())
             .collect(),
+        ignored: false,
     });
     support::press_control_key(&mut app, KeyCode::End);
 
@@ -374,6 +376,7 @@ fn paths_from_a_superseded_walk_are_dropped() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["stale/from/the/first/walk.rs".into()],
+        ignored: false,
     });
 
     let dump = support::render(&mut app, 60, 12);
@@ -390,6 +393,7 @@ fn paths_from_the_current_walk_are_listed() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/somewhere.rs".into()],
+        ignored: false,
     });
 
     let dump = support::render(&mut app, 60, 12);
@@ -599,6 +603,7 @@ fn the_list_moves_only_when_the_cursor_reaches_an_edge() {
         paths: (0..40)
             .map(|index| format!("file-{index:03}.rs").into())
             .collect(),
+        ignored: false,
     });
 
     // How many rows this screen shows, asked of the screen rather than
@@ -807,6 +812,54 @@ fn the_key_is_not_offered_where_it_would_do_nothing() {
     );
 }
 
+/// A file the tree ignores is drawn dim, so a list offering both still says
+/// which is which.
+///
+/// Broken deliberately by drawing every walked row the same: `target` and
+/// `src` in one ink is a list that has stopped answering the question a
+/// reader opened it with.
+#[test]
+fn a_file_the_tree_ignores_is_drawn_dim() {
+    use obelus::theme::builtin::DARK;
+
+    let scratch = support::Scratch::new("picker-dim");
+    scratch.write("src/main.rs", "fn main() {}\n");
+    scratch.write("target/debug/build.log", "noise\n");
+    scratch.write(".ignore", "target/\n");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(scratch.join("settings.toml"));
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.statuses_for_test(std::collections::HashMap::new());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 72, 20);
+    press_function(&mut app, 1);
+    press_alt_key(&mut app, KeyCode::Char('i'));
+    while let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(500)) {
+        app.handle(event);
+    }
+
+    let dump = support::render(&mut app, 72, 20);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("target/debug/build.log"),
+        "the ignored file was not offered:\n{dump}"
+    );
+    // By a letter each name has and the other does not -- `b` of "build",
+    // `c` of "src" -- because a row's ink is what is being asked about and
+    // the two rows share every other cell on the screen.
+    assert_eq!(
+        support::colour_under(&dump, 'b'),
+        support::spelled(DARK.gutter),
+        "an ignored file is drawn like a file the tree keeps:\n{dump}"
+    );
+    assert_ne!(
+        support::colour_under(&dump, 'c'),
+        support::spelled(DARK.gutter),
+        "a file the tree keeps is drawn like an ignored one:\n{dump}"
+    );
+}
+
 /// And the walk leaves them out, or does not.
 #[test]
 fn the_walk_offers_the_ignored_files_only_when_asked() {
@@ -842,6 +895,7 @@ fn paging_scrolls_the_window() {
         paths: (0..40)
             .map(|index| format!("file-{index:03}.rs").into())
             .collect(),
+        ignored: false,
     });
 
     let first = support::render(&mut app, 60, 12);
@@ -908,6 +962,7 @@ fn the_file_picker_shows_a_glyph_for_each_file() {
             "Cargo.toml".into(),
             "mystery.qqq".into(),
         ],
+        ignored: false,
     });
 
     let dump = support::render(&mut app, 40, 8);
@@ -993,6 +1048,7 @@ fn a_query_matches_the_name_and_not_the_glyph() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/app.rs".into()],
+        ignored: false,
     });
 
     type_text(&mut app, "app");
@@ -1042,6 +1098,7 @@ fn a_long_path_keeps_its_end_and_marks_the_cut() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
+        ignored: false,
     });
 
     let dump = support::render(&mut app, 30, 6);
@@ -1069,6 +1126,7 @@ fn a_truncated_row_keeps_the_padding_on_its_right() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
+        ignored: false,
     });
 
     // ASCII throughout, so one character in the dump is one cell.
@@ -1111,6 +1169,7 @@ fn truncation_does_not_move_the_matched_characters() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
+        ignored: false,
     });
 
     // A query that matches only in the tail, which is the part still on screen.
@@ -1132,6 +1191,7 @@ fn a_match_in_the_cut_away_head_colours_nothing() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["averydeepdirectory/tree/leading/to/x.rs".into()],
+        ignored: false,
     });
 
     type_text(&mut app, "averydeep");
@@ -1774,6 +1834,7 @@ fn the_file_picker_previews_the_selected_file() {
             "tests/fixtures/sample.rs".into(),
             "tests/fixtures/long.rs".into(),
         ],
+        ignored: false,
     });
 
     support::check("preview_60x22", &support::render(&mut app, 60, 22));
@@ -1791,6 +1852,7 @@ fn the_preview_follows_the_selection() {
             "tests/fixtures/sample.rs".into(),
             "tests/fixtures/long.rs".into(),
         ],
+        ignored: false,
     });
 
     let first = support::text_block(&support::render(&mut app, 60, 22)).to_string();
@@ -1860,6 +1922,7 @@ fn a_short_screen_gets_the_list_and_no_preview() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/sample.rs".into()],
+        ignored: false,
     });
 
     let dump = support::render(&mut app, 60, 10);
@@ -1890,6 +1953,7 @@ fn a_file_is_previewed_from_its_first_line() {
             "tests/fixtures/long.rs".into(),
             "tests/fixtures/indented.rs".into(),
         ],
+        ignored: false,
     });
 
     let dump = support::render(&mut app, 60, 22);
@@ -2000,6 +2064,7 @@ fn a_taller_screen_gives_the_extra_rows_to_the_preview() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths,
+        ignored: false,
     });
 
     let shown = |dump: &str| {
@@ -2055,6 +2120,7 @@ fn a_list_with_tabs_still_walks_ten_rows() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths,
+        ignored: false,
     });
 
     let names = |dump: &str| {
@@ -2123,6 +2189,7 @@ fn paging_scrolls_the_preview_and_not_the_list() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/many_lines.rs".into()],
+        ignored: false,
     });
 
     let at_rest = support::render(&mut app, 60, 22);
@@ -2195,6 +2262,7 @@ fn the_preview_stops_at_the_top_of_the_file() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/many_lines.rs".into()],
+        ignored: false,
     });
 
     let at_rest = support::text_block(&support::render(&mut app, 60, 22)).to_string();
@@ -2446,10 +2514,12 @@ fn the_file_picker_opens_on_the_file_being_read() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/one.rs".into(), "src/two.rs".into()],
+        ignored: false,
     });
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/sample.rs".into(), "src/three.rs".into()],
+        ignored: false,
     });
 
     let picker = app.picker().expect("the picker is open");
@@ -2484,6 +2554,7 @@ fn a_late_batch_does_not_move_a_selection_the_reader_has_touched() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/one.rs".into(), "src/two.rs".into()],
+        ignored: false,
     });
 
     press(&mut app, KeyCode::Down);
@@ -2496,6 +2567,7 @@ fn a_late_batch_does_not_move_a_selection_the_reader_has_touched() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/sample.rs".into()],
+        ignored: false,
     });
     assert_eq!(
         app.picker()
@@ -3132,6 +3204,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/long.rs".into()],
+        ignored: false,
     });
     press(&mut app, KeyCode::Enter);
     assert!(
@@ -3154,6 +3227,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
     app.handle(Event::FilesFound {
         generation: 2,
         paths: vec!["tests/fixtures/long.rs".into()],
+        ignored: false,
     });
     press(&mut app, KeyCode::Enter);
     assert!(
@@ -3362,6 +3436,7 @@ fn a_walk_in_flight_does_not_land_in_the_changed_listing() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/walked.rs".into()],
+        ignored: false,
     });
     assert_eq!(app.picker().expect("the file list").match_count(), 1);
 
@@ -3369,6 +3444,7 @@ fn a_walk_in_flight_does_not_land_in_the_changed_listing() {
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/late.rs".into()],
+        ignored: false,
     });
     let rows: Vec<String> = app
         .picker()
@@ -3479,6 +3555,7 @@ fn the_file_list_previews_an_open_file_where_it_is_being_read() {
             "tests/fixtures/many_lines.rs".into(),
             "tests/fixtures/sample.rs".into(),
         ],
+        ignored: false,
     });
     support::type_text(&mut app, "many");
     let dump = support::render(&mut app, 60, 30);
@@ -3546,6 +3623,7 @@ fn every_bar_on_the_screen_is_in_the_same_column() {
         paths: std::iter::once("tests/fixtures/many_lines.rs".into())
             .chain((0..40).map(|number| format!("src/dir_{number:02}/file.rs").into()))
             .collect(),
+        ignored: false,
     });
     let dump = support::render(&mut app, 60, 22);
     let listed = bars(&dump);
@@ -3588,6 +3666,7 @@ fn a_rule_is_a_rule_over_whatever_is_under_it() {
         paths: std::iter::once("tests/fixtures/boxes.txt".into())
             .chain((0..40).map(|number| format!("src/dir_{number:02}/file.rs").into()))
             .collect(),
+        ignored: false,
     });
     let dump = support::render(&mut app, 60, 22);
 

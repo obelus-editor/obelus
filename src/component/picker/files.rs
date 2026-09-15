@@ -1,6 +1,7 @@
 //! Gathering the files the picker can offer.
 
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
     sync::mpsc::Sender,
 };
@@ -34,61 +35,99 @@ pub fn spawn_walk(root: &Path, generation: u64, ignored: bool, sender: Sender<Ev
     let outcome = std::thread::Builder::new()
         .name("obelus-walk".to_string())
         .spawn(move || {
-            let mut batch: Vec<PathBuf> = Vec::with_capacity(BATCH);
-
-            // `.gitignore` and friends are respected unless the reader has
-            // said otherwise, and hidden files are skipped either way: a
-            // reader looking for a file wants the ones under version
-            // control, not `target` and never `.git`.
-            let mut walk = WalkBuilder::new(&root);
-            walk.git_ignore(!ignored)
-                .git_global(!ignored)
-                .git_exclude(!ignored)
-                .ignore(!ignored)
-                .parents(!ignored);
-            for entry in walk.build() {
-                let entry = match entry {
-                    Ok(entry) => entry,
-                    // An unreadable directory is not worth abandoning the walk
-                    // over.
-                    Err(error) => {
-                        tracing::debug!(%error, "skipping an entry");
-                        continue;
-                    }
-                };
-                if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-                    continue;
-                }
-                // Relative to the root, which is what the picker shows and
-                // what the reader typed to get here.
-                let path = entry
-                    .path()
-                    .strip_prefix(&root)
-                    .unwrap_or_else(|_| entry.path())
-                    .to_path_buf();
-                batch.push(path);
-
-                if batch.len() >= BATCH {
-                    let paths = std::mem::replace(&mut batch, Vec::with_capacity(BATCH));
-                    // The receiver is gone, so the loop has ended.
-                    if sender
-                        .send(Event::FilesFound { generation, paths })
-                        .is_err()
-                    {
-                        return;
-                    }
-                }
+            // The files the tree keeps, first and on their own: they are what
+            // a reader is usually after, and this is the quick walk -- it is
+            // the one that does not descend into `target`.
+            let mut sent = HashSet::new();
+            if !walk(&root, true, generation, &sender, &mut sent) || !ignored {
+                return;
             }
-
-            if !batch.is_empty() {
-                let _ = sender.send(Event::FilesFound {
-                    generation,
-                    paths: batch,
-                });
-            }
+            // And then the ones it does not keep, which are whatever the
+            // first walk did not send. Asking a second matcher whether a path
+            // is ignored would be asking the same question twice and leaving
+            // the two answers free to differ; this way "ignored" means
+            // exactly "the walk that obeys the rules did not offer it".
+            walk(&root, false, generation, &sender, &mut sent);
         });
 
     if let Err(error) = outcome {
         tracing::warn!(%error, "not walking the tree");
     }
+}
+
+/// One walk over the tree, sending what it finds in batches.
+///
+/// `obeying` says whether the ignore rules apply. The walk that obeys them
+/// remembers in `sent` what it offered; the walk that does not obey them
+/// leaves those out and sends the rest, marked as ignored.
+///
+/// Hidden files are skipped either way. Returns whether there is still
+/// anybody to send to.
+fn walk(
+    root: &Path,
+    obeying: bool,
+    generation: u64,
+    sender: &Sender<Event>,
+    sent: &mut HashSet<PathBuf>,
+) -> bool {
+    let mut batch: Vec<PathBuf> = Vec::with_capacity(BATCH);
+    let mut walk = WalkBuilder::new(root);
+    walk.git_ignore(obeying)
+        .git_global(obeying)
+        .git_exclude(obeying)
+        .ignore(obeying)
+        .parents(obeying);
+
+    for entry in walk.build() {
+        let entry = match entry {
+            Ok(entry) => entry,
+            // An unreadable directory is not worth abandoning the walk over.
+            Err(error) => {
+                tracing::debug!(%error, "skipping an entry");
+                continue;
+            }
+        };
+        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+            continue;
+        }
+        // Relative to the root, which is what the picker shows and what the
+        // reader typed to get here.
+        let path = entry
+            .path()
+            .strip_prefix(root)
+            .unwrap_or_else(|_| entry.path())
+            .to_path_buf();
+        match obeying {
+            true => {
+                sent.insert(path.clone());
+            }
+            false if sent.contains(&path) => continue,
+            false => {}
+        }
+        batch.push(path);
+
+        if batch.len() >= BATCH {
+            let paths = std::mem::replace(&mut batch, Vec::with_capacity(BATCH));
+            // The receiver is gone, so the loop has ended.
+            if sender
+                .send(Event::FilesFound {
+                    generation,
+                    paths,
+                    ignored: !obeying,
+                })
+                .is_err()
+            {
+                return false;
+            }
+        }
+    }
+
+    if !batch.is_empty() {
+        let _ = sender.send(Event::FilesFound {
+            generation,
+            paths: batch,
+            ignored: !obeying,
+        });
+    }
+    true
 }
