@@ -276,15 +276,19 @@ pub struct Viewport {
 pub struct Block {
     /// The line of the file they are drawn above.
     pub above: LineNumber,
-    /// What they said, as a document of its own.
+    /// What they said, and where the caret is in them.
     ///
-    /// A [`Text`] rather than a list of strings, so that everything the
+    /// An [`Editing`] rather than a list of strings, so that everything the
     /// file's own lines get is theirs too: they wrap at the same width, tabs
     /// reach the same stops, a wide glyph takes two cells, the caret moves
-    /// by visual rows, and a selection in them is a span like any other.
-    /// The alternative was a second, smaller set of all of that, and a
-    /// second set is a second set of bugs.
-    pub text: Text,
+    /// by visual rows and by words, and a selection in them is a span like
+    /// any other. The alternative was a second, smaller set of all of that,
+    /// and a second set is a second set of bugs.
+    ///
+    /// The caret lives here rather than beside the buffer's own because
+    /// these lines are a text and a caret belongs to the text it is in.
+    /// Which of them the reader is actually in is [`Buffer::caret_block`].
+    editing: Editing,
     /// What kind of thing these rows are.
     pub kind: Held,
     /// Every line it was opened with, so folding has something to put back.
@@ -341,6 +345,12 @@ pub const FOLDED_LINES: usize = 5;
 const MORE: &str = "\u{2026}";
 
 impl Block {
+    /// What the rows say.
+    #[must_use]
+    pub const fn text(&self) -> &Text {
+        self.editing.text()
+    }
+
     /// Whether folding it would hide anything.
     ///
     /// Only a message. A hunk's removed lines are already a thing the reader
@@ -378,7 +388,16 @@ impl Block {
             }
             false => self.full.join("\n"),
         };
-        self.text = Text::from_string(&lines);
+        let cursor = self.editing.cursor();
+        *self.editing.text_mut() = Text::from_string(&lines);
+        // The caret may have been standing on a row that has just gone. It
+        // keeps its place where it can, because a reader who folds while
+        // reading the third line expects to still be near the top -- not
+        // thrown back to the start. What was selected is let go: a selection
+        // across rows that are no longer there is not a selection of
+        // anything a reader can point at.
+        self.editing.clear_selection();
+        self.editing.arrive(cursor.line, cursor.column);
         self.rows.set(None);
     }
 
@@ -393,8 +412,9 @@ impl Block {
         {
             return rows;
         }
-        let rows = (0..self.text.line_count())
-            .map(|line| self.text.row_count(LineNumber::new(line), width))
+        let text = self.text();
+        let rows = (0..text.line_count())
+            .map(|line| text.row_count(LineNumber::new(line), width))
             .sum();
         self.rows.set(Some((width, rows)));
         rows
@@ -403,8 +423,9 @@ impl Block {
     /// How many rows come before one of its lines.
     #[must_use]
     pub fn rows_before(&self, line: LineNumber, width: u16) -> usize {
-        (0..line.get().min(self.text.line_count()))
-            .map(|line| self.text.row_count(LineNumber::new(line), width))
+        let text = self.text();
+        (0..line.get().min(text.line_count()))
+            .map(|line| text.row_count(LineNumber::new(line), width))
             .sum()
     }
 
@@ -416,16 +437,17 @@ impl Block {
     /// is a place in a line.
     #[must_use]
     pub fn place_at_row(&self, row: usize, width: u16) -> (LineNumber, usize) {
+        let text = self.text();
         let mut left = row;
-        for line in 0..self.text.line_count() {
-            let rows = self.text.row_count(LineNumber::new(line), width);
+        for line in 0..text.line_count() {
+            let rows = text.row_count(LineNumber::new(line), width);
             if left < rows {
                 return (LineNumber::new(line), left);
             }
             left -= rows;
         }
-        let last = self.text.last_line();
-        (last, self.text.row_count(last, width).saturating_sub(1))
+        let last = text.last_line();
+        (last, text.row_count(last, width).saturating_sub(1))
     }
 
     /// Whether it has anything in it.
@@ -458,46 +480,6 @@ pub enum Held {
     Removed,
     /// What a commit said about itself.
     Message,
-}
-
-/// Where the caret is while the reader is in an opened block.
-///
-/// Apart from the cursor rather than instead of it: those lines are not
-/// places in the file, so nothing that asks the file about "here" -- a
-/// language server, a jump, the next change -- may be answered from one.
-/// The cursor stays on the line the block is anchored to and goes on
-/// answering all of that; this says where the caret really is, what it has
-/// selected, and nothing else.
-///
-/// The same [`Cursor`] the file has, because the block is the same kind of
-/// thing: a text with rows, columns and a cell to aim for.
-#[derive(Clone, Copy, Debug)]
-struct InBlock {
-    /// Which block, by the line it hangs above.
-    above: LineNumber,
-    /// Where the caret is in the block's own text.
-    cursor: Cursor,
-    /// Where a selection started, if one has.
-    anchor: Option<Cursor>,
-}
-
-/// The run between two places, as a span, or nothing when they are the
-/// same place.
-///
-/// The file's selection and a block's are the same shape: two ends in one
-/// text, either way round.
-fn span_between(anchor: Cursor, cursor: Cursor) -> Option<Span> {
-    let (start, end) = if (anchor.line, anchor.column) <= (cursor.line, cursor.column) {
-        (anchor, cursor)
-    } else {
-        (cursor, anchor)
-    };
-    ((start.line, start.column) != (end.line, end.column)).then_some(Span {
-        line: start.line,
-        column: start.column,
-        end_line: end.line,
-        end_column: end.column,
-    })
 }
 
 /// The room the text has, and whether it wraps in it.
@@ -595,8 +577,16 @@ pub struct Buffer {
     /// things a reader most wants to see together are the two they are
     /// deciding between.
     blocks: Vec<Block>,
-    /// And where the caret is in it, if the reader has walked in.
-    in_block: Option<InBlock>,
+    /// Which of them the caret is in, if the reader has walked into one.
+    ///
+    /// Which block, and nothing else: where the caret is in its lines is
+    /// the block's, because those lines are a text and a caret belongs to
+    /// the text it is in. The buffer's own cursor stays on the line the
+    /// block hangs above and goes on answering everything that asks the
+    /// *file* about "here" -- a language server, a jump, the next change --
+    /// because none of that can be answered from lines the file does not
+    /// have.
+    in_block: Option<LineNumber>,
     /// What was on disk when this was last read or written.
     ///
     /// Nothing was kept about a file before, because nothing ever had to ask
@@ -847,7 +837,7 @@ impl Buffer {
             // Joined without a trailing newline: a text that ends in one
             // has an empty last line, and the block has exactly the lines
             // the hunk replaced.
-            text: Text::from_string(&lines.join("\n")),
+            editing: Editing::over(Text::from_string(&lines.join("\n"))),
             full: lines.to_vec(),
             folded: false,
             changed: None,
@@ -882,25 +872,6 @@ impl Buffer {
             return false;
         }
         self.blocks[at].refold(folded);
-        // The caret may have been standing on a row that has just gone. It
-        // keeps its column where it can, because a reader who folds while
-        // reading the third line expects to still be near the top -- not
-        // thrown back to the start.
-        let last = self.blocks[at].text.last_line();
-        if let Some(inside) = self.in_block.as_mut()
-            && inside.above == above
-        {
-            if inside.cursor.line > last {
-                inside.cursor.line = last;
-            }
-            let columns = self.blocks[at].text.line_length(inside.cursor.line);
-            if inside.cursor.column > columns {
-                inside.cursor.column = columns;
-            }
-            // A selection across rows that are no longer there is not a
-            // selection of anything a reader can point at.
-            inside.anchor = None;
-        }
         true
     }
 
@@ -923,7 +894,7 @@ impl Buffer {
     /// Closes it, and brings the caret back to the file if it was in there.
     pub fn close_block(&mut self, above: LineNumber) {
         self.blocks.retain(|block| block.above != above);
-        if self.in_block.is_some_and(|at| at.above == above) {
+        if self.in_block == Some(above) {
             self.in_block = None;
         }
     }
@@ -939,7 +910,7 @@ impl Buffer {
         self.blocks.retain(|block| block.kind != kind);
         if self
             .in_block
-            .is_some_and(|at| self.block_above(at.above).is_none())
+            .is_some_and(|above| self.block_above(above).is_none())
         {
             self.in_block = None;
         }
@@ -953,14 +924,15 @@ impl Buffer {
     /// past it to keep the cursor on screen. What the reader asked for was
     /// the message, so that is where the caret goes.
     pub fn enter_block(&mut self, above: LineNumber) {
-        if self.block_above(above).is_none_or(Block::is_empty) {
+        let Some(block) = self.block_above_mut(above) else {
+            return;
+        };
+        if block.is_empty() {
             return;
         }
-        self.in_block = Some(InBlock {
-            above,
-            cursor: Cursor::start(),
-            anchor: None,
-        });
+        *block.editing.cursor_mut() = Cursor::start();
+        block.editing.clear_selection();
+        self.in_block = Some(above);
     }
 
     /// The blocks this file has open, in the order they are drawn.
@@ -978,10 +950,19 @@ impl Buffer {
             .map(|at| &self.blocks[at])
     }
 
+    /// The same, to be moved about in.
+    fn block_above_mut(&mut self, line: LineNumber) -> Option<&mut Block> {
+        self.blocks
+            .binary_search_by_key(&line, |block| block.above)
+            .ok()
+            .map(|at| &mut self.blocks[at])
+    }
+
     /// Where the caret is in that block, if the reader has walked into it.
     #[must_use]
     pub fn in_block(&self) -> Option<(LineNumber, CharColumn)> {
-        self.in_block.map(|at| (at.cursor.line, at.cursor.column))
+        let cursor = self.block_above(self.in_block?)?.editing.cursor();
+        Some((cursor.line, cursor.column))
     }
 
     /// The block in front of the reader, by the line it hangs above.
@@ -1009,16 +990,15 @@ impl Buffer {
 
     /// Which block the caret is in, if it is in one.
     #[must_use]
-    pub fn caret_block(&self) -> Option<LineNumber> {
-        self.in_block.map(|at| at.above)
+    pub const fn caret_block(&self) -> Option<LineNumber> {
+        self.in_block
     }
 
     /// What is selected inside the block, in the block's own coordinates.
     #[must_use]
     pub fn block_selection(&self) -> Option<(LineNumber, Span)> {
-        let at = self.in_block?;
-        let anchor = at.anchor?;
-        Some((at.above, span_between(anchor, at.cursor)?))
+        let above = self.in_block?;
+        Some((above, self.block_above(above)?.editing.selection()?))
     }
 
     /// What the buffer holds.

@@ -186,7 +186,7 @@ fn step_rows(
 /// Up and down step one *visual* row, not one line. With wrapping on, a
 /// long line is many rows tall, and stepping over all of them at once is
 /// not what pressing down once looks like it should do.
-pub(crate) fn move_within(
+fn move_within(
     text: &Text,
     folds: &dyn Hides,
     cursor: &mut Cursor,

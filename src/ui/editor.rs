@@ -489,9 +489,9 @@ impl Widget for EditorView<'_> {
                 // the file: one wrapping per line rather than one per row,
                 // which for a deletion of a few hundred lines is the
                 // difference between a frame and several.
-                'block: for removed in 0..block.text.line_count() {
+                'block: for removed in 0..block.text().line_count() {
                     let removed = LineNumber::new(removed);
-                    for wrap in block.text.wrap_rows(removed, wrap_width) {
+                    for wrap in block.text().wrap_rows(removed, wrap_width) {
                         if into > 0 {
                             into -= 1;
                             continue;
@@ -568,7 +568,7 @@ impl Widget for EditorView<'_> {
                                 // followed the window.
                                 left: if self.wrap { 0 } else { viewport.left },
                             },
-                            &block.text,
+                            block.text(),
                             removed,
                             cells,
                             &Painting {
