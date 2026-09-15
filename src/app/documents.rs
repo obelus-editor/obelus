@@ -90,9 +90,39 @@ impl App {
         }
         picker.lists_files();
         picker.previews();
+        // This list has a key of its own, so it says so. The others have
+        // none, and a foot saying "enter chooses" would be a row spent on
+        // what the reader just did.
+        picker.says_its_keys();
         self.picker = Some(picker);
         self.listing = listings;
         self.refresh_listing();
+    }
+
+    /// Whatever a key means to a file list, beyond moving about in it.
+    ///
+    /// One key, and it is a setting: which files the list offers. Answered
+    /// here rather than in the picker because the picker knows about rows
+    /// and a query, and this is about where the rows come from -- and
+    /// because a setting is the application's to keep.
+    pub(super) fn listing_key(&mut self, key: &KeyEvent) -> bool {
+        if key.modifiers != KeyModifiers::ALT || key.code != KeyCode::Char('i') {
+            return false;
+        }
+        if !self.picker.as_ref().is_some_and(Picker::is_listing) {
+            return false;
+        }
+        // A tree that has pinned it has said so for everybody who opens it,
+        // and the row on the settings page says which file did. Here there
+        // is no row to say it, so the status bar does.
+        if let Some(path) = self.pinned_by("ignored_files") {
+            self.note = Some(format!("{} says which files to offer", path.display()));
+            return true;
+        }
+        let showing = !self.config().ignored_files;
+        self.change_setting("ignored_files", &crate::config::Value::Switch(showing));
+        self.refresh_listing();
+        true
     }
 
     /// Fills a file list with the rows of whichever listing is showing.
@@ -127,7 +157,12 @@ impl App {
                     }
                 }
                 if let Some(sender) = self.events.clone() {
-                    files::spawn_walk(&self.working_directory, self.walk_generation, sender);
+                    files::spawn_walk(
+                        &self.working_directory,
+                        self.walk_generation,
+                        self.config().ignored_files,
+                        sender,
+                    );
                 }
             }
             Listing::Changed => {

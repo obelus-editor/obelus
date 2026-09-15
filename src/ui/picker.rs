@@ -12,7 +12,8 @@ use crate::{
     git::FileStatus,
     theme::Theme,
     ui::{
-        Marked, Matched, drop_from_left, drop_from_right, editor::SCROLLBAR_WIDTH, fill, text_width,
+        Hint, Marked, Matched, drop_from_left, drop_from_right, editor::SCROLLBAR_WIDTH, fill,
+        text_width,
     },
 };
 
@@ -40,6 +41,60 @@ fn list_region_rows(picker: &Picker, width: u16) -> u16 {
     LIST_ROWS
         .saturating_add(picker.tab_rows())
         .saturating_add(picker.about_rows(width))
+}
+
+/// What the keys do in a file list, and which of them do anything now.
+///
+/// One list read two ways, the way every other footed view here reads its
+/// own: the foot draws the common ones that can be pressed, and the card
+/// draws all of them with the rest greyed.
+///
+/// Nothing about enter or escape: a list is a list, and what a reader does
+/// to one is not news. Nothing about the arrows that walk the tabs either --
+/// the tab row draws those itself, right where the tabs are, which says it
+/// better than a word at the foot could.
+#[must_use]
+pub fn hints(picker: &Picker) -> Vec<Hint> {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    if !picker.says_keys() {
+        return Vec::new();
+    }
+    let chord = crate::keymap::KeyChord::new;
+    vec![
+        Hint::common(
+            chord(KeyCode::Char('i'), KeyModifiers::ALT),
+            "ignored files",
+        )
+        .saying("offer the files the tree ignores, or leave them out"),
+    ]
+}
+
+/// The foot saying what this list's own keys do, and the card over it.
+///
+/// Over the whole room rather than over the list, because a foot is the
+/// bottom of the *view*: a full-area file list has a preview under it, and a
+/// foot tucked below the rows would sit across the middle of the screen.
+pub fn foot_of(cells: &mut CellBuffer, picker: &Picker, room: Rect, theme: &Theme) {
+    let hints = hints(picker);
+    if hints.is_empty() {
+        return;
+    }
+    crate::ui::foot(cells, room, &hints, theme);
+    if picker.showing_keys() {
+        // Above the foot: the foot says how to close this, and a card over
+        // it would be a card with no way out on screen.
+        crate::ui::keys_card(cells, room_for(picker, room), &hints, theme);
+    }
+}
+
+/// The room a list and its preview have, once a foot has taken its rows.
+///
+/// One answer, asked by the list, by the preview and by the drawing. Two
+/// would be a foot drawn over rows the preview believed it had, which is a
+/// foot written across the file.
+#[must_use]
+pub fn room_for(picker: &Picker, editor: Rect) -> Rect {
+    crate::ui::footed(editor, &hints(picker))
 }
 
 /// The fewest rows worth giving a preview.
@@ -74,6 +129,7 @@ pub fn preview_region(picker: Option<&Picker>, editor: Rect) -> Option<Rect> {
     if !picker.shows_previews() {
         return None;
     }
+    let editor = room_for(picker, editor);
     // And only where there is anywhere to put it. The arithmetic below is a
     // full-area list's: a compact one sits on the status bar with nothing
     // under it, so there is no room to divide.
@@ -127,6 +183,7 @@ impl<'a> PickerView<'a> {
 /// the same thing.
 #[must_use]
 pub fn region(picker: &Picker, editor: Rect) -> Rect {
+    let editor = room_for(picker, editor);
     match picker.layout() {
         PickerLayout::FullArea => match preview_region(Some(picker), editor) {
             Some(_) => Rect {

@@ -22,19 +22,31 @@ const BATCH: usize = 512;
 /// reopened while a walk is still running, and the batches from the old one
 /// have to be recognizable as stale rather than merged into the new list.
 ///
+/// `ignored` offers the files the tree has said to ignore as well. Only the
+/// ignore rules go: hidden files stay hidden either way, because `.git` is a
+/// directory with one file per object in it and a reader who asked to see
+/// what `.gitignore` hides did not ask for that.
+///
 /// A thread because `WalkBuilder` is a blocking API, and the walk of a large
 /// tree is long enough that the picker has to be usable while it runs.
-pub fn spawn_walk(root: &Path, generation: u64, sender: Sender<Event>) {
+pub fn spawn_walk(root: &Path, generation: u64, ignored: bool, sender: Sender<Event>) {
     let root = root.to_path_buf();
     let outcome = std::thread::Builder::new()
         .name("obelus-walk".to_string())
         .spawn(move || {
             let mut batch: Vec<PathBuf> = Vec::with_capacity(BATCH);
 
-            // `.gitignore` and friends are respected, and hidden files are
-            // skipped: a reader looking for a file wants the ones under
-            // version control, not `target` and `.git`.
-            for entry in WalkBuilder::new(&root).build() {
+            // `.gitignore` and friends are respected unless the reader has
+            // said otherwise, and hidden files are skipped either way: a
+            // reader looking for a file wants the ones under version
+            // control, not `target` and never `.git`.
+            let mut walk = WalkBuilder::new(&root);
+            walk.git_ignore(!ignored)
+                .git_global(!ignored)
+                .git_exclude(!ignored)
+                .ignore(!ignored)
+                .parents(!ignored);
+            for entry in walk.build() {
                 let entry = match entry {
                     Ok(entry) => entry,
                     // An unreadable directory is not worth abandoning the walk

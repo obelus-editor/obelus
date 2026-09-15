@@ -409,6 +409,15 @@ pub struct Picker {
     /// list's own order the arrivals are older commits, which belong at the
     /// bottom, so nothing above the selection ever moves.
     ordered: bool,
+    /// Whether this list says at its foot what its own keys do.
+    ///
+    /// Only a list with keys of its own. Every list answers to the arrows,
+    /// to enter and to escape, and a row of the reader's screen spent
+    /// saying so is a row spent on what they just did -- so the foot goes
+    /// where there is something they could not have guessed.
+    footed: bool,
+    /// Whether the card listing every key is up.
+    keys: bool,
     /// Scratch for `Utf32Str::new`, which needs somewhere to put a converted
     /// haystack.
     haystack: Vec<char>,
@@ -455,6 +464,8 @@ impl Picker {
             nests: false,
             filling: None,
             ordered: false,
+            footed: false,
+            keys: false,
             layout,
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
             haystack: Vec::new(),
@@ -655,6 +666,23 @@ impl Picker {
     #[must_use]
     pub const fn is_listing(&self) -> bool {
         self.listing
+    }
+
+    /// Says this list has keys of its own worth a foot.
+    pub const fn says_its_keys(&mut self) {
+        self.footed = true;
+    }
+
+    /// Whether it does.
+    #[must_use]
+    pub const fn says_keys(&self) -> bool {
+        self.footed
+    }
+
+    /// Whether the card listing every key is showing.
+    #[must_use]
+    pub const fn showing_keys(&self) -> bool {
+        self.keys
     }
 
     /// The tab names, empty for a picker without tabs.
@@ -1136,7 +1164,17 @@ impl Picker {
                 self.step_tab(false);
                 PickerOutcome::Consumed
             }
+            // The card first: a key that opens a thing closes that thing,
+            // and escape reaches the nearest thing on screen.
+            KeyCode::Esc if bare && self.keys => {
+                self.keys = false;
+                PickerOutcome::Consumed
+            }
             KeyCode::Esc if bare => PickerOutcome::Cancelled,
+            KeyCode::F(1) if bare && self.footed => {
+                self.keys = !self.keys;
+                PickerOutcome::Consumed
+            }
             KeyCode::Enter if bare => self
                 .matched
                 .get(self.window.focus())

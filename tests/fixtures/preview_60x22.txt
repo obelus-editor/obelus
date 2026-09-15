@@ -18,8 +18,8 @@ screen 60x22  editor 60x20  status 60x1
 15|    5                                                       
 16|                                                            
 17|                                                            
-18|                                                            
-19|                                                            
+18|────────────────────────────────────────────────────────────
+19|  󰘵 i ignored files                                 󱊫 keys  
 20|────────────────────────────────────────────────────────────
 21| 󰍉                                                          
 -- style --
@@ -41,8 +41,8 @@ screen 60x22  editor 60x20  status 60x1
 15|bbbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 16|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 17|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-18|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-19|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+19|bbdddbcccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccbb
 20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 21|hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
 -- legend --

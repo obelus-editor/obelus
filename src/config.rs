@@ -35,6 +35,14 @@ pub struct Config {
     pub tab_width: usize,
     /// Whether to ask a language server to lay the file out before writing.
     pub format_on_save: bool,
+    /// Whether the file list offers the files a tree has said to ignore.
+    ///
+    /// About the list, not about the files: what `.gitignore` keeps out is
+    /// kept out of the *offer*, and a reader who knows the path can still
+    /// open one. Which is why this is worth a key as well as a switch --
+    /// "where is that build log" is a question asked once and then not
+    /// again for a week.
+    pub ignored_files: bool,
     /// Which agent obelus talks to, by the registry's own name for it.
     ///
     /// One, or none. Two would mean every question having to say which
@@ -68,6 +76,10 @@ impl Default for Config {
             // a file somebody opened to read, and the first they would know
             // of it is the diff.
             format_on_save: false,
+            // Off, because a tree says what it ignores and mostly means it:
+            // a list whose first hundred rows are `target` is a list nobody
+            // can find anything in.
+            ignored_files: false,
             // None until the reader installs one: obelus does not choose an
             // agent for anybody.
             agent: None,
@@ -118,11 +130,13 @@ pub enum Group {
     Appearance,
     /// What it says about the file being read.
     Reading,
+    /// Which files obelus offers, and where it looks for them.
+    Files,
 }
 
 impl Group {
     /// Every group, in the order their tabs sit in.
-    pub const ALL: [Self; 2] = [Self::Appearance, Self::Reading];
+    pub const ALL: [Self; 3] = [Self::Appearance, Self::Reading, Self::Files];
 
     /// The tab's name.
     #[must_use]
@@ -130,6 +144,7 @@ impl Group {
         match self {
             Self::Appearance => "appearance",
             Self::Reading => "reading",
+            Self::Files => "files",
         }
     }
 }
@@ -267,6 +282,14 @@ pub const ALL: &[Setting] = &[
         reach: Reach::Anywhere,
         kind: Kind::Switch,
     },
+    Setting {
+        key: "ignored_files",
+        name: "Files a tree ignores",
+        about: "offer them in the file list as well -- what `.gitignore` keeps out is build output most days and the file you are looking for on the others",
+        group: Group::Files,
+        reach: Reach::Anywhere,
+        kind: Kind::Switch,
+    },
 ];
 
 impl Config {
@@ -283,6 +306,7 @@ impl Config {
             "wrap" => Some(Value::Switch(self.wrap)),
             "tab_width" => Some(Value::Count(self.tab_width)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
+            "ignored_files" => Some(Value::Switch(self.ignored_files)),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
         }
@@ -299,6 +323,7 @@ impl Config {
             // somebody typed `0` into should not make every tab nothing.
             ("tab_width", Value::Count(width)) => self.tab_width = *width,
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
+            ("ignored_files", Value::Switch(on)) => self.ignored_files = *on,
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
             ("agent", Value::Choice(word)) => {
@@ -501,6 +526,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     {
         config.format_on_save = on;
     }
+    if let Some(on) = table.get("ignored_files").and_then(toml::Value::as_bool)
+        && allowed("ignored_files")
+    {
+        config.ignored_files = on;
+    }
     if let Some(word) = table.get("agent").and_then(toml::Value::as_str)
         && allowed("agent")
     {
@@ -571,6 +601,7 @@ pub fn over(existing: &str, config: &Config) -> String {
     document["wrap"] = toml_edit::value(config.wrap);
     document["tab_width"] = toml_edit::value(i64::try_from(config.tab_width).unwrap_or(4));
     document["format_on_save"] = toml_edit::value(config.format_on_save);
+    document["ignored_files"] = toml_edit::value(config.ignored_files);
     // Written even when there is nobody, so the file says what obelus read
     // rather than leaving the reader to wonder whether it noticed.
     document["agent"] = toml_edit::value(config.agent.clone().unwrap_or_default());
@@ -861,6 +892,7 @@ mod tests {
             wrap: true,
             tab_width: 8,
             format_on_save: true,
+            ignored_files: true,
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and
             // both have to survive the file or the reader makes them again

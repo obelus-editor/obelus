@@ -246,6 +246,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
             });
             let region = picker::region(list, room);
             picker::PickerView::new(list, app.theme()).render(region, cells);
+            picker::foot_of(cells, list, room, app.theme());
             if region.y > regions.editor.y {
                 rule(
                     cells,
@@ -291,6 +292,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
         if let Some(list) = app.picker() {
             let region = picker::region(list, regions.editor);
             picker::PickerView::new(list, app.theme()).render(region, cells);
+            picker::foot_of(cells, list, regions.editor, app.theme());
             if region.y > regions.editor.y {
                 rule(
                     cells,
@@ -362,6 +364,11 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
                 None => fill(cells, preview, Style::new().bg(app.theme().background)),
             }
         }
+
+        // Last, because the card it can put up goes over everything this
+        // list is showing -- the preview included, which is drawn after the
+        // rows and would otherwise be drawn over the bottom half of it.
+        picker::foot_of(cells, list, regions.editor, app.theme());
     }
     // Over the code and over everything else in the region: what could be
     // typed next belongs beside the cursor, and the cursor is on top.

@@ -679,6 +679,93 @@ fn the_list_moves_only_when_the_cursor_reaches_an_edge() {
     );
 }
 
+/// The file list says at its foot that it has a key of its own, and `f1`
+/// says the rest.
+///
+/// Only that list: every other one answers to the arrows, enter and escape,
+/// and a row saying so would be a row spent on what the reader just did.
+#[test]
+fn the_file_list_says_what_its_own_key_does() {
+    let mut app = app();
+    press_function(&mut app, 1);
+    let dump = support::render(&mut app, 72, 24);
+    assert!(
+        support::text_block(&dump).contains("ignored files"),
+        "the file list has no foot:\n{dump}"
+    );
+
+    press_function(&mut app, 1);
+    let card = support::render(&mut app, 72, 24);
+    assert!(
+        support::text_block(&card).contains("offer the files the tree ignores"),
+        "f1 said nothing:\n{card}"
+    );
+}
+
+/// And no foot over a list that has no key of its own.
+#[test]
+fn a_list_with_nothing_of_its_own_to_say_says_nothing() {
+    let mut app = app();
+    press_control(&mut app, 'p');
+    let dump = support::render(&mut app, 72, 24);
+    assert!(
+        !support::text_block(&dump).contains("ignored files"),
+        "the palette grew a foot:\n{dump}"
+    );
+}
+
+/// `alt+i` flips the setting, and the setting is what the walk obeys.
+#[test]
+fn alt_i_turns_the_ignored_files_on_and_off() {
+    let scratch = support::Scratch::new("picker-ignored");
+    let file = scratch.join("config.toml");
+    let mut app = app();
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 72, 24);
+
+    press_function(&mut app, 1);
+    assert!(
+        !app.config().ignored_files,
+        "a tree's ignored files are offered before anybody asked"
+    );
+
+    press_alt_key(&mut app, KeyCode::Char('i'));
+    assert!(app.config().ignored_files, "the key did nothing");
+    let written = std::fs::read_to_string(&file).expect("the settings file");
+    assert!(
+        written.contains("ignored_files = true"),
+        "the setting was not written down: {written}"
+    );
+
+    press_alt_key(&mut app, KeyCode::Char('i'));
+    assert!(!app.config().ignored_files, "the key only goes one way");
+}
+
+/// And the walk leaves them out, or does not.
+#[test]
+fn the_walk_offers_the_ignored_files_only_when_asked() {
+    let scratch = support::Scratch::new("picker-walk");
+    scratch.write("keep.rs", "fn keep() {}\n");
+    scratch.write("skip.rs", "fn skip() {}\n");
+    scratch.write(".ignore", "skip.rs\n");
+
+    let found = |ignored: bool, generation: u64| -> Vec<String> {
+        let (sender, events) = std::sync::mpsc::channel();
+        obelus::component::picker::files::spawn_walk(scratch.path(), generation, ignored, sender);
+        let mut names = Vec::new();
+        while let Ok(Event::FilesFound { paths, .. }) = events.recv() {
+            names.extend(paths.into_iter().map(|path| path.display().to_string()));
+        }
+        names.sort();
+        names
+    };
+
+    // `.ignore` itself is not offered either way: it is a hidden file, and
+    // hidden is the one thing this key does not change.
+    assert_eq!(found(false, 1), vec!["keep.rs"]);
+    assert_eq!(found(true, 2), vec!["keep.rs", "skip.rs"]);
+}
+
 /// Paging through the list has to bring the rows with it.
 #[test]
 fn paging_scrolls_the_window() {
@@ -703,8 +790,10 @@ fn paging_scrolls_the_window() {
         !text.contains("file-000.rs"),
         "the window did not move:\n{paged}"
     );
+    // Two screenfuls down, and the selection rides along: the list has eight
+    // rows at this size, so the row it lands on is the sixteenth.
     assert!(
-        text.contains("file-02"),
+        text.contains("file-016.rs"),
         "the selection is off screen:\n{paged}"
     );
 }

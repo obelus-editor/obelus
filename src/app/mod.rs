@@ -1248,6 +1248,13 @@ impl App {
             return;
         }
 
+        // The one key a file list has that is not about moving around it.
+        // Before the picker, because the picker would not know it: what it
+        // changes is where the rows come from, which is the application's.
+        if self.listing_key(&key) {
+            return;
+        }
+
         if let Some(picker) = self.picker.as_mut() {
             // What a search is asking, before and after the key. The picker
             // owns the query and the tab and knows nothing about where rows

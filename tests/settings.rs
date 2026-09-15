@@ -852,7 +852,8 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         "a setting written down at its default is not the reader's: {blame:?}"
     );
 
-    // And the two tabs a tree may not have.
+    // And the two tabs a tree may not have, past the files page.
+    support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
     let dump = support::render(&mut app, 76, 16);
     assert!(
@@ -1000,8 +1001,10 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
         "the name is not after the tabs: {wide:?}"
     );
 
-    // Narrow: the tabs are whole, and the name is simply not there.
-    let narrow = tabs(&mut app, 40);
+    // Narrow: the tabs are whole, and the name is simply not there. Wide
+    // enough for five tabs and not for the name after them, which is the
+    // corner this is about.
+    let narrow = tabs(&mut app, 48);
     assert!(
         narrow.contains("appearance") && narrow.contains("agents"),
         "the tabs were written over: {narrow:?}"
@@ -1547,7 +1550,8 @@ fn a_command_can_be_put_on_another_key() {
     let scratch = temporary("bind");
     let file = settings_file(&scratch);
     let mut app = open(&file);
-    // The keys tab: appearance, reading, keys, agents.
+    // The keys tab: appearance, reading, files, keys, agents.
+    support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
     support::type_text(&mut app, "choose-theme");
@@ -1607,6 +1611,7 @@ fn a_key_that_is_taken_says_so_on_the_row() {
     let mut app = open(&settings_file(&scratch));
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Right);
     support::type_text(&mut app, "choose-theme");
     support::press(&mut app, KeyCode::Enter);
 
@@ -1661,6 +1666,7 @@ fn a_key_that_could_never_fire_is_refused() {
     let mut app = open(&settings_file(&scratch));
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Right);
     support::type_text(&mut app, "choose-theme");
     support::press(&mut app, KeyCode::Enter);
 
@@ -1709,6 +1715,7 @@ fn delete_takes_a_key_away() {
     let scratch = temporary("unbind");
     let file = settings_file(&scratch);
     let mut app = open(&file);
+    support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
     support::type_text(&mut app, "close-file");
