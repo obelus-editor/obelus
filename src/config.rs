@@ -43,6 +43,15 @@ pub struct Config {
     /// "where is that build log" is a question asked once and then not
     /// again for a week.
     pub ignored_files: bool,
+    /// How long the pointer has to rest on a word before obelus asks what
+    /// it is, in milliseconds.
+    ///
+    /// Zero is off: the pointer then asks nothing, and `alt+h` is the way
+    /// in. A time rather than a switch because the answer people want
+    /// differs by more than on and off -- a reader who knows the code
+    /// wants it slow enough never to appear by accident, and one reading
+    /// somebody else's wants it as fast as their hand stops.
+    pub hover_delay: usize,
     /// Which agent obelus talks to, by the registry's own name for it.
     ///
     /// One, or none. Two would mean every question having to say which
@@ -80,6 +89,11 @@ impl Default for Config {
             // a list whose first hundred rows are `target` is a list nobody
             // can find anything in.
             ignored_files: false,
+            // Long enough that crossing a line of code does not ask about
+            // every word on the way, short enough that a reader who has
+            // stopped does not wonder whether obelus noticed. The figure
+            // every editor with a mouse uses.
+            hover_delay: 400,
             // None until the reader installs one: obelus does not choose an
             // agent for anybody.
             agent: None,
@@ -232,6 +246,13 @@ const THEMES: &[&str] = &["dark", "light"];
 /// The tab widths anybody sets.
 const WIDTHS: &[&str] = &["2", "4", "8"];
 
+/// How long a rest is, in milliseconds, as the few anybody picks.
+///
+/// Zero is the list's way of saying "not at all": a fourth control meaning
+/// off, beside a list that already has a slowest, is a second way to say
+/// the same thing.
+const DELAYS: &[&str] = &["0", "200", "400", "800"];
+
 /// Every setting obelus has.
 pub const ALL: &[Setting] = &[
     Setting {
@@ -275,6 +296,14 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Count(WIDTHS),
     },
     Setting {
+        key: "hover_delay",
+        name: "Ask on a rest",
+        about: "how long the pointer has to rest on a word before obelus says what it is, in milliseconds -- zero asks only when a key does",
+        group: Group::Reading,
+        reach: Reach::Anywhere,
+        kind: Kind::Count(DELAYS),
+    },
+    Setting {
         key: "format_on_save",
         name: "Format when saving",
         about: "ask the language server to lay the file out before writing it",
@@ -305,6 +334,7 @@ impl Config {
             "blame_margin" => Some(Value::Switch(self.blame_margin)),
             "wrap" => Some(Value::Switch(self.wrap)),
             "tab_width" => Some(Value::Count(self.tab_width)),
+            "hover_delay" => Some(Value::Count(self.hover_delay)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
             "ignored_files" => Some(Value::Switch(self.ignored_files)),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
@@ -322,6 +352,7 @@ impl Config {
             // Clamped where it is read rather than refused here: a file
             // somebody typed `0` into should not make every tab nothing.
             ("tab_width", Value::Count(width)) => self.tab_width = *width,
+            ("hover_delay", Value::Count(delay)) => self.hover_delay = *delay,
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
             ("ignored_files", Value::Switch(on)) => self.ignored_files = *on,
             // An empty word is nobody, which is how a reader stops talking
@@ -521,6 +552,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     {
         config.tab_width = usize::try_from(width).unwrap_or(crate::text::TAB_WIDTH);
     }
+    if let Some(delay) = table.get("hover_delay").and_then(toml::Value::as_integer)
+        && allowed("hover_delay")
+    {
+        config.hover_delay = usize::try_from(delay).unwrap_or(0);
+    }
     if let Some(on) = table.get("format_on_save").and_then(toml::Value::as_bool)
         && allowed("format_on_save")
     {
@@ -600,6 +636,7 @@ pub fn over(existing: &str, config: &Config) -> String {
     document["blame_margin"] = toml_edit::value(config.blame_margin);
     document["wrap"] = toml_edit::value(config.wrap);
     document["tab_width"] = toml_edit::value(i64::try_from(config.tab_width).unwrap_or(4));
+    document["hover_delay"] = toml_edit::value(i64::try_from(config.hover_delay).unwrap_or(400));
     document["format_on_save"] = toml_edit::value(config.format_on_save);
     document["ignored_files"] = toml_edit::value(config.ignored_files);
     // Written even when there is nobody, so the file says what obelus read
@@ -891,6 +928,7 @@ mod tests {
             blame_margin: false,
             wrap: true,
             tab_width: 8,
+            hover_delay: 800,
             format_on_save: true,
             ignored_files: true,
             agent: Some("claude-acp".to_string()),

@@ -15,14 +15,19 @@
 use super::{Resting, *};
 use crate::{component::hover::Hover, lsp::hover};
 
-/// How long the pointer has to rest before it is asking a question.
-///
-/// Long enough that crossing a line of code does not ask about every word
-/// on the way, short enough that a reader who has stopped does not wonder
-/// whether obelus noticed. The figure every editor with a mouse uses.
-const DWELL: std::time::Duration = std::time::Duration::from_millis(400);
-
 impl App {
+    /// How long the pointer has to rest before it is asking a question.
+    ///
+    /// The reader's, because the answer people want differs by more than
+    /// on and off: one who knows the code wants it slow enough never to
+    /// appear by accident, and one reading somebody else's wants it as
+    /// fast as their hand stops. `None` where they have said zero, which
+    /// is the pointer asking nothing at all.
+    fn dwell(&self) -> Option<std::time::Duration> {
+        let delay = self.config().hover_delay;
+        (delay > 0).then(|| std::time::Duration::from_millis(delay as u64))
+    }
+
     /// Asks what the place under the caret is.
     pub fn ask_hover(&mut self) {
         let Some(at) = self.current_buffer().map(|buffer| {
@@ -182,9 +187,10 @@ impl App {
         }
 
         // The pointer, having been still for long enough to be asking.
-        if let Some(resting) = self.resting
+        if let Some(dwell) = self.dwell()
+            && let Some(resting) = self.resting
             && !resting.asked
-            && resting.since.elapsed() >= DWELL
+            && resting.since.elapsed() >= dwell
             && self.hover.is_none()
             && let Some(at) = self.place_under(resting.x, resting.y)
         {
@@ -199,8 +205,10 @@ impl App {
     /// Whether anything is waiting on the clock, so the frame asks to be
     /// woken.
     pub(super) fn is_resting(&self) -> bool {
-        self.resting
-            .is_some_and(|resting| !resting.asked && resting.since.elapsed() < DWELL)
+        self.dwell().is_some_and(|dwell| {
+            self.resting
+                .is_some_and(|resting| !resting.asked && resting.since.elapsed() < dwell)
+        })
     }
 
     /// The place in the document a screen cell is over, if it is over one.
@@ -284,6 +292,15 @@ impl App {
                 false
             }
         }
+    }
+
+    /// Whether the rest the pointer is on has asked its question.
+    ///
+    /// For a test, which cannot see the asking any other way: what a
+    /// question produces is a panel, and a panel needs a server to answer.
+    #[must_use]
+    pub fn rest_has_asked_for_test(&self) -> bool {
+        self.resting.is_some_and(|resting| resting.asked)
     }
 
     /// Hands the panel an answer to a question the pointer asked, about

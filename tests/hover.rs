@@ -363,6 +363,53 @@ fn an_answer_about_somewhere_the_reader_has_left_is_dropped() {
     );
 }
 
+/// Zero is the reader saying the pointer asks nothing: the key still
+/// does, and nothing waits on a clock.
+#[test]
+fn a_rest_of_nothing_asks_nothing() {
+    use obelus::event::{Event, Pointer};
+
+    let (scratch, mut app) = editing("hover-never", SOURCE);
+    let dump = support::render(&mut app, 76, 18);
+    let (y, x) = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
+        .enumerate()
+        .find_map(|(y, row)| row.find("iter").map(|x| (y, x)))
+        .expect("a word to rest on");
+    let point = |app: &mut App, x: usize, y: usize| {
+        app.handle(Event::Pointer {
+            kind: Pointer::Moved,
+            x: u16::try_from(x).expect("a column"),
+            y: u16::try_from(y).expect("a row"),
+        });
+        support::lay_out(app, 76, 18);
+    };
+
+    // The frame asks to be woken while a rest is being timed, which is the
+    // only thing about a rest that can be seen without a server.
+    point(&mut app, x, y);
+    assert!(
+        app.is_waking(),
+        "nothing is waiting for the rest to be long enough"
+    );
+    assert!(
+        !app.rest_has_asked_for_test(),
+        "the question was asked before the rest was long enough"
+    );
+
+    // The reader's own file, saying the pointer asks nothing.
+    let settings = scratch.path().join("config.toml");
+    std::fs::write(&settings, "hover_delay = 0\n").expect("writing the settings");
+    app.config_file_for_test(settings);
+    point(&mut app, x + 1, y);
+    assert!(!app.is_waking(), "a rest of nothing is still being timed");
+    assert!(
+        !app.rest_has_asked_for_test(),
+        "a rest of nothing asked at once, which is the opposite of what it says"
+    );
+}
+
 /// The shapes an answer arrives in, which the protocol has three of.
 #[test]
 fn the_shapes_an_answer_arrives_in() {

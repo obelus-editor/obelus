@@ -839,12 +839,6 @@ impl Buffer {
         }
     }
 
-    /// Where the cursor sits on screen, as a row and a cell within the text
-    /// area.
-    ///
-    /// `None` when it is not on screen, which after
-    /// [`Buffer::scroll_into_view`] means the text area has no room at all.
-    #[must_use]
     /// Where a place in the text is on screen, as a row and a cell of the
     /// text area.
     ///
@@ -885,6 +879,12 @@ impl Buffer {
         None
     }
 
+    /// Where the cursor sits on screen, as a row and a cell within the text
+    /// area.
+    ///
+    /// `None` when it is not on screen, which after
+    /// [`Buffer::scroll_into_view`] means the text area has no room at all.
+    #[must_use]
     pub fn cursor_screen_cell(&self, area: TextArea) -> Option<(u16, u16)> {
         let cell = self.caret_cell(area);
         let cursor = self.cursor_screen_row(area);

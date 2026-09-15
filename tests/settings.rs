@@ -1961,3 +1961,56 @@ fn the_foot_offers_unset_only_where_it_means_something() {
 fn word_on(text: &str, word: &str) -> bool {
     text.lines().any(|row| row.contains(word))
 }
+
+/// The rest that asks a question is a time, and the times are the few
+/// anybody picks -- with zero among them, because "never" is one of the
+/// answers people want and a switch beside the list would be a second way
+/// to say the slowest one.
+#[test]
+fn the_time_a_rest_takes_is_the_readers() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("dwell");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    // Typed for by name, which is how a reader reaches a setting on a
+    // page of them -- and a check that it is on the page at all.
+    support::type_text(&mut app, "hover");
+    let settings = app.settings().expect("the view");
+    assert_eq!(
+        settings
+            .rows()
+            .iter()
+            .map(|row| row.setting.key)
+            .collect::<Vec<_>>(),
+        ["hover_delay"],
+        "the setting is not on the page, or not the only one that word finds"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    let picker = app.picker().expect("the choices");
+    assert_eq!(
+        picker
+            .matches()
+            .map(|item| item.label.clone())
+            .collect::<Vec<_>>(),
+        ["0", "200", "400", "800"],
+        "not the times obelus offers"
+    );
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.clone()),
+        Some("400".to_string()),
+        "the list did not open on the one in force"
+    );
+
+    support::type_text(&mut app, "800");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        config::from_toml(&std::fs::read_to_string(&file).expect("the file")).hover_delay,
+        800,
+        "the file does not say what was chosen"
+    );
+    assert_eq!(app.config().hover_delay, 800, "obelus is not using it");
+}
