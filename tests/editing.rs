@@ -1136,6 +1136,51 @@ mod unwritten {
         );
     }
 
+    /// Typing something and taking it straight back out leaves the file it
+    /// was: the journal has moved on, and the bytes have not.
+    ///
+    /// The journal alone says otherwise -- a character typed and a
+    /// character deleted are two steps forward, not a step back -- so where
+    /// the document is the length of the one on disk, the bytes themselves
+    /// settle it.
+    #[test]
+    fn typing_and_deleting_leaves_the_file_as_it_was() {
+        let (_scratch, mut app, _path) = reading("undo-balanced", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+        assert!(unwritten(&app), "typing did not make it unwritten");
+
+        support::press(&mut app, crossterm::event::KeyCode::Backspace);
+        assert!(
+            !unwritten(&app),
+            "the character was taken back out and the file is still called unwritten"
+        );
+    }
+
+    /// And taking out a *different* character does not: the bytes are what
+    /// is asked, not how many of them there are.
+    #[test]
+    fn deleting_something_else_of_the_same_length_is_still_unwritten() {
+        let (_scratch, mut app, _path) = reading("undo-swapped", "fn main() {}\n");
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        support::type_text(&mut app, "x");
+        support::press(&mut app, crossterm::event::KeyCode::Left);
+        support::press(&mut app, crossterm::event::KeyCode::Left);
+        support::press(&mut app, crossterm::event::KeyCode::Backspace);
+        assert_eq!(
+            app.current_buffer()
+                .expect("a buffer")
+                .text()
+                .rope()
+                .to_string(),
+            "fn main() }x\n",
+            "not the edit this test meant to make"
+        );
+        assert!(
+            unwritten(&app),
+            "a document the same length as the file was taken for the file"
+        );
+    }
+
     /// However many it takes. A flag that an edit set and one undo cleared
     /// would call a half-undone document written.
     #[test]

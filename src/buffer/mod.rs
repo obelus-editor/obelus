@@ -228,6 +228,13 @@ struct Seen {
     stat: Option<Stat>,
     /// What was in it then.
     digest: u64,
+    /// And how long that was.
+    ///
+    /// Beside the digest because it is the cheap half of the same question:
+    /// a document that is not even the length of the one on disk is not it,
+    /// and finding that out costs nothing where taking a digest costs a
+    /// pass over the file.
+    length: usize,
 }
 
 /// A digest of some bytes, for telling one version of a file from another.
@@ -538,6 +545,12 @@ pub struct Buffer {
     /// answer. A document somebody has edited cannot be re-read to find out,
     /// so the question has to be asked of the file rather than of its text.
     seen: Option<Seen>,
+    /// Whether the text differs from what is on disk.
+    ///
+    /// Worked out whenever the text moves rather than when it is asked:
+    /// the status row and every row of the list of open files ask on every
+    /// frame, and the answer can cost a pass over the file.
+    dirty: bool,
     /// What somebody else has done to the file while this was dirty.
     ///
     /// Set instead of re-reading, because re-reading over an edit is losing
@@ -584,6 +597,7 @@ impl Buffer {
         let seen = Some(Seen {
             stat: Stat::of(&path),
             digest: digest_of_text(&text),
+            length: text.byte_length().get(),
         });
 
         Ok(Self {
@@ -612,6 +626,7 @@ impl Buffer {
             in_block: None,
             undo: undo::Undo::default(),
             disk: Disk::Unchanged,
+            dirty: false,
         })
     }
 
@@ -750,6 +765,7 @@ impl Buffer {
             undo: undo::Undo::default(),
             seen: None,
             disk: Disk::Unchanged,
+            dirty: false,
         }
     }
 
@@ -951,8 +967,31 @@ impl Buffer {
     /// the last re-read *failed*, and what git says has changed is about
     /// `HEAD` rather than about disk.
     #[must_use]
-    pub fn is_dirty(&self) -> bool {
-        self.undo.changed()
+    pub const fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Works out whether the text differs from what is on disk.
+    ///
+    /// The bytes, and nothing else. How many steps the journal has taken is
+    /// not the question -- a reader who typed a character and took it back
+    /// out has moved two steps forward and changed nothing -- and neither
+    /// is how many it would take to get back, which is a different number
+    /// again after an undo and some new work.
+    ///
+    /// Cheapest half first: a document that is not even the length of the
+    /// one on disk is not it, and finding that out costs nothing. While
+    /// somebody is typing, it never is -- which is what keeps a pass over
+    /// the file out of the keystroke. No test can tell that half from
+    /// leaving it out, because the digest answers correctly on its own; it
+    /// is there so that the digest is hardly ever asked.
+    fn settle_dirty(&mut self) {
+        let Some(seen) = self.seen else {
+            self.dirty = true;
+            return;
+        };
+        self.dirty = self.text.byte_length().get() != seen.length
+            || digest_of_text(&self.text) != seen.digest;
     }
 
     /// What somebody else has done to the file, as last established.
@@ -1048,9 +1087,14 @@ impl Buffer {
         self.seen = Some(Seen {
             stat: Stat::of(&self.path),
             digest: digest_of_text(&self.text),
+            length: self.text.byte_length().get(),
         });
         self.disk = Disk::Unchanged;
-        self.undo.settled();
+        // A save is something the reader did between one edit and the next:
+        // typing that carried on across it would undo back past the thing
+        // they wrote.
+        self.undo.close();
+        self.dirty = false;
     }
 
     /// How many times this document has changed.
@@ -1215,6 +1259,10 @@ impl Buffer {
         // reading, the diff against git, the rows of an in-file search --
         // and every one of them is wrong until it moves.
         self.version = self.version.saturating_add(1);
+        // Here rather than at the three doors that come through here, so
+        // that a fourth cannot forget: after this, what the screen says
+        // about the document is true of it.
+        self.settle_dirty();
 
         // What the reader folded, moved by however many lines the edit added
         // or took away. `offer` would be right for a re-read and is wrong

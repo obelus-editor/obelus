@@ -69,36 +69,19 @@ impl Step {
     }
 }
 
-/// One group of steps, and what tells it from every other group.
-#[derive(Debug)]
-struct Group {
-    /// Never reused, which is what makes it an answer to "is the document
-    /// where it was when it was written".
-    id: u64,
-    /// What it did, in the order it did it.
-    steps: Vec<Step>,
-}
-
 /// Everything a document can be put back to.
 #[derive(Debug, Default)]
 pub struct Undo {
     /// Groups already made, oldest first. The last is the open one.
-    done: Vec<Group>,
+    done: Vec<Vec<Step>>,
     /// Groups undone, for redoing. Emptied by any new edit.
-    undone: Vec<Group>,
+    undone: Vec<Vec<Step>>,
     /// Whether the last group is still taking steps.
     ///
     /// Apart from the group itself, because a group that has been closed is
     /// not an empty group -- it is a finished one, and the next step starts
     /// another.
     open: bool,
-    /// The id the next group will have.
-    next: u64,
-    /// Which group the document was on when it was last written.
-    ///
-    /// `None` for a document that has never been written and for one just
-    /// read from disk, which are the same state: no group made yet.
-    saved: Option<u64>,
 }
 
 impl Undo {
@@ -112,19 +95,12 @@ impl Undo {
             && self
                 .done
                 .last()
-                .and_then(|group| group.steps.last())
+                .and_then(|group| group.last())
                 .is_some_and(|last| last.runs_into(&step));
         match self.done.last_mut().filter(|_| joins) {
-            Some(group) => group.steps.push(step),
+            Some(group) => group.push(step),
             None => {
-                self.done.push(Group {
-                    id: self.next,
-                    steps: vec![step],
-                });
-                // Never given out twice, so a group that was undone and
-                // replaced by new work cannot be mistaken for the one the
-                // document was written at.
-                self.next = self.next.saturating_add(1);
+                self.done.push(vec![step]);
                 self.open = true;
             }
         }
@@ -143,40 +119,16 @@ impl Undo {
     pub fn undo(&mut self) -> Option<Vec<Step>> {
         let group = self.done.pop()?;
         self.open = false;
-        let steps = group.steps.clone();
-        self.undone.push(group);
-        Some(steps)
+        self.undone.push(group.clone());
+        Some(group)
     }
 
     /// The most recently undone group, to be done again.
     pub fn redo(&mut self) -> Option<Vec<Step>> {
         let group = self.undone.pop()?;
         self.open = false;
-        let steps = group.steps.clone();
-        self.done.push(group);
-        Some(steps)
-    }
-
-    /// Says the document as it stands is what is on disk.
-    ///
-    /// And closes the group, because a save is something the reader did
-    /// between one edit and the next: typing that carried on across it
-    /// would undo back past the thing they wrote.
-    pub fn settled(&mut self) {
-        self.saved = self.done.last().map(|group| group.id);
-        self.open = false;
-    }
-
-    /// Whether the document differs from what was last written.
-    ///
-    /// Which group the document is on rather than how many it has made:
-    /// undoing back to the group it was written at is being back at what is
-    /// on disk, however many edits and undos it took to get there, and new
-    /// work after an undo lands on a group id that has never been seen
-    /// before rather than on the number one happened to have.
-    #[must_use]
-    pub fn changed(&self) -> bool {
-        self.done.last().map(|group| group.id) != self.saved
+        self.done.push(group.clone());
+        Some(group)
     }
 
     /// Whether there is anything to undo.
@@ -199,9 +151,5 @@ impl Undo {
         self.done.clear();
         self.undone.clear();
         self.open = false;
-        // No group made, which is the state a document read from disk is
-        // in: it is what is on disk. `next` is not put back, so an id is
-        // still never given out twice.
-        self.saved = None;
     }
 }
