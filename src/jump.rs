@@ -83,6 +83,41 @@ impl JumpList {
         self.at += 1;
         self.entries.get(self.at).copied()
     }
+
+    /// Moves the places recorded in one document across an edit.
+    ///
+    /// A place is a line and a column, and an edit above one moves it: two
+    /// lines put in at the top of a file and everything the reader might go
+    /// back to is two lines further down. Without this, going back lands on
+    /// whatever has drifted into those numbers -- which is the same
+    /// confident wrongness a stale diff has, and harder to notice, because
+    /// the reader asked to go somewhere and did go somewhere.
+    ///
+    /// `from` and `to` are the lines the edit covered, before it was made.
+    /// A place above them is where it was; one below has moved by however
+    /// many lines the edit added or took away; and one *inside* them is a
+    /// place that is not there any more -- the nearest thing left to it is
+    /// where the edit began.
+    pub fn keep_across(
+        &mut self,
+        buffer: BufferId,
+        from: LineNumber,
+        to: LineNumber,
+        moved: isize,
+    ) {
+        for entry in &mut self.entries {
+            if entry.buffer != buffer || entry.line <= from {
+                continue;
+            }
+            if entry.line <= to {
+                entry.line = from;
+                // The column belonged to a line that is gone.
+                entry.column = CharColumn::new(0);
+                continue;
+            }
+            entry.line = LineNumber::new(entry.line.get().saturating_add_signed(moved));
+        }
+    }
 }
 
 #[cfg(test)]

@@ -2650,22 +2650,6 @@ fn the_outline_lists_what_a_file_defines_and_colours_it() {
         "a type and a function are the same colour:\n{dump}"
     );
 
-    // Nesting shows as indentation. `mod tests` is a definition and the
-    // tests inside it are inside it, so their rows start further right --
-    // which is the whole of what makes an outline a tree rather than a list.
-    let starts_at = |needle: &str| {
-        let at = rows
-            .iter()
-            .position(|row| row.contains(needle))
-            .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"));
-        let byte = rows[at].find(needle).expect("the label");
-        rows[at][..byte].chars().count()
-    };
-    assert!(
-        starts_at("nothing_to_go_back_to") > starts_at("tests"),
-        "a nested symbol is not indented under the one that holds it:\n{dump}"
-    );
-
     // And the preview below shows the selected symbol in its own code, which
     // is what makes an outline readable rather than an index.
     assert!(
@@ -2680,6 +2664,41 @@ fn the_outline_lists_what_a_file_defines_and_colours_it() {
     assert!(
         support::text_block(&after).contains("pub struct JumpList"),
         "choosing a symbol did not go to it:\n{after}"
+    );
+}
+
+/// Nesting shows as indentation. `mod tests` is a definition and the tests
+/// inside it are inside it, so their rows start further right -- which is
+/// the whole of what makes an outline a tree rather than a list.
+///
+/// Its own test because it has to look at the end of the list, where the
+/// nested rows are: the list shows ten at a time, and a file that grows a
+/// function would otherwise push them off the bottom.
+#[test]
+fn an_outline_indents_what_is_nested() {
+    let mut app = App::new(vec![
+        obelus::buffer::Buffer::open(std::path::Path::new("src/jump.rs")).expect("a file"),
+    ]);
+    support::lay_out(&mut app, 60, 24);
+    press_function(&mut app, 7);
+    press(&mut app, KeyCode::End);
+
+    let dump = support::render(&mut app, 60, 24);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    let starts_at = |needle: &str| {
+        let at = rows
+            .iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"));
+        let byte = rows[at].find(needle).expect("the label");
+        rows[at][..byte].chars().count()
+    };
+    assert!(
+        starts_at("nothing_to_go_back_to") > starts_at("tests"),
+        "a nested symbol is not indented under the one that holds it:\n{dump}"
     );
 }
 

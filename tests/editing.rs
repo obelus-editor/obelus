@@ -2187,3 +2187,97 @@ mod by_the_word_and_the_line {
         assert_eq!(text(&app), "one\n");
     }
 }
+
+/// Where the reader has been is a set of line numbers in a document, and an
+/// edit moves some of them.
+mod going_back {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    fn editing(name: &str, contents: &str) -> (support::Scratch, App) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 12);
+        (scratch, app)
+    }
+
+    /// Ten lines, each saying which it is, so that where a jump lands is
+    /// readable rather than counted.
+    fn numbered() -> String {
+        (0..10).map(|line| format!("line {line}\n")).collect()
+    }
+
+    fn at(app: &App) -> usize {
+        app.current_buffer().expect("a buffer").cursor().line.get()
+    }
+
+    /// Through the key a reader would use: the leap is what the history is
+    /// for, and `go-to-line` is the plainest one there is.
+    fn leap_to(app: &mut App, line: usize) {
+        dispatch::dispatch(app, Command::GoLine);
+        support::type_text(app, &(line + 1).to_string());
+        support::press(app, KeyCode::Enter);
+        assert_eq!(at(app), line, "the leap did not go where it was told");
+    }
+
+    #[test]
+    fn a_place_below_an_edit_moves_with_it() {
+        let (_scratch, mut app) = editing("jump-below", &numbered());
+        leap_to(&mut app, 8);
+        // Back to the top, and two lines put in above where the jump was.
+        dispatch::dispatch(&mut app, Command::GoBack);
+        assert_eq!(at(&app), 0, "not where this test meant to start");
+        support::press(&mut app, KeyCode::Enter);
+        support::press(&mut app, KeyCode::Enter);
+
+        dispatch::dispatch(&mut app, Command::GoForward);
+        assert_eq!(
+            at(&app),
+            10,
+            "going forward landed on the line the place used to be on"
+        );
+    }
+
+    /// And one above it stays where it is.
+    #[test]
+    fn a_place_above_an_edit_stays_put() {
+        let (_scratch, mut app) = editing("jump-above", &numbered());
+        leap_to(&mut app, 2);
+        leap_to(&mut app, 8);
+        // An edit below the first place, which must not move it.
+        support::press(&mut app, KeyCode::Enter);
+
+        dispatch::dispatch(&mut app, Command::GoBack);
+        assert_eq!(at(&app), 2, "a place above the edit moved anyway");
+    }
+
+    /// A place on a line the edit took away is a place that is not there
+    /// any more, and the nearest thing left to it is where the edit began.
+    #[test]
+    fn a_place_inside_an_edit_lands_where_it_began() {
+        let (_scratch, mut app) = editing("jump-inside", &numbered());
+        leap_to(&mut app, 5);
+        dispatch::dispatch(&mut app, Command::GoBack);
+
+        // Take lines three to seven away in one edit.
+        for _ in 0..3 {
+            support::press(&mut app, KeyCode::Down);
+        }
+        for _ in 0..4 {
+            support::press_shift(&mut app, KeyCode::Down);
+        }
+        support::press(&mut app, KeyCode::Backspace);
+
+        dispatch::dispatch(&mut app, Command::GoForward);
+        assert_eq!(at(&app), 3, "the place did not land where the edit began");
+    }
+}

@@ -392,12 +392,30 @@ impl App {
         let Some(index) = self.current.map(BufferId::get) else {
             return;
         };
+        let before = self
+            .buffers
+            .get(index)
+            .and_then(Option::as_ref)
+            .map_or(0, |buffer| buffer.text().line_count());
         let changed = self
             .buffers
             .get_mut(index)
             .and_then(Option::as_mut)
             .is_some_and(|buffer| buffer.edit(span, with, doing));
         if changed {
+            // The places the reader can go back to are line numbers in this
+            // document, and the edit has just moved some of them.
+            let after = self
+                .buffers
+                .get(index)
+                .and_then(Option::as_ref)
+                .map_or(0, |buffer| buffer.text().line_count());
+            self.jumps.keep_across(
+                BufferId::new(index),
+                span.line,
+                span.end_line,
+                after as isize - before as isize,
+            );
             // The server's copy of this document is now a document nobody
             // has. Everything else keyed on the version notices by itself.
             self.change_document(index);
