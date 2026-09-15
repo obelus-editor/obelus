@@ -207,7 +207,10 @@ pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &App) {
 }
 
 /// The box round the whole panel.
-fn edges(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
+///
+/// Shared with the signature line, which is the same kind of thing: a
+/// server's answer put where the reader is looking.
+pub(crate) fn edges(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
     let style = Style::new().fg(theme.gutter);
     let (left, right) = (area.x, area.right() - 1);
     let (top, bottom) = (area.y, area.bottom() - 1);

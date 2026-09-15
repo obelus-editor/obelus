@@ -1421,8 +1421,8 @@ fn the_selection_walks_past_what_cannot_be_chosen() {
         .collect();
     assert_eq!(
         only_dim.len(),
-        4,
-        "not the four selection commands: {only_dim:?}"
+        5,
+        "not the five selection commands: {only_dim:?}"
     );
     press(&mut app, KeyCode::Enter);
     assert!(

@@ -187,6 +187,19 @@ pub struct App {
     /// or one restarted, otherwise hand out the same id twice, and the second
     /// answer would be matched to the first question.
     asked: HashMap<(LanguageId, i64), Question>,
+    /// What each open file's server says is wrong with it.
+    ///
+    /// Keyed by path rather than by buffer, for the reason the tokens are:
+    /// a buffer is a slot that is reused, and a closed file's troubles
+    /// would otherwise be shown against whatever is opened into its place.
+    /// Replaced wholesale, because that is what a server sends.
+    troubles: HashMap<PathBuf, Vec<crate::lsp::trouble::Trouble>>,
+    /// Where the pointer was last put down, and how many times in a row.
+    ///
+    /// A terminal reports button presses and nothing about double clicks,
+    /// so the count is obelus's own: the same cell, pressed again inside
+    /// the time below, is the second press of one gesture.
+    clicked: Option<(u16, u16, std::time::Instant, u8)>,
     /// What could be typed next, while a server's answer is on screen.
     ///
     /// Beside the cursor rather than in a region of its own, and its own
@@ -194,6 +207,8 @@ pub struct App {
     /// document the whole time it is up: it takes six keys and the rest go
     /// where they were going.
     completion: Option<Completion>,
+    /// What the call the cursor is inside takes, while it is showing.
+    signature: Option<crate::lsp::signature::Signature>,
     /// The holes left by a snippet, while the reader is filling them in.
     ///
     /// Character offsets into the document, moved by every edit. A snippet
@@ -411,6 +426,9 @@ impl App {
             servers: HashMap::new(),
             stopped: HashSet::new(),
             asked: HashMap::new(),
+            clicked: None,
+            signature: None,
+            troubles: HashMap::new(),
             completion: None,
             filling: None,
             tokens: HashMap::new(),
@@ -671,6 +689,29 @@ impl App {
     #[must_use]
     pub const fn picker(&self) -> Option<&Picker> {
         self.picker.as_ref()
+    }
+
+    /// What the server says is wrong with the file being read.
+    ///
+    /// In the order the server sent them, which is the order they are in
+    /// the file for every server obelus talks to.
+    #[must_use]
+    pub fn troubles(&self) -> &[crate::lsp::trouble::Trouble] {
+        self.current_buffer()
+            .and_then(|buffer| self.troubles.get(buffer.path()))
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// What the call the cursor is inside takes, while it is showing.
+    ///
+    /// Not while the completion panel is up: the two would be drawn in the
+    /// same place, and what could be typed next is the nearer question.
+    #[must_use]
+    pub const fn signature(&self) -> Option<&crate::lsp::signature::Signature> {
+        match self.completion.is_some() {
+            true => None,
+            false => self.signature.as_ref(),
+        }
     }
 
     /// What could be typed next, while a server's answer is on screen.
@@ -1064,12 +1105,19 @@ impl App {
                 // handshake, progress, the server's own log lines — is dealt
                 // with in there.
                 let reply = client.on_message(&message);
+                // Unasked-for news about a file, which arrives on the same
+                // pipe as the answers and belongs to nobody's question.
+                let published = client.take_published();
+                for params in published {
+                    self.on_published(language, &params);
+                }
                 if let Some(reply) = reply {
                     self.on_reply(language, reply);
                 }
             }
             Event::Counted(counted) => self.on_counted(*counted),
             Event::Scroll(rows) => self.scroll(rows),
+            Event::Pointer { kind, x, y } => self.on_pointer(kind, x, y),
             // One change for the whole of it, so undoing a paste is one
             // step rather than however many lines it happened to be.
             Event::Paste(text) => self.paste_text(&text),
@@ -1515,6 +1563,113 @@ impl App {
         {
             dispatch::dispatch(self, command);
         }
+    }
+}
+
+impl App {
+    /// What the pointer did to the file being read.
+    ///
+    /// Only over the text, and only with nothing else open: a list, the
+    /// settings or the conversation is what the screen is showing while it
+    /// is up, and a click landing on the code behind one would move a caret
+    /// nobody can see.
+    fn on_pointer(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
+        use crate::event::Pointer;
+
+        if self.picker.is_some()
+            || self.settings.is_some()
+            || self.counts.is_some()
+            || self.showing_chat
+        {
+            return;
+        }
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        // A reading has no places in it for a caret: its rows are not the
+        // file's lines.
+        if buffer.mode() != Mode::Edit {
+            return;
+        }
+        let area = self.editor_area;
+        if x < area.x || x >= area.right() || y < area.y || y >= area.bottom() {
+            return;
+        }
+        // Everything the view draws in front of the text. A click to the
+        // left of it -- on the gutter, a fold mark, the change margin --
+        // is a click at the start of that row rather than nothing: the
+        // reader pointed at a line.
+        let offset = ui::editor::text_offset(
+            buffer.text().line_count(),
+            self.changes().is_some(),
+            !buffer.folds().is_empty(),
+        );
+        let row = y - area.y;
+        let cell = (x - area.x).saturating_sub(offset);
+        let text = self.text_area();
+
+        let count = match kind {
+            Pointer::Pressed => self.clicks_at(x, y),
+            _ => 0,
+        };
+        match kind {
+            // Dragging is what a reader does to select, so the place they
+            // put the button down stays put.
+            Pointer::Dragged => {
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.place_at_cell(row, cell, text, true);
+                }
+            }
+            Pointer::Released => return,
+            Pointer::Pressed => {
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.place_at_cell(row, cell, text, false);
+                }
+                match count {
+                    // Twice is the word, three times is the line: what
+                    // every editor with a pointer has taught.
+                    2 => self.widen_selection(),
+                    3 => {
+                        let line = self.current_buffer().map(|buffer| buffer.cursor().line);
+                        if let Some(line) = line
+                            && let Some(buffer) = self.current_buffer_mut()
+                        {
+                            buffer.select_line(line);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Wherever the caret ended up is somewhere the reader is now
+        // working from, so the next edit is a step of its own to undo.
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.settle_undo();
+        }
+    }
+
+    /// How many times in a row the pointer has been put down here.
+    ///
+    /// The same cell and inside the gap below, or the count starts again.
+    /// Three is as far as it goes: a fourth press is a first press, which
+    /// is what selecting a line and then clicking in it has to be.
+    fn clicks_at(&mut self, x: u16, y: u16) -> u8 {
+        /// Long enough for a deliberate double click and short enough that
+        /// two separate clicks are not taken for one. The figure every
+        /// desktop uses.
+        const GAP: std::time::Duration = std::time::Duration::from_millis(400);
+
+        let now = std::time::Instant::now();
+        let count = match self.clicked {
+            Some((was_x, was_y, when, count))
+                if (was_x, was_y) == (x, y) && now.duration_since(when) < GAP && count < 3 =>
+            {
+                count + 1
+            }
+            _ => 1,
+        };
+        self.clicked = Some((x, y, now, count));
+        count
     }
 }
 

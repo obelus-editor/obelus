@@ -172,8 +172,6 @@ impl App {
             return;
         };
         let selection = buffer.selection();
-        let cursor = buffer.cursor();
-        let text = buffer.text();
 
         // Indenting is about lines, not about what is selected in them, so
         // it comes before the rule that a selection is what a key is about.
@@ -184,6 +182,24 @@ impl App {
             Typing::Tab if selection.is_some() => return self.shift_indent(true),
             _ => {}
         }
+
+        // A bracket or a quote is half of something, and the other half is
+        // what the reader would have typed next. Before everything below,
+        // because each of the three cases puts in something other than the
+        // key itself.
+        match typing {
+            Typing::Character(character) if self.paired(character) => return,
+            Typing::Backward if selection.is_none() && self.took_a_pair_out() => return,
+            _ => {}
+        }
+        // The borrows above ended with the calls; everything below needs
+        // them again.
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        let selection = buffer.selection();
+        let cursor = buffer.cursor();
+        let text = buffer.text();
 
         let (span, with, doing) = match typing {
             // Whatever is selected goes, and what was typed takes its place.
@@ -289,7 +305,12 @@ impl App {
                         let above = cursor.line.saturating_sub(1);
                         (above, text.line_length(above))
                     }
-                    _ => (cursor.line, cursor.column.saturating_sub(1)),
+                    // A step of the indent where the cursor is standing
+                    // in one. Spaces are what obelus puts in for a tab, so
+                    // taking them out one at a time makes backspace the
+                    // one key that does not undo what tab did -- four
+                    // presses for one, and the reader counting them.
+                    _ => (cursor.line, indent_back(text, cursor.line, cursor.column)),
                 };
                 (
                     crate::coordinates::Span {
@@ -545,6 +566,127 @@ impl App {
         }
     }
 
+    /// Puts in both halves of a pair, where a key is half of one.
+    ///
+    /// Three things a reader means by typing a bracket or a quote, and
+    /// none of them is "put this character in and nothing else":
+    ///
+    /// * with something selected, put the pair *round* it -- which is the only
+    ///   way to add brackets to an expression that is already there;
+    /// * with the closing half already in front of the cursor, step over it, so
+    ///   that typing the whole of `(x)` leaves one pair rather than two;
+    /// * otherwise close it, and stand between the halves.
+    ///
+    /// Says whether it did any of the three. What makes this bearable
+    /// rather than infuriating is the last one's condition: a bracket typed
+    /// in front of a word closes nothing, because a reader putting `(`
+    /// before `word` is wrapping it, not opening an empty pair.
+    fn paired(&mut self, character: char) -> bool {
+        let Some(buffer) = self.current_buffer() else {
+            return false;
+        };
+        let cursor = buffer.cursor();
+        let text = buffer.text();
+        let after = text.line(cursor.line).chars().nth(cursor.column.get());
+        let before = match cursor.column.get() {
+            0 => None,
+            at => text.line(cursor.line).chars().nth(at - 1),
+        };
+
+        // Round what is selected.
+        if let Some(span) = buffer.selection()
+            && let Some(closer) = closer_for(character)
+        {
+            let inside = text.text_in(span);
+            self.change(
+                span,
+                &format!("{character}{inside}{closer}"),
+                crate::buffer::undo::Doing::Whole,
+            );
+            // The same text is still selected, one column further along --
+            // a reader who wrapped something in brackets to wrap it in
+            // more has not stopped pointing at it.
+            let end_column = match span.end_line == span.line {
+                true => span.end_column.saturating_add(1),
+                false => span.end_column,
+            };
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.select(crate::coordinates::Span {
+                    line: span.line,
+                    column: span.column.saturating_add(1),
+                    end_line: span.end_line,
+                    end_column,
+                });
+            }
+            return true;
+        }
+
+        // Over the half that is already there.
+        if after == Some(character) && closes_something(character) {
+            let area = self.text_area();
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.move_cursor(Motion::Right, area);
+            }
+            return true;
+        }
+
+        let Some(closer) = closer_for(character) else {
+            return false;
+        };
+        if !worth_closing(character, before, after) {
+            return false;
+        }
+        let at = crate::coordinates::Span {
+            line: cursor.line,
+            column: cursor.column,
+            end_line: cursor.line,
+            end_column: cursor.column,
+        };
+        self.change(
+            at,
+            &format!("{character}{closer}"),
+            crate::buffer::undo::Doing::Whole,
+        );
+        // Between the two, which is where the reader was going.
+        let area = self.text_area();
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.move_cursor(Motion::Left, area);
+        }
+        true
+    }
+
+    /// Takes both halves of an empty pair out, where backspace is between
+    /// them.
+    ///
+    /// The other end of [`App::paired`]: a key that put two characters in
+    /// has to be undone by the key that takes one out, or the reader is
+    /// left with the half they never typed.
+    fn took_a_pair_out(&mut self) -> bool {
+        let Some(buffer) = self.current_buffer() else {
+            return false;
+        };
+        let cursor = buffer.cursor();
+        let line: Vec<char> = buffer.text().line(cursor.line).chars().collect();
+        let at = cursor.column.get();
+        let Some(before) = at.checked_sub(1).and_then(|at| line.get(at).copied()) else {
+            return false;
+        };
+        if closer_for(before) != line.get(at).copied().map(Some).unwrap_or_default() {
+            return false;
+        }
+        self.change(
+            crate::coordinates::Span {
+                line: cursor.line,
+                column: cursor.column.saturating_sub(1),
+                end_line: cursor.line,
+                end_column: cursor.column.saturating_add(1),
+            },
+            "",
+            crate::buffer::undo::Doing::Whole,
+        );
+        true
+    }
+
     /// Makes one change to the document being read, and tells everything
     /// that has to hear about it.
     pub(super) fn change(
@@ -631,6 +773,74 @@ fn outdented(line: &str, indent: &str) -> String {
     line.chars()
         .skip(blanks.min(indent.chars().count()))
         .collect()
+}
+
+/// The half that closes what a character opens.
+///
+/// The brackets obelus already matches, and the quotes, which open and
+/// close with the same character. Not a table of its own for the brackets:
+/// [`crate::syntax::brackets::PAIRS`] is where the pairs live, and a second
+/// list would be a second list to keep right.
+fn closer_for(character: char) -> Option<char> {
+    if matches!(character, '"' | '\'' | '`') {
+        return Some(character);
+    }
+    crate::syntax::brackets::PAIRS
+        .iter()
+        .find(|(open, _)| *open == character)
+        .map(|(_, close)| *close)
+}
+
+/// Whether a character closes a pair, quotes included.
+fn closes_something(character: char) -> bool {
+    matches!(character, '"' | '\'' | '`') || crate::syntax::brackets::closes(character)
+}
+
+/// Whether the other half is worth putting in.
+///
+/// In front of a word it is not: `(` typed before `word` is a reader
+/// wrapping it, and a `)` appearing between the bracket and the word is
+/// something they then have to delete. In front of a space, a closing
+/// bracket, or the end of the line, it is what they were going to type.
+///
+/// A quote has the same rule on the other side as well, because `don't` is
+/// a word with a quote in it and an editor that made it `don''t` would be
+/// unusable for prose.
+fn worth_closing(character: char, before: Option<char>, after: Option<char>) -> bool {
+    let quote = matches!(character, '"' | '\'' | '`');
+    if quote && before.is_some_and(|character| character.is_alphanumeric() || character == '_') {
+        return false;
+    }
+    if quote && before == Some(character) {
+        return false;
+    }
+    match after {
+        None => true,
+        Some(after) => {
+            after.is_whitespace()
+                || crate::syntax::brackets::closes(after)
+                || matches!(after, ',' | ';' | ':' | '.')
+        }
+    }
+}
+
+/// Where backspace takes the cursor back to, inside a line's indent.
+///
+/// One step of it, to the tab stop below where the cursor is -- and one
+/// character everywhere else, which is every place that is not blank in
+/// front of the cursor. A tab character is one character and comes out as
+/// one: a file indented with tabs has a key press per level already.
+fn indent_back(text: &crate::text::Text, line: LineNumber, column: CharColumn) -> CharColumn {
+    let blank = text
+        .line(line)
+        .chars()
+        .take(column.get())
+        .all(|character| character == ' ');
+    if !blank {
+        return column.saturating_sub(1);
+    }
+    let step = crate::text::tab_width().max(1);
+    CharColumn::new((column.get() - 1) / step * step)
 }
 
 /// The blank a new line starts with, following the line it came off.

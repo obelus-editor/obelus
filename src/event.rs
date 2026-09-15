@@ -158,6 +158,21 @@ pub enum Event {
     /// because obelus asks the terminal to report the mouse -- without that
     /// the wheel arrives as arrow keys.
     Scroll(isize),
+    /// The pointer, over the screen.
+    ///
+    /// Where rather than what: which region a click lands in is the
+    /// application's to work out, the same as it is for a key. Only the
+    /// left button arrives -- the others belong to the terminal, and a
+    /// program that took them would be taking away the paste and the menu
+    /// every terminal has.
+    Pointer {
+        /// What the button did.
+        kind: Pointer,
+        /// The column, counted from the left of the screen.
+        x: u16,
+        /// And the row, from the top.
+        y: u16,
+    },
     /// Text the terminal pasted, all at once.
     ///
     /// Because obelus asks for bracketed paste, which wraps what the
@@ -195,6 +210,17 @@ pub enum Event {
     },
 }
 
+/// What the pointer's button did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pointer {
+    /// Put down.
+    Pressed,
+    /// Moved with the button held.
+    Dragged,
+    /// Let go.
+    Released,
+}
+
 impl Event {
     /// Translates a crossterm event, or `None` for one obelus ignores.
     ///
@@ -209,11 +235,27 @@ impl Event {
             // does. The other mouse events are dropped: nothing reads them,
             // and a variant nothing reads is indistinguishable from a broken
             // feature.
-            TerminalEvent::Mouse(mouse) => match mouse.kind {
-                crossterm::event::MouseEventKind::ScrollDown => Some(Self::Scroll(3)),
-                crossterm::event::MouseEventKind::ScrollUp => Some(Self::Scroll(-3)),
-                _ => None,
-            },
+            TerminalEvent::Mouse(mouse) => {
+                use crossterm::event::{MouseButton, MouseEventKind};
+                let pointer = |kind| {
+                    Some(Self::Pointer {
+                        kind,
+                        x: mouse.column,
+                        y: mouse.row,
+                    })
+                };
+                match mouse.kind {
+                    MouseEventKind::ScrollDown => Some(Self::Scroll(3)),
+                    MouseEventKind::ScrollUp => Some(Self::Scroll(-3)),
+                    // The left button only. The others are the terminal's
+                    // own -- a paste on middle click, a menu on right --
+                    // and taking them would be taking them away.
+                    MouseEventKind::Down(MouseButton::Left) => pointer(Pointer::Pressed),
+                    MouseEventKind::Drag(MouseButton::Left) => pointer(Pointer::Dragged),
+                    MouseEventKind::Up(MouseButton::Left) => pointer(Pointer::Released),
+                    _ => None,
+                }
+            }
             TerminalEvent::Paste(text) => Some(Self::Paste(text)),
             TerminalEvent::FocusGained | TerminalEvent::FocusLost => None,
         }

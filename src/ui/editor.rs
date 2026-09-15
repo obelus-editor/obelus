@@ -9,7 +9,7 @@
 use ratatui::{
     buffer::Buffer as CellBuffer,
     layout::Rect,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     widgets::Widget,
 };
 
@@ -162,6 +162,11 @@ pub struct EditorView<'a> {
     marked: &'a [Span],
     /// The characters selected in the file being read.
     selection: Option<Span>,
+    /// What the language server says is wrong with the file being read.
+    ///
+    /// Empty for a preview: a preview is somewhere else, and what is wrong
+    /// with the file the reader is editing is not about it.
+    troubles: &'a [crate::lsp::trouble::Trouble],
     /// What has changed since the last commit, if obelus knows.
     ///
     /// `None` for a file outside a repository, and then the margin takes no
@@ -278,6 +283,7 @@ impl<'a> EditorView<'a> {
             theme: app.theme(),
             marked: &[],
             selection: app.current_buffer().and_then(Buffer::selection),
+            troubles: app.troubles(),
             changes: app.changes(),
             opened: app.opened_hunks(),
             blame: app.blame(),
@@ -321,6 +327,7 @@ impl<'a> EditorView<'a> {
             // Everything that answers "where am I and what am I doing" is
             // the document's rather than a look at another one's.
             selection: None,
+            troubles: &[],
             opened: Vec::new(),
             blame: None,
             blamed_here: false,
@@ -569,6 +576,10 @@ impl Widget for EditorView<'_> {
                                 theme: self.theme,
                                 marked: &[],
                                 selection: selected_in(block.above),
+                                // A block is a commit's version of these
+                                // lines. What is wrong with the file is
+                                // wrong with the file, not with that.
+                                troubles: &[],
                                 brackets: None,
                             },
                         );
@@ -697,6 +708,7 @@ impl Widget for EditorView<'_> {
                         theme: self.theme,
                         marked: self.marked,
                         selection: self.selection,
+                        troubles: self.troubles,
                         brackets,
                     },
                 );
@@ -931,6 +943,8 @@ struct Painting<'a> {
     marked: &'a [Span],
     /// The characters the reader selected in the file being read.
     selection: Option<Span>,
+    /// What the language server says is wrong with the file.
+    troubles: &'a [crate::lsp::trouble::Trouble],
     /// The bracket under the cursor and its partner.
     brackets: Option<(ByteOffset, ByteOffset)>,
 }
@@ -1006,6 +1020,22 @@ fn draw_row(
             .is_some_and(|selection| selection.contains(line, CharColumn::new(column)))
         {
             style = style.bg(painting.theme.selection_background);
+        }
+        // Underlined where a server says something is wrong, in the colour
+        // that kind of trouble is written in. An underline rather than a
+        // background or a foreground: those two are taken -- by the
+        // selection and by the syntax -- and a third claim on them would
+        // hide one of the two.
+        if let Some(severity) = painting
+            .troubles
+            .iter()
+            .filter(|trouble| trouble.span.contains(line, CharColumn::new(column)))
+            .map(|trouble| trouble.severity)
+            .min()
+        {
+            style = style
+                .add_modifier(Modifier::UNDERLINED)
+                .underline_color(painting.theme.colour_for(Some(severity.kind())));
         }
         // The bracket the cursor is on, and its partner. After the mark, so
         // a symbol a preview is about keeps its own background where the two

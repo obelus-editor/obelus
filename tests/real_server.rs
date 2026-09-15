@@ -155,6 +155,18 @@ fn a_real_server_declares_the_characters_that_ask_for_a_completion() {
     // rust-analyzer says it: `resolve_provider: false`, because it puts the
     // documentation in the answer itself. The panel asks only where a
     // server says it would answer, which is why that is not asserted here.
+    // The same for the call the cursor is inside: `(` and `,` are what
+    // rust-analyzer says ask about one, and obelus has no list of its own.
+    assert!(
+        obelus::lsp::signature::supported(capabilities),
+        "rust-analyzer no longer answers textDocument/signatureHelp"
+    );
+    for character in ['(', ','] {
+        assert!(
+            obelus::lsp::signature::triggered_by(capabilities, character),
+            "rust-analyzer no longer says {character:?} asks what a call takes"
+        );
+    }
     assert!(
         !obelus::lsp::complete::resolves(capabilities),
         "rust-analyzer now resolves items, so the panel should be asking it to"

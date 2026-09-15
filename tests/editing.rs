@@ -288,6 +288,297 @@ mod keys {
         assert_eq!(text(&app), "ad\n");
     }
 
+    /// A bracket is half of something, and what a reader means by typing
+    /// one depends on what is beside the caret.
+    #[test]
+    fn a_bracket_puts_in_both_halves_where_that_is_what_was_meant() {
+        // In front of nothing, so the pair is what was meant.
+        let (_scratch, mut app) = reading("keys-pairs", "call\n");
+        support::press(&mut app, KeyCode::End);
+        support::type_text(&mut app, "(");
+        assert_eq!(text(&app), "call()\n", "the other half is missing");
+        let column = |app: &obelus::app::App| {
+            app.current_buffer()
+                .expect("a buffer")
+                .cursor()
+                .column
+                .get()
+        };
+        assert_eq!(column(&app), 5, "the caret is not between the halves");
+
+        // And the closing key steps over what is already there rather than
+        // putting in a second one.
+        support::type_text(&mut app, ")");
+        assert_eq!(text(&app), "call()\n");
+        assert_eq!(column(&app), 6);
+
+        // In front of a word it is not: the reader is wrapping it.
+        let (_scratch, mut app) = reading("keys-pairs-word", "word\n");
+        support::type_text(&mut app, "(");
+        assert_eq!(
+            text(&app),
+            "(word\n",
+            "a bracket in front of a word closed itself"
+        );
+
+        // Backspace between the halves takes both: the key that put two
+        // characters in is undone by the key that takes one out.
+        let (_scratch, mut app) = reading("keys-pairs-back", "call\n");
+        support::press(&mut app, KeyCode::End);
+        support::type_text(&mut app, "(");
+        support::press(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "call\n", "half of the pair was left behind");
+    }
+
+    /// A quote is a pair too, except inside a word -- where an editor that
+    /// closed it would make `don't` into `don''t`.
+    #[test]
+    fn a_quote_closes_itself_except_inside_a_word() {
+        let (_scratch, mut app) = reading("keys-quotes", "let s = \n");
+        support::press(&mut app, KeyCode::End);
+        support::type_text(&mut app, "\"");
+        assert_eq!(text(&app), "let s = \"\"\n");
+        support::type_text(&mut app, "hi\"");
+        assert_eq!(
+            text(&app),
+            "let s = \"hi\"\n",
+            "the closing quote was typed rather than stepped over"
+        );
+
+        let (_scratch, mut app) = reading("keys-apostrophe", "don\n");
+        support::press(&mut app, KeyCode::End);
+        support::type_text(&mut app, "'t");
+        assert_eq!(
+            text(&app),
+            "don't\n",
+            "an apostrophe in a word closed itself"
+        );
+    }
+
+    /// Brackets round what is selected is the only way to add them to
+    /// something that is already written.
+    #[test]
+    fn a_bracket_over_a_selection_goes_round_it() {
+        let (_scratch, mut app) = reading("keys-surround", "one two\n");
+        for _ in 0..3 {
+            support::press_shift(&mut app, KeyCode::Right);
+        }
+        support::type_text(&mut app, "(");
+        assert_eq!(text(&app), "(one) two\n", "the selection was replaced");
+        assert_eq!(
+            app.current_buffer()
+                .and_then(|buffer| buffer.selected_text()),
+            Some("one".to_string()),
+            "what was wrapped is no longer what is selected"
+        );
+
+        // So it can be wrapped again, which is the reason to keep it.
+        support::type_text(&mut app, "\"");
+        assert_eq!(text(&app), "(\"one\") two\n");
+
+        // And one press of undo takes a wrapping back.
+        support::press_control(&mut app, 'z');
+        assert_eq!(text(&app), "(one) two\n");
+    }
+
+    /// Tab puts a step of indent in, so backspace takes one out: any other
+    /// answer makes the two keys disagree about what a step is, and the
+    /// reader counts presses.
+    #[test]
+    fn backspace_takes_a_step_of_the_indent_out() {
+        let (_scratch, mut app) = reading("keys-unindent", "        deep\n");
+        support::press(&mut app, KeyCode::Home);
+        assert_eq!(
+            app.current_buffer()
+                .expect("a buffer")
+                .cursor()
+                .column
+                .get(),
+            8,
+            "the sample is not indented by two steps"
+        );
+
+        support::press(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "    deep\n", "one press took one space");
+        support::press(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "deep\n");
+
+        // Off a tab stop, it goes back to the one below rather than a
+        // whole step from where it stands.
+        let (_scratch, mut app) = reading("keys-unindent-odd", "      six\n");
+        support::press(&mut app, KeyCode::Home);
+        support::press(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "    six\n", "it did not stop at the tab stop");
+
+        // And anywhere that is not blank in front of the cursor it is one
+        // character, which is what it has always been.
+        let (_scratch, mut app) = reading("keys-unindent-text", "    a b\n");
+        support::press(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "    a \n");
+    }
+
+    /// What a reader means by the start of a line is the first thing on
+    /// it, not the margin. The second press goes the rest of the way, so
+    /// the margin is still one key away.
+    #[test]
+    fn home_goes_to_what_is_written_before_it_goes_to_the_margin() {
+        let (_scratch, mut app) = reading("keys-home", "    indented\nflush\n");
+        let column = |app: &obelus::app::App| {
+            app.current_buffer()
+                .expect("a buffer")
+                .cursor()
+                .column
+                .get()
+        };
+
+        support::press(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Home);
+        assert_eq!(column(&app), 4, "home did not stop at what was written");
+        support::press(&mut app, KeyCode::Home);
+        assert_eq!(column(&app), 0, "the second press did not reach the margin");
+        // And back out to the text, so neither place is a trap.
+        support::press(&mut app, KeyCode::Home);
+        assert_eq!(column(&app), 4);
+
+        // A line with nothing in front of it has one place to go, and
+        // pressing home twice leaves the caret there rather than moving it
+        // to somewhere that is the same column by a different name.
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Home);
+        assert_eq!(column(&app), 0);
+        support::press(&mut app, KeyCode::Home);
+        assert_eq!(column(&app), 0);
+    }
+
+    /// The character to the left of column zero is the newline above, so
+    /// that is where the caret goes. Holding an arrow down is how a reader
+    /// walks a file, and a key that stopped at every margin made that
+    /// impossible.
+    #[test]
+    fn an_arrow_at_the_margin_steps_to_the_line_beside_it() {
+        let (_scratch, mut app) = reading("keys-margins", "one\ntwo\n");
+        let caret = |app: &obelus::app::App| {
+            let cursor = app.current_buffer().expect("a buffer").cursor();
+            (cursor.line.get(), cursor.column.get())
+        };
+
+        // Off the end of a line is the start of the next.
+        support::press(&mut app, KeyCode::End);
+        assert_eq!(caret(&app), (0, 3));
+        support::press(&mut app, KeyCode::Right);
+        assert_eq!(caret(&app), (1, 0), "right stopped at the end of the line");
+
+        // And back over the same seam.
+        support::press(&mut app, KeyCode::Left);
+        assert_eq!(caret(&app), (0, 3), "left stopped at the margin");
+
+        // The ends of the document are the two places there is nowhere to
+        // step to.
+        support::press(&mut app, KeyCode::Home);
+        support::press(&mut app, KeyCode::Up);
+        support::press(&mut app, KeyCode::Left);
+        assert_eq!(caret(&app), (0, 0), "left walked off the top of the file");
+        support::press_control_key(&mut app, KeyCode::End);
+        for _ in 0..4 {
+            support::press(&mut app, KeyCode::Right);
+        }
+        let last = app.current_buffer().expect("a buffer").text().last_line();
+        assert_eq!(
+            caret(&app),
+            (last.get(), 0),
+            "right walked off the end of the file"
+        );
+    }
+
+    /// Selecting across a line boundary is the same step with shift on it,
+    /// so it crosses where the plain key does.
+    #[test]
+    fn a_held_shift_selects_across_the_seam() {
+        let (_scratch, mut app) = reading("keys-seam", "one\ntwo\n");
+        support::press(&mut app, KeyCode::End);
+        support::press_shift(&mut app, KeyCode::Right);
+        support::press_shift(&mut app, KeyCode::Right);
+        assert_eq!(
+            app.current_buffer()
+                .and_then(|buffer| buffer.selected_text()),
+            Some("\nt".to_string()),
+            "the selection did not cross the line break"
+        );
+    }
+
+    /// An arrow on a selection is a reader saying which end of it they
+    /// mean, so the caret goes there. Which end the *caret* is on says
+    /// nothing about it: that depends on which way they selected.
+    #[test]
+    fn an_arrow_collapses_a_selection_to_the_end_it_points_at() {
+        let (_scratch, mut app) = reading("keys-collapse", "one two three\n");
+        let caret = |app: &obelus::app::App| {
+            let cursor = app.current_buffer().expect("a buffer").cursor();
+            (cursor.line.get(), cursor.column.get())
+        };
+
+        // Selected forwards, so the caret is on the far end.
+        for _ in 0..3 {
+            support::press_shift(&mut app, KeyCode::Right);
+        }
+        support::press(&mut app, KeyCode::Left);
+        assert_eq!(caret(&app), (0, 0), "left did not go to the start");
+        assert!(
+            app.current_buffer()
+                .and_then(|buffer| buffer.selection())
+                .is_none(),
+            "the selection survived"
+        );
+
+        for _ in 0..3 {
+            support::press_shift(&mut app, KeyCode::Right);
+        }
+        support::press(&mut app, KeyCode::Right);
+        assert_eq!(caret(&app), (0, 3), "right did not go to the end");
+
+        // Selected backwards from the end of the word: the caret is on the
+        // near end, and the arrows still mean the ends of the selection
+        // rather than a step from the caret.
+        for _ in 0..3 {
+            support::press_shift(&mut app, KeyCode::Left);
+        }
+        support::press(&mut app, KeyCode::Right);
+        assert_eq!(
+            caret(&app),
+            (0, 3),
+            "right stepped on from a caret at the start"
+        );
+
+        // With nothing selected they step, which is the whole of what they
+        // did before.
+        support::press(&mut app, KeyCode::Right);
+        assert_eq!(caret(&app), (0, 4));
+
+        // And only those two keys mean the ends of a selection. A word
+        // motion is about words: from a caret at the fifth character it
+        // goes to the start of the word the caret is in, not to the start
+        // of what happened to be selected.
+        for _ in 0..4 {
+            support::press(&mut app, KeyCode::Right);
+        }
+        for _ in 0..3 {
+            support::press_shift(&mut app, KeyCode::Left);
+        }
+        assert_eq!(
+            caret(&app),
+            (0, 5),
+            "the selection is not where the test needs it"
+        );
+        support::press_control_key(&mut app, KeyCode::Left);
+        assert_eq!(
+            caret(&app),
+            (0, 4),
+            "a word motion was taken for a reader pointing at an end of the selection"
+        );
+    }
+
     /// The one thing every reader expects of them without being told.
     #[test]
     fn backspace_over_a_selection_takes_the_selection() {
@@ -1165,8 +1456,12 @@ mod unwritten {
         let (_scratch, mut app, _path) = reading("undo-swapped", "fn main() {}\n");
         support::press(&mut app, crossterm::event::KeyCode::End);
         support::type_text(&mut app, "x");
-        support::press(&mut app, crossterm::event::KeyCode::Left);
-        support::press(&mut app, crossterm::event::KeyCode::Left);
+        // Three, so the caret is not standing between `{` and `}`: an
+        // empty pair is a place where backspace takes out both halves, and
+        // this test is about a deletion of one character.
+        for _ in 0..3 {
+            support::press(&mut app, crossterm::event::KeyCode::Left);
+        }
         support::press(&mut app, crossterm::event::KeyCode::Backspace);
         assert_eq!(
             app.current_buffer()
@@ -1174,7 +1469,7 @@ mod unwritten {
                 .text()
                 .rope()
                 .to_string(),
-            "fn main() }x\n",
+            "fn main(){}x\n",
             "not the edit this test meant to make"
         );
         assert!(
@@ -2444,6 +2739,115 @@ mod whole_lines {
         assert!(
             !css.offers(Command::CommentToggle),
             "a language with only block comments was offered a line comment"
+        );
+    }
+}
+
+/// Widening what is selected, which is the key a reader reaches for
+/// instead of aiming at both ends of something by hand.
+mod widening {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer, command::Command};
+
+    use super::support;
+
+    fn editing(name: &str, contents: &str) -> (support::Scratch, App) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 16);
+        (scratch, app)
+    }
+
+    fn selected(app: &App) -> Option<String> {
+        app.current_buffer()
+            .and_then(|buffer| buffer.selected_text())
+    }
+
+    fn widen(app: &mut App) {
+        obelus::command::dispatch::dispatch(app, Command::SelectionWiden);
+    }
+
+    /// The word first, because that is the step every reader wants and the
+    /// only one they want often.
+    #[test]
+    fn the_first_step_is_the_word_the_caret_is_in() {
+        let (_scratch, mut app) = editing(
+            "widen-word",
+            "fn main() {\n    let name = other(1, 2);\n}\n",
+        );
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Home);
+        // Into the middle of `name`. Home lands on the first thing
+        // written, which is `let`.
+        for _ in 0.."let n".len() {
+            support::press(&mut app, KeyCode::Right);
+        }
+        widen(&mut app);
+        assert_eq!(selected(&app).as_deref(), Some("name"));
+    }
+
+    /// After the word, the grammar's own steps: what is selected is a
+    /// thing rather than a number of characters.
+    #[test]
+    fn the_steps_after_it_are_what_the_grammar_says_holds_it() {
+        let (_scratch, mut app) = editing(
+            "widen-tree",
+            "fn main() {\n    let name = other(1, 2);\n}\n",
+        );
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Home);
+        for _ in 0.."let name = other(".len() {
+            support::press(&mut app, KeyCode::Right);
+        }
+        widen(&mut app);
+        assert_eq!(selected(&app).as_deref(), Some("1"), "not the argument");
+
+        let mut seen = vec!["1".to_string()];
+        for _ in 0..6 {
+            widen(&mut app);
+            let now = selected(&app).expect("something selected");
+            assert!(
+                now.len() > seen.last().expect("a step").len(),
+                "the step did not widen anything: {seen:?} then {now:?}"
+            );
+            seen.push(now);
+        }
+        assert!(
+            seen.iter().any(|step| step == "other(1, 2)"),
+            "the call was never a step: {seen:?}"
+        );
+        assert!(
+            seen.iter().any(|step| step.starts_with("let name")),
+            "the statement was never a step: {seen:?}"
+        );
+        assert!(
+            seen.last().is_some_and(|step| step.starts_with("fn main")),
+            "it never reached the whole of the file: {seen:?}"
+        );
+    }
+
+    /// Without a grammar there are still two steps worth having.
+    #[test]
+    fn a_file_with_no_grammar_widens_by_the_line_and_the_whole() {
+        let scratch = support::Scratch::new("widen-plain");
+        let path = scratch.path().join("notes.txt");
+        std::fs::write(&path, "one two\nthree\n").expect("writing it");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 16);
+
+        widen(&mut app);
+        assert_eq!(selected(&app).as_deref(), Some("one"));
+        widen(&mut app);
+        assert_eq!(selected(&app).as_deref(), Some("one two"), "not the line");
+        widen(&mut app);
+        assert_eq!(
+            selected(&app).as_deref(),
+            Some("one two\nthree\n"),
+            "not the whole file"
         );
     }
 }

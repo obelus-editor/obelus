@@ -231,6 +231,27 @@ impl App {
         buffer.select_all();
     }
 
+    /// Widens what is selected by one step.
+    ///
+    /// The grammar's own steps, so what the key selects is a thing rather
+    /// than a number of characters: the word, the argument it is, the call
+    /// it is in, the statement, the block. `clear-selection` is the way
+    /// back out, because a stack of what was selected before would be a
+    /// stack to keep right across every edit.
+    pub fn widen_selection(&mut self) {
+        // Whatever the tree still owes: this is a question about what the
+        // text *means*, asked by a reader who is about to act on the
+        // answer.
+        self.settle_syntax();
+        let Some(buffer) = self.current_buffer_mut() else {
+            self.note = Some("no file open".to_string());
+            return;
+        };
+        if !buffer.widen_selection() {
+            self.note = Some("nothing wider to select".to_string());
+        }
+    }
+
     /// Copies the selected text to the system clipboard.
     pub fn copy_selection(&mut self) {
         let Some(buffer) = self.current_buffer() else {

@@ -91,6 +91,20 @@ pub fn type_text(app: &mut App, text: &str) {
     }
 }
 
+/// Draws a frame and hands back the cells themselves.
+///
+/// The dump names a style by its two colours, which is what almost every
+/// test is about; a modifier -- bold, italic, an underline -- is not in it
+/// and cannot be without renaming every style in every golden file. A test
+/// about one asks the cells.
+#[must_use]
+pub fn cells_of(app: &mut App, width: u16, height: u16) -> CellBuffer {
+    let area = Rect::new(0, 0, width, height);
+    let mut cells = CellBuffer::empty(area);
+    app.draw_into(&mut cells, area);
+    cells
+}
+
 /// Reads one of the sample source files.
 pub fn open_fixture(name: &str) -> Buffer {
     let path = fixtures().join(name);

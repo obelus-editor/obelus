@@ -248,6 +248,8 @@ pub fn for_command(command: crate::command::Command) -> char {
         // A lightbulb: what could be typed here is the one thing obelus
         // offers rather than answers.
         Command::SymbolComplete => '\u{f0335}',
+        // `md-alert_circle_outline`: what is wrong with the file.
+        Command::SymbolTroubles => '\u{f05d6}',
         // A list of what is in something, which is what an outline is.
         Command::SymbolOutline => '\u{f0279}',
         Command::SymbolDefinition => '\u{f04fe}',
@@ -298,6 +300,8 @@ pub fn for_command(command: crate::command::Command) -> char {
         Command::Redo => '\u{f044e}',
         Command::SelectionCopy => '\u{f018f}',
         // The dotted rectangle every program draws for "all of it".
+        // `md-arrow_expand_horizontal`: what is selected, made wider.
+        Command::SelectionWiden => '\u{f0616}',
         Command::SelectionAll => '\u{f0486}',
         Command::SelectionClear => '\u{f0156}',
         // The hooked arrows every browser uses, which is what the jump list

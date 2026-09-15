@@ -855,3 +855,42 @@ mod after_an_edit {
         );
     }
 }
+
+/// The line beside a line is the next one that is *shown*: a caret cannot
+/// be put on a line nobody can see, and stepping off the end of the line a
+/// closed run hangs on has to clear the whole run.
+#[test]
+fn an_arrow_steps_over_a_closed_run() {
+    let scratch = support::Scratch::new("folds-arrows");
+    let path = scratch.write("one.rs", "fn one() {\n    1;\n    2;\n}\nlast\n");
+    let mut buffer = Buffer::open(&path).expect("opening it");
+    let area = obelus::buffer::TextArea {
+        width: 40,
+        height: 10,
+        wrap: false,
+    };
+
+    assert!(buffer.toggle_fold(LineNumber::new(0)), "nothing folded");
+    assert!(
+        buffer.folds().hides(LineNumber::new(1)),
+        "the run did not hide its lines"
+    );
+
+    // Off the end of the line the run hangs on, which is past every line
+    // it hides.
+    buffer.place_cursor(LineNumber::new(0), obelus::coordinates::CharColumn::new(10));
+    buffer.move_cursor(obelus::buffer::Motion::Right, area);
+    assert_eq!(
+        (buffer.cursor().line.get(), buffer.cursor().column.get()),
+        (4, 0),
+        "the caret landed inside the run"
+    );
+
+    // And back the same way.
+    buffer.move_cursor(obelus::buffer::Motion::Left, area);
+    assert_eq!(
+        (buffer.cursor().line.get(), buffer.cursor().column.get()),
+        (0, 10),
+        "stepping back landed inside the run"
+    );
+}

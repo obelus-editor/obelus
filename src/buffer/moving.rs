@@ -52,6 +52,203 @@ impl Buffer {
         span_between(self.selection_anchor?, self.cursor)
     }
 
+    /// Puts the caret where a pointer landed, or drags the selection out
+    /// to it.
+    ///
+    /// `row` and `cell` are counted from the top left of the *text*, which
+    /// is what the caller has after taking off everything the view draws
+    /// in front of it. The walk from the top of the viewport is the same
+    /// one the caret's own screen position is worked out by, run the other
+    /// way: any other arithmetic would be a second answer to where a row
+    /// is, and the two would disagree over a fold or an opened hunk.
+    pub fn place_at_cell(&mut self, row: u16, cell: u16, area: TextArea, extend: bool) {
+        let width = area.wrap_width();
+        let at = self.step_screen_rows(
+            (self.viewport.top, self.viewport.top_row),
+            isize::try_from(row).unwrap_or(0),
+            area,
+        );
+        // Whatever is off the left-hand edge is part of the line as much as
+        // what is on screen.
+        let cell = DisplayColumn::new(
+            cell.saturating_add(u16::try_from(self.viewport.left).unwrap_or(u16::MAX)),
+        );
+
+        // A row an opened hunk drew, which is text the reader can see and
+        // put a caret in -- it is simply not text of the file.
+        let Some((line, row)) = self.text_row_at(at, area) else {
+            let Some(block) = self.block_above(at.0) else {
+                return;
+            };
+            let (line, row) = block.place_at_row(at.1, width);
+            let column = block.text.column_in_row(line, row, cell, width);
+            let cursor = Cursor {
+                line,
+                column,
+                remembered_cell: cell,
+            };
+            let anchor = match extend {
+                true => self.in_block.and_then(|at| at.anchor).or(Some(cursor)),
+                false => None,
+            };
+            self.in_block = Some(InBlock {
+                above: at.0,
+                cursor,
+                anchor,
+            });
+            self.selection_anchor = None;
+            return;
+        };
+        let column = self.text.column_in_row(line, row, cell, width);
+        match extend {
+            true => self.extend_to(line, column),
+            false => {
+                self.place_cursor(line, column);
+                self.cursor.remembered_cell = cell;
+            }
+        }
+    }
+
+    /// Moves the caret without letting go of what is selected.
+    ///
+    /// What a pointer dragged across the text means, and what a click with
+    /// shift held means: the place the reader started from stays put.
+    pub fn extend_to(&mut self, line: LineNumber, column: CharColumn) {
+        let anchor = self.selection_anchor.unwrap_or(self.cursor);
+        self.cursor.line = line;
+        self.cursor.column = self.text.clamp_column(line, column);
+        self.selection_anchor = Some(anchor);
+        self.detached = false;
+        self.in_block = None;
+    }
+
+    /// Selects a whole line, the break at the end of it included.
+    ///
+    /// With the break, so that what comes out of the clipboard is a line
+    /// rather than the middle of one -- the same rule `copy` follows when
+    /// nothing is selected.
+    pub fn select_line(&mut self, line: LineNumber) {
+        let last = self.text.last_line();
+        let (end_line, end_column) = match line >= last {
+            true => (line, self.text.line_length(line)),
+            false => (line.saturating_add(1), CharColumn::new(0)),
+        };
+        self.select(Span {
+            line,
+            column: CharColumn::new(0),
+            end_line,
+            end_column,
+        });
+    }
+
+    /// Widens what is selected by one step, and says whether it could.
+    ///
+    /// With nothing selected, the word the caret is in -- which is the
+    /// step every reader wants first and the only one they want often.
+    /// After that, the smallest thing in the *tree* that holds what is
+    /// already selected: the argument, then the call, then the statement,
+    /// then the block. A grammar is the only thing that knows where those
+    /// begin and end, and obelus has one for the file already.
+    ///
+    /// Where there is no grammar, the steps are the line and then the
+    /// file. Two coarse steps are worth having: a reader with a text file
+    /// open still wants to take a line without reaching for `home` and
+    /// `shift+end`.
+    pub fn widen_selection(&mut self) -> bool {
+        let Some(span) = self.selection() else {
+            let Some(word) = self.word_span() else {
+                return false;
+            };
+            self.select(word);
+            return true;
+        };
+        let Some(wider) = self.wider_than(span) else {
+            return false;
+        };
+        self.select(wider);
+        true
+    }
+
+    /// The word the caret is in, or the one it is at the end of.
+    ///
+    /// Both, because a caret sits *between* characters: with `word|` a
+    /// reader means that word, and so they do with `|word` and `wo|rd`.
+    fn word_span(&self) -> Option<Span> {
+        let characters: Vec<char> = self.text.line(self.cursor.line).chars().collect();
+        let at = self.cursor.column.get().min(characters.len());
+        let inside = |at: usize| characters.get(at).copied().is_some_and(wordish);
+        let start = match inside(at) || (at > 0 && inside(at - 1)) {
+            true => at,
+            false => return None,
+        };
+        let mut from = start;
+        while from > 0 && inside(from - 1) {
+            from -= 1;
+        }
+        let mut to = start;
+        while inside(to) {
+            to += 1;
+        }
+        (from < to).then_some(Span {
+            line: self.cursor.line,
+            column: CharColumn::new(from),
+            end_line: self.cursor.line,
+            end_column: CharColumn::new(to),
+        })
+    }
+
+    /// The smallest span that holds `span` and is bigger than it.
+    fn wider_than(&self, span: Span) -> Option<Span> {
+        let from = self
+            .text
+            .byte_of_char(self.text.char_offset(span.line, span.column));
+        let to = self
+            .text
+            .byte_of_char(self.text.char_offset(span.end_line, span.end_column));
+        if let Some(state) = self.syntax.as_ref() {
+            let mut node = state
+                .tree()
+                .root_node()
+                .descendant_for_byte_range(from.get(), to.get())?;
+            // Up until something is really bigger: a node whose only child
+            // is the selection has the same bytes, and climbing to it would
+            // be a key press that changed nothing.
+            loop {
+                if node.start_byte() < from.get() || node.end_byte() > to.get() {
+                    let (line, column) = self.text.position(
+                        self.text
+                            .char_of_byte(crate::coordinates::ByteOffset::new(node.start_byte())),
+                    );
+                    let (end_line, end_column) =
+                        self.text
+                            .position(self.text.char_of_byte(crate::coordinates::ByteOffset::new(
+                                node.end_byte(),
+                            )));
+                    return Some(Span {
+                        line,
+                        column,
+                        end_line,
+                        end_column,
+                    });
+                }
+                node = node.parent()?;
+            }
+        }
+
+        // No grammar: the line, and then everything.
+        let whole = self.spanning_all();
+        let line = Span {
+            line: span.line,
+            column: CharColumn::new(0),
+            end_line: span.line,
+            end_column: self.text.line_length(span.line),
+        };
+        match span == line || span.line != span.end_line {
+            true => (span != whole).then_some(whole),
+            false => Some(line),
+        }
+    }
+
     /// The text the reader selected, if any.
     ///
     /// From whichever of the two they selected it in: the file, or the
@@ -306,6 +503,21 @@ impl Buffer {
         area: TextArea,
         extend_selection: bool,
     ) {
+        // A left or right arrow on a selection puts the caret at that end
+        // of it and lets it go. The reader has a piece of the file in hand
+        // and is saying which end of it they mean; stepping one character
+        // from wherever the caret happens to be would move away from the
+        // end they pointed at half the time, because which end the caret
+        // is on depends on which way they selected.
+        if !extend_selection
+            && self.in_block.is_none()
+            && let Some(span) = self.selection()
+            && let Some((line, column)) = end_of(span, motion)
+        {
+            self.place_cursor(line, column);
+            self.scroll_into_view(area);
+            return;
+        }
         // The anchor belongs to whichever place the caret is in. Arming the
         // file's while the reader is selecting inside a block would leave a
         // selection nobody made: from the line the cursor is parked on to
@@ -866,13 +1078,37 @@ fn move_within(
     let rows = match motion {
         Motion::Up => -1,
         Motion::Down => 1,
+        // Off either end of a line is the line beside it: what lies to
+        // the left of column zero is the newline above, and where that
+        // character is, is the end of that line. The word motions have
+        // always crossed lines this way -- a plain arrow stopping dead at
+        // the margin was the odd one out, and it is the one key a reader
+        // holds down to walk through a file.
+        //
+        // Over a fold, the line beside it is the next one that is *shown*:
+        // a caret cannot be put on a line nobody can see, and the two
+        // steppers that answer this are the ones the word motions use.
         Motion::Left => {
-            cursor.column = cursor.column.saturating_sub(1);
+            if cursor.column.get() == 0 {
+                if let Some(above) = previous_line(folds, cursor.line) {
+                    cursor.line = above;
+                    cursor.column = text.line_length(above);
+                }
+            } else {
+                cursor.column = cursor.column.saturating_sub(1);
+            }
             remember(text, cursor, width);
             return moved(cursor);
         }
         Motion::Right => {
-            cursor.column = text.clamp_column(cursor.line, cursor.column.saturating_add(1));
+            if cursor.column >= text.line_length(cursor.line) {
+                if let Some(below) = next_line(text, folds, cursor.line) {
+                    cursor.line = below;
+                    cursor.column = CharColumn::new(0);
+                }
+            } else {
+                cursor.column = text.clamp_column(cursor.line, cursor.column.saturating_add(1));
+            }
             remember(text, cursor, width);
             return moved(cursor);
         }
@@ -881,7 +1117,17 @@ fn move_within(
         // line -- it is what `home` looks like it means, and jumping to the
         // far top of a paragraph is not what they pressed it for.
         Motion::LineStart => {
-            cursor.column = row_of(text, cursor.line, row, width).0;
+            let (first, end) = row_of(text, cursor.line, row, width);
+            // The indent is not where a line starts to a reader: what they
+            // reach for `home` to get to is the first thing they wrote.
+            // Pressing it again goes the rest of the way, so the margin is
+            // still one key away and neither of the two places needs a key
+            // of its own.
+            let written = first_written(text, cursor.line, first, end);
+            cursor.column = match cursor.column == written {
+                true => first,
+                false => written,
+            };
             remember(text, cursor, width);
             return moved(cursor);
         }
@@ -977,9 +1223,37 @@ fn row_of(text: &Text, line: LineNumber, row: usize, width: u16) -> (CharColumn,
     )
 }
 
+/// The first character of a row that is not blank.
+///
+/// The end of the row where the whole of it is blank: a line of spaces has
+/// nothing written on it, and the far end is the only place on it a reader
+/// could mean.
+fn first_written(text: &Text, line: LineNumber, first: CharColumn, end: CharColumn) -> CharColumn {
+    let characters: Vec<char> = text.line(line).chars().collect();
+    let mut at = first.get();
+    while at < end.get() && characters.get(at).is_some_and(|c| c.is_whitespace()) {
+        at += 1;
+    }
+    CharColumn::new(at)
+}
+
 /// Whether a character is part of a word rather than between words.
 fn wordish(character: char) -> bool {
     character.is_alphanumeric() || character == '_'
+}
+
+/// Which end of a selection a motion collapses it to, if it collapses it.
+///
+/// Only the two arrows that move by a character: `home` and `end` are
+/// about the line rather than the selection, the word motions are about
+/// words, and up and down carry on from the caret because a selection has
+/// no top or bottom end that a reader is pointing at.
+fn end_of(span: Span, motion: Motion) -> Option<(LineNumber, CharColumn)> {
+    match motion {
+        Motion::Left => Some((span.line, span.column)),
+        Motion::Right => Some((span.end_line, span.end_column)),
+        _ => None,
+    }
 }
 
 /// Which of the three kinds a character is, for telling one word from the

@@ -38,6 +38,8 @@ pub enum Command {
     SymbolMenu,
     /// Offer what could be typed where the cursor is.
     SymbolComplete,
+    /// Everything the language server says is wrong with this file.
+    SymbolTroubles,
     /// Every symbol this file defines, to jump to.
     SymbolOutline,
     /// Where the symbol under the cursor is defined.
@@ -95,6 +97,8 @@ pub enum Command {
     Redo,
     /// Stop selecting.
     SelectionClear,
+    /// Widen what is selected: the word, then whatever holds it.
+    SelectionWiden,
     /// Select the whole file.
     SelectionAll,
     /// Return to where the last jump was made from.
@@ -313,6 +317,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "What could be typed here",
     },
     CommandSpec {
+        command: Command::SymbolTroubles,
+        name: "show-problems",
+        title: "What is wrong with this file",
+    },
+    CommandSpec {
         command: Command::SymbolOutline,
         name: "show-outline",
         title: "Everything this file defines",
@@ -411,6 +420,11 @@ pub const ALL: &[CommandSpec] = &[
         command: Command::SelectionCopy,
         name: "copy-selection",
         title: "Copy the selection, or this line",
+    },
+    CommandSpec {
+        command: Command::SelectionWiden,
+        name: "widen-selection",
+        title: "Widen what is selected",
     },
     CommandSpec {
         command: Command::SelectionAll,
@@ -545,6 +559,7 @@ impl Command {
             | Self::CountLines => Group::Files,
             Self::SymbolMenu
             | Self::SymbolComplete
+            | Self::SymbolTroubles
             | Self::SymbolOutline
             | Self::SymbolDefinition
             | Self::SymbolTypeDefinition
@@ -565,6 +580,7 @@ impl Command {
             | Self::GitPrevious
             | Self::GitNext
             | Self::SelectionCopy
+            | Self::SelectionWiden
             | Self::SelectionCut
             | Self::LineUp
             | Self::LineDown
@@ -605,6 +621,9 @@ impl Command {
             | Self::SymbolImplementation
             | Self::SymbolReferences => Requires::AnAnswer,
             Self::LspStop | Self::SymbolComplete => Requires::ARunningServer,
+            // Not a running server: a file with nothing wrong with it is
+            // the answer this gives, and it is worth giving.
+            Self::SymbolTroubles => Requires::AFileOpen,
             // Everything that acts on the file being read. With nothing
             // open, each of them is a key that reports why instead of doing
             // something.
@@ -623,6 +642,9 @@ impl Command {
             // off again for one already showing as markdown.
             Self::PreviewToggle => Requires::APreview,
             Self::GoBracket => Requires::ABracket,
+            // A file, and nothing more: the first step is the word under
+            // the caret, which every file has and no grammar is needed for.
+            Self::SelectionWiden => Requires::AFileOpen,
             // Not `AKnownLanguage`: a file obelus can parse can still have
             // nothing to fold on the line the reader is on, and a key that
             // is offered everywhere and works in places is worse than one

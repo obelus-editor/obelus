@@ -5,9 +5,11 @@ pub mod client;
 pub mod complete;
 pub mod outline;
 pub mod position;
+pub mod signature;
 pub mod snippet;
 pub mod tokens;
 pub mod transport;
+pub mod trouble;
 
 use std::path::Path;
 

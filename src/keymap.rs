@@ -551,6 +551,21 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Down, KeyModifiers::ALT),
                 },
+                // `alt+e` for error: what the server says is wrong with
+                // this file, on the letter like the rest of this family.
+                Binding {
+                    command: Command::SymbolTroubles,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('e'), KeyModifiers::ALT),
+                },
+                // `alt+w` for widen, joining the family that asks about
+                // whatever the caret is in: the first step is the word it
+                // is in, and the rest are what the grammar says holds it.
+                Binding {
+                    command: Command::SelectionWiden,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('w'), KeyModifiers::ALT),
+                },
                 // `alt+c` for comment, on the letter like the rest of this
                 // family -- and `ctrl+/`, which is what everyone else uses,
                 // for the terminals that can say it. Most send `ctrl+_` or a

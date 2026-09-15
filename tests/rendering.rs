@@ -338,13 +338,20 @@ fn shift_arrows_select_and_plain_motion_clears_the_selection() {
         "the character after the selection is selected too:\n{selected_dump}"
     );
 
+    // And the arrow that points at an end of it puts the caret on that end
+    // rather than stepping past it: the reader has a piece of the file in
+    // hand and is saying which end of it they mean.
     press(&mut app, KeyCode::Right);
     let buffer = app.current_buffer().expect("a buffer");
     assert!(
         buffer.selection().is_none(),
         "the selection survived a plain move"
     );
-    assert_eq!(buffer.cursor().column, CharColumn::new(3));
+    assert_eq!(
+        buffer.cursor().column,
+        CharColumn::new(2),
+        "the caret stepped on from the end of the selection"
+    );
 }
 
 /// Copying without a selection copies the line the cursor is on, newline
@@ -491,6 +498,14 @@ fn home_and_end_move_to_the_ends_of_the_line() {
     // `\tlet greeting = "你好";` is twenty-one characters.
     assert_eq!(cursor.column, CharColumn::new(21));
 
+    // Home goes to what was written rather than to the margin: this line
+    // begins with a tab, and the first thing on it is `let`.
+    press(&mut app, KeyCode::Home);
+    assert_eq!(
+        app.current_buffer().expect("a buffer").cursor().column,
+        CharColumn::new(1)
+    );
+    // And again for the margin itself.
     press(&mut app, KeyCode::Home);
     assert_eq!(
         app.current_buffer().expect("a buffer").cursor().column,

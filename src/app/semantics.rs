@@ -511,6 +511,10 @@ impl App {
                 self.on_completion(question.buffer, from, reply);
                 return;
             }
+            Asked::Signature { line } => {
+                self.on_signature(question.buffer, line, reply);
+                return;
+            }
             Asked::Resolve { index } => {
                 self.on_resolve(index, reply);
                 return;
@@ -1013,6 +1017,153 @@ impl App {
     }
 }
 
+impl App {
+    /// Keeps what a server says is wrong with a file.
+    ///
+    /// Only for a file that is open: the ranges are turned into places in
+    /// a document here, and a document obelus does not have is one it
+    /// cannot place anything in. A server that talks about the rest of the
+    /// project -- rust-analyzer does, after a `cargo check` -- is not
+    /// wrong to, and this is where those would be kept if obelus ever
+    /// listed them.
+    pub(super) fn on_published(&mut self, language: LanguageId, params: &serde_json::Value) {
+        let Some(path) = crate::lsp::trouble::path_of(params) else {
+            return;
+        };
+        let Some(buffer) = self
+            .buffers
+            .iter()
+            .flatten()
+            .find(|buffer| buffer.path() == path)
+        else {
+            return;
+        };
+        let encoding = self
+            .servers
+            .get(&language)
+            .map_or(lsp_types::PositionEncodingKind::UTF16, |client| {
+                client.encoding().clone()
+            });
+        let troubles = crate::lsp::trouble::published(params, buffer.text(), &encoding);
+        // An empty set is a server saying the file is clean, which is news
+        // worth keeping: it is how what was wrong stops being shown.
+        match troubles.is_empty() {
+            true => self.troubles.remove(&path),
+            false => self.troubles.insert(path, troubles),
+        };
+    }
+
+    /// Hands the application what a server would have published.
+    ///
+    /// The whole path a real notification takes -- the uri, the ranges,
+    /// the severities -- because those are the parts worth testing, and a
+    /// server cannot be made to find a mistake on demand.
+    pub fn publish_for_test(&mut self, params: serde_json::Value) {
+        let language = self
+            .current_buffer()
+            .and_then(Buffer::language)
+            .unwrap_or(LanguageId::Rust);
+        self.on_published(language, &params);
+    }
+
+    /// Lists what the server says is wrong with this file.
+    pub fn open_troubles(&mut self) {
+        let troubles = self.troubles().to_vec();
+        if troubles.is_empty() {
+            self.note = Some(match self.server_state() {
+                Some((_, lsp::ServerState::Ready)) => "nothing wrong with this file".to_string(),
+                Some((command, _)) => format!("{command} is not answering"),
+                None => "no language server for this file".to_string(),
+            });
+            return;
+        }
+        // Back into the protocol's units, which is what a row that names a
+        // place carries: one kind of value for "go here", and the
+        // conversion in one place.
+        let path = self
+            .current_buffer()
+            .map_or(PathBuf::new(), |buffer| buffer.path().to_path_buf());
+        let encoding = self
+            .current_buffer()
+            .and_then(Buffer::language)
+            .and_then(|language| self.servers.get(&language))
+            .map_or(lsp_types::PositionEncodingKind::UTF16, |client| {
+                client.encoding().clone()
+            });
+        let Some(text) = self
+            .current_buffer()
+            .map(|buffer| buffer.text().rope().to_string())
+        else {
+            return;
+        };
+        let text = crate::text::Text::from_string(&text);
+        let at = |line, column| position::to_lsp(&text, line, column, &encoding);
+
+        let items = troubles
+            .iter()
+            .map(|trouble| PickerItem {
+                icon: icons::enabled().then(|| icons::for_kind(trouble.severity.kind())),
+                label: trouble.summary().to_string(),
+                detail: trouble.source.clone(),
+                prose: true,
+                marker: None,
+                trailing: Some(format!("{}", trouble.span.line.get() + 1)),
+                value: {
+                    let start = at(trouble.span.line, trouble.span.column);
+                    let end = at(trouble.span.end_line, trouble.span.end_column);
+                    PickerValue::Place {
+                        path: path.clone(),
+                        line: start.line,
+                        character: start.character,
+                        end_line: end.line,
+                        end_character: end.character,
+                    }
+                },
+                depth: 0,
+                status: None,
+                enabled: true,
+                colours: None,
+                kind: Some(trouble.severity.kind()),
+                tab: None,
+            })
+            .collect();
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: 10 });
+        picker.keeps_order(true);
+        picker.about(&format!(
+            "{} in {}",
+            counted(&troubles),
+            crate::app::relative(&path, &self.working_directory)
+        ));
+        self.picker = Some(picker);
+    }
+}
+
+/// How many of each severity, as a phrase.
+fn counted(troubles: &[crate::lsp::trouble::Trouble]) -> String {
+    use crate::lsp::trouble::Severity;
+
+    let count = |severity: Severity| {
+        troubles
+            .iter()
+            .filter(|trouble| trouble.severity == severity)
+            .count()
+    };
+    let mut said = Vec::new();
+    for severity in [
+        Severity::Error,
+        Severity::Warning,
+        Severity::Information,
+        Severity::Hint,
+    ] {
+        let many = count(severity);
+        if many > 0 {
+            let plural = if many == 1 { "" } else { "s" };
+            said.push(format!("{many} {}{plural}", severity.title()));
+        }
+    }
+    said.join(", ")
+}
+
 /// What one question that is still out was about.
 #[derive(Debug)]
 pub(super) struct Question {
@@ -1047,6 +1198,13 @@ pub(super) enum Asked {
     Completion {
         /// Where the word being completed starts.
         from: (LineNumber, CharColumn),
+    },
+    /// What the call the cursor is inside takes.
+    Signature {
+        /// The line it was asked on. A panel about a call the reader has
+        /// typed past is the same mistake as a completion for a word they
+        /// have finished.
+        line: LineNumber,
     },
     /// Everything about one candidate the reader is looking at.
     Resolve {

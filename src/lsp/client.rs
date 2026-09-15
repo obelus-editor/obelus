@@ -64,6 +64,13 @@ pub struct Client {
     encoding: PositionEncodingKind,
     /// Progress tokens in flight, and what each says it is doing.
     working: HashMap<String, String>,
+    /// What the server has said is wrong, since the caller last looked.
+    ///
+    /// Diagnostics arrive unasked, so there is no question waiting for
+    /// them and nothing for [`Client::on_message`] to answer with. Kept
+    /// here and drained by the caller, which is the only side that knows
+    /// whether the file they are about is still open.
+    published: Vec<Value>,
     /// How many messages have gone to the writer.
     ///
     /// Alongside [`Client::queued`] because between them they are the only
@@ -131,6 +138,7 @@ impl Client {
             // the expensive one.
             encoding: PositionEncodingKind::UTF16,
             working: HashMap::new(),
+            published: Vec::new(),
             sent: 0,
         };
         client.send_initialize(root)?;
@@ -216,6 +224,11 @@ impl Client {
     #[must_use]
     pub fn working_on(&self) -> Option<&str> {
         self.working.values().next().map(String::as_str)
+    }
+
+    /// Everything the server has said is wrong since this was last asked.
+    pub fn take_published(&mut self) -> Vec<Value> {
+        std::mem::take(&mut self.published)
     }
 
     /// Sends a request and returns the id its answer will carry.
@@ -404,6 +417,9 @@ impl Client {
     fn on_notification(&mut self, method: &str, params: &Value) {
         match method {
             "$/progress" => self.on_progress(params),
+            // Unasked for, and the whole truth about one file: the last
+            // set a server sends replaces whatever it said before.
+            "textDocument/publishDiagnostics" => self.published.push(params.clone()),
             "window/logMessage" | "window/showMessage" => {
                 if let Some(text) = params.get("message").and_then(Value::as_str) {
                     tracing::debug!(language = self.language.name(), "{text}");

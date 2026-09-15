@@ -14,6 +14,7 @@ pub mod image;
 pub mod picker;
 pub mod reading;
 pub mod settings;
+pub mod signature;
 pub mod status;
 pub mod welcome;
 
@@ -347,6 +348,12 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // typed next belongs beside the cursor, and the cursor is on top.
     if let Some(panel) = complete::layout(app, regions.editor) {
         complete::draw(cells, panel, app);
+    }
+    // And what the call takes, which is the same kind of thing one
+    // question further back. Never both: the panel's own accessor refuses
+    // to give a signature while there is a list of candidates.
+    if let Some(panel) = signature::layout(app, regions.editor) {
+        signature::draw(cells, panel, app);
     }
     status::StatusView::new(app).render(regions.status, cells);
 }

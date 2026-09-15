@@ -43,6 +43,7 @@ pub struct StatusView<'a> {
     /// And when a question is being asked, the row is the question.
     prompt: Option<&'a crate::component::prompt::Prompt>,
     theme: &'a Theme,
+    troubles: &'a [crate::lsp::trouble::Trouble],
     working_directory: &'a Path,
 }
 
@@ -55,6 +56,7 @@ impl<'a> StatusView<'a> {
             middle: app.note().or_else(|| app.server_working_on()),
             rows: app.rendered_rows(),
             server: app.server_state(),
+            troubles: app.troubles(),
             picker: app.picker(),
             settings: app.settings(),
             prompt: app.prompt(),
@@ -124,6 +126,47 @@ fn server_badge(server: Option<(&'static str, ServerState)>) -> String {
             false => format!("{} {name} ", state.mark()),
         })
         .unwrap_or_default()
+}
+
+/// How many things are wrong with the file, by kind.
+///
+/// Marks rather than words: the row is on screen the whole time and this
+/// is the part of it that is usually empty. A reader who wants the words
+/// has the list.
+#[must_use]
+fn wrong_badge(troubles: &[crate::lsp::trouble::Trouble]) -> String {
+    use crate::lsp::trouble::Severity;
+
+    let mut badge = String::new();
+    for severity in [Severity::Error, Severity::Warning] {
+        let many = troubles
+            .iter()
+            .filter(|trouble| trouble.severity == severity)
+            .count();
+        if many > 0 {
+            badge.push_str(&format!("{}{many} ", severity.mark()));
+        }
+    }
+    // The quiet two are counted together and only where there is nothing
+    // louder: a hint is not what a reader needs told about.
+    if badge.is_empty() && !troubles.is_empty() {
+        badge.push_str(&format!(
+            "{}{} ",
+            Severity::Information.mark(),
+            troubles.len()
+        ));
+    }
+    badge
+}
+
+/// The worst thing a server said about the file, for the colour of the
+/// count.
+fn worst(troubles: &[crate::lsp::trouble::Trouble]) -> crate::lsp::trouble::Severity {
+    troubles
+        .iter()
+        .map(|trouble| trouble.severity)
+        .min()
+        .unwrap_or(crate::lsp::trouble::Severity::Hint)
 }
 
 /// The colour that says which state it is.
@@ -257,6 +300,13 @@ impl StatusView<'_> {
         let badge = server_badge(self.server);
         let badge_width = text_width(&badge);
 
+        // What is wrong with the file, as a count of each kind: a reader
+        // who has not looked at the list still has to know there is one.
+        // Left of the server badge, because it is about the file and the
+        // badge is about the thing that said so.
+        let wrong = wrong_badge(self.troubles);
+        let wrong_width = text_width(&wrong);
+
         let cursor = buffer.cursor();
         // One-based, because that is what every other tool reports. The column
         // counts characters rather than cells: it is the cursor's position in
@@ -284,7 +334,8 @@ impl StatusView<'_> {
             .saturating_add(3)
             .saturating_add(marker_width)
             .saturating_add(working_width)
-            .saturating_add(badge_width);
+            .saturating_add(badge_width)
+            .saturating_add(wrong_width);
         // The file's own glyph, the same one the pickers give it, so a row in
         // a list and the file on screen are recognizably the same thing.
         let path = match icons::enabled() {
@@ -336,7 +387,16 @@ impl StatusView<'_> {
             write(cells, area.x + offset, area.y, &badge, style.fg(colour));
         }
 
-        let working_start = badge_start.saturating_sub(working_width);
+        let wrong_start = badge_start.saturating_sub(wrong_width);
+        if !wrong.is_empty()
+            && let Ok(offset) = u16::try_from(wrong_start)
+            && wrong_start > after_path + marker_width
+        {
+            let colour = self.theme.colour_for(Some(worst(self.troubles).kind()));
+            write(cells, area.x + offset, area.y, &wrong, style.fg(colour));
+        }
+
+        let working_start = wrong_start.saturating_sub(working_width);
         if !working.is_empty()
             && let Ok(offset) = u16::try_from(working_start)
             && working_start > after_path + marker_width

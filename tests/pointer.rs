@@ -1,0 +1,174 @@
+//! The pointer, over the text.
+//!
+//! A terminal reports where a button went down and nothing else -- no
+//! double click, no idea what is under it -- so everything here is
+//! obelus's own arithmetic, and the part worth testing is that a cell on
+//! screen becomes the place in the file a reader was pointing at.
+
+mod support;
+
+use crossterm::event::KeyCode;
+use obelus::{
+    app::App,
+    buffer::Buffer,
+    event::{Event, Pointer},
+};
+
+/// An application over a file of the test's own, laid out.
+fn editing(name: &str, contents: &str) -> (support::Scratch, App) {
+    let scratch = support::Scratch::new(name);
+    let path = scratch.path().join("sample.rs");
+    std::fs::write(&path, contents).expect("writing the file");
+    let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 60, 16);
+    (scratch, app)
+}
+
+fn press_at(app: &mut App, x: u16, y: u16) {
+    app.handle(Event::Pointer {
+        kind: Pointer::Pressed,
+        x,
+        y,
+    });
+}
+
+fn drag_to(app: &mut App, x: u16, y: u16) {
+    app.handle(Event::Pointer {
+        kind: Pointer::Dragged,
+        x,
+        y,
+    });
+}
+
+fn caret(app: &App) -> (usize, usize) {
+    let cursor = app.current_buffer().expect("a buffer").cursor();
+    (cursor.line.get(), cursor.column.get())
+}
+
+/// Where a character is on screen, as the dump shows it.
+fn cell_of(app: &mut App, needle: &str) -> (u16, u16) {
+    let dump = support::render(app, 60, 16);
+    let rows: Vec<String> = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
+        .collect();
+    let y = rows
+        .iter()
+        .position(|row| row.contains(needle))
+        .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"));
+    let x = rows[y].find(needle).expect("the cell");
+    (
+        u16::try_from(x).expect("a column"),
+        u16::try_from(y).expect("a row"),
+    )
+}
+
+#[test]
+fn a_click_puts_the_caret_where_it_landed() {
+    let (_scratch, mut app) = editing("pointer-click", "fn main() {\n    let name = 1;\n}\n");
+    let (x, y) = cell_of(&mut app, "name");
+    press_at(&mut app, x + 2, y);
+    assert_eq!(caret(&app), (1, 10), "the caret is not under the pointer");
+
+    // Past the end of a line is the end of it, not the line below.
+    press_at(&mut app, 58, y);
+    assert_eq!(caret(&app), (1, 17));
+}
+
+/// A click on the gutter is a reader pointing at a line, not at nothing.
+#[test]
+fn a_click_left_of_the_text_lands_at_the_start_of_the_line() {
+    let (_scratch, mut app) = editing("pointer-gutter", "fn main() {\n    let name = 1;\n}\n");
+    let (_, y) = cell_of(&mut app, "let name");
+    press_at(&mut app, 0, y);
+    assert_eq!(caret(&app), (1, 0));
+}
+
+#[test]
+fn dragging_selects_what_it_is_dragged_over() {
+    let (_scratch, mut app) = editing("pointer-drag", "fn main() {\n    let name = 1;\n}\n");
+    let (x, y) = cell_of(&mut app, "name");
+    press_at(&mut app, x, y);
+    drag_to(&mut app, x + 4, y);
+    assert_eq!(
+        app.current_buffer()
+            .and_then(|buffer| buffer.selected_text()),
+        Some("name".to_string())
+    );
+
+    // And on past the end of the line, which is the row below.
+    drag_to(&mut app, x, y + 1);
+    let selected = app
+        .current_buffer()
+        .and_then(|buffer| buffer.selected_text())
+        .expect("a selection");
+    assert!(
+        selected.starts_with("name = 1;\n"),
+        "the drag did not reach the next row: {selected:?}"
+    );
+}
+
+/// Twice is the word and three times is the line, which is what every
+/// editor with a pointer has taught.
+#[test]
+fn two_clicks_take_the_word_and_three_take_the_line() {
+    let (_scratch, mut app) = editing("pointer-counts", "fn main() {\n    let name = 1;\n}\n");
+    let (x, y) = cell_of(&mut app, "name");
+    press_at(&mut app, x + 1, y);
+    press_at(&mut app, x + 1, y);
+    assert_eq!(
+        app.current_buffer()
+            .and_then(|buffer| buffer.selected_text()),
+        Some("name".to_string()),
+        "two presses did not take the word"
+    );
+
+    press_at(&mut app, x + 1, y);
+    assert_eq!(
+        app.current_buffer()
+            .and_then(|buffer| buffer.selected_text()),
+        Some("    let name = 1;\n".to_string()),
+        "three presses did not take the line, break and all"
+    );
+
+    // A press somewhere else is a first press again.
+    let (other_x, other_y) = cell_of(&mut app, "fn main");
+    press_at(&mut app, other_x, other_y);
+    assert!(
+        app.current_buffer()
+            .and_then(|buffer| buffer.selection())
+            .is_none(),
+        "the count carried over to a press somewhere else"
+    );
+}
+
+/// A list is what the screen is showing while it is up, so a click on the
+/// code behind it would move a caret nobody can see.
+#[test]
+fn a_click_does_nothing_while_a_list_is_open() {
+    let (_scratch, mut app) = editing("pointer-list", "fn main() {\n    let name = 1;\n}\n");
+    let (x, y) = cell_of(&mut app, "name");
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::CommandPalette);
+    press_at(&mut app, x, y);
+    assert_eq!(caret(&app), (0, 0), "the click reached the file");
+}
+
+/// A file being read as markdown has no places for a caret: its rows are
+/// not the file's lines.
+#[test]
+fn a_click_does_nothing_over_a_reading() {
+    let scratch = support::Scratch::new("pointer-reading");
+    let path = scratch.path().join("readme.md");
+    std::fs::write(&path, "# Heading\n\nSome prose.\n").expect("writing it");
+    let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 60, 16);
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::PreviewToggle);
+
+    press_at(&mut app, 4, 2);
+    assert_eq!(caret(&app), (0, 0));
+
+    // And the keys still do what they did.
+    support::press(&mut app, KeyCode::Down);
+}

@@ -23,6 +23,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::SymbolMenu => app.open_symbol_menu(),
         Command::SymbolComplete => app.ask_completion(),
         Command::SymbolOutline => app.open_outline(),
+        Command::SymbolTroubles => app.open_troubles(),
         Command::SymbolDefinition
         | Command::SymbolTypeDefinition
         | Command::SymbolImplementation
@@ -51,6 +52,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::Redo => app.redo(),
         Command::SelectionClear => app.clear_selection(),
         Command::SelectionAll => app.select_all(),
+        Command::SelectionWiden => app.widen_selection(),
         Command::GoBack => app.go_back(),
         Command::GoForward => app.go_forward(),
         Command::AgentOpen => app.open_agent(),

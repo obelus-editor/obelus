@@ -110,6 +110,92 @@ impl App {
         }
     }
 
+    /// Asks what the call the cursor is inside takes.
+    pub(super) fn ask_signature(&mut self) {
+        let Some(id) = self.current else { return };
+        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+            return;
+        };
+        if !buffer.content().is_file() || buffer.mode() != crate::buffer::Mode::Edit {
+            return;
+        }
+        let Some(language) = buffer.language() else {
+            return;
+        };
+        let Ok(uri) = lsp::client::uri_for(buffer.path()) else {
+            return;
+        };
+        let cursor = buffer.cursor();
+        let version = buffer.version();
+        let Some(client) = self.servers.get_mut(&language) else {
+            return;
+        };
+        if !client
+            .capabilities()
+            .is_some_and(crate::lsp::signature::supported)
+        {
+            return;
+        }
+        let at = position::to_lsp(buffer.text(), cursor.line, cursor.column, client.encoding());
+        let params = serde_json::json!({
+            "textDocument": { "uri": uri },
+            "position": at,
+        });
+        if let Ok(request) = client.request("textDocument/signatureHelp", &params) {
+            self.asked.insert(
+                (language, request),
+                Question {
+                    asked: Asked::Signature { line: cursor.line },
+                    buffer: id,
+                    version,
+                },
+            );
+        }
+    }
+
+    /// Keeps what a server said a call takes, if the reader is still in it.
+    pub(super) fn on_signature(&mut self, id: BufferId, line: LineNumber, reply: Reply) {
+        // The line the question was asked on. A call spans one line often
+        // enough, and a reader who has gone to another one is writing
+        // something else -- a panel about the call above would be a panel
+        // about somewhere they have left.
+        if self.current != Some(id)
+            || self
+                .current_buffer()
+                .is_none_or(|buffer| buffer.cursor().line != line)
+        {
+            return;
+        }
+        self.signature = crate::lsp::signature::in_reply(&reply.result);
+    }
+
+    /// Whether a character is one the server says asks about a call.
+    fn triggers_signature(&self, character: char) -> bool {
+        self.current_buffer()
+            .and_then(Buffer::language)
+            .and_then(|language| self.servers.get(&language))
+            .and_then(Client::capabilities)
+            .is_some_and(|capabilities| {
+                crate::lsp::signature::triggered_by(capabilities, character)
+            })
+    }
+
+    /// Hands the application a signature, as a server would.
+    pub fn signature_for_test(&mut self, answer: serde_json::Value) {
+        let Some(id) = self.current else { return };
+        let Some(line) = self.current_buffer().map(|buffer| buffer.cursor().line) else {
+            return;
+        };
+        self.on_signature(
+            id,
+            line,
+            Reply {
+                id: 0,
+                result: Ok(answer),
+            },
+        );
+    }
+
     /// Hands the panel an answer, as a server would.
     ///
     /// The whole path a real answer takes -- the word's start, the query,
@@ -619,6 +705,19 @@ impl App {
             keys::Typing::Backward => self.settle_completion(),
             // A newline, a bracket, a delete: the reader has moved on.
             _ => self.completion = None,
+        }
+
+        // And the same keystroke asked about the call it is in, which is a
+        // different question with a different answer: a server may call one
+        // character a trigger for both, and `(` usually is.
+        match typing {
+            keys::Typing::Character(character) if self.triggers_signature(character) => {
+                self.ask_signature();
+            }
+            // A call closing, or the line ending: either way what is
+            // showing is about somewhere the reader has left.
+            keys::Typing::Character(')') | keys::Typing::Newline => self.signature = None,
+            _ => {}
         }
     }
 }

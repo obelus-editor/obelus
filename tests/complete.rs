@@ -265,8 +265,9 @@ fn the_panel_goes_when_the_reader_leaves_the_word() {
 
     // Not an arrow, which belongs to the list while it is up: the keys
     // that move the cursor out from under it are the ones the panel does
-    // not want.
-    support::press(&mut app, crossterm::event::KeyCode::Home);
+    // not want. And not a bare `home` either -- that lands on the first
+    // thing written on the line, which here is the word being completed.
+    support::press_control_key(&mut app, crossterm::event::KeyCode::Home);
     let dump = support::render(&mut app, 60, 16);
     assert!(
         !dump.contains("push_str"),
@@ -723,6 +724,97 @@ mod against_a_real_server {
         assert!(
             panel.count() > 0 && panel.query().is_empty(),
             "the panel that came back is about the word before the `::`"
+        );
+    }
+}
+
+/// What the call the cursor is inside takes, which is the question after
+/// "what could be typed": the name is chosen and the arguments are not.
+mod signatures {
+    use serde_json::json;
+
+    use super::{editing, support};
+
+    /// One signature, in the shape rust-analyzer sends: offsets into the
+    /// label rather than the parameter's own text.
+    fn answered(active: u32) -> serde_json::Value {
+        json!({
+            "signatures": [{
+                "label": "fn push_str(&mut self, string: &str)",
+                "parameters": [
+                    { "label": [12, 21] },
+                    { "label": [23, 35] }
+                ],
+                "activeParameter": active
+            }],
+            "activeSignature": 0
+        })
+    }
+
+    #[test]
+    fn the_call_is_shown_with_the_argument_being_typed_marked() {
+        let (_scratch, mut app) = editing("signature-shown", "fn main() {\n    push_str(\n}\n");
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        app.signature_for_test(answered(1));
+
+        let dump = support::render(&mut app, 60, 16);
+        assert!(
+            dump.contains("fn push_str(&mut self, string: &str)"),
+            "the signature is not on screen:\n{dump}"
+        );
+
+        // The argument being typed is drawn differently from the rest of
+        // the line, which is the whole of what the panel is for.
+        let rows: Vec<&str> = support::text_block(&dump).lines().collect();
+        let styles: Vec<&str> = support::style_block(&dump).lines().collect();
+        let at = rows
+            .iter()
+            .position(|row| row.contains("fn push_str(&mut"))
+            .expect("the signature");
+        let row = rows[at];
+        let cells = &styles[at][row.find('|').expect("a divider") + 1..];
+        let text = &row[row.find('|').expect("a divider") + 1..];
+        let second = text.find("string: &str").expect("the second argument");
+        let first = text.find("&mut self").expect("the first");
+        assert_ne!(
+            cells.chars().nth(second),
+            cells.chars().nth(first),
+            "the argument being typed is drawn as the rest of the line:\n{dump}"
+        );
+    }
+
+    /// A parameter given as text rather than as offsets, which is the
+    /// protocol's other shape.
+    #[test]
+    fn a_parameter_named_by_its_text_is_found_in_the_label() {
+        use obelus::lsp::signature::in_reply;
+
+        let found = in_reply(&Ok(json!({
+            "signatures": [{
+                "label": "def greet(name, loud=False)",
+                "parameters": [{ "label": "name" }, { "label": "loud=False" }],
+            }],
+            "activeParameter": 1
+        })))
+        .expect("a signature");
+        let (from, to) = found.active.expect("an active parameter");
+        assert_eq!(&found.label[from..to], "loud=False");
+    }
+
+    /// A closing bracket ends the call, so it ends the panel.
+    #[test]
+    fn the_panel_goes_when_the_call_does() {
+        let (_scratch, mut app) = editing("signature-closed", "fn main() {\n    push_str(\n}\n");
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        app.signature_for_test(answered(0));
+        assert!(app.signature().is_some(), "the panel never opened");
+
+        support::type_text(&mut app, ")");
+        assert!(
+            app.signature().is_none(),
+            "the panel stayed up after the call was closed"
         );
     }
 }
