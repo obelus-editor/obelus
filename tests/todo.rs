@@ -409,12 +409,7 @@ fn the_caret_is_on_the_cell_the_letter_goes_in() {
         .lines()
         .find(|row| row.contains("wire the counts"))
         .unwrap_or_default();
-    let cells = row.split_once('|').map_or(row, |(_, rest)| rest);
-    // Characters, not bytes: the box in front of a note is three bytes and
-    // one cell, and a caret is counted in cells.
-    let starts = cells
-        .find("wire the counts")
-        .map_or(0, |byte| cells[..byte].chars().count());
+    let starts = support::column_of(row, "wire the counts");
 
     assert_eq!(
         column(&mut app),
@@ -494,16 +489,10 @@ fn a_long_note_wraps_when_the_reader_wraps() {
         wrapped.join("\n")
     );
     // The continuation starts under the first row's words rather than under
-    // the box, so a note reads as one thing. Counted in characters: the box
-    // in front of a note is three bytes and one cell.
-    let column = |row: &str, needle: &str| {
-        row.find(needle)
-            .map(|byte| row[..byte].chars().count())
-            .unwrap_or_else(|| panic!("no {needle:?} in {row:?}"))
-    };
+    // the box, so a note reads as one thing.
     assert_eq!(
-        column(&wrapped[1], "of a narrow"),
-        column(&wrapped[0], "a note"),
+        support::column_of(&wrapped[1], "of a narrow"),
+        support::column_of(&wrapped[0], "a note"),
         "the second row is not under the first"
     );
 

@@ -249,14 +249,14 @@ fn label(index: usize) -> char {
     char::from(*LABELS.get(index).unwrap_or(&b'?'))
 }
 
-/// The legend entry for the first cell drawing `glyph`: `fg=… bg=…`.
+/// Which row and column of a dump the first `glyph` is at.
 ///
-/// The whole entry, for a test about a background: [`colour_under`] answers
-/// about the foreground, and a row's ground is the other half of what it is
-/// drawn in.
-#[must_use]
-pub fn legend_for(dump: &str, glyph: char) -> String {
-    let (row, column) = text_block(dump)
+/// Shared by everything that asks about one cell: the colour it is drawn in,
+/// the whole style behind it. In characters rather than cells, because what
+/// it is for is reaching into the style block, which is one letter per cell
+/// the same way the text block is one character per cell.
+fn cell_of(dump: &str, glyph: char) -> (usize, usize) {
+    text_block(dump)
         .lines()
         .filter(|line| !line.is_empty())
         .enumerate()
@@ -267,8 +267,36 @@ pub fn legend_for(dump: &str, glyph: char) -> String {
                 .position(|cell| cell == glyph)
                 .map(|column| (row, column))
         })
-        .unwrap_or_else(|| panic!("nothing on screen draws {glyph:?}:\n{}", text_block(dump)));
+        .unwrap_or_else(|| panic!("nothing on screen draws {glyph:?}:\n{}", text_block(dump)))
+}
 
+/// Which cell of a dump's row `needle` starts in.
+///
+/// Cells, which is what a caret and a column are counted in, and what none
+/// of the obvious answers gives: `str::find` hands back a *byte*, and `□` is
+/// three bytes, one character and one cell, while `\u{4f60}` is three bytes,
+/// one character and *two* cells. A test that reached for `find` and
+/// compared it with a caret was right only for rows made of ASCII.
+///
+/// The row's own `NN|` prefix is not counted, the way the dump's style and
+/// legend blocks line up against the text without it.
+#[must_use]
+pub fn column_of(row: &str, needle: &str) -> usize {
+    let cells = row.split_once('|').map_or(row, |(_, rest)| rest);
+    let at = cells
+        .find(needle)
+        .unwrap_or_else(|| panic!("no {needle:?} on {cells:?}"));
+    obelus::ui::text_width(&cells[..at])
+}
+
+/// The legend entry for the first cell drawing `glyph`: `fg=… bg=…`.
+///
+/// The whole entry, for a test about a background: [`colour_under`] answers
+/// about the foreground, and a row's ground is the other half of what it is
+/// drawn in.
+#[must_use]
+pub fn legend_for(dump: &str, glyph: char) -> String {
+    let (row, column) = cell_of(dump, glyph);
     let letter = style_block(dump)
         .lines()
         .filter(|line| !line.is_empty())
@@ -507,19 +535,7 @@ pub fn clipboard_turn() -> std::sync::MutexGuard<'static, ()> {
 /// icon and the width, and none of those are what is being asserted.
 #[must_use]
 pub fn colour_under(dump: &str, glyph: char) -> String {
-    let (row, column) = text_block(dump)
-        .lines()
-        .filter(|line| !line.is_empty())
-        .enumerate()
-        .find_map(|(row, line)| {
-            let cells = line.split_once('|').map_or(line, |(_, rest)| rest);
-            cells
-                .chars()
-                .position(|cell| cell == glyph)
-                .map(|column| (row, column))
-        })
-        .unwrap_or_else(|| panic!("nothing on screen draws {glyph:?}:\n{}", text_block(dump)));
-
+    let (row, column) = cell_of(dump, glyph);
     let letter = style_block(dump)
         .lines()
         .filter(|line| !line.is_empty())
