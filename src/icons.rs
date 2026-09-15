@@ -138,6 +138,11 @@ pub mod ui {
     pub const UNSAVED: char = '\u{f0766}';
     /// A file that can no longer be read from disk.
     pub const STALE: char = '\u{f0a4b}';
+    /// A directory, on a row whose children are what it holds.
+    ///
+    /// The plain folder rather than [`TREE`]: that one is the whole of what
+    /// was counted, and a directory inside it is not that.
+    pub const DIRECTORY: char = '\u{f07b}';
     /// A set of colours.
     pub const THEME: char = '\u{f03d8}';
     /// The tree obelus is reading, taken as a whole.

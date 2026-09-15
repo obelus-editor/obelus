@@ -353,15 +353,22 @@ impl CountsView<'_> {
         // row that skipped this column would put its name back level with
         // the names above it -- which is what the language written inside
         // another did, flush with the languages it is not one of.
-        // A directory's mark goes in the glyph's column rather than beside
-        // one. The branch in front of the row already says what it hangs
-        // under and a folder glyph would say it a third time -- and this is
-        // the half that survives a reader with no Nerd Font, which is the
-        // half that has to: folding is discovered by seeing the mark.
-        if let Some(open) = row.open {
-            put(cells, x, y, crate::ui::opens(open), style);
-            x += 2;
-        } else if crate::icons::enabled() {
+        // The fold mark, in a column of its own in front of the glyph. Kept
+        // on the rows that have nothing to put in it, so a file's name and a
+        // directory's start in the same place; and spent at all only on a
+        // page where something folds, so the languages are not indented past
+        // a column that would always be blank.
+        //
+        // One cell, not two: this is an ordinary glyph in every font, where
+        // the icons beside it are private-use codepoints the terminal
+        // allocates one cell for and the font draws two.
+        if self.counts.folds() {
+            if let Some(open) = row.open {
+                put(cells, x, y, crate::ui::opens(open), style);
+            }
+            x += 1;
+        }
+        if crate::icons::enabled() {
             if let Some(icon) = row.icon {
                 put(cells, x, y, icon, style);
             }

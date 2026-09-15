@@ -70,12 +70,12 @@ pub struct Row {
     pub depth: u16,
     /// Whether it is showing what it holds, for a row that holds anything.
     ///
-    /// `None` for a row that is not a directory. Drawn where a file's glyph
-    /// goes, rather than beside one: the branch in front of the row already
-    /// says what it hangs under, and a folder glyph next to an arrow that
-    /// opens it would be the third thing on one row saying the same thing.
-    /// It is also the half that survives a reader with no Nerd Font, which
-    /// is the half that has to.
+    /// `None` for a row that is not a directory. Drawn in a column of its
+    /// own in front of the glyph, which every row on the page leaves room
+    /// for once any row has one -- so a file's name and a directory's start
+    /// in the same place. It is also the half that survives a reader with no
+    /// Nerd Font, which is the half that has to: folding is only ever
+    /// discovered by seeing the mark.
     pub open: Option<bool>,
     /// How many files the row counts, where that is a question about it.
     /// A file row has no answer to it, which is not the same as one.
@@ -226,10 +226,7 @@ impl Node {
                     let path = at.join(name);
                     let open = opened.contains(&path);
                     rows.push(Row {
-                        // No glyph: the arrow is in this column, and it says
-                        // both that the row holds something and whether it
-                        // is showing it.
-                        icon: None,
+                        icon: crate::icons::enabled().then_some(crate::icons::ui::DIRECTORY),
                         name: name.to_string_lossy().into_owned(),
                         depth,
                         open: Some(open),
@@ -444,6 +441,16 @@ impl Counts {
         {
             self.window.set_focus(at);
         }
+    }
+
+    /// Whether any row on the page folds, and so whether every row leaves a
+    /// column in front of its glyph for the mark.
+    ///
+    /// Over all the rows rather than the visible ones: a column that came
+    /// and went as the list scrolled would move every name on the screen.
+    #[must_use]
+    pub fn folds(&self) -> bool {
+        self.rows.iter().any(|row| row.open.is_some())
     }
 
     /// Whether the row at `at` is one enter does something to.
