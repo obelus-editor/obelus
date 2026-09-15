@@ -21,6 +21,7 @@ mod counting;
 mod documents;
 mod history;
 mod history_view;
+mod noting;
 pub use history_view::About;
 mod keys;
 mod moving;
@@ -318,6 +319,8 @@ pub struct App {
     settings: Option<Settings>,
     /// The line counts, while they are showing.
     counts: Option<Counts>,
+    /// What the tree means to come back to, while it is showing.
+    notes: Option<crate::component::todo::TodoView>,
     /// The whole screen, as of the last frame.
     ///
     /// Kept beside `editor_area` because one view is not in it: the counts
@@ -451,6 +454,7 @@ impl App {
             agents: agents::Agents::default(),
             settings: None,
             counts: None,
+            notes: None,
             screen_area: Rect::ZERO,
             given_statuses: None,
             listing: Vec::new(),
@@ -822,6 +826,7 @@ impl App {
         self.picker.is_some()
             || self.settings.is_some()
             || self.counts.is_some()
+            || self.notes.is_some()
             || self.showing_chat
     }
 
@@ -1356,6 +1361,13 @@ impl App {
         // nothing to type into, so what they take is the keys that walk a
         // list and the two that leave it -- and everything else falls
         // through to the table, where nothing is bound in a dialog.
+        // Not while a prompt is open over it: the prompt is a thing the
+        // reader is *in*, and a list that went on taking enter and space
+        // underneath it would swallow the answer and tick something.
+        if self.prompt.is_none() && self.notes.is_some() && self.notes_key(&key) {
+            return;
+        }
+
         if self.counts.is_some() && self.counts_key(&key) {
             return;
         }

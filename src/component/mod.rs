@@ -12,4 +12,5 @@ pub mod counts;
 pub mod picker;
 pub mod prompt;
 pub mod settings;
+pub mod todo;
 pub mod window;

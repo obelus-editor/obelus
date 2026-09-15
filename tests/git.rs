@@ -2295,6 +2295,68 @@ fn a_message_with_nothing_to_hide_is_not_folded() {
     );
 }
 
+/// A line written down against one version of a file is found again in the
+/// next, which is what a note made while reading needs: it was put beside
+/// something, and the something has been moving ever since.
+#[test]
+fn a_line_is_followed_from_the_commit_it_was_noted_in() {
+    let then = "one\ntwo\nthree\nfour\n";
+
+    // Two lines put in above it: what was line 3 is line 5.
+    let changes = Changes::between(then, "new\nalso\none\ntwo\nthree\nfour\n");
+    assert_eq!(
+        changes.working_line(LineNumber::new(2)),
+        Some(LineNumber::new(4)),
+        "the line did not move down with what was added above it"
+    );
+    // And nothing above the first line moves it.
+    assert_eq!(
+        Changes::between(then, "one\ntwo\nthree\nfour\nfive\n").working_line(LineNumber::new(2)),
+        Some(LineNumber::new(2)),
+        "a line moved for a change below it"
+    );
+
+    // A line taken out is gone, and saying so beats pointing at whatever
+    // took its place.
+    let removed = Changes::between(then, "one\nfour\n");
+    assert_eq!(
+        removed.working_line(LineNumber::new(2)),
+        None,
+        "a line the file no longer has was found anyway"
+    );
+    assert_eq!(
+        removed.working_line(LineNumber::new(3)),
+        Some(LineNumber::new(1)),
+        "the line after a deletion did not come up with it"
+    );
+
+    // An unchanged file moves nothing.
+    assert_eq!(
+        Changes::between(then, then).working_line(LineNumber::new(2)),
+        Some(LineNumber::new(2))
+    );
+}
+
+/// It is the other direction of the map the blame walks, so the two agree
+/// wherever both have an answer.
+#[test]
+fn following_a_line_both_ways_comes_back_to_it() {
+    let changes = Changes::between(
+        "one\ntwo\nthree\nfour\nfive\n",
+        "one\nnew\ntwo\nthree\nfive\nsix\n",
+    );
+    for line in 0..5usize {
+        let Some(now) = changes.working_line(LineNumber::new(line)) else {
+            continue;
+        };
+        assert_eq!(
+            changes.committed_line(now),
+            Some(LineNumber::new(line)),
+            "line {line} went out and came back somewhere else"
+        );
+    }
+}
+
 /// A list of changed files is read for which of them to look at first, and
 /// how much each moved is most of that answer. At the right-hand end, where a
 /// number is read down a column rather than hunted for at the ragged end of a

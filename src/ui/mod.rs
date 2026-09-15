@@ -16,6 +16,7 @@ pub mod reading;
 pub mod settings;
 pub mod signature;
 pub mod status;
+pub mod todo;
 pub mod welcome;
 
 use ratatui::{
@@ -259,6 +260,14 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // file behind the view, at a line and column belonging to a cursor that
     // is nowhere on screen. The two rows that would have said
     // it go to the list instead.
+    // The notes take the whole region, the way the counts do: a list of
+    // what to come back to with the code behind it would be a screen with
+    // two things on it and no way to tell which one a key would reach.
+    if let Some(view) = todo::TodoUi::new(app) {
+        view.render(regions.editor, cells);
+        status::StatusView::new(app).render(regions.status, cells);
+        return;
+    }
     if let Some(view) = counts::CountsView::new(app) {
         view.render(area, cells);
         return;
@@ -697,6 +706,124 @@ where
         write(cells, area.x + offset, area.y, keys, dim);
     }
     column
+}
+
+/// One key, and what it does here.
+///
+/// The word is optional because some keys are their own explanation. The
+/// arrows walk the tabs and there is nothing to add to an arrow; `alt+f`
+/// means nothing at all until something says "fold". A word beside a key
+/// that did not need one is a row of text saying what everybody already
+/// knew, in the room the keys that *do* need explaining are about to want.
+#[derive(Clone, Copy, Debug)]
+pub struct Hint {
+    /// The key, spelled by the key table so that a reader who rebound it
+    /// sees what they bound.
+    pub chord: crate::keymap::KeyChord,
+    /// What it does, in as few words as will do.
+    pub does: Option<&'static str>,
+}
+
+impl Hint {
+    /// A key that says what it does, and one that does not.
+    #[must_use]
+    pub const fn new(chord: crate::keymap::KeyChord, does: &'static str) -> Self {
+        Self {
+            chord,
+            does: Some(does),
+        }
+    }
+}
+
+/// How many rows a view gives up to its foot, where it has one.
+///
+/// The rule and the keys under it. A view with nothing to say about its keys
+/// spends neither.
+pub const FOOT_ROWS: u16 = 2;
+
+/// What is left of a region once its foot is taken off the bottom.
+///
+/// One answer, asked by the drawing and by whatever moves about inside: a
+/// page is worth what is on screen, and two answers to how much that is
+/// would be a page that overshoots by however much they disagreed.
+#[must_use]
+pub fn footed(area: Rect, hints: &[Hint]) -> Rect {
+    if hints.is_empty() || area.height <= FOOT_ROWS {
+        return area;
+    }
+    Rect {
+        height: area.height - FOOT_ROWS,
+        ..area
+    }
+}
+
+/// The keys a view answers to, along the bottom of it under a rule.
+///
+/// At the foot rather than beside the title, because a key needs a word and
+/// words need room: the tab row has a title on it already and gives up what
+/// is left to the tabs. Here there is a row of its own, and a view that grew
+/// a sixth key does not have to choose which five to admit to.
+///
+/// Given up from the right as the row runs out, so the keys a view puts
+/// first are the ones that survive a narrow screen. Nothing is cut in half:
+/// a key and its word go together or neither goes.
+pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
+    if hints.is_empty() || area.height < FOOT_ROWS {
+        return;
+    }
+    let top = area.y + area.height - FOOT_ROWS;
+    rule(
+        cells,
+        Rect {
+            y: top,
+            height: 1,
+            ..area
+        },
+        theme,
+    );
+    let y = top + 1;
+    fill(
+        cells,
+        Rect {
+            y,
+            height: 1,
+            ..area
+        },
+        Style::new().bg(theme.background),
+    );
+
+    let mut x = area.x + 2;
+    let edge = area.x + area.width;
+    for hint in hints {
+        let chord = hint.chord.label();
+        let wanted = text_width(&chord) + hint.does.map_or(0, |does| text_width(does) + 1) + 3;
+        let Ok(wanted) = u16::try_from(wanted) else {
+            return;
+        };
+        if x + wanted > edge {
+            return;
+        }
+        // The key brighter than the word: what a reader is looking for down
+        // here is which key, and the word is what they read once to find out
+        // that it is the one.
+        x = write(
+            cells,
+            x,
+            y,
+            &chord,
+            Style::new().fg(theme.gutter_current).bg(theme.background),
+        );
+        if let Some(does) = hint.does {
+            x = write(
+                cells,
+                x + 1,
+                y,
+                does,
+                Style::new().fg(theme.gutter).bg(theme.background),
+            );
+        }
+        x += 3;
+    }
 }
 
 /// What a list says when it has nothing in it.

@@ -109,6 +109,10 @@ pub enum Command {
     AgentOpen,
     /// Count the lines of the tree, by language and by file.
     CountLines,
+    /// Show what this tree means to come back to.
+    TodoOpen,
+    /// Write down something to come back to, here.
+    TodoAdd,
     /// Read the settings file itself.
     ConfigFile,
     /// Open the settings.
@@ -492,6 +496,16 @@ pub const ALL: &[CommandSpec] = &[
         title: "How much code is here, by language and by file",
     },
     CommandSpec {
+        command: Command::TodoOpen,
+        name: "todo",
+        title: "What this project means to come back to",
+    },
+    CommandSpec {
+        command: Command::TodoAdd,
+        name: "todo-add",
+        title: "Write down something to come back to, at this line",
+    },
+    CommandSpec {
         command: Command::ConfigOpen,
         name: "open-settings",
         title: "Change obelus's settings",
@@ -556,7 +570,9 @@ impl Command {
             // A question about the tree of files, asked before any of them
             // is open: which makes it one of the files rather than one of
             // obelus's own housekeeping.
-            | Self::CountLines => Group::Files,
+            | Self::CountLines
+            | Self::TodoOpen
+            | Self::TodoAdd => Group::Files,
             Self::SymbolMenu
             | Self::SymbolComplete
             | Self::SymbolTroubles
@@ -624,6 +640,9 @@ impl Command {
             // Not a running server: a file with nothing wrong with it is
             // the answer this gives, and it is worth giving.
             Self::SymbolTroubles => Requires::AFileOpen,
+            // A note is made *about* a line, so there has to be one.
+            Self::TodoAdd => Requires::AFileOpen,
+            Self::TodoOpen => Requires::Nothing,
             // Everything that acts on the file being read. With nothing
             // open, each of them is a key that reports why instead of doing
             // something.

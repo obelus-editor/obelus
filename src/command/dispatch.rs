@@ -57,6 +57,8 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::GoForward => app.go_forward(),
         Command::AgentOpen => app.open_agent(),
         Command::CountLines => app.open_counts(),
+        Command::TodoOpen => app.open_todo(),
+        Command::TodoAdd => app.open_todo_prompt(),
         Command::ConfigOpen => app.open_settings(),
         Command::ConfigTree => app.open_project_settings(),
         Command::ConfigFile => app.open_config_file(),

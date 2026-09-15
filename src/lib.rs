@@ -31,5 +31,6 @@ pub mod search;
 pub mod syntax;
 pub mod text;
 pub mod theme;
+pub mod todo;
 pub mod ui;
 pub mod watch;

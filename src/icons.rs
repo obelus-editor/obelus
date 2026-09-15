@@ -276,6 +276,9 @@ pub fn for_command(command: crate::command::Command) -> char {
         // in the fold column has.
         // A history is a line of commits; the file's is that line with a
         // document on it.
+        // A ticked box, which is what the view is a list of.
+        Command::TodoOpen => '\u{f0856}',
+        Command::TodoAdd => '\u{f0417}',
         Command::HistoryFile => '\u{f0214}',
         Command::HistoryProject => '\u{f02a1}',
         // One commit, which is what a line has.

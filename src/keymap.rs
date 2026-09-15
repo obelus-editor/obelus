@@ -379,6 +379,21 @@ impl Keymap {
                     context: Context::Normal,
                     chord: function(11),
                 },
+                // `alt+t` for todo, on the letter of the word like the rest
+                // of the alt family, and asking the question alt asks: a
+                // note is about the line under the cursor.
+                //
+                // Writing one down has a key and reading them back does
+                // not. The banks are full and `f12` is the fourth of git's,
+                // held for git; squatting it would put a thing that is not
+                // git's in the row a reader reads as git's. `todo` is in
+                // the palette, and the keys page is where a reader who
+                // opens it often puts it on a key of their own.
+                Binding {
+                    command: Command::TodoAdd,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('t'), KeyModifiers::ALT),
+                },
                 // Control, on the letter of the word. `ctrl+p` for the
                 // palette; `ctrl+w` is "close this" in every browser and
                 // most editors, and in a terminal it is also the shell's

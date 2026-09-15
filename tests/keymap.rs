@@ -265,7 +265,7 @@ fn the_readers_own_bindings_go_over_the_defaults() {
 
     let moved: std::collections::BTreeMap<String, String> = [
         ("close-file".to_string(), "alt+w".to_string()),
-        ("choose-theme".to_string(), "alt+t".to_string()),
+        ("choose-theme".to_string(), "alt+y".to_string()),
         ("open-file".to_string(), String::new()),
         ("nonsense.command".to_string(), "ctrl+z".to_string()),
         ("show-change".to_string(), "not a key".to_string()),
@@ -296,7 +296,7 @@ fn the_readers_own_bindings_go_over_the_defaults() {
     // A command that had no key gets one where the reader is reading.
     assert_eq!(
         keymap.lookup(
-            &press(KeyCode::Char('t'), KeyModifiers::ALT),
+            &press(KeyCode::Char('y'), KeyModifiers::ALT),
             Context::Normal
         ),
         Some(Command::ThemeSelect)

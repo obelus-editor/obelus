@@ -1112,6 +1112,7 @@ impl App {
                 prose: true,
                 marker: None,
                 trailing: Some(format!("{}", trouble.span.line.get() + 1)),
+                changed: None,
                 value: {
                     let start = at(trouble.span.line, trouble.span.column);
                     let end = at(trouble.span.end_line, trouble.span.end_column);

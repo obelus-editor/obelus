@@ -219,6 +219,41 @@ impl Changes {
             .map(LineNumber::new)
     }
 
+    /// Where a line of the committed file sits in this one, or `None` for a
+    /// line the working tree no longer has.
+    ///
+    /// The other direction of [`Changes::committed_line`], and the one a
+    /// note made while reading needs: it was written against the file as
+    /// some commit had it, and what it points at has been moving ever since.
+    /// Without this the note walks down the file as the lines above it are
+    /// added to, which is worse than no line at all -- it is a line, and it
+    /// is the wrong one.
+    ///
+    /// A line inside a run the commit removed is gone, which is the honest
+    /// `None`: the note is about something that is not there any more, and
+    /// saying so beats landing near it.
+    #[must_use]
+    pub fn working_line(&self, line: LineNumber) -> Option<LineNumber> {
+        let at = isize::try_from(line.get()).unwrap_or(isize::MAX);
+        // What has to be added to a committed line to get this file's, over
+        // the hunks walked so far.
+        let mut offset: isize = 0;
+        for hunk in &self.hunks {
+            // Where the hunk starts in the committed file, which is where it
+            // starts here less everything the earlier hunks moved.
+            let start = isize::try_from(hunk.line.get()).unwrap_or(isize::MAX) - offset;
+            if start > at {
+                break;
+            }
+            let removed = isize::try_from(hunk.removed.len()).unwrap_or(isize::MAX);
+            if removed > 0 && at < start + removed {
+                return None;
+            }
+            offset += isize::try_from(hunk.lines).unwrap_or(0) - removed;
+        }
+        usize::try_from(at + offset).ok().map(LineNumber::new)
+    }
+
     /// The next change below a line, for stepping through them.
     ///
     /// Strictly below where it *starts*, so a cursor somewhere inside a

@@ -34,6 +34,15 @@ ob                  # or nothing, and pick one from the welcome screen
   first row of the languages is the whole tree, and choosing a language
   leaves only its files.
 
+- **What you mean to come back to.** `alt+t` while reading writes a note
+  down against the line under the cursor; `todo` shows them all, ticks them
+  off, and takes you back. A note may be about a line or about the project,
+  and both are ordinary. They live in `.obelus/todo.toml` beside the tree,
+  because they are about this project and not about you — and the line a
+  note was put beside is found again through git, so a note written last
+  week still points at what it was written about rather than at whatever has
+  since moved into its place.
+
 Long lines wrap on word boundaries, using the Unicode line breaking algorithm
 — so Chinese, which has no spaces, breaks between characters, and an English
 word on the same line still does not get cut in half. A run with nowhere to

@@ -412,6 +412,7 @@ impl App {
     /// note, because it is the reader's slip and not the file's.
     pub(super) fn answer(&mut self, kind: PromptKind, text: &str) {
         match kind {
+            PromptKind::Todo => self.note_down(text),
             PromptKind::Line => {
                 let Ok(line) = text.trim().parse::<usize>() else {
                     self.note = Some(format!("{text:?} is not a line number"));
