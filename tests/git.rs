@@ -2301,6 +2301,8 @@ fn a_message_with_nothing_to_hide_is_not_folded() {
 /// at.
 #[test]
 fn the_message_says_how_much_the_commit_changed_this_file() {
+    use obelus::theme::builtin::DARK;
+
     let repository = Repository::new("history-counts", "one\ntwo\nthree\n");
     // Two lines gone, three put in their place.
     repository.write("one\nTWO\nfour\nfive\n");
@@ -2321,6 +2323,44 @@ fn the_message_says_how_much_the_commit_changed_this_file() {
         head.contains("+3") && head.contains("\u{2212}2"),
         "not what this commit did to this file:\n{head}"
     );
+
+    // In the colours the margin marks the same two facts in: they are the
+    // same two facts, and a reader who learnt them beside the code has
+    // learnt them here.
+    assert_eq!(
+        support::colour_under(&dump, '+'),
+        support::spelled(DARK.change_added),
+        "what arrived is not in the colour an added line wears:\n{dump}"
+    );
+    assert_eq!(
+        support::colour_under(&dump, '\u{2212}'),
+        support::spelled(DARK.change_removed),
+        "what went is not in the colour a removed line wears:\n{dump}"
+    );
+}
+
+/// The message is not the file, and two things already say so: the bar down
+/// its left, and the line numbers it does not have. A panel of another
+/// colour on top of the code, as tall as somebody's prose, was a third --
+/// and the loudest thing on a screen whose subject is the code underneath.
+#[test]
+fn a_message_is_drawn_on_the_page_rather_than_on_a_panel() {
+    use obelus::theme::builtin::DARK;
+
+    let repository = Repository::new("history-panel", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit_all("Give the third bank of keys to git");
+    let (mut app, _events) = reading_it_at_its_commit(&repository);
+
+    let dump = support::render(&mut app, 64, 18);
+    let page = support::spelled(DARK.background);
+    for glyph in ['G', 'k', 'g'] {
+        let row = support::legend_for(&dump, glyph);
+        assert!(
+            row.ends_with(&format!("bg={page}")),
+            "the message sits on a panel: {glyph:?} is drawn {row}"
+        );
+    }
 }
 
 /// A repository whose one commit has a body worth folding, opened at that

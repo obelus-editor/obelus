@@ -572,8 +572,12 @@ impl App {
         // block is exactly the shape obelus has for that -- rows on screen
         // the file does not have, with no line numbers, that the caret can
         // walk into and copy from.
-        if let Some(said) = self.said_at(id, Some(path)) {
+        if let Some(said) = self.said_at(id) {
             buffer.open_held(LineNumber::new(0), &said, crate::buffer::Held::Message);
+            // What it did to this file, beside who did it.
+            if let Some(changed) = self.changed_at(id, path) {
+                buffer.mark_block_change(LineNumber::new(0), changed);
+            }
             // Folded, showing what the commit is called and the sentence it
             // starts with. The reader asked for a *file*; the message is why
             // it says what it says, which is worth a glance and `alt+f` when
@@ -671,27 +675,19 @@ impl App {
     /// The first row names it -- the id, who wrote it, how long ago -- and
     /// the rest is the message. A reader opening a file as a commit had it
     /// is asking why it says what it says, and that is the answer.
-    pub(super) fn said_at(&self, id: gix::ObjectId, path: Option<&Path>) -> Option<Vec<String>> {
+    pub(super) fn said_at(&self, id: gix::ObjectId) -> Option<Vec<String>> {
         let commit = crate::git::history::one(&self.working_directory, id)?;
         let now = std::time::SystemTime::now();
-        let mut first = format!(
-            "{}   {}   {}",
-            commit.short(),
-            commit.who,
-            crate::git::how_long_ago(commit.when, now)
-        );
-        // How much it changed *this file*, beside who changed it. The block
-        // hangs above one file and the question there is what this commit did
-        // to it -- not what it did to the tree, which would be a number about
-        // a diff the reader is not looking at, and a walk of every file in the
-        // commit to work out.
-        //
-        // Spelled the way the transcript spells the same fact, because it is
-        // the same fact.
-        if let Some((added, removed)) = path.and_then(|path| self.changed_at(id, path)) {
-            first.push_str(&format!("   +{added} \u{2212}{removed}"));
-        }
-        let mut said = vec![first, String::new(), commit.subject.clone()];
+        let mut said = vec![
+            format!(
+                "{}   {}   {}",
+                commit.short(),
+                commit.who,
+                crate::git::how_long_ago(commit.when, now)
+            ),
+            String::new(),
+            commit.subject.clone(),
+        ];
         if !commit.body.is_empty() {
             said.push(String::new());
             said.extend(commit.body.lines().map(str::to_string));
@@ -709,7 +705,7 @@ impl App {
     /// `None` where there is nothing to compare: a commit that added the
     /// file has no "before", and it is honest to say nothing rather than to
     /// count every line as new.
-    fn changed_at(&self, id: gix::ObjectId, path: &Path) -> Option<(usize, usize)> {
+    pub(super) fn changed_at(&self, id: gix::ObjectId, path: &Path) -> Option<(usize, usize)> {
         let full = self.working_directory.join(path);
         let before = crate::git::history::text_before(&self.working_directory, id, &full)?;
         let after = crate::git::history::text_at(&self.working_directory, id, &full)?;

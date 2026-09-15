@@ -338,6 +338,15 @@ pub struct Block {
     full: Vec<String>,
     /// Whether it is showing its opening lines rather than all of them.
     folded: bool,
+    /// What the commit did to the file the block hangs over, where that is
+    /// known: lines added, lines taken away.
+    ///
+    /// Beside the message rather than inside it. It is a fact *about* the
+    /// commit and not a thing the commit said, so it is not the reader's to
+    /// copy back as if the author had written it, it does not wrap or fold
+    /// as prose, and it can be drawn in the colours the margin already uses
+    /// for the same fact.
+    pub changed: Option<(usize, usize)>,
     /// How many lines the hunk actually replaced.
     ///
     /// Kept apart from the text, which cannot tell "nothing was removed"
@@ -887,6 +896,7 @@ impl Buffer {
             text: Text::from_string(&lines.join("\n")),
             full: lines.to_vec(),
             folded: false,
+            changed: None,
             lines: lines.len(),
             rows: std::cell::Cell::new(None),
         };
@@ -938,6 +948,16 @@ impl Buffer {
             inside.anchor = None;
         }
         true
+    }
+
+    /// Says what the commit behind a block did to the file it hangs over.
+    pub fn mark_block_change(&mut self, above: LineNumber, changed: (usize, usize)) {
+        if let Ok(at) = self
+            .blocks
+            .binary_search_by_key(&above, |block| block.above)
+        {
+            self.blocks[at].changed = Some(changed);
+        }
     }
 
     /// The same, the other way round from wherever it is now.

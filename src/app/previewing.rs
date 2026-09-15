@@ -371,12 +371,15 @@ impl App {
             Subject::Commit { id, path } => {
                 let text = crate::git::history::text_at(&self.working_directory, *id, path)?;
                 let mut buffer = Buffer::at_commit(path, *id, &text);
-                if let Some(said) = self.said_at(*id, Some(path)) {
+                if let Some(said) = self.said_at(*id) {
                     buffer.open_held(
                         crate::coordinates::LineNumber::new(0),
                         &said,
                         crate::buffer::Held::Message,
                     );
+                    if let Some(changed) = self.changed_at(*id, path) {
+                        buffer.mark_block_change(crate::coordinates::LineNumber::new(0), changed);
+                    }
                     // Folded, the way opening the row leaves it: a preview
                     // that showed the whole message would be a preview of
                     // somebody's prose, and the row under the cursor names a
@@ -400,7 +403,7 @@ impl App {
             // in favour of, because the message is the whole of what is
             // there.
             Subject::Message(id) => {
-                let said = self.said_at(*id, None)?;
+                let said = self.said_at(*id)?;
                 Some((Buffer::from_message(&said), None))
             }
         }

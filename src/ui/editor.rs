@@ -507,10 +507,18 @@ impl Widget for EditorView<'_> {
                                 crate::buffer::Held::Removed => {
                                     self.theme.change_removed_background
                                 }
-                                // A note, not a deletion: the colour
-                                // that says "this is obelus talking"
-                                // wherever else it does.
-                                crate::buffer::Held::Message => self.theme.raised_background,
+                                // The page's own colour. A deletion is
+                                // tinted because the tint is what says
+                                // those lines are gone -- there is nothing
+                                // else on the row to say it. A message has
+                                // the bar down its left and no line numbers
+                                // beside it, which is already two things
+                                // saying it is not the file; a panel of
+                                // another colour on top of the file, the
+                                // height of somebody's prose, was the
+                                // loudest thing on a screen whose subject
+                                // is the code underneath.
+                                crate::buffer::Held::Message => self.theme.background,
                             }),
                         );
                         // The bar a line on screen gets, not the boundary
@@ -540,7 +548,7 @@ impl Widget for EditorView<'_> {
                         // the row's colour is what says these lines are
                         // gone, and syntax on a red row would be two things
                         // saying different ones.
-                        draw_row(
+                        let ended = draw_row(
                             Placement {
                                 x: area.x + margin + gutter + folds,
                                 y,
@@ -564,6 +572,28 @@ impl Widget for EditorView<'_> {
                                 brackets: None,
                             },
                         );
+                        // What the commit did to this file, after the row
+                        // that says which commit it was. In the colours the
+                        // margin marks the same two facts in, because they
+                        // are the same two facts -- and drawn here rather
+                        // than written into the message, which would make
+                        // obelus's arithmetic part of what the author
+                        // wrote.
+                        if let Some((added, removed)) = block.changed.filter(|_| {
+                            block.kind == crate::buffer::Held::Message
+                                && removed == LineNumber::new(0)
+                                && wrap.first == crate::coordinates::CharColumn::new(0)
+                        }) {
+                            draw_change_count(
+                                area.x + margin + gutter + folds,
+                                y,
+                                width,
+                                ended,
+                                (added, removed),
+                                self.theme,
+                                cells,
+                            );
+                        }
                         screen_row += 1;
                     }
                 }
@@ -1014,6 +1044,47 @@ fn draw_row(
 /// No column is reserved for it, so a line long enough to reach it keeps its
 /// own space and loses the note. Code is never written over to make room for
 /// a note about code.
+/// `+added \u{2212}removed` after the text of a row, in the margin's colours.
+///
+/// Two words rather than one string, because they are two facts and wear two
+/// colours: green for what arrived, red for what went. The gap in front is
+/// the blame's gap, for the same reason -- it has to read as a note about
+/// the row rather than as more of it.
+fn draw_change_count(
+    x: u16,
+    y: u16,
+    width: u16,
+    text_ends: u16,
+    changed: (usize, usize),
+    theme: &Theme,
+    cells: &mut CellBuffer,
+) {
+    let (added, removed) = changed;
+    let words = [
+        (format!("+{added}"), theme.change_added),
+        (format!("\u{2212}{removed}"), theme.change_removed),
+    ];
+    let wanted: usize = words
+        .iter()
+        .map(|(word, _)| crate::ui::text_width(word) + 1)
+        .sum();
+    let Ok(wanted) = u16::try_from(wanted) else {
+        return;
+    };
+    // Three columns after the date, the way the message's own columns are
+    // spaced. A row with no room for it keeps its text instead: the number
+    // is a note, and a note may be the thing that goes.
+    let mut column = text_ends.saturating_add(3);
+    if column.saturating_add(wanted) > width {
+        return;
+    }
+    for (word, colour) in words {
+        column = crate::ui::write(cells, x + column, y, &word, Style::new().fg(colour))
+            .saturating_sub(x)
+            .saturating_add(1);
+    }
+}
+
 fn draw_blame(
     x: u16,
     y: u16,

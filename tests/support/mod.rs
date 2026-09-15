@@ -235,6 +235,43 @@ fn label(index: usize) -> char {
     char::from(*LABELS.get(index).unwrap_or(&b'?'))
 }
 
+/// The legend entry for the first cell drawing `glyph`: `fg=… bg=…`.
+///
+/// The whole entry, for a test about a background: [`colour_under`] answers
+/// about the foreground, and a row's ground is the other half of what it is
+/// drawn in.
+#[must_use]
+pub fn legend_for(dump: &str, glyph: char) -> String {
+    let (row, column) = text_block(dump)
+        .lines()
+        .filter(|line| !line.is_empty())
+        .enumerate()
+        .find_map(|(row, line)| {
+            let cells = line.split_once('|').map_or(line, |(_, rest)| rest);
+            cells
+                .chars()
+                .position(|cell| cell == glyph)
+                .map(|column| (row, column))
+        })
+        .unwrap_or_else(|| panic!("nothing on screen draws {glyph:?}:\n{}", text_block(dump)));
+
+    let letter = style_block(dump)
+        .lines()
+        .filter(|line| !line.is_empty())
+        .nth(row)
+        .and_then(|line| {
+            let cells = line.split_once('|').map_or(line, |(_, rest)| rest);
+            cells.chars().nth(column)
+        })
+        .expect("the style row under the text row");
+
+    legend_block(dump)
+        .lines()
+        .find(|line| line.starts_with(&format!("{letter} ")))
+        .expect("the legend entry for the style")
+        .to_string()
+}
+
 /// A theme's colour, spelled the way the legend spells it.
 ///
 /// So that a test names the colour it means -- `DARK.gutter` -- rather than
