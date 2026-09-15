@@ -102,15 +102,16 @@ pub fn footed(area: Rect, settings: &Settings) -> Rect {
 pub fn hints(settings: &Settings) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let bare = |code| crate::keymap::KeyChord::new(code, KeyModifiers::NONE);
-    let rows = settings.rows();
-    let on = rows.get(settings.window().focus());
     vec![
         Hint::common(bare(KeyCode::Enter), "change")
             .saying(match settings.on_keys() {
                 true => "put this command on another key",
                 false => "change it, or open what it can be",
             })
-            .when(on.is_some()),
+            // Asked of whichever page is showing rather than of the
+            // settings: the keys page has rows too, and enter does the same
+            // sort of thing to one of them.
+            .when(settings.row_count() > 0),
         // The one thing on this page nothing else says: a page that is
         // filtered by typing at it looks exactly like one that is not.
         Hint::common(bare(KeyCode::Char('a')), "to filter")
@@ -240,6 +241,7 @@ impl Widget for SettingsView<'_> {
                 .keys
                 .iter()
                 .map(|(command, chord)| Row {
+                    opens: None,
                     label: command.name().to_string(),
                     matched: self.settings.matched_in(command.name()),
                     detail: self.saying(*command),
@@ -257,33 +259,37 @@ impl Widget for SettingsView<'_> {
         let settings = self.settings.rows();
         let rows: Vec<Row> = settings
             .iter()
-            .map(|setting| Row {
-                label: setting.name.to_string(),
-                matched: self.settings.matched(setting),
+            .map(|shown| Row {
+                opens: shown.opens,
+                label: shown.setting.name.to_string(),
+                matched: self.settings.matched(shown.setting),
                 detail: None,
                 // What it does, on its own rows under the name: beside it,
                 // the two were competing for one row -- and the one that
                 // lost was the description, cut off with an ellipsis on
                 // exactly the rows that had most to explain.
                 body: self.settings.wrapped(
-                    setting.about,
+                    shown.setting.about,
                     crate::component::settings::description_width(region.width),
                 ),
-                aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
+                aside: Aside::Control(
+                    shown.setting.kind,
+                    Settings::value_of(shown.setting, self.config),
+                ),
                 // On the reader's page, the file that has this one instead
                 // of them. On the tree's, nothing: a setting the tree has
                 // is exactly what that page is for.
                 pinned: (!self.settings.on_tree())
                     .then(|| {
                         self.pinned
-                            .contains(&setting.key)
+                            .contains(&shown.setting.key)
                             .then(|| self.tree.clone())
                             .flatten()
                     })
                     .flatten(),
                 // And on the tree's page, which layer the value showing
                 // comes from -- the project's own included.
-                scope: self.settings.on_tree().then(|| self.scope(setting)),
+                scope: self.settings.on_tree().then(|| self.scope(shown.setting)),
             })
             .collect();
         self.column(cells, region, &rows, "no setting by that name");
@@ -294,6 +300,12 @@ impl Widget for SettingsView<'_> {
 /// One row of a page: what it is called, which of its characters the query
 /// matched, what it is, and what sits on the right.
 struct Row {
+    /// The heading this row opens, where it is the first of its group.
+    ///
+    /// Part of the row rather than a row of its own, so the focus never
+    /// lands on it and `down` means one distance: an entry is its heading,
+    /// its name, what it does, and the blank after.
+    opens: Option<crate::config::Group>,
     label: String,
     matched: Option<std::ops::Range<usize>>,
     detail: Option<(String, ratatui::style::Color)>,
@@ -429,6 +441,27 @@ impl SettingsView<'_> {
             // The background covers the name and what it says, but not the
             // blank under them: a run of colour that reached into the gap
             // would close it up again.
+            // The heading above it, where this row opens a group. Outside
+            // the entry's own background, because it belongs to the group
+            // and not to the setting that happens to come first in it: a
+            // heading wearing the selected row's colour would read as part
+            // of the row under it.
+            if let Some(group) = row.opens {
+                self.heading(
+                    cells,
+                    Rect {
+                        y,
+                        height: 1,
+                        ..region
+                    },
+                    room,
+                    group,
+                );
+                y += 1;
+                if y >= region.bottom() {
+                    break;
+                }
+            }
             let tall = u16::try_from(row.body.len()).unwrap_or(0) + 1;
             let area = Rect {
                 y,
@@ -589,6 +622,33 @@ impl SettingsView<'_> {
             // And a blank before the next one, which is the whole of what
             // makes an entry an entry.
             y += tall + u16::from(!row.body.is_empty());
+        }
+    }
+
+    /// A group's name, with a rule running out of it to the right.
+    ///
+    /// A separator rather than a tab, because these are all one page now:
+    /// the rule is what says "a different sort of thing starts here", and it
+    /// says it without the reader having to go and look on another page for
+    /// the setting they could not find on this one.
+    fn heading(&self, cells: &mut CellBuffer, area: Rect, room: u16, group: crate::config::Group) {
+        let plain = Style::new()
+            .fg(self.theme.foreground)
+            .bg(self.theme.background);
+        fill(cells, area, plain);
+        let after = write(
+            cells,
+            area.x + 1,
+            area.y,
+            group.label(),
+            plain.fg(self.theme.status_foreground),
+        );
+        // Out to where the controls begin rather than to the edge of the
+        // page: the column on the right is the values, and a rule drawn
+        // through it would read as a row of its own.
+        let end = area.x + room.saturating_sub(CONTROL_WIDTH + 1);
+        for x in after + 1..end {
+            put(cells, x, area.y, '\u{2500}', plain.fg(self.theme.gutter));
         }
     }
 

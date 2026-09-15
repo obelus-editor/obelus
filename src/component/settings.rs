@@ -87,6 +87,59 @@ pub const DESCRIPTION_INDENT: u16 = 3;
 /// verbose entry cannot push every other card off the screen.
 const MOST_DESCRIPTION_ROWS: usize = 3;
 
+/// Which of the settings' pages is showing.
+///
+/// Three, because there are three *shapes* of page here and not because
+/// there are three kinds of setting: a column of settings with a control
+/// each, a table of commands and the key each is on, and a shelf of cards
+/// from a registry that changes while it is being looked at.
+///
+/// Which group a setting belongs to is a heading down the first of those
+/// rather than a tab of its own. A tab is for somewhere else to go; a
+/// heading is for somewhere further down the same page -- and a reader
+/// looking for "the one about wrapping" should not have to guess which of
+/// four tabs somebody filed it under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Page {
+    /// Every setting, under a heading per group.
+    Settings,
+    /// Every command, and the key it is on.
+    Keys,
+    /// The agents obelus can install.
+    Agents,
+}
+
+impl Page {
+    /// Every page, in the order their tabs sit in.
+    pub const ALL: [Self; 3] = [Self::Settings, Self::Keys, Self::Agents];
+
+    /// The tab's name.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Settings => "settings",
+            Self::Keys => "keys",
+            Self::Agents => "agents",
+        }
+    }
+}
+
+/// One setting on the page, and the heading it sits under if it opens one.
+///
+/// The heading travels with the setting rather than being a row of its own:
+/// the focus walks settings, and a row it had to step over would make
+/// `down` mean two different distances. It also makes a group with nothing
+/// left in it disappear by itself -- a heading belongs to the first setting
+/// of its group that the query left, and where there is none there is no
+/// heading.
+#[derive(Clone, Copy, Debug)]
+pub struct Shown {
+    /// The setting.
+    pub setting: &'static Setting,
+    /// The group it opens, where it is the first of one on show.
+    pub opens: Option<config::Group>,
+}
+
 /// The settings view.
 #[derive(Debug)]
 pub struct Settings {
@@ -114,8 +167,8 @@ pub struct Settings {
     /// file a change is written to, and what a row says when the file this
     /// page is not about has the setting.
     whose: Whose,
-    /// Which group's tab is showing.
-    group: usize,
+    /// Which tab is showing, as an index into [`Page::ALL`].
+    page: usize,
     /// Which row has the focus and which is on top -- of the settings, or
     /// of the cards, whichever page is showing.
     ///
@@ -141,7 +194,7 @@ impl Settings {
             binding: None,
             refused: None,
             whose: Whose::Reader,
-            group: 0,
+            page: 0,
             window: Window::new(),
         }
     }
@@ -155,7 +208,7 @@ impl Settings {
             binding: None,
             refused: None,
             whose: Whose::Tree,
-            group: 0,
+            page: 0,
             window: Window::new(),
         }
     }
@@ -173,17 +226,15 @@ impl Settings {
     }
 
     /// The tab names, in order.
-    ///
-    /// The groups of settings, and then the agents -- which is a page of a
-    /// different shape rather than a group of rows, because what it lists
-    /// comes from a registry over the network and changes while it is being
-    /// looked at.
     #[must_use]
     pub fn tabs() -> Vec<&'static str> {
-        let mut tabs: Vec<&'static str> = Group::ALL.iter().map(|group| group.label()).collect();
-        tabs.push("keys");
-        tabs.push("agents");
-        tabs
+        Page::ALL.iter().map(|page| page.label()).collect()
+    }
+
+    /// Which page is showing.
+    #[must_use]
+    pub fn page(&self) -> Page {
+        Page::ALL.get(self.page).copied().unwrap_or(Page::Settings)
     }
 
     /// Whether the list of every key is showing.
@@ -192,16 +243,16 @@ impl Settings {
         self.keys_showing
     }
 
-    /// Whether the page showing is the keys rather than settings.
+    /// Whether the page showing is the keys rather than the settings.
     #[must_use]
     pub fn on_keys(&self) -> bool {
-        self.group == Group::ALL.len()
+        self.page() == Page::Keys
     }
 
-    /// Whether the page showing is the agents rather than settings.
+    /// Whether the page showing is the agents rather than the settings.
     #[must_use]
     pub fn on_agents(&self) -> bool {
-        self.group > Group::ALL.len()
+        self.page() == Page::Agents
     }
 
     /// The commands on show, with the key each is on: this page's rows.
@@ -270,7 +321,7 @@ impl Settings {
     /// Which tab is showing.
     #[must_use]
     pub const fn tab(&self) -> usize {
-        self.group
+        self.page
     }
 
     /// What has been typed.
@@ -298,27 +349,41 @@ impl Settings {
         &self.window
     }
 
-    /// The settings on show: this group's, narrowed by what has been typed.
+    /// The settings on show: all of them, narrowed by what has been typed,
+    /// each with the heading it opens where it opens one.
     ///
-    /// Plainly by substring rather than fuzzily: there are a dozen of these
-    /// and a reader typing "the" means the word, where a fuzzy match would
-    /// also offer everything with a t, an h and an e scattered through it.
+    /// Grouped by walking the groups rather than by trusting the order the
+    /// table happens to be written in: which group a setting is in is said
+    /// on the setting, and a page that read it off the array's order would
+    /// be a page one reordered line could quietly break.
+    ///
+    /// Narrowed plainly by substring rather than fuzzily: there are a dozen
+    /// of these and a reader typing "the" means the word, where a fuzzy
+    /// match would also offer everything with a t, an h and an e scattered
+    /// through it.
     #[must_use]
-    pub fn rows(&self) -> Vec<&'static Setting> {
-        if self.on_agents() {
+    pub fn rows(&self) -> Vec<Shown> {
+        if self.on_agents() || self.on_keys() {
             return Vec::new();
         }
-        let group = Group::ALL.get(self.group).copied();
         let query = self.query.to_lowercase();
-        config::ALL
-            .iter()
-            .filter(|setting| group.is_some_and(|group| setting.group == group))
-            .filter(|setting| {
-                query.is_empty()
+        let mut rows = Vec::new();
+        for group in Group::ALL {
+            let mut opens = Some(group);
+            for setting in config::ALL.iter().filter(|setting| setting.group == group) {
+                if !(query.is_empty()
                     || setting.name.to_lowercase().contains(&query)
-                    || setting.key.contains(&query)
-            })
-            .collect()
+                    || setting.key.contains(&query))
+                {
+                    continue;
+                }
+                rows.push(Shown {
+                    setting,
+                    opens: opens.take(),
+                });
+            }
+        }
+        rows
     }
 
     /// The agents on show: all of them, narrowed by what has been typed.
@@ -607,33 +672,35 @@ impl Settings {
                 self.refused = None;
                 SettingsOutcome::Consumed
             }
-            KeyCode::Enter if bare => match rows.get(self.window.focus()) {
-                Some(setting) => match setting.kind {
-                    Kind::Switch => {
-                        let on = matches!(Self::value_of(setting, config), Value::Switch(true));
-                        SettingsOutcome::Changed(setting.key, Value::Switch(!on))
-                    }
-                    // Both open the same short list. A number is picked
-                    // from one the way a word is, and the only difference
-                    // is what it is written down as.
-                    Kind::Choice(choices) | Kind::Count(choices) => {
-                        let word = match Self::value_of(setting, config) {
-                            Value::Choice(word) => word,
-                            Value::Count(count) => count.to_string(),
-                            Value::Switch(_) => String::new(),
-                        };
-                        SettingsOutcome::Choose(setting.key, choices, word)
-                    }
-                },
-                None => SettingsOutcome::Consumed,
-            },
+            KeyCode::Enter if bare => {
+                match rows.get(self.window.focus()).map(|shown| shown.setting) {
+                    Some(setting) => match setting.kind {
+                        Kind::Switch => {
+                            let on = matches!(Self::value_of(setting, config), Value::Switch(true));
+                            SettingsOutcome::Changed(setting.key, Value::Switch(!on))
+                        }
+                        // Both open the same short list. A number is picked
+                        // from one the way a word is, and the only difference
+                        // is what it is written down as.
+                        Kind::Choice(choices) | Kind::Count(choices) => {
+                            let word = match Self::value_of(setting, config) {
+                                Value::Choice(word) => word,
+                                Value::Count(count) => count.to_string(),
+                                Value::Switch(_) => String::new(),
+                            };
+                            SettingsOutcome::Choose(setting.key, choices, word)
+                        }
+                    },
+                    None => SettingsOutcome::Consumed,
+                }
+            }
             // Take it out of the tree's file, which is what `delete` means
             // on the keys page too: this one is not set here any more.
             // Only there -- the reader's own settings have no "unset", a
             // setting they have not changed is simply the default.
             KeyCode::Delete if bare && self.on_tree() && !self.on_keys() && !self.on_agents() => {
                 match rows.get(self.window.focus()) {
-                    Some(setting) => SettingsOutcome::Unset(setting.key),
+                    Some(shown) => SettingsOutcome::Unset(shown.setting.key),
                     None => SettingsOutcome::Consumed,
                 }
             }
@@ -656,7 +723,7 @@ impl Settings {
         // Every tab, not every group: the agents are a tab and not a group,
         // and a walk that stopped at the groups could never reach them.
         let last = Self::tabs().len() - 1;
-        self.group = match (forward, self.group) {
+        self.page = match (forward, self.page) {
             (true, at) if at >= last => 0,
             (true, at) => at + 1,
             (false, 0) => last,
@@ -706,22 +773,24 @@ impl Settings {
             false => self
                 .rows()
                 .iter()
-                .map(|setting| self.setting_rows(setting, description_width(room.0)))
+                .map(|shown| self.setting_rows(shown, description_width(room.0)))
                 .collect(),
         };
         self.window
             .settle_by_height(&heights, room.1.saturating_sub(2));
     }
 
-    /// How many rows one setting takes: its name, what it does, and the
-    /// blank that keeps it from running into the next one.
+    /// How many rows one setting takes: the heading it opens where it opens
+    /// one, its name, what it does, and the blank that keeps it from running
+    /// into the next one.
     ///
     /// Asked by the page that lays them out and by the window that decides
     /// which of them are on screen, so the two cannot disagree about where
-    /// an entry ends.
+    /// an entry ends -- the heading included, which is why it is counted
+    /// here rather than drawn as an afterthought.
     #[must_use]
-    pub fn setting_rows(&self, setting: &Setting, width: u16) -> u16 {
-        let about = u16::try_from(self.wrapped(setting.about, width).len()).unwrap_or(0);
-        1 + about + 1
+    pub fn setting_rows(&self, shown: &Shown, width: u16) -> u16 {
+        let about = u16::try_from(self.wrapped(shown.setting.about, width).len()).unwrap_or(0);
+        u16::from(shown.opens.is_some()) + 1 + about + 1
     }
 }

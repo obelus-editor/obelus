@@ -274,9 +274,15 @@ fn a_switch_is_a_slider_that_enter_flips() {
 
 /// The tabs are the groups, the arrows walk them -- only the arrows, the way
 /// they do in every other view with tabs on it -- and the focus comes back
-/// inside the rows the new tab has.
+/// One page of settings, with a heading where one group of them ends and
+/// the next begins -- and the tabs are the three shapes of page.
+///
+/// Broken deliberately by giving each group a tab of its own: a reader
+/// looking for "the one about wrapping" had to guess which of four pages
+/// somebody had filed it under, and the last of those pages had one row on
+/// it.
 #[test]
-fn the_tabs_are_the_groups() {
+fn every_setting_is_on_one_page_under_a_heading() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -289,48 +295,54 @@ fn the_tabs_are_the_groups() {
             .expect("the settings")
             .rows()
             .iter()
-            .map(|setting| setting.name.to_string())
+            .map(|shown| shown.setting.name.to_string())
             .collect::<Vec<_>>()
     };
-    assert_eq!(rows(&app), ["Colour theme", "Nerd Font glyphs"]);
-
-    // Onto the last row, then to the next tab: the focus cannot stay on a
-    // row the new tab does not have.
-    support::press(&mut app, KeyCode::Down);
-    assert_eq!(app.settings().expect("the settings").focus(), 1);
-    support::press(&mut app, KeyCode::Right);
+    // Every setting obelus has, in the order the groups are written in.
+    assert_eq!(rows(&app).len(), obelus::config::ALL.len());
+    assert_eq!(rows(&app)[0], "Colour theme");
     assert_eq!(
-        rows(&app),
-        [
-            "Wrap long lines",
-            "Blame in the margin",
-            "Tab width",
-            "Format when saving"
-        ]
-    );
-    assert!(
-        app.settings().expect("the settings").focus() < 2,
-        "the focus is on a row this tab does not have"
+        rows(&app).last().map(String::as_str),
+        Some("Files a tree ignores")
     );
 
-    // Left goes back, and once more reaches the agents -- which is a tab
-    // and not a group of settings, so it has no rows of this kind at all.
-    support::press(&mut app, KeyCode::Left);
-    assert_eq!(rows(&app), ["Colour theme", "Nerd Font glyphs"]);
-    support::press(&mut app, KeyCode::Left);
-    assert!(
-        app.settings().expect("the settings").on_agents(),
-        "the left arrow did not reach the agents"
+    // A heading on the first of each group and on nothing else, so the
+    // focus never has a row to step over.
+    let opens: Vec<Option<&'static str>> = app
+        .settings()
+        .expect("the settings")
+        .rows()
+        .iter()
+        .map(|shown| shown.opens.map(obelus::config::Group::label))
+        .collect();
+    assert_eq!(opens[0], Some("appearance"));
+    assert_eq!(opens[1], None, "a second heading inside one group");
+    assert_eq!(
+        opens.iter().filter(|opens| opens.is_some()).count(),
+        obelus::config::Group::ALL.len(),
+        "not one heading per group: {opens:?}"
     );
+
+    // And the tabs are the pages: the settings, the keys, the agents.
+    assert_eq!(
+        obelus::component::settings::Settings::tabs(),
+        ["settings", "keys", "agents"]
+    );
+    support::press(&mut app, KeyCode::Right);
+    assert!(app.settings().expect("the settings").on_keys());
+    support::press(&mut app, KeyCode::Right);
+    assert!(app.settings().expect("the settings").on_agents());
     assert!(
         rows(&app).is_empty(),
         "the agents page has settings rows on it"
     );
+    support::press(&mut app, KeyCode::Left);
+    assert!(app.settings().expect("the settings").on_keys());
 
     // Tab is not one of the keys that walks them: one way to do it is the
     // way every other tabbed view here works.
     support::press(&mut app, KeyCode::Tab);
-    assert!(app.settings().expect("the settings").on_agents());
+    assert!(app.settings().expect("the settings").on_keys());
 }
 
 /// Typing narrows the rows, and the count on the status bar says how many
@@ -550,7 +562,6 @@ fn the_last_setting_can_be_walked_to_on_a_short_screen() {
     let scratch = temporary("short");
     let file = settings_file(&scratch);
     let mut app = open(&file);
-    support::press(&mut app, KeyCode::Right);
 
     // A region of three rows, which is shorter than the first entry is
     // tall: walking to the second has to move the window or the reader is
@@ -560,15 +571,15 @@ fn the_last_setting_can_be_walked_to_on_a_short_screen() {
     let dump = support::render(&mut app, 66, 7);
     let focused = app.settings().expect("the settings").focus();
     let rows = app.settings().expect("the settings").rows();
-    let name = rows[focused.min(rows.len() - 1)].name;
+    let name = rows[focused.min(rows.len() - 1)].setting.name;
     assert!(
         support::text_block(&dump).contains(name),
         "the entry the keys are on is not on screen: {name}\n{dump}"
     );
 }
 
-/// A tree can carry settings of its own/// A tree can carry settings of its
-/// own, and they win where they say anything.
+/// A tree can carry settings of its own, and they win where they say
+/// anything.
 ///
 /// Which is what a project is for: everybody reading this repository gets
 /// its wrapped lines, whatever they have set for themselves elsewhere.
@@ -654,9 +665,9 @@ fn a_setting_the_tree_has_cannot_be_changed_here() {
     app.working_directory_for_test(root.clone());
     support::lay_out(&mut app, 76, 12);
     dispatch::dispatch(&mut app, Command::ConfigOpen);
-    support::press(&mut app, KeyCode::Right);
 
     // Onto the wrapped-lines row and try to turn it off.
+    support::type_text(&mut app, "wrap");
     support::press(&mut app, KeyCode::Enter);
     assert!(
         app.config().wrap,
@@ -695,10 +706,9 @@ fn the_trees_page_edits_the_trees_file() {
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
-    support::press(&mut app, KeyCode::Right);
-
-    // Onto `blame_margin` and turn it on.
-    support::press(&mut app, KeyCode::Down);
+    // Onto `blame_margin` by narrowing to it, which is one row, and turn it
+    // on.
+    support::type_text(&mut app, "blame");
     support::press(&mut app, KeyCode::Enter);
 
     let written =
@@ -744,7 +754,7 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
-    support::press(&mut app, KeyCode::Right);
+    support::type_text(&mut app, "wrap");
     support::press(&mut app, KeyCode::Delete);
 
     let written =
@@ -779,7 +789,7 @@ fn a_tree_with_no_settings_gets_a_file_when_one_is_set() {
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
     dispatch::dispatch(&mut app, Command::ConfigTree);
-    support::press(&mut app, KeyCode::Right);
+    support::type_text(&mut app, "wrap");
     support::press(&mut app, KeyCode::Enter);
 
     let written = std::fs::read_to_string(root.join(".obelus").join("config.toml"))
@@ -813,11 +823,13 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         vec!["theme", "blame_margin"],
     );
     app.working_directory_for_test(root.path().to_path_buf());
-    support::lay_out(&mut app, 76, 16);
+    // Tall enough for the whole page: every setting is on one now, and this
+    // reads two of them against each other.
+    support::lay_out(&mut app, 76, 32);
     dispatch::dispatch(&mut app, Command::ConfigTree);
 
     // The theme is the reader's; the glyphs are nobody's.
-    let dump = support::render(&mut app, 76, 16);
+    let dump = support::render(&mut app, 76, 32);
     let text = support::text_block(&dump);
     assert!(text.contains("global"), "{dump}");
     assert!(text.contains("default"), "{dump}");
@@ -827,8 +839,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     // And the setting the tree does have says so, in the same column: a
     // column where two of the three layers have a word and the third is
     // blank asks the reader to read an absence.
-    support::press(&mut app, KeyCode::Right);
-    let dump = support::render(&mut app, 76, 16);
+    let dump = support::render(&mut app, 76, 32);
     let wrap = support::text_block(&dump)
         .lines()
         .find(|row| row.contains("Wrap long lines"))
@@ -852,10 +863,9 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         "a setting written down at its default is not the reader's: {blame:?}"
     );
 
-    // And the two tabs a tree may not have, past the files page.
+    // And the two tabs a tree may not have.
     support::press(&mut app, KeyCode::Right);
-    support::press(&mut app, KeyCode::Right);
-    let dump = support::render(&mut app, 76, 16);
+    let dump = support::render(&mut app, 76, 32);
     assert!(
         support::text_block(&dump).contains("may not move the keys"),
         "{dump}"
@@ -942,10 +952,10 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
 
     // The tree's page: the name is ordinary ink, the word beside it is not.
     dispatch::dispatch(&mut app, Command::ConfigTree);
-    support::press(&mut app, KeyCode::Right);
+    support::type_text(&mut app, "blame");
     let dump = support::render(&mut app, 76, 16);
     assert_ne!(
-        letter(&dump, "Blame in the margin", "Blame"),
+        letter(&dump, "Blame in the margin", "margin"),
         letter(&dump, "Blame in the margin", "default"),
         "the name is as dim as the word saying the value is not the tree's:\n{dump}"
     );
@@ -953,10 +963,10 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
     // The reader's page: a setting the tree has taken is dim throughout,
     // name and all, because there it really cannot be used.
     dispatch::dispatch(&mut app, Command::ConfigOpen);
-    support::press(&mut app, KeyCode::Right);
+    support::type_text(&mut app, "wrap");
     let dump = support::render(&mut app, 76, 16);
     assert_eq!(
-        letter(&dump, "Wrap long lines", "Wrap"),
+        letter(&dump, "Wrap long lines", "long"),
         letter(&dump, "Wrap long lines", ".obelus/config.toml"),
         "a row the reader cannot use is not dim throughout:\n{dump}"
     );
@@ -984,11 +994,13 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
     support::lay_out(&mut app, 76, 10);
     dispatch::dispatch(&mut app, Command::ConfigTree);
 
+    // The first row, which is the tabs': "appearance" is a heading down the
+    // page now and would find that instead.
     let tabs = |app: &mut App, width: u16| -> String {
         let dump = support::render(app, width, 10);
         support::text_block(&dump)
             .lines()
-            .find(|row| row.contains("appearance"))
+            .find(|row| !row.trim().is_empty())
             .expect("the tab row")
             .to_string()
     };
@@ -1002,11 +1014,11 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
     );
 
     // Narrow: the tabs are whole, and the name is simply not there. Wide
-    // enough for five tabs and not for the name after them, which is the
-    // corner this is about.
-    let narrow = tabs(&mut app, 48);
+    // enough for the three tabs and not for the name after them, which is
+    // the corner this is about.
+    let narrow = tabs(&mut app, 40);
     assert!(
-        narrow.contains("appearance") && narrow.contains("agents"),
+        narrow.contains("settings") && narrow.contains("agents"),
         "the tabs were written over: {narrow:?}"
     );
     assert!(
@@ -1074,12 +1086,13 @@ fn the_ends_and_the_pages_are_reachable() {
     let mut app = open(&file);
     let focus = |app: &App| app.settings().expect("the settings").focus();
 
-    // Two rows on the appearance tab: End reaches the second, Home the
-    // first, and neither wraps past its end.
+    // Every setting on one page: End reaches the last, Home the first, and
+    // neither wraps past its end.
+    let last = obelus::config::ALL.len() - 1;
     support::press(&mut app, KeyCode::End);
-    assert_eq!(focus(&app), 1, "End did not reach the last row");
+    assert_eq!(focus(&app), last, "End did not reach the last row");
     support::press(&mut app, KeyCode::End);
-    assert_eq!(focus(&app), 1, "End walked past the end");
+    assert_eq!(focus(&app), last, "End walked past the end");
     support::press(&mut app, KeyCode::Home);
     assert_eq!(focus(&app), 0);
 
@@ -1087,10 +1100,13 @@ fn the_ends_and_the_pages_are_reachable() {
     // wrapped: a page that wrapped past the end would overshoot what the
     // reader was reaching for.
     support::press(&mut app, KeyCode::PageDown);
-    assert_eq!(focus(&app), 1, "PageDown did not reach the end");
+    let paged = focus(&app);
+    assert!(paged > 0, "PageDown did not move");
     support::press(&mut app, KeyCode::PageDown);
-    assert_eq!(focus(&app), 1, "PageDown wrapped");
-    support::press(&mut app, KeyCode::PageUp);
+    assert!(focus(&app) >= paged, "PageDown wrapped");
+    for _ in 0..3 {
+        support::press(&mut app, KeyCode::PageUp);
+    }
     assert_eq!(focus(&app), 0, "PageUp did not come back");
 }
 
@@ -1550,9 +1566,7 @@ fn a_command_can_be_put_on_another_key() {
     let scratch = temporary("bind");
     let file = settings_file(&scratch);
     let mut app = open(&file);
-    // The keys tab: appearance, reading, files, keys, agents.
-    support::press(&mut app, KeyCode::Right);
-    support::press(&mut app, KeyCode::Right);
+    // The keys tab, which is one across: settings, keys, agents.
     support::press(&mut app, KeyCode::Right);
     support::type_text(&mut app, "choose-theme");
     let dump = support::render(&mut app, 66, 12);
@@ -1610,8 +1624,6 @@ fn a_key_that_is_taken_says_so_on_the_row() {
     let scratch = temporary("taken");
     let mut app = open(&settings_file(&scratch));
     support::press(&mut app, KeyCode::Right);
-    support::press(&mut app, KeyCode::Right);
-    support::press(&mut app, KeyCode::Right);
     support::type_text(&mut app, "choose-theme");
     support::press(&mut app, KeyCode::Enter);
 
@@ -1665,8 +1677,6 @@ fn a_key_that_could_never_fire_is_refused() {
     let scratch = temporary("never");
     let mut app = open(&settings_file(&scratch));
     support::press(&mut app, KeyCode::Right);
-    support::press(&mut app, KeyCode::Right);
-    support::press(&mut app, KeyCode::Right);
     support::type_text(&mut app, "choose-theme");
     support::press(&mut app, KeyCode::Enter);
 
@@ -1715,8 +1725,6 @@ fn delete_takes_a_key_away() {
     let scratch = temporary("unbind");
     let file = settings_file(&scratch);
     let mut app = open(&file);
-    support::press(&mut app, KeyCode::Right);
-    support::press(&mut app, KeyCode::Right);
     support::press(&mut app, KeyCode::Right);
     support::type_text(&mut app, "close-file");
     support::press(&mut app, KeyCode::Enter);
@@ -1874,7 +1882,7 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
     // only what obelus knew about. Onto the reading tab and flip the first
     // switch on it.
     dispatch::dispatch(&mut app, Command::ConfigOpen);
-    support::press(&mut app, KeyCode::Right);
+    support::type_text(&mut app, "wrap");
     support::press(&mut app, KeyCode::Enter);
 
     let written = std::fs::read_to_string(&file).expect("reading it back");
