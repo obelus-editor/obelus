@@ -245,6 +245,9 @@ pub fn for_command(command: crate::command::Command) -> char {
         // implementation is what hangs below the thing, and references are a
         // search.
         Command::SymbolMenu => '\u{f0174}',
+        // A lightbulb: what could be typed here is the one thing obelus
+        // offers rather than answers.
+        Command::SymbolComplete => '\u{f0335}',
         // A list of what is in something, which is what an outline is.
         Command::SymbolOutline => '\u{f0279}',
         Command::SymbolDefinition => '\u{f04fe}',
@@ -348,21 +351,56 @@ pub fn for_agent(id: &str) -> char {
     }
 }
 
-/// The glyph for a kind of symbol, for an outline row.
+/// The glyph for a kind of thing in the code.
 ///
-/// Only the kinds an outline can hold: a list of what a file defines has
-/// functions, types, constants and fields in it, and nothing else.
+/// An outline row and a completion candidate both name something a file
+/// defines, so both wear this. Which means the fallback matters: it used to
+/// be the *function* glyph, so a variable, a constructor and a string
+/// literal were all drawn as functions -- a picture that is not vague but
+/// wrong, and a list of them reads as a list of functions.
+///
+/// The pictures are the conventional ones as far as there are conventions:
+/// a type is a box, a constant is locked, a variable is `x`. Every
+/// codepoint here was read out of a patched font's own tables rather than
+/// taken from a chart, because a wrong one looks exactly like a missing
+/// font.
 #[must_use]
 pub fn for_kind(kind: crate::theme::SyntaxKind) -> char {
     use crate::theme::SyntaxKind;
     match kind {
+        // `md-function`.
         SyntaxKind::Function => '\u{f0295}',
-        SyntaxKind::Type => '\u{f0169}',
-        SyntaxKind::Constant => '\u{f04fe}',
-        SyntaxKind::Property => '\u{f0219}',
-        // A module or namespace, which is what the outline uses this for.
+        // `md-cube_outline`: a type is a box, which is the one picture
+        // every editor draws for one. It used to be `md-code_braces`,
+        // which says "some code" and not "a type".
+        SyntaxKind::Type => '\u{f01a7}',
+        // `md-cube`, filled: what a constructor makes is one of those.
+        SyntaxKind::Constructor => '\u{f01a6}',
+        // `md-lock`: a value that does not change.
+        SyntaxKind::Constant => '\u{f033e}',
+        // `md-tag`: a field is a named slot in something.
+        SyntaxKind::Property => '\u{f04f9}',
+        // `md-variable`.
+        SyntaxKind::Variable => '\u{f0ae7}',
+        // `md-sitemap`: a module or namespace, which is what an outline
+        // uses this kind for.
         SyntaxKind::Keyword => '\u{f04aa}',
-        _ => '\u{f0295}',
+        // `md-format_quote_close`.
+        SyntaxKind::String => '\u{f027e}',
+        // `md-numeric`.
+        SyntaxKind::Number => '\u{f03a0}',
+        // `md-toggle_switch`: one of two.
+        SyntaxKind::Boolean => '\u{f0521}',
+        // `md-dots_horizontal`: something with a name, and nothing said
+        // about what it is. Honest, where a borrowed picture is not.
+        SyntaxKind::Attribute
+        | SyntaxKind::Comment
+        | SyntaxKind::Escape
+        | SyntaxKind::Label
+        | SyntaxKind::Operator
+        | SyntaxKind::Punctuation
+        | SyntaxKind::Error
+        | SyntaxKind::Warning => '\u{f01d8}',
     }
 }
 
@@ -488,6 +526,41 @@ mod command_tests {
     /// repeated. There is no fallback to find a hole in: the match is over
     /// the commands themselves, so a new one that nobody has drawn a picture
     /// for does not compile.
+    /// A row that names something is read by its picture first, so two
+    /// kinds that mean different things cannot wear the same one -- and
+    /// none of them may wear the one that means "no idea what this is".
+    #[test]
+    fn the_kinds_a_list_names_have_their_own_glyphs() {
+        use crate::theme::SyntaxKind;
+
+        let named = [
+            SyntaxKind::Function,
+            SyntaxKind::Type,
+            SyntaxKind::Constructor,
+            SyntaxKind::Constant,
+            SyntaxKind::Property,
+            SyntaxKind::Variable,
+            SyntaxKind::Keyword,
+            SyntaxKind::String,
+            SyntaxKind::Number,
+            SyntaxKind::Boolean,
+        ];
+        let mut seen = std::collections::HashMap::new();
+        for kind in named {
+            if let Some(earlier) = seen.insert(for_kind(kind), kind) {
+                panic!("{earlier:?} and {kind:?} share a glyph");
+            }
+        }
+        let anything = for_kind(SyntaxKind::Operator);
+        for kind in named {
+            assert_ne!(
+                for_kind(kind),
+                anything,
+                "{kind:?} is drawn as something obelus could not name"
+            );
+        }
+    }
+
     #[test]
     fn every_command_has_its_own_glyph() {
         let mut seen = std::collections::HashMap::new();
