@@ -899,7 +899,15 @@ impl App {
         self.settle_chat(editor_area);
         self.refresh_slash();
 
-        self.refresh_rendering(editor_area.width);
+        // Less the scrollbar's column, which the drawing keeps for itself:
+        // a reading laid out for the whole width would have its last cell
+        // clipped, and a box drawn round a block of code would lose the
+        // side that closes it.
+        self.refresh_rendering(
+            editor_area
+                .width
+                .saturating_sub(crate::ui::editor::SCROLLBAR_WIDTH),
+        );
         self.refresh_changes();
         self.refresh_blame();
         // After the changes, because the room the text has includes the

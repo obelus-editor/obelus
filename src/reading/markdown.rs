@@ -13,7 +13,10 @@
 
 use termimad::{FmtLine, FmtText, MadSkin, minimad::Compound};
 
-use crate::reading::{Ink, Row, Span};
+use crate::{
+    reading::{Ink, Row, Span},
+    syntax::highlight::Highlights,
+};
 
 /// Lays markdown out for a width.
 ///
@@ -22,6 +25,225 @@ use crate::reading::{Ink, Row, Span};
 /// borrows a markdown renderer instead of walking the syntax tree.
 #[must_use]
 pub fn render(source: &str, width: u16) -> Vec<Row> {
+    // Fenced code is not prose and does not go through a prose renderer.
+    // What it is made of is what the fence says it is, so it is laid out
+    // here, by the grammar the fence names -- and the prose around it is
+    // laid out as it always was.
+    let mut rows = Vec::new();
+    for piece in pieces(source) {
+        match piece {
+            Piece::Prose(text) => rows.extend(prose(&text, width)),
+            Piece::Fenced { language, body } => rows.extend(fenced(&language, &body, width)),
+        }
+    }
+    rows
+}
+
+/// What a markdown source is made of, for the purpose of laying it out.
+enum Piece {
+    /// Everything that is not inside a fence.
+    Prose(String),
+    /// One fenced block, without its fences.
+    Fenced {
+        /// What the opening fence called it, which may name nothing.
+        language: String,
+        /// The lines between the fences, as they were written.
+        body: String,
+    },
+}
+
+/// Splits a source into the prose and the fenced blocks.
+///
+/// A fence is three or more backticks or tildes at the start of a line, and
+/// the block it opens runs to the next line that starts with as many of the
+/// same character -- or to the end of the file, because an unclosed fence is
+/// a file somebody is still writing rather than a file to refuse.
+fn pieces(source: &str) -> Vec<Piece> {
+    let opening = |line: &str| {
+        let trimmed = line.trim_start();
+        let marker = trimmed
+            .chars()
+            .next()
+            .filter(|mark| *mark == '`' || *mark == '~')?;
+        let length = trimmed
+            .chars()
+            .take_while(|character| *character == marker)
+            .count();
+        (length >= 3).then(|| (marker, length, trimmed[length..].trim().to_string()))
+    };
+
+    let mut pieces = Vec::new();
+    let mut prose = String::new();
+    let mut fence: Option<(char, usize, String, String)> = None;
+    for line in source.lines() {
+        match fence.take() {
+            Some((marker, length, language, mut body)) => {
+                // The closing fence: the same character, at least as many.
+                let closes = opening(line).is_some_and(|(mark, count, rest)| {
+                    mark == marker && count >= length && rest.is_empty()
+                });
+                if closes {
+                    pieces.push(Piece::Fenced { language, body });
+                    continue;
+                }
+                body.push_str(line);
+                body.push('\n');
+                fence = Some((marker, length, language, body));
+            }
+            None => match opening(line) {
+                Some((marker, length, language)) => {
+                    if !prose.is_empty() {
+                        pieces.push(Piece::Prose(std::mem::take(&mut prose)));
+                    }
+                    fence = Some((marker, length, language, String::new()));
+                }
+                None => {
+                    prose.push_str(line);
+                    prose.push('\n');
+                }
+            },
+        }
+    }
+    if let Some((_, _, language, body)) = fence {
+        pieces.push(Piece::Fenced { language, body });
+    }
+    if !prose.is_empty() {
+        pieces.push(Piece::Prose(prose));
+    }
+    pieces
+}
+
+/// Lays a fenced block out, in the colours its own language would have.
+///
+/// The fence names the language and obelus has the grammar, so the block is
+/// parsed and coloured the way the file it was copied from would be. A
+/// fence that names nothing, or names something obelus cannot parse, keeps
+/// the one colour that says "this is code".
+///
+/// Lines are broken at the width rather than at a space: a line of code has
+/// no words to respect, and breaking it anywhere else would put a space
+/// where the code has none.
+///
+/// A box round it, the whole width of the reading: a block of code set
+/// into prose is a thing on the page rather than part of it, and where it
+/// begins and ends is worth a line rather than a guess.
+fn fenced(language: &str, body: &str, width: u16) -> Vec<Row> {
+    // The room the code has, which is the width less the side of the box
+    // at each end.
+    let inside = usize::from(width).saturating_sub(2).max(1);
+    let kinds = kinds_of(language, body);
+    let mut rows = vec![across(inside, true)];
+    let mut at = 0usize;
+    for line in body.lines() {
+        let mut taken = 0usize;
+        loop {
+            let rest: String = line.chars().skip(taken).take(inside).collect();
+            let spans = match kinds.as_ref() {
+                Some(kinds) => coloured(&rest, at + offset_of(line, taken), kinds),
+                None => vec![Span {
+                    text: rest.clone(),
+                    ink: Ink::Code,
+                    bold: false,
+                    italic: false,
+                }],
+            };
+            // The cells the code does not reach, so that the far side of
+            // the box lands where the corners above it are.
+            let unfilled = inside - rest.chars().count();
+            rows.push(Row::of(
+                std::iter::once(side("\u{2502}"))
+                    .chain(spans)
+                    .chain([blank(unfilled), side("\u{2502}")])
+                    .collect(),
+            ));
+            taken += inside;
+            if taken >= line.chars().count() {
+                break;
+            }
+        }
+        at += line.len() + 1;
+    }
+    rows.push(across(inside, false));
+    rows
+}
+
+/// The top or the bottom of the box, with the corners for which one it is.
+fn across(inside: usize, top: bool) -> Row {
+    let (left, right) = match top {
+        true => ('\u{250c}', '\u{2510}'),
+        false => ('\u{2514}', '\u{2518}'),
+    };
+    let mut line = String::new();
+    line.push(left);
+    line.extend(std::iter::repeat_n('\u{2500}', inside));
+    line.push(right);
+    Row::of(vec![side(&line)])
+}
+
+/// One piece of the box a block of code is drawn in.
+fn side(text: &str) -> Span {
+    Span {
+        text: text.to_string(),
+        ink: Ink::Mark,
+        bold: false,
+        italic: false,
+    }
+}
+
+/// Room: the cells inside the box that the code does not reach.
+fn blank(cells: usize) -> Span {
+    Span {
+        text: " ".repeat(cells),
+        // Blank, so it is room and nothing else: an ink here would be a
+        // colour for a space.
+        ink: Ink::Plain,
+        bold: false,
+        italic: false,
+    }
+}
+
+/// What each byte of a block is, if its language is one obelus parses.
+fn kinds_of(language: &str, body: &str) -> Option<Highlights> {
+    let language = crate::syntax::LanguageId::for_name(&language.to_lowercase())?;
+    let text = crate::text::Text::from_string(body);
+    let state = crate::syntax::parse::SyntaxState::new(language, &text)?;
+    let mut highlights = Highlights::default();
+    highlights.refresh(
+        &state,
+        &text,
+        crate::coordinates::ByteOffset::new(0)..crate::coordinates::ByteOffset::new(body.len()),
+    );
+    Some(highlights)
+}
+
+/// Where a character offset into a line is, in bytes.
+fn offset_of(line: &str, characters: usize) -> usize {
+    line.char_indices()
+        .nth(characters)
+        .map_or(line.len(), |(at, _)| at)
+}
+
+/// One row of a block, split into runs of a single kind.
+fn coloured(text: &str, at: usize, kinds: &Highlights) -> Vec<Span> {
+    let mut spans: Vec<Span> = Vec::new();
+    for (offset, character) in text.char_indices() {
+        let kind = kinds.kind_at(crate::coordinates::ByteOffset::new(at + offset));
+        let ink = kind.map_or(Ink::Plain, Ink::Syntax);
+        match spans.last_mut() {
+            Some(last) if last.ink == ink => last.text.push(character),
+            _ => spans.push(Span {
+                text: character.to_string(),
+                ink,
+                bold: false,
+                italic: false,
+            }),
+        }
+    }
+    spans
+}
+
+/// Lays prose out, which is what termimad is borrowed for.
+fn prose(source: &str, width: u16) -> Vec<Row> {
     // Joined first. The renderer below is line-oriented -- one source line,
     // one row -- and markdown is not: a single newline inside a paragraph is
     // a *soft* break, and the text either side of it is one paragraph that

@@ -88,6 +88,7 @@ fn style_of(ink: Ink, bold: bool, italic: bool, theme: &Theme) -> Style {
         Ink::Plain => style.fg(theme.foreground),
         Ink::Heading(_) => style.fg(theme.syntax.keyword).add_modifier(Modifier::BOLD),
         Ink::Code => style.fg(theme.syntax.string),
+        Ink::Syntax(kind) => style.fg(theme.syntax.colour(kind)),
         Ink::Aside => style.fg(theme.syntax.comment),
         Ink::Mark => style.fg(theme.gutter),
         Ink::Name => style.fg(theme.syntax.type_name),

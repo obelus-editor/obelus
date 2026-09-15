@@ -54,15 +54,25 @@ impl LanguageId {
     /// with no highlighting still reads fine.
     #[must_use]
     pub fn for_path(path: &Path) -> Option<Self> {
-        match path.extension()?.to_str()? {
-            "rs" => Some(Self::Rust),
+        Self::for_name(path.extension()?.to_str()?)
+    }
+
+    /// The language a name implies, if obelus knows it.
+    ///
+    /// Extensions and the names themselves, because the two arrive from
+    /// different places and mean the same thing: a file is called `.rs` and
+    /// a fenced block in markdown is called `rust`.
+    #[must_use]
+    pub fn for_name(name: &str) -> Option<Self> {
+        match name {
+            "rs" | "rust" => Some(Self::Rust),
             "toml" => Some(Self::Toml),
             "json" => Some(Self::Json),
-            "py" | "pyi" | "pyw" => Some(Self::Python),
+            "py" | "pyi" | "pyw" | "python" => Some(Self::Python),
             // JSX goes to the JavaScript grammar, whose query is shipped with
             // the JSX rules appended.
-            "js" | "mjs" | "cjs" | "jsx" => Some(Self::JavaScript),
-            "ts" | "mts" | "cts" => Some(Self::TypeScript),
+            "js" | "mjs" | "cjs" | "jsx" | "javascript" => Some(Self::JavaScript),
+            "ts" | "mts" | "cts" | "typescript" => Some(Self::TypeScript),
             "tsx" => Some(Self::Tsx),
             "go" => Some(Self::Go),
             // `.h` to C, which is the convention and is right for the header
@@ -71,8 +81,8 @@ impl LanguageId {
             // being wrong here costs some highlighting rather than a wrong
             // answer.
             "c" | "h" => Some(Self::C),
-            "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" | "ipp" => Some(Self::Cpp),
-            "sh" | "bash" | "zsh" | "ksh" => Some(Self::Bash),
+            "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" | "ipp" | "c++" => Some(Self::Cpp),
+            "sh" | "bash" | "zsh" | "ksh" | "shell" | "console" => Some(Self::Bash),
             "css" => Some(Self::Css),
             "html" | "htm" | "xhtml" => Some(Self::Html),
             "yaml" | "yml" => Some(Self::Yaml),

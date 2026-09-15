@@ -4,6 +4,7 @@
 //! down is the translation -- that a heading is a heading, that a fenced
 //! block is code, that a bullet is drawn at all, and that no row is wider
 //! than the width it was laid out for.
+mod support;
 
 use obelus::reading::{Ink, Row, markdown::render};
 
@@ -27,8 +28,13 @@ fn a_heading_a_paragraph_and_a_fence_are_told_apart() {
     let all = inks(&rows);
 
     assert!(all.contains(&Ink::Heading(1)), "no heading: {rows:?}");
-    assert!(all.contains(&Ink::Code), "no code: {rows:?}");
     assert!(all.contains(&Ink::Plain), "no prose: {rows:?}");
+    // A fence that names a language is coloured the way that language is,
+    // rather than in the one colour that says only "this is code".
+    assert!(
+        all.iter().any(|ink| matches!(ink, Ink::Syntax(_))),
+        "no code: {rows:?}"
+    );
 
     // The heading keeps its words and loses its hashes: the marks are
     // markdown's, not the author's.
@@ -208,7 +214,8 @@ fn the_breaks_that_mean_something_survive() {
         .map(text)
         .collect();
     assert!(
-        rows.iter().any(|row| row.trim() == "fn main() {}"),
+        rows.iter()
+            .any(|row| row.trim_matches([' ', '\u{2502}']) == "fn main() {}"),
         "the code was reflowed: {rows:?}"
     );
 
@@ -302,5 +309,291 @@ fn obelus_can_read_its_own_log() {
             .any(|(name, value)| name == "pid" && value == &pid.to_string()),
         "the process that said it was dropped: {:?}",
         entry.fields
+    );
+}
+
+/// A fenced block is not prose and is not laid out as prose: what it is made
+/// of is what its fence says it is.
+mod fences {
+    use obelus::{
+        reading::{Ink, Row},
+        theme::SyntaxKind,
+    };
+
+    use super::{render, text};
+
+    /// Whether a row is a line of code, which is a row inside the box.
+    fn is_code(row: &Row) -> bool {
+        row.spans.len() > 2 && row.spans[0].text == "\u{2502}"
+    }
+
+    /// Whether a row is the top or the bottom of the box.
+    fn is_across(row: &Row) -> bool {
+        row.spans.len() == 1 && row.spans[0].text.starts_with(['\u{250c}', '\u{2514}'])
+    }
+
+    /// The runs of a row of code, without the box and the room round it.
+    fn inside(row: &Row) -> &[obelus::reading::Span] {
+        &row.spans[1..row.spans.len() - 2]
+    }
+
+    /// Every ink on a row of code, in the order the runs are in, with the
+    /// box dropped. The box itself is what [`a_block_is_boxed`] is about.
+    fn inks_of(source: &str, width: u16) -> Vec<Vec<Ink>> {
+        render(source, width)
+            .iter()
+            .filter(|row| is_code(row))
+            .map(|row| inside(row).iter().map(|span| span.ink).collect())
+            .collect()
+    }
+
+    /// The same, as text, and without the box or the room it is set in.
+    fn lines_of(source: &str, width: u16) -> Vec<String> {
+        render(source, width)
+            .iter()
+            .filter(|row| !row.spans.is_empty() && !is_across(row))
+            .map(|row| match is_code(row) {
+                true => inside(row).iter().map(|span| span.text.as_str()).collect(),
+                false => text(row),
+            })
+            .collect()
+    }
+
+    /// A block of code is a thing set into the page: a box round it, the
+    /// whole width of the reading, and the prose left outside.
+    #[test]
+    fn a_block_is_boxed() {
+        let width = 40;
+        let rows = render("before\n\n```rust\nfn main() {}\n```\n", width);
+        let lines: Vec<String> = rows.iter().map(text).collect();
+        let at = lines
+            .iter()
+            .position(|line| line.contains("fn main"))
+            .unwrap_or_else(|| panic!("the code is not in the rows: {lines:?}"));
+
+        assert!(
+            lines[at].starts_with('\u{2502}') && lines[at].ends_with('\u{2502}'),
+            "the code is not inside a box: {lines:?}"
+        );
+        assert!(
+            lines[at - 1].starts_with('\u{250c}') && lines[at - 1].ends_with('\u{2510}'),
+            "the box has no top: {lines:?}"
+        );
+        assert!(
+            lines[at + 1].starts_with('\u{2514}') && lines[at + 1].ends_with('\u{2518}'),
+            "the box has no bottom: {lines:?}"
+        );
+
+        // The box is the reading's own width, so its sides line up with
+        // whatever is drawn above and below it.
+        for line in &lines[at - 1..=at + 1] {
+            assert_eq!(
+                line.chars().count(),
+                usize::from(width),
+                "the box is not the width of the reading: {lines:?}"
+            );
+        }
+        assert!(
+            lines.iter().any(|line| line.starts_with("before")),
+            "the prose was swept into the box too: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn a_named_language_is_coloured_as_that_language() {
+        let inks = inks_of("```rust\nfn main() {}\n```\n", 40);
+        assert_eq!(
+            inks,
+            vec![vec![
+                Ink::Syntax(SyntaxKind::Keyword),
+                Ink::Plain,
+                Ink::Syntax(SyntaxKind::Function),
+                Ink::Syntax(SyntaxKind::Punctuation),
+                Ink::Plain,
+                Ink::Syntax(SyntaxKind::Punctuation),
+            ]],
+            "`fn`, the name and the brackets are not told apart"
+        );
+    }
+
+    /// The fence's word is the language's name, where a file's is its
+    /// extension: the two arrive from different places and mean the same.
+    #[test]
+    fn the_fence_is_read_by_name_as_well_as_by_extension() {
+        for fence in ["rust", "rs"] {
+            let inks = inks_of(&format!("```{fence}\nfn main() {{}}\n```\n"), 40);
+            assert!(
+                inks[0].contains(&Ink::Syntax(SyntaxKind::Keyword)),
+                "```{fence} was not read as rust: {inks:?}"
+            );
+        }
+    }
+
+    /// A fence that names nothing keeps the one colour that says only that
+    /// it is code -- guessing at a language would colour it wrongly, which
+    /// is worse than not colouring it.
+    #[test]
+    fn a_fence_with_no_language_stays_one_colour() {
+        assert_eq!(
+            inks_of("```\nfn main() {}\n```\n", 40),
+            vec![vec![Ink::Code]]
+        );
+        assert_eq!(
+            inks_of("```nothing-obelus-knows\nfn main() {}\n```\n", 40),
+            vec![vec![Ink::Code]]
+        );
+    }
+
+    /// The fences themselves are markdown's marks, not the author's words,
+    /// and the language on the opening one is not a line of the block.
+    #[test]
+    fn the_fences_and_the_language_are_not_in_the_rows() {
+        let lines = lines_of("```rust\nfn main() {}\n```\n", 40);
+        assert_eq!(lines, vec!["fn main() {}"]);
+    }
+
+    /// Tildes open a fence as backticks do. These used to leak their
+    /// language into the rows and lose the code's colour with it.
+    #[test]
+    fn a_tilde_fence_is_a_fence() {
+        let lines = lines_of("~~~rust\nfn main() {}\n~~~\n", 40);
+        assert_eq!(lines, vec!["fn main() {}"]);
+    }
+
+    /// And a fence inside a list item, which used to leak the same way --
+    /// while the list went on being numbered around it.
+    #[test]
+    fn a_fence_inside_a_list_keeps_the_list() {
+        let lines = lines_of(
+            "1. first\n\n   ```rust\n   let x = 1;\n   ```\n\n2. second\n",
+            40,
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("1. first")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.trim() == "let x = 1;"),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("2. second")),
+            "{lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|line| line.contains("rust")),
+            "the fence's language leaked into the rows: {lines:?}"
+        );
+    }
+
+    /// A fence is closed by its own kind, and by at least as many of them:
+    /// a block about markdown has fences of its own inside it, and a
+    /// shorter run of the other character is one of its lines.
+    #[test]
+    fn a_fence_is_closed_by_its_own_kind() {
+        let lines = lines_of("~~~\n```\nstill inside\n```\n~~~\n", 40);
+        assert_eq!(
+            lines,
+            vec!["```", "still inside", "```"],
+            "a fence of the other kind closed it"
+        );
+
+        // And four backticks are not closed by three.
+        let lines = lines_of("````\n```\ninside\n```\n````\n", 40);
+        assert_eq!(lines, vec!["```", "inside", "```"]);
+    }
+
+    /// A line of code has no words to respect, so it breaks at the width
+    /// rather than at a space -- and every character survives the break.
+    #[test]
+    fn a_long_line_breaks_at_the_width() {
+        // Twelve cells across, less the side of the box at each end, is
+        // ten for the code.
+        let lines = lines_of("```rust\nlet name = other(1, 2, 3);\n```\n", 12);
+        assert_eq!(lines, vec!["let name =", " other(1, ", "2, 3);"]);
+    }
+
+    /// An unclosed fence is a file somebody is still writing, not a file to
+    /// refuse: what is under it is the block.
+    #[test]
+    fn an_unclosed_fence_runs_to_the_end() {
+        let lines = lines_of("```rust\nlet x = 1;\n", 40);
+        assert_eq!(lines, vec!["let x = 1;"]);
+    }
+}
+
+/// The box round a block of code, on screen.
+///
+/// The rows carry the box; this is what the drawing does with it, and the
+/// only way to see that is the cells.
+#[test]
+fn a_block_of_code_is_drawn_in_a_box() {
+    let scratch = support::Scratch::new("reading-code-box");
+    let path = scratch.path().join("sample.md");
+    // A table as well as the block, because a table's borders are the
+    // same furniture: what the box is drawn in is what they are drawn in.
+    std::fs::write(
+        &path,
+        "before\n\n```rust\nfn main() {}\n```\n\n| alpha | beta |\n|---|---|\n| 1 | 2 |\n",
+    )
+    .expect("writing it");
+    let mut app = obelus::app::App::new(vec![
+        obelus::buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 40, 20);
+    // A reading is what preview shows: the editor draws the file's own
+    // bytes, fences and all.
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::PreviewToggle);
+
+    let dump = support::render(&mut app, 40, 20);
+    // Past the row number the dump puts in front of every row, and past
+    // the blank line the section itself starts with.
+    let cells = |block: &str| -> Vec<String> {
+        block
+            .lines()
+            .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
+            .collect()
+    };
+    let rows = cells(support::text_block(&dump));
+    let styles = cells(support::style_block(&dump));
+    let at = rows
+        .iter()
+        .position(|row| row.contains("fn main"))
+        .unwrap_or_else(|| panic!("the code is not on screen:\n{dump}"));
+
+    // The box, drawn round the code and held off both edges.
+    let code = &rows[at];
+    assert!(
+        code.starts_with('\u{2502}') && code.trim_end().ends_with('\u{2502}'),
+        "the code is not drawn inside a box:\n{dump}"
+    );
+    assert!(
+        rows[at - 1].trim_end().ends_with('\u{2510}')
+            && rows[at + 1].trim_end().ends_with('\u{2518}'),
+        "the box has no top or no bottom on screen:\n{dump}"
+    );
+    assert_eq!(
+        rows[at].chars().count() - rows[at].trim_end().chars().count(),
+        1,
+        "the box does not reach the reading's edge, the scrollbar's cell apart:\n{dump}"
+    );
+
+    // And it is drawn as the reading's own furniture rather than as code:
+    // the same as the borders of a table, which is what it is.
+    let table = rows
+        .iter()
+        .position(|row| row.contains("alpha"))
+        .unwrap_or_else(|| panic!("the table is not on screen:\n{dump}"));
+    let side = |row: &String| {
+        row.chars()
+            .position(|cell| cell == '\u{2502}')
+            .unwrap_or_else(|| panic!("no border on {row:?}:\n{dump}"))
+    };
+    let letter = |row: usize, column: usize| styles[row].chars().nth(column).expect("a style");
+    assert_eq!(
+        letter(at, side(code)),
+        letter(table, side(&rows[table])),
+        "the box is not drawn as the reading's own furniture:\n{dump}"
     );
 }
