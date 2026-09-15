@@ -75,11 +75,22 @@ pub enum Refused {
 /// tall an entry is before anything is drawn.
 #[must_use]
 pub fn description_width(room: u16) -> u16 {
-    room.saturating_sub(DESCRIPTION_INDENT + 2).max(8)
+    room.saturating_sub(DESCRIPTION_INDENT + GROUP_INDENT + 2)
+        .max(8)
 }
 
 /// How far a description sits in from the name above it.
 pub const DESCRIPTION_INDENT: u16 = 3;
+
+/// How far a setting sits in from the heading of the group it is in.
+///
+/// Which is the whole of what says where one group ends and the next
+/// begins: no rule, no glyph, no second colour -- the same way the counts
+/// say which directory a file is in, and the same way a description under a
+/// name says it belongs to that name. A page whose groups were told apart
+/// by a line across it would be a page with six lines on it, counting the
+/// tabs' and the foot's, and the lines would be the loudest thing there.
+pub const GROUP_INDENT: u16 = 2;
 
 /// How many rows of a description a card will show.
 ///
@@ -791,6 +802,9 @@ impl Settings {
     #[must_use]
     pub fn setting_rows(&self, shown: &Shown, width: u16) -> u16 {
         let about = u16::try_from(self.wrapped(shown.setting.about, width).len()).unwrap_or(0);
-        u16::from(shown.opens.is_some()) + 1 + about + 1
+        // A heading is its word and the blank under it: the word alone, with
+        // the group's first setting hard against it, reads as a row of the
+        // group rather than as its name.
+        u16::from(shown.opens.is_some()) * 2 + 1 + about + 1
     }
 }

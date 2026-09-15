@@ -385,9 +385,11 @@ fn typing_narrows_the_settings() {
         .filter(|row| !row.is_empty())
         .position(|row| row.contains("Colour theme"))
         .expect("the row that matched");
-    // Cell one is the "C" of "Colour theme" -- cell zero is the row's own
-    // left-hand padding -- and cell twelve is its last character.
-    let letters: Vec<char> = styles[row].chars().skip(3 + 1).take(12).collect();
+    // The "C" of "Colour theme" is the first cell of the name: past the
+    // `NN|` the dump writes down its side, past the row's own left-hand
+    // padding, and past the indent that puts a setting under its group.
+    let name_at = 3 + 1 + usize::from(obelus::component::settings::GROUP_INDENT);
+    let letters: Vec<char> = styles[row].chars().skip(name_at).take(12).collect();
     let marked: std::collections::HashSet<char> = letters.iter().copied().collect();
     assert!(
         marked.len() > 1,

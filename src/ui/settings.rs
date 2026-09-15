@@ -9,7 +9,7 @@ use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets:
 
 use crate::{
     app::{App, agents::Listed},
-    component::settings::{DESCRIPTION_INDENT, Refused, Settings},
+    component::settings::{DESCRIPTION_INDENT, GROUP_INDENT, Refused, Settings},
     config::{Config, Kind, Value},
     theme::Theme,
     ui::{
@@ -410,6 +410,10 @@ impl SettingsView<'_> {
             false => region.width,
         };
         let aside_at = region.x + room.saturating_sub(CONTROL_WIDTH + 1);
+        // Where a name starts: in from the group's heading on the settings
+        // page, and hard against the edge on the keys page, which has no
+        // groups to be in.
+        let name_at = region.x + 1 + u16::from(!self.settings.on_keys()) * GROUP_INDENT;
         // Where what a row *does* starts, measured over the whole page
         // rather than taken from each name: a column of names is read down,
         // and prose that started at a different column on every row would
@@ -420,7 +424,7 @@ impl SettingsView<'_> {
             .map(|row| crate::ui::text_width(&row.label))
             .max()
             .unwrap_or(0);
-        let detail_at = region.x + 1 + u16::try_from(names).unwrap_or(0) + 2;
+        let detail_at = name_at + u16::try_from(names).unwrap_or(0) + 2;
         // Walked by height rather than by row, because an entry is as tall
         // as what it has to say: a name, the rows its description takes, and
         // a blank so that the next name is not read as part of it. Every
@@ -451,13 +455,12 @@ impl SettingsView<'_> {
                     cells,
                     Rect {
                         y,
-                        height: 1,
+                        height: 2,
                         ..region
                     },
-                    room,
                     group,
                 );
-                y += 1;
+                y += 2;
                 if y >= region.bottom() {
                     break;
                 }
@@ -487,7 +490,7 @@ impl SettingsView<'_> {
                 .as_deref()
                 .or(row.scope.map(Scope::word))
                 .map(|source| {
-                    let room = aside_at.saturating_sub(region.x + 4 + lock);
+                    let room = aside_at.saturating_sub(name_at + 3 + lock);
                     truncate_from_right(source, usize::from(room))
                 });
             let reserved = source.as_deref().map_or(0, |source| {
@@ -496,7 +499,7 @@ impl SettingsView<'_> {
 
             // Cut to what is left before the right-hand column: a line
             // running under it reads as part of it.
-            let width = aside_at.saturating_sub(region.x + 2 + reserved);
+            let width = aside_at.saturating_sub(name_at + 1 + reserved);
             let label = truncate_from_right(&row.label, usize::from(width));
             // Through the shared writer, so the characters the query
             // matched carry the background every other list marks a match
@@ -527,7 +530,7 @@ impl SettingsView<'_> {
             let after = write_marked(
                 cells,
                 area,
-                region.x + 1,
+                name_at,
                 y,
                 &label,
                 ink.bg(background),
@@ -612,7 +615,7 @@ impl SettingsView<'_> {
                 }
                 write(
                     cells,
-                    region.x + DESCRIPTION_INDENT,
+                    name_at + DESCRIPTION_INDENT - 1,
                     y + offset,
                     line,
                     plain.fg(self.theme.gutter).bg(background),
@@ -625,31 +628,28 @@ impl SettingsView<'_> {
         }
     }
 
-    /// A group's name, with a rule running out of it to the right.
+    /// A group's name, and the blank that sets it off from its settings.
     ///
-    /// A separator rather than a tab, because these are all one page now:
-    /// the rule is what says "a different sort of thing starts here", and it
-    /// says it without the reader having to go and look on another page for
-    /// the setting they could not find on this one.
-    fn heading(&self, cells: &mut CellBuffer, area: Rect, room: u16, group: crate::config::Group) {
+    /// The word and nothing else. What says where one group ends and the
+    /// next begins is that a group's settings are indented under its name --
+    /// the way a description is indented under the setting it is about, and
+    /// the way a file is indented under its directory in the counts. So
+    /// there is no rule to draw and no second colour to hold: a page whose
+    /// groups were told apart by a line across it would have six lines on
+    /// it, counting the tabs' and the foot's, and the lines would be the
+    /// loudest thing on a page of words.
+    fn heading(&self, cells: &mut CellBuffer, area: Rect, group: crate::config::Group) {
         let plain = Style::new()
             .fg(self.theme.foreground)
             .bg(self.theme.background);
         fill(cells, area, plain);
-        let after = write(
+        write(
             cells,
             area.x + 1,
             area.y,
             group.label(),
             plain.fg(self.theme.status_foreground),
         );
-        // Out to where the controls begin rather than to the edge of the
-        // page: the column on the right is the values, and a rule drawn
-        // through it would read as a row of its own.
-        let end = area.x + room.saturating_sub(CONTROL_WIDTH + 1);
-        for x in after + 1..end {
-            put(cells, x, area.y, '\u{2500}', plain.fg(self.theme.gutter));
-        }
     }
 
     /// Which layer the value on a row comes from, on the tree's page.
