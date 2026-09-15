@@ -103,6 +103,20 @@ const SLOW_FRAME: std::time::Duration = std::time::Duration::from_millis(50);
 /// draw entirely.
 const EVENT_DRAIN_LIMIT: usize = 256;
 
+/// What a file looked like when it was committed, and which file and
+/// commit that is the text of.
+///
+/// The text is `None` for a file with nothing committed, which has to be
+/// remembered as much as a text does: otherwise every keystroke goes and
+/// finds out again that there is nothing to find.
+#[derive(Debug)]
+pub(super) struct Committed {
+    /// Which file, and which commit it is being compared with.
+    pub(super) of: (PathBuf, Option<gix::ObjectId>),
+    /// What that commit had in it.
+    pub(super) text: Option<String>,
+}
+
 /// Everything obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
@@ -302,6 +316,18 @@ pub struct App {
     /// one they left a moment ago would spend that walk twice. Bounded by
     /// the files opened in a session, which is tens of them.
     blames: std::collections::HashMap<(PathBuf, Option<gix::ObjectId>), Vec<Option<git::Blamed>>>,
+    /// The committed text the margin's diff is against.
+    ///
+    /// One file's, because one file's diff is drawn: switching to another
+    /// reads that one's. Kept because reading it is opening the repository,
+    /// finding the commit, walking its tree and unpacking the blob -- and
+    /// what it answers changes only when the repository moves, where the
+    /// document it is compared with changes on every keystroke.
+    ///
+    /// `None` inside the answer is a file with nothing committed, which has
+    /// to be remembered too: otherwise every keystroke goes and finds out
+    /// again that there is nothing to find.
+    committed: Option<Committed>,
     /// Which files have been asked about and have not answered yet, so a
     /// frame does not start a second walk of the same history.
     asking_blame: std::collections::HashSet<(PathBuf, Option<gix::ObjectId>)>,
@@ -396,6 +422,7 @@ impl App {
             history: history_view::Showing::default(),
             searching: Vec::new(),
             blames: std::collections::HashMap::new(),
+            committed: None,
             asking_blame: std::collections::HashSet::new(),
             row_syntax: std::collections::HashMap::new(),
             searched: None,

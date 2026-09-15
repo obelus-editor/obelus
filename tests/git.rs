@@ -3837,3 +3837,42 @@ fn the_short_answer_about_a_tree_agrees_with_the_long_one() {
     );
     assert!(anything_changed(&root), "a new file is nothing changed");
 }
+
+/// What a file looked like when it was committed is read once per file, not
+/// once per keystroke.
+///
+/// Reading it is opening the repository, finding the commit, walking its
+/// tree and unpacking the blob -- two thirds of what the margin cost on
+/// every key pressed, for an answer that moves only when the repository
+/// does.
+#[test]
+fn the_committed_text_is_not_read_again_for_every_keystroke() {
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("committed-once", "one\ntwo\nthree\n");
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory.clone());
+    support::lay_out(&mut app, 60, 12);
+
+    // The margin has something to say, which is what says the diff happened
+    // at all.
+    support::type_text(&mut app, "x");
+    let dump = support::render(&mut app, 60, 12);
+    assert!(
+        app.changes().is_some_and(|changes| !changes.is_empty()),
+        "nothing was compared:\n{dump}"
+    );
+
+    // And it goes on saying it with the repository taken away underneath:
+    // the committed text is in hand, so nothing has to be read again.
+    std::fs::remove_dir_all(repository.directory.join(".git")).expect("taking the repository away");
+    support::type_text(&mut app, "y");
+    // Drawn, because that is when the margin's diff is worked out again:
+    // asking the application without drawing would be reading the answer
+    // from before the repository went.
+    let after = support::render(&mut app, 60, 12);
+    assert!(
+        app.changes().is_some_and(|changes| !changes.is_empty()),
+        "the committed text was read again rather than kept:\n{after}"
+    );
+}

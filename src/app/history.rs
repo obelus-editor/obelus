@@ -241,6 +241,7 @@ impl App {
     pub(super) fn forget_what_git_said(&mut self) {
         tracing::info!("the repository moved, so what it said about it is dropped");
         self.changes = None;
+        self.committed = None;
         self.blames.clear();
         self.asking_blame.clear();
         // And a history on screen is about the repository that moved.
@@ -276,25 +277,45 @@ impl App {
         // before -- so the margin beside it says what that commit did,
         // rather than how it differs from today, which is a question about
         // a file the reader is not looking at.
-        let before = match buffer.content().at() {
-            Some(id) => {
-                crate::git::history::text_before(&self.working_directory, id, buffer.path())
-            }
-            None => git::head_text(buffer.path()),
-        };
+        //
+        // Read once per file rather than once per keystroke: it is opening
+        // the repository, finding the commit, walking its tree and
+        // unpacking the blob, and the answer moves only when the repository
+        // does -- which [`App::forget_what_git_said`] is already told about.
+        let asked = (buffer.path().to_path_buf(), buffer.content().at());
+        // Taken before the cache below is touched, which ends the borrow of
+        // the buffer: what is being compared is this text, whether or not
+        // the other side of the comparison has to be read again.
+        let now = buffer.text().rope().to_string();
+        let asked_path = asked.0.clone();
+        if self
+            .committed
+            .as_ref()
+            .is_none_or(|committed| committed.of != asked)
+        {
+            let text = match asked.1 {
+                Some(id) => crate::git::history::text_before(&self.working_directory, id, &asked.0),
+                None => git::head_text(&asked.0),
+            };
+            self.committed = Some(crate::app::Committed { of: asked, text });
+        }
+        let before = self
+            .committed
+            .as_ref()
+            .and_then(|committed| committed.text.as_deref());
         // No text to compare with is every way this can have no answer --
         // not a repository, a file git has never heard of, no commits yet,
         // a commit that added the file -- and they all mean the same thing
         // in the margin: nothing to say.
         let changes = before.map(|committed| Changed {
-            changes: git::Changes::between(&committed, &buffer.text().rope().to_string()),
+            changes: git::Changes::between(committed, &now),
             at,
         });
         if changes.is_none() {
             // Said once per file, because "why is the margin empty" is a
             // question with no other answer on screen.
             tracing::debug!(
-                path = %buffer.path().display(),
+                path = %asked_path.display(),
                 "nothing committed to compare with, so no changes"
             );
         }
