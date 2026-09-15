@@ -37,6 +37,13 @@ nucleo-matcher = "0.3"
 # Walking the tree for the file picker, respecting .gitignore.
 ignore = "0.4"
 
+# The search's patterns. Already in the tree by way of `ignore` and `tokei`,
+# so this states a dependency obelus was compiling anyway rather than adding
+# one. `default-features = false` with `std`, `perf` and `unicode` kept: what
+# is dropped is `logging`, which would put obelus's own tracing output in the
+# middle of a frame.
+regex = { version = "1", default-features = false, features = ["std", "perf", "unicode"] }
+
 # Counting the lines of the tree. `default-features = false` drops tokei's
 # `cli` feature, which is its own binary's: clap, colored, env_logger and
 # num-format, none of which a library call needs. What is left still walks

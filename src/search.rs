@@ -16,6 +16,7 @@ use std::{
 };
 
 use ignore::WalkBuilder;
+use regex::Regex;
 
 use crate::event::Event;
 
@@ -69,6 +70,28 @@ impl Scope {
     }
 }
 
+/// How a search is looking, beside what it is looking for.
+///
+/// Three switches, which are the three every reader has met: the query as a
+/// pattern, the query as a whole word, and the capitals as typed. They are
+/// the reader's, kept for as long as obelus is running and not written
+/// down: a pattern answers *this* question, and one turned on to find one
+/// thing next Tuesday should not still be on the Tuesday after.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Looking {
+    /// Whether the query is a pattern rather than the text itself.
+    pub regex: bool,
+    /// Whether it has to stand as a word rather than inside one.
+    pub word: bool,
+    /// Whether the capitals are meant however the query is written.
+    ///
+    /// Off is not "case does not matter": off is smart case, which is the
+    /// query saying so itself -- one in lower case matches either, one with
+    /// a capital in it means it. This is for the query that is all lower
+    /// case and means it anyway, which smart case has no way to be told.
+    pub sensitive: bool,
+}
+
 /// What a search is looking for, and the rule for finding it.
 ///
 /// A thing rather than a string, because "is it in this line, and where" is
@@ -77,8 +100,8 @@ impl Scope {
 /// and three literal `contains` beside each other are three rules that will
 /// come apart.
 ///
-/// Literal, always. A search asks where a string *is*; `ac` is not in `abc`,
-/// and a search that said it was would be answering a question about
+/// Never fuzzy. A search asks where a string *is*; `ac` is not in `abc`, and
+/// a search that said it was would be answering a question about
 /// resemblance that nobody asked. Fuzzy matching is how a reader picks a
 /// name out of a list they already hold, which is what the pickers do and
 /// what this is not.
@@ -88,29 +111,80 @@ pub struct Needle {
     said: String,
     /// The same in lower case, for the query that does not care about it.
     folded: String,
-    /// Whether case matters, which the query says itself: one in lower case
-    /// matches either, and one with a capital in it means it.
-    ///
-    /// Smart case, the same rule the pickers' matcher follows, so a reader
-    /// does not learn two.
+    /// Whether case matters: what the reader asked for, or what the query
+    /// says itself where they asked for nothing.
     sensitive: bool,
+    /// The compiled pattern, where the reader asked for one or for whole
+    /// words.
+    ///
+    /// `None` for a plain literal, which is the case worth keeping out of a
+    /// regex engine: it is what a whole tree is walked with, and
+    /// `str::find` is a real string search.
+    pattern: Option<Regex>,
+    /// Whether what they typed will not compile.
+    ///
+    /// Kept rather than reported, because a half-typed pattern is the
+    /// ordinary state of one being typed: `(fn` is not an error to put in
+    /// front of somebody, it is a question that is not finished. What it
+    /// matches is nothing, and the view says so where it says "no match".
+    broken: bool,
 }
 
 impl Needle {
-    /// What a reader typed, ready to be looked for.
+    /// What a reader typed, ready to be looked for the way they asked.
     #[must_use]
-    pub fn new(said: &str) -> Self {
-        Self {
-            sensitive: said.chars().any(char::is_uppercase),
+    pub fn new(said: &str, how: Looking) -> Self {
+        // Smart case unless the reader has said otherwise: one in lower
+        // case matches either, one with a capital in it means it.
+        let sensitive = how.sensitive || said.chars().any(char::is_uppercase);
+        let mut needle = Self {
             folded: said.to_lowercase(),
             said: said.to_string(),
+            sensitive,
+            pattern: None,
+            broken: false,
+        };
+        if said.is_empty() || !(how.regex || how.word) {
+            return needle;
         }
+        // Escaped where it is not a pattern, so whole words can be asked for
+        // without the query becoming one: a reader searching for `a.b` with
+        // words on means those three characters.
+        let body = match how.regex {
+            true => said.to_string(),
+            false => regex::escape(said),
+        };
+        // `\b` around it, and the group so that a pattern with an
+        // alternation in it has the boundaries around the whole of it
+        // rather than around its first branch.
+        let body = match how.word {
+            true => format!("\\b(?:{body})\\b"),
+            false => body,
+        };
+        let body = match sensitive {
+            true => body,
+            false => format!("(?i){body}"),
+        };
+        match Regex::new(&body) {
+            Ok(pattern) => needle.pattern = Some(pattern),
+            Err(error) => {
+                tracing::debug!(%error, said, "not a pattern yet");
+                needle.broken = true;
+            }
+        }
+        needle
     }
 
     /// Whether nothing was typed, which is not a question.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.said.is_empty()
+    }
+
+    /// Whether what was typed will not compile as a pattern.
+    #[must_use]
+    pub const fn is_broken(&self) -> bool {
+        self.broken
     }
 
     /// Where it is in a line, counted in characters, or nothing.
@@ -126,8 +200,13 @@ impl Needle {
     /// line matches does not cost a copy of the whole file.
     #[must_use]
     pub fn found_in(&self, line: &str) -> Option<Range<usize>> {
-        if self.said.is_empty() {
+        if self.said.is_empty() || self.broken {
             return None;
+        }
+        if let Some(pattern) = self.pattern.as_ref() {
+            let found = pattern.find(line)?;
+            let from = line[..found.start()].chars().count();
+            return Some(from..from + line[found.range()].chars().count());
         }
         if self.sensitive {
             let at = line.find(&self.said)?;
@@ -203,19 +282,18 @@ const BIGGEST_FILE: u64 = 2 * 1024 * 1024;
 /// is two answers about one tree.
 pub fn spawn_scan(
     root: &Path,
-    query: &str,
+    needle: &Needle,
     generation: u64,
     ignored: bool,
     current: &Arc<AtomicU64>,
     sender: Sender<Event>,
 ) {
     let root = root.to_path_buf();
-    let query = query.to_string();
+    let needle = needle.clone();
     let current = Arc::clone(current);
     let outcome = std::thread::Builder::new()
         .name("obelus-search".to_string())
         .spawn(move || {
-            let needle = Needle::new(&query);
             let mut batch: Vec<Hit> = Vec::with_capacity(BATCH);
             let mut found = 0usize;
 

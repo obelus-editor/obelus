@@ -392,6 +392,12 @@ pub struct App {
     /// version they were read from: an agent rewriting the file while the
     /// search is open has to change what the list says.
     searched: Option<(PathBuf, i32)>,
+    /// How the search is looking: the three switches at its foot.
+    ///
+    /// The reader's, kept for as long as obelus is running and not written
+    /// to their settings: a pattern answers *this* question, and one turned
+    /// on to find one thing should not still be on next week.
+    looking: search::Looking,
     /// Which search the answers arriving belong to.
     ///
     /// Bumped on every keystroke that changes what is being asked, so the
@@ -481,6 +487,7 @@ impl App {
             asking_blame: std::collections::HashSet::new(),
             row_syntax: std::collections::HashMap::new(),
             searched: None,
+            looking: search::Looking::default(),
             search_generation: std::sync::Arc::default(),
             history_generation: std::sync::Arc::default(),
             asked_line: None,
@@ -1308,10 +1315,11 @@ impl App {
             return;
         }
 
-        // The one key a file list has that is not about moving around it.
-        // Before the picker, because the picker would not know it: what it
-        // changes is where the rows come from, which is the application's.
-        if self.listing_key(&key) {
+        // The keys a file list and a search have that are not about moving
+        // around them. Before the picker, because the picker would not know
+        // them: what they change is where the rows come from, which is the
+        // application's.
+        if self.listing_key(&key) || self.searching_key(&key) {
             return;
         }
 

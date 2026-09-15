@@ -418,6 +418,14 @@ pub struct Picker {
     footed: bool,
     /// Whether the card listing every key is up.
     keys: bool,
+    /// How this search is looking, where the question arises.
+    ///
+    /// `None` where it does not: a list that is not a search, and the
+    /// symbols tab, whose rows come from a language server that did its own
+    /// matching and would not know what to do with a pattern of ours. The
+    /// foot greys the keys there rather than dropping them, so it does not
+    /// change height as the reader steps between tabs.
+    looking: Option<crate::search::Looking>,
     /// Whether this list is offering the files a tree ignores, where that
     /// is a question about it at all.
     ///
@@ -479,6 +487,7 @@ impl Picker {
             ordered: false,
             footed: false,
             keys: false,
+            looking: None,
             ignored: None,
             layout,
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
@@ -697,6 +706,17 @@ impl Picker {
     #[must_use]
     pub const fn showing_keys(&self) -> bool {
         self.keys
+    }
+
+    /// Says how this search is looking, or that the question does not arise.
+    pub const fn looking_how(&mut self, how: Option<crate::search::Looking>) {
+        self.looking = how;
+    }
+
+    /// And what it was told.
+    #[must_use]
+    pub const fn looks_how(&self) -> Option<crate::search::Looking> {
+        self.looking
     }
 
     /// Says whether this list is offering the files a tree ignores, or that
@@ -1075,7 +1095,8 @@ impl Picker {
         indices.clear();
         let label = &self.items[index].label;
         if self.searching {
-            let Some(run) = crate::search::Needle::new(&self.query).found_in(label) else {
+            let how = self.looking.unwrap_or_default();
+            let Some(run) = crate::search::Needle::new(&self.query, how).found_in(label) else {
                 return;
             };
             indices.extend(run.map(|at| u32::try_from(at).unwrap_or(u32::MAX)));

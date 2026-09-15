@@ -32,6 +32,9 @@ impl App {
         picker.with_scopes(&names);
         picker.searches();
         picker.previews();
+        // Three keys of its own, so it says what they are and which way each
+        // is set: a switch a reader has to flip to find out is not one.
+        picker.says_its_keys();
         picker.go_to_tab(tab);
         self.searching = scopes;
         self.picker = Some(picker);
@@ -248,10 +251,18 @@ impl App {
     /// which is exactly the arrangement that let a fuzzy matcher stand
     /// between the reader and their answer.
     pub(super) fn refresh_search(&mut self) {
-        let Some(picker) = self.picker.as_ref() else {
+        let tab = self.picker.as_ref().map(Picker::tab);
+        let Some(scope) = tab.and_then(|tab| self.searching.get(tab).copied()) else {
             return;
         };
-        let Some(scope) = self.searching.get(picker.tab()).copied() else {
+        // What the foot says the switches are set to. Nothing on the symbols
+        // tab: those rows come from a language server that did its own
+        // matching and has never heard of our pattern.
+        let how = (scope != Scope::Symbols).then_some(self.looking);
+        if let Some(picker) = self.picker.as_mut() {
+            picker.looking_how(how);
+        }
+        let Some(picker) = self.picker.as_ref() else {
             return;
         };
         match scope {
@@ -280,6 +291,46 @@ impl App {
         }
     }
 
+    /// Whatever one of the search's own keys means, if it is one of them.
+    ///
+    /// Three switches, answered here rather than in the picker for the
+    /// reason the file list's one is: the picker knows about rows and a
+    /// query, and these are about how the rows were found.
+    pub(super) fn searching_key(&mut self, key: &KeyEvent) -> bool {
+        if key.modifiers != KeyModifiers::ALT {
+            return false;
+        }
+        // Only where they mean something: on the symbols tab the server did
+        // the matching, and the foot greys them there.
+        if !self
+            .picker
+            .as_ref()
+            .is_some_and(|picker| picker.looks_how().is_some())
+        {
+            return false;
+        }
+        let KeyCode::Char(letter) = key.code else {
+            return false;
+        };
+        match letter {
+            'r' => self.looking.regex = !self.looking.regex,
+            'w' => self.looking.word = !self.looking.word,
+            'c' => self.looking.sensitive = !self.looking.sensitive,
+            _ => return false,
+        }
+        self.refresh_search();
+        true
+    }
+
+    /// What the search is looking for, the way the reader asked.
+    fn needle(&self) -> search::Needle {
+        let query = self
+            .picker
+            .as_ref()
+            .map_or_else(String::new, |picker| picker.query().to_string());
+        search::Needle::new(&query, self.looking)
+    }
+
     /// The lines of the file being read that have the query in them.
     ///
     /// The matches rather than every line, by the same rule the walk of the
@@ -292,11 +343,14 @@ impl App {
     /// memory, and a pass over it per keystroke is nothing beside the walk
     /// the project tab starts for the same key.
     pub(super) fn search_this_file(&mut self) {
-        let needle = self
-            .picker
-            .as_ref()
-            .map(|picker| search::Needle::new(picker.query()));
-        let Some(needle) = needle else { return };
+        let needle = self.needle();
+        if needle.is_broken() {
+            if let Some(picker) = self.picker.as_mut() {
+                picker.replace(Vec::new());
+                picker.while_empty("that is not a pattern");
+            }
+            return;
+        }
         let Some(buffer) = self.current_buffer() else {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
@@ -392,10 +446,18 @@ impl App {
             picker.replace(Vec::new());
             picker.while_empty("searching\u{2026}");
         }
+        let needle = self.needle();
+        if needle.is_broken() {
+            if let Some(picker) = self.picker.as_mut() {
+                picker.replace(Vec::new());
+                picker.while_empty("that is not a pattern");
+            }
+            return;
+        }
         if let Some(sender) = self.events.clone() {
             search::spawn_scan(
                 &self.working_directory,
-                &query,
+                &needle,
                 generation,
                 self.config().ignored_files,
                 &self.search_generation,

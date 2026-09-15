@@ -53,27 +53,45 @@ fn list_region_rows(picker: &Picker, width: u16) -> u16 {
 /// to one is not news. Nothing about the arrows that walk the tabs either --
 /// the tab row draws those itself, right where the tabs are, which says it
 /// better than a word at the foot could.
+///
+/// Every one of these is a switch, and every one draws which way it is set.
+/// A switch a reader has to press to find out what it was is the one thing a
+/// switch must never ask of them -- and it is drawn with the settings page's
+/// own control, so the two places say it the same way.
 #[must_use]
 pub fn hints(picker: &Picker) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     if !picker.says_keys() {
         return Vec::new();
     }
-    let chord = crate::keymap::KeyChord::new;
-    // With the switch beside it, because this key is a switch and a switch
-    // whose state is not on screen is a key a reader has to press to find
-    // out which way it was -- the one thing a switch must never ask of
-    // them. The same control the settings page draws it with, so the two
-    // places say it the same way.
+    let alt = |letter| crate::keymap::KeyChord::new(KeyCode::Char(letter), KeyModifiers::ALT);
+    if picker.is_searching() {
+        let how = picker.looks_how();
+        let asked = how.unwrap_or_default();
+        // Greyed rather than dropped where the question does not arise, so
+        // the foot does not change height as the reader walks the tabs.
+        let here = how.is_some();
+        return vec![
+            Hint::common(alt('r'), "regex")
+                .saying("read the query as a pattern rather than as the text")
+                .set(asked.regex)
+                .when(here),
+            Hint::common(alt('w'), "word")
+                .saying("only where it stands as a word of its own")
+                .set(asked.word)
+                .when(here),
+            Hint::common(alt('c'), "case")
+                .saying("the capitals as typed, rather than as the query implies")
+                .set(asked.sensitive)
+                .when(here),
+        ];
+    }
     let offering = picker.offers_ignored();
     vec![
-        Hint::common(
-            chord(KeyCode::Char('i'), KeyModifiers::ALT),
-            "ignored files",
-        )
-        .saying("offer the files the tree ignores, or leave them out")
-        .set(offering.unwrap_or(false))
-        .when(offering.is_some()),
+        Hint::common(alt('i'), "ignored files")
+            .saying("offer the files the tree ignores, or leave them out")
+            .set(offering.unwrap_or(false))
+            .when(offering.is_some()),
     ]
 }
 

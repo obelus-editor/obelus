@@ -165,6 +165,91 @@ fn the_file_scope_finds_the_query_and_not_something_like_it() {
     assert_eq!(picker.nothing_to_show(), Some("type to search this file"));
 }
 
+/// The search's three switches: a pattern, a whole word, the capitals as
+/// typed. Each says at the foot which way it is set.
+#[test]
+fn the_three_switches_change_what_the_search_finds() {
+    let scratch = temporary("switches");
+    let path = scratch.write("x.rs", "let abc = 1;\nlet ABC = 2;\nlet abcdef = 3;\n");
+    let mut app = App::new(vec![obelus::buffer::Buffer::open(&path).expect("the file")]);
+    support::lay_out(&mut app, 74, 16);
+    support::press_function(&mut app, 5);
+    support::type_text(&mut app, "abc");
+
+    let found = |app: &App| app.picker().expect("the search").match_count();
+    // Smart case to start with: a query in lower case matches either.
+    assert_eq!(found(&app), 3, "smart case did not match the capitals");
+
+    // Only where it stands as a word: `abcdef` is not one.
+    support::press_alt_key(&mut app, KeyCode::Char('w'));
+    assert_eq!(found(&app), 2, "the whole-word switch did nothing");
+    support::press_alt_key(&mut app, KeyCode::Char('w'));
+
+    // The capitals as typed, which smart case had no way to be told.
+    support::press_alt_key(&mut app, KeyCode::Char('c'));
+    assert_eq!(found(&app), 2, "the case switch did nothing");
+    support::press_alt_key(&mut app, KeyCode::Char('c'));
+
+    // A pattern rather than the text.
+    support::press_alt_key(&mut app, KeyCode::Char('r'));
+    for _ in 0.."abc".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "ab.d");
+    assert_eq!(found(&app), 1, "the query was not read as a pattern");
+
+    // And the foot says which way each is set, rather than making the
+    // reader press one to find out.
+    let dump = support::render(&mut app, 74, 16);
+    let foot = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("regex"))
+        .expect("the foot")
+        .to_string();
+    // How far the knob sits from its word: a switch that is on has slid to
+    // the far end of its track, and one that is off has not. The blanks
+    // between are one cell each, so the distance is the gap.
+    let gap = |word: &str| -> usize {
+        let after = foot.find(word).expect("the word") + word.len();
+        foot[after..].find('\u{25a0}').expect("the switch")
+    };
+    assert!(
+        gap("regex") > gap("word"),
+        "the pattern switch is not slid across: {foot:?}"
+    );
+    assert_eq!(
+        gap("word"),
+        gap("case"),
+        "two switches nobody touched are set differently: {foot:?}"
+    );
+
+    // Half a pattern is not an error in front of the reader: it is a
+    // question that is not finished, and it matches nothing.
+    support::type_text(&mut app, "(");
+    let picker = app.picker().expect("the search");
+    assert_eq!(picker.match_count(), 0);
+    assert_eq!(picker.nothing_to_show(), Some("that is not a pattern"));
+}
+
+/// On the symbols tab the switches mean nothing -- the language server did
+/// the matching -- so they are greyed rather than dropped, and pressing one
+/// does nothing.
+#[test]
+fn the_switches_are_greyed_where_they_would_do_nothing() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 74, 16);
+    support::press_function(&mut app, 5);
+    let dump = support::render(&mut app, 74, 16);
+    assert!(
+        support::text_block(&dump).contains("regex"),
+        "the file tab does not offer the switches:\n{dump}"
+    );
+    assert!(
+        app.picker().expect("the search").looks_how().is_some(),
+        "the file tab says the switches mean nothing"
+    );
+}
+
 /// What the tree ignores, the search ignores -- unless the reader has asked
 /// for the ignored files, and then it does not.
 ///
@@ -183,7 +268,7 @@ fn the_search_reaches_what_the_file_list_offers() {
         let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(generation));
         search::spawn_scan(
             scratch.path(),
-            "needle",
+            &search::Needle::new("needle", search::Looking::default()),
             generation,
             ignored,
             &current,
@@ -499,7 +584,14 @@ fn a_scan_that_has_been_typed_past_stops() {
     // to find that out.
     let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(9));
     let (sender, events) = obelus::event::channel();
-    search::spawn_scan(scratch.path(), "needle", 4, false, &current, sender);
+    search::spawn_scan(
+        scratch.path(),
+        &search::Needle::new("needle", search::Looking::default()),
+        4,
+        false,
+        &current,
+        sender,
+    );
 
     // The thread owns the only sender, so its return closes the channel.
     // Nothing at all comes through: not even the batch that says it is
@@ -513,7 +605,14 @@ fn a_scan_that_has_been_typed_past_stops() {
     // While the generation it was started under does run to the end.
     let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(4));
     let (sender, events) = obelus::event::channel();
-    search::spawn_scan(scratch.path(), "needle", 4, false, &current, sender);
+    search::spawn_scan(
+        scratch.path(),
+        &search::Needle::new("needle", search::Looking::default()),
+        4,
+        false,
+        &current,
+        sender,
+    );
     let mut found = 0;
     loop {
         match events.recv_timeout(std::time::Duration::from_secs(10)) {
@@ -808,7 +907,14 @@ fn the_scan_trims_what_a_row_cannot_show() {
 fn scan(root: &std::path::Path, query: &str) -> Vec<Hit> {
     let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(7));
     let (sender, events) = obelus::event::channel();
-    search::spawn_scan(root, query, 7, false, &current, sender);
+    search::spawn_scan(
+        root,
+        &search::Needle::new(query, search::Looking::default()),
+        7,
+        false,
+        &current,
+        sender,
+    );
     let mut hits = Vec::new();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while std::time::Instant::now() < deadline {
@@ -879,13 +985,16 @@ fn the_preview_marks_what_the_query_matched() {
     }
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    support::lay_out(&mut app, 60, 20);
+    // Tall enough for a preview under the list and the foot under that: the
+    // search says what its three switches are set to, and those rows come
+    // out of the same region.
+    support::lay_out(&mut app, 60, 24);
     support::press_function(&mut app, 5);
     // Three letters that are next to each other in one line of the file:
     // `let greeting = "..."`.
     support::type_text(&mut app, "eti");
 
-    let dump = support::render(&mut app, 60, 20);
+    let dump = support::render(&mut app, 60, 24);
     let columns = marked(&dump, "let greeting");
     assert!(
         !columns.is_empty(),
