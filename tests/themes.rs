@@ -267,3 +267,95 @@ fn a_theme_whose_directory_is_replaced_arrives_here() {
         "the swapped theme did not arrive"
     );
 }
+
+/// The template shipped for omarchy names colours obelus actually has.
+///
+/// A key it spells wrong is a line that does nothing: a theme file gives
+/// what it wants and inherits the rest, so a misspelling is indentical to
+/// having left the colour out -- silently, and in a file nobody reads
+/// except the thing rendering it.
+///
+/// So every placeholder in it is filled with a colour of its own, and every
+/// one of those colours has to turn up somewhere in the theme that comes
+/// out.
+#[test]
+fn the_template_for_omarchy_names_colours_obelus_has() {
+    let template = std::fs::read_to_string("contrib/omarchy/obelus.toml.tpl")
+        .expect("the template shipped beside obelus");
+
+    // A different colour per placeholder, so each can be looked for. `mode`
+    // is not one: it names the theme to build on, and is the one place the
+    // template says a word rather than a colour.
+    let mut said = template.clone();
+    let mut wanted = Vec::new();
+    let mut at = 0u8;
+    while let Some(start) = said.find("{{ ") {
+        let end = said[start..].find(" }}").expect("a closed placeholder") + start + 3;
+        let key = said[start + 3..end - 3].to_string();
+        let filled = match key.as_str() {
+            "mode" => "dark".to_string(),
+            _ => {
+                at += 1;
+                let colour = format!("#{at:02x}{at:02x}{at:02x}");
+                wanted.push((key, colour.clone()));
+                colour
+            }
+        };
+        said.replace_range(start..end, &filled);
+    }
+    assert!(wanted.len() > 10, "the template filled in almost nothing");
+
+    let table: toml::Table = said.parse().expect("the rendered template is not toml");
+    let theme = written::over(&table);
+    // Every colour the template put in, somewhere in what came out.
+    let mut got = vec![
+        theme.background,
+        theme.foreground,
+        theme.gutter,
+        theme.gutter_current,
+        theme.scrollbar_track,
+        theme.control_background,
+        theme.status_foreground,
+        theme.status_stale,
+        theme.selected_row_background,
+        theme.raised_background,
+        theme.picker_match_background,
+        theme.marked_background,
+        theme.selection_background,
+        theme.change_added,
+        theme.change_modified,
+        theme.change_removed,
+        theme.change_added_background,
+        theme.change_modified_background,
+        theme.change_removed_background,
+        theme.bracket_background,
+    ];
+    let syntax = theme.syntax;
+    got.extend([
+        syntax.attribute,
+        syntax.boolean,
+        syntax.comment,
+        syntax.constant,
+        syntax.constructor,
+        syntax.escape,
+        syntax.function,
+        syntax.keyword,
+        syntax.label,
+        syntax.number,
+        syntax.operator,
+        syntax.property,
+        syntax.punctuation,
+        syntax.string,
+        syntax.type_name,
+        syntax.variable,
+        syntax.error,
+        syntax.warning,
+    ]);
+    for (key, colour) in wanted {
+        let colour = written::hex(&colour).expect("a colour");
+        assert!(
+            got.contains(&colour),
+            "the template sets a colour obelus does not have: {key}"
+        );
+    }
+}
