@@ -25,7 +25,7 @@ use crate::{
     component::counts::{Counts, Row},
     counts::Tally,
     theme::Theme,
-    ui::{editor::SCROLLBAR_WIDTH, fill, put, rule, text_width, write},
+    ui::{Hint, editor::SCROLLBAR_WIDTH, fill, put, rule, text_width, write},
 };
 
 /// How wide the column of file counts is.
@@ -61,7 +61,8 @@ const FURNITURE: u16 = 3;
 /// list: a page is worth what is on screen, and two answers to how much that
 /// is would be a page that overshoots by however much they disagreed.
 #[must_use]
-pub fn list_region(area: Rect) -> Rect {
+pub fn list_region(area: Rect, counts: &Counts) -> Rect {
+    let area = crate::ui::footed(area, &hints(counts));
     Rect {
         y: area.y + FURNITURE,
         height: area.height.saturating_sub(FURNITURE),
@@ -69,10 +70,44 @@ pub fn list_region(area: Rect) -> Rect {
     }
 }
 
+/// What the keys do here, and which of them do anything at the moment.
+///
+/// The arrows are not among them: they walk the tabs and say so on the tab
+/// row, where the key *is* the arrow. What is here is what a reader could
+/// not guess -- that a row folds, and that enter does two different things
+/// depending on what the row names.
+#[must_use]
+pub fn hints(counts: &Counts) -> Vec<Hint> {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let chord = crate::keymap::KeyChord::new;
+    let bare = |code| chord(code, KeyModifiers::NONE);
+    let on = counts.rows().get(counts.window().focus());
+    let folds = on.and_then(|row| row.open);
+    vec![
+        Hint::common(
+            bare(KeyCode::Enter),
+            match folds {
+                Some(true) => "close",
+                Some(false) => "open",
+                None => "read it",
+            },
+        )
+        .saying(match folds {
+            Some(_) => "show what is in it, or stop",
+            None => "read the file this row names",
+        })
+        .when(on.is_some_and(|row| row.go.is_some())),
+        Hint::common(chord(KeyCode::Char('f'), KeyModifiers::ALT), "fold")
+            .saying("the same, on the key that folds everywhere else")
+            .when(folds.is_some()),
+        Hint::common(bare(KeyCode::Esc), "leave").saying("leave, or drop the language first"),
+    ]
+}
+
 /// How many rows of list a region has room for.
 #[must_use]
-pub fn list_height(area: Rect) -> u16 {
-    list_region(area).height
+pub fn list_height(area: Rect, counts: &Counts) -> u16 {
+    list_region(area, counts).height
 }
 
 /// Which columns fit, for a region this wide.
@@ -235,7 +270,8 @@ impl Widget for CountsView<'_> {
         );
 
         let rows = self.counts.rows();
-        let body = list_region(area);
+        let hints = hints(self.counts);
+        let body = list_region(area, self.counts);
         if rows.is_empty() {
             crate::ui::nothing(
                 cells,
@@ -249,6 +285,14 @@ impl Widget for CountsView<'_> {
             );
         } else {
             self.rows(cells, body, layout);
+        }
+
+        crate::ui::foot(cells, area, &hints, self.theme);
+        // Over everything, because it is what the reader asked for and the
+        // table is what they asked about. Above the foot, which says how to
+        // close it.
+        if self.counts.showing_keys() {
+            crate::ui::keys_card(cells, crate::ui::footed(area, &hints), &hints, self.theme);
         }
     }
 }
@@ -583,15 +627,20 @@ mod tests {
     /// `tests/counts.rs`.
     #[test]
     fn the_list_is_what_is_left_under_the_tabs_and_the_headings() {
+        let counts = Counts::new();
         let area = Rect::new(0, 0, 80, 24);
-        let list = list_region(area);
-        assert_eq!(list_height(area), 21);
-        assert_eq!(list.height, 21);
-        // Under the tabs, the rule and the headings, and ending where the
-        // region does.
+        let list = list_region(area, &counts);
+        // Under the tabs, the rule and the headings; over the rule and the
+        // row of keys at the foot.
+        assert_eq!(list_height(area, &counts), 24 - 3 - crate::ui::FOOT_ROWS);
+        assert_eq!(list.height, list_height(area, &counts));
         assert_eq!(list.y, area.y + 3);
-        assert_eq!(list.bottom(), area.bottom());
+        assert_eq!(
+            list.bottom(),
+            area.bottom() - crate::ui::FOOT_ROWS,
+            "the list runs under its own foot"
+        );
         // A region with no room for a list at all does not go round.
-        assert_eq!(list_height(Rect::new(0, 0, 80, 2)), 0);
+        assert_eq!(list_height(Rect::new(0, 0, 80, 2), &counts), 0);
     }
 }

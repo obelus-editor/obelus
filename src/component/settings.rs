@@ -90,6 +90,8 @@ const MOST_DESCRIPTION_ROWS: usize = 3;
 /// The settings view.
 #[derive(Debug)]
 pub struct Settings {
+    /// Whether every key this page answers to is showing.
+    keys_showing: bool,
     /// What has been typed, which narrows the rows.
     query: String,
     /// Which command's key is being pressed, while one is.
@@ -134,6 +136,7 @@ impl Settings {
     #[must_use]
     pub const fn new() -> Self {
         Self {
+            keys_showing: false,
             query: String::new(),
             binding: None,
             refused: None,
@@ -147,6 +150,7 @@ impl Settings {
     #[must_use]
     pub const fn for_tree() -> Self {
         Self {
+            keys_showing: false,
             query: String::new(),
             binding: None,
             refused: None,
@@ -180,6 +184,12 @@ impl Settings {
         tabs.push("keys");
         tabs.push("agents");
         tabs
+    }
+
+    /// Whether the list of every key is showing.
+    #[must_use]
+    pub const fn showing_keys(&self) -> bool {
+        self.keys_showing
     }
 
     /// Whether the page showing is the keys rather than settings.
@@ -531,6 +541,15 @@ impl Settings {
         self.window.set_count(count);
 
         match key.code {
+            // The card first: a key that opens a thing closes that thing.
+            KeyCode::Esc if bare && self.keys_showing => {
+                self.keys_showing = false;
+                SettingsOutcome::Consumed
+            }
+            KeyCode::F(1) if bare => {
+                self.keys_showing = !self.keys_showing;
+                SettingsOutcome::Consumed
+            }
             KeyCode::Esc if bare => SettingsOutcome::Cancelled,
             // The ends, with and without control: the same keys reach the
             // ends of a document, a list and a rendering, and a key should

@@ -191,8 +191,11 @@ impl App {
         }
         // The counts, which are a list as well: the notch steps the row
         // rather than the view, for the same reason it does in a picker.
-        if let Some(counts) = self.counts.as_mut() {
-            counts.scroll(rows, crate::ui::counts::list_height(self.screen_area));
+        if let Some(counts) = self.counts.as_ref() {
+            let height = crate::ui::counts::list_height(self.screen_area, counts);
+            if let Some(counts) = self.counts.as_mut() {
+                counts.scroll(rows, height);
+            }
             return;
         }
         // The conversation's transcript, which is the only thing under a

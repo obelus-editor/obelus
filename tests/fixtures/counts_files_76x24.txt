@@ -22,8 +22,8 @@ screen 76x24  editor 76x22  status 76x1
 19|                                                                            
 20|                                                                            
 21|                                                                            
-22|                                                                            
-23|                                                                            
+22|────────────────────────────────────────────────────────────────────────────
+23|  󰌑 open   󰘵 f fold   󱊷 leave                                       󱊫 keys  
 -- style --
  0|aaaaaaaaaaaabbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -47,12 +47,13 @@ screen 76x24  editor 76x22  status 76x1
 19|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-22|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-23|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+23|ccecaaaaccceeecaaaacccecaaaaacccccccccccccccccccccccccccccccccccccccaaaaaacc
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
 c fg=#e4e4e7 bg=#18181b
 d fg=#71717a bg=#18181b
+e fg=#a1a1aa bg=#18181b
 -- cursor --
 none

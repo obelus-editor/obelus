@@ -12,14 +12,14 @@ screen 76x14  editor 76x12  status 76x1
  9|   ├   file04.rs                              394     364      20      10 █
 10|   ├   file05.rs                              385     355      20      10 █
 11|   ├   file06.rs                              376     346      20      10 █
-12|   ├   file07.rs                              367     337      20      10 █
-13|   ├   file08.rs                              358     328      20      10 █
+12|────────────────────────────────────────────────────────────────────────────
+13|  󰌑 close   󰘵 f fold   󱊷 leave                                      󱊫 keys  
 -- style --
  0|aaaaaaaaaaaabbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  2|cccccccccccccccccccccccccccccccccccccdddddcccdddddccccddddcddddddddccdddddcc
  3|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
- 4|bfbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbe
+ 4|bfbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbg
  5|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
  6|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
  7|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
@@ -27,8 +27,8 @@ screen 76x14  editor 76x12  status 76x1
  9|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
 10|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
 11|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
-12|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
-13|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
+12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+13|ccecaaaaaccceeecaaaacccecaaaaaccccccccccccccccccccccccccccccccccccccaaaaaacc
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a

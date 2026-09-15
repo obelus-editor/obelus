@@ -225,11 +225,13 @@ fn the_counts_take_the_whole_screen() {
         !text.contains("sample.rs"),
         "the file behind the view is still on screen:\n{dump}"
     );
-    // The last two rows are the list's, not a rule and a status row.
-    let foot: Vec<&str> = text.lines().rev().take(2).collect();
+    // The last rows are the view's own -- the keys it answers to -- and not
+    // the status row of a file it is covering. What is under a rule down
+    // there belongs to this view or there is nothing there at all.
+    let foot = text.lines().last().unwrap_or_default();
     assert!(
-        foot.iter().all(|row| !row.contains('\u{2500}')),
-        "a rule was left across the foot of the screen:\n{dump}"
+        foot.contains("leave"),
+        "the foot is not this view's:\n{dump}"
     );
 }
 
@@ -418,4 +420,42 @@ fn nothing_of_obeluss_own_opens_over_the_counts() {
     }
     assert!(app.picker().is_none(), "a list opened over the counts");
     assert!(app.counts().is_some(), "the counts closed themselves");
+}
+
+/// The counts say what their keys do: `alt+f` cannot be guessed, and enter
+/// does two different things depending on what the row names.
+#[test]
+fn the_counts_say_what_their_keys_do() {
+    let mut app = open(76, 18);
+    press(&mut app, KeyCode::Right);
+    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
+    for word in ["open", "fold", "leave", "keys"] {
+        assert!(text.contains(word), "{word:?} is not at the foot:\n{text}");
+    }
+
+    // On a file rather than a directory, enter reads it and there is nothing
+    // to fold -- so the foot says so rather than offering a key that does
+    // nothing.
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
+    assert!(
+        text.contains("read it"),
+        "enter does not say what it does:\n{text}"
+    );
+    assert!(
+        !text.contains("f fold"),
+        "a fold was offered on a file:\n{text}"
+    );
+
+    // And `f1` says all of them, at length.
+    press(&mut app, KeyCode::F(1));
+    let dump = support::render(&mut app, 76, 18);
+    assert!(
+        support::text_block(&dump).contains("the same, on the key that folds everywhere else"),
+        "no card:\n{dump}"
+    );
+    press(&mut app, KeyCode::Esc);
+    assert!(app.counts().is_some(), "escape left the view, not the card");
 }

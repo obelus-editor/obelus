@@ -1888,3 +1888,59 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
         "the switch that was flipped was not written:\n{written}"
     );
 }
+
+/// The settings say what their keys do, because two of them cannot be
+/// guessed: that the page is narrowed by typing at it, and that a setting
+/// the tree has set can be taken out again.
+#[test]
+fn the_settings_say_what_their_keys_do() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = tree("foot", "wrap = true\n");
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 76, 16);
+    dispatch::dispatch(&mut app, Command::ConfigTree);
+
+    let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
+    for word in ["change", "type to filter", "unset", "leave", "keys"] {
+        assert!(word_on(&text, word), "{word:?} is not at the foot:\n{text}");
+    }
+
+    // `f1` says all of them, at length.
+    support::press(&mut app, KeyCode::F(1));
+    let dump = support::render(&mut app, 76, 16);
+    let text = support::text_block(&dump);
+    assert!(text.contains("the keys here"), "no card:\n{dump}");
+    assert!(
+        text.contains("take this setting out of the tree's file"),
+        "the card only has the foot's word for it:\n{dump}"
+    );
+
+    // And escape closes the card before it leaves the page.
+    support::press(&mut app, KeyCode::Esc);
+    assert!(app.settings().is_some(), "escape left the settings");
+}
+
+/// `unset` is on the tree's page and nowhere else, because the reader's own
+/// settings have no "unset" -- one they have not changed is the default.
+#[test]
+fn the_foot_offers_unset_only_where_it_means_something() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 76, 16);
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
+    assert!(
+        !word_on(&text, "unset"),
+        "the reader's own page offered to unset something:\n{text}"
+    );
+}
+
+/// Whether a word is on the foot, which is the last row that has anything.
+fn word_on(text: &str, word: &str) -> bool {
+    text.lines().any(|row| row.contains(word))
+}

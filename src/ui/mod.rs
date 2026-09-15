@@ -732,6 +732,12 @@ pub struct Hint {
     pub and_also: Option<crate::keymap::KeyChord>,
     /// What it does, in the one word the foot has room for.
     pub does: Option<&'static str>,
+    /// How the key is written, where the chord does not say it.
+    ///
+    /// For the thing a page does that is not one key: a list narrowed by
+    /// typing at it answers to every letter, and naming one of them would
+    /// read as "press this one".
+    pub spelled: Option<&'static str>,
     /// The same thing said properly, for the card, which has room for it.
     ///
     /// `None` where the word is the whole of it. Two forms rather than one
@@ -763,6 +769,7 @@ impl Hint {
             chord,
             and_also: None,
             does: Some(does),
+            spelled: None,
             said: None,
             common: true,
             usable: true,
@@ -776,6 +783,13 @@ impl Hint {
             common: false,
             ..Self::common(chord, does)
         }
+    }
+
+    /// How to write the key, where the chord is not what a reader presses.
+    #[must_use]
+    pub const fn written(mut self, spelled: &'static str) -> Self {
+        self.spelled = Some(spelled);
+        self
     }
 
     /// What it does, at length, for the card.
@@ -802,6 +816,9 @@ impl Hint {
     /// How it is written: the key, or the pair of them.
     #[must_use]
     pub fn keys(self) -> String {
+        if let Some(spelled) = self.spelled {
+            return spelled.to_string();
+        }
         match self.and_also {
             Some(also) => format!("{} {}", self.chord.label(), also.label()),
             None => self.chord.label(),

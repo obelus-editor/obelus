@@ -12,7 +12,10 @@ use crate::{
     component::settings::{DESCRIPTION_INDENT, Refused, Settings},
     config::{Config, Kind, Value},
     theme::Theme,
-    ui::{Marked, Matched, fill, put, rule, text_width, truncate_from_right, write, write_marked},
+    ui::{
+        Hint, Marked, Matched, fill, put, rule, text_width, truncate_from_right, write,
+        write_marked,
+    },
 };
 
 /// How wide a control's column is.
@@ -89,6 +92,43 @@ impl<'a> SettingsView<'a> {
     }
 }
 
+/// How many rows the page gives up to the keys at its foot.
+#[must_use]
+pub fn footed(area: Rect, settings: &Settings) -> Rect {
+    crate::ui::footed(area, &hints(settings))
+}
+
+/// What the keys do here, and which of them do anything at the moment.
+///
+/// Not the arrows: they walk the tabs and say so on the tab row, where the
+/// key *is* the arrow. What is here is what a reader could not guess -- that
+/// this page is filtered by typing at it, and that a setting the tree has
+/// set can be unset.
+#[must_use]
+pub fn hints(settings: &Settings) -> Vec<Hint> {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let bare = |code| crate::keymap::KeyChord::new(code, KeyModifiers::NONE);
+    let rows = settings.rows();
+    let on = rows.get(settings.window().focus());
+    vec![
+        Hint::common(bare(KeyCode::Enter), "change")
+            .saying(match settings.on_keys() {
+                true => "put this command on another key",
+                false => "change it, or open what it can be",
+            })
+            .when(on.is_some()),
+        // The one thing on this page nothing else says: a page that is
+        // filtered by typing at it looks exactly like one that is not.
+        Hint::common(bare(KeyCode::Char('a')), "to filter")
+            .written("type")
+            .saying("type to narrow the list"),
+        Hint::common(bare(KeyCode::Delete), "unset")
+            .saying("take this setting out of the tree's file")
+            .when(settings.on_tree() && !settings.on_keys() && !settings.on_agents()),
+        Hint::common(bare(KeyCode::Esc), "leave").saying("leave the settings"),
+    ]
+}
+
 impl Widget for SettingsView<'_> {
     fn render(self, area: Rect, cells: &mut CellBuffer) {
         fill(
@@ -151,6 +191,10 @@ impl Widget for SettingsView<'_> {
             self.theme,
         );
 
+        let hints = hints(self.settings);
+        crate::ui::foot(cells, area, &hints, self.theme);
+        let under = crate::ui::footed(area, &hints);
+
         // The agents are a page of cards rather than a column of controls:
         // a reader choosing between forty programs is reading about them,
         // and a row of a table has nowhere to say what one is.
@@ -158,18 +202,19 @@ impl Widget for SettingsView<'_> {
             self.agents(
                 cells,
                 Rect {
-                    y: area.y + 2,
-                    height: area.height.saturating_sub(2),
-                    ..area
+                    y: under.y + 2,
+                    height: under.height.saturating_sub(2),
+                    ..under
                 },
             );
+            self.keys_card(cells, area, &hints);
             return;
         }
 
         let region = Rect {
-            y: area.y + 2,
-            height: area.height.saturating_sub(2),
-            ..area
+            y: under.y + 2,
+            height: under.height.saturating_sub(2),
+            ..under
         };
 
         // The keys are a column of the same rows: a command, what it does,
@@ -192,6 +237,7 @@ impl Widget for SettingsView<'_> {
                 },
                 self.theme,
             );
+            self.keys_card(cells, area, &hints);
             return;
         }
 
@@ -210,6 +256,7 @@ impl Widget for SettingsView<'_> {
                 })
                 .collect();
             self.column(cells, region, &rows, "no command by that name");
+            self.keys_card(cells, area, &hints);
             return;
         }
 
@@ -246,6 +293,7 @@ impl Widget for SettingsView<'_> {
             })
             .collect();
         self.column(cells, region, &rows, "no setting by that name");
+        self.keys_card(cells, area, &hints);
     }
 }
 
@@ -309,6 +357,16 @@ enum Aside {
 }
 
 impl SettingsView<'_> {
+    /// Every key this page answers to, where the reader asked for them.
+    ///
+    /// Above the foot, which says how to close it: a card that covered the
+    /// way out would be a card with no way out on screen.
+    fn keys_card(&self, cells: &mut CellBuffer, area: Rect, hints: &[Hint]) {
+        if self.settings.showing_keys() {
+            crate::ui::keys_card(cells, crate::ui::footed(area, hints), hints, self.theme);
+        }
+    }
+
     /// A page's rows, drawn one to a row.
     ///
     /// One loop for the settings and for the keys, because they are the
