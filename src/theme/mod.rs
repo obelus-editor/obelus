@@ -6,6 +6,7 @@
 //! nobody.
 
 pub mod builtin;
+pub mod written;
 
 use ratatui::style::Color;
 
@@ -233,8 +234,6 @@ pub const fn tint(base: Color, hue: Color, percent: u32) -> Color {
 /// A complete set of colours.
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {
-    /// The name the theme picker shows.
-    pub name: &'static str,
     /// Behind the text.
     pub background: Color,
     /// The text.

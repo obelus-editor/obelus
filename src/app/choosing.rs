@@ -20,21 +20,22 @@ impl App {
 
     /// Offers the built-in themes.
     pub fn open_theme_picker(&mut self) {
-        self.theme_before = Some(self.theme);
-        let items = builtin::ALL
-            .iter()
-            .map(|theme| PickerItem {
+        self.theme_before = Some((self.theme_name().to_string(), *self.theme()));
+        let items = self
+            .themes()
+            .into_iter()
+            .map(|name| PickerItem {
                 prose: false,
                 marker: None,
                 // The same glyph on every row, which is the honest one: what
                 // distinguishes two themes is the colours, and the row's own
                 // name is what says which.
                 icon: icons::enabled().then_some(icons::ui::THEME),
-                label: theme.name.to_string(),
+                label: name.clone(),
                 detail: None,
                 trailing: None,
                 changed: None,
-                value: PickerValue::Theme(theme),
+                value: PickerValue::Theme(name),
                 enabled: true,
                 colours: None,
                 status: None,
@@ -47,7 +48,7 @@ impl App {
         picker.when_empty("no theme is built in");
         // Open on the one that is on, so the list starts by saying which
         // theme this is rather than making the reader work it out.
-        picker.prefer(self.theme.name.to_string());
+        picker.prefer(self.theme_name().to_string());
         self.picker = Some(picker);
     }
 
@@ -312,15 +313,14 @@ impl App {
                     self.go_to_buffer(id);
                 }
             }
-            PickerValue::Theme(theme) => {
+            PickerValue::Theme(name) => {
                 // Kept, now that there is somewhere to keep it: a reader who
                 // picks a theme and finds the old one back tomorrow has been
                 // given a preview rather than a choice.
-                self.change_setting(
-                    "theme",
-                    &crate::config::Value::Choice(theme.name.to_string()),
-                );
-                self.set_theme(theme);
+                self.change_setting("theme", &crate::config::Value::Choice(name.clone()));
+                if let Some(theme) = self.theme_called(&name) {
+                    self.set_theme(&name, theme);
+                }
             }
             PickerValue::Place {
                 path,

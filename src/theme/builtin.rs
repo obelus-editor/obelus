@@ -23,7 +23,6 @@ const WASH: u32 = 18;
 
 /// The default.
 pub const DARK: Theme = Theme {
-    name: "dark",
     background: DARK_PAGE,
     foreground: Color::Rgb(228, 228, 231),
     gutter: Color::Rgb(82, 82, 91),
@@ -77,7 +76,6 @@ const LIGHT_REMOVED: Color = Color::Rgb(220, 38, 38);
 
 /// The same design with the ends of the scale swapped.
 pub const LIGHT: Theme = Theme {
-    name: "light",
     background: LIGHT_PAGE,
     foreground: Color::Rgb(24, 24, 27),
     gutter: Color::Rgb(161, 161, 170),
@@ -121,7 +119,16 @@ pub const LIGHT: Theme = Theme {
 };
 
 /// Every theme, in the order the picker lists them.
-pub const ALL: &[&Theme] = &[&DARK, &LIGHT];
+/// Every theme compiled in, by the name it answers to.
+///
+/// The name is here rather than on [`Theme`] because a theme is a set of
+/// colours and a name is not one of them: the module's own rule is that
+/// every field has a reader in the renderer, and nothing has ever painted
+/// with this. What it is is a label on a shelf, so it lives on the shelf.
+pub const ALL: &[(&str, &Theme)] = &[("dark", &DARK), ("light", &LIGHT)];
+
+/// The name of the one obelus starts with.
+pub const DEFAULT: &str = "dark";
 
 /// The theme a name names, if it names one.
 ///
@@ -129,5 +136,7 @@ pub const ALL: &[&Theme] = &[&DARK, &LIGHT];
 /// a list whose value is a word rather than a theme.
 #[must_use]
 pub fn by_name(name: &str) -> Option<&'static Theme> {
-    ALL.iter().copied().find(|theme| theme.name == name)
+    ALL.iter()
+        .find(|(called, _)| *called == name)
+        .map(|(_, theme)| *theme)
 }

@@ -147,7 +147,7 @@ fn a_choice_opens_the_list_every_other_choice_uses() {
     support::press(&mut app, KeyCode::Enter);
 
     assert!(app.picker().is_none(), "the list stayed open");
-    assert_eq!(app.theme().name, "light", "the theme did not change");
+    assert_eq!(app.theme_name(), "light", "the theme did not change");
     assert_eq!(
         config::from_toml(&std::fs::read_to_string(&file).expect("the file")).theme,
         "light"
@@ -158,7 +158,7 @@ fn a_choice_opens_the_list_every_other_choice_uses() {
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Esc);
     assert!(app.picker().is_none(), "escape left the list open");
-    assert_eq!(app.theme().name, "light", "escape chose something");
+    assert_eq!(app.theme_name(), "light", "escape chose something");
     assert!(app.settings().is_some(), "escape closed the view as well");
 }
 
@@ -181,7 +181,7 @@ fn walking_the_theme_list_wears_each_one() {
     support::press(&mut app, KeyCode::Enter);
     let dark = support::render(&mut app, 66, 12);
     assert_eq!(
-        app.theme().name,
+        app.theme_name(),
         "dark",
         "the list did not open on this one"
     );
@@ -191,7 +191,7 @@ fn walking_the_theme_list_wears_each_one() {
     support::press(&mut app, KeyCode::Down);
     let light = support::render(&mut app, 66, 12);
     assert_eq!(
-        app.theme().name,
+        app.theme_name(),
         "light",
         "the row moved and nothing changed"
     );
@@ -205,7 +205,7 @@ fn walking_the_theme_list_wears_each_one() {
     // so nothing was decided.
     support::press(&mut app, KeyCode::Esc);
     let after = support::render(&mut app, 66, 12);
-    assert_eq!(app.theme().name, "dark", "the preview stuck");
+    assert_eq!(app.theme_name(), "dark", "the preview stuck");
     assert!(
         !file.exists(),
         "a theme nobody chose was written to the settings file"
@@ -222,12 +222,12 @@ fn walking_the_theme_list_wears_each_one() {
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
-    assert_eq!(app.theme().name, "light", "the choice did not take");
+    assert_eq!(app.theme_name(), "light", "the choice did not take");
     support::press(&mut app, KeyCode::Esc);
     support::press_function(&mut app, 1);
     support::press(&mut app, KeyCode::Esc);
     assert_eq!(
-        app.theme().name,
+        app.theme_name(),
         "light",
         "escaping a later list put back a theme the reader had chosen"
     );
@@ -443,7 +443,7 @@ fn the_view_closes_and_the_file_is_what_it_shows() {
     .expect("writing the file");
     let mut second = App::new(vec![support::open_fixture("sample.rs")]);
     second.config_file_for_test(file.clone());
-    assert_eq!(second.theme().name, "light");
+    assert_eq!(second.theme_name(), "light");
     assert!(!second.config().blame_margin);
     obelus::icons::use_glyphs(true);
 }
@@ -480,7 +480,7 @@ fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(linked);
-    assert_eq!(app.theme().name, "dark", "it did not read through the link");
+    assert_eq!(app.theme_name(), "dark", "it did not read through the link");
 
     // What another machine's change looks like once git has put it there:
     // the repository's own file, rewritten, and the watcher reporting that
@@ -488,7 +488,7 @@ fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
     std::fs::write(&real, "theme = \"light\"\n").expect("the file");
     app.handle(Event::FileChanged { path: real });
     assert_eq!(
-        app.theme().name,
+        app.theme_name(),
         "light",
         "a setting that arrived through the link was not picked up"
     );
@@ -611,7 +611,7 @@ fn a_tree_lays_its_own_settings_over_the_readers() {
 
     assert!(app.config().wrap, "the tree's setting did not take");
     assert_eq!(
-        app.theme().name,
+        app.theme_name(),
         "light",
         "the tree took away a setting it never named"
     );
@@ -1067,7 +1067,7 @@ fn the_theme_picker_writes_its_choice_down() {
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
 
-    let chosen = app.theme().name.to_string();
+    let chosen = app.theme_name().to_string();
     assert_eq!(
         config::from_toml(&std::fs::read_to_string(&file).expect("the file")).theme,
         chosen,
@@ -1800,14 +1800,14 @@ fn a_setting_changed_by_another_obelus_arrives_here() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(file.clone());
     support::lay_out(&mut app, 66, 12);
-    assert_eq!(app.theme().name, "light", "the file was not read");
+    assert_eq!(app.theme_name(), "light", "the file was not read");
 
     // Another obelus writes the file. Nothing else says so: the watcher
     // hands over a path, and everything about what changed is in the file.
     std::fs::write(&file, "theme = \"dark\"\n").expect("the other window");
     app.handle(Event::FileChanged { path: file });
     assert_eq!(
-        app.theme().name,
+        app.theme_name(),
         "dark",
         "the change in the other window never arrived"
     );

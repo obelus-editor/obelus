@@ -25,7 +25,6 @@ use crate::{
     command::Command,
     component::window::{Move, Window, Wrap},
     question::Question,
-    theme::Theme,
 };
 
 /// What accepting an item means.
@@ -38,7 +37,13 @@ pub enum PickerValue {
     /// Switch to an open buffer.
     Buffer(BufferId),
     /// Switch theme.
-    Theme(&'static Theme),
+    /// A theme, by the name it answers to.
+    ///
+    /// The name rather than the colours: a row of a list should not be
+    /// carrying thirty-nine of them, and which colours a name stands for is
+    /// a question about the settings directories -- which the list knows
+    /// nothing about and the application does.
+    Theme(String),
     /// Set a setting to one of its choices.
     ///
     /// The settings view's droplist is this picker, opened over it: a list

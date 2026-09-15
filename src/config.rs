@@ -68,7 +68,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            theme: crate::theme::builtin::DARK.name.to_string(),
+            theme: crate::theme::builtin::DEFAULT.to_string(),
             icons: true,
             blame_margin: true,
             // Off, so a line is a line: a reader counting rows, comparing

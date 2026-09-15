@@ -137,7 +137,13 @@ pub struct App {
     /// whoever holds it gets nothing and does nothing.
     buffers: Vec<Option<Buffer>>,
     current: Option<BufferId>,
-    theme: &'static Theme,
+    /// The colours in force, and the name they answer to.
+    ///
+    /// Owned rather than borrowed from the built-in ones, because a theme
+    /// can come from a file now. The name is beside it rather than in it:
+    /// a theme is a set of colours and a name is not one of them.
+    theme: Theme,
+    theme_name: String,
     /// The open picker, if one is open.
     ///
     /// One field for all four, because they differ only in what they list.
@@ -280,7 +286,7 @@ pub struct App {
     /// each theme: a list of colour names is not a choice between colour
     /// schemes, and the only honest preview of a theme is the screen wearing
     /// it. Cancelling has to undo that.
-    theme_before: Option<&'static Theme>,
+    theme_before: Option<(String, Theme)>,
     /// The thread sending ticks, while anything wants them.
     ///
     /// Held so that dropping it stops the animation. There is nothing to
@@ -451,7 +457,8 @@ impl App {
             keymap: Keymap::new(),
             buffers,
             current,
-            theme: &builtin::DARK,
+            theme: builtin::DARK,
+            theme_name: builtin::DEFAULT.to_string(),
             picker: None,
             servers: HashMap::new(),
             stopped: HashSet::new(),
@@ -557,8 +564,14 @@ impl App {
 
     /// The colours currently in force.
     #[must_use]
-    pub const fn theme(&self) -> &'static Theme {
-        self.theme
+    pub const fn theme(&self) -> &Theme {
+        &self.theme
+    }
+
+    /// And the name they answer to, which is what the settings hold.
+    #[must_use]
+    pub fn theme_name(&self) -> &str {
+        &self.theme_name
     }
 
     /// Switches theme.
@@ -566,7 +579,8 @@ impl App {
     /// Takes effect on the next frame and costs nothing else: what is cached
     /// per byte is which kind of thing it is, not what colour, so there is no
     /// reparse and nothing to invalidate.
-    pub const fn set_theme(&mut self, theme: &'static Theme) {
+    pub fn set_theme(&mut self, name: &str, theme: Theme) {
+        self.theme_name = name.to_string();
         self.theme = theme;
     }
 
@@ -1378,8 +1392,8 @@ impl App {
                     // A theme previewed but not chosen. Nothing else a picker
                     // shows changes the application while it is open, so
                     // nothing else has to be put back.
-                    if let Some(before) = self.theme_before.take() {
-                        self.theme = before;
+                    if let Some((name, before)) = self.theme_before.take() {
+                        self.set_theme(&name, before);
                     }
                     return;
                 }

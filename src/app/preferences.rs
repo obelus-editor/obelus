@@ -113,19 +113,27 @@ impl App {
         choices: &'static [&'static str],
         word: &str,
     ) {
+        // The themes are the one list here the table cannot hold: which of
+        // them there are is a question about two directories, and the table
+        // is static data about what a setting *is*. So it is asked of the
+        // application, which is the thing that knows.
+        let choices: Vec<String> = match key {
+            "theme" => self.themes(),
+            _ => choices.iter().map(|choice| (*choice).to_string()).collect(),
+        };
         let items: Vec<PickerItem> = choices
             .iter()
             .map(|choice| PickerItem {
                 prose: false,
                 marker: None,
                 icon: None,
-                label: (*choice).to_string(),
+                label: choice.clone(),
                 detail: None,
                 trailing: None,
                 changed: None,
                 value: PickerValue::Setting {
                     key,
-                    word: (*choice).to_string(),
+                    word: choice.clone(),
                 },
                 enabled: true,
                 colours: None,
@@ -144,9 +152,78 @@ impl App {
         // walking this list wears each colour in turn, and the one that was
         // on is only in the running program.
         if key == "theme" {
-            self.theme_before = Some(self.theme);
+            self.theme_before = Some((self.theme_name().to_string(), *self.theme()));
         }
         self.picker = Some(picker);
+    }
+
+    /// Where a theme file may be, nearest first.
+    ///
+    /// The tree's own `.obelus/themes` and then the reader's, which is the
+    /// order the settings themselves are laid: what a project says about
+    /// itself goes over what the reader says about everything. A theme is
+    /// only colours -- there is no code in one, and nothing in a file here
+    /// can be run -- so a tree may hand one over on the same terms it hands
+    /// over a wrapped line.
+    fn theme_directories(&self) -> Vec<PathBuf> {
+        let tree = self
+            .settled
+            .tree
+            .as_deref()
+            .and_then(crate::theme::written::beside);
+        let readers = self
+            .settled
+            .path
+            .as_deref()
+            .and_then(crate::theme::written::beside);
+        tree.into_iter().chain(readers).collect()
+    }
+
+    /// Every theme there is to choose from, nearest first and without
+    /// repeats.
+    ///
+    /// A file shadows a built-in theme of the same name: it is the reader's
+    /// own file and the built-in one is still a rename away, where the other
+    /// way round would be a file that quietly did nothing.
+    #[must_use]
+    pub fn themes(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .theme_directories()
+            .iter()
+            .flat_map(|directory| crate::theme::written::found_in(directory))
+            .map(|(name, _)| name)
+            .collect();
+        names.extend(builtin::ALL.iter().map(|(name, _)| (*name).to_string()));
+        let mut seen = std::collections::HashSet::new();
+        names.retain(|name| seen.insert(name.clone()));
+        names
+    }
+
+    /// The colours a name stands for, out of the files and then the
+    /// built-in ones.
+    ///
+    /// `None` where nothing answers to it, which is a setting naming a theme
+    /// that has been renamed or deleted: the colours on screen stay as they
+    /// are, because a reader who cannot read the screen cannot fix the file.
+    #[must_use]
+    pub fn theme_called(&mut self, name: &str) -> Option<Theme> {
+        for directory in self.theme_directories() {
+            let Some((_, path)) = crate::theme::written::found_in(&directory)
+                .into_iter()
+                .find(|(called, _)| called == name)
+            else {
+                continue;
+            };
+            match crate::theme::written::read(&path) {
+                Ok(theme) => return Some(theme),
+                Err(error) => {
+                    tracing::warn!(%error, "a theme that would not read");
+                    self.note = Some(format!("{name} will not read"));
+                    return None;
+                }
+            }
+        }
+        builtin::by_name(name).copied()
     }
 
     /// Applies a setting the settings view changed, and writes the file.
@@ -281,8 +358,9 @@ impl App {
     /// One place, called at startup and after every change, so a setting
     /// cannot mean one thing on the way in and another when it is edited.
     fn apply_config(&mut self) {
-        if let Some(theme) = builtin::by_name(&self.settled.config.theme) {
-            self.theme = theme;
+        let called = self.settled.config.theme.clone();
+        if let Some(theme) = self.theme_called(&called) {
+            self.set_theme(&called, theme);
         }
         icons::use_glyphs(self.settled.config.icons);
         crate::text::lay_tabs_at(self.settled.config.tab_width);

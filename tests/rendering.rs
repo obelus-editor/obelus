@@ -212,7 +212,7 @@ fn switching_theme_repaints_without_moving_anything() {
     let mut app = app();
     let dark = support::render(&mut app, 40, 8);
 
-    app.set_theme(&obelus::theme::builtin::LIGHT);
+    app.set_theme("light", obelus::theme::builtin::LIGHT);
     let light = support::render(&mut app, 40, 8);
 
     assert_eq!(

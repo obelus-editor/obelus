@@ -2634,7 +2634,7 @@ fn the_theme_picker_previews_and_can_be_backed_out_of() {
     let opened = app.picker().expect("the theme picker");
     assert_eq!(
         opened.selected_item().map(|item| item.label.clone()),
-        Some(app.theme().name.to_string()),
+        Some(app.theme_name().to_string()),
         "the picker did not open on the current theme"
     );
 
