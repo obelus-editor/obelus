@@ -16,6 +16,7 @@
 pub mod agents;
 mod asking;
 mod choosing;
+mod completing;
 mod counting;
 mod documents;
 mod history;
@@ -46,13 +47,14 @@ use ratatui::{
     buffer::Buffer as CellBuffer,
     layout::{Position, Rect},
 };
-use semantics::Question;
+use semantics::{Asked, Question};
 
 use crate::{
     buffer::{Buffer, BufferId, Cursor, Mode, Motion, TextArea},
     command::{Command, Requires, dispatch},
     component::{
         chat::{ChatOutcome, Room as ChatRoom},
+        completion::Completion,
         counts::Counts,
         picker::{
             Colouring, Listing, Marking, Picker, PickerItem, PickerLayout, PickerOutcome,
@@ -185,6 +187,19 @@ pub struct App {
     /// or one restarted, otherwise hand out the same id twice, and the second
     /// answer would be matched to the first question.
     asked: HashMap<(LanguageId, i64), Question>,
+    /// What could be typed next, while a server's answer is on screen.
+    ///
+    /// Beside the cursor rather than in a region of its own, and its own
+    /// field rather than a picker, because the reader is typing into the
+    /// document the whole time it is up: it takes six keys and the rest go
+    /// where they were going.
+    completion: Option<Completion>,
+    /// The holes left by a snippet, while the reader is filling them in.
+    ///
+    /// Character offsets into the document, moved by every edit. A snippet
+    /// is over once the reader has tabbed past the last of them, which is
+    /// what gives `tab` back to indenting.
+    filling: Option<crate::lsp::snippet::Filling>,
     /// What each open file's tokens are, as its server last described them.
     ///
     /// Keyed by path rather than by buffer, because a buffer is a slot that
@@ -396,6 +411,8 @@ impl App {
             servers: HashMap::new(),
             stopped: HashSet::new(),
             asked: HashMap::new(),
+            completion: None,
+            filling: None,
             tokens: HashMap::new(),
             jumps: JumpList::default(),
             preview: None,
@@ -546,6 +563,17 @@ impl App {
         self.events = Some(sender);
     }
 
+    /// Starts a language server for the open file, as the loop does.
+    ///
+    /// [`App::events_for_test`] deliberately leaves this out -- most tests
+    /// want a channel and no subprocesses -- so a test that is about
+    /// talking to a real server asks for it by name.
+    pub fn serve_for_test(&mut self) {
+        for index in 0..self.buffers.len() {
+            self.serve(index);
+        }
+    }
+
     /// Which walk of the history the list is waiting for.
     ///
     /// So that a test can hand the list a batch by hand and have it taken
@@ -643,6 +671,12 @@ impl App {
     #[must_use]
     pub const fn picker(&self) -> Option<&Picker> {
         self.picker.as_ref()
+    }
+
+    /// What could be typed next, while a server's answer is on screen.
+    #[must_use]
+    pub const fn completion(&self) -> Option<&Completion> {
+        self.completion.as_ref()
     }
 
     /// The room a list is drawn in, which is not always the editor region.
@@ -903,6 +937,30 @@ impl App {
         // a reading laid out for the whole width would have its last cell
         // clipped, and a box drawn round a block of code would lose the
         // side that closes it.
+        // The panel is checked against the document rather than told about
+        // every way the document can move: a cursor that has left the word
+        // is a panel about somewhere else.
+        self.settle_completion();
+        // How much room the panel's two halves have, which the keys need
+        // as much as the drawing does: a page of documentation is the rows
+        // of it that are on screen, and only the geometry knows how many
+        // that is.
+        if let Some(panel) = ui::complete::layout(self, editor_area)
+            && let Some(completion) = self.completion.as_mut()
+        {
+            // The width inside the box, less the column the reading keeps
+            // for its scrollbar: laid out for cells it does not get, the
+            // last of every row would be clipped.
+            completion.settle_documentation(
+                panel
+                    .area
+                    .width
+                    .saturating_sub(2)
+                    .saturating_sub(ui::editor::SCROLLBAR_WIDTH),
+            );
+            completion.settle(panel.list, panel.documentation);
+        }
+
         self.refresh_rendering(
             editor_area
                 .width
@@ -1368,6 +1426,20 @@ impl App {
             }
         }
 
+        // What could be typed next, while a server's answer is beside the
+        // cursor. Before the motions and the typing, because the arrows
+        // walk the list and `enter` takes what is selected -- and after
+        // everything above, because a list or a dialog open over the file
+        // is what the reader is looking at instead.
+        if self.completion_key(&key) {
+            return;
+        }
+        // And the holes a snippet left, which take `tab` while there are
+        // any left to fill in.
+        if self.snippet_key(&key) {
+            return;
+        }
+
         // A rendering scrolls by rows. Its rows are not the file's lines, so
         // the cursor has nowhere to be in it and the motions have nothing to
         // move: what the keys do here is move the window.
@@ -1424,6 +1496,9 @@ impl App {
             && let Some(typing) = keys::typing_for(&key)
         {
             self.typed(typing);
+            // A letter is a reason to ask what could follow it; everything
+            // else is a reason to stop offering.
+            self.after_typing(typing);
             return;
         }
 

@@ -2,8 +2,10 @@
 
 pub mod action;
 pub mod client;
+pub mod complete;
 pub mod outline;
 pub mod position;
+pub mod snippet;
 pub mod tokens;
 pub mod transport;
 

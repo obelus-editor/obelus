@@ -36,6 +36,8 @@ pub enum Command {
     CommandPalette,
     /// Ask a language server about the symbol under the cursor.
     SymbolMenu,
+    /// Offer what could be typed where the cursor is.
+    SymbolComplete,
     /// Every symbol this file defines, to jump to.
     SymbolOutline,
     /// Where the symbol under the cursor is defined.
@@ -302,6 +304,14 @@ pub const ALL: &[CommandSpec] = &[
     // chord would rebuild the one-key-per-question arrangement the menu
     // exists to replace. Binding one later needs no code: the menu and the
     // palette both read the key table.
+    // Not usually reached by name: typing a letter asks by itself. This is
+    // the way back for a reader who dismissed the panel and wants it again,
+    // which is the one moment no letter is about to be typed.
+    CommandSpec {
+        command: Command::SymbolComplete,
+        name: "complete-here",
+        title: "What could be typed here",
+    },
     CommandSpec {
         command: Command::SymbolOutline,
         name: "show-outline",
@@ -534,6 +544,7 @@ impl Command {
             // obelus's own housekeeping.
             | Self::CountLines => Group::Files,
             Self::SymbolMenu
+            | Self::SymbolComplete
             | Self::SymbolOutline
             | Self::SymbolDefinition
             | Self::SymbolTypeDefinition
@@ -593,7 +604,7 @@ impl Command {
             | Self::SymbolTypeDefinition
             | Self::SymbolImplementation
             | Self::SymbolReferences => Requires::AnAnswer,
-            Self::LspStop => Requires::ARunningServer,
+            Self::LspStop | Self::SymbolComplete => Requires::ARunningServer,
             // Everything that acts on the file being read. With nothing
             // open, each of them is a key that reports why instead of doing
             // something.

@@ -21,6 +21,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::ThemeSelect => app.open_theme_picker(),
         Command::CommandPalette => app.open_command_palette(),
         Command::SymbolMenu => app.open_symbol_menu(),
+        Command::SymbolComplete => app.ask_completion(),
         Command::SymbolOutline => app.open_outline(),
         Command::SymbolDefinition
         | Command::SymbolTypeDefinition

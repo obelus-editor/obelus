@@ -126,6 +126,151 @@ fn a_real_server_declares_the_questions_the_menu_offers() {
     client.shutdown();
 }
 
+/// The panel is offered after `.` and `::` because the server says those
+/// characters mean something. obelus has no table of its own -- it asks
+/// about letters and about whatever the server names -- so a server that
+/// stopped declaring them would leave `std::` offering nothing, with
+/// nothing anywhere saying why.
+#[test]
+fn a_real_server_declares_the_characters_that_ask_for_a_completion() {
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+
+    let capabilities = client.capabilities().expect("ready means capabilities");
+    assert!(
+        obelus::lsp::complete::supported(capabilities),
+        "rust-analyzer no longer answers textDocument/completion"
+    );
+    for character in ['.', ':'] {
+        assert!(
+            obelus::lsp::complete::triggered_by(capabilities, character),
+            "rust-analyzer no longer says {character:?} is worth asking about"
+        );
+    }
+    // Not resolving is a thing a server is allowed to say, and
+    // rust-analyzer says it: `resolve_provider: false`, because it puts the
+    // documentation in the answer itself. The panel asks only where a
+    // server says it would answer, which is why that is not asserted here.
+    assert!(
+        !obelus::lsp::complete::resolves(capabilities),
+        "rust-analyzer now resolves items, so the panel should be asking it to"
+    );
+    client.shutdown();
+}
+
+/// The whole way through for the panel: open a document, ask what could be
+/// typed after a `self.`, and get the type's own fields and methods back
+/// with what each of them is.
+///
+/// Ignored for the reason its sibling below is: a server answers nothing
+/// until it has read the project.
+#[test]
+#[ignore = "waits for the project to be indexed"]
+fn a_real_server_offers_what_could_be_typed() {
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+
+    // A file of the repository's own, and a place in it that already has
+    // the punctuation the panel is offered after. A file written for the
+    // test would be a file outside the crate's module tree, which is a
+    // thing rust-analyzer has nothing to say about.
+    let path = root().join("src/jump.rs");
+    let source = std::fs::read_to_string(&path).expect("reading the file");
+    let uri = obelus::lsp::client::uri_for(&path).expect("a uri");
+    client
+        .notify(
+            "textDocument/didOpen",
+            &serde_json::json!({
+                "textDocument": {
+                    "uri": uri, "languageId": "rust", "version": 1, "text": source,
+                }
+            }),
+        )
+        .expect("opening the document");
+
+    // Just past a `self.`, which is where typing the trigger character
+    // leaves the cursor -- and the case worth asking about, because what
+    // comes back is fields and methods with their types. Found rather than
+    // written down: a line number here would be a test that fails when
+    // somebody adds a line above it.
+    let at = source.find("self.").expect("a receiver to complete after") + "self.".len();
+    let line = source[..at].matches('\n').count();
+    let character = at - source[..at].rfind('\n').map_or(0, |start| start + 1);
+
+    let text = obelus::text::Text::from_string(&source);
+    let encoding = client.encoding().clone();
+    let deadline = Instant::now() + INDEXED;
+    loop {
+        assert!(Instant::now() < deadline, "never indexed");
+        let id = client
+            .request(
+                "textDocument/completion",
+                &serde_json::json!({
+                    "textDocument": { "uri": uri },
+                    "position": { "line": line, "character": character },
+                }),
+            )
+            .expect("asking");
+        let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+            reply.is_some_and(|reply| reply.id == id)
+        })
+        .expect("an answer");
+
+        let offer = obelus::lsp::complete::offer_in(&reply.result, &text, &encoding);
+        if offer.candidates.is_empty() {
+            // Still reading the project, which is the same empty answer a
+            // question with no answer gets: asking again is what obelus
+            // does.
+            std::thread::sleep(Duration::from_millis(300));
+            continue;
+        }
+        assert!(
+            offer
+                .candidates
+                .iter()
+                .any(|candidate| candidate.label == "entries"),
+            "nothing of the type's own fields, so the answer is about somewhere else"
+        );
+        // What the panel draws beside the label, and what it puts in.
+        assert!(
+            offer
+                .candidates
+                .iter()
+                .any(|candidate| candidate.detail.is_some()),
+            "no candidate says what it is"
+        );
+        assert!(
+            offer
+                .candidates
+                .iter()
+                .all(|candidate| !candidate.insert.is_empty()),
+            "a candidate that puts nothing in"
+        );
+        // And what the documentation half shows. rust-analyzer says it
+        // does not resolve an item, which is the same server saying it has
+        // already sent everything it has: the documentation is in the
+        // answer itself, and a panel that waited for a resolve would show
+        // the signature and nothing else for every Rust file.
+        assert!(
+            offer
+                .candidates
+                .iter()
+                .any(|candidate| candidate.documentation.is_some()),
+            "no candidate carries documentation, and the server will not resolve one"
+        );
+        break;
+    }
+    client.shutdown();
+}
+
 /// The whole way through: open a document, ask where a symbol is defined, and
 /// get a place in the file that defines it.
 ///

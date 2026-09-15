@@ -7,6 +7,7 @@
 
 pub mod card;
 pub mod chat;
+pub mod complete;
 pub mod counts;
 pub mod editor;
 pub mod image;
@@ -341,6 +342,11 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
                 None => fill(cells, preview, Style::new().bg(app.theme().background)),
             }
         }
+    }
+    // Over the code and over everything else in the region: what could be
+    // typed next belongs beside the cursor, and the cursor is on top.
+    if let Some(panel) = complete::layout(app, regions.editor) {
+        complete::draw(cells, panel, app);
     }
     status::StatusView::new(app).render(regions.status, cells);
 }

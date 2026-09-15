@@ -561,6 +561,19 @@ impl App {
             .get(index)
             .and_then(Option::as_ref)
             .map_or(0, |buffer| buffer.text().line_count());
+        // Where the edit lands and how much it moves, in the one coordinate
+        // a snippet's holes are kept in. Taken before the edit, because
+        // afterwards the document it is measured against is gone.
+        let moving = self
+            .buffers
+            .get(index)
+            .and_then(Option::as_ref)
+            .map(|buffer| {
+                let text = buffer.text();
+                let at = text.char_offset(span.line, span.column);
+                let to = text.char_offset(span.end_line, span.end_column);
+                (at, to.get().saturating_sub(at.get()), with.chars().count())
+            });
         let changed = self
             .buffers
             .get_mut(index)
@@ -580,6 +593,11 @@ impl App {
                 span.end_line,
                 after as isize - before as isize,
             );
+            // And the holes a snippet left, which are places in this
+            // document too -- the reader is typing into one of them.
+            if let Some((at, removed, inserted)) = moving {
+                self.keep_filling_across(at, removed, inserted);
+            }
             // The server's copy of this document is now a document nobody
             // has. Everything else keyed on the version notices by itself.
             self.change_document(index);

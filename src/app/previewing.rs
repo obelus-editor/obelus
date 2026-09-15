@@ -176,6 +176,12 @@ impl App {
     /// something -- and otherwise the file, by rows, with the cursor left
     /// where it was put.
     pub(super) fn scroll(&mut self, rows: isize) {
+        // What could be typed next, which is a list beside the cursor: a
+        // notch walks it a row, the way a notch walks any list in obelus.
+        if let Some(completion) = self.completion.as_mut() {
+            completion.scroll(rows.signum());
+            return;
+        }
         if let Some(picker) = self.picker.as_mut() {
             // One row a notch in a list. Three is right for text, where a
             // notch is a gesture at a paragraph; a list is chosen through one

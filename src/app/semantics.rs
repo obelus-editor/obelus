@@ -507,6 +507,14 @@ impl App {
                 self.on_tokens(question.buffer, question.version, language, reply);
                 return;
             }
+            Asked::Completion { from } => {
+                self.on_completion(question.buffer, from, reply);
+                return;
+            }
+            Asked::Resolve { index } => {
+                self.on_resolve(index, reply);
+                return;
+            }
         };
         let indexing = self.server_working_on().is_some();
         match action::outcome_of(reply.result, question.version, now, indexing) {
@@ -1008,10 +1016,10 @@ impl App {
 /// What one question that is still out was about.
 #[derive(Debug)]
 pub(super) struct Question {
-    asked: Asked,
-    buffer: BufferId,
+    pub(super) asked: Asked,
+    pub(super) buffer: BufferId,
     /// The document version it was asked against.
-    version: i32,
+    pub(super) version: i32,
 }
 
 /// What a question was about.
@@ -1031,6 +1039,20 @@ pub(super) enum Asked {
     Formatting,
     /// What every token in the file is.
     Tokens,
+    /// What could be typed where the cursor was.
+    ///
+    /// The word's start rather than the cursor, because that is what makes
+    /// a late answer still usable: two more letters of the same word is
+    /// the same question, and the letters are the query.
+    Completion {
+        /// Where the word being completed starts.
+        from: (LineNumber, CharColumn),
+    },
+    /// Everything about one candidate the reader is looking at.
+    Resolve {
+        /// Which candidate of the answer, by its place in it.
+        index: usize,
+    },
 }
 
 /// The name of the symbol the cursor is in, or the last one before it.

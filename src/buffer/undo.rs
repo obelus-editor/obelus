@@ -25,6 +25,14 @@ pub enum Doing {
     /// Never joins anything and nothing joins it: a reader who pastes a
     /// function and then types is owed two steps back, not one.
     Whole,
+    /// Part of the act before it, wherever in the document it landed.
+    ///
+    /// One action that edits in two places -- a completion accepted with
+    /// the import it needs -- is one press of undo. The caller says so,
+    /// because only the caller knows the two edits are one act; nothing
+    /// about the offsets says it, and an import is nowhere near the word
+    /// that wanted it.
+    Joined,
 }
 
 /// One change, and enough to undo it.
@@ -53,6 +61,11 @@ impl Step {
     /// began, and the delete key eats forwards so the next one begins where
     /// this one did.
     fn runs_into(&self, next: &Self) -> bool {
+        // An edit that says it belongs to what came before it joins
+        // whatever that was, however far away it landed.
+        if next.doing == Doing::Joined {
+            return true;
+        }
         if self.doing != next.doing || self.doing == Doing::Whole {
             return false;
         }
@@ -64,7 +77,7 @@ impl Step {
                 let back = next.at.get() + next.removed.chars().count() == self.at.get();
                 back || next.at == self.at
             }
-            Doing::Whole => false,
+            Doing::Whole | Doing::Joined => false,
         }
     }
 }
