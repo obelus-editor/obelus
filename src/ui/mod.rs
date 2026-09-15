@@ -712,33 +712,96 @@ where
 ///
 /// The word is optional because some keys are their own explanation. The
 /// arrows walk the tabs and there is nothing to add to an arrow; `alt+f`
-/// means nothing at all until something says "fold". A word beside a key
-/// that did not need one is a row of text saying what everybody already
-/// knew, in the room the keys that *do* need explaining are about to want.
+/// means nothing at all until something says "fold".
 #[derive(Clone, Copy, Debug)]
 pub struct Hint {
     /// The key, spelled by the key table so that a reader who rebound it
     /// sees what they bound.
     pub chord: crate::keymap::KeyChord,
+    /// A second key that does the same thing, for a pair that shares a word:
+    /// `alt+up` and `alt+down` are one act in two directions, and two rows
+    /// saying "move it up" and "move it down" is the same sentence twice.
+    pub and_also: Option<crate::keymap::KeyChord>,
     /// What it does, in as few words as will do.
     pub does: Option<&'static str>,
+    /// Whether it goes at the foot, or waits in the list of them all.
+    ///
+    /// The foot is one row over the reader's work, so what goes there is
+    /// what they reach for without thinking. Everything else is a keypress
+    /// away and is not lost -- it is in the card, where there is room to say
+    /// what it does in words rather than in one.
+    pub common: bool,
+    /// Whether it does anything *now*.
+    ///
+    /// Worked out per frame by whoever knows: a note about the project has
+    /// nowhere to go, so there is no "go there" on the foot while the
+    /// selection is on one. The foot draws what can be pressed; the card
+    /// draws all of them and greys this one out, so what a reader learns is
+    /// that the view has eight keys rather than that its keys come and go.
+    pub usable: bool,
 }
 
 impl Hint {
-    /// A key that says what it does, and one that does not.
+    /// A key that goes at the foot.
     #[must_use]
-    pub const fn new(chord: crate::keymap::KeyChord, does: &'static str) -> Self {
+    pub const fn common(chord: crate::keymap::KeyChord, does: &'static str) -> Self {
         Self {
             chord,
+            and_also: None,
             does: Some(does),
+            common: true,
+            usable: true,
+        }
+    }
+
+    /// One that waits in the card.
+    #[must_use]
+    pub const fn rare(chord: crate::keymap::KeyChord, does: &'static str) -> Self {
+        Self {
+            common: false,
+            ..Self::common(chord, does)
+        }
+    }
+
+    /// The same act in the other direction, on a key of its own.
+    #[must_use]
+    pub const fn or(mut self, chord: crate::keymap::KeyChord) -> Self {
+        self.and_also = Some(chord);
+        self
+    }
+
+    /// Says whether it does anything at the moment.
+    #[must_use]
+    pub const fn when(mut self, usable: bool) -> Self {
+        self.usable = usable;
+        self
+    }
+
+    /// How it is written: the key, or the pair of them.
+    #[must_use]
+    pub fn keys(self) -> String {
+        match self.and_also {
+            Some(also) => format!("{} {}", self.chord.label(), also.label()),
+            None => self.chord.label(),
         }
     }
 }
 
-/// How many rows a view gives up to its foot, where it has one.
+/// The key that opens the list of what the keys here are.
 ///
-/// The rule and the keys under it. A view with nothing to say about its keys
-/// spends neither.
+/// `f1`, which has meant help for longer than any of this. It reaches no
+/// command from inside a view -- [`crate::keymap::Context::Dialog`] binds
+/// nothing, and that is the point -- and it is not a character, so it works
+/// even in a view that takes every character the reader types.
+#[must_use]
+pub fn keys_chord() -> crate::keymap::KeyChord {
+    crate::keymap::KeyChord::new(
+        crossterm::event::KeyCode::F(1),
+        crossterm::event::KeyModifiers::NONE,
+    )
+}
+
+/// How many rows a view gives up to its foot, where it has one.
 pub const FOOT_ROWS: u16 = 2;
 
 /// What is left of a region once its foot is taken off the bottom.
@@ -759,14 +822,9 @@ pub fn footed(area: Rect, hints: &[Hint]) -> Rect {
 
 /// The keys a view answers to, along the bottom of it under a rule.
 ///
-/// At the foot rather than beside the title, because a key needs a word and
-/// words need room: the tab row has a title on it already and gives up what
-/// is left to the tabs. Here there is a row of its own, and a view that grew
-/// a sixth key does not have to choose which five to admit to.
-///
-/// Given up from the right as the row runs out, so the keys a view puts
-/// first are the ones that survive a narrow screen. Nothing is cut in half:
-/// a key and its word go together or neither goes.
+/// The common ones that can be pressed at the moment, and `f1` at the
+/// right-hand end saying there are more. At the foot rather than beside a
+/// title, because a key needs a word and words need room.
 pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
     if hints.is_empty() || area.height < FOOT_ROWS {
         return;
@@ -792,11 +850,29 @@ pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
         Style::new().bg(theme.background),
     );
 
+    // The one at the end first, because it is the one that must not be given
+    // up: a foot that ran out of room and dropped the way to the rest of the
+    // keys would be a foot that hides the thing it exists to point at.
+    let all = format!("{} keys", keys_chord().label());
+    let width = u16::try_from(text_width(&all)).unwrap_or(0);
+    let edge = match area.width.checked_sub(width + 2) {
+        Some(offset) => {
+            write(
+                cells,
+                area.x + offset,
+                y,
+                &all,
+                Style::new().fg(theme.gutter).bg(theme.background),
+            );
+            area.x + offset
+        }
+        None => area.x + area.width,
+    };
+
     let mut x = area.x + 2;
-    let edge = area.x + area.width;
-    for hint in hints {
-        let chord = hint.chord.label();
-        let wanted = text_width(&chord) + hint.does.map_or(0, |does| text_width(does) + 1) + 3;
+    for hint in hints.iter().filter(|hint| hint.common && hint.usable) {
+        let keys = hint.keys();
+        let wanted = text_width(&keys) + hint.does.map_or(0, |does| text_width(does) + 1) + 3;
         let Ok(wanted) = u16::try_from(wanted) else {
             return;
         };
@@ -804,13 +880,13 @@ pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
             return;
         }
         // The key brighter than the word: what a reader is looking for down
-        // here is which key, and the word is what they read once to find out
-        // that it is the one.
+        // here is which key, and the word is read once to find out that it
+        // is the one.
         x = write(
             cells,
             x,
             y,
-            &chord,
+            &keys,
             Style::new().fg(theme.gutter_current).bg(theme.background),
         );
         if let Some(does) = hint.does {
@@ -826,7 +902,105 @@ pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
     }
 }
 
-/// What a list says when it has nothing in it.
+/// Every key a view answers to, on a card over it.
+///
+/// All of them, with what cannot be pressed at the moment greyed rather than
+/// left out: what a reader should come away with is that this view has these
+/// keys, not that its keys come and go. There is room here for a sentence,
+/// which is why the words can be words rather than the one the foot fits.
+pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
+    if hints.is_empty() {
+        return;
+    }
+    let column = u16::try_from(
+        hints
+            .iter()
+            .map(|hint| text_width(&hint.keys()))
+            .max()
+            .unwrap_or(0),
+    )
+    .unwrap_or(0)
+    .saturating_add(2);
+    let widest = u16::try_from(
+        hints
+            .iter()
+            .map(|hint| hint.does.map_or(0, text_width))
+            .max()
+            .unwrap_or(0),
+    )
+    .unwrap_or(0);
+    // The edges, a margin inside them, the keys and what they do.
+    let width = column
+        .saturating_add(widest)
+        .saturating_add(4)
+        .min(area.width);
+    // The edges, the title, a blank under it, and a row per key.
+    let height = u16::try_from(hints.len())
+        .unwrap_or(u16::MAX)
+        .saturating_add(4)
+        .min(area.height);
+    if width < 4 || height < 4 {
+        return;
+    }
+    let card = Rect {
+        x: area.x + (area.width - width) / 2,
+        y: area.y + (area.height - height) / 2,
+        width,
+        height,
+    };
+
+    let ground = Style::new()
+        .fg(theme.foreground)
+        .bg(theme.raised_background);
+    fill(cells, card, ground);
+    // An edge, because this sits over a list it is not part of: a raised
+    // ground alone reads as the list having changed colour.
+    let edge = Style::new().fg(theme.gutter).bg(theme.raised_background);
+    let last = card.width - 1;
+    let foot = card.height - 1;
+    for (x, glyph) in [(0, '\u{256d}'), (last, '\u{256e}')] {
+        put(cells, card.x + x, card.y, glyph, edge);
+    }
+    for (x, glyph) in [(0, '\u{2570}'), (last, '\u{256f}')] {
+        put(cells, card.x + x, card.y + foot, glyph, edge);
+    }
+    for x in 1..last {
+        put(cells, card.x + x, card.y, '\u{2500}', edge);
+        put(cells, card.x + x, card.y + foot, '\u{2500}', edge);
+    }
+    for y in 1..foot {
+        put(cells, card.x, card.y + y, '\u{2502}', edge);
+        put(cells, card.x + last, card.y + y, '\u{2502}', edge);
+    }
+
+    write(
+        cells,
+        card.x + 2,
+        card.y + 1,
+        "the keys here",
+        Style::new()
+            .fg(theme.status_foreground)
+            .bg(theme.raised_background),
+    );
+    let off = Style::new().fg(theme.gutter).bg(theme.raised_background);
+    for (at, hint) in hints.iter().enumerate() {
+        let Ok(offset) = u16::try_from(at) else { break };
+        let y = card.y + 3 + offset;
+        if y >= card.y + foot {
+            break;
+        }
+        let style = match hint.usable {
+            true => ground,
+            false => off,
+        };
+        write(cells, card.x + 2, y, &hint.keys(), style);
+        if let Some(does) = hint.does {
+            write(cells, card.x + 2 + column, y, does, style);
+        }
+    }
+}
+
+/// What a list says when it has nothing in it./// What a list says when it has nothing in it.
 ///
 /// One place, so that every empty list in obelus says its own reason in the
 /// same voice and the same colour. What the reason *is* belongs to whoever

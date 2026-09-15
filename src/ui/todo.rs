@@ -15,11 +15,8 @@ use crate::{
     app::App,
     component::todo::{Row, TodoView as Notes},
     theme::Theme,
-    ui::{Hint, editor::SCROLLBAR_WIDTH, fill, foot, footed, put, rule, text_width, write},
+    ui::{Hint, editor::SCROLLBAR_WIDTH, fill, foot, footed, put, text_width, write},
 };
-
-/// The rows that are not the list: the title and the rule under it.
-const FURNITURE: u16 = 2;
 
 /// The box in front of a note, ticked and not.
 const OPEN: char = '\u{25a1}';
@@ -32,30 +29,46 @@ const DONE: char = '\u{2611}';
 /// is would be a page that overshoots by however much they disagreed.
 #[must_use]
 pub fn list_region(area: Rect, hints: &[Hint]) -> Rect {
-    let area = footed(area, hints);
-    Rect {
-        y: area.y + FURNITURE,
-        height: area.height.saturating_sub(FURNITURE),
-        ..area
-    }
+    // Nothing above it. There are no tabs here and nothing to filter by, so
+    // a title row would be one row of the reader's screen spent saying what
+    // they just asked for.
+    footed(area, hints)
 }
 
-/// What the keys do here.
+/// What the keys do here, and which of them do anything at the moment.
 ///
-/// In the order they survive a narrow screen, which is the order they are
-/// worth: going to what a note is about is the whole point of a note that
-/// points anywhere, and leaving is the one key every reader already knows.
+/// One list, read two ways: the foot draws the common ones that can be
+/// pressed, and the card draws all of them with the rest greyed. A view that
+/// kept two lists would be a view whose card and foot could disagree about
+/// what it answers to.
 #[must_use]
-pub fn hints() -> Vec<Hint> {
+pub fn hints(notes: &Notes) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
-    let chord = |code, modifiers| crate::keymap::KeyChord::new(code, modifiers);
+    let chord = crate::keymap::KeyChord::new;
+    let bare = |code| chord(code, KeyModifiers::NONE);
+    let alt = |character| chord(KeyCode::Char(character), KeyModifiers::ALT);
+    // While a note is being written the list's keys are characters: space is
+    // a space and delete takes a letter out. Saying otherwise would be a row
+    // of keys that do something else from what it says.
+    if notes.writing().is_some() {
+        return vec![
+            Hint::common(chord(KeyCode::Enter, KeyModifiers::ALT), "a new line"),
+            Hint::common(bare(KeyCode::Enter), "keep it"),
+            Hint::common(bare(KeyCode::Esc), "give up on it"),
+        ];
+    }
+    let on = notes.selected_note();
     vec![
-        Hint::new(chord(KeyCode::Enter, KeyModifiers::NONE), "go there"),
-        Hint::new(chord(KeyCode::Char(' '), KeyModifiers::NONE), "done"),
-        Hint::new(chord(KeyCode::Char('f'), KeyModifiers::ALT), "open"),
-        Hint::new(chord(KeyCode::Char('e'), KeyModifiers::ALT), "write"),
-        Hint::new(chord(KeyCode::Delete, KeyModifiers::NONE), "drop"),
-        Hint::new(chord(KeyCode::Esc, KeyModifiers::NONE), "leave"),
+        Hint::common(bare(KeyCode::Enter), "go").when(notes.can_go()),
+        Hint::common(bare(KeyCode::Char(' ')), "done").when(on.is_some()),
+        Hint::common(alt('n'), "new"),
+        Hint::common(bare(KeyCode::Esc), "leave"),
+        Hint::rare(alt('e'), "write this one over").when(on.is_some()),
+        Hint::rare(alt('f'), "show what is behind it").when(notes.can_fold()),
+        Hint::rare(chord(KeyCode::Up, KeyModifiers::ALT), "move it up or down")
+            .or(chord(KeyCode::Down, KeyModifiers::ALT))
+            .when(notes.rows().len() > 1),
+        Hint::rare(bare(KeyCode::Delete), "take it away").when(on.is_some()),
     ]
 }
 
@@ -85,29 +98,7 @@ impl Widget for TodoUi<'_> {
                 .fg(self.theme.foreground)
                 .bg(self.theme.background),
         );
-        if area.height < FURNITURE {
-            return;
-        }
-
-        let hints = hints();
-        write(
-            cells,
-            area.x + 2,
-            area.y,
-            "todo",
-            Style::new()
-                .fg(self.theme.status_foreground)
-                .bg(self.theme.background),
-        );
-        rule(
-            cells,
-            Rect {
-                y: area.y + 1,
-                height: 1,
-                ..area
-            },
-            self.theme,
-        );
+        let hints = hints(self.notes);
         foot(cells, area, &hints, self.theme);
 
         let list = list_region(area, &hints);
@@ -116,6 +107,7 @@ impl Widget for TodoUi<'_> {
         }
         if self.notes.rows().is_empty() {
             crate::ui::nothing(cells, list, "nothing to come back to", self.theme);
+            self.keys(cells, area, &hints);
             return;
         }
 
@@ -154,10 +146,24 @@ impl Widget for TodoUi<'_> {
                 self.theme,
             );
         }
+
+        self.keys(cells, area, &hints);
     }
 }
 
 impl TodoUi<'_> {
+    /// Every key this view answers to, where the reader asked for them.
+    ///
+    /// Over everything, because it is what they asked for and the list is
+    /// what they asked about.
+    fn keys(&self, cells: &mut CellBuffer, area: Rect, hints: &[Hint]) {
+        if self.notes.showing_keys() {
+            // Above the foot: the foot says how to close this, and a card
+            // that covered it would be a card with no way out on screen.
+            crate::ui::keys_card(cells, footed(area, hints), hints, self.theme);
+        }
+    }
+
     /// One row: the mark, the box, what it says, and where it points.
     fn row(&self, cells: &mut CellBuffer, area: Rect, row: &Row, selected: bool) {
         // One mark for "the keys are here", and it says nothing else.

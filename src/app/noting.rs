@@ -17,7 +17,7 @@ use super::*;
 use crate::{
     component::todo::{TodoOutcome, TodoView},
     coordinates::LineNumber,
-    todo::{At, Note, Todo},
+    todo::{At, Todo},
 };
 
 impl App {
@@ -46,43 +46,20 @@ impl App {
         self.notes = Some(TodoView::new(todo, where_now));
     }
 
-    /// Asks for something to come back to, about the line being read.
+    /// Writes one down about the line being read.
     ///
-    /// On the status bar, because a note is made *while* reading and a view
-    /// that covered the code would be asking the reader to remember what
-    /// they were looking at. The same prompt a line number is typed on.
-    pub fn open_todo_prompt(&mut self) {
-        self.prompt = Some(Prompt::new(PromptKind::Todo));
-    }
-
-    /// Writes down what was typed on the prompt.
-    ///
-    /// With the place when there is a file under the prompt, and without one
-    /// when the notes themselves are what is showing: a note made from the
-    /// list is about the project, and there is no line to put on it.
-    pub(super) fn note_down(&mut self, said: &str) {
-        if said.trim().is_empty() {
-            return;
+    /// Opens the view and starts an empty note in it, carrying where the
+    /// reader was. One way to write a note, wherever it is started from: it
+    /// is written in the list it will be read in, and a second way -- a line
+    /// typed on the status bar -- would be a note made in a shape nobody
+    /// ever sees it in.
+    pub fn add_todo(&mut self) {
+        let at = self.here_now();
+        if self.notes.is_none() {
+            self.open_todo();
         }
-        let at = self.notes.is_none().then(|| self.here_now()).flatten();
-        let note = Note {
-            said: said.to_string(),
-            done: false,
-            at,
-        };
-        match self.notes.as_mut() {
-            Some(notes) => notes.add(note),
-            None => {
-                let mut todo = Todo::read(&self.working_directory);
-                todo.notes.push(note);
-                self.save_notes(&todo);
-                self.note = Some("written down".to_string());
-                return;
-            }
-        }
-        let todo = self.notes.as_ref().map(|notes| notes.todo().clone());
-        if let Some(todo) = todo {
-            self.save_notes(&todo);
+        if let Some(notes) = self.notes.as_mut() {
+            notes.write_new(at);
         }
     }
 
@@ -91,7 +68,13 @@ impl App {
     /// Relative to the tree, because every path obelus writes down is: an
     /// absolute one is about one machine, and the file it names is about the
     /// project.
+    ///
+    /// Nothing while the notes themselves are showing: there is no line
+    /// under a list, and a note made from here is about the project.
     fn here_now(&self) -> Option<At> {
+        if self.notes.is_some() {
+            return None;
+        }
         let buffer = self.current_buffer()?;
         let path = buffer
             .path()
@@ -123,7 +106,7 @@ impl App {
         let Some(notes) = self.notes.as_mut() else {
             return false;
         };
-        let hints = crate::ui::todo::hints();
+        let hints = crate::ui::todo::hints(notes);
         let list = crate::ui::todo::list_region(self.editor_area, &hints);
         let outcome = notes.handle_key(key, list.height, list.width);
         match outcome {
@@ -132,10 +115,6 @@ impl App {
             TodoOutcome::Changed => {
                 let todo = notes.todo().clone();
                 self.save_notes(&todo);
-                true
-            }
-            TodoOutcome::Asking => {
-                self.open_todo_prompt();
                 true
             }
             TodoOutcome::Cancelled => {

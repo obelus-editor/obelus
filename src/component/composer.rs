@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// What is being written.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Composer {
     /// The lines, never empty: an empty box is one empty line, because a
     /// caret has to be somewhere.
@@ -26,6 +26,16 @@ pub struct Composer {
     line: usize,
     /// How far along it, in characters.
     column: usize,
+}
+
+impl Default for Composer {
+    /// Not derived: the derived one hands back no lines at all, and every
+    /// method here reads `lines[line]` on the promise that there is always
+    /// one. An empty box is one empty line, because a caret has to be
+    /// somewhere.
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Composer {

@@ -25,8 +25,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub enum PromptKind {
     /// A line to go to.
     Line,
-    /// Something to come back to.
-    Todo,
 }
 
 impl PromptKind {
@@ -38,7 +36,6 @@ impl PromptKind {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Line => "line: ",
-            Self::Todo => "todo: ",
         }
     }
 
@@ -55,10 +52,6 @@ impl PromptKind {
     pub const fn accepts(self, character: char) -> bool {
         match self {
             Self::Line => character.is_ascii_digit(),
-            // Anything that can be typed. A note is a sentence, and a
-            // sentence made of what obelus felt like allowing is a sentence
-            // the reader has to work around.
-            Self::Todo => true,
         }
     }
 }
