@@ -128,6 +128,7 @@ impl App {
         picker.with_scopes(&names);
         // A commit's files hang under it: the query is about the commits.
         picker.nests();
+        picker.previews();
         picker.go_to_tab(tab);
         self.picker = Some(picker);
         self.history = Showing {

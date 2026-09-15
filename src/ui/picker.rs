@@ -66,11 +66,17 @@ const FILLING_INSET: usize = 6;
 /// way round that matters, since the list is filtered by typing and the
 /// preview is not.
 ///
-/// Only for a list whose rows name a file. A palette of commands has nothing
-/// to show.
+/// Only for a list that said its rows name something to show. A palette of
+/// commands has nothing.
 #[must_use]
 pub fn preview_region(picker: Option<&Picker>, editor: Rect) -> Option<Rect> {
     let picker = picker?;
+    if !picker.shows_previews() {
+        return None;
+    }
+    // And only where there is anywhere to put it. The arithmetic below is a
+    // full-area list's: a compact one sits on the status bar with nothing
+    // under it, so there is no room to divide.
     if picker.layout() != PickerLayout::FullArea {
         return None;
     }

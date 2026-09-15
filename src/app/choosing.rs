@@ -11,7 +11,11 @@ impl App {
     /// The only way to reach a list of places without a language server
     /// answering first, which is what a test of the preview needs.
     pub fn open_picker_for_test(&mut self, items: Vec<PickerItem>, layout: PickerLayout) {
-        self.picker = Some(Picker::new(items, layout));
+        let mut picker = Picker::new(items, layout);
+        // Standing in for the application's lists of files and places, which
+        // is what every caller of this hands it, and those all preview.
+        picker.previews();
+        self.picker = Some(picker);
     }
 
     /// Offers the built-in themes.

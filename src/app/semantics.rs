@@ -531,7 +531,9 @@ impl App {
             Outcome::Places(places) => {
                 let items = place_rows(&places, &self.working_directory);
                 self.note = None;
-                self.picker = Some(Picker::new(items, PickerLayout::FullArea));
+                let mut picker = Picker::new(items, PickerLayout::FullArea);
+                picker.previews();
+                self.picker = Some(picker);
             }
         }
     }
@@ -633,6 +635,7 @@ impl App {
             let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
             picker.when_empty("asking the language server\u{2026}");
             picker.is_outline_of(path);
+            picker.previews();
             self.picker = Some(picker);
             return;
         }
@@ -705,6 +708,7 @@ impl App {
             picker.prefer(here);
         }
         picker.is_outline_of(path);
+        picker.previews();
         self.picker = Some(picker);
     }
 

@@ -327,6 +327,8 @@ pub struct Picker {
     /// Whether the list holds the height it asked for rather than shrinking
     /// to the rows that match.
     steady: bool,
+    /// Whether the rows of this list name something worth showing beneath it.
+    previews: bool,
     /// Whether any row carries a mark, and so whether every row leaves a
     /// column for one.
     ///
@@ -433,6 +435,7 @@ impl Picker {
             searching: false,
             listing: false,
             steady: false,
+            previews: false,
             explains: false,
             marked: false,
             question: None,
@@ -602,6 +605,32 @@ impl Picker {
     /// unless a list says the steadiness is worth more.
     pub const fn keeps_height(&mut self) {
         self.steady = true;
+    }
+
+    /// Says the rows of this list name something worth showing beneath it.
+    ///
+    /// A file, a place in one, a commit: whatever the reader would be looking
+    /// at if they chose the row. A list of commands, themes or settings names
+    /// none of those, and the room a preview would take is better spent on
+    /// the code the list is drawn over.
+    ///
+    /// Asked for rather than worked out. It used to be read off the layout --
+    /// a full-area list previewed and a compact one did not -- which held
+    /// only because the lists that name files are the same seven lists that
+    /// take the whole region. Two sets that happen to coincide, and nothing
+    /// making them: the next full-area list of something unpreviewable would
+    /// have set aside half the screen to show nothing in.
+    ///
+    /// Said by the list rather than worked out per row, so the pane does not
+    /// come and go under a reader walking a list whose rows differ.
+    pub const fn previews(&mut self) {
+        self.previews = true;
+    }
+
+    /// Whether it does.
+    #[must_use]
+    pub const fn shows_previews(&self) -> bool {
+        self.previews
     }
 
     /// Says this list is a list of files, whose rows the application

@@ -31,6 +31,7 @@ impl App {
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
         picker.with_scopes(&names);
         picker.searches();
+        picker.previews();
         picker.go_to_tab(tab);
         self.searching = scopes;
         self.picker = Some(picker);

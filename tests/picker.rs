@@ -1744,6 +1744,45 @@ fn a_file_is_previewed_from_its_first_line() {
     );
 }
 
+/// A preview is set aside for a list that said its rows name something to
+/// show, and not for one that merely takes the whole region.
+///
+/// Those were the same seven lists, which is why the layout stood in for the
+/// question -- two sets that happen to coincide, with nothing making them.
+/// The next full-area list of commands or settings would have given up half
+/// the screen to show nothing in it.
+#[test]
+fn a_full_area_list_previews_only_if_it_said_it_would() {
+    use obelus::{
+        component::picker::{Picker, PickerLayout},
+        ui::picker::preview_region,
+    };
+    use ratatui::layout::Rect;
+
+    let editor = Rect::new(0, 0, 80, 30);
+    let quiet = Picker::new(items(&["a", "b", "c"]), PickerLayout::FullArea);
+    assert!(
+        preview_region(Some(&quiet), editor).is_none(),
+        "a list that never asked for a preview was given room for one"
+    );
+
+    let mut shows = Picker::new(items(&["a", "b", "c"]), PickerLayout::FullArea);
+    shows.previews();
+    assert!(
+        preview_region(Some(&shows), editor).is_some(),
+        "a list that asked for a preview was given nowhere to put it"
+    );
+
+    // And asking is not enough on a layout with nowhere to put one: a compact
+    // list sits on the status bar with nothing under it.
+    let mut compact = Picker::new(items(&["a"]), PickerLayout::Compact { rows: 10 });
+    compact.previews();
+    assert!(
+        preview_region(Some(&compact), editor).is_none(),
+        "a compact list was given a region below rows that end the screen"
+    );
+}
+
 /// A list of references is read by looking at the symbol in each one, so the
 /// preview marks it. Saying only which line leaves the reader finding it
 /// again on every row.
