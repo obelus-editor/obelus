@@ -1039,7 +1039,7 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
     }
 }
 
-/// What a list says when it has nothing in it./// What a list says when it has nothing in it.
+/// What a list says when it has nothing in it.
 ///
 /// One place, so that every empty list in obelus says its own reason in the
 /// same voice and the same colour. What the reason *is* belongs to whoever

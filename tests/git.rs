@@ -1462,6 +1462,170 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
     );
 }
 
+/// Where obelus draws a run of changes, against where git draws it.
+///
+/// Over this repository's own history rather than a hand-written pair. A
+/// minimal diff still has choices in it -- a block inserted where the lines
+/// around it repeat can be written as starting a line or two earlier, and
+/// one change can be written as two hunks with a line between them -- and
+/// which reading you get is what decides which lines are marked in the
+/// margin. That ambiguity does not show up in a sample anybody would write
+/// by hand: every five-line case I tried is drawn the same way with or
+/// without the tidying. In real code it shows up constantly -- of the
+/// seventy-nine file diffs in the last dozen commits, nineteen land
+/// somewhere git does not put them if the diff is used as the algorithm
+/// leaves it.
+///
+/// Skipped where there is no history to read, which is what a tarball
+/// without a `.git` is.
+#[test]
+fn a_run_of_changes_is_where_git_draws_it() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let git = |arguments: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(arguments)
+            .output()
+            .expect("running git");
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let commits: Vec<String> = git(&["log", "-12", "--format=%H"])
+        .lines()
+        .map(str::to_string)
+        .collect();
+    if commits.len() < 2 {
+        return;
+    }
+
+    // `@@ -old,count +new,count @@`, as the runs obelus would name.
+    let headers = |text: &str| -> Vec<String> {
+        text.lines()
+            .filter(|line| line.starts_with("@@"))
+            .map(|line| {
+                let mut parts = line.split(' ').skip(1);
+                let before = parts.next().unwrap_or("-0,0").trim_start_matches('-');
+                let after = parts.next().unwrap_or("+0,0").trim_start_matches('+');
+                let count = |part: &str| {
+                    part.split_once(',')
+                        .map_or(1, |(_, many)| many.parse().unwrap_or(1))
+                };
+                let start: usize = after
+                    .split(',')
+                    .next()
+                    .and_then(|start| start.parse().ok())
+                    .unwrap_or(0);
+                let (added, removed): (usize, usize) = (count(after), count(before));
+                // git names the line *before* a pure deletion; obelus marks
+                // the line it sits in front of.
+                let at = if added == 0 { start + 1 } else { start };
+                format!("{at}+{added}-{removed}")
+            })
+            .collect()
+    };
+
+    let mut checked = 0usize;
+    for id in &commits {
+        let object = gix::ObjectId::from_hex(id.as_bytes()).expect("a commit");
+        for row in git(&["show", "--numstat", "--format=", id]).lines() {
+            let Some(name) = row.split('\t').nth(2) else {
+                continue;
+            };
+            let path = root.join(name);
+            // A file the commit added or deleted has only one side, and
+            // one that is not text has no lines: neither is a diff.
+            let (Some(before), Some(after)) = (
+                obelus::git::history::text_before(&root, object, &path),
+                obelus::git::history::text_at(&root, object, &path),
+            ) else {
+                continue;
+            };
+            let ours: Vec<String> = obelus::git::change::Changes::between(&before, &after)
+                .hunks()
+                .iter()
+                .map(|hunk| {
+                    format!(
+                        "{}+{}-{}",
+                        hunk.line.get() + 1,
+                        hunk.lines,
+                        hunk.removed.len()
+                    )
+                })
+                .collect();
+            let theirs = headers(&git(&[
+                "-c",
+                "diff.algorithm=histogram",
+                "show",
+                "-U0",
+                "--format=",
+                id,
+                "--",
+                name,
+            ]));
+            assert_eq!(ours, theirs, "{} {name}", &id[..8]);
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 20,
+        "only {checked} diffs were compared, which is not enough of them"
+    );
+}
+
+/// Each file is counted against its own committed version./// Each file is
+/// counted against its own committed version.
+///
+/// Walking a tree to a path moves it: gix leaves the tree on the subtree it
+/// descended into, so one tree asked twice answers the second question from
+/// wherever the first left it. Every file after the first then looked like
+/// a file the commit does not have -- which is drawn as a file where every
+/// line was just added, on a list whose whole job is to say how much each
+/// one changed.
+#[test]
+fn every_file_is_counted_against_its_own_committed_version() {
+    use obelus::git::counted_against_head;
+
+    let repository = Repository::new("counts-many", "one\ntwo\nthree\n");
+    // The second one a directory down, so reaching it is a walk rather
+    // than a lookup in the root tree.
+    let inner = repository.directory().join("inner");
+    std::fs::create_dir_all(&inner).expect("a directory");
+    let deep = inner.join("deep.rs");
+    std::fs::write(&deep, "a\nb\n").expect("a file");
+    repository.run(&["add", "inner/deep.rs"]);
+    repository.run(&["commit", "--quiet", "-m", "both"]);
+
+    repository.write("one\ntwo\nthree\nfour\n");
+    std::fs::write(&deep, "a\nb\nc\nd\n").expect("rewriting it");
+
+    let file = repository.path();
+    for order in [
+        vec![file.clone(), deep.clone()],
+        vec![deep.clone(), file.clone()],
+    ] {
+        let counts = counted_against_head(&order);
+        assert_eq!(
+            counts.get(&file).copied(),
+            Some((1, 0)),
+            "the file asked about in position {:?}: {counts:?}",
+            order.iter().position(|path| *path == file)
+        );
+        assert_eq!(
+            counts.get(&deep).copied(),
+            Some((2, 0)),
+            "the nested file: {counts:?}"
+        );
+    }
+
+    // A file the commit really does not have is all of it added, which is
+    // the answer the bug above made everything look like.
+    let fresh = repository.directory().join("fresh.rs");
+    std::fs::write(&fresh, "x\ny\n").expect("a new file");
+    let counts = counted_against_head(&[file.clone(), fresh.clone()]);
+    assert_eq!(counts.get(&fresh).copied(), Some((2, 0)));
+    assert_eq!(counts.get(&file).copied(), Some((1, 0)));
+}
+
 /// A list of files says which of them have been touched. A project's file
 /// list is mostly files nobody has changed, and the few that have been are
 /// what a reader is usually looking for.
@@ -1483,6 +1647,49 @@ fn a_list_of_files_says_which_have_changed() {
         found.get(&repository.directory.join("new.rs")).copied(),
         Some(FileStatus::New),
         "a file git has never seen: {found:?}"
+    );
+
+    // A directory nothing in it is tracked is *not* what is listed: git's
+    // own report collapses one into a single line, which is right for a
+    // person reading a terminal and wrong for a list of files to open --
+    // picking the folder would do nothing, and the files inside it would
+    // be the ones nobody could reach.
+    let new_module = repository.directory.join("module");
+    std::fs::create_dir_all(new_module.join("inner")).expect("a new directory");
+    std::fs::write(new_module.join("mod.rs"), "pub mod inner;\n").expect("a file in it");
+    std::fs::write(new_module.join("inner").join("deep.rs"), "fn deep() {}\n").expect("another");
+    let found = statuses(&repository.directory);
+    assert_eq!(
+        found.get(&new_module.join("mod.rs")).copied(),
+        Some(FileStatus::New),
+        "the file in a new directory is not listed: {found:?}"
+    );
+    assert_eq!(
+        found
+            .get(&new_module.join("inner").join("deep.rs"))
+            .copied(),
+        Some(FileStatus::New),
+        "a file further down is not listed either: {found:?}"
+    );
+    // And a repository checked out inside the tree, which is the one thing
+    // a walk of every file still reports as a directory: git cannot look
+    // inside somebody else's repository, so it names the directory. It is
+    // not a file either.
+    let nested = repository.directory.join("vendored");
+    std::fs::create_dir_all(&nested).expect("a directory");
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(&nested)
+        .args(["init", "--quiet"])
+        .output()
+        .expect("running git");
+    std::fs::write(nested.join("theirs.rs"), "fn theirs() {}\n").expect("a file in it");
+
+    let found = statuses(&repository.directory);
+    assert!(
+        !found.keys().any(|path| path.is_dir()),
+        "a folder is in the list of files: {:?}",
+        found.keys().collect::<Vec<_>>()
     );
 
     // Keyed by absolute path, because git reports paths relative to the

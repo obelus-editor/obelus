@@ -179,6 +179,16 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
     let Ok(platform) = repository.status(gix::progress::Discard) else {
         return statuses;
     };
+    // Every untracked file, rather than the directory holding them.
+    //
+    // git's own default is to collapse a directory nothing in it is
+    // tracked into one line -- `dir/` -- which is the right answer for a
+    // terminal reporting to a person and the wrong one here: what this
+    // feeds is a list of files to *open*, and a reader who picks the
+    // folder gets nothing, because a folder is not a file. A new module is
+    // exactly the case it goes wrong on: the one directory whose contents
+    // a reader most wants listed.
+    let platform = platform.untracked_files(gix::status::UntrackedFiles::Files);
     let Ok(iterator) = platform.into_iter(None) else {
         return statuses;
     };
@@ -193,6 +203,14 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
             // Found by the directory walk, which is how a file git has never
             // seen arrives.
             Item::IndexWorktree(index_worktree::Item::DirectoryContents { entry, .. }) => {
+                // Only what can be opened. A walk that emits every file
+                // still reports a directory of its own for an empty one,
+                // and a repository nested in the tree arrives as one
+                // entry -- neither is a file, and a row naming one is a
+                // row that does nothing.
+                if !matches!(entry.disk_kind, Some(gix::dir::entry::Kind::File)) {
+                    continue;
+                }
                 (entry.rela_path, FileStatus::New)
             }
             // A rename is a deletion and an addition to git; to a reader
@@ -230,10 +248,18 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
 
 /// How much each of these files has changed since the last commit.
 ///
-/// One repository, one head tree, and a peel per path -- against
-/// [`head_text`], which opens the repository and resolves the head tree for
-/// every file it is asked about. That is most of the cost, and a list of
-/// changed files asks about all of them at once.
+/// One repository and one head tree, against [`head_text`], which opens the
+/// repository and resolves the head tree for every file it is asked about.
+/// That is most of the cost, and a list of changed files asks about all of
+/// them at once.
+///
+/// The tree itself is copied per path, which is not a saving thrown away:
+/// walking a tree to a path *moves* it -- gix leaves it on the subtree it
+/// descended into -- so one tree asked twice answers the second question
+/// from wherever the first left it. Every file below the first one then
+/// looked like a file the commit does not have, which reads as a file
+/// where every line was just added. The copy is the root tree's own bytes
+/// and nothing else; what was expensive is still done once.
 ///
 /// A path with no answer is left out rather than counted as nothing: a file
 /// git has never heard of, one whose committed content is not text, one that
@@ -251,13 +277,14 @@ pub fn counted_against_head(paths: &[PathBuf]) -> HashMap<PathBuf, (usize, usize
     let Some(repository) = repository(first) else {
         return counts;
     };
-    let Ok(mut tree) = repository.head_tree() else {
+    let Ok(head) = repository.head_tree() else {
         return counts;
     };
     for path in paths {
         let Some(relative) = in_repository(&repository, path) else {
             continue;
         };
+        let mut tree = head.clone();
         let committed = match tree.peel_to_entry_by_path(&relative) {
             Ok(Some(entry)) => match entry.object() {
                 Ok(object) => match String::from_utf8(object.data.clone()) {

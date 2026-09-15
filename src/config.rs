@@ -689,7 +689,6 @@ pub fn write_tree(path: &Path, key: &str, value: Option<&Value>) -> std::io::Res
 /// all of it is one thing to find, to copy between machines and to put in a
 /// `.gitignore`, where a dotfile per kind of thing is a row of them at the
 /// top of every listing of the tree.
-///
 #[must_use]
 pub fn tree_path_for(root: &Path) -> PathBuf {
     root.join(".obelus").join("config.toml")
