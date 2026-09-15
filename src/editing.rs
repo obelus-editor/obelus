@@ -17,8 +17,10 @@
 //! two vocabularies -- a [`Motion`] to move it and a [`Typing`] to change
 //! what it is in.
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
 use crate::{
-    coordinates::{CharColumn, DisplayColumn, LineNumber, Span},
+    coordinates::{CharColumn, CharOffset, DisplayColumn, LineNumber, Span},
     text::Text,
 };
 
@@ -488,6 +490,100 @@ fn remember(text: &Text, cursor: &mut Cursor, width: u16) {
     cursor.remembered_cell = cell;
 }
 
+/// The motion a navigation key stands for.
+///
+/// A modifier obelus has no meaning for disqualifies the key: `ctrl+left` is a
+/// word motion it does not have yet, and treating it as a plain left would be
+/// a wrong answer rather than a missing one.
+pub(crate) fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
+    // Judged the same way the key table judges, so a key means the same thing
+    // in both places or nothing in both places.
+    let modifiers = crate::keymap::modifiers_of(key)?;
+
+    match (modifiers, key.code) {
+        // Not `ctrl+PageUp`/`ctrl+PageDown`: those mean previous and next tab
+        // almost everywhere, and the nearest thing obelus has to a tab is a
+        // buffer, so they are worth leaving free.
+        // A word at a time, which is the other thing `ctrl` and an arrow
+        // mean everywhere a reader has been.
+        (KeyModifiers::CONTROL, KeyCode::Left) => Some((Motion::WordLeft, false)),
+        (KeyModifiers::CONTROL, KeyCode::Right) => Some((Motion::WordRight, false)),
+        (m, KeyCode::Left) if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+            Some((Motion::WordLeft, true))
+        }
+        (m, KeyCode::Right) if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+            Some((Motion::WordRight, true))
+        }
+        (KeyModifiers::CONTROL, KeyCode::Home) => Some((Motion::DocumentStart, false)),
+        (KeyModifiers::CONTROL, KeyCode::End) => Some((Motion::DocumentEnd, false)),
+        // With shift as well, the same two motions extend the selection.
+        // Without these the ends of the file are the one place a selection
+        // cannot reach, and the rule that a modifier obelus has no meaning
+        // for disqualifies the key made them do nothing at all.
+        (m, KeyCode::Home) if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+            Some((Motion::DocumentStart, true))
+        }
+        (m, KeyCode::End) if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+            Some((Motion::DocumentEnd, true))
+        }
+        (KeyModifiers::SHIFT, code) => match code {
+            KeyCode::Left => Some((Motion::Left, true)),
+            KeyCode::Right => Some((Motion::Right, true)),
+            KeyCode::Up => Some((Motion::Up, true)),
+            KeyCode::Down => Some((Motion::Down, true)),
+            KeyCode::Home => Some((Motion::LineStart, true)),
+            KeyCode::End => Some((Motion::LineEnd, true)),
+            _ => None,
+        },
+        (KeyModifiers::NONE, code) => match code {
+            KeyCode::Left => Some((Motion::Left, false)),
+            KeyCode::Right => Some((Motion::Right, false)),
+            KeyCode::Up => Some((Motion::Up, false)),
+            KeyCode::Down => Some((Motion::Down, false)),
+            KeyCode::Home => Some((Motion::LineStart, false)),
+            KeyCode::End => Some((Motion::LineEnd, false)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// What a key types, if it types anything.
+///
+/// Shift is allowed through: it is how a capital arrives, and the character
+/// crossterm reports already has it applied. Every other modifier is
+/// somebody else's -- a `ctrl` chord is a command, and typing one would put
+/// a character in where the reader asked for an action.
+pub(crate) fn typing_for(key: &KeyEvent) -> Option<Typing> {
+    let modifiers = crate::keymap::modifiers_of(key)?;
+    // The one pair of `ctrl` chords that type rather than command: they
+    // take out a word, which is the pair of `ctrl` with the arrows moving
+    // over one. Before the rule below, which is what refuses the rest.
+    if modifiers == KeyModifiers::CONTROL {
+        return match key.code {
+            KeyCode::Backspace => Some(Typing::BackwardWord),
+            KeyCode::Delete => Some(Typing::ForwardWord),
+            _ => None,
+        };
+    }
+    let bare = modifiers == KeyModifiers::NONE;
+    let shifted = modifiers == KeyModifiers::SHIFT;
+    if !bare && !shifted {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char(character) => Some(Typing::Character(character)),
+        KeyCode::Enter if bare => Some(Typing::Newline),
+        KeyCode::Tab if bare => Some(Typing::Tab),
+        // Whichever way the terminal reports it: some send `BackTab` with
+        // shift still on it and some send it bare.
+        KeyCode::BackTab => Some(Typing::Outdent),
+        KeyCode::Backspace if bare => Some(Typing::Backward),
+        KeyCode::Delete if bare => Some(Typing::Forward),
+        _ => None,
+    }
+}
+
 /// A text with a caret in it, and what the caret has hold of.
 ///
 /// The three places obelus puts a caret were three of these written by hand:
@@ -626,4 +722,118 @@ fn span_between(anchor: Cursor, cursor: Cursor) -> Option<Span> {
         end_line: to.line,
         end_column: to.column,
     })
+}
+
+impl Editing {
+    /// Whatever a key means to the text, or `false` for one that means
+    /// nothing to it.
+    ///
+    /// The keys of a text, in one place. Which ones those are is a rule
+    /// rather than a preference, and a rule written twice is a rule that
+    /// will be true in one place -- which is what it was, and why a reader
+    /// who had learnt `ctrl+left` in a file found it did nothing in a note.
+    ///
+    /// `enter` and `esc` are *not* here. Finishing and giving up are the
+    /// caller's, and the callers answer them differently: one sends a
+    /// message, one keeps a note, one puts a line break in. A text deciding
+    /// either would be deciding something it knows nothing about.
+    ///
+    /// Up and down answer `false` at the ends, so a caller with rows above
+    /// and below can step out rather than have the key swallowed.
+    pub fn handle_key(&mut self, key: &KeyEvent, hides: &dyn Hides, width: u16) -> bool {
+        if let Some((motion, extend)) = motion_for(key) {
+            return match extend {
+                true => self.extend_to(motion, hides, width),
+                false => self.move_to(motion, hides, width),
+            };
+        }
+        match typing_for(key) {
+            Some(typing) => {
+                self.apply(typing, hides, width);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Puts something in, or takes something out.
+    ///
+    /// Over a selection, every one of them replaces it: what the reader has
+    /// hold of is what they meant, and a letter typed onto a selection is
+    /// the selection gone and the letter in its place.
+    pub fn apply(&mut self, typing: Typing, hides: &dyn Hides, width: u16) {
+        if let Some(span) = self.selection() {
+            let taken = matches!(
+                typing,
+                Typing::Backward | Typing::Forward | Typing::BackwardWord | Typing::ForwardWord
+            );
+            self.remove(span, width);
+            if taken {
+                return;
+            }
+        }
+        match typing {
+            Typing::Character(character) => self.put(&character.to_string(), width),
+            Typing::Newline => self.put("\n", width),
+            Typing::Tab => self.put("\t", width),
+            // Nothing yet: what an outdent means depends on what the lines
+            // around it are indented with, which is the file's business.
+            Typing::Outdent => {}
+            Typing::Backward => {
+                let from = self.cursor;
+                if self.move_to(Motion::Left, hides, width) {
+                    self.cut_between(self.cursor, from, width);
+                }
+            }
+            Typing::Forward => {
+                let from = self.cursor;
+                if self.move_to(Motion::Right, hides, width) {
+                    self.cut_between(from, self.cursor, width);
+                }
+            }
+            Typing::BackwardWord => {
+                let from = self.cursor;
+                if self.move_to(Motion::WordLeft, hides, width) {
+                    self.cut_between(self.cursor, from, width);
+                }
+            }
+            Typing::ForwardWord => {
+                let from = self.cursor;
+                if self.move_to(Motion::WordRight, hides, width) {
+                    self.cut_between(from, self.cursor, width);
+                }
+            }
+        }
+    }
+
+    /// Writes something in at the caret, and leaves the caret after it.
+    fn put(&mut self, what: &str, width: u16) {
+        let at = self.text.char_offset(self.cursor.line, self.cursor.column);
+        self.text.insert(at, what);
+        let (line, column) = self
+            .text
+            .position(CharOffset::new(at.get() + what.chars().count()));
+        self.anchor = None;
+        self.place(line, column, width);
+    }
+
+    /// Takes a run out, and leaves the caret where it began.
+    fn remove(&mut self, span: Span, width: u16) {
+        self.text.remove(span);
+        self.anchor = None;
+        self.place(span.line, span.column, width);
+    }
+
+    /// The same, between two places.
+    fn cut_between(&mut self, from: Cursor, to: Cursor, width: u16) {
+        self.remove(
+            Span {
+                line: from.line,
+                column: from.column,
+                end_line: to.line,
+                end_column: to.column,
+            },
+            width,
+        );
+    }
 }

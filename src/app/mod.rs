@@ -36,11 +36,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::editing::motion_for;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use documents::Rendered;
 use history::Changed;
-use keys::{editor_paging, motion_for, view_step};
+use keys::{editor_paging, view_step};
 use previewing::Preview;
 use ratatui::{
     Terminal,
@@ -1561,7 +1562,7 @@ impl App {
         if self.picker.is_none()
             && self.settings.is_none()
             && !self.showing_chat
-            && let Some(typing) = keys::typing_for(&key)
+            && let Some(typing) = crate::editing::typing_for(&key)
         {
             self.typed(typing);
             // A letter is a reason to ask what could follow it; everything

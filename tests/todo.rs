@@ -598,3 +598,47 @@ fn a_place_is_a_row_of_its_own() {
         "the note that points somewhere was laid out differently:\n{dump}"
     );
 }
+
+/// The keys a reader learnt in a file work in a note, because a note is the
+/// same thing with less attached to it.
+///
+/// Broken deliberately by giving the box its own stepping over its own
+/// `Vec<String>`: `ctrl+left` walked a word in the file and did nothing
+/// here, and every key added to one side was a key the other did not have.
+#[test]
+fn the_words_keys_work_in_a_note_too() {
+    let scratch = tree("words", THREE);
+    let mut app = open(&scratch, 60, 10);
+    let ctrl = |code| Event::Key(KeyEvent::new(code, KeyModifiers::CONTROL));
+    let column = |app: &mut App| {
+        support::cursor_line(&support::render(app, 60, 10))
+            .split_once(',')
+            .and_then(|(x, _)| x.trim().parse::<usize>().ok())
+            .unwrap_or(0)
+    };
+
+    // "wire the counts tree up to the search", from its first letter.
+    let start = column(&mut app);
+    app.handle(ctrl(KeyCode::Right));
+    let word = column(&mut app);
+    assert!(word > start + 1, "ctrl+right did not walk a word");
+    app.handle(ctrl(KeyCode::Right));
+    assert!(column(&mut app) > word, "it stopped after one");
+    app.handle(ctrl(KeyCode::Left));
+    assert!(
+        column(&mut app) < word + 2,
+        "ctrl+left did not come back a word"
+    );
+
+    // And a word at a time out, which is the pair of the same rule.
+    app.handle(ctrl(KeyCode::Delete));
+    let said = app.notes().expect("the view").rows()[0].said.clone();
+    assert!(
+        !said.contains("the counts"),
+        "ctrl+delete did not take a word out: {said:?}"
+    );
+    assert!(
+        said.starts_with("wire"),
+        "it took out more than a word: {said:?}"
+    );
+}
