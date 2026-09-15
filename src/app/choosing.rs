@@ -92,6 +92,10 @@ impl App {
             .map(|group| group.name())
             .collect();
         picker.with_tabs(&names);
+        // Read down as much as it is typed at: most of what the palette
+        // offers is what the reader came to find out, so the block stays the
+        // height it opened at rather than closing up under the query.
+        picker.keeps_height();
         self.picker = Some(picker);
     }
 

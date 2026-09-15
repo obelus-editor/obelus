@@ -247,6 +247,9 @@ pub enum PickerLayout {
     /// directly on the status bar so the code stays visible.
     Compact {
         /// The most rows it may take.
+        ///
+        /// And exactly what it takes, for a list that asked to keep a steady
+        /// height with [`Picker::keeps_height`].
         rows: u16,
     },
 }
@@ -321,6 +324,9 @@ pub struct Picker {
     /// Whether this list is a list of files, whose rows are refilled when
     /// the tab moves.
     listing: bool,
+    /// Whether the list holds the height it asked for rather than shrinking
+    /// to the rows that match.
+    steady: bool,
     /// Whether any row carries a mark, and so whether every row leaves a
     /// column for one.
     ///
@@ -426,6 +432,7 @@ impl Picker {
             scopes: false,
             searching: false,
             listing: false,
+            steady: false,
             explains: false,
             marked: false,
             question: None,
@@ -574,6 +581,27 @@ impl Picker {
             self.ordered = keeps;
             self.refilter();
         }
+    }
+
+    /// Holds the list at the height it asked for, however few rows match.
+    ///
+    /// For a list a reader walks as much as they type at. The palette is
+    /// read down -- most of what it offers is what the reader came to find
+    /// out -- and a block that resized on every keystroke would move the row
+    /// under their eye between one letter and the next.
+    ///
+    /// Off by default, and asked for rather than worked out. It used to be
+    /// inferred from the list having tabs, which was one list's preference
+    /// wearing another list's property: nothing about a tab says anything
+    /// about height, and the next list to grow tabs would have inherited a
+    /// decision nobody made for it.
+    ///
+    /// The rows it does not fill are blank, and a compact list is drawn over
+    /// code that is still being read, so each of them is a row of that code
+    /// covered by nothing. That is the price, and it is why this is off
+    /// unless a list says the steadiness is worth more.
+    pub const fn keeps_height(&mut self) {
+        self.steady = true;
     }
 
     /// Says this list is a list of files, whose rows the application
@@ -855,14 +883,17 @@ impl Picker {
         let above = self.tab_rows().saturating_add(self.about_rows(width));
         match self.layout {
             PickerLayout::FullArea => available,
-            // A list with tabs keeps its full height whatever the tab holds:
-            // walking the tabs would otherwise resize the block under the
-            // reader, and the rows would move as they read them. Without
-            // tabs the list is as tall as it has rows -- at least one, which
-            // is where the reason for having none goes.
-            PickerLayout::Compact { rows } if !self.tabs.is_empty() => {
+            // All of what it asked for, for a list that said it wants to stay
+            // the height it started at.
+            PickerLayout::Compact { rows } if self.steady => {
                 rows.saturating_add(above).min(available)
             }
+            // Otherwise as tall as it has rows, up to what it asked for. A
+            // compact list is drawn over code the reader is still reading, so
+            // a row it takes and does not use is a row of that code covered
+            // by nothing.
+            //
+            // At least one, which is where the reason for having none goes.
             PickerLayout::Compact { rows } => u16::try_from(self.match_count())
                 .unwrap_or(u16::MAX)
                 .max(1)
@@ -1240,6 +1271,87 @@ impl Picker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A compact list is as tall as it has rows, up to what it asked for.
+    /// It is drawn over code that is still being read, so a row it takes
+    /// and does not use is a row of that code covered by nothing.
+    ///
+    /// Tabs do not change that. Height used to be inferred from having
+    /// them, which was one list's preference wearing another list's
+    /// property -- so a list with tabs that has not asked to stay still
+    /// closes up like any other.
+    #[test]
+    fn a_compact_list_shrinks_to_what_matches_tabs_or_not() {
+        let plain = |count: usize| {
+            let rows = (0..count).map(|n| named(&n.to_string())).collect();
+            Picker::new(rows, PickerLayout::Compact { rows: 10 })
+        };
+
+        assert_eq!(
+            plain(3).visible_rows(20, 40),
+            3,
+            "three rows took not three"
+        );
+        assert_eq!(plain(30).visible_rows(20, 40), 10, "it went past its most");
+        assert_eq!(
+            plain(0).visible_rows(20, 40),
+            1,
+            "nothing to say needs a row to say it in"
+        );
+
+        let mut tabbed = plain(3);
+        tabbed.with_tabs(&["one", "two"]);
+        assert_eq!(
+            tabbed.visible_rows(20, 40),
+            3 + tabbed.tab_rows(),
+            "a list with tabs kept room it had nothing to put in"
+        );
+    }
+
+    /// Unless it says otherwise. A list read down as much as it is typed at
+    /// would move the row under the reader's eye between one letter and the
+    /// next.
+    #[test]
+    fn a_list_that_asked_to_keep_its_height_keeps_it() {
+        let rows = (0..3).map(|n| named(&n.to_string())).collect();
+        let mut picker = Picker::new(rows, PickerLayout::Compact { rows: 10 });
+        picker.keeps_height();
+        assert_eq!(
+            picker.visible_rows(20, 40),
+            10,
+            "it closed up on a list that asked not to"
+        );
+
+        // Including when nothing matches at all, which is the moment the
+        // steadiness is for: the block does not blink out from under a
+        // reader who typed one letter too many.
+        picker.set_query("nothing here matches this");
+        assert_eq!(picker.match_count(), 0, "the query matched something");
+        assert_eq!(
+            picker.visible_rows(20, 40),
+            10,
+            "it moved when the list emptied"
+        );
+    }
+
+    /// One row, for the tests above.
+    fn named(label: &str) -> PickerItem {
+        PickerItem {
+            prose: false,
+            marker: None,
+            icon: None,
+            label: label.to_string(),
+            detail: None,
+            trailing: None,
+            value: PickerValue::Nothing,
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            kind: None,
+            tab: None,
+        }
+    }
 
     /// A list can say what it is about, and what it says takes room from
     /// its rows rather than from the screen around it.
