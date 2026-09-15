@@ -52,14 +52,24 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
         // Nothing about typing, the arrows or `shift+enter`: this is a page
         // being written, and what a page being written does with a letter is
         // not news. What is worth a row is what it does with a *note*.
-        Hint::common(bare(KeyCode::Enter), "another"),
-        Hint::common(alt(KeyCode::Char(' ')), "done").when(on.is_some()),
-        Hint::common(alt(KeyCode::Enter), "go there").when(notes.can_go()),
-        Hint::common(bare(KeyCode::Esc), "leave"),
-        Hint::rare(alt(KeyCode::Up), "move it up or down")
+        Hint::common(bare(KeyCode::Enter), "another").saying("start another note"),
+        Hint::common(alt(KeyCode::Char(' ')), "done")
+            .saying("done, or not")
+            .when(on.is_some()),
+        Hint::common(alt(KeyCode::Enter), "go there")
+            .saying("go to what it is about")
+            .when(notes.can_go()),
+        // At the foot rather than on the card alone: taking a whole note
+        // away is the one thing here a reader will go looking for and not
+        // find, because backspace on its own is a letter.
+        Hint::common(alt(KeyCode::Backspace), "drop")
+            .saying("take the whole note away")
+            .when(on.is_some()),
+        Hint::common(bare(KeyCode::Esc), "leave").saying("leave, keeping what is written"),
+        Hint::rare(alt(KeyCode::Up), "move")
+            .saying("move it up or down")
             .or(alt(KeyCode::Down))
             .when(notes.rows().len() > 1),
-        Hint::rare(alt(KeyCode::Backspace), "take the whole note away").when(on.is_some()),
     ]
 }
 
@@ -84,9 +94,14 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
     })
 }
 
-/// How far in a note's own text starts: the fold column, the box, and the
-/// blank after it.
-const MARGIN: u16 = 4;
+/// Which column a note's own text starts in: a blank, the box, and the blank
+/// after it.
+///
+/// One number, because two things need it and they have to agree: the row is
+/// drawn from here and the caret is put here. They did not, once, and the
+/// caret sat one cell right of the letter it was about to put down -- which
+/// is a caret that is lying about the only thing it says.
+const MARGIN: u16 = 3;
 
 /// The notes, over the whole editor region.
 pub struct TodoUi<'a> {
@@ -209,11 +224,16 @@ impl TodoUi<'_> {
         // The box, on the note's own row only: a line of a body is part of
         // the note above it and is not separately done. Its column is kept
         // on the rows below, so a note's lines line up under its first.
-        let mut x = area.x + 1;
         if row.head {
-            put(cells, x, y, if row.done { DONE } else { OPEN }, style);
+            put(
+                cells,
+                area.x + 1,
+                y,
+                if row.done { DONE } else { OPEN },
+                style,
+            );
         }
-        x += 2;
+        let x = area.x + MARGIN;
 
         let at = row.at.as_deref().unwrap_or_default();
         let reserved = match at.is_empty() {

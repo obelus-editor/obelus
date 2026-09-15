@@ -730,8 +730,14 @@ pub struct Hint {
     /// `alt+up` and `alt+down` are one act in two directions, and two rows
     /// saying "move it up" and "move it down" is the same sentence twice.
     pub and_also: Option<crate::keymap::KeyChord>,
-    /// What it does, in as few words as will do.
+    /// What it does, in the one word the foot has room for.
     pub does: Option<&'static str>,
+    /// The same thing said properly, for the card, which has room for it.
+    ///
+    /// `None` where the word is the whole of it. Two forms rather than one
+    /// because the two places are not the same place: a foot is a row shared
+    /// by everything, and a card is a page about one thing.
+    pub said: Option<&'static str>,
     /// Whether it goes at the foot, or waits in the list of them all.
     ///
     /// The foot is one row over the reader's work, so what goes there is
@@ -757,6 +763,7 @@ impl Hint {
             chord,
             and_also: None,
             does: Some(does),
+            said: None,
             common: true,
             usable: true,
         }
@@ -769,6 +776,13 @@ impl Hint {
             common: false,
             ..Self::common(chord, does)
         }
+    }
+
+    /// What it does, at length, for the card.
+    #[must_use]
+    pub const fn saying(mut self, said: &'static str) -> Self {
+        self.said = Some(said);
+        self
     }
 
     /// The same act in the other direction, on a key of its own.
@@ -932,7 +946,7 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
     let widest = u16::try_from(
         hints
             .iter()
-            .map(|hint| hint.does.map_or(0, text_width))
+            .map(|hint| hint.said.or(hint.does).map_or(0, text_width))
             .max()
             .unwrap_or(0),
     )
@@ -1002,7 +1016,7 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
             false => off,
         };
         write(cells, card.x + 2, y, &hint.keys(), style);
-        if let Some(does) = hint.does {
+        if let Some(does) = hint.said.or(hint.does) {
             write(cells, card.x + 2 + column, y, does, style);
         }
     }

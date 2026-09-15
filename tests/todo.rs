@@ -385,3 +385,67 @@ fn a_tree_with_no_notes_says_so() {
         .expect("the notes");
     assert!(written.contains("the first"), "{written}");
 }
+
+/// The caret sits on the cell the next letter goes in.
+///
+/// Broken deliberately by giving the drawing and the caret their own idea of
+/// where a note's text starts: the caret sat one cell right of the letter it
+/// was about to put down, which is a caret lying about the only thing it
+/// says.
+#[test]
+fn the_caret_is_on_the_cell_the_letter_goes_in() {
+    let scratch = tree("align", THREE);
+    let mut app = open(&scratch, 76, 14);
+    let column = |app: &mut App| {
+        let dump = support::render(app, 76, 14);
+        support::cursor_line(&dump)
+            .split_once(',')
+            .and_then(|(x, _)| x.trim().parse::<usize>().ok())
+            .unwrap_or(0)
+    };
+    // Where the note's own text begins on its row.
+    let dump = support::render(&mut app, 76, 14);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("wire the counts"))
+        .unwrap_or_default();
+    let cells = row.split_once('|').map_or(row, |(_, rest)| rest);
+    // Characters, not bytes: the box in front of a note is three bytes and
+    // one cell, and a caret is counted in cells.
+    let starts = cells
+        .find("wire the counts")
+        .map_or(0, |byte| cells[..byte].chars().count());
+
+    assert_eq!(
+        column(&mut app),
+        starts,
+        "the caret is not on the first letter"
+    );
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Right);
+    assert_eq!(
+        column(&mut app),
+        starts + 3,
+        "it did not move with the caret"
+    );
+}
+
+/// Taking a whole note away is at the foot, not only on the card: backspace
+/// on its own is a letter here, so it is the one thing a reader will go
+/// looking for and not find.
+#[test]
+fn dropping_a_note_is_at_the_foot() {
+    let scratch = tree("drop-foot", THREE);
+    let mut app = open(&scratch, 76, 14);
+    let text = support::text_block(&support::render(&mut app, 76, 14)).to_string();
+    assert!(text.contains("drop"), "the foot does not say how:\n{text}");
+
+    // And the card says it at length, which is what a card is for.
+    press(&mut app, KeyCode::F(1));
+    let dump = support::render(&mut app, 76, 16);
+    assert!(
+        support::text_block(&dump).contains("take the whole note away"),
+        "the card only has the foot's word for it:\n{dump}"
+    );
+}
