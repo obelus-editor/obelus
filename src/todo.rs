@@ -120,11 +120,11 @@ impl Todo {
             let Some(note) = value.as_table() else {
                 continue;
             };
-            let said = note
-                .get("said")
-                .and_then(toml::Value::as_str)
-                .unwrap_or_default()
-                .to_string();
+            let said = trimmed(
+                note.get("said")
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or_default(),
+            );
             // A note that says nothing is a row a reader cannot tell from an
             // empty one, and there is nothing to do about it.
             if said.trim().is_empty() {
@@ -209,6 +209,18 @@ impl Todo {
 /// allowed to be a paragraph and `"a\nb"` is a paragraph nobody can read in
 /// the file. Escaped either way: a note may quote code, and code has quotes
 /// and backslashes in it.
+/// What a note says, with the blank line off the end.
+///
+/// A text that ends in a newline has an empty last line, and that line is a
+/// row on the page nobody typed. obelus never writes one -- but the file is
+/// the reader's as much as it is obelus's, and TOML's multi-line form
+/// invites it: closing quotes on a line of their own is the natural way to
+/// write one, and it leaves the break behind.
+#[must_use]
+pub fn trimmed(text: &str) -> String {
+    text.trim_end_matches('\n').to_string()
+}
+
 fn quoted(text: &str) -> String {
     let escaped: String = text
         .chars()

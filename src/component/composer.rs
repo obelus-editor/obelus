@@ -15,9 +15,30 @@
 //! What is left here is the box's own shape: how wide it lays out, which
 //! rows it hands to whoever draws it, and where the caret is in them.
 
+use std::ops::Range;
+
 use crossterm::event::KeyEvent;
 
-use crate::{coordinates::DisplayColumn, editing::Editing, text::Text};
+use crate::{
+    coordinates::{CharColumn, DisplayColumn, LineNumber, Span},
+    editing::Editing,
+    text::Text,
+};
+
+/// One row of a box, laid out.
+///
+/// What it says and which of it the reader has hold of, together, because
+/// they are worked out together: a row is what the wrapping decided, and a
+/// selection given in the note's own lines and columns would have to be
+/// taken apart again by whoever draws it.
+#[derive(Clone, Debug, Default)]
+pub struct Laid {
+    /// What the row says.
+    pub said: String,
+    /// Which of its characters are selected, counted from the start of the
+    /// row rather than of the text.
+    pub held: Option<Range<usize>>,
+}
 
 /// What is being written.
 #[derive(Clone, Debug)]
@@ -148,10 +169,23 @@ impl Composer {
             .move_to(crate::editing::Motion::LineEnd, &(), width.max(1));
     }
 
-    /// The rows it takes at a width, wrapped the way a file's lines are.
+    /// The rows it takes at a width, wrapped the way a file's lines are,
+    /// with whatever the reader has hold of marked on each.
+    #[must_use]
+    pub fn laid(&self, width: u16) -> Vec<Laid> {
+        laid_out(self.writing.text(), width, self.writing.selection())
+    }
+
+    /// The same, for a caller with nothing to say about a selection.
     #[must_use]
     pub fn rows(&self, width: u16) -> Vec<String> {
-        wrapped(&self.text(), width)
+        self.laid(width).into_iter().map(|row| row.said).collect()
+    }
+
+    /// What the reader has hold of, if they have hold of anything.
+    #[must_use]
+    pub fn selected(&self) -> Option<String> {
+        self.writing.selected()
     }
 
     /// Which row of the box the caret is on, and how many cells into it.
@@ -175,20 +209,42 @@ impl Composer {
 /// them out a second way would be a second wrapping to keep in step with
 /// this one.
 #[must_use]
-pub fn wrapped(text: &str, width: u16) -> Vec<String> {
-    let laid = Text::from_string(text);
+pub fn wrapped(text: &str, width: u16) -> Vec<Laid> {
+    laid_out(&Text::from_string(text), width, None)
+}
+
+/// The rows of a text at a width, with `held` broken up across them.
+fn laid_out(text: &Text, width: u16, held: Option<Span>) -> Vec<Laid> {
+    let width = width.max(1);
     let mut rows = Vec::new();
-    for index in 0..laid.line_count() {
-        let line = crate::coordinates::LineNumber::new(index);
-        let characters: Vec<char> = laid.line(line).chars().collect();
-        for row in laid.wrap_rows(line, width.max(1)) {
+    for index in 0..text.line_count() {
+        let line = LineNumber::new(index);
+        let characters: Vec<char> = text.line(line).chars().collect();
+        for row in text.wrap_rows(line, width) {
             let words: String = characters
                 .iter()
                 .take(row.end.get())
                 .skip(row.first.get())
                 .collect();
-            rows.push(words.trim_end_matches('\n').to_string());
+            let said = words.trim_end_matches('\n').to_string();
+            rows.push(Laid {
+                held: held.and_then(|span| held_in(span, line, row.first, said.chars().count())),
+                said,
+            });
         }
     }
     rows
+}
+
+/// Which of a row's characters a span covers, if it covers any.
+///
+/// Asked of each character rather than worked out as an intersection,
+/// because that is the answer the file's own rows get: a second arithmetic
+/// for the same question is a second answer for the two to disagree over,
+/// and a selection that stopped one character short in a note and not in a
+/// file is exactly the kind of thing nobody would find.
+fn held_in(span: Span, line: LineNumber, first: CharColumn, shown: usize) -> Option<Range<usize>> {
+    let mut held = (0..shown).filter(|at| span.contains(line, CharColumn::new(first.get() + at)));
+    let from = held.next()?;
+    Some(from..held.next_back().map_or(from + 1, |last| last + 1))
 }

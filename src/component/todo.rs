@@ -14,12 +14,15 @@
 //! Nothing here reads or writes that file -- the application does, because
 //! it is the one that knows which tree this is.
 
-use std::path::PathBuf;
+use std::{ops::Range, path::PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
-    component::{composer::Composer, window::Window},
+    component::{
+        composer::{Composer, Laid},
+        window::Window,
+    },
     coordinates::LineNumber,
     todo::{Note, Todo},
 };
@@ -46,6 +49,12 @@ pub struct Row {
     pub place: bool,
     /// Whether the note is done, for the whole of it to be drawn as such.
     pub done: bool,
+    /// Which of `said`'s characters the reader has hold of, if any.
+    ///
+    /// Counted from the start of this row rather than of the note: a row is
+    /// what gets drawn, and a selection given in the note's own lines would
+    /// have to be taken apart again by whoever draws it.
+    pub held: Option<Range<usize>>,
 }
 
 /// What a key did.
@@ -61,6 +70,13 @@ pub enum TodoOutcome {
     Go(PathBuf, LineNumber),
     /// The reader gave up.
     Cancelled,
+    /// Put this on the clipboard.
+    Copy {
+        /// What to copy.
+        text: String,
+        /// What it was, for the reader to be told what they got.
+        what: &'static str,
+    },
 }
 
 /// The notes, while they are showing.
@@ -197,38 +213,38 @@ impl TodoView {
     /// to read -- which is what they opened the list to avoid.
     fn rebuild(&mut self) {
         let mut rows = Vec::new();
+        // Wrapped where the reader asked for wrapping, and one row per line
+        // where they did not -- the same answer the file behind this view
+        // gives, because it is the same question, and the same width the
+        // caret is measured against, because the two have to be counting
+        // the same rows.
+        let room = self.caret_width().max(1);
         for (index, note) in self.todo.notes.iter().enumerate() {
             // A note the caret is in shows what is in the box, not what is
-            // on disk: the reader is looking at their own typing.
-            let said = self
-                .writing
-                .as_ref()
-                .filter(|(at, _)| *at == index)
-                .map_or_else(|| note.said.clone(), |(_, composer)| composer.text());
-            // Wrapped where the reader asked for wrapping, and one row per
-            // line where they did not -- the same answer the file behind
-            // this view gives, because it is the same question.
-            let (room, wrap) = self.laid;
-            let room = room.max(1);
-            let laid: Vec<String> = match wrap {
-                true => crate::component::composer::wrapped(&said, room),
-                false => said.lines().map(str::to_string).collect(),
+            // on disk: the reader is looking at their own typing, and it is
+            // the box that knows what of it they have hold of.
+            let laid = match self.writing.as_ref().filter(|(at, _)| *at == index) {
+                Some((_, composer)) => composer.laid(room),
+                None => crate::component::composer::wrapped(&note.said, room),
             };
             let mut lines = laid.into_iter();
+            let first: Laid = lines.next().unwrap_or_default();
             rows.push(Row {
                 note: index,
-                said: lines.next().unwrap_or_default(),
+                said: first.said,
                 head: true,
                 place: false,
                 done: note.done,
+                held: first.held,
             });
             for line in lines {
                 rows.push(Row {
                     note: index,
-                    said: line,
+                    said: line.said,
                     head: false,
                     place: false,
                     done: note.done,
+                    held: line.held,
                 });
             }
             // And where it points, under what it says: a row of its own
@@ -245,6 +261,10 @@ impl TodoView {
                     head: false,
                     place: true,
                     done: note.done,
+                    // Never: it is a fact about the note rather than a word
+                    // of it, and it is not the reader's to take a copy of
+                    // by selecting it.
+                    held: None,
                 });
             }
         }
@@ -299,7 +319,10 @@ impl TodoView {
         let Some((at, composer)) = self.writing.take() else {
             return false;
         };
-        let said = composer.text();
+        // The same shape it would come back in from the file: a note that
+        // changed when it was read again would be a note whose rows moved
+        // under a reader who had not touched it.
+        let said = crate::todo::trimmed(&composer.text());
         if said.trim().is_empty() {
             self.drop_note(at);
             return true;
@@ -500,6 +523,30 @@ impl TodoView {
                 self.where_now.swap(at, to);
                 self.enter_note(to, false);
                 TodoOutcome::Changed
+            }
+
+            // The reader's own copy key, which is `ctrl+c` everywhere in
+            // obelus. It has to be answered here because a dialog is bound
+            // to nothing in the key table -- and a box a reader can select
+            // in but not copy out of is a box with half a selection.
+            //
+            // The whole note where nothing is held, the way the file copies
+            // the whole line: copying nothing is not something a key can
+            // usefully do.
+            KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
+                let Some((_, composer)) = self.writing.as_ref() else {
+                    return TodoOutcome::Consumed;
+                };
+                match composer.selected() {
+                    Some(text) => TodoOutcome::Copy {
+                        text,
+                        what: "selection",
+                    },
+                    None => TodoOutcome::Copy {
+                        text: composer.text(),
+                        what: "note",
+                    },
+                }
             }
 
             // Everything else is the box's, and the box knows which keys

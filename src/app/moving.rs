@@ -270,15 +270,25 @@ impl App {
             ),
         };
 
-        // Handed to the terminal, which owns it from here: that is what
-        // makes the copy outlive obelus and what makes it work over ssh. A
-        // terminal that does not implement the sequence copies nothing and
-        // cannot say so, so the note reports what obelus did rather than
-        // what the terminal did with it.
-        match crate::clipboard::copy(&text) {
+        self.copied(&text, what);
+    }
+
+    /// Hands text to the clipboard and says what the reader got.
+    ///
+    /// Handed to the terminal, which owns it from here: that is what makes
+    /// the copy outlive obelus and what makes it work over ssh. A terminal
+    /// that does not implement the sequence copies nothing and cannot say
+    /// so, so the note reports what obelus did rather than what the terminal
+    /// did with it.
+    ///
+    /// Shared with the notes, because a copy is a copy: the file and the box
+    /// a note is written in say the same thing about it or a reader learns
+    /// that one of them is lying.
+    pub(super) fn copied(&mut self, text: &str, what: &str) {
+        match crate::clipboard::copy(text) {
             Ok(()) => self.note = Some(format!("copied {what}")),
             Err(error) => {
-                tracing::warn!(%error, "copying the selection failed");
+                tracing::warn!(%error, what, "copying failed");
                 self.note = Some(format!("could not copy {what}"));
             }
         }

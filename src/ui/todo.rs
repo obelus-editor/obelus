@@ -15,7 +15,7 @@ use crate::{
     app::App,
     component::todo::{Row, TodoView as Notes},
     theme::Theme,
-    ui::{Hint, editor::SCROLLBAR_WIDTH, fill, foot, footed, put, write},
+    ui::{Hint, Marked, editor::SCROLLBAR_WIDTH, fill, foot, footed, put, write_marked},
 };
 
 /// The box in front of a note, ticked and not.
@@ -81,6 +81,12 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
             .saying("move it up or down")
             .or(alt(KeyCode::Down))
             .when(notes.rows().len() > 1),
+        // On the card rather than at the foot: `ctrl+c` is what copying is
+        // everywhere in obelus, so a reader arrives knowing it. What they
+        // do not know is what it takes when they are holding nothing.
+        Hint::rare(chord(KeyCode::Char('c'), KeyModifiers::CONTROL), "copy")
+            .saying("copy what is held, or the whole note")
+            .when(on.is_some()),
     ]
 }
 
@@ -256,8 +262,20 @@ impl TodoUi<'_> {
             true => self.theme.gutter,
             false => self.theme.foreground,
         };
-        write(
+        // What the reader has hold of, marked the way every other row in
+        // obelus marks a run of itself -- and the way the file marks its
+        // own selection, which is the colour a reader has learnt means
+        // "this is what you are holding".
+        let marked = match row.held.clone() {
+            Some(held) => Marked::run(held, self.theme.selection_background),
+            None => Marked::plain(),
+        };
+        write_marked(
             cells,
+            Rect {
+                width: area.width.saturating_sub(SCROLLBAR_WIDTH),
+                ..area
+            },
             x,
             y,
             &crate::ui::truncate_from_right(
@@ -265,6 +283,7 @@ impl TodoUi<'_> {
                 usize::from(area.width.saturating_sub(MARGIN + SCROLLBAR_WIDTH).max(1)),
             ),
             Style::new().fg(ink).bg(background),
+            &marked,
         );
     }
 }

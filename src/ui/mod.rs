@@ -19,6 +19,8 @@ pub mod status;
 pub mod todo;
 pub mod welcome;
 
+use std::ops::Range;
+
 use ratatui::{
     buffer::Buffer as CellBuffer,
     layout::{Position, Rect, Size},
@@ -544,12 +546,14 @@ pub fn write(cells: &mut CellBuffer, x: u16, y: u16, contents: &str, style: Styl
     column
 }
 
-/// Which characters of a row matched what the reader typed.
+/// Which characters of a row are marked out.
 ///
-/// Two shapes because the matching has two shapes: a fuzzy match lands on
-/// scattered characters, and a substring match is one run. Every list in
-/// obelus marks them the same way, which is what this is for -- a row in a
-/// narrowed list has to say why it is in it.
+/// Two shapes because the questions have two shapes: a fuzzy match lands on
+/// scattered characters, while a substring match -- or a selection, which is
+/// the same shape and gets the same treatment -- is one run. Every row in
+/// obelus marks them the same way, which is what this is for: a row in a
+/// narrowed list has to say why it is in it, and a row of a note has to say
+/// what the reader has hold of.
 #[derive(Clone, Copy, Debug, Default)]
 pub enum Matched<'a> {
     /// Nothing was typed, or nothing in this text matched it.
@@ -620,9 +624,23 @@ impl Marked<'_> {
             skip: 0,
         }
     }
+
+    /// Text with one run of it marked out.
+    ///
+    /// For a selection, which is not a match and is drawn like one: a
+    /// background over whatever colour the characters already carry.
+    #[must_use]
+    pub const fn run(held: Range<usize>, mark: Color) -> Self {
+        Self {
+            matched: Matched::Run(held.start, held.end),
+            mark,
+            syntax: None,
+            skip: 0,
+        }
+    }
 }
 
-/// Writes a row's text, marking what matched and colouring what the file
+/// Writes a row's text, marking a run of it and colouring what the file
 /// colours, and returns the column after it.
 ///
 /// Clipped at the right edge of `area` rather than the screen: a row is

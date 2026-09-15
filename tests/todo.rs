@@ -176,13 +176,87 @@ fn the_arrows_walk_the_lines_then_the_notes() {
             .unwrap_or(0)
     };
     assert_eq!(row(&mut app), 0);
-    // Into the second note, then down its own two lines.
-    for expected in [1, 2, 3, 4] {
+    // Into the second note, down its own three lines, and then over the row
+    // saying where it points -- that is a fact about the note rather than a
+    // line of it, so there is nowhere on it for a caret to be.
+    for expected in [1, 2, 3, 5] {
         press(&mut app, KeyCode::Down);
         assert_eq!(row(&mut app), expected, "the caret did not walk down");
     }
     press(&mut app, KeyCode::Up);
     assert_eq!(row(&mut app), 3);
+}
+
+/// What the reader has hold of is marked, and `ctrl+c` takes a copy of it.
+///
+/// Both in one test because they are one thing: a selection nobody can see
+/// is a selection nobody makes, and one that cannot be copied out is a
+/// selection with nothing to do.
+#[test]
+fn what_is_held_in_a_note_is_marked_and_copied() {
+    use obelus::theme::builtin::DARK;
+
+    let _turn = support::clipboard_turn();
+    obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
+
+    let scratch = tree("held", THREE);
+    let mut app = open(&scratch, 76, 18);
+    // The caret opens at the start of the first note, so this takes "wire".
+    for _ in 0..4 {
+        support::press_shift(&mut app, KeyCode::Right);
+    }
+
+    let dump = support::render(&mut app, 76, 18);
+    let held = format!("bg={}", support::spelled(DARK.selection_background));
+    assert!(
+        support::legend_for(&dump, 'w').ends_with(&held),
+        "the first letter of what is held is not marked:\n{dump}"
+    );
+    // The first `t` on the page is the one in "the", a character past the
+    // end of what is held.
+    assert!(
+        !support::legend_for(&dump, 't').ends_with(&held),
+        "the mark ran past what is held:\n{dump}"
+    );
+
+    support::press_control_key(&mut app, KeyCode::Char('c'));
+    assert_eq!(
+        obelus::clipboard::paste().as_deref(),
+        Some("wire"),
+        "what was held did not reach the clipboard"
+    );
+
+    // And with nothing held, the whole note -- the way the file copies the
+    // whole line rather than nothing at all.
+    press(&mut app, KeyCode::Right);
+    support::press_control_key(&mut app, KeyCode::Char('c'));
+    assert_eq!(
+        obelus::clipboard::paste().as_deref(),
+        Some("wire the counts tree up to the search"),
+    );
+}
+
+/// A note is what it says, without the blank line a trailing newline leaves.
+///
+/// Broken deliberately by laying the notes out through the text they are
+/// really held in: a note written with TOML's multi-line quotes ends in a
+/// break, and the page grew a row nobody had typed under it.
+#[test]
+fn a_note_does_not_end_in_a_blank_row() {
+    let scratch = tree("blank-end", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let dump = support::render(&mut app, 76, 18);
+    let rows: Vec<&str> = support::text_block(&dump).lines().collect();
+    let at = |needle: &str| {
+        rows.iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("no {needle:?}:\n{dump}"))
+    };
+    assert_eq!(
+        at("sample.rs:2"),
+        at("changes the colours") + 1,
+        "a blank row came between the note and where it points:\n{dump}"
+    );
 }
 
 /// `alt+space` ticks a note, and the file says so.

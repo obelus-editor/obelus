@@ -124,6 +124,12 @@ impl App {
         match outcome {
             TodoOutcome::Ignored => false,
             TodoOutcome::Consumed => true,
+            // Nothing is saved: a copy takes a note away from the page and
+            // changes nothing on it.
+            TodoOutcome::Copy { text, what } => {
+                self.copied(&text, what);
+                true
+            }
             TodoOutcome::Changed => {
                 let todo = notes.todo().clone();
                 self.save_notes(&todo);
