@@ -8,7 +8,6 @@
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
 use crate::{
-    app::App,
     component::picker::{Marking, Picker, PickerItem, PickerLayout},
     git::FileStatus,
     theme::Theme,
@@ -92,77 +91,83 @@ pub struct PickerView<'a> {
 }
 
 impl<'a> PickerView<'a> {
-    /// Borrows what the view needs, or nothing if no picker is open.
-    #[must_use]
-    pub fn new(app: &'a App) -> Option<Self> {
-        Some(Self {
-            picker: app.picker()?,
-            theme: app.theme(),
-        })
-    }
-
-    /// The same view over a list that is not the one taking keys.
+    /// Borrows what a view needs, which is the list and the colours to draw
+    /// it in.
     ///
-    /// For a list that follows what is being typed somewhere else -- the
-    /// commands an agent takes, against the box a message is written in.
-    /// It is drawn by the same code as every other list, because it is the
-    /// same thing to a reader: rows, one of them chosen, what matched
+    /// One constructor, including for a list that is not the one taking keys
+    /// -- the commands an agent takes, against the box a message is written
+    /// in. It is drawn by the same code as every other list, because it is
+    /// the same thing to a reader: rows, one of them chosen, what matched
     /// marked.
     #[must_use]
-    pub const fn over(picker: &'a Picker, theme: &'a Theme) -> Self {
+    pub const fn new(picker: &'a Picker, theme: &'a Theme) -> Self {
         Self { picker, theme }
     }
+}
 
-    /// Where the list goes within the editor region.
-    ///
-    /// A compact list sits on the bottom edge and grows upwards only as far as
-    /// it has to, so the code above stays readable. A full-area list gives up
-    /// its bottom rows to the preview, and one row between them to the rule
-    /// that says they are different things.
-    #[must_use]
-    pub fn region(&self, editor: Rect) -> Rect {
-        match self.picker.layout() {
-            PickerLayout::FullArea => match preview_region(Some(self.picker), editor) {
-                Some(_) => Rect {
-                    height: list_region_rows(self.picker, editor.width),
-                    ..editor
-                },
-                None => editor,
+/// Where the list goes within the editor region.
+///
+/// A compact list sits on the bottom edge and grows upwards only as far as it
+/// has to, so the code above stays readable. A full-area list gives up its
+/// bottom rows to the preview, and one row between them to the rule that says
+/// they are different things.
+///
+/// A free function rather than a method on the view, because measuring is not
+/// drawing: the key handler has to know how tall the list will be in order to
+/// size a page, and it was reaching that fact by building a widget it never
+/// rendered. Nothing here reads the theme, which is the other half of saying
+/// the same thing.
+#[must_use]
+pub fn region(picker: &Picker, editor: Rect) -> Rect {
+    match picker.layout() {
+        PickerLayout::FullArea => match preview_region(Some(picker), editor) {
+            Some(_) => Rect {
+                height: list_region_rows(picker, editor.width),
+                ..editor
             },
-            PickerLayout::Compact { .. } => {
-                let wanted = self.picker.visible_rows(editor.height, editor.width);
-                Rect {
-                    y: editor.y + editor.height - wanted,
-                    height: wanted,
-                    ..editor
-                }
+            None => editor,
+        },
+        PickerLayout::Compact { .. } => {
+            let wanted = picker.visible_rows(editor.height, editor.width);
+            Rect {
+                y: editor.y + editor.height - wanted,
+                height: wanted,
+                ..editor
             }
         }
     }
 }
 
-impl PickerView<'_> {
-    /// The rows of the list, within the region it is drawn in.
-    ///
-    /// A list with tabs keeps its first two rows for them -- the tabs and
-    /// the rule under them -- and one that says what it is about keeps the
-    /// rows that takes, so what a reader walks is what is left. One
-    /// function, shared with the drawing and with everything that has to
-    /// know how many rows are on screen: a window settled on a height the
-    /// rows do not have scrolls before the last row it drew, and a page
-    /// steps further than the reader can see.
-    #[must_use]
-    pub fn rows_region(&self, region: Rect) -> Rect {
-        let above = self
-            .picker
-            .tab_rows()
-            .saturating_add(self.picker.about_rows(region.width));
-        Rect {
-            y: region.y + above,
-            height: region.height.saturating_sub(above),
-            ..region
-        }
+/// The rows of the list, within the region it is drawn in.
+///
+/// A list with tabs keeps its first two rows for them -- the tabs and the rule
+/// under them -- and one that says what it is about keeps the rows that takes,
+/// so what a reader walks is what is left. One function, shared with the
+/// drawing and with everything that has to know how many rows are on screen: a
+/// window settled on a height the rows do not have scrolls before the last row
+/// it drew, and a page steps further than the reader can see.
+#[must_use]
+pub fn rows_region(picker: &Picker, region: Rect) -> Rect {
+    let above = picker
+        .tab_rows()
+        .saturating_add(picker.about_rows(region.width));
+    Rect {
+        y: region.y + above,
+        height: region.height.saturating_sub(above),
+        ..region
     }
+}
+
+/// How many rows of the list a reader will actually see, given the room.
+///
+/// The two above composed, which is the only question anybody outside this
+/// module asks: the window follows the selection when it knows how many rows
+/// are on screen, the matched characters are worked out for those rows, and a
+/// page moves by that many. Named once so that three callers cannot each get
+/// the composition slightly wrong.
+#[must_use]
+pub fn rows_drawn(picker: &Picker, room: Rect) -> u16 {
+    rows_region(picker, region(picker, room)).height
 }
 
 impl Widget for PickerView<'_> {
@@ -217,7 +222,7 @@ impl Widget for PickerView<'_> {
         // The tabs next, with their own rule under them, and the list below
         // whatever they took. The rule is why a tab row reads as a heading
         // over the list rather than as its first row.
-        let list = self.rows_region(area);
+        let list = rows_region(self.picker, area);
         let tabs = self.picker.tab_rows();
         if tabs > 0 {
             let under = Rect {

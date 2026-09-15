@@ -226,19 +226,13 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
         // A list opened over it is the agent's own question, or the
         // commands it takes: both draw where any compact list draws, with
         // the conversation behind them.
-        let over = app
-            .picker()
-            .map(|picker| picker::PickerView::over(picker, app.theme()))
-            .or_else(|| {
-                app.slash()
-                    .map(|slash| picker::PickerView::over(slash, app.theme()))
-            });
+        let over = app.picker().or_else(|| app.slash());
         if let Some(list) = over {
             let room = app.chat().map_or(regions.editor, |chat| {
                 chat::above_writing(regions.editor, chat)
             });
-            let region = list.region(room);
-            list.render(region, cells);
+            let region = picker::region(list, room);
+            picker::PickerView::new(list, app.theme()).render(region, cells);
             if region.y > regions.editor.y {
                 rule(
                     cells,
@@ -273,9 +267,9 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
         view.render(regions.editor, cells);
         // A list opened over them is a setting's choices: it draws where any
         // compact list draws, and the settings are what is behind it.
-        if let Some(list) = picker::PickerView::new(app) {
-            let region = list.region(regions.editor);
-            list.render(region, cells);
+        if let Some(list) = app.picker() {
+            let region = picker::region(list, regions.editor);
+            picker::PickerView::new(list, app.theme()).render(region, cells);
             if region.y > regions.editor.y {
                 rule(
                     cells,
@@ -298,9 +292,9 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     }
     // Over the code, because a compact list is meant to leave the code above
     // it visible.
-    if let Some(view) = picker::PickerView::new(app) {
-        let region = view.region(regions.editor);
-        view.render(region, cells);
+    if let Some(list) = app.picker() {
+        let region = picker::region(list, regions.editor);
+        picker::PickerView::new(list, app.theme()).render(region, cells);
 
         // A compact list sits on top of the code, so it needs an edge: the
         // same rule the preview gets, for the same reason, which is that two

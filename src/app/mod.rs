@@ -834,8 +834,10 @@ impl App {
         // their matched characters worked out, and only the geometry knows
         // how many rows there are. The room is the room it is *drawn* in,
         // which over a conversation is everything above the box.
-        let rows = ui::picker::PickerView::new(self)
-            .map(|view| view.rows_region(view.region(self.picker_room())).height);
+        let rows = self
+            .picker
+            .as_ref()
+            .map(|picker| ui::picker::rows_drawn(picker, self.picker_room()));
         if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
             picker.refresh_indices(rows);
         }
@@ -1073,8 +1075,8 @@ impl App {
         // list gives half of that to a preview, and a page of the whole
         // editor would walk the selection twice as far as the reader can
         // see.
-        let page = ui::picker::PickerView::new(self).map_or(1, |view| {
-            view.rows_region(view.region(self.picker_room())).height
+        let page = self.picker.as_ref().map_or(1, |picker| {
+            ui::picker::rows_drawn(picker, self.picker_room())
         });
         // Except the paging keys, while a preview is on screen: a screenful
         // is what the thing being *read* is moved by, and the list above it

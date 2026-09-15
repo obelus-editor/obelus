@@ -368,9 +368,7 @@ impl App {
     /// so it needs what the picker needs.
     fn settle_slash(&mut self) {
         let rows = self.slash.as_ref().zip(self.chat()).map(|(slash, chat)| {
-            let view = ui::picker::PickerView::over(slash, self.theme());
-            view.rows_region(view.region(ui::chat::above_writing(self.editor_area, chat)))
-                .height
+            ui::picker::rows_drawn(slash, ui::chat::above_writing(self.editor_area, chat))
         });
         if let (Some(rows), Some(slash)) = (rows, self.slash.as_mut()) {
             slash.refresh_indices(rows);
