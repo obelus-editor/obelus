@@ -63,10 +63,20 @@ fn every_line_of_every_note_is_on_the_page() {
     let text = support::text_block(&dump);
 
     assert!(text.contains("wire the counts tree"), "{dump}");
-    assert!(text.contains("\u{25a1} wire"), "no empty box:\n{dump}");
-    assert!(
-        text.contains("\u{2611} settings live"),
-        "no ticked box:\n{dump}"
+    // Whichever pair is drawn -- the Nerd Font's where there is one, the
+    // plain ones where there is not. What has to be true is that a note to
+    // do and a note that is done are not the same box.
+    let boxes: Vec<char> = text
+        .lines()
+        .filter_map(|row| row.split_once('|').map(|(_, rest)| rest))
+        .filter_map(|row| row.chars().nth(1))
+        .filter(|glyph| !glyph.is_whitespace())
+        .collect();
+    assert!(boxes.len() >= 3, "not a box per note:\n{dump}");
+    assert_eq!(boxes[0], boxes[1], "two notes to do are drawn differently");
+    assert_ne!(
+        boxes[0], boxes[2],
+        "a note that is done is drawn like one that is not:\n{dump}"
     );
     // On a row of its own, under what the note says.
     let rows: Vec<&str> = text.lines().collect();

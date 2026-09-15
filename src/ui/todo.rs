@@ -19,8 +19,19 @@ use crate::{
 };
 
 /// The box in front of a note, ticked and not.
-const OPEN: char = '\u{25a1}';
-const DONE: char = '\u{2611}';
+///
+/// The plain ones where there is no Nerd Font. Everything else on this page
+/// survives losing the glyphs -- the words are words -- but whether a note
+/// is done is said *only* here, so it has to be said in something every
+/// terminal can draw.
+fn box_of(done: bool) -> char {
+    match (crate::icons::enabled(), done) {
+        (true, false) => crate::icons::ui::TODO,
+        (true, true) => crate::icons::ui::TODO_DONE,
+        (false, false) => '\u{25a1}',
+        (false, true) => '\u{2611}',
+    }
+}
 
 /// Where the notes go, inside a region this size.
 ///
@@ -234,13 +245,7 @@ impl TodoUi<'_> {
         // the note above it and is not separately done. Its column is kept
         // on the rows below, so a note's lines line up under its first.
         if row.head {
-            put(
-                cells,
-                area.x + 1,
-                y,
-                if row.done { DONE } else { OPEN },
-                style,
-            );
+            put(cells, area.x + 1, y, box_of(row.done), style);
         }
         let x = area.x + MARGIN;
 

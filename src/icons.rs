@@ -138,6 +138,14 @@ pub mod ui {
     pub const UNSAVED: char = '\u{f0766}';
     /// A file that can no longer be read from disk.
     pub const STALE: char = '\u{f0a4b}';
+    /// A note to come back to, and one that has been come back to.
+    ///
+    /// The same box in both, with a mark in the second: a pair that changed
+    /// shape -- a square for one and a circle for the other -- would put a
+    /// jog in the one column of this page a reader reads straight down.
+    pub const TODO: char = '\u{f0131}';
+    /// The same box, with the mark in it.
+    pub const TODO_DONE: char = '\u{f0132}';
     /// A directory, on a row whose children are what it holds.
     ///
     /// The plain folder rather than [`TREE`]: that one is the whole of what
