@@ -131,48 +131,6 @@ impl Mode {
     }
 }
 
-/// A direction to move the cursor in.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Motion {
-    /// One character left.
-    Left,
-    /// One character right.
-    Right,
-    /// One line up.
-    Up,
-    /// One line down.
-    Down,
-    /// The first character of the line.
-    LineStart,
-    /// Past the last character of the line.
-    LineEnd,
-    /// The start of the word to the left, or the one the cursor is in.
-    WordLeft,
-    /// Past the end of the word to the right.
-    WordRight,
-    /// The start of the document.
-    DocumentStart,
-    /// The last line of the document.
-    DocumentEnd,
-}
-
-/// Where the cursor is, and where it would like to be.
-#[derive(Clone, Copy, Debug)]
-pub struct Cursor {
-    /// The line the cursor is on.
-    pub line: LineNumber,
-    /// The character the cursor is before.
-    pub column: CharColumn,
-    /// The cell within a visual row that the cursor is aiming for while moving
-    /// vertically.
-    ///
-    /// Without this, moving down through a short row and back up lands in the
-    /// wrong place: the column would have been clamped on the way through and
-    /// the original never recovered. Within a *row* rather than within a line,
-    /// because with wrapping a row is what moving up and down steps over.
-    remembered_cell: DisplayColumn,
-}
-
 /// What somebody else has done to a file since a document and it were the
 /// same bytes.
 ///
@@ -486,6 +444,13 @@ impl Block {
 /// Two things are drawn the same way -- rows of text the file does not have,
 /// between two lines it does -- and they are not the same thing, so they do
 /// not read the same: lines a commit removed are gone, and a commit's
+/// A caret in a text, and the two vocabularies that move and change it.
+///
+/// Re-exported rather than owned: a buffer *is* one of these with a file and
+/// a syntax tree attached, and so is the box a note is written in. What they
+/// share lives in [`crate::editing`].
+pub use crate::editing::{Cursor, Editing, Motion, Typing};
+
 /// message is a note.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Held {
@@ -1271,7 +1236,7 @@ impl Buffer {
     /// Where the word before the cursor begins.
     #[must_use]
     pub fn word_before(&self) -> (LineNumber, CharColumn) {
-        moving::word_left(
+        crate::editing::word_left(
             &self.text,
             &self.folds,
             self.cursor.line,
@@ -1282,7 +1247,7 @@ impl Buffer {
     /// Where the word after the cursor ends.
     #[must_use]
     pub fn word_after(&self) -> (LineNumber, CharColumn) {
-        moving::word_right(
+        crate::editing::word_right(
             &self.text,
             &self.folds,
             self.cursor.line,

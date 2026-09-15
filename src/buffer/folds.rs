@@ -274,6 +274,14 @@ fn shallower_than(indents: &[Row]) -> Vec<Row> {
 /// file for the answer. Kept because it is the plain reading: [`of`] is the
 /// same rule arranged so that nothing is scanned twice, and a test holds the
 /// two to each other.
+impl crate::editing::Hides for Folds {
+    /// What a motion steps over: a line inside a closed run is not a place
+    /// the caret can be, because it is not a line anybody can see.
+    fn hides(&self, line: LineNumber) -> bool {
+        Self::hides(self, line)
+    }
+}
+
 #[cfg(test)]
 fn at(text: &Text, row: LineNumber) -> Option<Fold> {
     let last = text.last_line();

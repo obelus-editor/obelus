@@ -18,6 +18,7 @@ pub mod component;
 pub mod config;
 pub mod coordinates;
 pub mod counts;
+pub mod editing;
 pub mod event;
 pub mod git;
 pub mod icons;
