@@ -554,28 +554,16 @@ impl Card {
             // The rest are the box's, and only while the reader is in it.
             // A card with nothing to type in has no use for them, and a key
             // that does nothing should reach the table where it might.
-            KeyCode::Left if bare && writing => {
-                self.write(|composer| composer.left());
-                CardOutcome::Consumed
-            }
-            KeyCode::Right if bare && writing => {
-                self.write(|composer| composer.right());
-                CardOutcome::Consumed
-            }
-            KeyCode::Home if bare && writing => {
-                self.write(|composer| composer.home(room));
-                CardOutcome::Consumed
-            }
-            KeyCode::End if bare && writing => {
-                self.write(|composer| composer.end(room));
-                CardOutcome::Consumed
-            }
-            KeyCode::Backspace if bare && writing => {
-                self.write(Composer::backspace);
-                CardOutcome::Consumed
-            }
-            KeyCode::Delete if bare && writing => {
-                self.write(Composer::delete);
+            //
+            // Which keys those are is the box's own rule, asked rather than
+            // repeated: there are two boxes now, and the same table written
+            // in both is a table that will be right in one.
+            _ if writing
+                && self
+                    .words
+                    .as_mut()
+                    .is_some_and(|words| words.composer.handle_key(key, room)) =>
+            {
                 CardOutcome::Consumed
             }
             // Typing goes in the box wherever the reader is on the card: a

@@ -434,7 +434,7 @@ impl TodoView {
     }
 
     fn write_key_in(&mut self, key: &KeyEvent, room: u16) -> TodoOutcome {
-        let Some((at, composer)) = self.writing.as_mut() else {
+        let Some((_, composer)) = self.writing.as_mut() else {
             return TodoOutcome::Ignored;
         };
         let bare = key.modifiers.is_empty();
@@ -467,57 +467,13 @@ impl TodoView {
                 self.finish(at, &composer.text());
                 TodoOutcome::Changed
             }
-            // The newline, because enter is taken by finishing. The message
-            // box a note is written in does it the same way.
-            KeyCode::Enter if key.modifiers == KeyModifiers::ALT => {
-                composer.newline();
-                TodoOutcome::Consumed
-            }
-            KeyCode::Up if bare => {
-                composer.up(room);
-                TodoOutcome::Consumed
-            }
-            KeyCode::Down if bare => {
-                composer.down(room);
-                TodoOutcome::Consumed
-            }
-            KeyCode::Left if bare => {
-                composer.left();
-                TodoOutcome::Consumed
-            }
-            KeyCode::Right if bare => {
-                composer.right();
-                TodoOutcome::Consumed
-            }
-            KeyCode::Home if bare => {
-                composer.home(room);
-                TodoOutcome::Consumed
-            }
-            KeyCode::End if bare => {
-                composer.end(room);
-                TodoOutcome::Consumed
-            }
-            KeyCode::Backspace if bare => {
-                composer.backspace();
-                TodoOutcome::Consumed
-            }
-            KeyCode::Delete if bare => {
-                composer.delete();
-                TodoOutcome::Consumed
-            }
-            // Everything typable goes in the box. Nothing else on this view
-            // wants characters while a note is open in it, and a key that
-            // fell through would be typing into a list nobody can see.
-            KeyCode::Char(character)
-                if bare || key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
-            {
-                composer.insert(character);
-                TodoOutcome::Consumed
-            }
-            _ => {
-                let _ = at;
-                TodoOutcome::Ignored
-            }
+            // Everything else is the box's, and the box knows which keys
+            // those are: it is the same box a message to an agent is
+            // written in, and which keys a box answers to is one rule.
+            _ => match composer.handle_key(key, room) {
+                true => TodoOutcome::Consumed,
+                false => TodoOutcome::Ignored,
+            },
         }
     }
 }

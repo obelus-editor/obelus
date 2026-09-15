@@ -478,3 +478,72 @@ fn the_list_starts_at_the_first_row() {
         "something is above the list:\n{dump}"
     );
 }
+
+/// A note being written has a caret in the row it is being written in, and
+/// the arrows move it.
+///
+/// Broken deliberately by leaving the notes out of `cursor_position`: the
+/// box took every key and showed no sign of where they were landing, which
+/// is a text box a reader cannot use.
+#[test]
+fn the_caret_is_in_the_row_being_written() {
+    let scratch = tree("caret", THREE);
+    let mut app = open(&scratch, 60, 12);
+    app.handle(alt(KeyCode::Char('n')));
+    support::type_text(&mut app, "first line");
+
+    let dump = support::render(&mut app, 60, 12);
+    let after = support::cursor_line(&dump).to_string();
+    assert!(after.contains(','), "there is no caret in the box:\n{dump}");
+
+    // `shift+enter` is the newline, as it is in every box: enter is taken by
+    // finishing, and nothing says so at the foot because everybody knows.
+    app.handle(Event::Key(KeyEvent::new(
+        KeyCode::Enter,
+        KeyModifiers::SHIFT,
+    )));
+    support::type_text(&mut app, "second line");
+    let dump = support::render(&mut app, 60, 12);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("first line") && text.contains("second line"),
+        "shift+enter did not make a line:\n{dump}"
+    );
+    let (x, y) = split(support::cursor_line(&dump));
+    let (first_x, first_y) = split(&after);
+    assert!(y > first_y, "the caret did not come down a row");
+
+    // And the arrows move it, which is the other half of being able to type.
+    press(&mut app, KeyCode::Left);
+    press(&mut app, KeyCode::Left);
+    let dump = support::render(&mut app, 60, 12);
+    let (moved, still) = split(support::cursor_line(&dump));
+    assert_eq!(still, y, "left took the caret off its row");
+    assert_eq!(
+        moved + 2,
+        x_of_end(&dump, "second line"),
+        "left moved it {moved}"
+    );
+    let _ = (x, first_x);
+
+    press(&mut app, KeyCode::Up);
+    let (_, up) = split(support::cursor_line(&support::render(&mut app, 60, 12)));
+    assert_eq!(up, first_y, "up did not go back to the first line");
+}
+
+/// `x,y` as the dump writes it.
+fn split(line: &str) -> (u16, u16) {
+    let (x, y) = line.split_once(',').unwrap_or(("0", "0"));
+    (x.trim().parse().unwrap_or(0), y.trim().parse().unwrap_or(0))
+}
+
+/// The column just past `needle` on the row that holds it.
+fn x_of_end(dump: &str, needle: &str) -> u16 {
+    let row = support::text_block(dump)
+        .lines()
+        .find(|row| row.contains(needle))
+        .unwrap_or_default();
+    let cells = row.split_once('|').map_or(row, |(_, rest)| rest);
+    let at = cells.find(needle).unwrap_or(0);
+    u16::try_from(at + needle.chars().count()).unwrap_or(0)
+}

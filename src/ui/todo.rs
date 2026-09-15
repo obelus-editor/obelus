@@ -51,8 +51,10 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     // a space and delete takes a letter out. Saying otherwise would be a row
     // of keys that do something else from what it says.
     if notes.writing().is_some() {
+        // Not the newline. `shift+enter` is what every box anywhere takes,
+        // and a row saying so is a row spent on something the reader already
+        // knew -- the same argument the arrows on a tab row make.
         return vec![
-            Hint::common(chord(KeyCode::Enter, KeyModifiers::ALT), "a new line"),
             Hint::common(bare(KeyCode::Enter), "keep it"),
             Hint::common(bare(KeyCode::Esc), "give up on it"),
         ];
@@ -71,6 +73,31 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
         Hint::rare(bare(KeyCode::Delete), "take it away").when(on.is_some()),
     ]
 }
+
+/// Where the terminal should put its caret: in the note being written.
+///
+/// Worked out from the same rows the drawing lays out, so the caret is in
+/// the row the reader can see their typing in rather than a row the view
+/// happens to agree about.
+#[must_use]
+pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
+    let composer = notes.writing()?;
+    let at = notes.writing_at()?;
+    let hints = hints(notes);
+    let list = list_region(area, &hints);
+    let window = notes.window();
+    let row = at.checked_sub(window.top())?;
+    let (line, cell) = composer.caret(list.width.saturating_sub(MARGIN));
+    let y = list.y + u16::try_from(row + line).ok()?;
+    (y < list.bottom()).then(|| ratatui::layout::Position {
+        x: (list.x + MARGIN + cell.get()).min(list.right().saturating_sub(1)),
+        y,
+    })
+}
+
+/// How far in a note's own text starts: the fold column, the box, and the
+/// blank after it.
+const MARGIN: u16 = 4;
 
 /// The notes, over the whole editor region.
 pub struct TodoUi<'a> {

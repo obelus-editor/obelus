@@ -11,6 +11,8 @@
 //! there already, and a second implementation of them is a second set of
 //! off-by-ones. What is here is the editing, which `Text` does not do.
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
 use crate::{
     coordinates::{CharColumn, DisplayColumn, LineNumber},
     text::Text,
@@ -79,6 +81,68 @@ impl Composer {
         }
         self.line = self.lines.len() - 1;
         self.column = self.lines[self.line].chars().count();
+    }
+
+    /// Whatever a key means to the text, or `false` for one that means
+    /// nothing to it.
+    ///
+    /// The keys of a box of text, in one place: there are two boxes now --
+    /// a message to an agent and a note -- and the next will be the third.
+    /// Which keys a box answers to is a rule rather than a preference, and a
+    /// rule written twice is a rule that will be true in one place.
+    ///
+    /// `enter` and `esc` are *not* here. Finishing and giving up are the
+    /// caller's, and the callers answer them differently: one sends a
+    /// message, one keeps a note, and a box that decided either would be
+    /// deciding something it knows nothing about.
+    ///
+    /// `shift+enter` is the newline, and `alt+enter` with it: the first is
+    /// what a reader presses, and the second is what a terminal that cannot
+    /// tell shift from nothing sends.
+    ///
+    /// Up and down answer `false` at the ends, so a caller with rows above
+    /// and below the box can step out of it rather than have the key
+    /// swallowed.
+    pub fn handle_key(&mut self, key: &KeyEvent, room: u16) -> bool {
+        let bare = key.modifiers.is_empty();
+        let shift = key.modifiers == KeyModifiers::SHIFT;
+        match key.code {
+            KeyCode::Enter if shift || key.modifiers == KeyModifiers::ALT => {
+                self.newline();
+                true
+            }
+            KeyCode::Up if bare => self.up(room),
+            KeyCode::Down if bare => self.down(room),
+            KeyCode::Left if bare => {
+                self.left();
+                true
+            }
+            KeyCode::Right if bare => {
+                self.right();
+                true
+            }
+            KeyCode::Home if bare => {
+                self.home(room);
+                true
+            }
+            KeyCode::End if bare => {
+                self.end(room);
+                true
+            }
+            KeyCode::Backspace if bare => {
+                self.backspace();
+                true
+            }
+            KeyCode::Delete if bare => {
+                self.delete();
+                true
+            }
+            KeyCode::Char(character) if bare || shift => {
+                self.insert(character);
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Types one character.

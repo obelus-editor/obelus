@@ -149,6 +149,14 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
         });
     }
 
+    // A note being written has one, in the row it is being written in --
+    // which is the row it will be read in. The same answer the conversation
+    // gives, for the same reason: what is typed is a paragraph, and a
+    // paragraph does not fit on the status bar.
+    if let Some(notes) = app.notes() {
+        return todo::caret(regions.editor, notes);
+    }
+
     // Nothing is typed into the counts, so there is no caret in them: what
     // marks where the keys are going is the row's background, and a caret as
     // well would be two marks for one fact. Without this the file behind
