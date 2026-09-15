@@ -11,7 +11,7 @@
 
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
 
-use super::{chat, fill, put, rule, write};
+use super::{chat, fill, put, rule, truncate_from_right, write};
 use crate::{
     component::card::{Card, On},
     theme::Theme,
@@ -207,7 +207,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
                 cells,
                 ended + 2,
                 y,
-                &fitted(about, room),
+                &truncate_from_right(about, usize::from(room)),
                 style.fg(theme.gutter),
             );
         }
@@ -322,26 +322,6 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
             }
         }
     }
-}
-
-/// `words` in `cells`, ending in an ellipsis where they do not fit.
-fn fitted(words: &str, cells: u16) -> String {
-    let cells = usize::from(cells);
-    if super::text_width(words) <= cells {
-        return words.to_string();
-    }
-    let mut kept = String::new();
-    let mut width = 0;
-    for character in words.chars() {
-        let next = width + unicode_width::UnicodeWidthChar::width(character).unwrap_or(0);
-        if next + 1 > cells {
-            break;
-        }
-        width = next;
-        kept.push(character);
-    }
-    kept.push('\u{2026}');
-    kept
 }
 
 /// What a tick looks like, ticked or not.

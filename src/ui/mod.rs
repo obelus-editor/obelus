@@ -783,6 +783,28 @@ pub fn drop_from_right(contents: &str, cells: usize) -> usize {
     total - kept
 }
 
+/// `contents` with its tail replaced by an ellipsis if it does not fit.
+///
+/// For a sentence, where the beginning is the part worth keeping. The three
+/// places that wanted this had each grown their own: one measured in cells
+/// and one in characters, so the same prose cut to the same width came out
+/// two different lengths depending on which screen it was on -- and the one
+/// counting characters cut a Chinese sentence at half the room it was given.
+#[must_use]
+pub fn truncate_from_right(contents: &str, cells: usize) -> String {
+    let dropped = drop_from_right(contents, cells);
+    if dropped == 0 {
+        return contents.to_string();
+    }
+    let total = contents.chars().count();
+    if dropped >= total {
+        return String::new();
+    }
+    let mut result: String = contents.chars().take(total - dropped).collect();
+    result.push('\u{2026}');
+    result
+}
+
 /// `contents` with its head replaced by an ellipsis if it does not fit.
 #[must_use]
 pub fn truncate_from_left(contents: &str, cells: usize) -> String {
@@ -801,7 +823,7 @@ pub fn truncate_from_left(contents: &str, cells: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{drop_from_left, drop_from_right, truncate_from_left};
+    use super::{drop_from_left, drop_from_right, truncate_from_left, truncate_from_right};
 
     #[test]
     fn a_path_that_fits_is_left_alone() {
@@ -895,6 +917,29 @@ mod tests {
         assert_eq!(super::text_width(&kept), 6);
     }
 
+    /// The string form, and the one cell the mark takes.
+    #[test]
+    fn a_sentence_comes_back_with_its_tail_marked() {
+        assert_eq!(truncate_from_right("Stop and ask", 30), "Stop and ask");
+        assert_eq!(
+            truncate_from_right("Stop and ask, instead of counting", 12),
+            "Stop and as\u{2026}"
+        );
+        assert_eq!(
+            super::text_width(&truncate_from_right("Stop and ask, instead", 12)),
+            12
+        );
+    }
+
+    /// Nothing rather than a lone `\u{2026}`, which is what the other
+    /// direction does and says only that something was hidden. The two
+    /// helpers this replaced both drew the mark alone here.
+    #[test]
+    fn no_room_for_the_mark_means_no_mark() {
+        assert_eq!(truncate_from_right("Stop and ask", 1), "");
+        assert_eq!(truncate_from_right("Stop and ask", 0), "");
+    }
+
     /// The same property the other direction has to hold: what is kept, plus
     /// the cell the mark takes, fits in the room it was given.
     #[test]
@@ -918,6 +963,11 @@ mod tests {
                 assert!(
                     width <= cells,
                     "{contents:?} at {cells} cells kept {width} cells' worth"
+                );
+                let written = super::text_width(&truncate_from_right(contents, cells));
+                assert!(
+                    written <= cells,
+                    "{contents:?} at {cells} cells came back {written} wide"
                 );
             }
         }

@@ -12,7 +12,7 @@ use crate::{
     component::settings::{DESCRIPTION_INDENT, Refused, Settings},
     config::{Config, Kind, Value},
     theme::Theme,
-    ui::{Marked, Matched, fill, put, rule, text_width, write, write_marked},
+    ui::{Marked, Matched, fill, put, rule, text_width, truncate_from_right, write, write_marked},
 };
 
 /// How wide a control's column is.
@@ -402,7 +402,7 @@ impl SettingsView<'_> {
                 .or(row.scope.map(Scope::word))
                 .map(|source| {
                     let room = aside_at.saturating_sub(region.x + 4 + lock);
-                    clipped(source, room)
+                    truncate_from_right(source, usize::from(room))
                 });
             let reserved = source.as_deref().map_or(0, |source| {
                 u16::try_from(crate::ui::text_width(source)).unwrap_or(0) + lock + 1
@@ -411,7 +411,7 @@ impl SettingsView<'_> {
             // Cut to what is left before the right-hand column: a line
             // running under it reads as part of it.
             let width = aside_at.saturating_sub(region.x + 2 + reserved);
-            let label = clipped(&row.label, width);
+            let label = truncate_from_right(&row.label, usize::from(width));
             // Through the shared writer, so the characters the query
             // matched carry the background every other list marks a match
             // with: a row in a narrowed list has to say why it is in it.
@@ -460,7 +460,7 @@ impl SettingsView<'_> {
                     cells,
                     at,
                     y,
-                    &clipped(detail, left),
+                    &truncate_from_right(detail, usize::from(left)),
                     plain.fg(*colour).bg(background),
                 );
             }
@@ -508,7 +508,7 @@ impl SettingsView<'_> {
                         cells,
                         aside_at,
                         y,
-                        &clipped(words, CONTROL_WIDTH),
+                        &truncate_from_right(words, usize::from(CONTROL_WIDTH)),
                         plain.fg(self.theme.foreground).bg(background),
                     );
                 }
@@ -615,7 +615,7 @@ impl SettingsView<'_> {
                 cells,
                 area.x + INDENT,
                 area.y,
-                &clipped(&reason, area.width.saturating_sub(INDENT * 2)),
+                &truncate_from_right(&reason, usize::from(area.width.saturating_sub(INDENT * 2))),
                 dim,
             );
             return;
@@ -726,7 +726,7 @@ impl SettingsView<'_> {
             },
             name_at,
             area.y,
-            &clipped(&agent.agent.name, room),
+            &truncate_from_right(&agent.agent.name, usize::from(room)),
             plain,
             &Marked::matched(
                 run_of(self.settings.matched_in(&agent.agent.name)),
@@ -758,7 +758,7 @@ impl SettingsView<'_> {
                 cells,
                 name_at,
                 y,
-                &clipped(&self.facts(agent), inner.saturating_sub(3)),
+                &truncate_from_right(&self.facts(agent), usize::from(inner.saturating_sub(3))),
                 dim,
             );
             y += 1;
@@ -773,7 +773,10 @@ impl SettingsView<'_> {
                 cells,
                 name_at,
                 y,
-                &clipped(&format!("\u{f0159} {why}"), inner.saturating_sub(3)),
+                &truncate_from_right(
+                    &format!("\u{f0159} {why}"),
+                    usize::from(inner.saturating_sub(3)),
+                ),
                 plain.fg(self.theme.change_removed),
             );
         }
@@ -845,17 +848,6 @@ impl SettingsView<'_> {
 /// A matched run, as the shared writer takes it.
 fn run_of(run: Option<std::ops::Range<usize>>) -> Matched<'static> {
     run.map_or(Matched::Nothing, |run| Matched::Run(run.start, run.end))
-}
-
-/// As much of a sentence as fits, with a mark where it was cut.
-fn clipped(text: &str, room: u16) -> String {
-    let room = usize::from(room);
-    if text_width(text) <= room {
-        return text.to_string();
-    }
-    let mut kept: String = text.chars().take(room.saturating_sub(1)).collect();
-    kept.push('\u{2026}');
-    kept
 }
 
 /// Writes a control: a switch, or the word a droplist is set to.
