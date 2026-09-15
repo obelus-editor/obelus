@@ -74,8 +74,16 @@ pub fn list_region(area: Rect, counts: &Counts) -> Rect {
 ///
 /// The arrows are not among them: they walk the tabs and say so on the tab
 /// row, where the key *is* the arrow. What is here is what a reader could
-/// not guess -- that a row folds, and that enter does two different things
-/// depending on what the row names.
+/// not guess -- that enter does two different things depending on what the
+/// row names, and which of them this row would do.
+///
+/// Folding has no key of its own. It had `alt+f` for a while, which is the
+/// key that folds a run of code, but on a directory that is what enter
+/// already does and on a file it did nothing at all -- one act, two keys,
+/// and the foot drawn under them made it plain. What transfers from the
+/// editor is the *mark*, which is the same arrow there; a list row that
+/// opens is opened with enter here, as a commit's files are in the
+/// history.
 #[must_use]
 pub fn hints(counts: &Counts) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
@@ -97,9 +105,6 @@ pub fn hints(counts: &Counts) -> Vec<Hint> {
             None => "read the file this row names",
         })
         .when(on.is_some_and(|row| row.go.is_some())),
-        Hint::common(chord(KeyCode::Char('f'), KeyModifiers::ALT), "fold")
-            .saying("the same, on the key that folds everywhere else")
-            .when(folds.is_some()),
         Hint::common(bare(KeyCode::Esc), "leave").saying("leave, or drop the language first"),
     ]
 }

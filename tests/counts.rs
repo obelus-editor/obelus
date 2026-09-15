@@ -429,13 +429,12 @@ fn the_counts_say_what_their_keys_do() {
     let mut app = open(76, 18);
     press(&mut app, KeyCode::Right);
     let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
-    for word in ["open", "fold", "leave", "keys"] {
+    for word in ["open", "leave", "keys"] {
         assert!(text.contains(word), "{word:?} is not at the foot:\n{text}");
     }
 
-    // On a file rather than a directory, enter reads it and there is nothing
-    // to fold -- so the foot says so rather than offering a key that does
-    // nothing.
+    // On a file it reads it instead: one key, two acts, and the foot says
+    // which one is in front of the reader.
     press(&mut app, KeyCode::Enter);
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Down);
@@ -444,16 +443,11 @@ fn the_counts_say_what_their_keys_do() {
         text.contains("read it"),
         "enter does not say what it does:\n{text}"
     );
-    assert!(
-        !text.contains("f fold"),
-        "a fold was offered on a file:\n{text}"
-    );
-
     // And `f1` says all of them, at length.
     press(&mut app, KeyCode::F(1));
     let dump = support::render(&mut app, 76, 18);
     assert!(
-        support::text_block(&dump).contains("the same, on the key that folds everywhere else"),
+        support::text_block(&dump).contains("read the file this row names"),
         "no card:\n{dump}"
     );
     press(&mut app, KeyCode::Esc);

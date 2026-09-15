@@ -552,24 +552,6 @@ impl Counts {
                 self.step_page();
                 CountsOutcome::Consumed
             }
-            // The mark on the row says this: the same arrow the gutter, the
-            // transcript and a commit's files turn, and the same key that
-            // turns them. Taken here rather than left to the command table
-            // because the counts are a dialog, and obelus's own commands do
-            // not run from inside one.
-            KeyCode::Char('f') if key.modifiers == KeyModifiers::ALT => {
-                match self
-                    .rows
-                    .get(self.window.focus())
-                    .and_then(|row| row.go.clone())
-                {
-                    Some(Go::Fold(path)) => {
-                        self.fold(&path);
-                        CountsOutcome::Consumed
-                    }
-                    _ => CountsOutcome::Ignored,
-                }
-            }
             KeyCode::Enter if bare => {
                 match self
                     .rows
@@ -888,10 +870,19 @@ mod tests {
         assert_eq!(counts.rows().len(), shut + 2, "not its two files");
         assert_eq!(counts.rows()[1].depth, 1, "its files are not indented");
 
-        // `alt+f` is the same act, and the mark on the row says so.
-        counts.handle_key(&KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT), 10);
+        // The same key closes it: one act, one key. It answered to `alt+f`
+        // as well for a while, which on a directory did what enter does and
+        // on a file did nothing at all.
+        counts.handle_key(&press(KeyCode::Enter), 10);
         assert_eq!(counts.rows()[0].open, Some(false));
         assert_eq!(counts.rows().len(), shut, "it would not fold back");
+        assert!(
+            matches!(
+                counts.handle_key(&KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT), 10),
+                CountsOutcome::Ignored
+            ),
+            "the counts still answer to a key they gave up"
+        );
     }
 
     /// Siblings are ordered by what the page is about, biggest first, with

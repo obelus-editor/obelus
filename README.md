@@ -29,8 +29,8 @@ ob                  # or nothing, and pick one from the welcome screen
   puts it in two pages: the languages, biggest first, with the prose that is
   written *inside* each one on a row of its own — 90 of this repository's
   Rust files carry 7,000 lines of Markdown — and the files, as a tree of
-  directories that folds. `enter` opens a directory or reads a file, `alt+f`
-  does the folding, and siblings are ordered by size whichever they are. The
+  directories that folds. `enter` opens a directory or reads a file, and
+  siblings are ordered by size whichever they are. The
   first row of the languages is the whole tree, and choosing a language
   leaves only its files.
 
