@@ -371,7 +371,7 @@ impl App {
             Subject::Commit { id, path } => {
                 let text = crate::git::history::text_at(&self.working_directory, *id, path)?;
                 let mut buffer = Buffer::at_commit(path, *id, &text);
-                if let Some(said) = self.said_at(*id) {
+                if let Some(said) = self.said_at(*id, Some(path)) {
                     buffer.open_held(
                         crate::coordinates::LineNumber::new(0),
                         &said,
@@ -390,9 +390,10 @@ impl App {
                 Some((buffer, changes))
             }
             // A message on its own, with no file under it: a commit is not
-            // a file, and what it has to show is what it said.
+            // a file, and what it has to show is what it said. No file, so
+            // no count of what it did to one.
             Subject::Message(id) => {
-                let said = self.said_at(*id)?;
+                let said = self.said_at(*id, None)?;
                 Some((Buffer::from_message(&said), None))
             }
         }

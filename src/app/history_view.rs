@@ -572,7 +572,7 @@ impl App {
         // block is exactly the shape obelus has for that -- rows on screen
         // the file does not have, with no line numbers, that the caret can
         // walk into and copy from.
-        if let Some(said) = self.said_at(id) {
+        if let Some(said) = self.said_at(id, Some(path)) {
             buffer.open_held(LineNumber::new(0), &said, crate::buffer::Held::Message);
             buffer.enter_block(LineNumber::new(0));
         }
@@ -666,23 +666,48 @@ impl App {
     /// The first row names it -- the id, who wrote it, how long ago -- and
     /// the rest is the message. A reader opening a file as a commit had it
     /// is asking why it says what it says, and that is the answer.
-    pub(super) fn said_at(&self, id: gix::ObjectId) -> Option<Vec<String>> {
+    pub(super) fn said_at(&self, id: gix::ObjectId, path: Option<&Path>) -> Option<Vec<String>> {
         let commit = crate::git::history::one(&self.working_directory, id)?;
         let now = std::time::SystemTime::now();
-        let mut said = vec![
-            format!(
-                "{}   {}   {}",
-                commit.short(),
-                commit.who,
-                crate::git::how_long_ago(commit.when, now)
-            ),
-            String::new(),
-            commit.subject.clone(),
-        ];
+        let mut first = format!(
+            "{}   {}   {}",
+            commit.short(),
+            commit.who,
+            crate::git::how_long_ago(commit.when, now)
+        );
+        // How much it changed *this file*, beside who changed it. The block
+        // hangs above one file and the question there is what this commit did
+        // to it -- not what it did to the tree, which would be a number about
+        // a diff the reader is not looking at, and a walk of every file in the
+        // commit to work out.
+        //
+        // Spelled the way the transcript spells the same fact, because it is
+        // the same fact.
+        if let Some((added, removed)) = path.and_then(|path| self.changed_at(id, path)) {
+            first.push_str(&format!("   +{added} \u{2212}{removed}"));
+        }
+        let mut said = vec![first, String::new(), commit.subject.clone()];
         if !commit.body.is_empty() {
             said.push(String::new());
             said.extend(commit.body.lines().map(str::to_string));
         }
         Some(said)
+    }
+
+    /// How many lines a commit added and took away in one file.
+    ///
+    /// The file as that commit had it against the file as the one before it
+    /// did, which is the same pair the margin beside this version is drawn
+    /// from -- so the number over the file and the marks down its side are
+    /// two readings of one diff rather than two diffs.
+    ///
+    /// `None` where there is nothing to compare: a commit that added the
+    /// file has no "before", and it is honest to say nothing rather than to
+    /// count every line as new.
+    fn changed_at(&self, id: gix::ObjectId, path: &Path) -> Option<(usize, usize)> {
+        let full = self.working_directory.join(path);
+        let before = crate::git::history::text_before(&self.working_directory, id, &full)?;
+        let after = crate::git::history::text_at(&self.working_directory, id, &full)?;
+        Some(git::change::counted(&git::change::drawn(&before, &after)))
     }
 }

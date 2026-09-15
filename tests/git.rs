@@ -8,6 +8,8 @@
 
 mod support;
 
+use std::sync::mpsc::Receiver;
+
 use obelus::{
     app::App,
     buffer::Buffer,
@@ -2199,6 +2201,49 @@ fn a_commit_opens_its_files_under_it() {
         ["touching two", "committed"],
         "it would not close"
     );
+}
+
+/// Beside who wrote it: what it did to *this* file. The block hangs above one
+/// file, and the question there is what this commit did to that -- not what it
+/// did to the tree, which is a number about a diff the reader is not looking
+/// at.
+#[test]
+fn the_message_says_how_much_the_commit_changed_this_file() {
+    let repository = Repository::new("history-counts", "one\ntwo\nthree\n");
+    // Two lines gone, three put in their place.
+    repository.write("one\nTWO\nfour\nfive\n");
+    repository.commit_all("Change it about");
+    let (mut app, _events) = reading_it_at_its_commit(&repository);
+
+    let dump = support::render(&mut app, 64, 18);
+    let text = support::text_block(&dump);
+    let head = text
+        .lines()
+        .find(|row| row.contains("just now"))
+        .unwrap_or_else(|| panic!("no header row:\n{text}"));
+    assert!(
+        head.contains('+') && head.contains('\u{2212}'),
+        "the header says nothing about what changed:\n{head}"
+    );
+    assert!(
+        head.contains("+3") && head.contains("\u{2212}2"),
+        "not what this commit did to this file:\n{head}"
+    );
+}
+
+/// Opens the repository's file as its newest commit had it, the way a reader
+/// gets there: the file's own history, and the commit at the top of it.
+fn reading_it_at_its_commit(repository: &Repository) -> (App, Receiver<Event>) {
+    use crossterm::event::KeyCode;
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 64, 18);
+    support::press_function(&mut app, 9);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Enter);
+    (app, events)
 }
 
 /// A subject too long for the row says so. Running out of row looks exactly
