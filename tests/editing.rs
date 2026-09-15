@@ -2281,3 +2281,169 @@ mod going_back {
         assert_eq!(at(&app), 3, "the place did not land where the edit began");
     }
 }
+
+/// Moving a line, and commenting one out: the two things a reader does to
+/// whole lines that are neither typing nor indenting.
+mod whole_lines {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    fn editing(name: &str, file: &str, contents: &str) -> (support::Scratch, App) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join(file);
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 12);
+        (scratch, app)
+    }
+
+    fn text(app: &App) -> String {
+        app.current_buffer()
+            .expect("a buffer")
+            .text()
+            .rope()
+            .to_string()
+    }
+
+    fn at(app: &App) -> usize {
+        app.current_buffer().expect("a buffer").cursor().line.get()
+    }
+
+    #[test]
+    fn a_line_moves_down_and_the_cursor_goes_with_it() {
+        let (_scratch, mut app) = editing("move-down", "sample.rs", "one\ntwo\nthree\n");
+        dispatch::dispatch(&mut app, Command::LineDown);
+        assert_eq!(text(&app), "two\none\nthree\n");
+        assert_eq!(at(&app), 1, "the cursor stayed behind");
+    }
+
+    #[test]
+    fn a_line_moves_up() {
+        let (_scratch, mut app) = editing("move-up", "sample.rs", "one\ntwo\nthree\n");
+        support::press(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::LineUp);
+        assert_eq!(text(&app), "two\none\nthree\n");
+        assert_eq!(at(&app), 0);
+    }
+
+    /// The selected lines go together, and stay selected so the next press
+    /// is about the same lines.
+    #[test]
+    fn the_selected_lines_move_together_and_stay_selected() {
+        let (_scratch, mut app) = editing("move-block", "sample.rs", "one\ntwo\nthree\nfour\n");
+        support::press_shift(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::LineDown);
+        assert_eq!(text(&app), "three\none\ntwo\nfour\n");
+        dispatch::dispatch(&mut app, Command::LineDown);
+        assert_eq!(text(&app), "three\nfour\none\ntwo\n");
+    }
+
+    /// Against the end it is being moved towards, nothing happens.
+    #[test]
+    fn a_line_at_the_top_does_not_move_up() {
+        let (_scratch, mut app) = editing("move-edge", "sample.rs", "one\ntwo\n");
+        dispatch::dispatch(&mut app, Command::LineUp);
+        assert_eq!(text(&app), "one\ntwo\n");
+        assert!(
+            !app.current_buffer().expect("a buffer").is_dirty(),
+            "a move that could not happen made the file unsaved"
+        );
+    }
+
+    /// One change, so a line walked three rows down is three steps back.
+    #[test]
+    fn a_move_is_one_step_back() {
+        let (_scratch, mut app) = editing("move-undo", "sample.rs", "one\ntwo\nthree\n");
+        dispatch::dispatch(&mut app, Command::LineDown);
+        dispatch::dispatch(&mut app, Command::Undo);
+        assert_eq!(text(&app), "one\ntwo\nthree\n");
+    }
+
+    #[test]
+    fn a_line_is_commented_out_and_back() {
+        let (_scratch, mut app) = editing("comment-one", "sample.rs", "fn a() {\n    one();\n}\n");
+        support::press(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::CommentToggle);
+        assert_eq!(text(&app), "fn a() {\n    // one();\n}\n");
+
+        dispatch::dispatch(&mut app, Command::CommentToggle);
+        assert_eq!(text(&app), "fn a() {\n    one();\n}\n");
+    }
+
+    /// The mark goes at the shallowest indentation of the lines it is
+    /// about, so the marks line up rather than stepping in and out with the
+    /// code.
+    #[test]
+    fn the_marks_line_up_under_each_other() {
+        let (_scratch, mut app) = editing(
+            "comment-align",
+            "sample.rs",
+            "fn a() {\n    if b {\n        c();\n    }\n}\n",
+        );
+        // The two lines the selection touches are indented by four and by
+        // eight, and the deeper one is last: a mark put at the indentation
+        // of whichever line was looked at last would land in a different
+        // place, and this is what says it does not.
+        support::press(&mut app, KeyCode::Down);
+        support::press_shift(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::CommentToggle);
+        assert_eq!(
+            text(&app),
+            "fn a() {\n    // if b {\n    //     c();\n    }\n}\n"
+        );
+    }
+
+    /// A block where one line is not commented is a block somebody was in
+    /// the middle of commenting, and finishing it is what they meant.
+    #[test]
+    fn a_half_commented_block_is_finished_rather_than_undone() {
+        let (_scratch, mut app) = editing("comment-half", "sample.rs", "// one\ntwo\n");
+        support::press_shift(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::CommentToggle);
+        assert_eq!(text(&app), "// // one\n// two\n");
+    }
+
+    /// Taking a comment off eats the blank after the mark -- unless one of
+    /// the lines has no blank there, where eating it would take a character
+    /// somebody wrote.
+    #[test]
+    fn a_mark_with_nothing_after_it_keeps_every_line_whole() {
+        let (_scratch, mut app) = editing("comment-margin", "sample.rs", "// one\n//two\n");
+        support::press_shift(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::CommentToggle);
+        assert_eq!(text(&app), " one\ntwo\n");
+    }
+
+    /// A blank line gets no mark: a comment on one is trailing blanks.
+    #[test]
+    fn a_blank_line_is_left_alone() {
+        let (_scratch, mut app) = editing("comment-blank", "sample.rs", "one\n\ntwo\n");
+        support::press_shift(&mut app, KeyCode::Down);
+        support::press_shift(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::CommentToggle);
+        assert_eq!(text(&app), "// one\n\n// two\n");
+    }
+
+    /// The language says what a comment starts with, and one with only
+    /// block comments says nothing -- so the command is not offered.
+    #[test]
+    fn a_language_with_no_line_comment_does_not_offer_it() {
+        let (_scratch, mut app) = editing("comment-python", "sample.py", "def a():\n    b()\n");
+        support::press(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::CommentToggle);
+        assert_eq!(text(&app), "def a():\n    # b()\n");
+
+        let (_other, css) = editing("comment-css", "sample.css", "a {\n  color: red;\n}\n");
+        assert!(
+            !css.offers(Command::CommentToggle),
+            "a language with only block comments was offered a line comment"
+        );
+    }
+}

@@ -1295,11 +1295,11 @@ fn the_changes_can_be_stepped_through() {
 
     // Down: each change in turn, by its first line, and the middle one
     // counts once however many lines it has.
-    support::press_alt_key(&mut app, KeyCode::Down);
+    support::press_alt(&mut app, 'n');
     assert_eq!(line(&app), 5, "not the first change");
-    support::press_alt_key(&mut app, KeyCode::Down);
+    support::press_alt(&mut app, 'n');
     assert_eq!(line(&app), 20, "not the second change");
-    support::press_alt_key(&mut app, KeyCode::Down);
+    support::press_alt(&mut app, 'n');
     assert_eq!(line(&app), 50, "the middle change was counted twice");
 
     // And nothing below the last one: a wrap back to the top would look
@@ -1307,7 +1307,7 @@ fn the_changes_can_be_stepped_through() {
     // does nothing at all, because the command is not offered here -- and
     // says nothing either, which is what every other key that cannot move
     // does.
-    support::press_alt_key(&mut app, KeyCode::Down);
+    support::press_alt(&mut app, 'n');
     assert_eq!(line(&app), 50, "it wrapped around");
     assert_eq!(app.note(), None, "a key that did nothing said so");
     // The palette is where that is answered: the row is there to be found,
@@ -1338,16 +1338,16 @@ fn the_changes_can_be_stepped_through() {
 
     // Up, and from inside a long change: to the top of that change first,
     // then to the one before it.
-    support::press_alt_key(&mut app, KeyCode::Up);
+    support::press_alt(&mut app, 'p');
     assert_eq!(line(&app), 20);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Down);
     assert_eq!(line(&app), 22, "still inside the middle change");
-    support::press_alt_key(&mut app, KeyCode::Up);
+    support::press_alt(&mut app, 'p');
     assert_eq!(line(&app), 20, "not the top of the change being read");
-    support::press_alt_key(&mut app, KeyCode::Up);
+    support::press_alt(&mut app, 'p');
     assert_eq!(line(&app), 5);
-    support::press_alt_key(&mut app, KeyCode::Up);
+    support::press_alt(&mut app, 'p');
     assert_eq!(line(&app), 5, "it wrapped around");
     assert_eq!(app.note(), None, "a key that did nothing said so");
 

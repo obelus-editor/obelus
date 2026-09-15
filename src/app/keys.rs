@@ -381,6 +381,170 @@ impl App {
         }
     }
 
+    /// Moves the lines the reader is on up or down by one.
+    ///
+    /// The lines a selection touches, whole, or the line the cursor is on.
+    /// One change rather than two, so a line walked three rows down is
+    /// three steps back rather than six -- and the lines go as they are,
+    /// without being re-indented: a reader moving a line has a place in
+    /// mind for it, and a line that changed shape on the way is a line they
+    /// have to look at again.
+    pub fn move_lines(&mut self, up: bool) {
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        let text = buffer.text();
+        let (first, last) = lines_in_hand(buffer);
+        // Nowhere to go: the block is already against the end it is being
+        // moved towards.
+        let last_line = text.last_line();
+        if (up && first.get() == 0) || (!up && last >= last_line) {
+            return;
+        }
+        // The line it swaps with, and the two spans that make it one edit:
+        // everything from the first line to the last, in the order the move
+        // puts them.
+        let (from, to) = match up {
+            true => (first.saturating_sub(1), last),
+            false => (first, last.saturating_add(1)),
+        };
+        let span = crate::coordinates::Span {
+            line: from,
+            column: CharColumn::new(0),
+            end_line: to,
+            end_column: text.line_length(to),
+        };
+        let lines: Vec<String> = (from.get()..=to.get())
+            .map(|line| text.line(LineNumber::new(line)).to_string())
+            .collect();
+        let with = match up {
+            true => lines[1..].join("\n") + "\n" + &lines[0],
+            false => {
+                let end = lines.len() - 1;
+                lines[end].clone() + "\n" + &lines[..end].join("\n")
+            }
+        };
+        let cursor = buffer.cursor();
+        let selected = buffer.selection().is_some();
+        self.change(span, &with, crate::buffer::undo::Doing::Whole);
+
+        // The reader keeps hold of what they moved: the lines under the
+        // selection, or the cursor on the line it was on.
+        let moved = |line: LineNumber| match up {
+            true => line.saturating_sub(1),
+            false => line.saturating_add(1),
+        };
+        if let Some(buffer) = self.current_buffer_mut() {
+            match selected {
+                true => {
+                    let end = moved(last);
+                    buffer.select(crate::coordinates::Span {
+                        line: moved(first),
+                        column: CharColumn::new(0),
+                        end_line: end,
+                        end_column: buffer.text().line_length(end),
+                    });
+                }
+                false => buffer.place_cursor(moved(cursor.line), cursor.column),
+            }
+        }
+    }
+
+    /// Comments the lines the reader is on out, or takes the comment off.
+    ///
+    /// Off where every line that has anything on it is already commented,
+    /// and on otherwise: a block half commented is a block somebody was in
+    /// the middle of commenting, and finishing it is what they meant.
+    ///
+    /// The token goes at the shallowest indentation of the lines it is
+    /// about, so that the marks line up under each other rather than
+    /// stepping in and out with the code. Blank lines are left alone --
+    /// a comment on one is trailing blanks.
+    pub fn toggle_comment(&mut self) {
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        let Some(token) = buffer
+            .language()
+            .and_then(|language| language.line_comment())
+        else {
+            self.note = Some("no line comment in this language".to_string());
+            return;
+        };
+        let text = buffer.text();
+        let (first, last) = lines_in_hand(buffer);
+        let rows: Vec<String> = (first.get()..=last.get())
+            .map(|line| text.line(LineNumber::new(line)).to_string())
+            .collect();
+
+        // Three passes' worth of questions, asked in one: whether every
+        // line with anything on it is already commented, how far in the
+        // shallowest of them starts, and whether every mark is followed by
+        // a blank -- because where one is not, taking a blank off the rest
+        // would eat a character somebody wrote.
+        let mut commented = true;
+        let mut margin = true;
+        let mut indent = usize::MAX;
+        for row in rows.iter().filter(|row| !row.trim().is_empty()) {
+            let at = row
+                .chars()
+                .take_while(|character| character.is_whitespace())
+                .count();
+            indent = indent.min(at);
+            let rest: String = row.chars().skip(at).collect();
+            match rest.strip_prefix(token) {
+                Some(after) => margin &= after.starts_with(' '),
+                None => commented = false,
+            }
+        }
+        if indent == usize::MAX {
+            return;
+        }
+
+        let with: Vec<String> = rows
+            .iter()
+            .map(|row| {
+                if row.trim().is_empty() {
+                    return row.clone();
+                }
+                if !commented {
+                    let (before, after): (String, String) = (
+                        row.chars().take(indent).collect(),
+                        row.chars().skip(indent).collect(),
+                    );
+                    return format!("{before}{token} {after}");
+                }
+                let at = row
+                    .chars()
+                    .take_while(|character| character.is_whitespace())
+                    .count();
+                let kept: String = row
+                    .chars()
+                    .skip(at + token.chars().count() + usize::from(margin))
+                    .collect();
+                row.chars().take(at).collect::<String>() + &kept
+            })
+            .collect();
+
+        let span = crate::coordinates::Span {
+            line: first,
+            column: CharColumn::new(0),
+            end_line: last,
+            end_column: text.line_length(last),
+        };
+        let selected = buffer.selection().is_some();
+        self.change(span, &with.join("\n"), crate::buffer::undo::Doing::Whole);
+        if selected && let Some(buffer) = self.current_buffer_mut() {
+            let end = buffer.text().line_length(last);
+            buffer.select(crate::coordinates::Span {
+                line: first,
+                column: CharColumn::new(0),
+                end_line: last,
+                end_column: end,
+            });
+        }
+    }
+
     /// Makes one change to the document being read, and tells everything
     /// that has to hear about it.
     pub(super) fn change(
@@ -420,6 +584,15 @@ impl App {
             // has. Everything else keyed on the version notices by itself.
             self.change_document(index);
         }
+    }
+}
+
+/// The lines a command about lines is about: the ones a selection touches,
+/// or the one the cursor is on.
+fn lines_in_hand(buffer: &crate::buffer::Buffer) -> (LineNumber, LineNumber) {
+    match buffer.selection() {
+        Some(span) => (span.line, span.end_line),
+        None => (buffer.cursor().line, buffer.cursor().line),
     }
 }
 

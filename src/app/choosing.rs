@@ -239,6 +239,12 @@ impl App {
             // for every row of the palette, and building a map of every
             // changed path to look at its length walks the tree each time.
             Requires::AChangedFile => self.anything_changed(),
+            // The language's own fact, and a cheap one: what a file is
+            // parsed as is already known.
+            Requires::ALineComment => self
+                .current_buffer()
+                .and_then(Buffer::language)
+                .is_some_and(|language| language.line_comment().is_some()),
             Requires::AServerLog => crate::logging::current_file(crate::logging::SERVERS).is_some(),
         }
     }

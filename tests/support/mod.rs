@@ -500,3 +500,12 @@ pub fn colour_under(dump: &str, glyph: char) -> String {
         .expect("the legend entry for the style")
         .to_string()
 }
+
+/// Sends a letter with alt held, which is the family obelus's own commands
+/// live in.
+pub fn press_alt(app: &mut App, character: char) {
+    app.handle(Event::Key(KeyEvent::new(
+        KeyCode::Char(character),
+        KeyModifiers::ALT,
+    )));
+}

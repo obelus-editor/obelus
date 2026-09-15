@@ -81,6 +81,37 @@ impl LanguageId {
         }
     }
 
+    /// What this language starts a line comment with, if it has one.
+    ///
+    /// A column of the same table `name` and `grammar` are columns of,
+    /// because that is what it is: one fact per language, and the only one
+    /// that toggling a comment needs. The toggling itself knows no
+    /// languages at all -- helix and zed both keep this as data for the
+    /// same reason, in a configuration file because their languages come
+    /// from outside. obelus's are compiled in beside their grammars, so
+    /// this is compiled in beside them.
+    ///
+    /// `None` for a language with only block comments. Better to say so and
+    /// have the command dim than to guess at `//` and leave a reader with a
+    /// file their tools will not parse.
+    #[must_use]
+    pub const fn line_comment(self) -> Option<&'static str> {
+        match self {
+            Self::Rust
+            | Self::JavaScript
+            | Self::TypeScript
+            | Self::Tsx
+            | Self::Go
+            | Self::C
+            | Self::Cpp => Some("//"),
+            Self::Python | Self::Bash | Self::Toml | Self::Yaml => Some("#"),
+            // Only block comments, or none at all: CSS and HTML have
+            // `/* */` and `<!-- -->`, JSON has nothing, and markdown's
+            // comment is an HTML one.
+            Self::Json | Self::Css | Self::Html | Self::Markdown => None,
+        }
+    }
+
     /// The name to show.
     #[must_use]
     pub const fn name(self) -> &'static str {

@@ -284,6 +284,13 @@ pub fn for_command(command: crate::command::Command) -> char {
         // curl back on themselves.
         Command::SelectionCut => '\u{f0190}',
         Command::Paste => '\u{f0192}',
+        // A line with an arrow off the top of it, and one off the bottom:
+        // what moves is the line, not the reader.
+        Command::LineUp => '\u{f05ce}',
+        Command::LineDown => '\u{f05cd}',
+        // Two slashes, which is what a comment starts with in most of the
+        // languages this table knows.
+        Command::CommentToggle => '\u{f0182}',
         Command::Undo => '\u{f054c}',
         Command::Redo => '\u{f044e}',
         Command::SelectionCopy => '\u{f018f}',

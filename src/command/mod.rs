@@ -78,6 +78,13 @@ pub enum Command {
     SelectionCopy,
     /// Copy the selection and take it out.
     SelectionCut,
+    /// Move the line, or the selected lines, up one.
+    LineUp,
+    /// And down one.
+    LineDown,
+    /// Comment the line, or the selected lines, out -- or take the comment
+    /// off where they all have one.
+    CommentToggle,
     /// Put back what was last copied or cut.
     Paste,
     /// Put back what the last change took away.
@@ -215,6 +222,8 @@ pub enum Requires {
     AChangedFile,
     /// A language server has to have written to its log.
     AServerLog,
+    /// The language has to have something to start a line comment with.
+    ALineComment,
 }
 
 /// A command's name and description, for the palette to list and match on.
@@ -404,6 +413,21 @@ pub const ALL: &[CommandSpec] = &[
         title: "Cut the selection, or this line",
     },
     CommandSpec {
+        command: Command::LineUp,
+        name: "move-line-up",
+        title: "Move this line, or the selected ones, up",
+    },
+    CommandSpec {
+        command: Command::LineDown,
+        name: "move-line-down",
+        title: "Move this line, or the selected ones, down",
+    },
+    CommandSpec {
+        command: Command::CommentToggle,
+        name: "toggle-comment",
+        title: "Comment this line, or the selected ones, out",
+    },
+    CommandSpec {
         command: Command::Paste,
         name: "paste",
         title: "Put back what was last copied or cut",
@@ -531,6 +555,9 @@ impl Command {
             | Self::GitNext
             | Self::SelectionCopy
             | Self::SelectionCut
+            | Self::LineUp
+            | Self::LineDown
+            | Self::CommentToggle
             | Self::Paste
             | Self::Undo
             | Self::Redo
@@ -619,6 +646,11 @@ impl Command {
             Self::GitPrevious => Requires::AHunkBefore,
             Self::GitNext => Requires::AHunkAfter,
             Self::SelectionClear => Requires::ASelection,
+            Self::LineUp | Self::LineDown => Requires::AFileOpen,
+            // A language with only block comments has nothing to put in
+            // front of a line, and saying so is better than a key that does
+            // nothing on CSS and works on Rust.
+            Self::CommentToggle => Requires::ALineComment,
             // Not a selection: with nothing selected these are about the
             // line the cursor is on, which is what a reader means by them
             // far more often than they mean "nothing".

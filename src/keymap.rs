@@ -518,22 +518,53 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('m'), KeyModifiers::ALT),
                 },
-                // The arrows under `alt`, because stepping between changes
-                // is the arrows' own motion at the scale of the diff rather
-                // than the line.
+                // `alt+n` and `alt+p` for the next and previous change,
+                // joining `alt+d` for the diff of this one: three keys about
+                // the same thing, on the letters of what they do.
                 //
-                // Not `ctrl+alt+arrow`, which GNOME and KDE take for
-                // switching workspaces: a key the desktop eats before the
-                // terminal sees it looks like a broken program.
+                // The arrows would read better and are spent better below:
+                // `alt+arrow` moving a line is the chord every editor with a
+                // mouse has taught, and stepping between changes has letters
+                // to fall back on where moving a line has none -- the rules
+                // refuse two modifiers, and an arrow may only be bound under
+                // `alt`.
                 Binding {
                     command: Command::GitPrevious,
                     context: Context::Normal,
-                    chord: KeyChord::new(KeyCode::Up, KeyModifiers::ALT),
+                    chord: KeyChord::new(KeyCode::Char('p'), KeyModifiers::ALT),
                 },
                 Binding {
                     command: Command::GitNext,
                     context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('n'), KeyModifiers::ALT),
+                },
+                // Not `ctrl+alt+arrow`, which GNOME and KDE take for
+                // switching workspaces: a key the desktop eats before the
+                // terminal sees it looks like a broken program.
+                Binding {
+                    command: Command::LineUp,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Up, KeyModifiers::ALT),
+                },
+                Binding {
+                    command: Command::LineDown,
+                    context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Down, KeyModifiers::ALT),
+                },
+                // `alt+c` for comment, on the letter like the rest of this
+                // family -- and `ctrl+/`, which is what everyone else uses,
+                // for the terminals that can say it. Most send `ctrl+_` or a
+                // bare control byte for that chord and obelus never hears
+                // it; the letter is the one that works everywhere.
+                Binding {
+                    command: Command::CommentToggle,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('c'), KeyModifiers::ALT),
+                },
+                Binding {
+                    command: Command::CommentToggle,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('/'), KeyModifiers::CONTROL),
                 },
                 // The browser's keys, for the browser's idea: a history of
                 // places, walked in both directions. vim's `ctrl+o` and
