@@ -256,21 +256,7 @@ impl Composer {
     /// The box as it is drawn: every row of every line, wrapped.
     #[must_use]
     pub fn rows(&self, width: u16) -> Vec<String> {
-        let text = self.layout();
-        let mut rows = Vec::new();
-        for (index, _) in self.lines.iter().enumerate() {
-            let line = LineNumber::new(index);
-            let characters: Vec<char> = text.line(line).chars().collect();
-            for row in text.wrap_rows(line, width.max(1)) {
-                let words: String = characters
-                    .iter()
-                    .take(row.end.get())
-                    .skip(row.first.get())
-                    .collect();
-                rows.push(words.trim_end_matches('\n').to_string());
-            }
-        }
-        rows
+        wrapped(&self.text(), width)
     }
 
     /// Which row of the box the caret is on, and how many cells into it.
@@ -324,6 +310,35 @@ impl Composer {
             .nth(column)
             .map_or(self.lines[line].len(), |(at, _)| at)
     }
+}
+
+/// `text` in rows of `width`, the way a box lays out what is in it.
+///
+/// A free function because two things want it and only one of them is a box:
+/// a page of notes has to lay out the ones nobody is typing in, and laying
+/// them out a second way would be a second wrapping to keep in step with
+/// this one.
+///
+/// [`crate::text::Text`] does the wrapping, as it does for a file: a line
+/// breaks on a word boundary, a run with nowhere to break falls back to the
+/// margin, and a wide glyph takes the two cells it takes.
+#[must_use]
+pub fn wrapped(text: &str, width: u16) -> Vec<String> {
+    let laid = Text::from_string(text);
+    let mut rows = Vec::new();
+    for index in 0..laid.line_count() {
+        let line = LineNumber::new(index);
+        let characters: Vec<char> = laid.line(line).chars().collect();
+        for row in laid.wrap_rows(line, width.max(1)) {
+            let words: String = characters
+                .iter()
+                .take(row.end.get())
+                .skip(row.first.get())
+                .collect();
+            rows.push(words.trim_end_matches('\n').to_string());
+        }
+    }
+    rows
 }
 
 #[cfg(test)]

@@ -918,6 +918,13 @@ impl App {
     /// Private: it has to run before the frame is drawn, and the only thing
     /// that knows that is [`App::draw_into`], which is the one caller.
     fn prepare(&mut self, editor_area: Rect) {
+        // The notes are laid out against the room they have: a terminal is
+        // resized and a setting is changed while they are open, and the rows
+        // they are made of depend on both.
+        let laid = self.notes_laid_out();
+        if let Some(notes) = self.notes.as_mut() {
+            notes.lay_out(laid.0, laid.1);
+        }
         self.editor_area = editor_area;
         self.check_servers();
         // What the conversation says is happening, read off the state

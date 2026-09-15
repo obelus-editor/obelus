@@ -449,3 +449,75 @@ fn dropping_a_note_is_at_the_foot() {
         "the card only has the foot's word for it:\n{dump}"
     );
 }
+
+/// A note too long for the row wraps, where the reader asked for wrapping.
+///
+/// The same answer the file behind this view gives, because it is the same
+/// question -- and this page is prose being written, where a line running
+/// off the edge takes the caret with it.
+#[test]
+fn a_long_note_wraps_when_the_reader_wraps() {
+    let long = "a note long enough that it will not sit on one row of a narrow \
+                terminal, and so has to go somewhere";
+    let scratch = support::Scratch::new("todo-wrap");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        format!("[[todo]]\nsaid = \"{long}\"\ndone = false\n"),
+    )
+    .expect("the notes");
+
+    let showing = |wrap: bool| {
+        let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+        app.configure(
+            obelus::config::Config {
+                wrap,
+                ..obelus::config::Config::default()
+            },
+            Vec::new(),
+        );
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 56, 12);
+        dispatch::dispatch(&mut app, Command::TodoOpen);
+        support::text_block(&support::render(&mut app, 56, 12))
+            .lines()
+            .filter(|row| !row.is_empty())
+            .take(3)
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    };
+
+    let wrapped = showing(true);
+    assert!(
+        wrapped[1].contains("of a narrow terminal"),
+        "it did not wrap:\n{}",
+        wrapped.join("\n")
+    );
+    // The continuation starts under the first row's words rather than under
+    // the box, so a note reads as one thing. Counted in characters: the box
+    // in front of a note is three bytes and one cell.
+    let column = |row: &str, needle: &str| {
+        row.find(needle)
+            .map(|byte| row[..byte].chars().count())
+            .unwrap_or_else(|| panic!("no {needle:?} in {row:?}"))
+    };
+    assert_eq!(
+        column(&wrapped[1], "of a narrow"),
+        column(&wrapped[0], "a note"),
+        "the second row is not under the first"
+    );
+
+    // And where the reader does not wrap, one row and the mark that says
+    // there is more of it.
+    let cut = showing(false);
+    assert!(
+        !cut[1].contains("of a narrow"),
+        "it wrapped anyway:\n{}",
+        cut.join("\n")
+    );
+    assert!(
+        cut[0].contains('\u{2026}'),
+        "nothing says it was cut:\n{}",
+        cut[0]
+    );
+}

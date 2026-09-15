@@ -83,6 +83,13 @@ pub struct TodoView {
     window: Window,
     /// Whether every key this view answers to is showing.
     keys: bool,
+    /// How wide a note's own text is, and whether it wraps there.
+    ///
+    /// Kept because the rows depend on it: a note of one long line is one
+    /// row or four, and the window, the caret and the drawing have to be
+    /// counting the same rows. Set from the frame, which is the only place
+    /// that knows.
+    laid: (u16, bool),
     /// The note the caret is in, and what is in it.
     ///
     /// Always, where there is a note to be in. There is no editing *mode*
@@ -99,10 +106,11 @@ impl TodoView {
     /// Opens the view over what a tree has, with where each note points
     /// worked out.
     #[must_use]
-    pub fn new(todo: Todo, where_now: Vec<Option<LineNumber>>) -> Self {
+    pub fn new(todo: Todo, where_now: Vec<Option<LineNumber>>, laid: (u16, bool)) -> Self {
         let mut view = Self {
             todo,
             where_now,
+            laid,
             ..Self::default()
         };
         view.rebuild();
@@ -113,6 +121,26 @@ impl TodoView {
             view.enter_note(0, false);
         }
         view
+    }
+
+    /// Says how wide a note's text is and whether it wraps, and lays the
+    /// rows out again if that has moved.
+    ///
+    /// Asked every frame, because a terminal is resized and a setting is
+    /// changed while this is open.
+    pub fn lay_out(&mut self, room: u16, wrap: bool) {
+        if self.laid == (room, wrap) {
+            return;
+        }
+        self.laid = (room, wrap);
+        self.rebuild();
+        self.follow_caret();
+    }
+
+    /// How a note's text is laid out: its width, and whether it wraps.
+    #[must_use]
+    pub const fn laid(&self) -> (u16, bool) {
+        self.laid
     }
 
     /// The notes, for whoever writes them down.
@@ -174,10 +202,18 @@ impl TodoView {
                 .as_ref()
                 .filter(|(at, _)| *at == index)
                 .map_or_else(|| note.said.clone(), |(_, composer)| composer.text());
-            let mut lines = said.lines();
+            // Wrapped where the reader asked for wrapping, and one row per
+            // line where they did not -- the same answer the file behind
+            // this view gives, because it is the same question.
+            let (room, wrap) = self.laid;
+            let laid: Vec<String> = match wrap {
+                true => crate::component::composer::wrapped(&said, room.max(1)),
+                false => said.lines().map(str::to_string).collect(),
+            };
+            let mut lines = laid.into_iter();
             rows.push(Row {
                 note: index,
-                said: lines.next().unwrap_or("").to_string(),
+                said: lines.next().unwrap_or_default(),
                 head: true,
                 done: note.done,
                 at: note.at.as_ref().map(|at| match self.where_now.get(index) {
@@ -189,7 +225,7 @@ impl TodoView {
             for line in lines {
                 rows.push(Row {
                     note: index,
-                    said: line.to_string(),
+                    said: line,
                     head: false,
                     done: note.done,
                     at: None,
@@ -213,9 +249,10 @@ impl TodoView {
         };
         let mut composer = Composer::new();
         composer.replace(&note.said);
+        let room = self.caret_width();
         if !end {
-            composer.home(u16::MAX);
-            while composer.up(u16::MAX) {}
+            composer.home(room);
+            while composer.up(room) {}
         }
         self.writing = Some((to, composer));
         self.rebuild();
@@ -456,6 +493,16 @@ impl TodoView {
         }
     }
 
+    /// The width the caret is measured against: the row's, where the text
+    /// wraps there, and no limit where it does not.
+    #[must_use]
+    pub const fn caret_width(&self) -> u16 {
+        match self.laid.1 {
+            true => self.laid.0,
+            false => u16::MAX,
+        }
+    }
+
     /// Keeps the selection on the row the caret is really in.
     ///
     /// The window is what scrolls, and it follows the caret rather than the
@@ -465,7 +512,7 @@ impl TodoView {
         let Some((at, composer)) = self.writing.as_ref() else {
             return;
         };
-        let (line, _) = composer.caret(u16::MAX);
+        let (line, _) = composer.caret(self.caret_width());
         let Some(first) = self.rows.iter().position(|row| row.note == *at) else {
             return;
         };

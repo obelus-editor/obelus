@@ -43,7 +43,11 @@ impl App {
                     .and_then(|at| crate::todo::where_now(&self.working_directory, at))
             })
             .collect();
-        self.notes = Some(TodoView::new(todo, where_now));
+        // How wide a note's text is here, and whether it wraps: the rows
+        // depend on both, and the view has to be laid out before anything
+        // asks it how many rows it has.
+        let laid = self.notes_laid_out();
+        self.notes = Some(TodoView::new(todo, where_now, laid));
     }
 
     /// Writes one down about the line being read.
@@ -101,14 +105,22 @@ impl App {
         }
     }
 
+    /// How wide a note's own text is, and whether it wraps there.
+    pub(super) fn notes_laid_out(&self) -> (u16, bool) {
+        let room = crate::ui::todo::text_width_in(self.editor_area);
+        (room, self.config().wrap)
+    }
+
     /// Whatever a key means to the notes, if they are showing.
     pub(super) fn notes_key(&mut self, key: &KeyEvent) -> bool {
+        let laid = self.notes_laid_out();
         let Some(notes) = self.notes.as_mut() else {
             return false;
         };
+        notes.lay_out(laid.0, laid.1);
         let hints = crate::ui::todo::hints(notes);
         let list = crate::ui::todo::list_region(self.editor_area, &hints);
-        let outcome = notes.handle_key(key, list.height, list.width);
+        let outcome = notes.handle_key(key, list.height, laid.0);
         match outcome {
             TodoOutcome::Ignored => false,
             TodoOutcome::Consumed => true,

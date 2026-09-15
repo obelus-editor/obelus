@@ -73,6 +73,15 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     ]
 }
 
+/// How wide a note's own text is, in a region this size.
+///
+/// The margin in front of it and the bar down the side come off: what is
+/// left is where the words go, which is what they wrap at.
+#[must_use]
+pub fn text_width_in(area: Rect) -> u16 {
+    area.width.saturating_sub(MARGIN + SCROLLBAR_WIDTH).max(1)
+}
+
 /// Where the terminal should put its caret: in the note being written.
 ///
 /// Worked out from the same rows the drawing lays out, so the caret is in
@@ -86,7 +95,7 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
     let list = list_region(area, &hints);
     let window = notes.window();
     let row = at.checked_sub(window.top())?;
-    let (line, cell) = composer.caret(list.width.saturating_sub(MARGIN));
+    let (line, cell) = composer.caret(notes.caret_width());
     let y = list.y + u16::try_from(row + line).ok()?;
     (y < list.bottom()).then(|| ratatui::layout::Position {
         x: (list.x + MARGIN + cell.get()).min(list.right().saturating_sub(1)),
@@ -244,6 +253,9 @@ impl TodoUi<'_> {
             .x
             .saturating_add(area.width)
             .saturating_sub(SCROLLBAR_WIDTH + reserved);
+        // A row is already a row: where the text wraps, `rebuild` cut it at
+        // the width, and where it does not, the cut is the honest mark that
+        // there is more of the line than the screen.
         write(
             cells,
             x,
