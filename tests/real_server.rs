@@ -550,3 +550,104 @@ fn a_real_server_outlines_a_file_by_name_and_by_nesting() {
         "the position is not on the line the name is on: {line:?}"
     );
 }
+
+/// A server obelus started is a server obelus stops.
+#[test]
+fn a_server_does_not_outlive_the_shutdown() {
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+    let pid = client.pid().expect("the server's process");
+    assert!(alive(pid), "the server was not running to begin with");
+
+    client.shutdown();
+    // Asked politely and killed if it will not go, so by here it is gone
+    // either way -- and `shutdown` reaps it, so the pid is not a zombie
+    // answering to signal zero.
+    assert!(!alive(pid), "the server outlived the shutdown");
+}
+
+/// And a server obelus lets go of is a server obelus stops, which is the
+/// half that was missing: stopping one on purpose was never the leak.
+///
+/// Broken deliberately by leaving it to `Child`'s own `Drop`, which does
+/// nothing at all. Every other way a client went -- obelus ending, a test
+/// finishing, one server replacing another -- left the process running.
+#[test]
+fn a_server_does_not_outlive_its_client() {
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+    let pid = client.pid().expect("the server's process");
+    assert!(alive(pid));
+
+    drop(client);
+    assert!(!alive(pid), "the server outlived the client that held it");
+}
+
+/// The same, once the server has finished loading the project.
+///
+/// The case that matters and the one a quick test cannot reach: a
+/// rust-analyzer that is still starting up exits when the pipe to it
+/// closes, and one that has finished loading does not. Eighty-four of the
+/// second kind is what this looked like from the outside.
+#[test]
+#[ignore = "waits for the project to be indexed"]
+fn a_loaded_server_does_not_outlive_its_client() {
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+    let pid = client.pid().expect("the server's process");
+
+    // Loaded, which is a question with an answer rather than a sleep: a
+    // server that is still indexing says so, and one that has finished
+    // answers about a name in the project.
+    let deadline = Instant::now() + INDEXED;
+    loop {
+        assert!(Instant::now() < deadline, "never indexed");
+        let id = client
+            .request(
+                "workspace/symbol",
+                &serde_json::json!({ "query": "Buffer" }),
+            )
+            .expect("asking");
+        let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+            reply.is_some_and(|reply| reply.id == id)
+        })
+        .expect("an answer");
+        let found = reply
+            .result
+            .ok()
+            .map(|value| obelus::lsp::outline::found_in(Ok(value), Some(&root())))
+            .unwrap_or_default();
+        if !found.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    drop(client);
+    assert!(
+        !alive(pid),
+        "a loaded server outlived the client that held it"
+    );
+}
+
+/// Whether a process is still there, asked the way `kill -0` asks.
+fn alive(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}

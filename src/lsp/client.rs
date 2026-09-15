@@ -287,11 +287,26 @@ impl Client {
         Some(Reply { id, result })
     }
 
-    /// Asks the server to stop, and stops waiting for it if it will not.
+    /// Which process it is, for whoever has to ask the operating system
+    /// about it.
+    #[must_use]
+    pub fn pid(&self) -> Option<u32> {
+        Some(self.process.id())
+    }
+
+    /// How long a server gets to go on its own before it is killed.
     ///
     /// Politeness with a deadline: rust-analyzer writes its caches out on a
     /// clean shutdown, which is worth a moment, and no server is worth
     /// hanging the exit on.
+    const PATIENCE: std::time::Duration = std::time::Duration::from_millis(500);
+
+    /// Asks the server to stop, and stops waiting for it if it will not.
+    ///
+    /// The request is sent and not waited on. A server with a lot to say on
+    /// the way down would answer it late -- gopls flushes a thousand log
+    /// lines first -- and what obelus needs is not the answer but that the
+    /// `exit` after it has been written.
     pub fn shutdown(&mut self) {
         let _ = self.request("shutdown", &Value::Null);
         let _ = self.notify("exit", &Value::Null);
@@ -300,10 +315,11 @@ impl Client {
         let (dead, _) = mpsc::channel();
         self.outgoing = dead;
 
-        for _ in 0..20 {
+        let until = std::time::Instant::now() + Self::PATIENCE;
+        while std::time::Instant::now() < until {
             match self.process.try_wait() {
                 Ok(Some(_)) => return,
-                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(25)),
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
                 Err(_) => break,
             }
         }
@@ -557,4 +573,30 @@ fn spawn_logger(command: String, stderr: std::process::ChildStderr) {
                 tracing::debug!(%command, "{line}");
             }
         });
+}
+
+impl Drop for Client {
+    /// Ends the process when the client goes.
+    ///
+    /// `Child` does not do this itself: dropping one leaves the process
+    /// running, deliberately, because a child outliving its parent is the
+    /// usual thing to want -- it is what every daemon ever started from a
+    /// shell depends on. It is not the thing to want here, and every other
+    /// editor says so in its own words: helix spawns with tokio's
+    /// `kill_on_drop`, zed with `async-process`'s. obelus spawns with the
+    /// standard library, which has neither, so it says it here.
+    ///
+    /// Here rather than only where a server is stopped on purpose, because
+    /// "on purpose" was never the leak: it is every other way a client goes
+    /// -- the application ending, a test finishing, one server replacing
+    /// another -- and a leaked rust-analyzer is a quarter of a gigabyte
+    /// holding an index of a project nobody is reading.
+    fn drop(&mut self) {
+        // Already gone, and `shutdown` would only be talking to a pipe with
+        // nobody on the other end.
+        if matches!(self.process.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        self.shutdown();
+    }
 }
