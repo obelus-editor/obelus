@@ -35,15 +35,17 @@ ob                  # or nothing, and pick one from the welcome screen
   leaves only its files.
 
 - **What you mean to come back to.** `alt+t` while reading opens the notes
-  with a new one started against the line under the cursor, written where it
-  will be read; `todo` shows them all, ticks them off with space, moves them
-  with `alt`+an arrow, and takes you back with enter. A note may be about a
-  line or about the project, and both are ordinary. They live in
-  `.obelus/todo.toml` beside the tree, because they are about this project
-  and not about you — and the line a note was put beside is found again
-  through git, so a note written last week still points at what it was
-  written about rather than at whatever has since moved into its place.
-  The keys are along the bottom, and `f1` has the rest of them.
+  with one started against the line under the cursor; `todo` opens them all.
+  The page is always being written — the caret is in it when it opens, a
+  letter is a letter, `enter` starts another note and `shift+enter` a line
+  inside one. What acts on a note *as* a note is under `alt`: tick it, go to
+  what it is about, move it, take it away. A note may be about a line or
+  about the project, and both are ordinary; one that says nothing is not
+  kept. They live in `.obelus/todo.toml` beside the tree, because they are
+  about this project and not about you — and the line a note was put beside
+  is found again through git, so a note written last week still points at
+  what it was written about rather than at whatever has since moved into its
+  place. The keys are along the bottom, and `f1` has the rest of them.
 
 Long lines wrap on word boundaries, using the Unicode line breaking algorithm
 — so Chinese, which has no spaces, breaks between characters, and an English

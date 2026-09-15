@@ -117,11 +117,18 @@ impl App {
                 self.save_notes(&todo);
                 true
             }
+            // Leaving keeps what was being written, which is why both of
+            // these save: there is no moment where the reader said "done
+            // with this note", so every way out of the view is one.
             TodoOutcome::Cancelled => {
+                let todo = notes.todo().clone();
+                self.save_notes(&todo);
                 self.notes = None;
                 true
             }
             TodoOutcome::Go(path, line) => {
+                let todo = notes.todo().clone();
+                self.save_notes(&todo);
                 self.notes = None;
                 self.go_to_note(&path, line);
                 true

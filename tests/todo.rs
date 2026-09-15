@@ -50,160 +50,290 @@ said = "settings live in a directory now"
 done = true
 "#;
 
-/// The notes are rows, done is said in a box, and where a note points is at
-/// the right-hand end.
+/// Every line of every note, always: nothing is folded away.
+///
+/// Broken deliberately by putting only a note's first line on the page: a
+/// note of three lines read as a note of one, and the reader had to open
+/// each one to find out what it said.
 #[test]
-fn the_notes_are_a_list_of_what_to_come_back_to() {
+fn every_line_of_every_note_is_on_the_page() {
     let scratch = tree("list", THREE);
     let mut app = open(&scratch, 76, 18);
     let dump = support::render(&mut app, 76, 18);
     let text = support::text_block(&dump);
 
     assert!(text.contains("wire the counts tree"), "{dump}");
-    assert!(
-        text.contains("\u{25a1} wire"),
-        "a note that is not done has no empty box:\n{dump}"
-    );
+    assert!(text.contains("\u{25a1} wire"), "no empty box:\n{dump}");
     assert!(
         text.contains("\u{2611} settings live"),
-        "a note that is done has no ticked box:\n{dump}"
+        "no ticked box:\n{dump}"
     );
+    assert!(text.contains("sample.rs:2"), "no place on the row:\n{dump}");
     assert!(
-        text.contains("sample.rs:2"),
-        "the place a note is about is not on its row:\n{dump}"
-    );
-    // Only its first line, until it is opened.
-    assert!(
-        !text.contains("rows caches"),
-        "a note's body is on screen unasked:\n{dump}"
+        text.contains("rows caches"),
+        "a note's second line is not on the page:\n{dump}"
     );
 }
 
-/// What the keys do is at the foot of the view, because three of them do
-/// nothing anywhere else in obelus.
+/// It opens with the caret in it, and a letter is a letter.
+///
+/// Broken deliberately by keeping the box shut until a key opened it: every
+/// change cost two keys, and the page looked like a list until the reader
+/// found out otherwise.
 #[test]
-fn the_view_says_what_its_keys_do() {
-    let scratch = tree("hints", THREE);
+fn there_is_no_mode_to_get_into() {
+    let scratch = tree("modeless", THREE);
     let mut app = open(&scratch, 76, 18);
-    // On a note that points somewhere, so "go" is a key that does something.
-    press(&mut app, KeyCode::Down);
-    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
-    // The common ones that can be pressed, and the way to the rest.
-    for word in ["go", "done", "new", "leave", "keys"] {
-        assert!(text.contains(word), "{word:?} is not at the foot:\n{text}");
-    }
-    // Not the rest of them: those are a keypress away, not a row of the
-    // reader's screen.
+    let dump = support::render(&mut app, 76, 18);
     assert!(
-        !text.contains("write this one over"),
-        "the foot is the whole list:\n{text}"
+        support::cursor_line(&dump).contains(','),
+        "it opened with no caret:\n{dump}"
     );
+
+    support::type_text(&mut app, "!!");
+    let dump = support::render(&mut app, 76, 18);
+    assert!(
+        support::text_block(&dump).contains("!!wire the counts"),
+        "typing did not reach the note:\n{dump}"
+    );
+
+    // And leaving keeps it: there is no moment the reader says "done with
+    // this note", so every way out of the view is one.
+    press(&mut app, KeyCode::Esc);
+    assert!(app.notes().is_none(), "escape did not leave");
+    let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
+        .expect("the notes");
+    assert!(written.contains("!!wire the counts"), "{written}");
 }
 
-/// A note with more behind it folds, on the mark and the key every other
-/// folding thing in obelus uses.
+/// Enter starts another note where the caret is, and `shift+enter` is a line
+/// inside one.
 #[test]
-fn a_note_with_a_body_folds_open() {
-    let scratch = tree("fold", THREE);
+fn enter_starts_another_note_and_shift_enter_a_line() {
+    let scratch = tree("another", THREE);
     let mut app = open(&scratch, 76, 18);
-    press(&mut app, KeyCode::Down);
-    app.handle(alt(KeyCode::Char('f')));
+
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "a fresh one");
+    app.handle(Event::Key(KeyEvent::new(
+        KeyCode::Enter,
+        KeyModifiers::SHIFT,
+    )));
+    support::type_text(&mut app, "and more of it");
 
     let dump = support::render(&mut app, 76, 18);
-    let text = support::text_block(&dump);
-    assert!(text.contains("rows caches"), "it would not open:\n{dump}");
-    assert!(text.contains('\u{25be}'), "the mark did not turn:\n{dump}");
+    let rows: Vec<&str> = support::text_block(&dump).lines().collect();
+    let at = |needle: &str| {
+        rows.iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("no {needle:?}:\n{dump}"))
+    };
+    // Right after the note it was started from, not at the end of the list.
+    assert_eq!(at("a fresh one"), at("wire the counts") + 1);
+    assert_eq!(at("and more of it"), at("a fresh one") + 1);
 
-    app.handle(alt(KeyCode::Char('f')));
+    press(&mut app, KeyCode::Esc);
+    let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
+        .expect("the notes");
     assert!(
-        !support::text_block(&support::render(&mut app, 76, 18)).contains("rows caches"),
-        "it would not fold again"
+        written.contains("a fresh one\nand more of it"),
+        "the two lines are not one note: {written}"
     );
 }
 
-/// Space ticks a note, and the file says so straight away: a note ticked in
-/// obelus and lost when it closed would be worse than no tick at all.
+/// Up and down walk a note's own lines, and step to the next note when there
+/// are none left.
 #[test]
-fn space_ticks_a_note_and_writes_it_down() {
+fn the_arrows_walk_the_lines_then_the_notes() {
+    let scratch = tree("walk", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let row = |app: &mut App| {
+        let dump = support::render(app, 76, 18);
+        support::cursor_line(&dump)
+            .split_once(',')
+            .and_then(|(_, y)| y.trim().parse::<u16>().ok())
+            .unwrap_or(0)
+    };
+    assert_eq!(row(&mut app), 0);
+    // Into the second note, then down its own two lines.
+    for expected in [1, 2, 3, 4] {
+        press(&mut app, KeyCode::Down);
+        assert_eq!(row(&mut app), expected, "the caret did not walk down");
+    }
+    press(&mut app, KeyCode::Up);
+    assert_eq!(row(&mut app), 3);
+}
+
+/// `alt+space` ticks a note, and the file says so.
+#[test]
+fn alt_space_ticks_a_note() {
     let scratch = tree("tick", THREE);
     let mut app = open(&scratch, 76, 18);
-    press(&mut app, KeyCode::Char(' '));
+    app.handle(alt(KeyCode::Char(' ')));
 
     let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
         .expect("the notes");
     let table = written.parse::<toml::Table>().expect("it parses");
     let notes = table["todo"].as_array().expect("the notes");
-    assert_eq!(
-        notes[0]["done"].as_bool(),
-        Some(true),
-        "the tick was not written down: {written}"
-    );
-    // And the others are left as they were.
+    assert_eq!(notes[0]["done"].as_bool(), Some(true), "{written}");
     assert_eq!(notes[1]["done"].as_bool(), Some(false));
 }
 
-/// Delete takes a note away, and the file loses it too.
+/// `alt+backspace` takes the whole note away -- backspace on its own is a
+/// character here.
 #[test]
-fn delete_takes_a_note_away() {
+fn alt_backspace_takes_a_note_away() {
     let scratch = tree("drop", THREE);
     let mut app = open(&scratch, 76, 18);
-    press(&mut app, KeyCode::Delete);
+    app.handle(alt(KeyCode::Backspace));
 
     let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
         .expect("the notes");
-    assert!(
-        !written.contains("wire the counts tree"),
-        "it is still there: {written}"
-    );
+    assert!(!written.contains("wire the counts tree"), "{written}");
     assert!(
         written.contains("settings live in a directory"),
-        "it took the others with it: {written}"
+        "{written}"
     );
 }
 
-/// Enter goes where a note points, and the view gets out of the way.
-///
-/// Broken deliberately by leaving the view open behind the file: the line
-/// was read under a list nobody had asked to keep.
+/// `alt+enter` goes where a note points, and the view gets out of the way.
 #[test]
-fn enter_goes_to_what_a_note_is_about() {
+fn alt_enter_goes_to_what_a_note_is_about() {
     let scratch = tree("go", THREE);
-    // The file the note points at, in the tree the notes belong to.
     std::fs::write(scratch.path().join("sample.rs"), "one\ntwo\nthree\n").expect("the file");
 
     let mut app = open(&scratch, 76, 18);
     press(&mut app, KeyCode::Down);
-    press(&mut app, KeyCode::Enter);
+    app.handle(alt(KeyCode::Enter));
 
     assert!(app.notes().is_none(), "the view stayed over the file");
     let buffer = app.current_buffer().expect("nothing was opened");
     assert!(
         buffer.path().ends_with("sample.rs"),
-        "opened {} instead",
+        "{}",
         buffer.path().display()
     );
-    assert_eq!(
-        buffer.cursor().line.get(),
-        1,
-        "it did not land on the line the note is about"
-    );
+    assert_eq!(buffer.cursor().line.get(), 1, "not the line it is about");
 }
 
-/// A note about the project has nowhere to go, and enter says so by doing
-/// nothing rather than by going somewhere arbitrary.
+/// A note about the project has nowhere to go, and nothing is the answer.
 #[test]
-fn enter_on_a_note_about_nothing_goes_nowhere() {
+fn alt_enter_on_a_note_about_nothing_goes_nowhere() {
     let scratch = tree("nowhere", THREE);
     let mut app = open(&scratch, 76, 18);
-    press(&mut app, KeyCode::Enter);
-    assert!(
-        app.notes().is_some(),
-        "a note with no place took the reader somewhere"
+    app.handle(alt(KeyCode::Enter));
+    assert!(app.notes().is_some(), "it went somewhere");
+}
+
+/// Where a note sits is the reader's to decide.
+#[test]
+fn alt_and_an_arrow_moves_a_note() {
+    let scratch = tree("move", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let heads = |app: &App| -> Vec<String> {
+        app.notes()
+            .expect("the view")
+            .rows()
+            .iter()
+            .filter(|row| row.head)
+            .map(|row| row.said.clone())
+            .collect()
+    };
+    let first = heads(&app)[0].clone();
+
+    app.handle(alt(KeyCode::Down));
+    assert_eq!(heads(&app)[1], first, "it did not move down");
+    app.handle(alt(KeyCode::Down));
+    assert_eq!(heads(&app)[2], first, "the caret did not follow it");
+    app.handle(alt(KeyCode::Up));
+    assert_eq!(heads(&app)[1], first);
+
+    let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
+        .expect("the notes");
+    let table = written.parse::<toml::Table>().expect("it parses");
+    assert_eq!(
+        table["todo"].as_array().expect("the notes")[1]["said"].as_str(),
+        Some(first.as_str()),
+        "the order was not written down: {written}"
     );
 }
 
-/// A note is made while reading, on the status bar, and carries where the
-/// reader was.
+/// A note that says nothing is not a note, and leaving one is how it goes.
+#[test]
+fn a_note_with_nothing_in_it_is_dropped() {
+    let scratch = tree("empty", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let notes = |app: &App| {
+        app.notes()
+            .expect("the view")
+            .rows()
+            .iter()
+            .filter(|row| row.head)
+            .count()
+    };
+    let before = notes(&app);
+
+    // Started and walked away from.
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Down);
+    assert_eq!(notes(&app), before, "an empty note stayed");
+
+    // Started, typed blanks into, and left.
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "   ");
+    press(&mut app, KeyCode::Esc);
+    let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
+        .expect("the notes");
+    let table = written.parse::<toml::Table>().expect("it parses");
+    assert_eq!(
+        table["todo"].as_array().expect("the notes").len(),
+        before,
+        "a note of blanks was kept: {written}"
+    );
+}
+
+/// The foot says only what can be pressed, and `f1` says all of it.
+#[test]
+fn the_foot_drops_a_key_that_would_do_nothing() {
+    let scratch = tree("usable", THREE);
+    let mut app = open(&scratch, 76, 18);
+
+    // The first note is about the project, so there is nowhere to go.
+    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
+    assert!(!text.contains("go there"), "{text}");
+    assert!(text.contains("another") && text.contains("leave"), "{text}");
+
+    press(&mut app, KeyCode::Down);
+    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
+    assert!(
+        text.contains("go there"),
+        "the key that works is missing:\n{text}"
+    );
+}
+
+/// `f1` shows every key, including the ones the foot left out.
+#[test]
+fn f1_shows_every_key_this_view_has() {
+    let scratch = tree("keys", THREE);
+    let mut app = open(&scratch, 76, 18);
+    press(&mut app, KeyCode::F(1));
+
+    let dump = support::render(&mut app, 76, 18);
+    let text = support::text_block(&dump);
+    assert!(text.contains("the keys here"), "no card:\n{dump}");
+    for word in ["move it up or down", "take the whole note away"] {
+        assert!(text.contains(word), "{word:?} is not on the card:\n{dump}");
+    }
+
+    press(&mut app, KeyCode::Esc);
+    assert!(app.notes().is_some(), "escape left the view, not the card");
+    assert!(
+        !support::text_block(&support::render(&mut app, 76, 18)).contains("the keys here"),
+        "the card stayed"
+    );
+}
+
+/// `alt+t` from a line of code opens the notes with one started against it.
 #[test]
 fn a_note_made_while_reading_carries_the_line() {
     let scratch = support::Scratch::new("todo-made");
@@ -220,8 +350,9 @@ fn a_note_made_while_reading_carries_the_line() {
 
     dispatch::dispatch(&mut app, Command::TodoAdd);
     assert!(app.notes().is_some(), "it did not open the notes");
+    // Straight into it: no key between asking and typing.
     support::type_text(&mut app, "look at this again");
-    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Esc);
 
     let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
         .expect("the notes");
@@ -229,67 +360,13 @@ fn a_note_made_while_reading_carries_the_line() {
     let note = &table["todo"].as_array().expect("the notes")[0];
     assert_eq!(note["said"].as_str(), Some("look at this again"));
     assert_eq!(note["at"].as_str(), Some("thing.rs"));
-    assert_eq!(
-        note["line"].as_integer(),
-        Some(3),
-        "not the line the reader was on: {written}"
-    );
+    assert_eq!(note["line"].as_integer(), Some(3), "{written}");
 }
 
-/// The same key from inside the view makes a note about the project, because
-/// there is no line under a list.
-#[test]
-fn a_note_made_from_the_list_is_about_the_project() {
-    let scratch = tree("project", THREE);
-    let mut app = open(&scratch, 76, 18);
-    app.handle(alt(KeyCode::Char('n')));
-    support::type_text(&mut app, "think about this");
-    press(&mut app, KeyCode::Enter);
-
-    let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
-        .expect("the notes");
-    let table = written.parse::<toml::Table>().expect("it parses");
-    let notes = table["todo"].as_array().expect("the notes");
-    let last = notes.last().expect("the new one");
-    assert_eq!(last["said"].as_str(), Some("think about this"));
-    assert!(
-        last.get("at").is_none(),
-        "a note made from the list carried a place: {written}"
-    );
-}
-
-/// `alt+e` opens a note in the box a message is written in, and enter
-/// finishes it.
-#[test]
-fn a_note_can_be_written_over() {
-    let scratch = tree("write", THREE);
-    let mut app = open(&scratch, 76, 18);
-    app.handle(alt(KeyCode::Char('e')));
-    assert!(
-        app.notes()
-            .and_then(obelus::component::todo::TodoView::writing)
-            .is_some(),
-        "the box did not open"
-    );
-
-    // Everything typable goes in the box, including a space, which is a key
-    // the list itself has.
-    support::type_text(&mut app, " and soon");
-    press(&mut app, KeyCode::Enter);
-
-    let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
-        .expect("the notes");
-    assert!(
-        written.contains("and soon"),
-        "what was written did not reach the file: {written}"
-    );
-}
-
-/// A tree with nothing to come back to says so, rather than showing an empty
-/// region and leaving the reader to work out whether it is broken.
+/// A tree with nothing to come back to says so.
 #[test]
 fn a_tree_with_no_notes_says_so() {
-    let scratch = support::Scratch::new("todo-empty");
+    let scratch = support::Scratch::new("todo-none");
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.working_directory_for_test(scratch.path().to_path_buf());
     support::lay_out(&mut app, 76, 18);
@@ -298,252 +375,13 @@ fn a_tree_with_no_notes_says_so() {
     let dump = support::render(&mut app, 76, 18);
     assert!(
         support::text_block(&dump).contains("nothing to come back to"),
-        "an empty view says nothing:\n{dump}"
+        "{dump}"
     );
-}
-
-/// The foot says only what can be pressed now, and `f1` says all of it.
-///
-/// Broken deliberately by drawing every common hint whatever the selection
-/// is on: "go" sat at the foot over a note about the project, which has
-/// nowhere to go, and pressing it did nothing.
-#[test]
-fn the_foot_drops_a_key_that_would_do_nothing() {
-    let scratch = tree("usable", THREE);
-    let mut app = open(&scratch, 76, 18);
-
-    // The first note is about the project, so there is nowhere to go.
-    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
-    assert!(
-        !text.contains("\u{f0311} go"),
-        "the foot offered a key with nowhere to go:\n{text}"
-    );
-
-    // The second points at a file, and the key comes back.
-    press(&mut app, KeyCode::Down);
-    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
-    assert!(
-        text.contains("go"),
-        "the foot dropped a key that works here:\n{text}"
-    );
-}
-
-/// `f1` shows every key, including the ones the foot left out.
-#[test]
-fn f1_shows_every_key_this_view_has() {
-    let scratch = tree("keys", THREE);
-    let mut app = open(&scratch, 76, 18);
-    press(&mut app, KeyCode::F(1));
-
-    let dump = support::render(&mut app, 76, 18);
-    let text = support::text_block(&dump);
-    assert!(text.contains("the keys here"), "no card:\n{dump}");
-    for word in [
-        "write this one over",
-        "show what is behind it",
-        "move it up or down",
-        "take it away",
-    ] {
-        assert!(text.contains(word), "{word:?} is not on the card:\n{dump}");
-    }
-
-    // And the same key closes it, before it closes the view.
+    // And enter starts the first one.
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "the first");
     press(&mut app, KeyCode::Esc);
-    assert!(app.notes().is_some(), "escape left the view, not the card");
-    assert!(
-        !support::text_block(&support::render(&mut app, 76, 18)).contains("the keys here"),
-        "the card stayed"
-    );
-}
-
-/// A new note is written where it will live, and nothing is on the status
-/// bar about it.
-#[test]
-fn a_new_note_is_written_in_the_list() {
-    let scratch = tree("inline", THREE);
-    let mut app = open(&scratch, 76, 18);
-    app.handle(alt(KeyCode::Char('n')));
-
-    // An empty row at the end, with the caret in it: what is typed shows up
-    // on the row rather than anywhere else.
-    support::type_text(&mut app, "a new one");
-    let dump = support::render(&mut app, 76, 18);
-    assert!(
-        support::text_block(&dump).contains("a new one"),
-        "the typing is not on its row:\n{dump}"
-    );
-    // The foot is the box's keys now, not the list's.
-    assert!(
-        support::text_block(&dump).contains("keep it"),
-        "the foot still offers the list's keys:\n{dump}"
-    );
-
-    press(&mut app, KeyCode::Enter);
     let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
         .expect("the notes");
-    assert!(written.contains("a new one"), "{written}");
-}
-
-/// A note that says nothing is not a note, however it got that way.
-#[test]
-fn a_note_with_nothing_in_it_is_dropped() {
-    let scratch = tree("empty", THREE);
-    let mut app = open(&scratch, 76, 18);
-    let before = app.notes().expect("the view").rows().len();
-
-    // Started and given up on.
-    app.handle(alt(KeyCode::Char('n')));
-    press(&mut app, KeyCode::Esc);
-    assert_eq!(
-        app.notes().expect("the view").rows().len(),
-        before,
-        "an abandoned note stayed"
-    );
-
-    // Started, typed blanks into, and kept.
-    app.handle(alt(KeyCode::Char('n')));
-    support::type_text(&mut app, "   ");
-    press(&mut app, KeyCode::Enter);
-    assert_eq!(
-        app.notes().expect("the view").rows().len(),
-        before,
-        "a note of blanks was kept"
-    );
-
-    // And an existing one emptied is taken away.
-    app.handle(alt(KeyCode::Char('e')));
-    for _ in 0..80 {
-        press(&mut app, KeyCode::Backspace);
-    }
-    press(&mut app, KeyCode::Enter);
-    let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
-        .expect("the notes");
-    assert!(
-        !written.contains("wire the counts tree"),
-        "emptying a note kept it: {written}"
-    );
-}
-
-/// Where a note sits is the reader's to decide.
-#[test]
-fn alt_and_an_arrow_moves_a_note() {
-    let scratch = tree("move", THREE);
-    let mut app = open(&scratch, 76, 18);
-    let said = |app: &App| -> Vec<String> {
-        app.notes()
-            .expect("the view")
-            .rows()
-            .iter()
-            .filter(|row| row.head)
-            .map(|row| row.said.clone())
-            .collect()
-    };
-    let first = said(&app)[0].clone();
-
-    app.handle(alt(KeyCode::Down));
-    assert_eq!(said(&app)[1], first, "it did not move down");
-    // The selection goes with it, which is what makes a second press move it
-    // again rather than move whatever landed under the cursor.
-    app.handle(alt(KeyCode::Down));
-    assert_eq!(said(&app)[2], first, "the selection did not follow it");
-
-    app.handle(alt(KeyCode::Up));
-    assert_eq!(said(&app)[1], first);
-
-    let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
-        .expect("the notes");
-    let table = written.parse::<toml::Table>().expect("it parses");
-    let notes = table["todo"].as_array().expect("the notes");
-    assert_eq!(
-        notes[1]["said"].as_str(),
-        Some(first.as_str()),
-        "the order was not written down: {written}"
-    );
-}
-
-/// The list starts at the first row: there are no tabs here and nothing to
-/// filter by, so a title would be a row of the reader's screen spent saying
-/// what they just asked for.
-#[test]
-fn the_list_starts_at_the_first_row() {
-    let scratch = tree("notitle", THREE);
-    let mut app = open(&scratch, 76, 18);
-    let dump = support::render(&mut app, 76, 18);
-    let first = support::text_block(&dump)
-        .lines()
-        .find(|line| !line.trim().is_empty())
-        .unwrap_or_default();
-    assert!(
-        first.contains("wire the counts tree"),
-        "something is above the list:\n{dump}"
-    );
-}
-
-/// A note being written has a caret in the row it is being written in, and
-/// the arrows move it.
-///
-/// Broken deliberately by leaving the notes out of `cursor_position`: the
-/// box took every key and showed no sign of where they were landing, which
-/// is a text box a reader cannot use.
-#[test]
-fn the_caret_is_in_the_row_being_written() {
-    let scratch = tree("caret", THREE);
-    let mut app = open(&scratch, 60, 12);
-    app.handle(alt(KeyCode::Char('n')));
-    support::type_text(&mut app, "first line");
-
-    let dump = support::render(&mut app, 60, 12);
-    let after = support::cursor_line(&dump).to_string();
-    assert!(after.contains(','), "there is no caret in the box:\n{dump}");
-
-    // `shift+enter` is the newline, as it is in every box: enter is taken by
-    // finishing, and nothing says so at the foot because everybody knows.
-    app.handle(Event::Key(KeyEvent::new(
-        KeyCode::Enter,
-        KeyModifiers::SHIFT,
-    )));
-    support::type_text(&mut app, "second line");
-    let dump = support::render(&mut app, 60, 12);
-    let text = support::text_block(&dump);
-    assert!(
-        text.contains("first line") && text.contains("second line"),
-        "shift+enter did not make a line:\n{dump}"
-    );
-    let (x, y) = split(support::cursor_line(&dump));
-    let (first_x, first_y) = split(&after);
-    assert!(y > first_y, "the caret did not come down a row");
-
-    // And the arrows move it, which is the other half of being able to type.
-    press(&mut app, KeyCode::Left);
-    press(&mut app, KeyCode::Left);
-    let dump = support::render(&mut app, 60, 12);
-    let (moved, still) = split(support::cursor_line(&dump));
-    assert_eq!(still, y, "left took the caret off its row");
-    assert_eq!(
-        moved + 2,
-        x_of_end(&dump, "second line"),
-        "left moved it {moved}"
-    );
-    let _ = (x, first_x);
-
-    press(&mut app, KeyCode::Up);
-    let (_, up) = split(support::cursor_line(&support::render(&mut app, 60, 12)));
-    assert_eq!(up, first_y, "up did not go back to the first line");
-}
-
-/// `x,y` as the dump writes it.
-fn split(line: &str) -> (u16, u16) {
-    let (x, y) = line.split_once(',').unwrap_or(("0", "0"));
-    (x.trim().parse().unwrap_or(0), y.trim().parse().unwrap_or(0))
-}
-
-/// The column just past `needle` on the row that holds it.
-fn x_of_end(dump: &str, needle: &str) -> u16 {
-    let row = support::text_block(dump)
-        .lines()
-        .find(|row| row.contains(needle))
-        .unwrap_or_default();
-    let cells = row.split_once('|').map_or(row, |(_, rest)| rest);
-    let at = cells.find(needle).unwrap_or(0);
-    u16::try_from(at + needle.chars().count()).unwrap_or(0)
+    assert!(written.contains("the first"), "{written}");
 }

@@ -39,9 +39,7 @@ pub struct Row {
     pub head: bool,
     /// Whether the note is done, for the whole of it to be drawn as such.
     pub done: bool,
-    /// Whether it opens, and whether it is open. `None` on a body row and on
-    /// a note with nothing behind it.
-    pub open: Option<bool>,
+
     /// Where it points, written the way a reader would say it, for the head
     /// row of a note that points anywhere.
     pub at: Option<String>,
@@ -76,8 +74,7 @@ pub struct TodoView {
     ///
     /// `None` where git says the line has gone.
     where_now: Vec<Option<LineNumber>>,
-    /// Which notes are showing their body.
-    open: std::collections::HashSet<usize>,
+
     /// The rows as they stand, rebuilt when anything changes rather than per
     /// frame -- the draw path is the one place that cannot afford to do work
     /// it could have done once.
@@ -86,7 +83,12 @@ pub struct TodoView {
     window: Window,
     /// Whether every key this view answers to is showing.
     keys: bool,
-    /// The note being written, where one is.
+    /// The note the caret is in, and what is in it.
+    ///
+    /// Always, where there is a note to be in. There is no editing *mode*
+    /// here: the view is a page of notes being written, and a page that had
+    /// to be unlocked before it would take a letter is a page where every
+    /// change costs two keys it should not.
     ///
     /// The box a message to an agent is written in, because a note is the
     /// same shape: a paragraph, sometimes pasted, with a caret in it.
@@ -104,6 +106,12 @@ impl TodoView {
             ..Self::default()
         };
         view.rebuild();
+        // The caret goes in straight away: there is nothing to unlock, and a
+        // page that opened with no caret would be a page that looks like a
+        // list until the reader finds out otherwise.
+        if !view.todo.notes.is_empty() {
+            view.enter_note(0, false);
+        }
         view
     }
 
@@ -141,90 +149,105 @@ impl TodoView {
     /// away again on escape never existed, which is why it is put in here
     /// and only saved when it is kept.
     pub fn write_new(&mut self, at: Option<crate::todo::At>) {
+        self.keep();
         self.todo.notes.push(Note {
             said: String::new(),
             done: false,
             at,
         });
         self.where_now.push(None);
-        let index = self.todo.notes.len() - 1;
-        self.rebuild();
-        if let Some(on) = self.rows.iter().rposition(|row| row.head) {
-            self.window.set_focus(on);
-        }
-        self.writing = Some((index, Composer::default()));
+        self.enter_note(self.todo.notes.len() - 1, true);
     }
 
-    /// Lays the notes out as rows.
+    /// Lays the notes out as rows: every line of every one of them.
+    ///
+    /// Nothing is folded away. A note is what it says, and a list that shows
+    /// a third of each note is a list a reader has to open one row at a time
+    /// to read -- which is what they opened the list to avoid.
     fn rebuild(&mut self) {
         let mut rows = Vec::new();
         for (index, note) in self.todo.notes.iter().enumerate() {
-            // A note being written shows what is in the box, not what is on
-            // disk: the reader is looking at their own typing.
-            let writing = self
+            // A note the caret is in shows what is in the box, not what is
+            // on disk: the reader is looking at their own typing.
+            let said = self
                 .writing
                 .as_ref()
                 .filter(|(at, _)| *at == index)
-                .map(|(_, composer)| composer.text());
-            let said = writing.clone().unwrap_or_else(|| note.said.clone());
-            let open = writing.is_some() || self.open.contains(&index);
+                .map_or_else(|| note.said.clone(), |(_, composer)| composer.text());
             let mut lines = said.lines();
             rows.push(Row {
                 note: index,
                 said: lines.next().unwrap_or("").to_string(),
                 head: true,
                 done: note.done,
-                // Nothing to fold while it is being written: what is behind
-                // the row is on the screen, and a mark saying it could be
-                // hidden is a mark for a key that is a character right now.
-                open: (writing.is_none() && note.folds()).then_some(open),
-                // Where it points *now*, not where it was put: a reader
-                // reading the row is about to press enter on it.
                 at: note.at.as_ref().map(|at| match self.where_now.get(index) {
                     Some(Some(line)) => format!("{}:{}", at.path.display(), line.get() + 1),
                     // The file still has the note, and the line does not.
-                    // Said rather than left off, because "somewhere in this
-                    // file" is more than the reader had.
                     _ => format!("{}:gone", at.path.display()),
                 }),
             });
-            if open {
-                for line in lines {
-                    rows.push(Row {
-                        note: index,
-                        said: line.to_string(),
-                        head: false,
-                        done: note.done,
-                        open: None,
-                        at: None,
-                    });
-                }
+            for line in lines {
+                rows.push(Row {
+                    note: index,
+                    said: line.to_string(),
+                    head: false,
+                    done: note.done,
+                    at: None,
+                });
             }
         }
         self.rows = rows;
         self.window.set_count(self.rows.len());
     }
 
-    /// Keeps what was written, or takes the note away where it says nothing.
+    /// Puts the caret in a note, keeping whatever the last one said.
     ///
-    /// Nothing and nothing but blanks are the same answer. A row a reader
-    /// cannot tell from an empty one is not a note, whether it was made that
-    /// way or emptied.
-    fn finish(&mut self, at: usize, said: &str) {
+    /// The commit happens here rather than on a key, because leaving a note
+    /// *is* finishing it: there is no other moment, and asking the reader to
+    /// mark one would be the mode again under another name.
+    fn enter_note(&mut self, to: usize, end: bool) {
+        self.keep();
+        let Some(note) = self.todo.notes.get(to) else {
+            self.writing = None;
+            return;
+        };
+        let mut composer = Composer::new();
+        composer.replace(&note.said);
+        if !end {
+            composer.home(u16::MAX);
+            while composer.up(u16::MAX) {}
+        }
+        self.writing = Some((to, composer));
+        self.rebuild();
+        let row = match end {
+            true => self.rows.iter().rposition(|row| row.note == to),
+            false => self.rows.iter().position(|row| row.note == to),
+        };
+        if let Some(row) = row {
+            self.window.set_focus(row);
+        }
+    }
+
+    /// Writes what is in the box back into its note, and drops the note if
+    /// it says nothing.
+    ///
+    /// Returns whether anything changed, so a caller can tell a move that
+    /// wrote something from one that did not.
+    fn keep(&mut self) -> bool {
+        let Some((at, composer)) = self.writing.take() else {
+            return false;
+        };
+        let said = composer.text();
         if said.trim().is_empty() {
             self.drop_note(at);
-        } else if let Some(note) = self.todo.notes.get_mut(at) {
-            note.said = said.to_string();
+            return true;
         }
-        self.rebuild();
-        // The selection follows what it was on, or comes back to the end.
-        let on = self
-            .rows
-            .iter()
-            .position(|row| row.note == at && row.head)
-            .or_else(|| self.rows.len().checked_sub(1));
-        if let Some(on) = on {
-            self.window.set_focus(on);
+        match self.todo.notes.get_mut(at) {
+            Some(note) if note.said != said => {
+                note.said = said;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -235,15 +258,6 @@ impl TodoView {
         }
         self.todo.notes.remove(at);
         self.where_now.remove(at);
-        self.open = self
-            .open
-            .iter()
-            .filter_map(|open| match (*open).cmp(&at) {
-                std::cmp::Ordering::Less => Some(*open),
-                std::cmp::Ordering::Equal => None,
-                std::cmp::Ordering::Greater => Some(open - 1),
-            })
-            .collect();
     }
 
     /// Which note the selection is on, whichever of its rows that is.
@@ -264,32 +278,27 @@ impl TodoView {
             .is_some_and(|at| self.where_now.get(at).copied().flatten().is_some())
     }
 
-    /// Whether the note under the selection has anything behind it.
-    #[must_use]
-    pub fn can_fold(&self) -> bool {
-        self.selected_note().is_some_and(Note::folds)
-    }
-
     /// Whether the list of every key is showing.
     #[must_use]
     pub const fn showing_keys(&self) -> bool {
         self.keys
     }
 
-    /// Which row is being written in, for the view to draw the box there.
+    /// Which row the note being written starts on, for the caret.
     #[must_use]
     pub fn writing_at(&self) -> Option<usize> {
         let (note, _) = self.writing.as_ref()?;
-        self.rows
-            .iter()
-            .position(|row| row.note == *note && row.head)
+        self.rows.iter().position(|row| row.note == *note)
     }
 
     /// Whatever a key means here.
+    ///
+    /// The letters go in the note the caret is in, always: this page is a
+    /// page of notes being written. What acts on a note *as a note* -- tick
+    /// it, go where it points, move it, take it away -- is under `alt`,
+    /// which is the question alt asks everywhere in obelus: about the thing
+    /// the cursor is on.
     pub fn handle_key(&mut self, key: &KeyEvent, page: u16, room: u16) -> TodoOutcome {
-        if self.writing.is_some() {
-            return self.write_key(key, room);
-        }
         let bare = key.modifiers.is_empty();
         let alt = key.modifiers == KeyModifiers::ALT;
         match key.code {
@@ -298,42 +307,79 @@ impl TodoView {
                 self.keys = false;
                 TodoOutcome::Consumed
             }
-            KeyCode::Esc if bare => TodoOutcome::Cancelled,
-            KeyCode::Up if bare => {
-                self.window.step(-1, crate::component::window::Wrap::Yes);
+            KeyCode::Esc if bare => {
+                self.keep();
+                self.rebuild();
+                TodoOutcome::Cancelled
+            }
+            KeyCode::F(1) if bare => {
+                self.keys = !self.keys;
                 TodoOutcome::Consumed
             }
-            KeyCode::Down if bare => {
-                self.window.step(1, crate::component::window::Wrap::Yes);
-                TodoOutcome::Consumed
-            }
-            KeyCode::PageUp if bare => {
-                self.window.step(
-                    -isize::try_from(page.max(1)).unwrap_or(1),
-                    crate::component::window::Wrap::No,
+
+            // Another note, which is what enter means in a page being
+            // written. Where it points is `alt+enter`: this is not a list of
+            // rows to choose from, it is the text of them.
+            KeyCode::Enter if bare => {
+                let after = self.selected().map_or(0, |at| at + 1);
+                self.keep();
+                // The note may have gone with the keep, if it said nothing.
+                let after = after.min(self.todo.notes.len());
+                self.todo.notes.insert(
+                    after,
+                    Note {
+                        said: String::new(),
+                        done: false,
+                        at: None,
+                    },
                 );
+                self.where_now.insert(after, None);
+                self.enter_note(after, true);
+                TodoOutcome::Changed
+            }
+
+            // Up and down walk the note's own lines first, and step to the
+            // next note when there are none left -- which is what the box
+            // answering `false` at its ends is for.
+            KeyCode::Up | KeyCode::Down if bare => {
+                let down = key.code == KeyCode::Down;
+                let inside = self
+                    .writing
+                    .as_mut()
+                    .is_some_and(|(_, composer)| match down {
+                        true => composer.down(room),
+                        false => composer.up(room),
+                    });
+                if inside {
+                    self.follow_caret();
+                    return TodoOutcome::Consumed;
+                }
+                let Some(at) = self.selected() else {
+                    return TodoOutcome::Consumed;
+                };
+                let to = match down {
+                    true if at + 1 < self.todo.notes.len() => at + 1,
+                    false if at > 0 => at - 1,
+                    _ => return TodoOutcome::Consumed,
+                };
+                self.enter_note(to, !down);
                 TodoOutcome::Consumed
             }
-            KeyCode::PageDown if bare => {
-                self.window.step(
-                    isize::try_from(page.max(1)).unwrap_or(1),
-                    crate::component::window::Wrap::No,
-                );
+            KeyCode::PageUp | KeyCode::PageDown if bare => {
+                let by = isize::try_from(page.max(1)).unwrap_or(1);
+                let by = match key.code {
+                    KeyCode::PageUp => -by,
+                    _ => by,
+                };
+                let landed = self.window.step(by, crate::component::window::Wrap::No);
+                if let Some(to) = self.rows.get(landed).map(|row| row.note) {
+                    self.enter_note(to, false);
+                }
                 TodoOutcome::Consumed
             }
-            // Where it points, which is what enter means in every list here.
-            // A note about the project has nowhere to go, and nothing is the
-            // honest answer -- the row says so by having no place on it.
-            KeyCode::Enter if bare => match self.selected().and_then(|at| {
-                let note = self.todo.notes.get(at)?;
-                let place = note.at.as_ref()?;
-                let line = (*self.where_now.get(at)?)?;
-                Some((place.path.clone(), line))
-            }) {
-                Some((path, line)) => TodoOutcome::Go(path, line),
-                None => TodoOutcome::Consumed,
-            },
-            KeyCode::Char(' ') if bare => match self.selected() {
+
+            // Done, or not. On `alt` because space is a space here.
+            KeyCode::Char(' ') if alt => match self.selected() {
                 Some(at) => {
                     if let Some(note) = self.todo.notes.get_mut(at) {
                         note.done = !note.done;
@@ -343,137 +389,87 @@ impl TodoView {
                 }
                 None => TodoOutcome::Consumed,
             },
-            KeyCode::Delete if bare => match self.selected() {
+            // Where it points. A note about the project has nowhere to go,
+            // and nothing is the honest answer.
+            KeyCode::Enter if alt => match self.selected().and_then(|at| {
+                let place = self.todo.notes.get(at)?.at.as_ref()?;
+                Some((place.path.clone(), (*self.where_now.get(at)?)?))
+            }) {
+                Some((path, line)) => {
+                    self.keep();
+                    TodoOutcome::Go(path, line)
+                }
+                None => TodoOutcome::Consumed,
+            },
+            // The whole note, because backspace on its own is a character.
+            KeyCode::Backspace | KeyCode::Delete if alt => match self.selected() {
                 Some(at) => {
+                    self.writing = None;
                     self.drop_note(at);
                     self.rebuild();
+                    let to = at.min(self.todo.notes.len().saturating_sub(1));
+                    if self.todo.notes.is_empty() {
+                        self.writing = None;
+                    } else {
+                        self.enter_note(to, false);
+                    }
                     TodoOutcome::Changed
                 }
                 None => TodoOutcome::Consumed,
             },
-            KeyCode::Char('f') if alt => match self.selected() {
-                Some(at) if self.todo.notes.get(at).is_some_and(Note::folds) => {
-                    if !self.open.remove(&at) {
-                        self.open.insert(at);
-                    }
-                    let on = self.rows.iter().position(|row| row.note == at && row.head);
-                    self.rebuild();
-                    if let Some(on) = on {
-                        self.window.set_focus(on);
-                    }
-                    TodoOutcome::Consumed
-                }
-                _ => TodoOutcome::Ignored,
-            },
-            // The same key that writes one down while reading. A note made
-            // from here has no line under it, which the application knows
-            // and this does not have to.
-            KeyCode::Char('n') if alt => {
-                self.write_new(None);
-                TodoOutcome::Consumed
-            }
             // Where a note sits is the reader's to decide, so nothing else
             // reorders the list: ticking one leaves it where it is.
             KeyCode::Up | KeyCode::Down if alt => {
+                self.keep();
                 let Some(at) = self.selected() else {
-                    return TodoOutcome::Ignored;
+                    return TodoOutcome::Consumed;
                 };
                 let to = match key.code {
                     KeyCode::Up if at > 0 => at - 1,
                     KeyCode::Down if at + 1 < self.todo.notes.len() => at + 1,
-                    _ => return TodoOutcome::Consumed,
+                    _ => {
+                        self.enter_note(at, false);
+                        return TodoOutcome::Consumed;
+                    }
                 };
                 self.todo.notes.swap(at, to);
                 self.where_now.swap(at, to);
-                self.open = self
-                    .open
-                    .iter()
-                    .map(|open| match *open {
-                        it if it == at => to,
-                        it if it == to => at,
-                        it => it,
-                    })
-                    .collect();
-                self.rebuild();
-                if let Some(on) = self.rows.iter().position(|row| row.note == to && row.head) {
-                    self.window.set_focus(on);
-                }
+                self.enter_note(to, false);
                 TodoOutcome::Changed
             }
-            KeyCode::F(1) if bare => {
-                self.keys = !self.keys;
+
+            // Everything else is the box's, and the box knows which keys
+            // those are: it is the same box a message to an agent is written
+            // in, and which keys a box answers to is one rule.
+            _ => {
+                let took = self
+                    .writing
+                    .as_mut()
+                    .is_some_and(|(_, composer)| composer.handle_key(key, room));
+                if !took {
+                    return TodoOutcome::Ignored;
+                }
+                self.rebuild();
+                self.follow_caret();
                 TodoOutcome::Consumed
             }
-            KeyCode::Char('e') if alt => match self.selected() {
-                Some(at) => {
-                    let mut composer = Composer::default();
-                    if let Some(note) = self.todo.notes.get(at) {
-                        composer.replace(&note.said);
-                    }
-                    self.writing = Some((at, composer));
-                    TodoOutcome::Consumed
-                }
-                None => TodoOutcome::Ignored,
-            },
-            _ => TodoOutcome::Ignored,
         }
     }
 
-    /// Whatever a key means while a note is being written.
+    /// Keeps the selection on the row the caret is really in.
     ///
-    /// Escape gives up on the writing and not on the view, which is the rule
-    /// every other thing here follows: a key that opens a thing closes that
-    /// thing.
-    fn write_key(&mut self, key: &KeyEvent, room: u16) -> TodoOutcome {
-        let outcome = self.write_key_in(key, room);
-        // What the box holds is what the rows show, so they follow it.
-        if matches!(outcome, TodoOutcome::Consumed) {
-            self.rebuild();
-        }
-        outcome
-    }
-
-    fn write_key_in(&mut self, key: &KeyEvent, room: u16) -> TodoOutcome {
-        let Some((_, composer)) = self.writing.as_mut() else {
-            return TodoOutcome::Ignored;
+    /// The window is what scrolls, and it follows the caret rather than the
+    /// note: a note of ten lines is ten rows, and a reader typing on the
+    /// last of them should not have the view sitting on the first.
+    fn follow_caret(&mut self) {
+        let Some((at, composer)) = self.writing.as_ref() else {
+            return;
         };
-        let bare = key.modifiers.is_empty();
-        match key.code {
-            // Given up on. A note that was new is gone with it -- it never
-            // said anything, so there was never a note -- and one that was
-            // being written over keeps what it said.
-            KeyCode::Esc if bare => {
-                let Some((at, _)) = self.writing.take() else {
-                    return TodoOutcome::Consumed;
-                };
-                let empty = self
-                    .todo
-                    .notes
-                    .get(at)
-                    .is_some_and(|note| note.said.trim().is_empty());
-                if empty {
-                    self.drop_note(at);
-                }
-                self.rebuild();
-                match empty {
-                    true => TodoOutcome::Changed,
-                    false => TodoOutcome::Consumed,
-                }
-            }
-            // Finished, because enter is what finishes a thing here -- and
-            // `alt+enter` is the newline, the way the message box does it.
-            KeyCode::Enter if bare => {
-                let (at, composer) = self.writing.take().unwrap_or_else(|| unreachable!());
-                self.finish(at, &composer.text());
-                TodoOutcome::Changed
-            }
-            // Everything else is the box's, and the box knows which keys
-            // those are: it is the same box a message to an agent is
-            // written in, and which keys a box answers to is one rule.
-            _ => match composer.handle_key(key, room) {
-                true => TodoOutcome::Consumed,
-                false => TodoOutcome::Ignored,
-            },
-        }
+        let (line, _) = composer.caret(u16::MAX);
+        let Some(first) = self.rows.iter().position(|row| row.note == *at) else {
+            return;
+        };
+        self.window
+            .set_focus((first + line).min(self.rows.len().saturating_sub(1)));
     }
 }

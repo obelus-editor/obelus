@@ -46,31 +46,20 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let chord = crate::keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
-    let alt = |character| chord(KeyCode::Char(character), KeyModifiers::ALT);
-    // While a note is being written the list's keys are characters: space is
-    // a space and delete takes a letter out. Saying otherwise would be a row
-    // of keys that do something else from what it says.
-    if notes.writing().is_some() {
-        // Not the newline. `shift+enter` is what every box anywhere takes,
-        // and a row saying so is a row spent on something the reader already
-        // knew -- the same argument the arrows on a tab row make.
-        return vec![
-            Hint::common(bare(KeyCode::Enter), "keep it"),
-            Hint::common(bare(KeyCode::Esc), "give up on it"),
-        ];
-    }
+    let alt = |code| chord(code, KeyModifiers::ALT);
     let on = notes.selected_note();
     vec![
-        Hint::common(bare(KeyCode::Enter), "go").when(notes.can_go()),
-        Hint::common(bare(KeyCode::Char(' ')), "done").when(on.is_some()),
-        Hint::common(alt('n'), "new"),
+        // Nothing about typing, the arrows or `shift+enter`: this is a page
+        // being written, and what a page being written does with a letter is
+        // not news. What is worth a row is what it does with a *note*.
+        Hint::common(bare(KeyCode::Enter), "another"),
+        Hint::common(alt(KeyCode::Char(' ')), "done").when(on.is_some()),
+        Hint::common(alt(KeyCode::Enter), "go there").when(notes.can_go()),
         Hint::common(bare(KeyCode::Esc), "leave"),
-        Hint::rare(alt('e'), "write this one over").when(on.is_some()),
-        Hint::rare(alt('f'), "show what is behind it").when(notes.can_fold()),
-        Hint::rare(chord(KeyCode::Up, KeyModifiers::ALT), "move it up or down")
-            .or(chord(KeyCode::Down, KeyModifiers::ALT))
+        Hint::rare(alt(KeyCode::Up), "move it up or down")
+            .or(alt(KeyCode::Down))
             .when(notes.rows().len() > 1),
-        Hint::rare(bare(KeyCode::Delete), "take it away").when(on.is_some()),
+        Hint::rare(alt(KeyCode::Backspace), "take the whole note away").when(on.is_some()),
     ]
 }
 
@@ -217,15 +206,10 @@ impl TodoUi<'_> {
         let dim = Style::new().fg(self.theme.gutter).bg(background);
         let y = area.y;
 
+        // The box, on the note's own row only: a line of a body is part of
+        // the note above it and is not separately done. Its column is kept
+        // on the rows below, so a note's lines line up under its first.
         let mut x = area.x + 1;
-        // The fold mark, in a column every row leaves for it so that what a
-        // note says and what its body says start in the same place.
-        if let Some(open) = row.open {
-            put(cells, x, y, crate::ui::opens(open), style);
-        }
-        x += 1;
-        // And the box, on the note's own row only: a line of a body is part
-        // of the note above it and is not separately done.
         if row.head {
             put(cells, x, y, if row.done { DONE } else { OPEN }, style);
         }

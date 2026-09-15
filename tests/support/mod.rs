@@ -311,6 +311,11 @@ fn colour(colour: Color) -> String {
 /// machines this is written on: a suite run a few hundred times over an
 /// afternoon was holding most of a gigabyte of nothing.
 ///
+/// Once per name per run, checked: two tests in one binary run at the same
+/// time, so a name asked for twice is two tests clearing each other's ground
+/// -- which shows up as a test that fails one run in three and nothing to
+/// see in either of them.
+///
 /// The process id is in the name so that two runs at once do not clear each
 /// other's ground, which is a failure that looks like a flaky test.
 pub struct Scratch {
@@ -321,6 +326,25 @@ pub struct Scratch {
 impl Scratch {
     /// An empty directory, whatever was there before.
     pub fn new(name: &str) -> Self {
+        // Once per name per run. Two tests that asked for the same one would
+        // each clear the other's ground -- they run at the same time in the
+        // same process, so the pid in the path does not keep them apart --
+        // and what that looks like from outside is a test that fails one run
+        // in three for no reason anybody can see. It costs an afternoon; the
+        // panic costs a moment and says which two.
+        static TAKEN: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
+            std::sync::Mutex::new(None);
+        let mut taken = TAKEN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(
+            taken
+                .get_or_insert_with(std::collections::HashSet::new)
+                .insert(name.to_string()),
+            "two tests asked for the scratch directory {name:?}, and they would clear each other's"
+        );
+        drop(taken);
+
         let path = std::env::temp_dir().join(format!("obelus-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).expect("a scratch directory");
