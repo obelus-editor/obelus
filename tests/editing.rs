@@ -344,6 +344,7 @@ mod keys {
         // Nothing outside obelus: a suite that used whatever this machine
         // has would reach into the clipboard of whoever ran it, and would
         // pass or fail by what happened to be on it.
+        let _turn = support::clipboard_turn();
         obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
 
         let (_scratch, mut app) = reading("keys-cut", "one two\n");
@@ -405,6 +406,7 @@ mod keys {
         let _turn = CLIPBOARD
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _turn = support::clipboard_turn();
         obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Osc52);
 
         assert_eq!(
@@ -1925,5 +1927,263 @@ mod format_on_save {
             "a file nobody could lay out was never written"
         );
         assert!(!app.current_buffer().expect("a buffer").is_dirty());
+    }
+}
+
+/// One step in, and one step back out.
+mod indenting_a_block {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer, coordinates::LineNumber};
+
+    use super::support;
+
+    fn editing(name: &str, file: &str, contents: &str) -> (support::Scratch, App) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join(file);
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 12);
+        (scratch, app)
+    }
+
+    fn text(app: &App) -> String {
+        app.current_buffer()
+            .expect("a buffer")
+            .text()
+            .rope()
+            .to_string()
+    }
+
+    /// The whole of the reason this exists: `tab` used to put the indent in
+    /// place of the selection, which is the one thing nobody means by it.
+    #[test]
+    fn tab_over_a_selection_moves_the_lines_in() {
+        let (_scratch, mut app) = editing(
+            "indent-in",
+            "sample.rs",
+            "fn a() {\nlet one = 1;\nlet two = 2;\n}\n",
+        );
+        support::press(&mut app, KeyCode::Down);
+        support::press_shift(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Tab);
+
+        assert_eq!(
+            text(&app),
+            "fn a() {\n    let one = 1;\n    let two = 2;\n}\n",
+            "the selected lines did not move in"
+        );
+    }
+
+    /// And the selection is still over them, so the next press is about the
+    /// same lines.
+    #[test]
+    fn the_lines_stay_selected() {
+        let (_scratch, mut app) = editing("indent-again", "sample.rs", "a\nb\nc\n");
+        support::press_shift(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Tab);
+        support::press(&mut app, KeyCode::Tab);
+        assert_eq!(text(&app), "        a\n        b\nc\n");
+    }
+
+    /// Back out again, and no further than the margin.
+    #[test]
+    fn shift_tab_moves_them_back_out() {
+        let (_scratch, mut app) = editing(
+            "indent-out",
+            "sample.rs",
+            "fn a() {\n    let one = 1;\n  let two = 2;\n}\n",
+        );
+        support::press(&mut app, KeyCode::Down);
+        support::press_shift(&mut app, KeyCode::Down);
+        support::press_shift(&mut app, KeyCode::BackTab);
+
+        // The second line is indented by two in a file of four, so it comes
+        // out at the margin rather than staying where it is.
+        assert_eq!(text(&app), "fn a() {\nlet one = 1;\nlet two = 2;\n}\n");
+    }
+
+    /// With nothing selected it is the line the cursor is on, which is what
+    /// makes `shift+tab` worth having on its own.
+    #[test]
+    fn shift_tab_with_nothing_selected_is_this_line() {
+        let (_scratch, mut app) = editing("indent-one", "sample.rs", "fn a() {\n    one();\n}\n");
+        support::press(&mut app, KeyCode::Down);
+        support::press_shift(&mut app, KeyCode::BackTab);
+        assert_eq!(text(&app), "fn a() {\none();\n}\n");
+    }
+
+    /// A line with nothing on it gets nothing put in front of it: an indent
+    /// there is trailing blanks, which every other tool takes back out.
+    #[test]
+    fn an_empty_line_is_left_alone() {
+        let (_scratch, mut app) = editing("indent-empty", "sample.rs", "a\n\nb\n");
+        support::press_shift(&mut app, KeyCode::Down);
+        support::press_shift(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Tab);
+        assert_eq!(text(&app), "    a\n\n    b\n");
+    }
+
+    /// One change, not one per line: a block put right takes one `ctrl+z`.
+    #[test]
+    fn the_whole_block_is_one_step_back() {
+        let (_scratch, mut app) = editing("indent-undo", "sample.rs", "a\nb\nc\n");
+        support::press_shift(&mut app, KeyCode::Down);
+        support::press_shift(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Tab);
+        obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::Undo);
+        assert_eq!(text(&app), "a\nb\nc\n");
+    }
+
+    /// What a step of indentation is belongs to the file: a file indented
+    /// with tabs is a file a reader means to keep indenting with tabs.
+    #[test]
+    fn a_file_indented_with_tabs_gets_tabs() {
+        let (_scratch, mut app) = editing("indent-tabs", "sample.go", "func a() {\n\tone()\n}\n");
+        support::press(&mut app, KeyCode::Down);
+        support::press_shift(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Tab);
+        assert_eq!(text(&app), "func a() {\n\t\tone()\n\t}\n");
+
+        // And so does the tab key with nothing selected.
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::Tab);
+        assert!(
+            text(&app).ends_with('\t'),
+            "the tab key put spaces into a file indented with tabs: {:?}",
+            text(&app)
+        );
+    }
+
+    /// And a file indented with spaces keeps its spaces, however wide.
+    #[test]
+    fn a_file_indented_with_spaces_gets_spaces() {
+        let (_scratch, mut app) =
+            editing("indent-spaces", "sample.rs", "fn a() {\n    one();\n}\n");
+        support::press(&mut app, KeyCode::Down);
+        support::press(&mut app, KeyCode::End);
+        support::press(&mut app, KeyCode::Tab);
+        let line = app
+            .current_buffer()
+            .expect("a buffer")
+            .text()
+            .line(LineNumber::new(1))
+            .to_string();
+        assert_eq!(line, "    one();    ");
+    }
+}
+
+/// A word at a time, and a line at a time: the two things `ctrl` already
+/// meant for moving, meant for taking out and taking a copy as well.
+mod by_the_word_and_the_line {
+    use crossterm::event::KeyCode;
+    use obelus::{
+        app::App,
+        buffer::Buffer,
+        clipboard,
+        command::{Command, dispatch},
+    };
+
+    use super::support;
+
+    fn editing(name: &str, contents: &str) -> (support::Scratch, App) {
+        let scratch = support::Scratch::new(name);
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, contents).expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 12);
+        (scratch, app)
+    }
+
+    fn text(app: &App) -> String {
+        app.current_buffer()
+            .expect("a buffer")
+            .text()
+            .rope()
+            .to_string()
+    }
+
+    /// `ctrl` with the arrow keys already steps over a word. A reader who
+    /// can step over one expects to be able to take it out.
+    #[test]
+    fn control_backspace_takes_out_the_word_behind() {
+        let (_scratch, mut app) = editing("word-back", "let greeting = hello;\n");
+        support::press(&mut app, KeyCode::End);
+        support::press_control_key(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "let greeting = hello\n");
+        support::press_control_key(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "let greeting = \n");
+    }
+
+    #[test]
+    fn control_delete_takes_out_the_word_in_front() {
+        let (_scratch, mut app) = editing("word-forward", "let greeting = hello;\n");
+        support::press_control_key(&mut app, KeyCode::Delete);
+        assert_eq!(text(&app), " greeting = hello;\n");
+    }
+
+    /// And at the ends of the document there is no word to take, so nothing
+    /// happens rather than something odd.
+    #[test]
+    fn there_is_nothing_behind_the_start_of_the_document() {
+        let (_scratch, mut app) = editing("word-edges", "one two\n");
+        support::press_control_key(&mut app, KeyCode::Backspace);
+        assert_eq!(text(&app), "one two\n");
+        assert!(
+            !app.current_buffer().expect("a buffer").is_dirty(),
+            "a key with nothing to do made the file unsaved"
+        );
+    }
+
+    /// Copying with nothing selected copies the line, newline and all, so
+    /// that what comes back out is a line rather than the middle of one.
+    #[test]
+    fn copying_nothing_copies_the_line() {
+        let _turn = support::clipboard_turn();
+        clipboard::use_provider_for_test(clipboard::Provider::Kept);
+        let (_scratch, mut app) = editing("line-copy", "one\ntwo\nthree\n");
+        support::press(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::SelectionCopy);
+        assert_eq!(clipboard::paste().as_deref(), Some("two\n"));
+        assert_eq!(text(&app), "one\ntwo\nthree\n", "copying changed the file");
+    }
+
+    /// And cutting takes the line away rather than leaving a blank where it
+    /// was.
+    #[test]
+    fn cutting_nothing_cuts_the_line_away() {
+        let _turn = support::clipboard_turn();
+        clipboard::use_provider_for_test(clipboard::Provider::Kept);
+        let (_scratch, mut app) = editing("line-cut", "one\ntwo\nthree\n");
+        support::press(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::SelectionCut);
+        assert_eq!(text(&app), "one\nthree\n");
+        assert_eq!(clipboard::paste().as_deref(), Some("two\n"));
+    }
+
+    /// A cut line and a paste put it back where it came from, which is what
+    /// makes the pair of them a way to move a line.
+    #[test]
+    fn a_cut_line_pastes_back_as_a_line() {
+        let _turn = support::clipboard_turn();
+        clipboard::use_provider_for_test(clipboard::Provider::Kept);
+        let (_scratch, mut app) = editing("line-move", "one\ntwo\nthree\n");
+        support::press(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::SelectionCut);
+        dispatch::dispatch(&mut app, Command::Paste);
+        assert_eq!(text(&app), "one\ntwo\nthree\n");
+    }
+
+    /// The last line of a file has no line break after it to take.
+    #[test]
+    fn cutting_the_last_line_takes_what_there_is() {
+        let _turn = support::clipboard_turn();
+        clipboard::use_provider_for_test(clipboard::Provider::Kept);
+        let (_scratch, mut app) = editing("line-last", "one\ntwo");
+        support::press(&mut app, KeyCode::Down);
+        dispatch::dispatch(&mut app, Command::SelectionCut);
+        assert_eq!(text(&app), "one\n");
     }
 }

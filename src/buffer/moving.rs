@@ -1003,7 +1003,7 @@ fn characters(text: &Text, line: LineNumber) -> Vec<char> {
 
 /// The start of the word to the left, stepping onto the line above where
 /// there is nothing to the left on this one.
-fn word_left(
+pub(super) fn word_left(
     text: &Text,
     folds: &Folds,
     mut line: LineNumber,
@@ -1038,7 +1038,7 @@ fn word_left(
 }
 
 /// Past the end of the word to the right, stepping onto the line below.
-fn word_right(
+pub(super) fn word_right(
     text: &Text,
     folds: &Folds,
     mut line: LineNumber,

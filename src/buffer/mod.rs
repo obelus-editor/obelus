@@ -237,6 +237,23 @@ struct Seen {
     length: usize,
 }
 
+/// Whether a file indents with tabs.
+///
+/// The first line that begins with a blank settles it, which is as much of
+/// the file as anyone reads to find out. A file that never indents is a
+/// file with no answer, and spaces are the answer that is wrong in the
+/// fewest places.
+fn indented_with_tabs(text: &Text) -> bool {
+    text.rope()
+        .lines()
+        .find_map(|line| match line.chars().next() {
+            Some('\t') => Some(true),
+            Some(' ') => Some(false),
+            _ => None,
+        })
+        .unwrap_or(false)
+}
+
 /// A digest of some bytes, for telling one version of a file from another.
 ///
 /// Sixty-four bits of `SipHash`, which is what a `HashMap` key gets. Two
@@ -545,6 +562,14 @@ pub struct Buffer {
     /// answer. A document somebody has edited cannot be re-read to find out,
     /// so the question has to be asked of the file rather than of its text.
     seen: Option<Seen>,
+    /// Whether this file indents with tabs rather than with spaces.
+    ///
+    /// Read off the file rather than configured: what a file is indented
+    /// with is a fact about the file, and a reader who has to tell obelus
+    /// once per project has been asked something their files already say.
+    /// A file with no indentation at all gets spaces, which is the answer
+    /// that is wrong in the fewest places.
+    tabs: bool,
     /// Whether the text differs from what is on disk.
     ///
     /// Worked out whenever the text moves rather than when it is asked:
@@ -594,6 +619,7 @@ impl Buffer {
 
         let mut folds = folds::Folds::default();
         folds.offer(folds::of(&text));
+        let tabs = indented_with_tabs(&text);
         let seen = Some(Seen {
             stat: Stat::of(&path),
             digest: digest_of_text(&text),
@@ -627,6 +653,7 @@ impl Buffer {
             undo: undo::Undo::default(),
             disk: Disk::Unchanged,
             dirty: false,
+            tabs,
         })
     }
 
@@ -766,6 +793,7 @@ impl Buffer {
             seen: None,
             disk: Disk::Unchanged,
             dirty: false,
+            tabs: false,
         }
     }
 
@@ -1080,6 +1108,51 @@ impl Buffer {
     /// Says what somebody else did, so the screen can say it too.
     pub const fn mark_on_disk(&mut self, disk: Disk) {
         self.disk = disk;
+    }
+
+    /// What one step of indentation is in this file.
+    ///
+    /// A tab where the file is indented with tabs, and the setting's worth
+    /// of spaces where it is not.
+    #[must_use]
+    pub fn indent(&self) -> String {
+        match self.tabs {
+            true => "\t".to_string(),
+            false => " ".repeat(crate::text::tab_width()),
+        }
+    }
+
+    /// Selects a span, as though the reader had dragged across it.
+    pub fn select(&mut self, span: Span) {
+        self.selection_anchor = Some(Cursor {
+            line: span.line,
+            column: span.column,
+            ..self.cursor
+        });
+        self.cursor.line = span.end_line;
+        self.cursor.column = span.end_column;
+    }
+
+    /// Where the word before the cursor begins.
+    #[must_use]
+    pub fn word_before(&self) -> (LineNumber, CharColumn) {
+        moving::word_left(
+            &self.text,
+            &self.folds,
+            self.cursor.line,
+            self.cursor.column,
+        )
+    }
+
+    /// Where the word after the cursor ends.
+    #[must_use]
+    pub fn word_after(&self) -> (LineNumber, CharColumn) {
+        moving::word_right(
+            &self.text,
+            &self.folds,
+            self.cursor.line,
+            self.cursor.column,
+        )
     }
 
     /// Says the text is what is on disk, after writing it there.

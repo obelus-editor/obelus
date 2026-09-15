@@ -391,7 +391,7 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::SelectionCopy,
         name: "copy-selection",
-        title: "Copy the selected text",
+        title: "Copy the selection, or this line",
     },
     CommandSpec {
         command: Command::SelectionAll,
@@ -401,7 +401,7 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::SelectionCut,
         name: "cut-selection",
-        title: "Copy the selection and take it out",
+        title: "Cut the selection, or this line",
     },
     CommandSpec {
         command: Command::Paste,
@@ -618,8 +618,12 @@ impl Command {
             Self::GitHunk => Requires::AHunk,
             Self::GitPrevious => Requires::AHunkBefore,
             Self::GitNext => Requires::AHunkAfter,
-            Self::SelectionCopy | Self::SelectionClear | Self::SelectionCut => {
-                Requires::ASelection
+            Self::SelectionClear => Requires::ASelection,
+            // Not a selection: with nothing selected these are about the
+            // line the cursor is on, which is what a reader means by them
+            // far more often than they mean "nothing".
+            Self::SelectionCopy | Self::SelectionCut => {
+                Requires::AFileOpen
             }
             // Not "is there anything to paste": obelus's own store knows
             // without being asked, and an external clipboard has to be run

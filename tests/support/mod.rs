@@ -399,3 +399,17 @@ pub fn said(dump: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+
+/// The turn to use the clipboard.
+///
+/// What obelus keeps when no provider can hold a copy is one thing for the
+/// whole process, so two tests reading it at once each see what the other
+/// put there. Held for as long as the returned guard lives, which is the
+/// body of the test that took it.
+pub fn clipboard_turn() -> std::sync::MutexGuard<'static, ()> {
+    static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // A test that failed while holding it poisoned nothing: there is no
+    // state behind this, only the taking of turns.
+    TURN.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}

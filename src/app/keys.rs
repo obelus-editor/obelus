@@ -111,10 +111,16 @@ pub(super) enum Typing {
     Newline,
     /// An indent.
     Tab,
+    /// One step back out of an indent.
+    Outdent,
     /// Take out what is behind the cursor.
     Backward,
     /// Take out what is in front of it.
     Forward,
+    /// Take out the word behind it.
+    BackwardWord,
+    /// And the word in front.
+    ForwardWord,
 }
 
 /// What a key types, if it types anything.
@@ -125,6 +131,16 @@ pub(super) enum Typing {
 /// a character in where the reader asked for an action.
 pub(super) fn typing_for(key: &KeyEvent) -> Option<Typing> {
     let modifiers = keymap::modifiers_of(key)?;
+    // The one pair of `ctrl` chords that type rather than command: they
+    // take out a word, which is the pair of `ctrl` with the arrows moving
+    // over one. Before the rule below, which is what refuses the rest.
+    if modifiers == KeyModifiers::CONTROL {
+        return match key.code {
+            KeyCode::Backspace => Some(Typing::BackwardWord),
+            KeyCode::Delete => Some(Typing::ForwardWord),
+            _ => None,
+        };
+    }
     let bare = modifiers == KeyModifiers::NONE;
     let shifted = modifiers == KeyModifiers::SHIFT;
     if !bare && !shifted {
@@ -134,6 +150,9 @@ pub(super) fn typing_for(key: &KeyEvent) -> Option<Typing> {
         KeyCode::Char(character) => Some(Typing::Character(character)),
         KeyCode::Enter if bare => Some(Typing::Newline),
         KeyCode::Tab if bare => Some(Typing::Tab),
+        // Whichever way the terminal reports it: some send `BackTab` with
+        // shift still on it and some send it bare.
+        KeyCode::BackTab => Some(Typing::Outdent),
         KeyCode::Backspace if bare => Some(Typing::Backward),
         KeyCode::Delete if bare => Some(Typing::Forward),
         _ => None,
@@ -155,6 +174,16 @@ impl App {
         let selection = buffer.selection();
         let cursor = buffer.cursor();
         let text = buffer.text();
+
+        // Indenting is about lines, not about what is selected in them, so
+        // it comes before the rule that a selection is what a key is about.
+        // `tab` over a selection used to put the indent *in place of* it,
+        // which is the one thing no reader has ever meant by it.
+        match typing {
+            Typing::Outdent => return self.shift_indent(false),
+            Typing::Tab if selection.is_some() => return self.shift_indent(true),
+            _ => {}
+        }
 
         let (span, with, doing) = match typing {
             // Whatever is selected goes, and what was typed takes its place.
@@ -197,6 +226,40 @@ impl App {
                     crate::buffer::undo::Doing::Whole,
                 )
             }
+            Typing::Outdent => return,
+            // A word at a time, by the rule the arrow keys move by.
+            Typing::BackwardWord => {
+                let (line, column) = buffer.word_before();
+                if (line, column) == (cursor.line, cursor.column) {
+                    return;
+                }
+                (
+                    crate::coordinates::Span {
+                        line,
+                        column,
+                        end_line: cursor.line,
+                        end_column: cursor.column,
+                    },
+                    String::new(),
+                    crate::buffer::undo::Doing::Deleting,
+                )
+            }
+            Typing::ForwardWord => {
+                let (end_line, end_column) = buffer.word_after();
+                if (end_line, end_column) == (cursor.line, cursor.column) {
+                    return;
+                }
+                (
+                    crate::coordinates::Span {
+                        line: cursor.line,
+                        column: cursor.column,
+                        end_line,
+                        end_column,
+                    },
+                    String::new(),
+                    crate::buffer::undo::Doing::Deleting,
+                )
+            }
             Typing::Character(_) | Typing::Newline | Typing::Tab => {
                 let at = crate::coordinates::Span {
                     line: cursor.line,
@@ -212,6 +275,7 @@ impl App {
                     Typing::Newline => {
                         "\n".to_string() + &indent_after(text, cursor.line, cursor.column)
                     }
+                    Typing::Tab => buffer.indent(),
                     _ => put_in(typing),
                 };
                 (at, what, doing)
@@ -262,6 +326,61 @@ impl App {
         self.change(span, &with, doing);
     }
 
+    /// Moves the lines the reader is on one step in or out.
+    ///
+    /// The lines a selection touches, whole, or the line the cursor is on
+    /// when nothing is selected -- and one change rather than one per line,
+    /// so that putting a block right takes one `ctrl+z` to put back.
+    ///
+    /// The selection comes out over the same lines, whole: a reader lining
+    /// a block up presses this more than once, and a selection that went
+    /// with the first press would make the second press about something
+    /// else.
+    pub(super) fn shift_indent(&mut self, deeper: bool) {
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        let indent = buffer.indent();
+        let text = buffer.text();
+        let (first, last) = match buffer.selection() {
+            Some(span) => (span.line, span.end_line),
+            None => (buffer.cursor().line, buffer.cursor().line),
+        };
+        let mut lines = Vec::new();
+        for line in first.get()..=last.get() {
+            let line = LineNumber::new(line);
+            let was = text.line(line).to_string();
+            lines.push(match deeper {
+                // Nothing to put in front of a line with nothing on it: an
+                // indent on an empty line is trailing blanks, which is what
+                // every other tool in the reader's way then takes back out.
+                true if was.trim().is_empty() => was,
+                true => indent.clone() + &was,
+                false => outdented(&was, &indent),
+            });
+        }
+        let span = crate::coordinates::Span {
+            line: first,
+            column: CharColumn::new(0),
+            end_line: last,
+            end_column: text.line_length(last),
+        };
+        let with = lines.join("\n");
+        if with == text.text_in(span) {
+            return;
+        }
+        self.change(span, &with, crate::buffer::undo::Doing::Whole);
+        if let Some(buffer) = self.current_buffer_mut() {
+            let end = buffer.text().line_length(last);
+            buffer.select(crate::coordinates::Span {
+                line: first,
+                column: CharColumn::new(0),
+                end_line: last,
+                end_column: end,
+            });
+        }
+    }
+
     /// Makes one change to the document being read, and tells everything
     /// that has to hear about it.
     pub(super) fn change(
@@ -284,6 +403,25 @@ impl App {
             self.change_document(index);
         }
     }
+}
+
+/// A line with one step of its indentation taken off.
+///
+/// A tab where the line begins with one, and otherwise up to a step's worth
+/// of spaces -- fewer where there are fewer, because a line indented by two
+/// spaces in a file of four should come out at the margin rather than stay
+/// where it is.
+fn outdented(line: &str, indent: &str) -> String {
+    if let Some(rest) = line.strip_prefix('\t') {
+        return rest.to_string();
+    }
+    let blanks = line
+        .chars()
+        .take_while(|character| *character == ' ')
+        .count();
+    line.chars()
+        .skip(blanks.min(indent.chars().count()))
+        .collect()
 }
 
 /// The blank a new line starts with, following the line it came off.
@@ -324,7 +462,14 @@ fn put_in(typing: Typing) -> String {
     match typing {
         Typing::Character(character) => character.to_string(),
         Typing::Newline => "\n".to_string(),
-        Typing::Tab => " ".repeat(crate::text::tab_width()),
-        Typing::Backward | Typing::Forward => String::new(),
+        // Never asked for `Tab`: what one step of indentation is belongs to
+        // the file, so [`App::typed`] takes it from the document rather
+        // than from here.
+        Typing::Tab
+        | Typing::Outdent
+        | Typing::Backward
+        | Typing::Forward
+        | Typing::BackwardWord
+        | Typing::ForwardWord => String::new(),
     }
 }

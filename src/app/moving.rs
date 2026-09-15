@@ -233,11 +233,20 @@ impl App {
 
     /// Copies the selected text to the system clipboard.
     pub fn copy_selection(&mut self) {
-        // Nothing said when there is nothing to copy: the command is not
-        // offered without a selection, so the key does nothing and the
-        // palette's dim row is where that is answered.
-        let Some(text) = self.current_buffer().and_then(Buffer::selected_text) else {
+        let Some(buffer) = self.current_buffer() else {
             return;
+        };
+        // The line the cursor is on where nothing is selected, newline and
+        // all -- so that what comes back out of the clipboard is a line
+        // rather than the middle of one. Copying nothing is not something a
+        // key can usefully do, and selecting the line first to copy it is a
+        // step every editor spares the reader.
+        let (text, what) = match buffer.selected_text() {
+            Some(text) => (text, "selection"),
+            None => (
+                buffer.text().line(buffer.cursor().line).to_string() + "\n",
+                "line",
+            ),
         };
 
         // Handed to the terminal, which owns it from here: that is what
@@ -246,10 +255,10 @@ impl App {
         // cannot say so, so the note reports what obelus did rather than
         // what the terminal did with it.
         match crate::clipboard::copy(&text) {
-            Ok(()) => self.note = Some("copied selection".to_string()),
+            Ok(()) => self.note = Some(format!("copied {what}")),
             Err(error) => {
                 tracing::warn!(%error, "copying the selection failed");
-                self.note = Some("could not copy selection".to_string());
+                self.note = Some(format!("could not copy {what}"));
             }
         }
     }
@@ -260,8 +269,30 @@ impl App {
     /// rows are lines the file no longer has, and cutting them would be
     /// cutting from a diff.
     pub fn cut_selection(&mut self) {
-        let Some(span) = self.current_buffer().and_then(Buffer::selection) else {
+        let Some(buffer) = self.current_buffer() else {
             return;
+        };
+        // The whole line where nothing is selected, and the line break with
+        // it: a cut line has to leave, not leave a blank behind.
+        let (span, what) = match buffer.selection() {
+            Some(span) => (span, "selection"),
+            None => {
+                let line = buffer.cursor().line;
+                let text = buffer.text();
+                let (end_line, end_column) = match line >= text.last_line() {
+                    true => (line, text.line_length(line)),
+                    false => (line.saturating_add(1), CharColumn::new(0)),
+                };
+                (
+                    Span {
+                        line,
+                        column: CharColumn::new(0),
+                        end_line,
+                        end_column,
+                    },
+                    "line",
+                )
+            }
         };
         let Some(text) = self
             .current_buffer()
@@ -270,13 +301,13 @@ impl App {
             return;
         };
         match crate::clipboard::copy(&text) {
-            Ok(()) => self.note = Some("cut selection".to_string()),
+            Ok(()) => self.note = Some(format!("cut {what}")),
             Err(error) => {
                 // Taken out anyway: the reader asked for it gone, and a
                 // clipboard that would not take it does not change that.
                 // Undo is where it went, and the note says so.
                 tracing::warn!(%error, "copying the cut failed");
-                self.note = Some("cut selection, but could not copy it".to_string());
+                self.note = Some(format!("cut {what}, but could not copy it"));
             }
         }
         self.change(span, "", crate::buffer::undo::Doing::Whole);

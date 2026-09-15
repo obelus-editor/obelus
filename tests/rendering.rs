@@ -347,16 +347,22 @@ fn shift_arrows_select_and_plain_motion_clears_the_selection() {
     assert_eq!(buffer.cursor().column, CharColumn::new(3));
 }
 
-/// Copying without a selection does nothing, and says nothing: the command
-/// is not offered without one, so the key it is on is dead here and the
-/// palette's dim row is where a reader finds out why. Nothing reaches the
-/// clipboard either, which is what makes the answer the same on a headless
-/// machine.
+/// Copying without a selection copies the line the cursor is on, newline
+/// and all, so that what comes back out of the clipboard is a line rather
+/// than the middle of one. Selecting the line first is a step every editor
+/// spares the reader.
 #[test]
-fn copying_without_a_selection_does_nothing() {
+fn copying_without_a_selection_copies_the_line() {
+    let _turn = support::clipboard_turn();
+    obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
     let mut app = app_on_screen(WIDTH, HEIGHT);
     support::press_control(&mut app, 'c');
-    assert_eq!(app.note(), None, "a key that did nothing said so");
+    assert_eq!(app.note(), Some("copied line"));
+    assert_eq!(
+        obelus::clipboard::paste().as_deref(),
+        Some("fn main() {\n"),
+        "the line did not reach the clipboard whole"
+    );
 }
 
 /// Shift applies equally to the line and document-sized motions. A page moves

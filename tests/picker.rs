@@ -1291,7 +1291,9 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
         "go-to-implementation",
         "find-references",
         "stop-server",
-        "copy-selection",
+        // Not `copy-selection` or `cut-selection`: with nothing selected
+        // they are about the line the cursor is on, so a file being open is
+        // all they need.
         "clear-selection",
         "go-to-bracket",
         "go-back",
