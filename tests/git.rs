@@ -2201,6 +2201,42 @@ fn a_commit_opens_its_files_under_it() {
     );
 }
 
+/// The arrow that says a commit has files behind it is the arrow the gutter
+/// and the transcript draw, and it recedes there. A mark is coloured by what
+/// it says, and this one says "there is more here", not "look at this".
+///
+/// It went red once, when the mark a buffer wears for work that is not on
+/// disk was given the status row's colour and every mark in every list came
+/// with it. The two are not the same fact and must not be the same colour.
+#[test]
+fn the_arrow_on_a_commit_recedes() {
+    use obelus::{app::App, buffer::Buffer, theme::builtin::DARK};
+
+    let repository = Repository::new("history-arrow", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit_all("touching two");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 16);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+
+    let dump = support::render(&mut app, 70, 16);
+    let arrow = support::colour_under(&dump, '\u{25b8}');
+    assert_eq!(
+        arrow,
+        support::spelled(DARK.gutter),
+        "the fold arrow is not in the colour the gutter draws it in:\n{dump}"
+    );
+    assert_ne!(
+        arrow,
+        support::spelled(DARK.status_stale),
+        "the fold arrow is wearing the mark for work that is not on disk"
+    );
+}
+
 /// Choosing one of a commit's files opens the file as that commit had it --
 /// not the file on disk, which is a different document that happens to
 /// share a name.

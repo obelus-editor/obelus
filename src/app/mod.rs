@@ -55,7 +55,8 @@ use crate::{
         chat::{ChatOutcome, Room as ChatRoom},
         counts::Counts,
         picker::{
-            Colouring, Listing, Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue, files,
+            Colouring, Listing, Marking, Picker, PickerItem, PickerLayout, PickerOutcome,
+            PickerValue, files,
         },
         prompt::{Prompt, PromptKind, PromptOutcome},
         settings::{Settings, SettingsOutcome},

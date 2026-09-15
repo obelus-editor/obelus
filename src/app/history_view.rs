@@ -369,7 +369,9 @@ impl App {
                 }),
                 // Where the reader is, which is the one row in a list of
                 // places that they do not need to go to.
-                marker: reference.head.then(|| "\u{2022}".to_string()),
+                marker: reference
+                    .head
+                    .then(|| (Marking::Aside, "\u{2022}".to_string())),
                 label: reference.name.clone(),
                 // What it points at, after the name: a name says which
                 // place, and a subject says what is there.
@@ -402,7 +404,7 @@ impl App {
                 // The mark, when this tab has anything to open: a reader
                 // cannot press a key on a row that never said it had
                 // something behind it.
-                marker: expands.then(|| crate::ui::opens(open).to_string()),
+                marker: expands.then(|| (Marking::Aside, crate::ui::opens(open).to_string())),
                 label: commit.subject.clone(),
                 detail: None,
                 // Both on the right, where the width is taken out of the

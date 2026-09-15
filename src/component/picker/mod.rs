@@ -126,6 +126,33 @@ impl Listing {
 /// is what the row draws, and a run is a claim about its characters.
 pub type Colouring = (u16, u16, crate::theme::SyntaxKind);
 
+/// What a row's mark is saying, which is what it gets drawn in.
+///
+/// The fact rather than the colour: a list is built where the fact is known
+/// and painted where the theme is, and a `Color` here would be the only one
+/// in this module -- every other thing a row says about itself is a
+/// `FileStatus` or a `SyntaxKind` that the view looks up.
+///
+/// Which matters because the marks do not weigh the same. A fold arrow is
+/// the same arrow the gutter and the transcript draw, and recedes there;
+/// work that is not on disk is the one thing in a list a reader must not
+/// miss. Painting every mark alike makes one of those two wrong.
+///
+/// Two, because that is how many weights there are. The aside covers both
+/// marks that recede -- "there is more behind this row" and "you are already
+/// here" -- and splitting it in two would be two names for one colour, which
+/// is a distinction the screen does not make and nobody could check.
+/// Whichever of them needs its own colour can have its own variant then, and
+/// the compiler will name every place that has to answer for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Marking {
+    /// Something the row says about itself on the way past: what it holds,
+    /// or that it is where the reader already is.
+    Aside,
+    /// Work that obelus has not written.
+    Unwritten,
+}
+
 /// One row.
 #[derive(Clone, Debug)]
 pub struct PickerItem {
@@ -148,13 +175,19 @@ pub struct PickerItem {
     /// is in" cut to "…the block the cursor is in" has lost the half that
     /// tells a reader which commit this is.
     pub prose: bool,
-    /// A mark before the icon, for a row that holds something.
+    /// A mark before the icon, for a row that has something to say about
+    /// itself: what it is saying, and the glyph that says it.
     ///
     /// Its own field rather than the icon's, because the icon comes and
     /// goes with the reader's font and this does not: "there is more behind
     /// this row" is the only way folding is discovered, and a reader with
     /// no nerd font has to be told it too.
-    pub marker: Option<String>,
+    ///
+    /// The glyph stays with the caller for the same reason: an unwritten
+    /// buffer wears its nerd-font mark where there is a font for it and a
+    /// bullet where there is not, and which of those is on screen is not
+    /// something the view is in a position to know.
+    pub marker: Option<(Marking, String)>,
     /// Shown dimmed and right-aligned at the end of the row.
     ///
     /// Its width is taken out of the label's before the label is truncated, so

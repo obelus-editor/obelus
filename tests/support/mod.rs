@@ -235,6 +235,15 @@ fn label(index: usize) -> char {
     char::from(*LABELS.get(index).unwrap_or(&b'?'))
 }
 
+/// A theme's colour, spelled the way the legend spells it.
+///
+/// So that a test names the colour it means -- `DARK.gutter` -- rather than
+/// the six hex digits that colour happens to be today.
+#[must_use]
+pub fn spelled(value: Color) -> String {
+    colour(value)
+}
+
 fn colour(colour: Color) -> String {
     match colour {
         Color::Rgb(red, green, blue) => format!("#{red:02x}{green:02x}{blue:02x}"),
@@ -412,4 +421,45 @@ pub fn clipboard_turn() -> std::sync::MutexGuard<'static, ()> {
     // state behind this, only the taking of turns.
     TURN.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// What the first cell drawing `glyph` is painted in, as the legend spells
+/// colours: `#rrggbb`.
+///
+/// A mark is one cell and its whole job is the colour it is in, so a test of
+/// one is a test of that cell's foreground. Found by the glyph rather than by
+/// a column, because the column a mark lands in moves with the indent, the
+/// icon and the width, and none of those are what is being asserted.
+#[must_use]
+pub fn colour_under(dump: &str, glyph: char) -> String {
+    let (row, column) = text_block(dump)
+        .lines()
+        .filter(|line| !line.is_empty())
+        .enumerate()
+        .find_map(|(row, line)| {
+            let cells = line.split_once('|').map_or(line, |(_, rest)| rest);
+            cells
+                .chars()
+                .position(|cell| cell == glyph)
+                .map(|column| (row, column))
+        })
+        .unwrap_or_else(|| panic!("nothing on screen draws {glyph:?}:\n{}", text_block(dump)));
+
+    let letter = style_block(dump)
+        .lines()
+        .filter(|line| !line.is_empty())
+        .nth(row)
+        .and_then(|line| {
+            let cells = line.split_once('|').map_or(line, |(_, rest)| rest);
+            cells.chars().nth(column)
+        })
+        .expect("the style row under the text row");
+
+    legend_block(dump)
+        .lines()
+        .find(|line| line.starts_with(&format!("{letter} ")))
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|field| field.strip_prefix("fg="))
+        .expect("the legend entry for the style")
+        .to_string()
 }

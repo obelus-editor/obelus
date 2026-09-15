@@ -9,7 +9,7 @@ use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets:
 
 use crate::{
     app::App,
-    component::picker::{Picker, PickerItem, PickerLayout},
+    component::picker::{Marking, Picker, PickerItem, PickerLayout},
     git::FileStatus,
     theme::Theme,
     ui::{Marked, Matched, drop_from_left, editor::SCROLLBAR_WIDTH, fill, text_width},
@@ -362,12 +362,19 @@ impl PickerView<'_> {
         // Before the icon, because it is not part of the name: it says
         // something about the row rather than about the thing it names.
         //
-        // In the colour the status row marks the same facts in, and not
-        // dimmed. A mark for work that is not on disk is the one thing in a
-        // list of files a reader must not miss, and the gutter's grey --
-        // which is the colour of a line number, chosen to recede -- made it
-        // something to notice only once it was pointed out.
-        if let Some(marker) = item.marker.as_deref() {
+        // In whichever colour that is. A mark for work that is not on disk
+        // gets the one the status row marks the same fact in, and is not
+        // dimmed: it is the one thing in a list of files a reader must not
+        // miss, and the gutter's grey -- which is the colour of a line
+        // number, chosen to recede -- made it something to notice only once
+        // it was pointed out. The rest do want to recede, and get it: a
+        // fold arrow is the arrow the gutter and the transcript draw, and a
+        // reader who learnt the mark there has to find it here.
+        if let Some((marking, marker)) = item.marker.as_ref() {
+            let colour = match marking {
+                Marking::Unwritten => self.theme.status_stale,
+                Marking::Aside => self.theme.gutter,
+            };
             // With a blank column after it, the way the icon has one: two
             // glyphs touching read as one glyph nobody has seen before.
             let marker = format!("{marker} ");
@@ -377,7 +384,7 @@ impl PickerView<'_> {
                 column,
                 y,
                 &marker,
-                style.fg(self.theme.status_stale),
+                style.fg(colour),
                 &Marked::plain(),
             );
         } else if self.picker.marked() {

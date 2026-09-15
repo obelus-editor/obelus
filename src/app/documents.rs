@@ -199,9 +199,12 @@ impl App {
                 // The glyph the status row uses for the same fact, so that
                 // the file on screen and its row in the list are visibly
                 // saying one thing rather than two.
-                marker: buffer.is_dirty().then(|| match icons::enabled() {
-                    true => icons::ui::UNSAVED.to_string(),
-                    false => "\u{2022}".to_string(),
+                marker: buffer.is_dirty().then(|| {
+                    let glyph = match icons::enabled() {
+                        true => icons::ui::UNSAVED.to_string(),
+                        false => "\u{2022}".to_string(),
+                    };
+                    (Marking::Unwritten, glyph)
                 }),
                 icon: Some(icons::for_path(buffer.path())),
                 label: relative(buffer.path(), &self.working_directory),

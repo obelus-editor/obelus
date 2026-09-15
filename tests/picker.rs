@@ -83,6 +83,36 @@ fn the_command_palette_hugs_the_status_bar_and_leaves_the_code_visible() {
     support::check("palette_60x20", &support::render(&mut app, 60, 20));
 }
 
+/// The other half of the same rule: the mark a buffer wears for work that
+/// is not on disk does *not* recede. It is the one thing in a list of open
+/// files a reader must not walk past, and it gets the colour the status row
+/// marks the same fact in.
+///
+/// Paired with `the_arrow_on_a_commit_recedes` over in the git tests. Between
+/// them they say that a mark is drawn by what it means, and that the two
+/// meanings in obelus today do not look alike.
+#[test]
+fn the_mark_on_an_unwritten_buffer_does_not_recede() {
+    use obelus::theme::builtin::DARK;
+
+    let mut app = app();
+    support::type_text(&mut app, "x");
+    press_function(&mut app, 2);
+
+    let dump = support::render(&mut app, 60, 12);
+    let mark = support::colour_under(&dump, obelus::icons::ui::UNSAVED);
+    assert_eq!(
+        mark,
+        support::spelled(DARK.status_stale),
+        "the unwritten mark is not in the colour the status row uses:\n{dump}"
+    );
+    assert_ne!(
+        mark,
+        support::spelled(DARK.gutter),
+        "the unwritten mark receded into the gutter's grey"
+    );
+}
+
 #[test]
 fn a_full_area_picker_covers_the_code() {
     let mut app = app();
