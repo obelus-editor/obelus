@@ -97,6 +97,22 @@ impl App {
         })
     }
 
+    /// Puts a run of text into the note the caret is in.
+    ///
+    /// The door both pastes come through: the key, and the sequence a
+    /// terminal sends when the reader uses its own paste. One change to the
+    /// note either way, and the notes are written down after it.
+    pub(super) fn paste_into_notes(&mut self, what: &str) {
+        let laid = self.notes_laid_out();
+        let Some(notes) = self.notes.as_mut() else {
+            return;
+        };
+        notes.lay_out(laid.0, laid.1);
+        notes.paste(what);
+        let todo = notes.todo().clone();
+        self.save_notes(&todo);
+    }
+
     /// Writes the notes down, and says so if it cannot.
     pub(super) fn save_notes(&mut self, todo: &Todo) {
         if let Err(error) = todo.write(&self.working_directory) {
@@ -120,7 +136,7 @@ impl App {
         notes.lay_out(laid.0, laid.1);
         let hints = crate::ui::todo::hints(notes);
         let list = crate::ui::todo::list_region(self.editor_area, &hints);
-        let outcome = notes.handle_key(key, list.height, laid.0);
+        let outcome = notes.handle_key(key, list.height);
         match outcome {
             TodoOutcome::Ignored => false,
             TodoOutcome::Consumed => true,
@@ -128,6 +144,20 @@ impl App {
             // changes nothing on it.
             TodoOutcome::Copy { text, what } => {
                 self.copied(&text, what);
+                true
+            }
+            // A cut did change the page, so it is written down as well.
+            TodoOutcome::Cut { text, what } => {
+                let todo = notes.todo().clone();
+                self.cut_away(&text, what);
+                self.save_notes(&todo);
+                true
+            }
+            TodoOutcome::Paste => {
+                match crate::clipboard::paste() {
+                    Some(what) => self.paste_into_notes(&what),
+                    None => self.note = Some("nothing to paste".to_string()),
+                }
                 true
             }
             TodoOutcome::Changed => {

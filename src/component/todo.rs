@@ -77,6 +77,19 @@ pub enum TodoOutcome {
         /// What it was, for the reader to be told what they got.
         what: &'static str,
     },
+    /// The same, for text this has just taken out: write the notes down
+    /// too, and say it was cut rather than copied.
+    Cut {
+        /// What to copy.
+        text: String,
+        /// What it was.
+        what: &'static str,
+    },
+    /// Put whatever is on the clipboard into the note the caret is in.
+    ///
+    /// Asked for rather than done, because what is on the clipboard is the
+    /// application's question: this knows about a text and a caret in it.
+    Paste,
 }
 
 /// The notes, while they are showing.
@@ -336,6 +349,42 @@ impl TodoView {
         }
     }
 
+    /// Puts a run of text into the note the caret is in, over whatever is
+    /// held.
+    ///
+    /// A note of its own where there is none to be in: a reader who pastes
+    /// into an empty page meant to start one.
+    pub fn paste(&mut self, what: &str) {
+        if self.writing.is_none() {
+            self.write_new(None);
+        }
+        let room = self.caret_width();
+        if let Some((_, composer)) = self.writing.as_mut() {
+            composer.write_in(what, room);
+        }
+        self.rebuild();
+        self.follow_caret();
+    }
+
+    /// Takes the note the caret is in away, and puts the caret on whatever
+    /// takes its place. Says whether there was one to take.
+    ///
+    /// Two keys do this -- `alt+backspace`, which throws it away, and
+    /// `ctrl+x`, which takes a copy on the way out -- and a note dropped
+    /// half-way by one of them would leave the list a row it cannot fill.
+    fn take_note_away(&mut self) -> bool {
+        let Some(at) = self.selected() else {
+            return false;
+        };
+        self.writing = None;
+        self.drop_note(at);
+        self.rebuild();
+        if !self.todo.notes.is_empty() {
+            self.enter_note(at.min(self.todo.notes.len() - 1), false);
+        }
+        true
+    }
+
     /// Takes a note away, and the marks that pointed past it with it.
     fn drop_note(&mut self, at: usize) {
         if at >= self.todo.notes.len() {
@@ -385,9 +434,15 @@ impl TodoView {
     /// it, go where it points, move it, take it away -- is under `alt`,
     /// which is the question alt asks everywhere in obelus: about the thing
     /// the cursor is on.
-    pub fn handle_key(&mut self, key: &KeyEvent, page: u16, room: u16) -> TodoOutcome {
+    pub fn handle_key(&mut self, key: &KeyEvent, page: u16) -> TodoOutcome {
+        // The width the box is asked about is this view's own answer, not
+        // the caller's: the rows were laid out at it, the caret is measured
+        // against it, and a third number arriving through the door is a
+        // third answer for them to disagree over.
+        let room = self.caret_width();
         let bare = key.modifiers.is_empty();
         let alt = key.modifiers == KeyModifiers::ALT;
+        let control = key.modifiers == KeyModifiers::CONTROL;
         match key.code {
             // The card first: a key that opens a thing closes that thing.
             KeyCode::Esc if bare && self.keys => {
@@ -489,20 +544,9 @@ impl TodoView {
                 None => TodoOutcome::Consumed,
             },
             // The whole note, because backspace on its own is a character.
-            KeyCode::Backspace | KeyCode::Delete if alt => match self.selected() {
-                Some(at) => {
-                    self.writing = None;
-                    self.drop_note(at);
-                    self.rebuild();
-                    let to = at.min(self.todo.notes.len().saturating_sub(1));
-                    if self.todo.notes.is_empty() {
-                        self.writing = None;
-                    } else {
-                        self.enter_note(to, false);
-                    }
-                    TodoOutcome::Changed
-                }
-                None => TodoOutcome::Consumed,
+            KeyCode::Backspace | KeyCode::Delete if alt => match self.take_note_away() {
+                true => TodoOutcome::Changed,
+                false => TodoOutcome::Consumed,
             },
             // Where a note sits is the reader's to decide, so nothing else
             // reorders the list: ticking one leaves it where it is.
@@ -525,15 +569,15 @@ impl TodoView {
                 TodoOutcome::Changed
             }
 
-            // The reader's own copy key, which is `ctrl+c` everywhere in
-            // obelus. It has to be answered here because a dialog is bound
-            // to nothing in the key table -- and a box a reader can select
-            // in but not copy out of is a box with half a selection.
+            // The four keys a reader arrives already holding. They have to
+            // be answered here because a dialog is bound to nothing in the
+            // key table -- and a box a reader can select in but not copy out
+            // of is a box with half a selection.
             //
-            // The whole note where nothing is held, the way the file copies
+            // The whole note where nothing is held, the way the file takes
             // the whole line: copying nothing is not something a key can
-            // usefully do.
-            KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
+            // usefully do, and the note is what a line is here.
+            KeyCode::Char('c') if control => {
                 let Some((_, composer)) = self.writing.as_ref() else {
                     return TodoOutcome::Consumed;
                 };
@@ -547,6 +591,48 @@ impl TodoView {
                         what: "note",
                     },
                 }
+            }
+            KeyCode::Char('x') if control => {
+                let room = self.caret_width();
+                // What the note said before the cut, for the arm below: a
+                // cut that took nothing has to know what the whole of it
+                // was, and after the fact is too late to ask.
+                let taken = self.writing.as_mut().map(|(_, composer)| {
+                    let whole = composer.text();
+                    (composer.cut(room), whole)
+                });
+                let Some((held, whole)) = taken else {
+                    return TodoOutcome::Consumed;
+                };
+                if let Some(text) = held {
+                    self.rebuild();
+                    self.follow_caret();
+                    return TodoOutcome::Cut {
+                        text,
+                        what: "selection",
+                    };
+                }
+                // Nothing held, so the whole note goes. Which is how a note
+                // is moved somewhere else, and is `alt+backspace` with a
+                // copy taken on the way out.
+                match self.take_note_away() {
+                    true => TodoOutcome::Cut {
+                        text: whole,
+                        what: "note",
+                    },
+                    false => TodoOutcome::Consumed,
+                }
+            }
+            KeyCode::Char('v') if control => TodoOutcome::Paste,
+            KeyCode::Char('a') if control => {
+                let room = self.caret_width();
+                let Some((_, composer)) = self.writing.as_mut() else {
+                    return TodoOutcome::Consumed;
+                };
+                composer.select_all(room);
+                self.rebuild();
+                self.follow_caret();
+                TodoOutcome::Consumed
             }
 
             // Everything else is the box's, and the box knows which keys

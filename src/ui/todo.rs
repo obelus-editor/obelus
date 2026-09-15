@@ -58,6 +58,7 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     let chord = crate::keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
     let alt = |code| chord(code, KeyModifiers::ALT);
+    let control = |letter| chord(KeyCode::Char(letter), KeyModifiers::CONTROL);
     let on = notes.selected_note();
     vec![
         // Nothing about typing, the arrows or `shift+enter`: this is a page
@@ -81,11 +82,21 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
             .saying("move it up or down")
             .or(alt(KeyCode::Down))
             .when(notes.rows().len() > 1),
-        // On the card rather than at the foot: `ctrl+c` is what copying is
-        // everywhere in obelus, so a reader arrives knowing it. What they
-        // do not know is what it takes when they are holding nothing.
-        Hint::rare(chord(KeyCode::Char('c'), KeyModifiers::CONTROL), "copy")
+        // The four a reader arrives already holding, on the card rather
+        // than at the foot: they are what these keys are everywhere else,
+        // so the foot would spend four of its columns saying nothing. On
+        // the card, though, because "can I paste in here?" is a question a
+        // dialog has to have an answer to -- and because what copy and cut
+        // take when nothing is held is this view's own rule.
+        Hint::rare(control('c'), "copy")
             .saying("copy what is held, or the whole note")
+            .when(on.is_some()),
+        Hint::rare(control('x'), "cut")
+            .saying("cut what is held, or the whole note")
+            .when(on.is_some()),
+        Hint::rare(control('v'), "paste").saying("paste what was copied"),
+        Hint::rare(control('a'), "all")
+            .saying("take hold of the whole note")
             .when(on.is_some()),
     ]
 }

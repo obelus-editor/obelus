@@ -294,6 +294,22 @@ impl App {
         }
     }
 
+    /// The same for text that is being taken out as well as copied.
+    ///
+    /// A different thing to say when the clipboard refuses, because a
+    /// different thing happened: the text has gone from where it was either
+    /// way, and a reader told only that the copy failed would go looking
+    /// for it where it no longer is.
+    pub(super) fn cut_away(&mut self, text: &str, what: &str) {
+        match crate::clipboard::copy(text) {
+            Ok(()) => self.note = Some(format!("cut {what}")),
+            Err(error) => {
+                tracing::warn!(%error, what, "copying the cut failed");
+                self.note = Some(format!("cut {what}, but could not copy it"));
+            }
+        }
+    }
+
     /// Copies the selection and takes it out of the document.
     ///
     /// The selection in the *file*, not the one in an opened hunk. A hunk's
@@ -331,16 +347,7 @@ impl App {
         else {
             return;
         };
-        match crate::clipboard::copy(&text) {
-            Ok(()) => self.note = Some(format!("cut {what}")),
-            Err(error) => {
-                // Taken out anyway: the reader asked for it gone, and a
-                // clipboard that would not take it does not change that.
-                // Undo is where it went, and the note says so.
-                tracing::warn!(%error, "copying the cut failed");
-                self.note = Some(format!("cut {what}, but could not copy it"));
-            }
-        }
+        self.cut_away(&text, what);
         self.change(span, "", crate::buffer::undo::Doing::Whole);
     }
 
@@ -362,6 +369,15 @@ impl App {
     /// What the terminal's own paste arrives as, and what the clipboard
     /// hands back. One change either way, so undoing it is one step.
     pub(super) fn paste_text(&mut self, what: &str) {
+        // Into the notes while they are showing, because that is the page
+        // the reader is writing on: a paste that went past them into the
+        // file behind would put their text somewhere they cannot see it.
+        // Not under a prompt, which is the thing they are answering -- the
+        // same guard the keys go through.
+        if self.prompt.is_none() && self.notes.is_some() {
+            self.paste_into_notes(what);
+            return;
+        }
         let Some(buffer) = self.current_buffer() else {
             return;
         };

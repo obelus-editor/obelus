@@ -188,6 +188,21 @@ impl Composer {
         self.writing.selected()
     }
 
+    /// Takes hold of the whole of it.
+    pub fn select_all(&mut self, width: u16) {
+        self.writing.select_all(width.max(1));
+    }
+
+    /// Puts a run of text in, over whatever is held.
+    pub fn write_in(&mut self, what: &str, width: u16) {
+        self.writing.write_in(what, width.max(1));
+    }
+
+    /// Takes out what is held, and says what it was.
+    pub fn cut(&mut self, width: u16) -> Option<String> {
+        self.writing.cut(width.max(1))
+    }
+
     /// Which row of the box the caret is on, and how many cells into it.
     #[must_use]
     pub fn caret(&self, width: u16) -> (usize, DisplayColumn) {

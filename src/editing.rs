@@ -756,6 +756,29 @@ impl Editing {
     pub fn has_selection(&self) -> bool {
         self.selection().is_some()
     }
+
+    /// Writes a run of text in at the caret, over whatever is held.
+    ///
+    /// What a paste is, following the rule every typed letter follows: what
+    /// the reader has hold of is what they meant, and it goes.
+    pub fn write_in(&mut self, what: &str, width: u16) {
+        if let Some(span) = self.selection() {
+            self.remove(span, width);
+        }
+        self.put(what, width);
+    }
+
+    /// Takes out whatever is held, and says what it was.
+    ///
+    /// Nothing where nothing is held: what to do instead is a question about
+    /// what the text is part of -- a line of a file, a whole note -- and this
+    /// knows about neither.
+    pub fn cut(&mut self, width: u16) -> Option<String> {
+        let span = self.selection()?;
+        let taken = self.text.text_in(span);
+        self.remove(span, width);
+        Some(taken)
+    }
 }
 
 /// The run between two places, or nothing where they are the same place.

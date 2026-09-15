@@ -236,6 +236,90 @@ fn what_is_held_in_a_note_is_marked_and_copied() {
     );
 }
 
+/// The other three keys a reader brings with them: all of it, out, and back.
+#[test]
+fn a_note_takes_the_clipboard_keys_too() {
+    let _turn = support::clipboard_turn();
+    obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
+
+    let scratch = tree("clipboard", THREE);
+    let mut app = open(&scratch, 76, 18);
+
+    // All of the first note, and then out of it. The note stays -- it is
+    // the text that was taken, not the row -- and it says nothing.
+    support::press_control_key(&mut app, KeyCode::Char('a'));
+    support::press_control_key(&mut app, KeyCode::Char('x'));
+    let dump = support::render(&mut app, 76, 18);
+    assert!(
+        !support::text_block(&dump).contains("wire the counts"),
+        "what was cut is still on the page:\n{dump}"
+    );
+    assert_eq!(
+        obelus::clipboard::paste().as_deref(),
+        Some("wire the counts tree up to the search")
+    );
+
+    // And back in, where the caret was left.
+    support::press_control_key(&mut app, KeyCode::Char('v'));
+    let dump = support::render(&mut app, 76, 18);
+    assert!(
+        support::text_block(&dump).contains("wire the counts tree up to the search"),
+        "the paste did not put it back:\n{dump}"
+    );
+}
+
+/// `ctrl+x` with nothing held takes the whole note, the way copy takes it.
+#[test]
+fn cutting_with_nothing_held_takes_the_note() {
+    let _turn = support::clipboard_turn();
+    obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
+
+    let scratch = tree("cut-note", THREE);
+    let mut app = open(&scratch, 76, 18);
+    support::press_control_key(&mut app, KeyCode::Char('x'));
+
+    assert_eq!(
+        obelus::clipboard::paste().as_deref(),
+        Some("wire the counts tree up to the search")
+    );
+    let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
+        .expect("the notes");
+    assert!(
+        !written.contains("wire the counts"),
+        "the cut note was not written away: {written}"
+    );
+}
+
+/// What the terminal pastes lands in the note, not in the file behind it.
+///
+/// Broken deliberately by sending every paste straight to the buffer: the
+/// notes are a whole screen of their own, and the reader's text went into a
+/// file they could not see.
+#[test]
+fn what_the_terminal_pastes_lands_in_the_note() {
+    let scratch = tree("bracketed", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let was = app
+        .current_buffer()
+        .expect("a buffer")
+        .text()
+        .rope()
+        .to_string();
+
+    app.handle(Event::Paste(" and the blame".to_string()));
+
+    let dump = support::render(&mut app, 76, 18);
+    assert!(
+        support::text_block(&dump).contains(" and the blamewire the counts"),
+        "the paste did not reach the note:\n{dump}"
+    );
+    assert_eq!(
+        app.current_buffer().expect("a buffer").text().rope(),
+        &was,
+        "the paste went into the file behind the notes"
+    );
+}
+
 /// A note is what it says, without the blank line a trailing newline leaves.
 ///
 /// Broken deliberately by laying the notes out through the text they are
