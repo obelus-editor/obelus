@@ -37,12 +37,15 @@ pub struct Row {
     pub said: String,
     /// Whether this is the note's own row, or a line of its body.
     pub head: bool,
+    /// Whether this row is where the note points rather than what it says.
+    ///
+    /// Its own row, under the note. Hung off the end of the first line it
+    /// was a place the note's own words had to be laid out around -- and
+    /// where half the notes have none, the right-hand edge it lined up
+    /// against was not a column anybody could read down.
+    pub place: bool,
     /// Whether the note is done, for the whole of it to be drawn as such.
     pub done: bool,
-
-    /// Where it points, written the way a reader would say it, for the head
-    /// row of a note that points anywhere.
-    pub at: Option<String>,
 }
 
 /// What a key did.
@@ -206,8 +209,9 @@ impl TodoView {
             // line where they did not -- the same answer the file behind
             // this view gives, because it is the same question.
             let (room, wrap) = self.laid;
+            let room = room.max(1);
             let laid: Vec<String> = match wrap {
-                true => crate::component::composer::wrapped(&said, room.max(1)),
+                true => crate::component::composer::wrapped(&said, room),
                 false => said.lines().map(str::to_string).collect(),
             };
             let mut lines = laid.into_iter();
@@ -215,20 +219,32 @@ impl TodoView {
                 note: index,
                 said: lines.next().unwrap_or_default(),
                 head: true,
+                place: false,
                 done: note.done,
-                at: note.at.as_ref().map(|at| match self.where_now.get(index) {
-                    Some(Some(line)) => format!("{}:{}", at.path.display(), line.get() + 1),
-                    // The file still has the note, and the line does not.
-                    _ => format!("{}:gone", at.path.display()),
-                }),
             });
             for line in lines {
                 rows.push(Row {
                     note: index,
                     said: line,
                     head: false,
+                    place: false,
                     done: note.done,
-                    at: None,
+                });
+            }
+            // And where it points, under what it says: a row of its own
+            // rather than the end of the first line, so what a note says is
+            // laid out the same whether it points anywhere or not.
+            if let Some(at) = note.at.as_ref() {
+                rows.push(Row {
+                    note: index,
+                    said: match self.where_now.get(index) {
+                        Some(Some(line)) => format!("{}:{}", at.path.display(), line.get() + 1),
+                        // The file still has the note, and the line does not.
+                        _ => format!("{}:gone", at.path.display()),
+                    },
+                    head: false,
+                    place: true,
+                    done: note.done,
                 });
             }
         }
@@ -256,9 +272,18 @@ impl TodoView {
         }
         self.writing = Some((to, composer));
         self.rebuild();
+        // Never the place: it is a fact about the note rather than a line
+        // of it, and a caret standing on it would be a caret in text the
+        // reader cannot change.
         let row = match end {
-            true => self.rows.iter().rposition(|row| row.note == to),
-            false => self.rows.iter().position(|row| row.note == to),
+            true => self
+                .rows
+                .iter()
+                .rposition(|row| row.note == to && !row.place),
+            false => self
+                .rows
+                .iter()
+                .position(|row| row.note == to && !row.place),
         };
         if let Some(row) = row {
             self.window.set_focus(row);
@@ -325,7 +350,9 @@ impl TodoView {
     #[must_use]
     pub fn writing_at(&self) -> Option<usize> {
         let (note, _) = self.writing.as_ref()?;
-        self.rows.iter().position(|row| row.note == *note)
+        self.rows
+            .iter()
+            .position(|row| row.note == *note && !row.place)
     }
 
     /// Whatever a key means here.
@@ -495,6 +522,10 @@ impl TodoView {
 
     /// The width the caret is measured against: the row's, where the text
     /// wraps there, and no limit where it does not.
+    ///
+    /// The same for every note, because where a note points is a row of its
+    /// own: what a note says is laid out the same whether it points anywhere
+    /// or not.
     #[must_use]
     pub const fn caret_width(&self) -> u16 {
         match self.laid.1 {
@@ -513,7 +544,11 @@ impl TodoView {
             return;
         };
         let (line, _) = composer.caret(self.caret_width());
-        let Some(first) = self.rows.iter().position(|row| row.note == *at) else {
+        let Some(first) = self
+            .rows
+            .iter()
+            .position(|row| row.note == *at && !row.place)
+        else {
             return;
         };
         self.window

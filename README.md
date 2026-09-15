@@ -40,8 +40,8 @@ ob                  # or nothing, and pick one from the welcome screen
   letter is a letter, `enter` starts another note and `shift+enter` a line
   inside one. What acts on a note *as* a note is under `alt`: tick it, go to
   what it is about, move it, take it away. A note may be about a line or
-  about the project, and both are ordinary; one that says nothing is not
-  kept. They live in `.obelus/todo.toml` beside the tree, because they are
+  about the project, and both are ordinary; where it points goes on a row
+  of its own under it, and one that says nothing is not kept. They live in `.obelus/todo.toml` beside the tree, because they are
   about this project and not about you — and the line a note was put beside
   is found again through git, so a note written last week still points at
   what it was written about rather than at whatever has since moved into its

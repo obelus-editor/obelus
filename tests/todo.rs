@@ -68,7 +68,18 @@ fn every_line_of_every_note_is_on_the_page() {
         text.contains("\u{2611} settings live"),
         "no ticked box:\n{dump}"
     );
-    assert!(text.contains("sample.rs:2"), "no place on the row:\n{dump}");
+    // On a row of its own, under what the note says.
+    let rows: Vec<&str> = text.lines().collect();
+    let at = |needle: &str| {
+        rows.iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("no {needle:?}:\n{dump}"))
+    };
+    assert_eq!(
+        at("sample.rs:2"),
+        at("changes the colours") + 1,
+        "the place is not under the note it belongs to:\n{dump}"
+    );
     assert!(
         text.contains("rows caches"),
         "a note's second line is not on the page:\n{dump}"
@@ -508,5 +519,72 @@ fn a_long_note_wraps_when_the_reader_wraps() {
         cut[0].contains('\u{2026}'),
         "nothing says it was cut:\n{}",
         cut[0]
+    );
+}
+
+/// Where a note points is a row of its own, so what it says is laid out the
+/// same whether it points anywhere or not.
+///
+/// Broken deliberately by hanging the place off the end of the first line:
+/// a note long enough was wrapped to the whole width, laid out under the
+/// place, and then drawn over by it.
+#[test]
+fn a_place_is_a_row_of_its_own() {
+    let long = "this cache does not notice a theme change, and the rows it keeps go \
+                on saying what they said";
+    let scratch = support::Scratch::new("todo-place");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        format!(
+            "[[todo]]\nsaid = \"{long}\"\ndone = false\nat = \"src/ui/picker.rs\"\nline = 412\n\
+             \n[[todo]]\nsaid = \"{long}\"\ndone = false\n"
+        ),
+    )
+    .expect("the notes");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(
+        obelus::config::Config {
+            wrap: true,
+            ..obelus::config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 70, 14);
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+
+    let dump = support::render(&mut app, 70, 14);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| !row.is_empty())
+        .collect();
+    // The place is on its own, under the note, and nothing of the note is on
+    // that row.
+    let place = rows
+        .iter()
+        .position(|row| row.contains("picker.rs:412"))
+        .unwrap_or_else(|| panic!("no place:\n{dump}"));
+    assert!(
+        !rows[place].contains("cache") && !rows[place].contains("said"),
+        "the place shares a row with the note:\n{dump}"
+    );
+
+    // And the two notes say the same thing, so they take the same rows to
+    // say it: one of them pointing somewhere changes nothing about how what
+    // it says is laid out.
+    let said_rows = |note: usize| {
+        app.notes()
+            .expect("the view")
+            .rows()
+            .iter()
+            .filter(|row| row.note == note && !row.place)
+            .count()
+    };
+    assert_eq!(
+        said_rows(0),
+        said_rows(1),
+        "the note that points somewhere was laid out differently:\n{dump}"
     );
 }

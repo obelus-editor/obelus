@@ -15,7 +15,7 @@ use crate::{
     app::App,
     component::todo::{Row, TodoView as Notes},
     theme::Theme,
-    ui::{Hint, editor::SCROLLBAR_WIDTH, fill, foot, footed, put, text_width, write},
+    ui::{Hint, editor::SCROLLBAR_WIDTH, fill, foot, footed, put, write},
 };
 
 /// The box in front of a note, ticked and not.
@@ -222,12 +222,12 @@ impl TodoUi<'_> {
         // A note that is done is said in the ink, never by taking it away: a
         // list of what is done is how a reader tells "I decided against it"
         // from "I never got to it".
-        let ink = match row.done {
-            true => self.theme.gutter,
-            false => self.theme.foreground,
-        };
-        let style = Style::new().fg(ink).bg(background);
-        let dim = Style::new().fg(self.theme.gutter).bg(background);
+        let style = Style::new()
+            .fg(match row.done {
+                true => self.theme.gutter,
+                false => self.theme.foreground,
+            })
+            .bg(background);
         let y = area.y;
 
         // The box, on the note's own row only: a line of a body is part of
@@ -244,32 +244,22 @@ impl TodoUi<'_> {
         }
         let x = area.x + MARGIN;
 
-        let at = row.at.as_deref().unwrap_or_default();
-        let reserved = match at.is_empty() {
-            true => 0,
-            false => u16::try_from(text_width(at) + 2).unwrap_or(u16::MAX),
+        // A row that is where the note points is dim: it is a fact about
+        // the note rather than a word of it, and it is not the reader's to
+        // change.
+        let ink = match row.place || row.done {
+            true => self.theme.gutter,
+            false => self.theme.foreground,
         };
-        let edge = area
-            .x
-            .saturating_add(area.width)
-            .saturating_sub(SCROLLBAR_WIDTH + reserved);
-        // A row is already a row: where the text wraps, `rebuild` cut it at
-        // the width, and where it does not, the cut is the honest mark that
-        // there is more of the line than the screen.
         write(
             cells,
             x,
             y,
-            &crate::ui::truncate_from_right(&row.said, usize::from(edge.saturating_sub(x))),
-            style,
+            &crate::ui::truncate_from_right(
+                &row.said,
+                usize::from(area.width.saturating_sub(MARGIN + SCROLLBAR_WIDTH).max(1)),
+            ),
+            Style::new().fg(ink).bg(background),
         );
-
-        if !at.is_empty()
-            && let Some(offset) = area
-                .width
-                .checked_sub(SCROLLBAR_WIDTH + reserved.saturating_sub(1))
-        {
-            write(cells, area.x + offset, y, at, dim);
-        }
     }
 }
