@@ -84,6 +84,12 @@ pub fn hints(picker: &Picker) -> Vec<Hint> {
                 .saying("the capitals as typed, rather than as the query implies")
                 .set(asked.sensitive)
                 .when(here),
+            // The other way round from the three above: this one is the
+            // symbols tab's, and they are the two that read a text.
+            Hint::common(alt('o'), "outside")
+                .saying("names from outside the project, where a server knows any")
+                .set(picker.reaches_outside().unwrap_or(false))
+                .when(picker.reaches_outside().is_some()),
         ];
     }
     let offering = picker.offers_ignored();

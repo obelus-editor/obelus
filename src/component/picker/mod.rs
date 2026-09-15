@@ -426,6 +426,13 @@ pub struct Picker {
     /// foot greys the keys there rather than dropping them, so it does not
     /// change height as the reader steps between tabs.
     looking: Option<crate::search::Looking>,
+    /// Whether this search is offering names from outside the project,
+    /// where that is a question about it.
+    ///
+    /// `None` on the tabs where it is not one: a walk of this tree and a
+    /// search of the open file are inside the project by construction, and
+    /// only a language server has an index that reaches past it.
+    outside: Option<bool>,
     /// Whether this list is offering the files a tree ignores, where that
     /// is a question about it at all.
     ///
@@ -488,6 +495,7 @@ impl Picker {
             footed: false,
             keys: false,
             looking: None,
+            outside: None,
             ignored: None,
             layout,
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
@@ -717,6 +725,18 @@ impl Picker {
     #[must_use]
     pub const fn looks_how(&self) -> Option<crate::search::Looking> {
         self.looking
+    }
+
+    /// Says whether this search reaches past the project, or that the
+    /// question does not arise.
+    pub const fn reaching_outside(&mut self, outside: Option<bool>) {
+        self.outside = outside;
+    }
+
+    /// And what it was told.
+    #[must_use]
+    pub const fn reaches_outside(&self) -> Option<bool> {
+        self.outside
     }
 
     /// Says whether this list is offering the files a tree ignores, or that

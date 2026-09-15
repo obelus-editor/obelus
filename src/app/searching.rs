@@ -259,8 +259,12 @@ impl App {
         // tab: those rows come from a language server that did its own
         // matching and has never heard of our pattern.
         let how = (scope != Scope::Symbols).then_some(self.looking);
+        // And the other way round: reaching past the project is a question
+        // only an index that reaches past it can answer.
+        let outside = (scope == Scope::Symbols).then_some(self.outside);
         if let Some(picker) = self.picker.as_mut() {
             picker.looking_how(how);
+            picker.reaching_outside(outside);
         }
         let Some(picker) = self.picker.as_ref() else {
             return;
@@ -293,29 +297,30 @@ impl App {
 
     /// Whatever one of the search's own keys means, if it is one of them.
     ///
-    /// Three switches, answered here rather than in the picker for the
-    /// reason the file list's one is: the picker knows about rows and a
-    /// query, and these are about how the rows were found.
+    /// Four switches, and which of them mean anything depends on the tab:
+    /// three are about reading a text and the fourth is about how far an
+    /// index reaches. Answered here rather than in the picker for the reason
+    /// the file list's one is: the picker knows about rows and a query, and
+    /// these are about how the rows were found.
     pub(super) fn searching_key(&mut self, key: &KeyEvent) -> bool {
         if key.modifiers != KeyModifiers::ALT {
             return false;
         }
         // Only where they mean something: on the symbols tab the server did
         // the matching, and the foot greys them there.
-        if !self
-            .picker
-            .as_ref()
-            .is_some_and(|picker| picker.looks_how().is_some())
-        {
+        let Some(picker) = self.picker.as_ref().filter(|picker| picker.is_searching()) else {
             return false;
-        }
+        };
+        let reading = picker.looks_how().is_some();
+        let beyond = picker.reaches_outside().is_some();
         let KeyCode::Char(letter) = key.code else {
             return false;
         };
         match letter {
-            'r' => self.looking.regex = !self.looking.regex,
-            'w' => self.looking.word = !self.looking.word,
-            'c' => self.looking.sensitive = !self.looking.sensitive,
+            'r' if reading => self.looking.regex = !self.looking.regex,
+            'w' if reading => self.looking.word = !self.looking.word,
+            'c' if reading => self.looking.sensitive = !self.looking.sensitive,
+            'o' if beyond => self.outside = !self.outside,
             _ => return false,
         }
         self.refresh_search();

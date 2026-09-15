@@ -392,6 +392,13 @@ pub struct App {
     /// version they were read from: an agent rewriting the file while the
     /// search is open has to change what the list says.
     searched: Option<(PathBuf, i32)>,
+    /// Whether the symbols search offers names from outside the project.
+    ///
+    /// Off, because a server that has indexed a project has indexed what it
+    /// was built on too: a search for `new` answered from the whole index is
+    /// the registry's answer with the reader's own names somewhere in it.
+    /// The switch is for the times they meant the dependency.
+    outside: bool,
     /// How the search is looking: the three switches at its foot.
     ///
     /// The reader's, kept for as long as obelus is running and not written
@@ -488,6 +495,7 @@ impl App {
             row_syntax: std::collections::HashMap::new(),
             searched: None,
             looking: search::Looking::default(),
+            outside: false,
             search_generation: std::sync::Arc::default(),
             history_generation: std::sync::Arc::default(),
             asked_line: None,

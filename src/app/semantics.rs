@@ -975,7 +975,11 @@ impl App {
     /// from one scope into another is worse than dropping them.
     fn on_workspace_symbols(&mut self, reply: Reply) {
         let root = self.working_directory.clone();
-        let symbols = lsp::outline::found_in(reply.result, &root);
+        // This tree unless the reader has asked to see past it: a list of
+        // every name a server knows is mostly the registry's, and the one
+        // they meant is somewhere among them.
+        let within = (!self.outside).then_some(root.as_path());
+        let symbols = lsp::outline::found_in(reply.result, within);
         let Some(picker) = self.picker.as_mut() else {
             return;
         };

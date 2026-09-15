@@ -165,14 +165,19 @@ pub struct Found {
 /// jump to, so a symbol with no range is dropped -- a row that cannot answer
 /// the one thing it is for is worse than a row that is not there.
 ///
+/// `within` is the tree to keep to, and `None` is the reader having asked
+/// for everything the server knows -- which is the only way to reach a name
+/// in a dependency by searching for it, and is why the rule above is a
+/// switch rather than a law.
+///
 /// Empty for an error and for a null answer, which is what a server that
 /// has not finished indexing says.
 #[must_use]
-pub fn found_in(result: Result<Value, String>, root: &std::path::Path) -> Vec<Found> {
+pub fn found_in(result: Result<Value, String>, within: Option<&std::path::Path>) -> Vec<Found> {
     let Ok(value) = result else {
         return Vec::new();
     };
-    let mine = |symbol: &Found| symbol.path.starts_with(root);
+    let mine = |symbol: &Found| within.is_none_or(|root| symbol.path.starts_with(root));
     // The flat shape first: every server that answers this question at all
     // answers with it, and the newer shape deserializes from the same JSON
     // with its range thrown away.
@@ -247,7 +252,7 @@ mod workspace_tests {
                 }
             }
         ]);
-        let found = found_in(Ok(reply), root());
+        let found = found_in(Ok(reply), Some(root()));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "Picker");
         assert_eq!(found[0].kind, SyntaxKind::Type);
@@ -268,7 +273,7 @@ mod workspace_tests {
         let reply = json!([
             { "name": "far_away", "kind": 12, "location": { "uri": "file:///p/a.rs" } }
         ]);
-        assert!(found_in(Ok(reply), root()).is_empty());
+        assert!(found_in(Ok(reply), Some(root())).is_empty());
     }
 
     /// An error, a null and a shape obelus does not know all mean the same
@@ -276,9 +281,9 @@ mod workspace_tests {
     /// answers null.
     #[test]
     fn nothing_usable_means_no_rows() {
-        assert!(found_in(Err("no".to_string()), root()).is_empty());
-        assert!(found_in(Ok(json!(null)), root()).is_empty());
-        assert!(found_in(Ok(json!({ "unexpected": true })), root()).is_empty());
+        assert!(found_in(Err("no".to_string()), Some(root())).is_empty());
+        assert!(found_in(Ok(json!(null)), Some(root())).is_empty());
+        assert!(found_in(Ok(json!({ "unexpected": true })), Some(root())).is_empty());
     }
 
     /// A search offers the reader's own tree and nothing else.
@@ -310,7 +315,7 @@ mod workspace_tests {
             at("/p-notes/scratch.rs"),
         ]);
 
-        let kept = found_in(Ok(reply.clone()), root());
+        let kept = found_in(Ok(reply.clone()), Some(root()));
         assert_eq!(
             kept.iter()
                 .map(|symbol| symbol.path.clone())
@@ -325,7 +330,7 @@ mod workspace_tests {
         // Every one of those rows is readable: what dropped two of them is
         // the root, not a shape the reply could not be read in.
         assert_eq!(
-            found_in(Ok(reply), std::path::Path::new("/")).len(),
+            found_in(Ok(reply), Some(std::path::Path::new("/"))).len(),
             4,
             "not every symbol was read"
         );
@@ -340,7 +345,7 @@ mod workspace_tests {
                 { "name": "later", "kind": 12,
                   "location": { "uri": "file:///p/src/lazy.rs" } },
             ])),
-            root(),
+            Some(root()),
         );
         assert_eq!(
             newer

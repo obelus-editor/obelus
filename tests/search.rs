@@ -231,23 +231,73 @@ fn the_three_switches_change_what_the_search_finds() {
     assert_eq!(picker.nothing_to_show(), Some("that is not a pattern"));
 }
 
-/// On the symbols tab the switches mean nothing -- the language server did
-/// the matching -- so they are greyed rather than dropped, and pressing one
-/// does nothing.
+/// Which switches mean anything depends on the tab: three of them read a
+/// text, and the fourth is about how far an index reaches.
+///
+/// A tab only offers what it can answer. The file and project tabs are
+/// inside this tree by construction, so there is nothing for "outside" to
+/// do; the symbols tab's rows come from a server that did its own matching
+/// and has never heard of our pattern.
 #[test]
-fn the_switches_are_greyed_where_they_would_do_nothing() {
+fn a_tab_offers_only_the_switches_it_can_answer() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    support::lay_out(&mut app, 74, 16);
+    support::lay_out(&mut app, 84, 16);
     support::press_function(&mut app, 5);
-    let dump = support::render(&mut app, 74, 16);
+
+    let picker = app.picker().expect("the search");
     assert!(
-        support::text_block(&dump).contains("regex"),
-        "the file tab does not offer the switches:\n{dump}"
+        picker.looks_how().is_some(),
+        "the file tab says reading a text means nothing to it"
     );
     assert!(
-        app.picker().expect("the search").looks_how().is_some(),
-        "the file tab says the switches mean nothing"
+        picker.reaches_outside().is_none(),
+        "the file tab offers to reach past a tree it is inside"
     );
+
+    let dump = support::render(&mut app, 84, 16);
+    let foot = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("regex"))
+        .expect("the foot")
+        .to_string();
+    assert!(foot.contains("word") && foot.contains("case"), "{foot:?}");
+    assert!(
+        !foot.contains("outside"),
+        "the foot offers a key that would do nothing: {foot:?}"
+    );
+}
+
+/// A symbol outside the project is left out unless the reader asks for it.
+///
+/// A server that has indexed a project has indexed what it was built on
+/// too, so a search for a common name answered from the whole index is the
+/// registry's answer with the reader's own names somewhere in it. It was a
+/// law; it is a switch now, because going to a name in a dependency by
+/// searching for it is a real thing to want.
+#[test]
+fn the_symbols_of_the_project_or_of_everything() {
+    use serde_json::json;
+
+    let reply = json!([
+        { "name": "mine", "kind": 12,
+          "location": { "uri": "file:///p/src/main.rs",
+                        "range": { "start": { "line": 1, "character": 3 },
+                                   "end": { "line": 1, "character": 7 } } } },
+        { "name": "theirs", "kind": 12,
+          "location": { "uri": "file:///home/reader/.cargo/registry/serde/lib.rs",
+                        "range": { "start": { "line": 2, "character": 0 },
+                                   "end": { "line": 2, "character": 6 } } } },
+    ]);
+    let root = std::path::Path::new("/p");
+
+    let names = |within: Option<&std::path::Path>| -> Vec<String> {
+        obelus::lsp::outline::found_in(Ok(reply.clone()), within)
+            .iter()
+            .map(|found| found.name.clone())
+            .collect()
+    };
+    assert_eq!(names(Some(root)), ["mine"]);
+    assert_eq!(names(None), ["mine", "theirs"]);
 }
 
 /// What the tree ignores, the search ignores -- unless the reader has asked
