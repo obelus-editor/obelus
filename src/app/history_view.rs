@@ -382,6 +382,7 @@ impl App {
                     crate::git::how_long_ago(reference.at.when, now),
                     reference.at.short()
                 )),
+                changed: None,
                 value: PickerValue::Commit(reference.at.id),
                 depth: 0,
                 status: None,
@@ -417,6 +418,7 @@ impl App {
                     crate::git::how_long_ago(commit.when, now),
                     commit.short()
                 )),
+                changed: None,
                 value: PickerValue::Commit(commit.id),
                 depth: 0,
                 // Not on the remote yet, which is the same colour a file
@@ -442,6 +444,7 @@ impl App {
                         label: path.display().to_string(),
                         detail: None,
                         trailing: None,
+                        changed: None,
                         value: PickerValue::CommitFile {
                             id: commit.id,
                             path: path.clone(),

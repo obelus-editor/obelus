@@ -241,6 +241,7 @@ impl App {
                     label: command.spec().name.to_string(),
                     detail: Some(command.spec().title.to_string()),
                     trailing: self.keymap.chord_for(command).map(KeyChord::label),
+                    changed: None,
                     value: PickerValue::Command(command),
                     enabled: true,
                     colours: None,
@@ -692,6 +693,7 @@ impl App {
                     label: symbol.name.clone(),
                     detail: None,
                     trailing: Some(format!("{}", symbol.line.get() + 1)),
+                    changed: None,
                     value: PickerValue::Place {
                         path: path.clone(),
                         line,
@@ -800,6 +802,7 @@ impl App {
                 label: symbol.name.clone(),
                 detail: None,
                 trailing: Some(format!("{}", symbol.line.saturating_add(1))),
+                changed: None,
                 value: PickerValue::Place {
                     path: path.clone(),
                     line: symbol.line,
@@ -1002,6 +1005,7 @@ impl App {
                         .display(),
                     symbol.line.saturating_add(1)
                 )),
+                changed: None,
                 value: PickerValue::Place {
                     path: symbol.path.clone(),
                     line: symbol.line,
@@ -1279,6 +1283,7 @@ fn place_rows(places: &[crate::lsp::action::Place], root: &Path) -> Vec<PickerIt
                 label: text.unwrap_or_else(|| at.clone()),
                 detail: None,
                 trailing: Some(at),
+                changed: None,
                 value: PickerValue::Place {
                     path: place.path.clone(),
                     line: place.line,

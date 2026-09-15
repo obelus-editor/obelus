@@ -438,10 +438,21 @@ impl PickerView<'_> {
         // is a path, and a path longer than the row left the label with no
         // columns at all: a list of icons with nothing beside them.
         let trailing = item.trailing.as_deref().unwrap_or_default();
+        // Right of everything, including the trailing: a number is read down
+        // a column, and a column with a ragged right edge is a column a
+        // reader has to find the end of on every row.
+        let counted = item
+            .changed
+            .map(|(added, removed)| (format!("+{added}"), format!("\u{2212}{removed}")));
+        let counted_columns = counted.as_ref().map_or(0, |(up, down)| {
+            u16::try_from(text_width(up) + text_width(down) + 2).unwrap_or(u16::MAX)
+        });
         let wanted = if trailing.is_empty() {
-            0
+            counted_columns
         } else {
-            u16::try_from(text_width(trailing) + 2).unwrap_or(u16::MAX)
+            u16::try_from(text_width(trailing) + 2)
+                .unwrap_or(u16::MAX)
+                .saturating_add(counted_columns)
         };
         let reserved = wanted.min(area.width / 2);
         let limit = area.width.saturating_sub(1).saturating_sub(reserved);
@@ -532,11 +543,11 @@ impl PickerView<'_> {
             let dropped = drop_from_left(trailing, room);
             let shown = trailing.chars().count().saturating_sub(dropped);
             if shown > 0
-                && let Ok(offset) =
-                    u16::try_from(usize::from(area.width).saturating_sub(text_width(trailing) + 1))
-                        .map(|offset| {
-                            offset.max(area.width.saturating_sub(reserved).saturating_add(1))
-                        })
+                && let Ok(offset) = u16::try_from(
+                    usize::from(area.width.saturating_sub(counted_columns))
+                        .saturating_sub(text_width(trailing) + 1),
+                )
+                .map(|offset| offset.max(area.width.saturating_sub(reserved).saturating_add(1)))
                 && offset >= column
             {
                 if dropped > 0 {
@@ -556,6 +567,36 @@ impl PickerView<'_> {
                 } else {
                     at(cells, area, offset, y, trailing, dim, &Marked::plain());
                 }
+            }
+        }
+
+        // Last, at the row's right-hand edge, in the colours the margin marks
+        // the same two facts in. Never cut: its width came out of the label's
+        // before the label was, and a number missing a digit is worse than no
+        // number -- so a row with no room for it keeps its name instead.
+        if let Some((up, down)) = counted {
+            let width = u16::try_from(text_width(&up) + text_width(&down) + 1).unwrap_or(u16::MAX);
+            if let Some(offset) = area.width.checked_sub(width + 1)
+                && offset >= column
+            {
+                let after = at(
+                    cells,
+                    area,
+                    offset,
+                    y,
+                    &up,
+                    style.fg(self.theme.change_added),
+                    &Marked::plain(),
+                );
+                at(
+                    cells,
+                    area,
+                    after.saturating_add(1),
+                    y,
+                    &down,
+                    style.fg(self.theme.change_removed),
+                    &Marked::plain(),
+                );
             }
         }
     }

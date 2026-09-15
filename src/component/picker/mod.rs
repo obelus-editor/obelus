@@ -193,6 +193,17 @@ pub struct PickerItem {
     /// Its width is taken out of the label's before the label is truncated, so
     /// it is the one part of a row that never gets cut.
     pub trailing: Option<String>,
+    /// How much the thing this row names has changed: lines added, lines
+    /// taken away.
+    ///
+    /// Its own field rather than words in `trailing`, because it is two facts
+    /// and wears two colours -- the same two the margin marks them in beside
+    /// the code, and the same two a commit's message carries above a file.
+    /// A reader who learnt them in one place has learnt them here.
+    ///
+    /// Right of everything, where a number is read down a column rather than
+    /// hunted for at the ragged end of a name.
+    pub changed: Option<(usize, usize)>,
     /// What choosing it does.
     pub value: PickerValue,
     /// How deep the row sits in whatever it is a list of.
@@ -478,6 +489,7 @@ impl Picker {
             label,
             detail: about,
             trailing: None,
+            changed: None,
             value: PickerValue::Answer(answer),
             enabled: true,
             colours: None,
@@ -1372,6 +1384,7 @@ mod tests {
             label: label.to_string(),
             detail: None,
             trailing: None,
+            changed: None,
             value: PickerValue::Nothing,
             enabled: true,
             colours: None,
@@ -1402,6 +1415,7 @@ mod tests {
                 label: name.to_string(),
                 detail: None,
                 trailing: None,
+                changed: None,
                 value: PickerValue::Nothing,
                 enabled: true,
                 colours: None,

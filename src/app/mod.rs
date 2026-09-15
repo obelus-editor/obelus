@@ -1185,6 +1185,7 @@ impl App {
                         label: path.display().to_string(),
                         detail: None,
                         trailing: None,
+                        changed: None,
                         value: PickerValue::File(path.clone()),
                         enabled: true,
                         colours: None,

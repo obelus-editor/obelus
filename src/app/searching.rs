@@ -345,6 +345,7 @@ impl App {
                         .to_string(),
                     detail: None,
                     trailing: Some(format!("{}", number + 1)),
+                    changed: None,
                     value: PickerValue::Place {
                         path: path.clone(),
                         line: at.line,
@@ -433,6 +434,7 @@ impl App {
             label: hit.text,
             detail: None,
             trailing: Some(format!("{}:{}", hit.path.display(), hit.line + 1)),
+            changed: None,
             // The line, not the column: the file is not open, so its text --
             // which is what a column in the protocol's units is counted
             // against -- is not here to count with. The row highlights what

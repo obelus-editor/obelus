@@ -122,6 +122,7 @@ impl App {
                 label: (*choice).to_string(),
                 detail: None,
                 trailing: None,
+                changed: None,
                 value: PickerValue::Setting {
                     key,
                     word: (*choice).to_string(),

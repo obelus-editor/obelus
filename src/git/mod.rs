@@ -228,6 +228,59 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
     statuses
 }
 
+/// How much each of these files has changed since the last commit.
+///
+/// One repository, one head tree, and a peel per path -- against
+/// [`head_text`], which opens the repository and resolves the head tree for
+/// every file it is asked about. That is most of the cost, and a list of
+/// changed files asks about all of them at once.
+///
+/// A path with no answer is left out rather than counted as nothing: a file
+/// git has never heard of, one whose committed content is not text, one that
+/// cannot be read off disk now. Nothing beside the name is the honest mark
+/// for a file this cannot speak about; `+0 \u{2212}0` would be a claim.
+///
+/// A file that is gone from disk counts as all removed, which is what
+/// deleting it did.
+#[must_use]
+pub fn counted_against_head(paths: &[PathBuf]) -> HashMap<PathBuf, (usize, usize)> {
+    let mut counts = HashMap::new();
+    let Some(first) = paths.first() else {
+        return counts;
+    };
+    let Some(repository) = repository(first) else {
+        return counts;
+    };
+    let Ok(mut tree) = repository.head_tree() else {
+        return counts;
+    };
+    for path in paths {
+        let Some(relative) = in_repository(&repository, path) else {
+            continue;
+        };
+        let committed = match tree.peel_to_entry_by_path(&relative) {
+            Ok(Some(entry)) => match entry.object() {
+                Ok(object) => match String::from_utf8(object.data.clone()) {
+                    Ok(text) => text,
+                    // Not text, so it has no lines to count.
+                    Err(_) => continue,
+                },
+                Err(_) => continue,
+            },
+            // The commit does not have it: everything in it arrived.
+            Ok(None) => String::new(),
+            Err(_) => continue,
+        };
+        // A file that is gone reads as empty, which makes its lines removed.
+        let now = std::fs::read_to_string(path).unwrap_or_default();
+        counts.insert(
+            path.clone(),
+            change::counted(&change::drawn(&committed, &now)),
+        );
+    }
+    counts
+}
+
 /// The file as the last commit has it, or `None` if that question has no
 /// answer.
 ///

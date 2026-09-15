@@ -33,6 +33,7 @@ impl App {
                 label: theme.name.to_string(),
                 detail: None,
                 trailing: None,
+                changed: None,
                 value: PickerValue::Theme(theme),
                 enabled: true,
                 colours: None,
@@ -81,6 +82,7 @@ impl App {
                 // with nothing here is one the palette is the only way to
                 // reach, which is worth being able to see.
                 trailing: self.keymap.chord_for(spec.command).map(KeyChord::label),
+                changed: None,
                 value: PickerValue::Command(spec.command),
             })
             .collect();

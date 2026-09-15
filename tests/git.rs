@@ -2295,6 +2295,70 @@ fn a_message_with_nothing_to_hide_is_not_folded() {
     );
 }
 
+/// A list of changed files is read for which of them to look at first, and
+/// how much each moved is most of that answer. At the right-hand end, where a
+/// number is read down a column rather than hunted for at the ragged end of a
+/// name.
+#[test]
+fn the_changed_files_say_how_much_each_changed() {
+    use obelus::theme::builtin::DARK;
+
+    let repository = Repository::new("changed-counts", "one\ntwo\nthree\n");
+    std::fs::write(repository.directory().join("other.rs"), "a\nb\n").expect("the other");
+    repository.commit_all("what they were");
+    // Two lines replaced and two added; one line taken away; a file git has
+    // never heard of, which is all arrival.
+    repository.write("one\nTWO\nfour\nfive\nsix\n");
+    std::fs::write(repository.directory().join("other.rs"), "a\n").expect("the other");
+    std::fs::write(repository.directory().join("new.rs"), "x\ny\nz\n").expect("the new one");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    support::lay_out(&mut app, 56, 16);
+    support::press_function(&mut app, 3);
+
+    let dump = support::render(&mut app, 56, 16);
+    let text = support::text_block(&dump);
+    let row = |name: &str| {
+        text.lines()
+            .find(|row| row.contains(name))
+            .unwrap_or_else(|| panic!("{name} is not in the list:\n{text}"))
+            .to_string()
+    };
+    assert!(
+        row("file.rs").contains("+4 \u{2212}2"),
+        "{}",
+        row("file.rs")
+    );
+    assert!(row("new.rs").contains("+3 \u{2212}0"), "{}", row("new.rs"));
+    assert!(
+        row("other.rs").contains("+0 \u{2212}1"),
+        "{}",
+        row("other.rs")
+    );
+
+    // Right-aligned: every row's count ends at the same column, which is what
+    // makes them a column rather than three notes.
+    let ends: Vec<usize> = ["file.rs", "new.rs", "other.rs"]
+        .into_iter()
+        .map(|name| row(name).trim_end().len())
+        .collect();
+    assert!(
+        ends.windows(2).all(|pair| pair[0] == pair[1]),
+        "the counts do not line up: {ends:?}"
+    );
+
+    // And in the two colours the margin marks the same two facts in.
+    assert_eq!(
+        support::colour_under(&dump, '+'),
+        support::spelled(DARK.change_added)
+    );
+    assert_eq!(
+        support::colour_under(&dump, '\u{2212}'),
+        support::spelled(DARK.change_removed)
+    );
+}
+
 /// A commit chosen from the project's history has no file under it, so the
 /// count beside it is the whole commit's -- which is what that row is. In a
 /// file's history the same number is about the file. Both answer the question

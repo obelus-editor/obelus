@@ -30,6 +30,7 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
             label: (*label).to_string(),
             detail: None,
             trailing: None,
+            changed: None,
             value: PickerValue::File(label.into()),
             enabled: true,
             colours: None,
@@ -61,6 +62,7 @@ fn many(count: usize) -> Vec<PickerItem> {
             label: format!("item-{index:03}"),
             detail: None,
             trailing: None,
+            changed: None,
             value: PickerValue::File(format!("item-{index:03}").into()),
             enabled: true,
             colours: None,
@@ -1802,6 +1804,7 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
             label: "long.rs:2:7".to_string(),
             detail: None,
             trailing: None,
+            changed: None,
             value: PickerValue::Place {
                 path,
                 line: 1,
@@ -2074,6 +2077,7 @@ fn moving_the_selection_forgets_the_scrolling() {
         label: format!("many_lines.rs:{}", line + 1),
         detail: None,
         trailing: None,
+        changed: None,
         value: PickerValue::Place {
             path: path.clone(),
             line,
@@ -2166,6 +2170,7 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
             label: "many_lines.rs:31".to_string(),
             detail: None,
             trailing: None,
+            changed: None,
             value: PickerValue::Place {
                 path,
                 line: 30,

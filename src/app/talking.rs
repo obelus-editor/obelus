@@ -174,6 +174,7 @@ impl App {
                 // selected row and the current value look the same cannot
                 // say which of the two it is showing.
                 trailing: (value.id == setting.current).then(|| "current".to_string()),
+                changed: None,
                 value: PickerValue::AgentValue {
                     setting: id.to_string(),
                     value: value.id.clone(),
@@ -341,6 +342,7 @@ impl App {
                 label: format!("/{}", order.name),
                 detail: Some(order.description.clone()),
                 trailing: order.hint.clone(),
+                changed: None,
                 value: PickerValue::Nothing,
                 enabled: true,
                 colours: None,

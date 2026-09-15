@@ -833,6 +833,7 @@ fn a_jump_lands_in_the_middle_of_the_screen() {
             label: "many_lines.rs:31".to_string(),
             detail: None,
             trailing: None,
+            changed: None,
             value: PickerValue::Place {
                 path,
                 line: 30,
@@ -900,6 +901,7 @@ fn a_jump_back_lands_in_the_middle_too() {
             label: "many_lines.rs:31".to_string(),
             detail: None,
             trailing: None,
+            changed: None,
             value: PickerValue::Place {
                 path,
                 line: 30,

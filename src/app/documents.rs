@@ -143,11 +143,27 @@ impl App {
                 // it walked the tree, and a list that reorders itself between
                 // openings cannot be learned.
                 rows.sort_by(|left, right| left.0.cmp(&right.0));
+                // How much each has changed, asked once for the whole list:
+                // opening the repository and resolving the head tree is most
+                // of the cost, and doing it per row would pay it as many
+                // times as the tree has changed files.
+                let counts = git::counted_against_head(
+                    &self
+                        .statuses
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<std::path::PathBuf>>(),
+                );
                 let items = rows
                     .into_iter()
                     .map(|(name, status)| PickerItem {
                         prose: false,
                         marker: None,
+                        // What it did to the file, at the row's right-hand
+                        // end: a list of changed files is read for which of
+                        // them to look at first, and how much each moved is
+                        // most of that answer.
+                        changed: counts.get(&root.join(&name)).copied(),
                         icon: Some(icons::for_path(std::path::Path::new(&name))),
                         enabled: true,
                         colours: None,
@@ -219,6 +235,7 @@ impl App {
                 // status row marks the same fact in the same words, so a
                 // reader who has seen one has read the other.
                 trailing: buffer.content().short(),
+                changed: None,
                 value: PickerValue::Buffer(BufferId::new(index)),
                 enabled: true,
                 colours: None,
