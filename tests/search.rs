@@ -165,6 +165,45 @@ fn the_file_scope_finds_the_query_and_not_something_like_it() {
     assert_eq!(picker.nothing_to_show(), Some("type to search this file"));
 }
 
+/// What the tree ignores, the search ignores -- unless the reader has asked
+/// for the ignored files, and then it does not.
+///
+/// Broken deliberately by walking with the ignore rules always on: the file
+/// list would offer `target/build.log` and the search could not see a word
+/// in it, which is two answers about one tree.
+#[test]
+fn the_search_reaches_what_the_file_list_offers() {
+    let scratch = temporary("ignored");
+    scratch.write("kept.rs", "the needle is here\n");
+    scratch.write("target/build.log", "the needle is here too\n");
+    scratch.write(".ignore", "target/\n");
+
+    let found = |ignored: bool, generation: u64| -> Vec<String> {
+        let (sender, events) = std::sync::mpsc::channel();
+        let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(generation));
+        search::spawn_scan(
+            scratch.path(),
+            "needle",
+            generation,
+            ignored,
+            &current,
+            sender,
+        );
+        let mut names = Vec::new();
+        while let Ok(Event::Matches { hits, done, .. }) = events.recv() {
+            names.extend(hits.into_iter().map(|hit| hit.path.display().to_string()));
+            if done {
+                break;
+            }
+        }
+        names.sort();
+        names
+    };
+
+    assert_eq!(found(false, 1), vec!["kept.rs"]);
+    assert_eq!(found(true, 2), vec!["kept.rs", "target/build.log"]);
+}
+
 /// The rows are the lines of one version of one file, so a file rewritten
 /// while the search is open is listed as it now is. An agent editing the
 /// file under the reader is the ordinary case here, not an exotic one.
@@ -460,7 +499,7 @@ fn a_scan_that_has_been_typed_past_stops() {
     // to find that out.
     let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(9));
     let (sender, events) = obelus::event::channel();
-    search::spawn_scan(scratch.path(), "needle", 4, &current, sender);
+    search::spawn_scan(scratch.path(), "needle", 4, false, &current, sender);
 
     // The thread owns the only sender, so its return closes the channel.
     // Nothing at all comes through: not even the batch that says it is
@@ -474,7 +513,7 @@ fn a_scan_that_has_been_typed_past_stops() {
     // While the generation it was started under does run to the end.
     let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(4));
     let (sender, events) = obelus::event::channel();
-    search::spawn_scan(scratch.path(), "needle", 4, &current, sender);
+    search::spawn_scan(scratch.path(), "needle", 4, false, &current, sender);
     let mut found = 0;
     loop {
         match events.recv_timeout(std::time::Duration::from_secs(10)) {
@@ -769,7 +808,7 @@ fn the_scan_trims_what_a_row_cannot_show() {
 fn scan(root: &std::path::Path, query: &str) -> Vec<Hit> {
     let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(7));
     let (sender, events) = obelus::event::channel();
-    search::spawn_scan(root, query, 7, &current, sender);
+    search::spawn_scan(root, query, 7, false, &current, sender);
     let mut hits = Vec::new();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while std::time::Instant::now() < deadline {

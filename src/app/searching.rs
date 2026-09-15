@@ -397,6 +397,7 @@ impl App {
                 &self.working_directory,
                 &query,
                 generation,
+                self.config().ignored_files,
                 &self.search_generation,
                 sender,
             );

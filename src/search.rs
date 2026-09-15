@@ -196,10 +196,16 @@ const BIGGEST_FILE: u64 = 2 * 1024 * 1024;
 /// answer a question nobody is asking any more. There is nothing else to
 /// stop a thread with -- a walk in `ignore` cannot be interrupted from
 /// outside -- so the thread has to ask.
+///
+/// `ignored` searches the files the tree has said to ignore as well, which
+/// is the reader's `ignored_files` and not a question of this walk's own: a
+/// file list that offers `target` beside a search that cannot see into it
+/// is two answers about one tree.
 pub fn spawn_scan(
     root: &Path,
     query: &str,
     generation: u64,
+    ignored: bool,
     current: &Arc<AtomicU64>,
     sender: Sender<Event>,
 ) {
@@ -213,7 +219,13 @@ pub fn spawn_scan(
             let mut batch: Vec<Hit> = Vec::with_capacity(BATCH);
             let mut found = 0usize;
 
-            for entry in WalkBuilder::new(&root).build() {
+            let mut walk = WalkBuilder::new(&root);
+            walk.git_ignore(!ignored)
+                .git_global(!ignored)
+                .git_exclude(!ignored)
+                .ignore(!ignored)
+                .parents(!ignored);
+            for entry in walk.build() {
                 // Per file rather than per line: a file is the unit of work
                 // here, and reading the flag for every line of a large file
                 // would be a cost of its own.
