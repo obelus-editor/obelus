@@ -6,6 +6,7 @@
 //! when the answer was not in the file after all.
 
 use std::{
+    ops::Range,
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -68,6 +69,83 @@ impl Scope {
     }
 }
 
+/// What a search is looking for, and the rule for finding it.
+///
+/// A thing rather than a string, because "is it in this line, and where" is
+/// one question asked in three places -- by the walk of the tree, by the
+/// search of the file being read, and by the view marking what it found --
+/// and three literal `contains` beside each other are three rules that will
+/// come apart.
+///
+/// Literal, always. A search asks where a string *is*; `ac` is not in `abc`,
+/// and a search that said it was would be answering a question about
+/// resemblance that nobody asked. Fuzzy matching is how a reader picks a
+/// name out of a list they already hold, which is what the pickers do and
+/// what this is not.
+#[derive(Clone, Debug)]
+pub struct Needle {
+    /// What the reader typed.
+    said: String,
+    /// The same in lower case, for the query that does not care about it.
+    folded: String,
+    /// Whether case matters, which the query says itself: one in lower case
+    /// matches either, and one with a capital in it means it.
+    ///
+    /// Smart case, the same rule the pickers' matcher follows, so a reader
+    /// does not learn two.
+    sensitive: bool,
+}
+
+impl Needle {
+    /// What a reader typed, ready to be looked for.
+    #[must_use]
+    pub fn new(said: &str) -> Self {
+        Self {
+            sensitive: said.chars().any(char::is_uppercase),
+            folded: said.to_lowercase(),
+            said: said.to_string(),
+        }
+    }
+
+    /// Whether nothing was typed, which is not a question.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.said.is_empty()
+    }
+
+    /// Where it is in a line, counted in characters, or nothing.
+    ///
+    /// Characters because that is what a row is marked in: the view walks
+    /// the label a character at a time, and a byte offset would mark the
+    /// wrong half of a glyph the moment a line had one in it.
+    ///
+    /// Found on bytes first, which is what makes walking a tree affordable:
+    /// `str::find` is a real string search and stepping character by
+    /// character is not. Where case does not matter the line is lowered a
+    /// line at a time rather than a file at a time, so a file whose first
+    /// line matches does not cost a copy of the whole file.
+    #[must_use]
+    pub fn found_in(&self, line: &str) -> Option<Range<usize>> {
+        if self.said.is_empty() {
+            return None;
+        }
+        if self.sensitive {
+            let at = line.find(&self.said)?;
+            let from = line[..at].chars().count();
+            return Some(from..from + self.said.chars().count());
+        }
+        let lowered = line.to_lowercase();
+        let at = lowered.find(&self.folded)?;
+        // Counted in the lowered copy. Lowering can change how many
+        // characters a line has -- Turkish dotted I lowers to two -- so this
+        // is the right column wherever the two agree, which is everywhere a
+        // reader will meet, and a column or two out in the one place it is
+        // not. What it can never do is claim a line matched that did not.
+        let from = lowered[..at].chars().count();
+        Some(from..from + self.folded.chars().count())
+    }
+}
+
 /// One matching line, ready to become a row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hit {
@@ -103,8 +181,8 @@ const BIGGEST_FILE: u64 = 2 * 1024 * 1024;
 
 /// Scans every file under `root` for `query`, on its own thread.
 ///
-/// Smart case, the same rule the picker's matcher follows: a query in lower
-/// case matches either case, and a query with a capital in it means it.
+/// What counts as a match is [`Needle`]'s to say, which is also what the
+/// search of the open file asks and what the view marks.
 ///
 /// `generation` comes back with every batch, because the reader types faster
 /// than a tree can be walked and the answers to the previous query must be
@@ -131,12 +209,7 @@ pub fn spawn_scan(
     let outcome = std::thread::Builder::new()
         .name("obelus-search".to_string())
         .spawn(move || {
-            let sensitive = query.chars().any(char::is_uppercase);
-            let needle = if sensitive {
-                query.clone()
-            } else {
-                query.to_lowercase()
-            };
+            let needle = Needle::new(&query);
             let mut batch: Vec<Hit> = Vec::with_capacity(BATCH);
             let mut found = 0usize;
 
@@ -167,15 +240,7 @@ pub fn spawn_scan(
                     .to_path_buf();
 
                 for (number, line) in contents.lines().enumerate() {
-                    let matched = if sensitive {
-                        line.contains(&needle)
-                    } else {
-                        // Lowered per line rather than per file, so a file
-                        // whose first line matches does not cost a copy of
-                        // the whole file.
-                        line.to_lowercase().contains(&needle)
-                    };
-                    if !matched {
+                    if needle.found_in(line).is_none() {
                         continue;
                     }
                     let trimmed = line.trim();

@@ -1059,13 +1059,33 @@ impl Picker {
         let Some((index, _)) = self.matched.get(row).copied() else {
             return Vec::new();
         };
-        let pattern = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
         let mut indices = Vec::new();
-        let haystack = Utf32Str::new(&self.items[index].label, &mut self.haystack);
-        pattern.indices(haystack, &mut self.matcher, &mut indices);
+        self.marks_in(index, &mut indices);
+        indices
+    }
+
+    /// Where the query is in one row's label, as character positions.
+    ///
+    /// Two rules, because a picker and a search are two things. A picker is
+    /// choosing among names it is holding and matches the way a reader types
+    /// a name they half remember, loosely. A search is asking where a string
+    /// is, and `ac` is not in `abc` -- so it marks the run it found and
+    /// nothing else.
+    fn marks_in(&mut self, index: usize, indices: &mut Vec<u32>) {
+        indices.clear();
+        let label = &self.items[index].label;
+        if self.searching {
+            let Some(run) = crate::search::Needle::new(&self.query).found_in(label) else {
+                return;
+            };
+            indices.extend(run.map(|at| u32::try_from(at).unwrap_or(u32::MAX)));
+            return;
+        }
+        let pattern = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
+        let haystack = Utf32Str::new(label, &mut self.haystack);
+        pattern.indices(haystack, &mut self.matcher, indices);
         indices.sort_unstable();
         indices.dedup();
-        indices
     }
 
     /// The character positions of one visible row that the query matched.
@@ -1116,17 +1136,13 @@ impl Picker {
             return;
         }
 
-        let pattern = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
         let first = self.first_visible(height);
         for row in first..first.saturating_add(usize::from(height)) {
-            let Some((index, _)) = self.matched.get(row) else {
+            let Some((index, _)) = self.matched.get(row).copied() else {
                 break;
             };
             let mut indices = spare.pop().unwrap_or_default();
-            let haystack = Utf32Str::new(&self.items[*index].label, &mut self.haystack);
-            pattern.indices(haystack, &mut self.matcher, &mut indices);
-            indices.sort_unstable();
-            indices.dedup();
+            self.marks_in(index, &mut indices);
             self.indices.push((row, indices));
         }
     }
@@ -1308,7 +1324,18 @@ impl Picker {
             (_, tab, Some(of)) => tab == of,
         };
 
-        if self.query.is_empty() {
+        // A search's rows are answers, not candidates. Whatever produced
+        // them -- the walk of the tree, the language server, the search of
+        // the open file -- was given the query and has already said which
+        // lines have it in them. Asking again here is a second matcher over
+        // the first, and a second matcher can only disagree: it did, and
+        // what it disagreed about it threw away.
+        //
+        // So a search is the empty query's case. The order is the producer's
+        // too, which for a walk is the order of the tree and for a file is
+        // the order of its lines -- both of which mean something, where a
+        // match score here would not.
+        if self.query.is_empty() || self.searching {
             // An empty query keeps the given order, which is the order the
             // caller thought worth showing: recent buffers, the command table.
             self.matched.extend(

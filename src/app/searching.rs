@@ -35,7 +35,7 @@ impl App {
         picker.go_to_tab(tab);
         self.searching = scopes;
         self.picker = Some(picker);
-        self.refresh_search(true);
+        self.refresh_search();
     }
 
     /// Which scopes have something to search, in the order their tabs sit
@@ -241,10 +241,13 @@ impl App {
 
     /// Fills the search with the rows of whichever scope is showing.
     ///
-    /// `moved` says the tab changed, as against only the query: the file's
-    /// rows are every line of it and are filtered by the picker itself, so
-    /// they are gathered once per visit rather than once per keystroke.
-    pub(super) fn refresh_search(&mut self, moved: bool) {
+    /// Asked whenever the query or the tab moves, and every scope answers
+    /// the same way: the rows are what has the query in it. It used to take
+    /// a flag saying which of the two had moved, because the file's rows
+    /// were every line of it and were worth gathering only once per visit --
+    /// which is exactly the arrangement that let a fuzzy matcher stand
+    /// between the reader and their answer.
+    pub(super) fn refresh_search(&mut self) {
         let Some(picker) = self.picker.as_ref() else {
             return;
         };
@@ -253,38 +256,22 @@ impl App {
         };
         match scope {
             Scope::File => {
-                let empty = picker.query().is_empty();
-                // The rows are the lines of one version of one file, so
-                // that is what says whether they are still the right rows:
-                // a file an agent rewrites while the search is open must not
-                // go on being listed as it was.
-                let stale = self.searched
-                    != self
-                        .current_buffer()
-                        .map(|buffer| (buffer.path().to_path_buf(), buffer.version()));
-                let filled = picker.row_count() > 0;
-                if empty {
-                    // Every line of the file is not an answer to no
-                    // question -- the reader is looking at the file already,
-                    // and a list of it says nothing they cannot see. With no
-                    // file at all the reason is that, which is a fact about
-                    // the world rather than an invitation to type.
-                    let reason = if self.current_buffer().is_some() {
-                        "type to search this file"
-                    } else {
-                        "no file open"
+                if picker.query().is_empty() {
+                    // Nothing asked, so nothing found -- not every line of
+                    // the file, which the reader is looking at already and
+                    // which says nothing a list could add. With no file at
+                    // all the reason is that, which is a fact about the
+                    // world rather than an invitation to type.
+                    let reason = match self.current_buffer().is_some() {
+                        true => "type to search this file",
+                        false => "no file open",
                     };
                     self.searched = None;
                     if let Some(picker) = self.picker.as_mut() {
                         picker.replace(Vec::new());
                         picker.while_empty(reason);
                     }
-                } else if moved || !filled || stale {
-                    // Gathered on the way in from an empty query rather than
-                    // per keystroke: the rows are the file's lines, which do
-                    // not depend on what has been typed. The picker narrows
-                    // them from there, and re-gathering per keystroke would
-                    // also throw away the row the reader had moved to.
+                } else {
                     self.search_this_file();
                 }
             }
@@ -293,13 +280,23 @@ impl App {
         }
     }
 
-    /// Every line of the file being read, for the picker to narrow.
+    /// The lines of the file being read that have the query in them.
     ///
-    /// The rows are the lines rather than the matches, because the picker is
-    /// already a matcher: it scores the query against every row, highlights
-    /// what it matched and keeps the best first. A search that filtered the
-    /// lines itself would be a second, worse matcher beside it.
+    /// The matches rather than every line, by the same rule the walk of the
+    /// tree follows: one question, and only its radius changes. The rows
+    /// were the lines once, with the picker's fuzzy matcher narrowing them,
+    /// which meant `ac` found `abc` -- an answer to a question about
+    /// resemblance, in a view whose question is where a string is.
+    ///
+    /// Done here and now rather than on a thread: the file is already in
+    /// memory, and a pass over it per keystroke is nothing beside the walk
+    /// the project tab starts for the same key.
     pub(super) fn search_this_file(&mut self) {
+        let needle = self
+            .picker
+            .as_ref()
+            .map(|picker| search::Needle::new(picker.query()));
+        let Some(needle) = needle else { return };
         let Some(buffer) = self.current_buffer() else {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
@@ -321,11 +318,16 @@ impl App {
             });
 
         let items: Vec<PickerItem> = (0..text.line_count())
-            .map(|number| {
+            .filter_map(|number| {
                 let line = LineNumber::new(number);
+                // Against the line as it is written, not as the row shows
+                // it: a row is trimmed of its indentation, and a query for
+                // a run of spaces would otherwise find nothing anywhere.
+                let said = text.line(line).to_string();
+                needle.found_in(&said)?;
                 let at = position::to_lsp(text, line, CharColumn::new(0), &encoding);
                 let end = position::to_lsp(text, line, text.line_length(line), &encoding);
-                PickerItem {
+                Some(PickerItem {
                     prose: false,
                     marker: None,
                     icon: None,
@@ -335,14 +337,9 @@ impl App {
                     depth: 0,
                     kind: None,
                     // Trimmed at the front: the indentation is the same on
-                    // every row of a block, so matching it finds nothing and
-                    // showing it spends the width where the answer is.
-                    label: text
-                        .line(line)
-                        .to_string()
-                        .trim_end()
-                        .trim_start()
-                        .to_string(),
+                    // every row of a block, so showing it spends the width
+                    // where the answer is.
+                    label: said.trim_end().trim_start().to_string(),
                     detail: None,
                     trailing: Some(format!("{}", number + 1)),
                     changed: None,
@@ -354,14 +351,14 @@ impl App {
                         end_character: end.character,
                     },
                     tab: None,
-                }
+                })
             })
             .collect();
 
         self.searched = Some((path, version));
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(items);
-            picker.when_empty("this file is empty");
+            picker.while_empty("no match in this file");
         }
     }
 

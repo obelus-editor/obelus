@@ -1332,7 +1332,7 @@ impl App {
             match outcome {
                 PickerOutcome::Consumed => {
                     if searching && after != before {
-                        self.refresh_search(after.0 != before.0);
+                        self.refresh_search();
                     }
                     if listing && after.0 != before.0 {
                         self.refresh_listing();

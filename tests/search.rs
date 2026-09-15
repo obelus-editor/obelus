@@ -113,13 +113,18 @@ fn an_empty_search_previews_the_file_being_read() {
     );
 }
 
-/// The file's rows are its lines, and the picker narrows them. The rows are
-/// lines rather than matches because the picker is already a matcher: a
-/// search that filtered the lines itself would be a second, worse one beside
-/// it, and would lose the highlighting of what matched.
+/// The file's rows are the lines that have the query in them, found the way
+/// a search finds things: literally.
+///
+/// Broken deliberately by listing every line of the file and letting the
+/// picker's fuzzy matcher narrow them. Searching `ac` found `abc` -- an
+/// answer about what a line resembles, in a view whose question is where a
+/// string is.
 #[test]
-fn the_file_scope_lists_its_lines_and_narrows_to_the_query() {
-    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+fn the_file_scope_finds_the_query_and_not_something_like_it() {
+    let scratch = temporary("file-literal");
+    let path = scratch.write("x.rs", "let abc = 1;\nlet nope = 2;\nlet abc_again = 3;\n");
+    let mut app = App::new(vec![obelus::buffer::Buffer::open(&path).expect("the file")]);
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 5);
 
@@ -129,63 +134,35 @@ fn the_file_scope_lists_its_lines_and_narrows_to_the_query() {
     assert_eq!(picker.match_count(), 0, "the file was listed unasked");
     assert_eq!(picker.nothing_to_show(), Some("type to search this file"));
 
-    support::type_text(&mut app, "e");
+    // The lines that have it, and only those.
+    support::type_text(&mut app, "abc");
     let picker = app.picker().expect("the search");
-    assert_eq!(
-        picker.row_count(),
-        5,
-        "not every line of a four-line file, plus the empty last one"
-    );
-    // Trimmed at the front: the indentation is the same on every row of a
-    // block, so matching it finds nothing and showing it spends the width.
+    assert_eq!(picker.match_count(), 2, "not the two lines with `abc` in");
     assert!(
-        picker
-            .matches()
-            .any(|item| item.label == "println!(\"{greeting} world\");"),
-        "the lines are not the rows"
+        picker.matches().all(|item| item.label.contains("abc")),
+        "a line without the query is in the list"
     );
 
-    support::type_text(&mut app, "et");
+    // And `ac` is not in `abc`.
+    for _ in 0.."abc".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "ac");
     let picker = app.picker().expect("the search");
-    assert_eq!(picker.query(), "eet");
-    assert_eq!(picker.match_count(), 2, "the query narrowed nothing");
-
-    // Narrowing does not throw away the row the reader had moved to, which
-    // is the picker's own rule -- and which is why the file's lines are
-    // gathered once on the way in rather than per keystroke.
-    support::press(&mut app, KeyCode::Down);
-    let chosen = app.picker().expect("the search").selected();
-    assert_eq!(chosen, 1, "the second row is not selected");
-    support::press(&mut app, KeyCode::Backspace);
     assert_eq!(
-        app.picker().expect("the search").selected(),
-        chosen,
-        "typing put the selection back at the top"
+        picker.match_count(),
+        0,
+        "`ac` found a line that only resembles it"
     );
-    // Nor does a redraw: the rows are re-gathered when the file changes, not
-    // when the screen is painted.
-    let _ = support::render(&mut app, 60, 16);
-    assert_eq!(
-        app.picker().expect("the search").selected(),
-        chosen,
-        "a redraw put the selection back at the top"
-    );
+    assert_eq!(picker.nothing_to_show(), Some("no match in this file"));
 
     // Emptied again, the rows go away rather than becoming the file.
-    for _ in 0..3 {
+    for _ in 0.."ac".len() {
         support::press(&mut app, KeyCode::Backspace);
     }
     let picker = app.picker().expect("the search");
     assert_eq!(picker.row_count(), 0, "the file came back as a list");
     assert_eq!(picker.nothing_to_show(), Some("type to search this file"));
-    support::type_text(&mut app, "greet");
-
-    // And the row goes where it says: onto that line of that file.
-    support::press(&mut app, KeyCode::Down);
-    support::press(&mut app, KeyCode::Enter);
-    assert!(app.picker().is_none(), "the search stayed open");
-    let cursor = app.current_buffer().expect("a file").cursor();
-    assert_eq!(cursor.line.get(), 2, "not the line the row named");
 }
 
 /// The rows are the lines of one version of one file, so a file rewritten
@@ -826,6 +803,9 @@ fn temporary(name: &str) -> support::Scratch {
 /// line's own span -- column zero to the end of it -- and the preview
 /// marked what the row said it was about. Which is the line, and a reader
 /// who typed three letters is looking for those three letters.
+///
+/// One run, because that is what a search finds: the mark used to be
+/// scattered wherever a fuzzy matcher had landed.
 #[test]
 fn the_preview_marks_what_the_query_matched() {
     /// The columns of the preview's row for `line` that wear the marked
@@ -892,31 +872,19 @@ fn the_preview_marks_what_the_query_matched() {
         .collect();
     assert_eq!(letters, "eti", "the marks are not on what matched:\n{dump}");
 
-    // And a query whose characters are *not* next to each other is marked
-    // where they are, rather than as one run from the first to the last: a
-    // fuzzy match is scattered by nature.
+    // And a query whose characters are not next to each other is not in the
+    // line at all: `lgn` is not in `let greeting`, however many of its
+    // letters are. A search asks where a string is.
     for _ in 0.."eti".len() {
         support::press(&mut app, KeyCode::Backspace);
     }
     support::type_text(&mut app, "lgn");
-    let dump = support::render(&mut app, 60, 20);
-    let columns = marked(&dump, "let greeting");
+    let picker = app.picker().expect("the search");
     assert_eq!(
-        columns.len(),
-        3,
-        "a scattered match was marked as one run:\n{dump}"
+        picker.match_count(),
+        0,
+        "a query whose letters are merely present found a line"
     );
-    let rows: Vec<String> = support::text_block(&dump)
-        .lines()
-        .filter(|row| row.contains("let greeting"))
-        .map(str::to_string)
-        .collect();
-    let row = rows.last().expect("the preview's row").clone();
-    let letters: String = columns
-        .iter()
-        .filter_map(|column| row.chars().nth(*column))
-        .collect();
-    assert_eq!(letters, "lgn", "the marks are not on what matched:\n{dump}");
 }
 
 /// Choosing a row lands on what the query matched, not on the line.
