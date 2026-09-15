@@ -574,6 +574,11 @@ impl App {
         // walk into and copy from.
         if let Some(said) = self.said_at(id, Some(path)) {
             buffer.open_held(LineNumber::new(0), &said, crate::buffer::Held::Message);
+            // Folded, showing what the commit is called and the sentence it
+            // starts with. The reader asked for a *file*; the message is why
+            // it says what it says, which is worth a glance and `alt+f` when
+            // the glance is not enough.
+            buffer.fold_block(LineNumber::new(0), true);
             buffer.enter_block(LineNumber::new(0));
         }
         // A reader who asked about a line is put on that line, where it was

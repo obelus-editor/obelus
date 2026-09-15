@@ -216,7 +216,17 @@ impl App {
             Requires::SomethingToUndo => self.current_buffer().is_some_and(Buffer::can_undo),
             Requires::SomethingToRedo => self.current_buffer().is_some_and(Buffer::can_redo),
             Requires::AFoldHere => self.current_buffer().is_some_and(|buffer| {
-                buffer.folds().is_folded_at(buffer.cursor().line)
+                // A commit's message is a thing the reader is inside, and
+                // the cursor cannot say so: it stays on the line the block
+                // hangs above, answering for the *file*, while the caret is
+                // up in rows the file does not have. Asking the file where
+                // the cursor is would refuse the key on the one screen where
+                // the reader can see what it would fold.
+                buffer
+                    .caret_block()
+                    .and_then(|above| buffer.block_above(above))
+                    .is_some_and(crate::buffer::Block::can_fold)
+                    || buffer.folds().is_folded_at(buffer.cursor().line)
                     || buffer.folds().offered_at(buffer.cursor().line).is_some()
             }),
             Requires::AFoldableFile => self

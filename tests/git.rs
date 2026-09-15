@@ -2203,6 +2203,98 @@ fn a_commit_opens_its_files_under_it() {
     );
 }
 
+/// A commit's message hangs above the file, and a commit's message is long.
+/// Forty rows of somebody's prose in front of a file is the file pushed off
+/// the screen by its own footnote, so what opens is the first five lines --
+/// the commit, the subject, and the sentence the body starts with -- and a
+/// mark saying there is more.
+#[test]
+fn a_commits_message_opens_folded() {
+    let (mut app, _repository, _events) = a_file_at_a_wordy_commit("history-folded");
+
+    let dump = support::render(&mut app, 64, 18);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("Give the third bank"),
+        "the subject is not on screen:\n{text}"
+    );
+    assert!(
+        text.contains("The opening line."),
+        "the body's opening line is not on screen:\n{text}"
+    );
+    assert!(
+        !text.contains("The far line"),
+        "the whole message is on screen, so nothing was folded:\n{text}"
+    );
+    assert!(
+        text.contains('\u{2026}'),
+        "nothing says the message goes on:\n{text}"
+    );
+}
+
+/// `alt+f` is already "fold what the cursor is inside", and a message is a
+/// thing the reader is inside -- they were put there. The same key opens it
+/// and closes it again.
+#[test]
+fn alt_f_opens_a_folded_message_and_folds_it_again() {
+    use crossterm::event::KeyCode;
+
+    let (mut app, _repository, _events) = a_file_at_a_wordy_commit("history-alt-f");
+    let showing = |app: &mut App| support::text_block(&support::render(app, 64, 18)).to_string();
+
+    assert!(
+        !showing(&mut app).contains("fourth line of the body"),
+        "it did not open folded"
+    );
+
+    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    let open = showing(&mut app);
+    assert!(
+        open.contains("The far line"),
+        "alt+f did not open the message:\n{open}"
+    );
+    assert!(
+        !open.contains('\u{2026}'),
+        "the mark is still there with nothing left to hide:\n{open}"
+    );
+
+    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    assert!(
+        !showing(&mut app).contains("fourth line of the body"),
+        "alt+f would not fold it again"
+    );
+}
+
+/// Nothing to hide, so nothing is hidden and nothing says it was. A mark
+/// over a message that is already whole is a promise of something that is
+/// not there.
+#[test]
+fn a_message_with_nothing_to_hide_is_not_folded() {
+    use crossterm::event::KeyCode;
+
+    let repository = Repository::new("history-short", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit_all("Just the one line");
+    let (mut app, _events) = reading_it_at_its_commit(&repository);
+
+    let dump = support::render(&mut app, 64, 18);
+    let text = support::text_block(&dump);
+    assert!(text.contains("Just the one line"), "the subject is missing");
+    assert!(
+        !text.contains('\u{2026}'),
+        "a whole message is marked as cut:\n{text}"
+    );
+
+    // And the key finds nothing to do rather than doing something odd.
+    support::press_alt_key(&mut app, KeyCode::Char('f'));
+    let dump = support::render(&mut app, 64, 18);
+    let after = support::text_block(&dump);
+    assert!(
+        !after.contains('\u{2026}'),
+        "alt+f folded a message with nothing behind it:\n{after}"
+    );
+}
+
 /// Beside who wrote it: what it did to *this* file. The block hangs above one
 /// file, and the question there is what this commit did to that -- not what it
 /// did to the tree, which is a number about a diff the reader is not looking
@@ -2229,6 +2321,23 @@ fn the_message_says_how_much_the_commit_changed_this_file() {
         head.contains("+3") && head.contains("\u{2212}2"),
         "not what this commit did to this file:\n{head}"
     );
+}
+
+/// A repository whose one commit has a body worth folding, opened at that
+/// commit's version of its file.
+fn a_file_at_a_wordy_commit(name: &str) -> (App, Repository, Receiver<Event>) {
+    let repository = Repository::new(name, "one\n");
+    repository.write("one\ntwo\n");
+    // Short lines, so a wrapped row cannot split a phrase a test looks for.
+    repository.commit_all(
+        "Give the third bank of keys to git\n\n\
+         The opening line.\n\
+         The second line.\n\
+         The third line.\n\n\
+         The far line, well out of sight.",
+    );
+    let (app, events) = reading_it_at_its_commit(&repository);
+    (app, repository, events)
 }
 
 /// Opens the repository's file as its newest commit had it, the way a reader

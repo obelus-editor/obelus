@@ -502,6 +502,19 @@ impl App {
     /// saying so would be the third answer to a question the palette
     /// settled.
     pub fn toggle_fold(&mut self) {
+        // The block first, when the caret is in one. "Fold what the cursor
+        // is inside" is the question this key asks, and a commit's message
+        // is a thing the reader is inside -- they were put there. Asking the
+        // file instead would fold a run of code the caret is nowhere near,
+        // on a screen where the caret is visibly somewhere else.
+        let inside = self
+            .current_buffer()
+            .and_then(crate::buffer::Buffer::caret_block);
+        if let (Some(buffer), Some(above)) = (self.current_buffer_mut(), inside)
+            && buffer.toggle_block_fold(above)
+        {
+            return;
+        }
         let line = self.current_buffer().map(|buffer| buffer.cursor().line);
         if let (Some(buffer), Some(line)) = (self.current_buffer_mut(), line) {
             buffer.toggle_fold(line);

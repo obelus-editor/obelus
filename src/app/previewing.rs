@@ -377,6 +377,11 @@ impl App {
                         &said,
                         crate::buffer::Held::Message,
                     );
+                    // Folded, the way opening the row leaves it: a preview
+                    // that showed the whole message would be a preview of
+                    // somebody's prose, and the row under the cursor names a
+                    // file.
+                    buffer.fold_block(crate::coordinates::LineNumber::new(0), true);
                     // Landing where opening the row would land: in the
                     // message, at its top. A preview that started at the
                     // file's first line would show the end of the message
@@ -391,7 +396,9 @@ impl App {
             }
             // A message on its own, with no file under it: a commit is not
             // a file, and what it has to show is what it said. No file, so
-            // no count of what it did to one.
+            // no count of what it did to one -- and nothing to fold it away
+            // in favour of, because the message is the whole of what is
+            // there.
             Subject::Message(id) => {
                 let said = self.said_at(*id, None)?;
                 Some((Buffer::from_message(&said), None))
