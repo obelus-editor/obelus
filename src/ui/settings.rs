@@ -31,12 +31,6 @@ const CONTROL_WIDTH: u16 = 12;
 /// of a table rather than as a card.
 const INDENT: u16 = 3;
 
-/// How wide a switch's track is, in cells.
-///
-/// Four: two for the knob and two for the room it slides into. Anything
-/// narrower stops looking like something that slides.
-const TRACK_WIDTH: u16 = 4;
-
 /// The settings, over the whole editor region.
 pub struct SettingsView<'a> {
     settings: &'a Settings,
@@ -931,44 +925,11 @@ fn draw_control(
         theme.gutter
     };
     match (kind, value) {
+        // A slider, drawn by the one thing that draws sliders: the foot of
+        // a list has them too, and a reader who has learnt this shape here
+        // should not have to learn a second one there.
         (Kind::Switch, Value::Switch(on)) => {
-            // A slider: a square knob at one end of a short track. The
-            // shape says which way it is without a word to read, and says
-            // what the left and right arrows will do to it.
-            //
-            // Squares rather than full blocks: a full block fills its
-            // cell's whole height, so the knobs of two rows one above the
-            // other touch and read as one tall bar. A square leaves a
-            // margin above and below, which is the gap between them.
-            crate::ui::fill(
-                cells,
-                ratatui::layout::Rect {
-                    x,
-                    y,
-                    width: TRACK_WIDTH,
-                    height: 1,
-                },
-                style.bg(theme.control_background),
-            );
-            // Bright when on and dim when off, rather than a colour: the
-            // knob's *position* already says which way it is, so a hue
-            // would be a second answer to a question already answered --
-            // and green here would mean something different from green in
-            // the margin, where it means a line git has never seen.
-            let (at, colour) = if *on {
-                (x + TRACK_WIDTH / 2, ink)
-            } else {
-                (x, theme.gutter)
-            };
-            for cell in 0..TRACK_WIDTH / 2 {
-                put(
-                    cells,
-                    at + cell,
-                    y,
-                    '\u{25a0}',
-                    Style::new().fg(colour).bg(theme.control_background),
-                );
-            }
+            crate::ui::switch(cells, x, y, *on, ink, theme);
         }
         (Kind::Count(_), Value::Count(count)) => {
             let after = write(cells, x, y, &count.to_string(), style.fg(ink));

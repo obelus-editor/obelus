@@ -19,7 +19,7 @@ screen 60x22  editor 60x20  status 60x1
 16|                                                            
 17|                                                            
 18|────────────────────────────────────────────────────────────
-19|  󰘵 i ignored files                                 󱊫 keys  
+19|  󰘵 i ignored files ■■                              󱊫 keys  
 20|────────────────────────────────────────────────────────────
 21| 󰍉                                                          
 -- style --
@@ -42,9 +42,9 @@ screen 60x22  editor 60x20  status 60x1
 16|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 17|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-19|bbdddbcccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccbb
+19|bbdddbcccccccccccccbhhaabbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccbb
 20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-21|hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
+21|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 -- legend --
 a fg=#e4e4e7 bg=#27272a
 b fg=#e4e4e7 bg=#18181b
@@ -53,6 +53,7 @@ d fg=#a1a1aa bg=#18181b
 e fg=#c084fc bg=#18181b
 f fg=#60a5fa bg=#18181b
 g fg=#a3e635 bg=#18181b
-h fg=#d4d4d8 bg=#18181b
+h fg=#52525b bg=#27272a
+i fg=#d4d4d8 bg=#18181b
 -- cursor --
 4,21

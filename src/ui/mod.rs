@@ -776,6 +776,15 @@ pub struct Hint {
     /// away and is not lost -- it is in the card, where there is room to say
     /// what it does in words rather than in one.
     pub common: bool,
+    /// Which way it is set, for a key whose whole job is a switch.
+    ///
+    /// The word says what the key switches; this says what it is switched
+    /// to. Without it a switch on a key is a coin toss: the reader presses
+    /// it to find out which way it was, which is the one thing a switch
+    /// must never make them do.
+    ///
+    /// `None` for a key that does something rather than sets something.
+    pub switched: Option<bool>,
     /// Whether it does anything *now*.
     ///
     /// Worked out per frame by whoever knows: a note about the project has
@@ -796,6 +805,7 @@ impl Hint {
             does: Some(does),
             spelled: None,
             said: None,
+            switched: None,
             common: true,
             usable: true,
         }
@@ -838,6 +848,13 @@ impl Hint {
         self
     }
 
+    /// Says it is a switch, and which way it is set.
+    #[must_use]
+    pub const fn set(mut self, on: bool) -> Self {
+        self.switched = Some(on);
+        self
+    }
+
     /// How it is written: the key, or the pair of them.
     #[must_use]
     pub fn keys(self) -> String {
@@ -863,6 +880,51 @@ pub fn keys_chord() -> crate::keymap::KeyChord {
         crossterm::event::KeyCode::F(1),
         crossterm::event::KeyModifiers::NONE,
     )
+}
+
+/// How wide a switch's track is, in cells.
+///
+/// Four: two for the knob and two for the room it slides into. Anything
+/// narrower stops looking like something that slides.
+pub const TRACK_WIDTH: u16 = 4;
+
+/// A switch, drawn where it is asked for, and the column after it.
+///
+/// A square knob at one end of a short track. The shape says which way it
+/// is without a word to read, and it says it the same way wherever a switch
+/// appears: this is the settings page's control, so a reader who has seen
+/// one there knows what one at the foot of a list is saying.
+///
+/// Squares rather than full blocks: a full block fills its cell's whole
+/// height, and two of them one above the other read as one tall bar.
+pub fn switch(cells: &mut CellBuffer, x: u16, y: u16, on: bool, ink: Color, theme: &Theme) -> u16 {
+    fill(
+        cells,
+        Rect {
+            x,
+            y,
+            width: TRACK_WIDTH,
+            height: 1,
+        },
+        Style::new().bg(theme.control_background),
+    );
+    // Bright when on and dim when off, rather than a colour: the knob's
+    // *position* already says which way it is, so a hue would be a second
+    // answer to a question already answered.
+    let (at, colour) = match on {
+        true => (x + TRACK_WIDTH / 2, ink),
+        false => (x, theme.gutter),
+    };
+    for cell in 0..TRACK_WIDTH / 2 {
+        put(
+            cells,
+            at + cell,
+            y,
+            '\u{25a0}',
+            Style::new().fg(colour).bg(theme.control_background),
+        );
+    }
+    x + TRACK_WIDTH
 }
 
 /// How many rows a view gives up to its foot, where it has one.
@@ -936,7 +998,9 @@ pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
     let mut x = area.x + 2;
     for hint in hints.iter().filter(|hint| hint.common && hint.usable) {
         let keys = hint.keys();
-        let wanted = text_width(&keys) + hint.does.map_or(0, |does| text_width(does) + 1) + 3;
+        let switched = hint.switched.map_or(0, |_| usize::from(TRACK_WIDTH) + 1);
+        let wanted =
+            text_width(&keys) + hint.does.map_or(0, |does| text_width(does) + 1) + switched + 3;
         let Ok(wanted) = u16::try_from(wanted) else {
             return;
         };
@@ -961,6 +1025,9 @@ pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
                 does,
                 Style::new().fg(theme.gutter).bg(theme.background),
             );
+        }
+        if let Some(on) = hint.switched {
+            x = switch(cells, x + 1, y, on, theme.foreground, theme);
         }
         x += 3;
     }
@@ -988,7 +1055,10 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
     let widest = u16::try_from(
         hints
             .iter()
-            .map(|hint| hint.said.or(hint.does).map_or(0, text_width))
+            .map(|hint| {
+                hint.said.or(hint.does).map_or(0, text_width)
+                    + hint.switched.map_or(0, |_| usize::from(TRACK_WIDTH) + 1)
+            })
             .max()
             .unwrap_or(0),
     )
@@ -1058,8 +1128,18 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
             false => off,
         };
         write(cells, card.x + 2, y, &hint.keys(), style);
+        let mut x = card.x + 2 + column;
         if let Some(does) = hint.said.or(hint.does) {
-            write(cells, card.x + 2 + column, y, does, style);
+            x = write(cells, x, y, does, style);
+        }
+        // After the words, because what it is set to is worth reading second:
+        // a reader coming to the card is finding out what the key *is*.
+        if let Some(on) = hint.switched {
+            let ink = match hint.usable {
+                true => theme.foreground,
+                false => theme.gutter,
+            };
+            switch(cells, x + 1, y, on, ink, theme);
         }
     }
 }

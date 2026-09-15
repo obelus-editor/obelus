@@ -418,6 +418,19 @@ pub struct Picker {
     footed: bool,
     /// Whether the card listing every key is up.
     keys: bool,
+    /// Whether this list is offering the files a tree ignores, where that
+    /// is a question about it at all.
+    ///
+    /// `None` where the key means nothing: the changed files come from git
+    /// rather than from a walk, and what a tree ignores is not part of that
+    /// answer either way. Greyed at the foot rather than dropped from it, so
+    /// the list does not change height as the reader steps between tabs.
+    ///
+    /// Set by whoever filled the list, because the walk and the setting
+    /// behind it are both theirs -- what is the list's is only that the foot
+    /// is drawn from it, and a foot that had to guess would guess wrong on
+    /// the first frame after the key.
+    ignored: Option<bool>,
     /// Scratch for `Utf32Str::new`, which needs somewhere to put a converted
     /// haystack.
     haystack: Vec<char>,
@@ -466,6 +479,7 @@ impl Picker {
             ordered: false,
             footed: false,
             keys: false,
+            ignored: None,
             layout,
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
             haystack: Vec::new(),
@@ -683,6 +697,18 @@ impl Picker {
     #[must_use]
     pub const fn showing_keys(&self) -> bool {
         self.keys
+    }
+
+    /// Says whether this list is offering the files a tree ignores, or that
+    /// the question does not arise here.
+    pub const fn offering_ignored(&mut self, offering: Option<bool>) {
+        self.ignored = offering;
+    }
+
+    /// And what it was told.
+    #[must_use]
+    pub const fn offers_ignored(&self) -> Option<bool> {
+        self.ignored
     }
 
     /// The tab names, empty for a picker without tabs.

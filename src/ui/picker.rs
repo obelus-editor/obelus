@@ -60,12 +60,20 @@ pub fn hints(picker: &Picker) -> Vec<Hint> {
         return Vec::new();
     }
     let chord = crate::keymap::KeyChord::new;
+    // With the switch beside it, because this key is a switch and a switch
+    // whose state is not on screen is a key a reader has to press to find
+    // out which way it was -- the one thing a switch must never ask of
+    // them. The same control the settings page draws it with, so the two
+    // places say it the same way.
+    let offering = picker.offers_ignored();
     vec![
         Hint::common(
             chord(KeyCode::Char('i'), KeyModifiers::ALT),
             "ignored files",
         )
-        .saying("offer the files the tree ignores, or leave them out"),
+        .saying("offer the files the tree ignores, or leave them out")
+        .set(offering.unwrap_or(false))
+        .when(offering.is_some()),
     ]
 }
 

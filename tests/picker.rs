@@ -741,6 +741,72 @@ fn alt_i_turns_the_ignored_files_on_and_off() {
     assert!(!app.config().ignored_files, "the key only goes one way");
 }
 
+/// The foot says which way the key is set, so nobody has to press it to
+/// find out.
+///
+/// Broken deliberately by drawing the key and its word and nothing else:
+/// "ignored files" says what `alt+i` is about and not one thing about
+/// whether they are being offered, and a switch a reader has to flip to
+/// read is not a switch.
+#[test]
+fn the_foot_says_which_way_the_key_is_set() {
+    let scratch = support::Scratch::new("picker-switch");
+    let mut app = app();
+    app.config_file_for_test(scratch.join("config.toml"));
+    support::lay_out(&mut app, 72, 24);
+    press_function(&mut app, 1);
+
+    let knob = |app: &mut App| -> usize {
+        let dump = support::render(app, 72, 24);
+        let row = support::text_block(&dump)
+            .lines()
+            .find(|row| row.contains("ignored files"))
+            .unwrap_or_else(|| panic!("no foot:\n{dump}"))
+            .to_string();
+        support::column_of(&row, "\u{25a0}")
+    };
+
+    let off = knob(&mut app);
+    press_alt_key(&mut app, KeyCode::Char('i'));
+    let on = knob(&mut app);
+    assert!(
+        on > off,
+        "the switch did not slide: the knob was at {off} and is at {on}"
+    );
+    press_alt_key(&mut app, KeyCode::Char('i'));
+    assert_eq!(knob(&mut app), off, "it did not slide back");
+}
+
+/// And on the changed tab it says nothing, because there the key means
+/// nothing: those rows are git's answer, and git does not report a file it
+/// was told to ignore.
+#[test]
+fn the_key_is_not_offered_where_it_would_do_nothing() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.statuses_for_test(
+        [(
+            std::path::PathBuf::from("src/main.rs"),
+            obelus::git::FileStatus::Changed,
+        )]
+        .into_iter()
+        .collect(),
+    );
+    support::lay_out(&mut app, 72, 24);
+    press_function(&mut app, 1);
+    let all = support::render(&mut app, 72, 24);
+    assert!(
+        support::text_block(&all).contains("ignored files"),
+        "the key is not offered on the tab it works on:\n{all}"
+    );
+
+    press(&mut app, KeyCode::Right);
+    let changed = support::render(&mut app, 72, 24);
+    assert!(
+        !support::text_block(&changed).contains("ignored files"),
+        "the foot offers a key that would do nothing:\n{changed}"
+    );
+}
+
 /// And the walk leaves them out, or does not.
 #[test]
 fn the_walk_offers_the_ignored_files_only_when_asked() {

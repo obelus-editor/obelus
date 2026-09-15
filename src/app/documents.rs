@@ -109,7 +109,13 @@ impl App {
         if key.modifiers != KeyModifiers::ALT || key.code != KeyCode::Char('i') {
             return false;
         }
-        if !self.picker.as_ref().is_some_and(Picker::is_listing) {
+        // Only where the key means something: on the changed tab these rows
+        // are git's answer, and the foot greys it there.
+        if !self
+            .picker
+            .as_ref()
+            .is_some_and(|picker| picker.offers_ignored().is_some())
+        {
             return false;
         }
         // A tree that has pinned it has said so for everybody who opens it,
@@ -142,7 +148,11 @@ impl App {
                 let prefer = self
                     .current_buffer()
                     .map(|buffer| relative(buffer.path(), &self.working_directory));
+                let ignored = self.config().ignored_files;
                 if let Some(picker) = self.picker.as_mut() {
+                    // What the walk about to run was told, so the foot says
+                    // which way the key is set rather than guessing.
+                    picker.offering_ignored(Some(ignored));
                     picker.replace(Vec::new());
                     // Shown for the moment before the first batch arrives as
                     // well as for a tree with nothing in it, which is why it
@@ -168,6 +178,12 @@ impl App {
             Listing::Changed => {
                 // The walk in flight is answering the other tab's question.
                 self.walk_generation += 1;
+                // And what a tree ignores is not a question about this tab:
+                // these rows are git's answer about what has changed, and
+                // git does not report a file it was told to ignore.
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.offering_ignored(None);
+                }
                 let root = self.working_directory.clone();
                 let mut rows: Vec<(String, git::FileStatus)> = self
                     .statuses
