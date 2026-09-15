@@ -143,6 +143,28 @@ fn two_clicks_take_the_word_and_three_take_the_line() {
     );
 }
 
+/// The pointer moving with nothing held down moves nothing: it is noted,
+/// because a pointer that comes to rest is asking what is under it, and
+/// noted is all it is.
+#[test]
+fn moving_the_pointer_moves_nothing() {
+    let (_scratch, mut app) = editing("pointer-moved", "fn main() {\n    let name = 1;\n}\n");
+    let (x, y) = cell_of(&mut app, "name");
+    app.handle(Event::Pointer {
+        kind: Pointer::Moved,
+        x,
+        y,
+    });
+    assert_eq!(caret(&app), (0, 0), "the caret followed the pointer");
+    assert!(
+        app.current_buffer()
+            .and_then(|buffer| buffer.selection())
+            .is_none(),
+        "something was selected by a pointer with no button down"
+    );
+    assert!(app.hover().is_none(), "a question was asked with no server");
+}
+
 /// A list is what the screen is showing while it is up, so a click on the
 /// code behind it would move a caret nobody can see.
 #[test]

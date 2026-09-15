@@ -167,6 +167,11 @@ fn a_real_server_declares_the_characters_that_ask_for_a_completion() {
             "rust-analyzer no longer says {character:?} asks what a call takes"
         );
     }
+    // And what a place is, which is the third thing the panels ask.
+    assert!(
+        obelus::lsp::hover::supported(capabilities),
+        "rust-analyzer no longer answers textDocument/hover"
+    );
     assert!(
         !obelus::lsp::complete::resolves(capabilities),
         "rust-analyzer now resolves items, so the panel should be asking it to"

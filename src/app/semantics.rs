@@ -512,6 +512,10 @@ impl App {
                 self.on_completion(question.buffer, from, reply);
                 return;
             }
+            Asked::Hover { at, pointed } => {
+                self.on_hover(question.buffer, at, pointed, reply);
+                return;
+            }
             Asked::Signature { line } => {
                 self.on_signature(question.buffer, line, reply);
                 return;
@@ -1203,6 +1207,15 @@ pub(super) enum Asked {
     Completion {
         /// Where the word being completed starts.
         from: (LineNumber, CharColumn),
+    },
+    /// What a place in the file is.
+    Hover {
+        /// Which place, so that an answer about somewhere the reader has
+        /// left can be thrown away.
+        at: (LineNumber, CharColumn),
+        /// Whether the pointer asked, which decides what "still there"
+        /// means when the answer lands.
+        pointed: bool,
     },
     /// What the call the cursor is inside takes.
     Signature {

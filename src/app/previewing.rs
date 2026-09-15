@@ -176,6 +176,13 @@ impl App {
     /// something -- and otherwise the file, by rows, with the cursor left
     /// where it was put.
     pub(super) fn scroll(&mut self, rows: isize) {
+        // What a server said about a place, while it is up: it is what the
+        // reader is looking at, and the file behind it is not going
+        // anywhere.
+        if self.hover().is_some() {
+            self.scroll_hover(rows);
+            return;
+        }
         // What could be typed next, which is a list beside the cursor: a
         // notch walks it a row, the way a notch walks any list in obelus.
         if let Some(completion) = self.completion.as_mut() {

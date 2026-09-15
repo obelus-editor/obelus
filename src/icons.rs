@@ -261,6 +261,8 @@ pub fn for_command(command: crate::command::Command) -> char {
         // A lightbulb: what could be typed here is the one thing obelus
         // offers rather than answers.
         Command::SymbolComplete => '\u{f0335}',
+        // `md-tooltip`: what a thing is, said beside it.
+        Command::SymbolHover => '\u{f0523}',
         // `md-alert_circle_outline`: what is wrong with the file.
         Command::SymbolTroubles => '\u{f05d6}',
         // A list of what is in something, which is what an outline is.

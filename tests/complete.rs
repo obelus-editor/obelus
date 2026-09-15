@@ -686,6 +686,77 @@ mod against_a_real_server {
         );
     }
 
+    /// The pointer resting on a word asks what it is, which is the one
+    /// thing in obelus that happens because the reader did nothing.
+    #[test]
+    #[ignore = "starts a server and waits for the project to be read"]
+    fn the_pointer_resting_on_a_word_asks_what_it_is() {
+        use obelus::event::Pointer;
+
+        let Some((mut app, events)) = served() else {
+            return;
+        };
+        warm(&mut app, &events);
+        // Off the word `warm` left behind: a question about it is still in
+        // flight, and an answer landing later would put a list of
+        // candidates over the answer this test is about. Moving the caret
+        // away is what makes that answer be dropped.
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::Home);
+        support::press(&mut app, crossterm::event::KeyCode::Esc);
+
+        // Over a word of the file itself, found on screen rather than
+        // counted: what the pointer is over is a cell, and which cell that
+        // is depends on the gutter.
+        let dump = support::render(&mut app, 80, 24);
+        let rows: Vec<String> = support::text_block(&dump)
+            .lines()
+            .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
+            .collect();
+        let (y, x) = rows
+            .iter()
+            .enumerate()
+            .find_map(|(y, row)| row.find("JumpList").map(|x| (y, x)))
+            .unwrap_or_else(|| panic!("no name to point at:\n{dump}"));
+        app.handle(Event::Pointer {
+            kind: Pointer::Moved,
+            x: u16::try_from(x).expect("a column") + 2,
+            y: u16::try_from(y).expect("a row"),
+        });
+
+        assert!(
+            pump(&mut app, &events, ANSWER, |app| app.hover().is_some()),
+            "the pointer rested on a name and nothing was asked"
+        );
+        // Reaching for the answer with the pointer is not leaving it:
+        // every cell on the way is a pointer that has left the word, and
+        // an answer that vanished as you moved towards it could not be
+        // read to the end.
+        let panel = obelus::ui::hover::layout(&app, app.editor_area_for_test())
+            .expect("the answer is drawn somewhere");
+        app.handle(Event::Pointer {
+            kind: Pointer::Moved,
+            x: panel.x + 2,
+            y: panel.y + 1,
+        });
+        support::lay_out(&mut app, 80, 24);
+        assert!(
+            app.hover().is_some(),
+            "the answer went away as the pointer reached for it"
+        );
+
+        // And moving off it altogether takes it away.
+        app.handle(Event::Pointer {
+            kind: Pointer::Moved,
+            x: 1,
+            y: u16::try_from(y).expect("a row"),
+        });
+        assert!(
+            app.hover().is_none(),
+            "the answer stayed after the pointer left the word"
+        );
+    }
+
     /// A candidate that ends in that punctuation asks the next question as
     /// soon as it goes in: `std::` is the start of a name, not one.
     #[test]

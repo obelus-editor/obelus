@@ -23,6 +23,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::SymbolMenu => app.open_symbol_menu(),
         Command::SymbolComplete => app.ask_completion(),
         Command::SymbolOutline => app.open_outline(),
+        Command::SymbolHover => app.ask_hover(),
         Command::SymbolTroubles => app.open_troubles(),
         Command::SymbolDefinition
         | Command::SymbolTypeDefinition

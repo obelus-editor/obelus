@@ -21,6 +21,7 @@ mod counting;
 mod documents;
 mod history;
 mod history_view;
+mod hovering;
 mod noting;
 pub use history_view::About;
 mod keys;
@@ -36,7 +37,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::editing::motion_for;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use documents::Rendered;
@@ -58,6 +58,7 @@ use crate::{
         chat::{ChatOutcome, Room as ChatRoom},
         completion::Completion,
         counts::Counts,
+        hover::Hover,
         picker::{
             Colouring, Listing, Marking, Picker, PickerItem, PickerLayout, PickerOutcome,
             PickerValue, files,
@@ -66,6 +67,7 @@ use crate::{
         settings::{Settings, SettingsOutcome},
     },
     coordinates::{ByteOffset, CharColumn, LineNumber, Span},
+    editing::motion_for,
     event::{self, Event, Ticker},
     git, icons,
     jump::{Jump, JumpList},
@@ -211,6 +213,17 @@ pub struct App {
     completion: Option<Completion>,
     /// What the call the cursor is inside takes, while it is showing.
     signature: Option<crate::lsp::signature::Signature>,
+    /// What the server says the place under the caret is, while it is up.
+    hover: Option<Hover>,
+    /// Where the pointer is resting, since when, and whether that rest
+    /// has already asked its question.
+    ///
+    /// A hover on a rest is the one thing in obelus that happens because a
+    /// reader did *nothing*, so the doing-nothing has to be measured: the
+    /// same cell, still under the pointer when the next tick lands. The
+    /// asking is remembered because a pointer left on a word that has no
+    /// answer must ask about it once rather than twelve times a second.
+    resting: Option<Resting>,
     /// The holes left by a snippet, while the reader is filling them in.
     ///
     /// Character offsets into the document, moved by every edit. A snippet
@@ -432,6 +445,8 @@ impl App {
             asked: HashMap::new(),
             clicked: None,
             signature: None,
+            hover: None,
+            resting: None,
             troubles: HashMap::new(),
             completion: None,
             filling: None,
@@ -586,6 +601,15 @@ impl App {
         self.events = Some(sender);
     }
 
+    /// The region the editor was last drawn in.
+    ///
+    /// For a test that has to ask where something on screen is, which is
+    /// the one question a test about the pointer cannot avoid.
+    #[must_use]
+    pub const fn editor_area_for_test(&self) -> Rect {
+        self.editor_area
+    }
+
     /// Starts a language server for the open file, as the loop does.
     ///
     /// [`App::events_for_test`] deliberately leaves this out -- most tests
@@ -716,6 +740,19 @@ impl App {
         match self.completion.is_some() {
             true => None,
             false => self.signature.as_ref(),
+        }
+    }
+
+    /// What the server says the place under the caret is, while it is up.
+    ///
+    /// Not while either of the other two panels is: all three want the
+    /// cells beside the cursor, and of the three this is the question
+    /// asked longest ago.
+    #[must_use]
+    pub const fn hover(&self) -> Option<&Hover> {
+        match self.completion.is_some() || self.signature.is_some() {
+            true => None,
+            false => self.hover.as_ref(),
         }
     }
 
@@ -943,7 +980,9 @@ impl App {
         // A grammar too slow to keep up with typing leaves a tree owing an
         // answer, and the ticker is what comes back for it: the reader
         // stops, the next tick lands, and the colours catch up.
-        self.animate(self.wants_animating(doing.is_some()) || self.anything_behind());
+        self.animate(
+            self.wants_animating(doing.is_some()) || self.anything_behind() || self.is_resting(),
+        );
 
         // Which rows the list will draw is what decides which rows need
         // their matched characters worked out, and only the geometry knows
@@ -995,6 +1034,17 @@ impl App {
         // every way the document can move: a cursor that has left the word
         // is a panel about somewhere else.
         self.settle_completion();
+        // And the answer about a place, which the pointer resting is what
+        // asks for: this is where the resting is noticed.
+        self.settle_hover();
+        if let Some(hover) = self.hover.as_mut() {
+            // What it is drawn in, so that paging it moves what is on
+            // screen rather than a number nothing reads.
+            hover.settle(
+                ui::hover::room(editor_area),
+                crate::component::hover::MOST_ROWS,
+            );
+        }
         // How much room the panel's two halves have, which the keys need
         // as much as the drawing does: a page of documentation is the rows
         // of it that are on screen, and only the geometry knows how many
@@ -1512,6 +1562,13 @@ impl App {
             }
         }
 
+        // What the server said about a place. Before the panels below it
+        // because escape belongs to whatever is nearest, and it takes no
+        // other key from them: what it does not want, it closes itself for
+        // and lets through.
+        if self.hover_key(&key) {
+            return;
+        }
         // What could be typed next, while a server's answer is beside the
         // cursor. Before the motions and the typing, because the arrows
         // walk the list and `enter` takes what is selected -- and after
@@ -1646,11 +1703,16 @@ impl App {
         let cell = (x - area.x).saturating_sub(offset);
         let text = self.text_area();
 
+        // Where it is, whatever it is doing: the rest that asks a question
+        // is measured from the last place it was seen.
+        self.pointer_rested(x, y);
         let count = match kind {
             Pointer::Pressed => self.clicks_at(x, y),
             _ => 0,
         };
         match kind {
+            // Nothing but where it is, which was noted above.
+            Pointer::Moved => return,
             // Dragging is what a reader does to select, so the place they
             // put the button down stays put.
             Pointer::Dragged => {
@@ -1709,6 +1771,18 @@ impl App {
         self.clicked = Some((x, y, now, count));
         count
     }
+}
+
+/// The pointer, standing still.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Resting {
+    /// Which cell of the screen.
+    pub(super) x: u16,
+    pub(super) y: u16,
+    /// When it arrived there.
+    pub(super) since: std::time::Instant,
+    /// Whether this rest has asked what is under it.
+    pub(super) asked: bool,
 }
 
 /// A path as it should be read: relative to the root when it lies under it.

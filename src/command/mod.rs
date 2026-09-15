@@ -38,6 +38,8 @@ pub enum Command {
     SymbolMenu,
     /// Offer what could be typed where the cursor is.
     SymbolComplete,
+    /// What the language server says the place under the caret is.
+    SymbolHover,
     /// Everything the language server says is wrong with this file.
     SymbolTroubles,
     /// Every symbol this file defines, to jump to.
@@ -321,6 +323,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "What could be typed here",
     },
     CommandSpec {
+        command: Command::SymbolHover,
+        name: "describe-symbol",
+        title: "What this is",
+    },
+    CommandSpec {
         command: Command::SymbolTroubles,
         name: "show-problems",
         title: "What is wrong with this file",
@@ -574,6 +581,7 @@ impl Command {
             | Self::TodoOpen
             | Self::TodoAdd => Group::Files,
             Self::SymbolMenu
+            | Self::SymbolHover
             | Self::SymbolComplete
             | Self::SymbolTroubles
             | Self::SymbolOutline
@@ -636,7 +644,9 @@ impl Command {
             | Self::SymbolTypeDefinition
             | Self::SymbolImplementation
             | Self::SymbolReferences => Requires::AnAnswer,
-            Self::LspStop | Self::SymbolComplete => Requires::ARunningServer,
+            Self::LspStop | Self::SymbolComplete | Self::SymbolHover => {
+                Requires::ARunningServer
+            }
             // Not a running server: a file with nothing wrong with it is
             // the answer this gives, and it is worth giving.
             Self::SymbolTroubles => Requires::AFileOpen,

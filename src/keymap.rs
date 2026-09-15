@@ -566,6 +566,14 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Down, KeyModifiers::ALT),
                 },
+                // `alt+h` for what this is -- hover, which is what every
+                // editor calls it and what the protocol calls it, on the
+                // letter of the word like the rest of this family.
+                Binding {
+                    command: Command::SymbolHover,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('h'), KeyModifiers::ALT),
+                },
                 // `alt+e` for error: what the server says is wrong with
                 // this file, on the letter like the rest of this family.
                 Binding {

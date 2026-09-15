@@ -219,6 +219,12 @@ pub enum Event {
 /// What the pointer's button did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pointer {
+    /// Moved with nothing held down.
+    ///
+    /// Reported only by terminals that track motion, which is every one
+    /// obelus has been run on: it is what a rest is measured from, and
+    /// where there is none there is simply no hover on a rest.
+    Moved,
     /// Put down.
     Pressed,
     /// Moved with the button held.
@@ -256,6 +262,7 @@ impl Event {
                     // The left button only. The others are the terminal's
                     // own -- a paste on middle click, a menu on right --
                     // and taking them would be taking them away.
+                    MouseEventKind::Moved => pointer(Pointer::Moved),
                     MouseEventKind::Down(MouseButton::Left) => pointer(Pointer::Pressed),
                     MouseEventKind::Drag(MouseButton::Left) => pointer(Pointer::Dragged),
                     MouseEventKind::Up(MouseButton::Left) => pointer(Pointer::Released),

@@ -281,7 +281,9 @@ impl<'a> EditorView<'a> {
             buffer: app.current_buffer(),
             highlights: app.highlights(),
             theme: app.theme(),
-            marked: &[],
+            // The characters a hover is about, where one is up: the same
+            // mark a preview puts on the symbol it was opened for.
+            marked: app.hovered_range(),
             selection: app.current_buffer().and_then(Buffer::selection),
             troubles: app.troubles(),
             changes: app.changes(),

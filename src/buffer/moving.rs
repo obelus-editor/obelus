@@ -108,6 +108,33 @@ impl Buffer {
         }
     }
 
+    /// The place in the document a screen cell is over.
+    ///
+    /// What [`Buffer::place_at_cell`] works out before it moves anything,
+    /// for the caller that only wants to know: the pointer resting over a
+    /// word asks what the word is, and asking must not move the caret.
+    #[must_use]
+    pub fn place_of_cell(
+        &self,
+        row: u16,
+        cell: u16,
+        area: TextArea,
+    ) -> Option<(LineNumber, CharColumn)> {
+        let width = area.wrap_width();
+        let at = self.step_screen_rows(
+            (self.viewport.top, self.viewport.top_row),
+            isize::try_from(row).unwrap_or(0),
+            area,
+        );
+        let cell = DisplayColumn::new(
+            cell.saturating_add(u16::try_from(self.viewport.left).unwrap_or(u16::MAX)),
+        );
+        // A row an opened hunk drew is a commit's version of those lines,
+        // which is not a place in this document.
+        let (line, row) = self.text_row_at(at, area)?;
+        Some((line, self.text().column_in_row(line, row, cell, width)))
+    }
+
     /// Moves the caret without letting go of what is selected.
     ///
     /// What a pointer dragged across the text means, and what a click with
@@ -818,6 +845,46 @@ impl Buffer {
     /// `None` when it is not on screen, which after
     /// [`Buffer::scroll_into_view`] means the text area has no room at all.
     #[must_use]
+    /// Where a place in the text is on screen, as a row and a cell of the
+    /// text area.
+    ///
+    /// The other direction of [`Buffer::place_of_cell`], and the same
+    /// question [`Buffer::cursor_screen_cell`] answers about the caret --
+    /// which is its own function because the caret can be somewhere a
+    /// place in the text cannot: inside the lines an opened hunk is
+    /// showing, which belong to a commit rather than to this document.
+    ///
+    /// `None` for a place that is not on screen, which is the honest
+    /// answer for anything hung off it: there is nowhere to hang it.
+    #[must_use]
+    pub fn cell_of_place(
+        &self,
+        line: LineNumber,
+        column: CharColumn,
+        area: TextArea,
+    ) -> Option<(u16, u16)> {
+        let width = area.wrap_width();
+        let (row_in_line, cell) = self.text().visual_position(line, column, width);
+        let left = u16::try_from(self.viewport.left).ok()?;
+        let cell = cell.get().checked_sub(left)?;
+        if cell >= area.width {
+            return None;
+        }
+        let wanted = (line, self.rows_above(line, width) + row_in_line);
+        let mut at = (self.viewport.top, self.viewport.top_row);
+        for row in 0..area.height {
+            if at == wanted {
+                return Some((row, cell));
+            }
+            let next = self.step_screen_rows(at, 1, area);
+            if next == at {
+                return None;
+            }
+            at = next;
+        }
+        None
+    }
+
     pub fn cursor_screen_cell(&self, area: TextArea) -> Option<(u16, u16)> {
         let cell = self.caret_cell(area);
         let cursor = self.cursor_screen_row(area);

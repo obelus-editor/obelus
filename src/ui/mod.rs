@@ -10,6 +10,7 @@ pub mod chat;
 pub mod complete;
 pub mod counts;
 pub mod editor;
+pub mod hover;
 pub mod image;
 pub mod picker;
 pub mod reading;
@@ -380,6 +381,12 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // to give a signature while there is a list of candidates.
     if let Some(panel) = signature::layout(app, regions.editor) {
         signature::draw(cells, panel, app);
+    }
+    // And what the thing under the caret *is*, which is the question
+    // furthest back of the three -- so it is drawn last and its own
+    // accessor gives nothing while either of the others is up.
+    if let Some(panel) = hover::layout(app, regions.editor) {
+        hover::draw(cells, panel, app);
     }
     status::StatusView::new(app).render(regions.status, cells);
 }
