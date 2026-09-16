@@ -800,3 +800,75 @@ fn the_words_keys_work_in_a_note_too() {
         "it took out more than a word: {said:?}"
     );
 }
+
+/// A note somebody else added while the list was open is not written over.
+///
+/// obelus writes the whole file from what it holds, so the window that
+/// matters is exactly this: the list is open, another obelus -- or the
+/// reader's own editor -- writes the file, and then something here saves.
+/// Without hearing about the change, the save puts the file back the way it
+/// was and the other note is gone.
+///
+/// Driven through `Event::FileChanged`, which is what the watcher sends: a
+/// real watch would take a moment to notice and a test should not be about
+/// how long.
+#[test]
+fn a_note_added_from_outside_survives_the_next_save() {
+    let scratch = tree("outside", "[[todo]]\nsaid = \"the first\"\ndone = false\n");
+    let mut app = open(&scratch, 76, 24);
+    let file = scratch.path().join(".obelus").join("todo.toml");
+
+    // Somebody else, with the list open. Their file keeps obelus's note --
+    // they read it before writing, as obelus would -- and adds one.
+    let theirs = std::fs::read_to_string(&file).expect("the notes");
+    std::fs::write(
+        &file,
+        format!("{theirs}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"),
+    )
+    .expect("their write");
+    app.handle(Event::FileChanged { path: file.clone() });
+
+    // And now the reader does something that saves: leaving does.
+    press(&mut app, KeyCode::Esc);
+
+    let after = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        after.contains("theirs"),
+        "the note added from outside was written over:\n{after}"
+    );
+    assert!(after.contains("the first"), "obelus lost its own:\n{after}");
+}
+
+/// And what the reader is part-way through typing survives it too.
+///
+/// The re-read swaps the notes underneath them, so the two things that are
+/// theirs -- the note the caret is in and the words in the box -- are put
+/// back by name. Losing a half-written note to somebody else's save would
+/// be a worse bug than the one the watch is here to fix.
+#[test]
+fn a_note_being_written_survives_someone_else_saving() {
+    let scratch = tree("writing", "[[todo]]\nsaid = \"the first\"\ndone = false\n");
+    let mut app = open(&scratch, 76, 24);
+    let file = scratch.path().join(".obelus").join("todo.toml");
+
+    // The caret opens at the very start of the first note, so this goes in
+    // front of what is there. What matters is that it is still there after.
+    support::type_text(&mut app, "half-written ");
+
+    let theirs = std::fs::read_to_string(&file).expect("the notes");
+    std::fs::write(
+        &file,
+        format!("{theirs}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"),
+    )
+    .expect("their write");
+    app.handle(Event::FileChanged { path: file.clone() });
+
+    press(&mut app, KeyCode::Esc);
+
+    let after = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        after.contains("half-written the first"),
+        "what was being typed was lost:\n{after}"
+    );
+    assert!(after.contains("theirs"), "their note was lost:\n{after}");
+}

@@ -47,20 +47,57 @@ impl App {
         if todo.minted {
             self.save_notes(&todo);
         }
-        let where_now = todo
-            .notes
+        let where_now = self.where_the_notes_point(&todo);
+        // How wide a note's text is here, and whether it wraps: the rows
+        // depend on both, and the view has to be laid out before anything
+        // asks it how many rows it has.
+        let laid = self.notes_laid_out();
+        self.notes = Some(TodoView::new(todo, where_now, laid));
+        // Heard about for as long as the page is showing, which is the
+        // window that matters: obelus writes the whole file from what it
+        // holds, so a change made while the reader has the list open is a
+        // change the next save would put back the way it was.
+        if let Some(watcher) = self.watcher.as_mut()
+            && let Err(error) = watcher.watch(&crate::todo::path(&self.working_directory))
+        {
+            tracing::debug!(%error, "not watching what the tree means to come back to");
+        }
+    }
+
+    /// Where each note points now, which is a question for git and the disk.
+    fn where_the_notes_point(&self, todo: &Todo) -> Vec<Option<LineNumber>> {
+        todo.notes
             .iter()
             .map(|note| {
                 note.at
                     .as_ref()
                     .and_then(|at| crate::todo::where_now(&self.working_directory, at))
             })
-            .collect();
-        // How wide a note's text is here, and whether it wraps: the rows
-        // depend on both, and the view has to be laid out before anything
-        // asks it how many rows it has.
-        let laid = self.notes_laid_out();
-        self.notes = Some(TodoView::new(todo, where_now, laid));
+            .collect()
+    }
+
+    /// Whether a path that changed is the file the notes are kept in.
+    #[must_use]
+    pub(super) fn is_the_notes_file(&self, path: &std::path::Path) -> bool {
+        path == crate::todo::path(&self.working_directory)
+    }
+
+    /// Takes the file again, because somebody else wrote it.
+    ///
+    /// Only while the page is showing: with it shut there is nothing to
+    /// keep in step, and the next open reads the file anyway.
+    pub(super) fn reread_notes(&mut self) {
+        if self.notes.is_none() {
+            return;
+        }
+        let todo = Todo::read(&self.working_directory);
+        if todo.minted {
+            self.save_notes(&todo);
+        }
+        let where_now = self.where_the_notes_point(&todo);
+        if let Some(notes) = self.notes.as_mut() {
+            notes.reread(todo, where_now);
+        }
     }
 
     /// Writes one down about the line being read.

@@ -1086,6 +1086,9 @@ impl App {
                     self.save_notes(&todo);
                 }
                 self.notes = None;
+                if let Some(watcher) = self.watcher.as_mut() {
+                    watcher.unwatch(&crate::todo::path(&self.working_directory));
+                }
             }
             Layer::Settings => self.settings = None,
             Layer::Counts => self.counts = None,
@@ -1420,6 +1423,10 @@ impl App {
                     // the name in the settings has not moved, and what it
                     // stands for has.
                     self.reread_theme();
+                } else if self.is_the_notes_file(&path) {
+                    // What the tree means to come back to, written by
+                    // somebody who is not this obelus.
+                    self.reread_notes();
                 } else if crate::git::state_moved(&path) {
                     self.forget_what_git_said();
                 } else {

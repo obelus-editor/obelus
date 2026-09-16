@@ -135,6 +135,73 @@ pub struct TodoView {
 }
 
 impl TodoView {
+    /// Takes the file again, keeping what the reader was doing.
+    ///
+    /// Somebody else has written it -- a second obelus, or the reader's own
+    /// editor -- and what they wrote is now what the file says. Reopening
+    /// the view would be the simple answer and would throw away the note
+    /// being written, so instead the notes are swapped and the two things
+    /// that are the reader's are put back by *name*: which note the caret
+    /// is in, and which one they are part-way through typing.
+    ///
+    /// A note being typed into that somebody else has deleted is kept, at
+    /// the end. The reader is looking at it and has their hands on it; the
+    /// other writer did not know that, and of the two of them only one is
+    /// here to be surprised.
+    pub fn reread(&mut self, todo: Todo, where_now: Vec<Option<LineNumber>>) {
+        // The box itself is what carries across, not what it would have
+        // written: `keep` takes the box with it, and what it writes into is
+        // a copy of the notes this is about to throw away. So the note is
+        // taken for its name and the box is kept whole -- which also keeps
+        // the caret where the reader left it.
+        let writing = self
+            .writing
+            .take()
+            .and_then(|(at, composer)| Some((self.todo.notes.get(at)?.clone(), composer)));
+        let focused = self.selected_note().map(|note| note.id.clone());
+
+        self.todo = todo;
+        self.where_now = where_now;
+
+        let writing = writing.map(|(note, composer)| {
+            let at = self.todo.notes.iter().position(|other| other.id == note.id);
+            let at = at.unwrap_or_else(|| {
+                self.todo.notes.push(note);
+                self.where_now.push(None);
+                self.todo.notes.len() - 1
+            });
+            (at, composer)
+        });
+        self.rebuild();
+
+        // The caret back where it was, by name. A note that has gone leaves
+        // the reader at the top, which is where a list with nothing to
+        // return to puts them.
+        if let Some(id) = focused {
+            self.focus(&id);
+        }
+        self.writing = writing;
+        self.follow_caret();
+    }
+
+    /// Puts the selection on the note with this name, if it is still there.
+    ///
+    /// By name rather than by position, which is the whole reason a note has
+    /// one: the list is read from the file every time it opens, and a note
+    /// inserted above moves every position below it.
+    pub fn focus(&mut self, to: &crate::todo::NoteId) {
+        let Some(at) = self.todo.notes.iter().position(|note| note.id == *to) else {
+            return;
+        };
+        if let Some(row) = self
+            .rows
+            .iter()
+            .position(|row| row.note == at && !row.place)
+        {
+            self.window.set_focus(row);
+        }
+    }
+
     /// Opens the view over what a tree has, with where each note points
     /// worked out.
     #[must_use]
