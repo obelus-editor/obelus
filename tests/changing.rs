@@ -200,6 +200,114 @@ fn an_edit_obelus_will_not_make_is_declined() {
     assert!(open.exists(), "the file was deleted");
 }
 
+/// A save asks what to do about the imports, and says which kind it
+/// means.
+///
+/// The one code action obelus sends without being asked, so it is the one
+/// that has to say `only`: a request with no kind on it comes back with
+/// every refactoring near the cursor, and applying one of those to a file
+/// somebody pressed save on would be obelus editing their code on its own
+/// account.
+#[test]
+fn a_save_asks_about_the_imports_and_only_about_those() {
+    use obelus::syntax::LanguageId;
+
+    let (_scratch, mut app, open, _closed) = project("save-imports");
+    let (sender, heard) = obelus::event::channel();
+    app.events_for_test(sender);
+    assert!(
+        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        "the echo would not start"
+    );
+    app.declared_for_test(LanguageId::Rust, json!({ "codeActionProvider": true }));
+    app.configure(
+        obelus::config::Config {
+            organize_imports_on_save: true,
+            ..obelus::config::Config::default()
+        },
+        Vec::new(),
+    );
+
+    support::type_text(&mut app, "\n");
+    support::press_control(&mut app, 's');
+
+    // Nothing is written yet: the save is waiting on the answer.
+    assert_eq!(
+        text_of(&open),
+        "fn thing() {}\n\nfn main() {\n    thing();\n}\n",
+        "the file was written before the server had answered"
+    );
+
+    // What went out, read back off the wire by a server that echoes.
+    let asked = heard_request(&heard, "textDocument/codeAction").expect("the question");
+    assert_eq!(
+        asked["params"]["context"]["only"],
+        json!(["source.organizeImports"]),
+        "the save asked for everything the cursor is near: {asked}"
+    );
+    assert_eq!(
+        asked["params"]["range"]["start"],
+        json!({ "line": 0, "character": 0 }),
+        "the question is not about the whole file: {asked}"
+    );
+    assert!(
+        asked["params"]["context"]["diagnostics"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "a question about imports carried diagnostics: {asked}"
+    );
+
+    // And the answer finishes the save it stopped.
+    app.organizing_for_test(json!([
+        { "title": "Organize imports", "kind": "source.organizeImports",
+          "edit": { "changes": { format!("file://{}", open.display()): [
+              { "range": { "start": { "line": 0, "character": 0 },
+                           "end": { "line": 0, "character": 0 } },
+                "newText": "use std::fmt;\n" }
+          ] } } }
+    ]));
+    // On disk, with the tidying in it: the answer both made the edit and
+    // finished the save it had stopped.
+    let written = text_of(&open);
+    assert!(
+        written.starts_with("use std::fmt;\n"),
+        "the tidying did not reach the file: {written:?}"
+    );
+    assert!(
+        written.contains("fn thing() {}"),
+        "the file lost what was in it: {written:?}"
+    );
+    assert!(
+        !app.current_buffer().expect("a buffer").is_dirty(),
+        "the save never finished"
+    );
+}
+
+/// And with the switch off it asks nobody anything.
+#[test]
+fn a_save_leaves_the_imports_alone_unless_asked() {
+    use obelus::syntax::LanguageId;
+
+    let (_scratch, mut app, open, _closed) = project("save-plain");
+    let (sender, heard) = obelus::event::channel();
+    app.events_for_test(sender);
+    assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
+    app.declared_for_test(LanguageId::Rust, json!({ "codeActionProvider": true }));
+
+    support::type_text(&mut app, "\n");
+    support::press_control(&mut app, 's');
+
+    assert!(
+        heard_request(&heard, "textDocument/codeAction").is_none(),
+        "a setting nobody turned on asked a server something"
+    );
+    assert!(
+        text_of(&open).starts_with('\n'),
+        "the file was not written: {:?}",
+        text_of(&open)
+    );
+}
+
 /// Every edit lands where the server wrote it, which means making them
 /// from the end backwards.
 #[test]
@@ -275,6 +383,55 @@ fn a_rename_of_a_file_that_has_changed_is_refused() {
     );
 }
 
+/// Offers worked out against a file that has moved since are refused.
+///
+/// The ranges in them are places in the text as it was, and the damage a
+/// stale one does is quiet: an old line and column is usually still a
+/// real place in the new text, so the edit lands somewhere wrong rather
+/// than failing. The same guard a rename has, at both of this one's two
+/// windows -- the list, and the round trip that fills an offer in.
+#[test]
+fn offers_about_a_file_that_has_changed_are_refused() {
+    let (_scratch, mut app, open, _closed) = project("actions-stale");
+    let offer = json!([
+        { "title": "Remove unused import", "kind": "quickfix",
+          "edit": { "changes": { format!("file://{}", open.display()): [
+              { "range": { "start": { "line": 0, "character": 0 },
+                           "end": { "line": 1, "character": 0 } }, "newText": "" }
+          ] } } }
+    ]);
+    support::press(&mut app, KeyCode::End);
+    support::type_text(&mut app, "x");
+    let version = app.current_buffer().expect("a buffer").version();
+
+    app.actions_at_version_for_test(offer.clone(), version - 1);
+    assert!(app.picker().is_none(), "offers about the file as it was");
+    assert!(
+        app.note().unwrap_or_default().contains("changed while"),
+        "the reader was not told why nothing happened"
+    );
+
+    // And the longer window: the list has closed, the server is filling
+    // the offer in, and the reader has the keys back the whole time.
+    app.actions_for_test(offer);
+    support::press(&mut app, KeyCode::Esc);
+    support::type_text(&mut app, "y");
+    let text = open_text(&app);
+    app.action_at_version_for_test(
+        json!({ "title": "Remove unused import", "kind": "quickfix",
+                "edit": { "changes": { format!("file://{}", open.display()): [
+                    { "range": { "start": { "line": 0, "character": 0 },
+                                 "end": { "line": 1, "character": 0 } }, "newText": "" }
+                ] } } }),
+        version,
+    );
+    assert_eq!(
+        open_text(&app),
+        text,
+        "an edit worked out against the file as it was went in anyway"
+    );
+}
+
 /// The things a server offers to do are a list, and choosing one does it.
 #[test]
 fn what_can_be_done_here_is_a_list_and_choosing_one_does_it() {
@@ -334,4 +491,29 @@ fn nothing_offered_is_said_rather_than_listed() {
         app.note().unwrap_or_default().contains("nothing to do"),
         "the reader was not told"
     );
+}
+
+/// The first message of a kind that obelus wrote, as the echo gave it
+/// back.
+///
+/// `None` when nothing of that kind arrives within a moment, which is
+/// the answer for "it asked nobody anything": there is no event to wait
+/// for when the point is that none is coming.
+fn heard_request(
+    heard: &std::sync::mpsc::Receiver<obelus::event::Event>,
+    method: &str,
+) -> Option<serde_json::Value> {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while let Some(left) = until.checked_duration_since(std::time::Instant::now()) {
+        match heard.recv_timeout(left) {
+            Ok(obelus::event::Event::Lsp { message, .. })
+                if message.get("method").and_then(serde_json::Value::as_str) == Some(method) =>
+            {
+                return Some(message);
+            }
+            Ok(_) => {}
+            Err(_) => return None,
+        }
+    }
+    None
 }

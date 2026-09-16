@@ -771,10 +771,23 @@ impl App {
     /// that moved comes back here too, having settled the one thing the
     /// command stopped for.
     pub(super) fn save_now(&mut self, index: usize) {
-        // Laid out first, where the reader asked for that and somebody can
-        // do it. The answer comes back later and writes the file then --
-        // the alternative is holding the whole program still waiting for
-        // another process to reply.
+        // The imports first, where that was asked for. Before the layout
+        // because tidying them changes the text and the layout is about
+        // the text that ends up written -- and each step is a round trip
+        // whose answer picks the next one up, rather than the whole
+        // program being held still waiting for another process to reply.
+        if self.settled.config.organize_imports_on_save && self.ask_organize_imports(index) {
+            self.note = Some("tidying the imports\u{2026}".to_string());
+            return;
+        }
+        self.format_then_write(index);
+    }
+
+    /// The rest of a save: laid out where that was asked for, and written.
+    ///
+    /// Its own step because the imports come first and their answer
+    /// arrives here, having settled the one thing it stopped for.
+    pub(super) fn format_then_write(&mut self, index: usize) {
         if self.settled.config.format_on_save && self.ask_formatting(index) {
             self.note = Some("laying it out\u{2026}".to_string());
             return;

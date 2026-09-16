@@ -527,6 +527,36 @@ impl App {
         self.asked.insert((language, request), question);
     }
 
+    /// Tells a stand-in server's client what that server can do.
+    ///
+    /// Through the handshake reply, which is how a real one arrives: what
+    /// the client ends up holding is then whatever the real path would
+    /// have put there, and the queue it was holding goes out.
+    pub fn declared_for_test(&mut self, language: LanguageId, capabilities: serde_json::Value) {
+        if let Some(client) = self.servers.get_mut(&language) {
+            client.on_message(&serde_json::json!({
+                "id": 0, "result": { "capabilities": capabilities },
+            }));
+        }
+    }
+
+    /// Whether a document is still the one a question was asked about.
+    ///
+    /// Every answer that names places in a text turns on this, and they
+    /// all mean the same thing by it: the ranges a server sent are places
+    /// in the file as it was, and a file that has changed has moved them.
+    /// The damage a stale answer does is quiet -- an old line and column
+    /// is usually still a real place in the new text, so the edit lands
+    /// somewhere wrong rather than failing.
+    #[must_use]
+    pub(super) fn unmoved(&self, id: BufferId, version: i32) -> bool {
+        self.buffers
+            .get(id.get())
+            .and_then(Option::as_ref)
+            .map(Buffer::version)
+            == Some(version)
+    }
+
     /// How many messages have gone to the servers.
     ///
     /// For a test about a notification that has no answer: nothing comes
@@ -550,8 +580,15 @@ impl App {
         language: LanguageId,
         command: &'static str,
     ) -> bool {
-        let (sender, receiver) = crate::event::channel();
-        drop(receiver);
+        // The application's own channel where it has one, so that a test
+        // holding the other end of it reads whatever obelus writes -- a
+        // server that echoes turns the wire into something a test can
+        // assert about. A throwaway otherwise.
+        let sender = self.events.clone().unwrap_or_else(|| {
+            let (sender, receiver) = crate::event::channel();
+            drop(receiver);
+            sender
+        });
         let server = lsp::Server {
             command,
             arguments: &[],
@@ -614,11 +651,19 @@ impl App {
                 return;
             }
             Asked::Actions => {
-                self.on_actions(reply);
+                self.on_actions(question.buffer, question.version, reply);
+                return;
+            }
+            Asked::Organizing => {
+                self.on_organizing(question.buffer, question.version, reply);
+                return;
+            }
+            Asked::Organized => {
+                self.on_organized(question.buffer, question.version, reply);
                 return;
             }
             Asked::Action { at } => {
-                self.on_action(at, reply);
+                self.on_action(at, question.buffer, question.version, reply);
                 return;
             }
             Asked::Rename => {
@@ -1018,12 +1063,7 @@ impl App {
     /// applying them in order would be applying each one to a document the
     /// last one changed, so they go in from the bottom up.
     fn on_formatting(&mut self, id: BufferId, version: i32, reply: Reply) {
-        let now = self
-            .buffers
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .map(Buffer::version);
-        if now != Some(version) {
+        if !self.unmoved(id, version) {
             tracing::debug!("the file changed while it was being laid out");
             self.note = Some("the file changed while formatting".to_string());
         } else if let Some(edits) = action::edits_in(reply.result.ok()) {
@@ -1330,6 +1370,11 @@ pub(super) enum Asked {
     Rename,
     /// What can be done about where the reader is.
     Actions,
+    /// What the server would do to this file's imports, asked because it
+    /// is about to be written.
+    Organizing,
+    /// That one, filled in.
+    Organized,
     /// One of those, filled in.
     Action {
         /// Which of the offers, by its place in the list.

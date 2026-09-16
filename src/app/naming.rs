@@ -95,14 +95,8 @@ impl App {
 
     /// Keeps what a server said, if it is still about what is on screen.
     pub(super) fn on_uses(&mut self, id: BufferId, version: i32, reply: Reply) {
-        // The document it was asked about, unchanged since: these are
-        // places in a text, and a text that has moved has moved them.
-        let still = self
-            .buffers
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .is_some_and(|buffer| buffer.version() == version);
-        if self.current != Some(id) || !still {
+        // The document it was asked about, unchanged since.
+        if self.current != Some(id) || !self.unmoved(id, version) {
             return;
         }
         let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {

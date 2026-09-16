@@ -10,6 +10,12 @@
 use super::*;
 use crate::lsp::actions;
 
+/// The kind a server files "sort the imports out" under.
+///
+/// A prefix: the protocol's kinds are dotted paths and a server may
+/// answer with something under this one.
+const ORGANIZE_IMPORTS: &str = "source.organizeImports";
+
 impl App {
     /// Asks what can be done about the selection, or the line the cursor
     /// is on.
@@ -93,7 +99,17 @@ impl App {
     }
 
     /// Lists what the server offered.
-    pub(super) fn on_actions(&mut self, reply: Reply) {
+    ///
+    /// Refused where the document has moved since it was asked. Every
+    /// range in every offer is a place in the file as it was, and a file
+    /// that has changed has moved them: the offers would still apply, to
+    /// the wrong text, without anything going wrong loudly enough to
+    /// notice.
+    pub(super) fn on_actions(&mut self, id: BufferId, version: i32, reply: Reply) {
+        if !self.unmoved(id, version) {
+            self.note = Some("the file changed while asking".to_string());
+            return;
+        }
         let offered = actions::offered_in(&reply.result);
         if offered.is_empty() {
             self.note = Some("nothing to do here".to_string());
@@ -186,7 +202,16 @@ impl App {
     }
 
     /// Takes a filled-in action and does it.
-    pub(super) fn on_action(&mut self, at: usize, reply: Reply) {
+    ///
+    /// The other half of the same guard. This is the longer window of the
+    /// two: the list has closed by now, so the keys are the document's
+    /// again and the reader can type the whole time the server is working
+    /// the edit out.
+    pub(super) fn on_action(&mut self, at: usize, id: BufferId, version: i32, reply: Reply) {
+        if !self.unmoved(id, version) {
+            self.note = Some("the file changed while asking".to_string());
+            return;
+        }
         let Ok(result) = reply.result else {
             self.note = Some("the server could not work that out".to_string());
             return;
@@ -243,12 +268,216 @@ impl App {
         }
     }
 
+    /// Asks what the server would do to this file's imports, because it
+    /// is about to be written.
+    ///
+    /// The one code action obelus sends without being asked, which is why
+    /// it is the one that says `only`: a request with no kind on it comes
+    /// back with every refactoring the cursor is near, and applying one of
+    /// those to a file somebody pressed save on would be obelus editing
+    /// their code on its own account.
+    ///
+    /// Says whether anybody was asked. A save nobody could tidy goes ahead
+    /// untidied rather than waiting for an answer that is not coming.
+    pub(super) fn ask_organize_imports(&mut self, index: usize) -> bool {
+        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+            return false;
+        };
+        let (Some(language), true) = (buffer.language(), buffer.content().is_file()) else {
+            return false;
+        };
+        let Ok(uri) = lsp::client::uri_for(buffer.path()) else {
+            return false;
+        };
+        let version = buffer.version();
+        // The whole file. Imports are the top of it and the question is
+        // about all of them, so a range around the cursor would be asking
+        // about whichever ones the reader happens to be near.
+        let lines = buffer.text().line_count();
+        let Some(client) = self.servers.get_mut(&language) else {
+            return false;
+        };
+        if !client.capabilities().is_some_and(actions::supported) {
+            return false;
+        }
+        let params = serde_json::json!({
+            "textDocument": { "uri": uri },
+            "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": lines, "character": 0 },
+            },
+            "context": { "diagnostics": [], "only": [ORGANIZE_IMPORTS] },
+        });
+        match client.request("textDocument/codeAction", &params) {
+            Ok(request) => {
+                self.remember(
+                    language,
+                    request,
+                    Question {
+                        asked: Asked::Organizing,
+                        buffer: BufferId::new(index),
+                        version,
+                    },
+                );
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, "not asking about the imports");
+                false
+            }
+        }
+    }
+
+    /// Takes what the server offered and either does it or asks for it in
+    /// full, and gets on with the save either way.
+    pub(super) fn on_organizing(&mut self, id: BufferId, version: i32, reply: Reply) {
+        if !self.unmoved(id, version) {
+            // Not a note: the reader pressed save, the save is what they
+            // are waiting for, and the imports were obelus's own idea.
+            tracing::debug!("the file changed while its imports were being looked at");
+            self.write_now(id.get());
+            return;
+        }
+        let Some(action) = actions::offered_in(&reply.result)
+            .into_iter()
+            .find(|action| {
+                action
+                    .kind
+                    .as_deref()
+                    .is_some_and(|kind| kind.starts_with(ORGANIZE_IMPORTS))
+            })
+        else {
+            // A server with nothing to say about the imports, which is
+            // most of them: rust-analyzer offers nothing under `source.`
+            // at all.
+            self.format_then_write(id.get());
+            return;
+        };
+        if action.unresolved() && self.resolve_organized(id, version, &action) {
+            return;
+        }
+        self.tidy_with(id, action.edit());
+    }
+
+    /// Asks for the edit of an offer that arrived without one.
+    fn resolve_organized(&mut self, id: BufferId, version: i32, action: &actions::Action) -> bool {
+        let Some(language) = self
+            .buffers
+            .get(id.get())
+            .and_then(Option::as_ref)
+            .and_then(Buffer::language)
+        else {
+            return false;
+        };
+        let item = action.item.clone();
+        let Some(client) = self.servers.get_mut(&language) else {
+            return false;
+        };
+        if !client.capabilities().is_some_and(actions::resolves) {
+            return false;
+        }
+        match client.request("codeAction/resolve", &item) {
+            Ok(request) => {
+                self.remember(
+                    language,
+                    request,
+                    Question {
+                        asked: Asked::Organized,
+                        buffer: id,
+                        version,
+                    },
+                );
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// The filled-in offer, made.
+    pub(super) fn on_organized(&mut self, id: BufferId, version: i32, reply: Reply) {
+        if !self.unmoved(id, version) {
+            tracing::debug!("the file changed while its imports were being worked out");
+            self.write_now(id.get());
+            return;
+        }
+        let wanted = reply
+            .result
+            .ok()
+            .map(|result| crate::lsp::edits::wanted_in(&result));
+        self.tidy_with(id, wanted);
+    }
+
+    /// Makes the edit, if there is one, and carries on saving.
+    fn tidy_with(&mut self, id: BufferId, wanted: Option<crate::lsp::edits::Wanted>) {
+        if let Some(wanted) = wanted
+            && !wanted.is_empty()
+        {
+            // Through the same machine as a rename, which means a server
+            // that named another file gets that file opened rather than
+            // written -- this save is about the one document.
+            self.apply_wanted(&wanted);
+        }
+        // Whatever happened, the reader is still waiting to be saved.
+        self.format_then_write(id.get());
+    }
+
+    /// Hands obelus a filled-in offer worked out against a version of the
+    /// document that has been left behind.
+    pub fn action_at_version_for_test(&mut self, answer: serde_json::Value, version: i32) {
+        let Some(id) = self.current else { return };
+        self.on_action(
+            0,
+            id,
+            version,
+            Reply {
+                id: 0,
+                result: Ok(answer),
+            },
+        );
+    }
+
+    /// Hands obelus what a server said about the imports, mid-save.
+    pub fn organizing_for_test(&mut self, answer: serde_json::Value) {
+        let Some(id) = self.current else { return };
+        let version = self.current_buffer().map_or(0, Buffer::version);
+        self.on_organizing(
+            id,
+            version,
+            Reply {
+                id: 0,
+                result: Ok(answer),
+            },
+        );
+    }
+
     /// Hands obelus a list of offers, as a server would.
     pub fn actions_for_test(&mut self, answer: serde_json::Value) {
-        self.on_actions(Reply {
-            id: 0,
-            result: Ok(answer),
-        });
+        let Some(id) = self.current else { return };
+        let version = self
+            .current_buffer()
+            .map_or(0, crate::buffer::Buffer::version);
+        self.on_actions(
+            id,
+            version,
+            Reply {
+                id: 0,
+                result: Ok(answer),
+            },
+        );
+    }
+
+    /// The same, about a version of the document that has been left
+    /// behind -- which is what a late answer is.
+    pub fn actions_at_version_for_test(&mut self, answer: serde_json::Value, version: i32) {
+        let Some(id) = self.current else { return };
+        self.on_actions(
+            id,
+            version,
+            Reply {
+                id: 0,
+                result: Ok(answer),
+            },
+        );
     }
 }
 

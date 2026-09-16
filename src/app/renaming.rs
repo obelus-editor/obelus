@@ -131,12 +131,7 @@ impl App {
     /// not that file. A reader whose rename is refused can ask again, where
     /// one whose rename lands two characters out has a mess to find.
     pub(super) fn on_rename(&mut self, id: BufferId, version: i32, reply: Reply) {
-        let now = self
-            .buffers
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .map(Buffer::version);
-        if now != Some(version) {
+        if !self.unmoved(id, version) {
             self.note = Some("the file changed while renaming".to_string());
             return;
         }
