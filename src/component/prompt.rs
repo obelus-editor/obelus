@@ -151,6 +151,19 @@ impl Prompt {
         self.text.put(said);
     }
 
+    /// Puts the answer's caret where a cell of its row is.
+    pub fn place_at_cell(&mut self, cell: u16, extend: bool) {
+        self.text.place_at_cell(cell, extend);
+    }
+
+    /// Takes hold of the word under the caret, or of the whole answer.
+    pub fn hold(&mut self, all: bool) {
+        match all {
+            true => self.text.hold_all(),
+            false => self.text.hold_word(),
+        }
+    }
+
     /// What a copy takes from the answer: what is held, or all of it.
     #[must_use]
     pub fn copied(&self) -> (String, &'static str) {

@@ -1770,6 +1770,81 @@ impl App {
 }
 
 impl App {
+    /// What the pointer did to a box on the status row, and whether it was
+    /// one of those.
+    ///
+    /// The nearest thing on screen, so it is asked first -- and it answers
+    /// for every click on that row, including one that lands past the end
+    /// of what was typed: the row is the box, and a click on it is a click
+    /// in the box.
+    fn pointer_on_status(&mut self, kind: crate::event::Pointer, x: u16, y: u16) -> bool {
+        use crate::event::Pointer;
+
+        let status = ui::regions(self.screen_area).status;
+        if status.height == 0 || y != status.y || x < status.x || x >= status.right() {
+            return false;
+        }
+        // Which box is showing, and how far in its text starts. The same
+        // order the keys go in by, and the same insets the renderer draws
+        // them at.
+        let inset = if self.prompt.is_some() {
+            self.prompt.as_ref().map(ui::status::answer_inset)
+        } else if self.settings.is_some() {
+            Some(ui::status::typed_inset(None))
+        } else {
+            self.picker
+                .as_ref()
+                .map(|picker| ui::status::typed_inset(picker.question()))
+        };
+        let Some(inset) = inset else {
+            return false;
+        };
+        let cell = (x - status.x).saturating_sub(inset);
+        let clicks = match kind {
+            Pointer::Pressed => self.clicks_at(x, y),
+            _ => 0,
+        };
+        match kind {
+            // Nothing to do, but the row is still the box's: a move over it
+            // must not reach the file underneath.
+            Pointer::Moved | Pointer::Released => {}
+            Pointer::Dragged => self.place_on_status(cell, true),
+            Pointer::Pressed => {
+                self.place_on_status(cell, false);
+                // Twice is the word and three times is the whole of it,
+                // which is what a line has instead of a line.
+                match clicks {
+                    2 => self.hold_on_status(false),
+                    3 => self.hold_on_status(true),
+                    _ => {}
+                }
+            }
+        }
+        true
+    }
+
+    /// Puts the caret of whichever box is on the status row.
+    fn place_on_status(&mut self, cell: u16, extend: bool) {
+        if let Some(prompt) = self.prompt.as_mut() {
+            prompt.place_at_cell(cell, extend);
+        } else if let Some(settings) = self.settings.as_mut() {
+            settings.place_in_query(cell, extend);
+        } else if let Some(picker) = self.picker.as_mut() {
+            picker.place_in_query(cell, extend);
+        }
+    }
+
+    /// Takes hold of a word of it, or of all of it.
+    fn hold_on_status(&mut self, all: bool) {
+        if let Some(prompt) = self.prompt.as_mut() {
+            prompt.hold(all);
+        } else if let Some(settings) = self.settings.as_mut() {
+            settings.hold_in_query(all);
+        } else if let Some(picker) = self.picker.as_mut() {
+            picker.hold_in_query(all);
+        }
+    }
+
     /// What the pointer did to the file being read.
     ///
     /// Only over the text, and only with nothing else open: a list, the
@@ -1779,6 +1854,13 @@ impl App {
     fn on_pointer(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
         use crate::event::Pointer;
 
+        // The boxes on the status row first: a question, a list's query, a
+        // page's filter. All three are one row, so one piece of arithmetic
+        // serves them -- and a reader who can select in a box with the
+        // keyboard but not with the pointer has half a selection.
+        if self.pointer_on_status(kind, x, y) {
+            return;
+        }
         if self.picker.is_some()
             || self.settings.is_some()
             || self.counts.is_some()

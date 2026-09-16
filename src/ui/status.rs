@@ -214,6 +214,19 @@ fn typed(question: Option<&str>, words: &str) -> String {
     }
 }
 
+/// How many cells sit in front of what was typed on a status row.
+///
+/// The mark or the question, and the blank after it. Shared with whoever
+/// turns a click into a place in the line: the renderer decides where the
+/// text starts, so it is the renderer that has to say.
+#[must_use]
+pub fn typed_inset(question: Option<&str>) -> u16 {
+    // The one column every status row is drawn in from, and then the
+    // prefix itself.
+    let inset = 1usize.saturating_add(text_width(&typed(question, "")));
+    u16::try_from(inset).unwrap_or(u16::MAX)
+}
+
 /// Which column the caret belongs in on a row that is typed into.
 ///
 /// `at` is how many characters of `words` are in front of the caret, which
@@ -231,6 +244,13 @@ pub fn typed_caret(question: Option<&str>, words: &str, at: usize) -> u16 {
 #[must_use]
 pub fn filter_caret(query: &str, at: usize) -> u16 {
     typed_caret(None, query, at)
+}
+
+/// The same, in front of a question's answer.
+#[must_use]
+pub fn answer_inset(prompt: &crate::component::prompt::Prompt) -> u16 {
+    let inset = 1usize.saturating_add(text_width(prompt.kind().label()));
+    u16::try_from(inset).unwrap_or(u16::MAX)
 }
 
 /// Which column the caret belongs in while a question is being asked.

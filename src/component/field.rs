@@ -26,7 +26,7 @@
 use crossterm::event::KeyEvent;
 
 use crate::{
-    coordinates::CharColumn,
+    coordinates::{CharColumn, DisplayColumn, LineNumber},
     editing::{Editing, Typing},
 };
 
@@ -185,6 +185,50 @@ impl Field {
                 true
             }
         }
+    }
+
+    /// Puts the caret where a cell of the row is, and says whether it
+    /// landed anywhere.
+    ///
+    /// `cell` is counted from the first character of the line rather than
+    /// from the edge of the screen: what is drawn in front of the line --
+    /// a prompt's label, the mark a list puts before its query -- is the
+    /// renderer's, and the line knows nothing about it.
+    ///
+    /// `extend` is a drag: the place the button went down stays put and
+    /// this end moves, which is what makes a selection out of two points.
+    pub fn place_at_cell(&mut self, cell: u16, extend: bool) {
+        let line = LineNumber::new(0);
+        let column = self
+            .writing
+            .text()
+            .column_in_row(line, 0, DisplayColumn::new(cell), ROOM);
+        // Held before arriving, which is what makes the anchor the place
+        // the button went down: `hold` takes the caret where it *is*, so
+        // holding after the move would anchor the selection to the point
+        // it had just reached and every drag would hold nothing. The
+        // keyboard path does the same thing in the same order.
+        match extend {
+            true => self.writing.hold(),
+            false => self.writing.clear_selection(),
+        }
+        self.writing.arrive(line, column);
+    }
+
+    /// Takes hold of the word the caret is in.
+    ///
+    /// What a second click means, the way it does in the file.
+    pub fn hold_word(&mut self) {
+        self.writing
+            .move_to(crate::editing::Motion::WordLeft, &(), ROOM);
+        self.writing
+            .extend_to(crate::editing::Motion::WordRight, &(), ROOM);
+    }
+
+    /// Takes hold of all of it, which is what a third click means: a line
+    /// is what a line has instead of a line.
+    pub fn hold_all(&mut self) {
+        self.writing.select_all(ROOM);
     }
 
     /// What a copy takes from it, and what to call it.

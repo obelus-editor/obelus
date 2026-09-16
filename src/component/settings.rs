@@ -362,6 +362,19 @@ impl Settings {
         self.settle();
     }
 
+    /// Puts the filter's caret where a cell of its row is.
+    pub fn place_in_query(&mut self, cell: u16, extend: bool) {
+        self.query.place_at_cell(cell, extend);
+    }
+
+    /// Takes hold of the word under the caret, or of the whole filter.
+    pub fn hold_in_query(&mut self, all: bool) {
+        match all {
+            true => self.query.hold_all(),
+            false => self.query.hold_word(),
+        }
+    }
+
     /// What a copy takes from the query: what is held, or all of it.
     #[must_use]
     pub fn copy_query(&self) -> (String, &'static str) {

@@ -176,7 +176,7 @@ mod in_place {
         app::App,
         buffer::Buffer,
         command::{Command, dispatch},
-        event::Event,
+        event::{Event, Pointer},
     };
 
     use super::{KeyCode, KeyEvent, KeyModifiers};
@@ -444,6 +444,105 @@ mod in_place {
                 .to_string(),
             before,
             "the cut took a line out of the file behind the chat"
+        );
+    }
+
+    /// Dragging in a box selects in it, the way dragging in the file
+    /// selects in the file.
+    ///
+    /// The pointer used to stop at every panel: `on_pointer` returned for
+    /// anything covering the screen, so no box ever saw a click and a
+    /// reader could select with the keyboard and not with the mouse.
+    #[test]
+    fn dragging_in_a_box_selects_in_it() {
+        let (_scratch, mut app) = open("field-drag");
+        dispatch::dispatch(&mut app, Command::SearchFile);
+        support::type_text(&mut app, "hello world");
+        let (y, at) = support::place_of(&mut app, "hello world");
+
+        app.handle(Event::Pointer {
+            kind: Pointer::Pressed,
+            x: at + 6,
+            y,
+        });
+        app.handle(Event::Pointer {
+            kind: Pointer::Dragged,
+            x: at + 11,
+            y,
+        });
+        assert_eq!(
+            app.picker().expect("the list").query_held(),
+            Some(6..11),
+            "the drag did not hold the word it crossed"
+        );
+        assert_eq!(
+            app.current_buffer()
+                .expect("a file")
+                .text()
+                .rope()
+                .to_string(),
+            "fn main() {}\n",
+            "the drag reached the file behind the list"
+        );
+    }
+
+    /// Twice is the word and three times is the whole of it, which is what
+    /// a line has instead of a line.
+    #[test]
+    fn clicking_twice_holds_a_word_and_three_times_holds_the_line() {
+        let (_scratch, mut app) = open("field-clicks");
+        dispatch::dispatch(&mut app, Command::SearchFile);
+        support::type_text(&mut app, "hello world");
+        let (y, at) = support::place_of(&mut app, "hello world");
+
+        for _ in 0..2 {
+            app.handle(Event::Pointer {
+                kind: Pointer::Pressed,
+                x: at + 8,
+                y,
+            });
+        }
+        assert_eq!(
+            app.picker().expect("the list").query_held(),
+            Some(6..11),
+            "two clicks did not hold the word"
+        );
+
+        app.handle(Event::Pointer {
+            kind: Pointer::Pressed,
+            x: at + 8,
+            y,
+        });
+        assert_eq!(
+            app.picker().expect("the list").query_held(),
+            Some(0..11),
+            "three clicks did not hold the whole line"
+        );
+    }
+
+    /// And the question on the status bar, which is the nearest of the
+    /// three: it is answered over whatever else is showing.
+    #[test]
+    fn dragging_in_a_question_selects_in_the_answer() {
+        let (_scratch, mut app) = open("field-drag-prompt");
+        dispatch::dispatch(&mut app, Command::GoLine);
+        support::type_text(&mut app, "12345");
+        let (y, at) = support::place_of(&mut app, "12345");
+
+        app.handle(Event::Pointer {
+            kind: Pointer::Pressed,
+            x: at,
+            y,
+        });
+        app.handle(Event::Pointer {
+            kind: Pointer::Dragged,
+            x: at + 3,
+            y,
+        });
+        assert_eq!(
+            app.prompt().expect("the question").held(),
+            Some(0..3),
+            "the drag did not hold what it crossed"
         );
     }
 

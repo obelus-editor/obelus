@@ -563,3 +563,30 @@ pub fn press_alt(app: &mut App, character: char) {
         KeyModifiers::ALT,
     )));
 }
+
+/// Where a run of text is on screen, as a row and a column.
+///
+/// Counted in characters rather than in bytes: `str::find` answers in
+/// bytes, and a row with a glyph in front of it -- the mark a list draws
+/// before its query -- is four bytes and one cell wide, so the two
+/// disagree by three wherever it matters.
+#[must_use]
+pub fn place_of(app: &mut App, needle: &str) -> (u16, u16) {
+    let dump = render(app, 76, 18);
+    let rows: Vec<String> = text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
+        .collect();
+    let (row, column) = rows
+        .iter()
+        .enumerate()
+        .find_map(|(y, row)| {
+            row.find(needle)
+                .map(|byte| (y, row[..byte].chars().count()))
+        })
+        .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"));
+    (
+        u16::try_from(row).unwrap_or(u16::MAX),
+        u16::try_from(column).unwrap_or(u16::MAX),
+    )
+}
