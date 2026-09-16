@@ -16,6 +16,7 @@ pub mod clipboard;
 pub mod command;
 pub mod component;
 pub mod config;
+pub mod conversation;
 pub mod coordinates;
 pub mod counts;
 pub mod document;

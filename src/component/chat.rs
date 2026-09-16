@@ -223,7 +223,13 @@ pub enum Focus {
 }
 
 /// A conversation.
-#[derive(Debug, Default)]
+///
+/// `Default` is `new` rather than derived, because the two differed and the
+/// difference was invisible: a derived one gets a plain [`Window`], and a
+/// transcript wants the one that stays at the end until the reader scrolls
+/// up. A conversation built the wrong way looked right and stopped
+/// following, which is the kind of thing a type should not let happen twice.
+#[derive(Debug)]
 pub struct Chat {
     /// What has been said, oldest first.
     said: Vec<Said>,
@@ -246,6 +252,12 @@ pub struct Chat {
     window: Window,
     /// Which of the two things on this screen the keys are moving.
     focus: Focus,
+}
+
+impl Default for Chat {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Chat {

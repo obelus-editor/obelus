@@ -274,7 +274,7 @@ impl App {
             return;
         }
         if self.showing_chat {
-            let (text, what) = self.chat.copied();
+            let (text, what) = self.conversation.chat.copied();
             self.copied(&text, what);
             return;
         }
@@ -367,7 +367,7 @@ impl App {
             // view lays it out with: a cut is over a selection, and where
             // a selection ends was decided by where the rows wrap.
             let room = ui::chat::writing_width(self.editor_area);
-            let (text, what) = self.chat.cut(room);
+            let (text, what) = self.conversation.chat.cut(room);
             self.cut_away(&text, what);
             return;
         }
@@ -476,7 +476,7 @@ impl App {
                 return;
             }
             Some(Layer::Chat) => {
-                self.chat.put(what);
+                self.conversation.chat.put(what);
                 return;
             }
             // Nothing is typed into the counts, so a paste has nowhere to

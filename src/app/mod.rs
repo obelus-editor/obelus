@@ -320,33 +320,18 @@ pub struct App {
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
     statuses: std::collections::HashMap<PathBuf, git::FileStatus>,
-    /// The conversation with an agent, whether or not it is on screen.
+    /// The conversation with an agent: what was said, what is being typed,
+    /// and what it is waiting on.
     ///
-    /// Kept rather than opened: the view is a region the reader shows and
-    /// hides, and a conversation that started again every time it was
-    /// closed would be a conversation nobody could leave for a minute.
-    chat: crate::component::chat::Chat,
+    /// One, for now, and always there. It is the shape rather than the
+    /// count that this is about: what belongs to a conversation is in one
+    /// place, so that a second one is a second of these rather than a
+    /// second set of fields nobody remembered to pair up.
+    conversation: crate::conversation::Conversation,
     /// Whether the conversation is what the editor region is showing.
     showing_chat: bool,
     /// The agent obelus is talking to, once something has needed it.
     talker: Option<crate::acp::Talk>,
-    /// The agent's own commands, while one is being typed in the box.
-    ///
-    /// Its own list rather than [`App::picker`], because it does not take
-    /// the keys: it follows what is being typed and the box keeps them.
-    slash: Option<Picker>,
-    /// The form the agent asked the reader to fill in, while one is open.
-    asking: Option<talking::Asking>,
-    /// The card whatever the agent asked is answered on.
-    ///
-    /// One field for both kinds of question it can ask -- a form's field
-    /// and a request for permission -- because on screen they are the same
-    /// thing: what it wants to know, what the answers are, and room to say
-    /// one in your own words where it will take those.
-    card: Option<crate::component::card::Card>,
-    /// The permission request waiting on the reader: the channel its
-    /// answer goes back through.
-    permission: Option<crate::acp::Answer<Option<String>>>,
     /// What obelus knows about the agents it could run.
     agents: agents::Agents,
     /// The settings as they stand, and where each part came from.
@@ -531,13 +516,9 @@ impl App {
             prompt: None,
             changes: None,
             statuses: std::collections::HashMap::new(),
-            chat: crate::component::chat::Chat::new(),
+            conversation: crate::conversation::Conversation::default(),
             showing_chat: false,
             talker: None,
-            slash: None,
-            asking: None,
-            card: None,
-            permission: None,
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),
             settings: None,
@@ -1231,7 +1212,7 @@ impl App {
             | talking::Talking::Ready
             | talking::Talking::Gone => None,
         };
-        self.chat.doing(doing);
+        self.conversation.chat.doing(doing);
         // A grammar too slow to keep up with typing leaves a tree owing an
         // answer, and the ticker is what comes back for it: the reader
         // stops, the next tick lands, and the colours catch up.

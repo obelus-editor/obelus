@@ -215,7 +215,7 @@ impl App {
                 if !self.showing_chat {
                     return false;
                 }
-                self.chat.scroll(rows);
+                self.conversation.chat.scroll(rows);
                 true
             }
             // A question is one row and has nothing to scroll; the notes

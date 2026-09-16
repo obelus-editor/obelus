@@ -11,6 +11,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::*;
+use crate::conversation::Asking;
 use crate::{
     acp,
     component::{
@@ -18,29 +19,6 @@ use crate::{
         chat::{Chat, Speaker},
     },
 };
-
-/// A form an agent asked the reader to fill in.
-///
-/// One field at a time, in the order the agent listed them: a list where
-/// the answer is one of a few, the box where it is words. What has been
-/// answered is kept here until the last field is, because the protocol
-/// takes the whole form as one answer.
-#[derive(Debug)]
-pub struct Asking {
-    /// What the agent said the form is about, in its own words.
-    ///
-    /// Kept because it belongs above whichever question is showing rather
-    /// than in a line of its own: a form is one question with several
-    /// parts, and saying what it is about twice is saying it once too
-    /// often.
-    message: String,
-    /// The fields nobody has answered yet, the next one first.
-    left: std::collections::VecDeque<acp::Field>,
-    /// What has been answered, in the order it was.
-    given: Vec<(String, acp::Reply)>,
-    /// Where the answers go when the last one is in.
-    answer: acp::Answer<Option<Vec<(String, acp::Reply)>>>,
-}
 
 /// What obelus is doing about an agent, for the view to say so.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,7 +61,7 @@ impl App {
     /// The conversation, while it is what the reader is looking at.
     #[must_use]
     pub fn chat(&self) -> Option<&Chat> {
-        self.showing_chat.then_some(&self.chat)
+        self.showing_chat.then_some(&self.conversation.chat)
     }
 
     /// What obelus is doing about an agent.
@@ -231,12 +209,12 @@ impl App {
         // In the transcript, because it is a thing the reader did to the
         // conversation: what the agent answers with is the whole set of
         // settings again, which is not something to show.
-        self.chat.note(&format!("{name}: {told}"));
+        self.conversation.chat.note(&format!("{name}: {told}"));
     }
 
     /// Sends what the reader typed.
     pub(super) fn send_to_agent(&mut self, text: &str) {
-        self.chat.asked(text);
+        self.conversation.chat.asked(text);
         // An agent that has stopped is started again by talking to it,
         // which is what the view tells the reader to do. The handle of the
         // one that ended is dropped first: it is still a handle, so a
@@ -283,9 +261,9 @@ impl App {
     /// goes with them, because a question on screen that nobody is waiting
     /// for is a question the reader would answer into nothing.
     fn forget_the_question(&mut self) {
-        self.permission = None;
-        self.asking = None;
-        self.card = None;
+        self.conversation.permission = None;
+        self.conversation.asking = None;
+        self.conversation.card = None;
     }
 
     /// The agent's own commands, while one is being typed.
@@ -297,7 +275,7 @@ impl App {
     /// is typing, and this list follows what they type.
     #[must_use]
     pub fn slash(&self) -> Option<&Picker> {
-        self.slash.as_ref()
+        self.conversation.slash.as_ref()
     }
 
     /// Builds or refreshes that list, once a frame.
@@ -311,10 +289,10 @@ impl App {
             .filter(|_| !self.agent_orders().is_empty())
             .and_then(Chat::typing_command);
         let Some(name) = name else {
-            self.slash = None;
+            self.conversation.slash = None;
             return;
         };
-        if let Some(slash) = self.slash.as_mut() {
+        if let Some(slash) = self.conversation.slash.as_mut() {
             if slash.query() != name {
                 slash.set_query(&name);
             }
@@ -323,7 +301,7 @@ impl App {
             // as far as the box is concerned, and a list that stayed would
             // swallow the enter that sends it.
             if slash.match_count() == 0 {
-                self.slash = None;
+                self.conversation.slash = None;
             }
             self.settle_slash();
             return;
@@ -354,7 +332,7 @@ impl App {
         let mut slash = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         slash.set_query(&name);
         if slash.match_count() > 0 {
-            self.slash = Some(slash);
+            self.conversation.slash = Some(slash);
         }
         self.settle_slash();
     }
@@ -368,10 +346,15 @@ impl App {
     /// neither scrolls nor says what the query matched -- it is the picker,
     /// so it needs what the picker needs.
     fn settle_slash(&mut self) {
-        let rows = self.slash.as_ref().zip(self.chat()).map(|(slash, chat)| {
-            ui::picker::rows_drawn(slash, ui::chat::above_writing(self.editor_area, chat))
-        });
-        if let (Some(rows), Some(slash)) = (rows, self.slash.as_mut()) {
+        let rows = self
+            .conversation
+            .slash
+            .as_ref()
+            .zip(self.chat())
+            .map(|(slash, chat)| {
+                ui::picker::rows_drawn(slash, ui::chat::above_writing(self.editor_area, chat))
+            });
+        if let (Some(rows), Some(slash)) = (rows, self.conversation.slash.as_mut()) {
             slash.refresh_indices(rows);
         }
     }
@@ -383,7 +366,7 @@ impl App {
     /// to the box, which is what makes the list a list of what is being
     /// typed rather than a mode the reader is in.
     pub(super) fn slash_key(&mut self, key: &KeyEvent) -> bool {
-        let Some(slash) = self.slash.as_mut() else {
+        let Some(slash) = self.conversation.slash.as_mut() else {
             return false;
         };
         let Some(modifiers) = keymap::modifiers_of(key) else {
@@ -415,15 +398,15 @@ impl App {
                     // The name and a blank after it: the blank is what
                     // settles the name, so the list is done and whatever
                     // the command takes is typed next.
-                    self.chat.put(&format!("{name} "));
-                    self.slash = None;
+                    self.conversation.chat.put(&format!("{name} "));
+                    self.conversation.slash = None;
                 }
                 true
             }
             // The list, not the conversation: escape gives up on the
             // nearest thing first, and what the reader typed stays.
             KeyCode::Esc => {
-                self.slash = None;
+                self.conversation.slash = None;
                 true
             }
             _ => false,
@@ -433,7 +416,7 @@ impl App {
     /// The card an agent's question is on, while one is up.
     #[must_use]
     pub fn card(&self) -> Option<&Card> {
-        self.card.as_ref()
+        self.conversation.card.as_ref()
     }
 
     /// Gives a key to the card.
@@ -455,9 +438,13 @@ impl App {
         // lays them out with: a page of scrolling is the page on screen,
         // and the caret moves by the rows the box really has.
         let room = ChatRoom {
-            transcript: crate::ui::chat::bands(self.editor_area, &self.chat, self.card.as_ref())
-                .transcript
-                .height,
+            transcript: crate::ui::chat::bands(
+                self.editor_area,
+                &self.conversation.chat,
+                self.conversation.card.as_ref(),
+            )
+            .transcript
+            .height,
             reading: crate::ui::chat::reading_width(self.editor_area),
             writing: crate::ui::chat::writing_width(self.editor_area),
         };
@@ -472,7 +459,11 @@ impl App {
         // the view does. Cloned because the box is about to be borrowed to
         // take the key.
         let settings = self.agent_settings().to_vec();
-        match self.chat.handle_key(key, thinking, room, &settings) {
+        match self
+            .conversation
+            .chat
+            .handle_key(key, thinking, room, &settings)
+        {
             ChatOutcome::Consumed => true,
             ChatOutcome::Cancelled => {
                 // Escape gives up on the nearest thing first, and a question
@@ -539,14 +530,14 @@ impl App {
     }
 
     pub(super) fn card_key(&mut self, key: &crossterm::event::KeyEvent) -> bool {
-        let Some(card) = self.card.as_ref() else {
+        let Some(card) = self.conversation.card.as_ref() else {
             return false;
         };
         // The width a card's own rows have, which is what its caret is
         // worked out against.
         let width =
             crate::ui::card::width_of(crate::ui::chat::bands_for(self.editor_area, card).writing);
-        let Some(card) = self.card.as_mut() else {
+        let Some(card) = self.conversation.card.as_mut() else {
             return false;
         };
         match card.handle_key(key, width) {
@@ -571,7 +562,7 @@ impl App {
     /// Whether the agent is waiting on an answer to something it asked.
     #[must_use]
     pub const fn is_asking(&self) -> bool {
-        self.asking.is_some()
+        self.conversation.asking.is_some()
     }
 
     /// Brings the conversation back, because the agent is waiting on the
@@ -587,7 +578,7 @@ impl App {
         // commands follows what is being typed in the box, and the box is
         // what the card covers: left open it would be a list over a
         // question, about words the keys are no longer going to.
-        self.slash = None;
+        self.conversation.slash = None;
     }
 
     /// Puts a form the agent asked for to the reader.
@@ -598,7 +589,7 @@ impl App {
         answer: acp::Answer<Option<Vec<(String, acp::Reply)>>>,
     ) {
         self.show_the_question();
-        self.asking = Some(Asking {
+        self.conversation.asking = Some(Asking {
             message: message.to_string(),
             left: fields.into(),
             given: Vec::new(),
@@ -609,7 +600,7 @@ impl App {
 
     /// Puts the next field, or answers the form when there is none left.
     fn put_the_question(&mut self) {
-        let Some(asking) = self.asking.as_ref() else {
+        let Some(asking) = self.conversation.asking.as_ref() else {
             return;
         };
         if asking.left.is_empty() {
@@ -649,7 +640,7 @@ impl App {
             // row, and what it is for has been said above.
             card.writing(&field.title, field.required, suggested.as_deref());
         }
-        self.card = Some(card);
+        self.conversation.card = Some(card);
     }
 
     /// The fields the card on screen is answering: the one it puts the
@@ -659,7 +650,7 @@ impl App {
     /// the question and taking the answer have to agree about which fields
     /// were on the card.
     fn asked_now(&self) -> (Option<acp::Field>, Option<acp::Field>) {
-        let Some(asking) = self.asking.as_ref() else {
+        let Some(asking) = self.conversation.asking.as_ref() else {
             return (None, None);
         };
         let Some(field) = asking.left.front().cloned() else {
@@ -688,7 +679,7 @@ impl App {
         // A permission request is named answers and nothing else, so the
         // one they chose is the answer.
         if self.is_asking_permission() {
-            self.card = None;
+            self.conversation.card = None;
             match chosen.first() {
                 Some(option) => self.allow(option),
                 None => self.refuse_permission(),
@@ -764,7 +755,7 @@ impl App {
             }
         }
         let taken = usize::from(choice.is_some()) + usize::from(asked.is_some());
-        let Some(asking) = self.asking.as_mut() else {
+        let Some(asking) = self.conversation.asking.as_mut() else {
             return;
         };
         for _ in 0..taken {
@@ -772,14 +763,14 @@ impl App {
         }
         asking.given.extend(given);
         for line in said {
-            self.chat.note(&line);
+            self.conversation.chat.note(&line);
         }
         // Theirs, in the transcript, because that is what they said -- the
         // agent asked in words and this is the answer in words.
         if let Some(text) = words {
-            self.chat.asked(text);
+            self.conversation.chat.asked(text);
         }
-        self.card = None;
+        self.conversation.card = None;
         self.put_the_question();
     }
 
@@ -794,13 +785,16 @@ impl App {
     ) -> Option<acp::Reply> {
         let Ok(number) = text.parse::<f64>() else {
             let title = field.title.clone();
-            self.chat
+            self.conversation
+                .chat
                 .note(&format!("{title} takes a number, not {text:?}"));
             return None;
         };
         if least.is_some_and(|least| number < least) || most.is_some_and(|most| number > most) {
             let asked = question(field);
-            self.chat.note(&format!("that is outside {asked}"));
+            self.conversation
+                .chat
+                .note(&format!("that is outside {asked}"));
             return None;
         }
         Some(match whole {
@@ -815,21 +809,23 @@ impl App {
 
     /// Answers the form, now that every field has one.
     fn settle_asking(&mut self) {
-        let Some(asking) = self.asking.take() else {
+        let Some(asking) = self.conversation.asking.take() else {
             return;
         };
         if asking.answer.send(Some(asking.given)).is_err() {
-            self.chat.note("it stopped waiting for an answer");
+            self.conversation
+                .chat
+                .note("it stopped waiting for an answer");
         }
     }
 
     /// Says no to the form, whichever field the reader was on.
     pub(super) fn refuse_asking(&mut self) {
-        self.card = None;
-        let Some(asking) = self.asking.take() else {
+        self.conversation.card = None;
+        let Some(asking) = self.conversation.asking.take() else {
             return;
         };
-        self.chat.note("not answered");
+        self.conversation.chat.note("not answered");
         let _ = asking.answer.send(None);
     }
 
@@ -845,16 +841,20 @@ impl App {
             return;
         }
         let width = crate::ui::chat::writing_width(editor_area);
-        let needed = self.chat.writing().rows(width).len();
+        let needed = self.conversation.chat.writing().rows(width).len();
         let region = crate::ui::chat::regions(editor_area, needed).transcript;
-        let rows = self.chat.rows(region.width.saturating_sub(4)).len();
-        self.chat.settle(rows, region.height);
+        let rows = self
+            .conversation
+            .chat
+            .rows(region.width.saturating_sub(4))
+            .len();
+        self.conversation.chat.settle(rows, region.height);
         // And the focus on the row under the box, against the settings
         // that are really there: they are the agent's, and it can take one
         // away in the middle of a sentence -- a model with no thinking
         // levels does exactly that.
         let settings = self.agent_settings().len();
-        self.chat.settle_focus(settings);
+        self.conversation.chat.settle_focus(settings);
     }
 
     /// Takes one message from the agent.
@@ -870,9 +870,9 @@ impl App {
         };
         match incoming {
             acp::Incoming::Update(update) => match update {
-                acp::Update::Said(text) => self.chat.chunk(Speaker::Agent, &text),
-                acp::Update::Thought(text) => self.chat.chunk(Speaker::Thought, &text),
-                acp::Update::Tool { call, status } => self.chat.tool(&call, &status),
+                acp::Update::Said(text) => self.conversation.chat.chunk(Speaker::Agent, &text),
+                acp::Update::Thought(text) => self.conversation.chat.chunk(Speaker::Thought, &text),
+                acp::Update::Tool { call, status } => self.conversation.chat.tool(&call, &status),
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
                 // said, and a transcript with them in it is a log.
@@ -884,17 +884,19 @@ impl App {
                 // every answer is noise.
                 match reason.as_str() {
                     "endturn" | "end_turn" => {}
-                    "cancelled" => self.chat.note("stopped"),
-                    "refusal" => self.chat.note("it declined to answer"),
+                    "cancelled" => self.conversation.chat.note("stopped"),
+                    "refusal" => self.conversation.chat.note("it declined to answer"),
                     "maxtokens" | "max_tokens" => {
-                        self.chat.note("it ran out of room to answer in");
+                        self.conversation
+                            .chat
+                            .note("it ran out of room to answer in");
                     }
-                    other => self.chat.note(other),
+                    other => self.conversation.chat.note(other),
                 }
             }
             acp::Incoming::Failed(what, why) => {
                 tracing::warn!(what, why, "the agent");
-                self.chat.note(&format!("{what}: {why}"));
+                self.conversation.chat.note(&format!("{what}: {why}"));
             }
             acp::Incoming::Permission {
                 call,
@@ -922,8 +924,11 @@ impl App {
                 // and talking to it again is what starts the next one.
                 self.forget_the_question();
                 match why {
-                    Some(why) => self.chat.note(&format!("the agent stopped: {why}")),
-                    None => self.chat.note("the agent stopped"),
+                    Some(why) => self
+                        .conversation
+                        .chat
+                        .note(&format!("the agent stopped: {why}")),
+                    None => self.conversation.chat.note("the agent stopped"),
                 }
             }
             // Folded into the handle above.
@@ -966,7 +971,8 @@ impl App {
             return;
         };
         let Some(root) = self.agents_root() else {
-            self.chat
+            self.conversation
+                .chat
                 .note("this system has nowhere for obelus to keep an agent");
             return;
         };
@@ -979,7 +985,7 @@ impl App {
                 id,
                 "no agent to talk to: nothing is installed under that name"
             );
-            self.chat.note(&format!(
+            self.conversation.chat.note(&format!(
                 "{id} is not installed \u{2014} open the settings and install it"
             ));
             return;
@@ -1012,7 +1018,7 @@ impl App {
         // file nor the last commit, so this is the only place they exist.
         // After the answer they stay, which is how a reader finds out later
         // what they agreed to.
-        self.chat.tool(call, "pending");
+        self.conversation.chat.tool(call, "pending");
         let choices = options
             .iter()
             .map(|choice| Choice {
@@ -1034,17 +1040,19 @@ impl App {
         if let Some(reason) = reason.filter(|reason| !reason.trim().is_empty()) {
             card.about(reason);
         }
-        self.permission = Some(answer);
-        self.card = Some(card);
+        self.conversation.permission = Some(answer);
+        self.conversation.card = Some(card);
     }
 
     /// Answers the permission request the reader chose an option for.
     pub(super) fn allow(&mut self, option: &str) {
-        let Some(answer) = self.permission.take() else {
+        let Some(answer) = self.conversation.permission.take() else {
             return;
         };
         if answer.send(Some(option.to_string())).is_err() {
-            self.chat.note("it stopped waiting for an answer");
+            self.conversation
+                .chat
+                .note("it stopped waiting for an answer");
         }
     }
 
@@ -1054,18 +1062,18 @@ impl App {
     /// request is never answered waits for ever, and one that is told it
     /// was cancelled ends the turn and says so.
     pub(super) fn refuse_permission(&mut self) {
-        self.card = None;
-        let Some(answer) = self.permission.take() else {
+        self.conversation.card = None;
+        let Some(answer) = self.conversation.permission.take() else {
             return;
         };
         let _ = answer.send(None);
-        self.chat.note("not answered");
+        self.conversation.chat.note("not answered");
     }
 
     /// Whether a permission request is waiting on the reader.
     #[must_use]
     pub fn is_asking_permission(&self) -> bool {
-        self.permission.is_some()
+        self.conversation.permission.is_some()
     }
 
     /// Answers the agent's request for a file's text.
