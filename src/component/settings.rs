@@ -16,7 +16,10 @@ use crate::{
     agent::Status,
     app::agents::Listed as Agent,
     command::Command,
-    component::window::{Move, Window, Wrap},
+    component::{
+        field::Field,
+        window::{Move, Window, Wrap},
+    },
     config::{self, Config, Group, Kind, Setting, Value, Whose},
     keymap::{KeyChord, Keymap},
 };
@@ -157,7 +160,7 @@ pub struct Settings {
     /// Whether every key this page answers to is showing.
     keys_showing: bool,
     /// What has been typed, which narrows the rows.
-    query: String,
+    query: Field,
     /// Which command's key is being pressed, while one is.
     ///
     /// The page is in no mode otherwise: a key means what it means here
@@ -198,10 +201,10 @@ impl Default for Settings {
 impl Settings {
     /// A view on the first group, with nothing typed.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             keys_showing: false,
-            query: String::new(),
+            query: Field::new(),
             binding: None,
             refused: None,
             whose: Whose::Reader,
@@ -212,10 +215,10 @@ impl Settings {
 
     /// The same page, over the tree's own settings file.
     #[must_use]
-    pub const fn for_tree() -> Self {
+    pub fn for_tree() -> Self {
         Self {
             keys_showing: false,
-            query: String::new(),
+            query: Field::new(),
             binding: None,
             refused: None,
             whose: Whose::Tree,
@@ -290,7 +293,7 @@ impl Settings {
         if !self.on_keys() {
             return Vec::new();
         }
-        let query = self.query.to_lowercase();
+        let query = self.query.said().to_lowercase();
         crate::command::ALL
             .iter()
             .filter(|spec| {
@@ -337,8 +340,39 @@ impl Settings {
 
     /// What has been typed.
     #[must_use]
-    pub fn query(&self) -> &str {
-        &self.query
+    pub fn query(&self) -> String {
+        self.query.said()
+    }
+
+    /// Where the caret is in it, for whoever draws the row.
+    #[must_use]
+    pub fn query_caret(&self) -> usize {
+        self.query.caret().get()
+    }
+
+    /// Which characters of it the reader has hold of.
+    #[must_use]
+    pub fn query_held(&self) -> Option<std::ops::Range<usize>> {
+        self.query.held()
+    }
+
+    /// Puts a run of text into it, which is what a paste is.
+    pub fn put_in_query(&mut self, said: &str) {
+        self.query.put(said);
+        self.settle();
+    }
+
+    /// What a copy takes from the query: what is held, or all of it.
+    #[must_use]
+    pub fn copy_query(&self) -> (String, &'static str) {
+        self.query.copied()
+    }
+
+    /// The same, and takes it out.
+    pub fn cut_query(&mut self) -> (String, &'static str) {
+        let taken = self.query.cut();
+        self.settle();
+        taken
     }
 
     /// Which row has the focus.
@@ -377,7 +411,7 @@ impl Settings {
         if self.on_agents() || self.on_keys() {
             return Vec::new();
         }
-        let query = self.query.to_lowercase();
+        let query = self.query.said().to_lowercase();
         let mut rows = Vec::new();
         for group in Group::ALL {
             let mut opens = Some(group);
@@ -475,7 +509,7 @@ impl Settings {
         if self.query.is_empty() {
             return None;
         }
-        let query: Vec<char> = self.query.to_lowercase().chars().collect();
+        let query: Vec<char> = self.query.said().to_lowercase().chars().collect();
         let text: Vec<char> = text.to_lowercase().chars().collect();
         if query.len() > text.len() {
             return None;
@@ -643,16 +677,21 @@ impl Settings {
                     .apply(movement, u16::try_from(page).unwrap_or(1), Wrap::Yes);
                 SettingsOutcome::Consumed
             }
-            // The arrows walk the tabs, as they do in every other view with
+            // `tab` walks the tabs, as it does in every other view with
             // tabs on it -- which is why a switch is flipped with enter and
-            // not by sliding it: one pair of keys with two jobs, decided by
-            // whichever row happens to have the focus, is a pair of keys a
-            // reader has to think about.
-            KeyCode::Right if bare => {
+            // not by sliding it: one key with two jobs, decided by
+            // whichever row happens to have the focus, is a key a reader
+            // has to think about.
+            //
+            // The arrows used to do this. They are the caret's now: the
+            // filter is a line with a caret in it, and a box a reader
+            // cannot move about in is the thing this whole page filters
+            // with.
+            KeyCode::Tab if bare => {
                 self.step_tab(true);
                 SettingsOutcome::Consumed
             }
-            KeyCode::Left if bare => {
+            KeyCode::BackTab => {
                 self.step_tab(false);
                 SettingsOutcome::Consumed
             }
@@ -715,17 +754,15 @@ impl Settings {
                     None => SettingsOutcome::Consumed,
                 }
             }
-            KeyCode::Backspace if bare => {
-                self.query.pop();
-                self.settle();
-                SettingsOutcome::Consumed
-            }
-            KeyCode::Char(character) => {
-                self.query.push(character);
-                self.settle();
-                SettingsOutcome::Consumed
-            }
-            _ => SettingsOutcome::Ignored,
+            // Whatever the page did not want goes to the filter, which is
+            // a line with a caret in it and takes the keys a line takes.
+            _ => match self.query.handle_key(key) {
+                true => {
+                    self.settle();
+                    SettingsOutcome::Consumed
+                }
+                false => SettingsOutcome::Ignored,
+            },
         }
     }
 

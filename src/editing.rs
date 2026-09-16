@@ -270,7 +270,12 @@ fn move_within(
             while folds.hides(cursor.line) && cursor.line.get() > 0 {
                 cursor.line = cursor.line.saturating_sub(1);
             }
-            cursor.column = CharColumn::new(0);
+            // The end of it, not the start. A file that ends in a newline
+            // has an empty last line, so the two are the same thing there
+            // and this looked right for as long as a file was the only
+            // thing with a caret in it. A text that does not end in one --
+            // a line being typed into -- has its end at the end.
+            cursor.column = text.line_length(cursor.line);
             remember(text, cursor, width);
             return moved(cursor);
         }

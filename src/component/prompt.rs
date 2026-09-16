@@ -10,7 +10,9 @@
 //! what the answer is for. It draws on the status row and nowhere else, so
 //! nothing it does covers the code.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
+
+use crate::component::field::Field;
 
 /// What a prompt is asking for.
 ///
@@ -63,6 +65,18 @@ impl PromptKind {
             Self::Name => !character.is_whitespace(),
         }
     }
+
+    /// The same rule, as the line's own.
+    ///
+    /// A line takes a function rather than an enum, because the rules do
+    /// not fall into kinds: the next question asked will have its own.
+    #[must_use]
+    pub const fn accepts_fn(self) -> crate::component::field::Accepts {
+        match self {
+            Self::Line => |character| character.is_ascii_digit(),
+            Self::Name => |character| !character.is_whitespace(),
+        }
+    }
 }
 
 /// What came of a key.
@@ -82,16 +96,16 @@ pub enum PromptOutcome {
 #[derive(Clone, Debug)]
 pub struct Prompt {
     kind: PromptKind,
-    text: String,
+    text: Field,
 }
 
 impl Prompt {
     /// Asks something.
     #[must_use]
-    pub const fn new(kind: PromptKind) -> Self {
+    pub fn new(kind: PromptKind) -> Self {
         Self {
             kind,
-            text: String::new(),
+            text: Field::taking(kind.accepts_fn()),
         }
     }
 
@@ -102,7 +116,10 @@ impl Prompt {
     /// and a blank prompt would make them type the whole thing again.
     #[must_use]
     pub fn about(kind: PromptKind, text: String) -> Self {
-        Self { kind, text }
+        Self {
+            kind,
+            text: Field::about(&text, kind.accepts_fn()),
+        }
     }
 
     /// What it is asking for.
@@ -113,14 +130,42 @@ impl Prompt {
 
     /// What has been typed.
     #[must_use]
-    pub fn text(&self) -> &str {
-        &self.text
+    pub fn text(&self) -> String {
+        self.text.said()
+    }
+
+    /// Where the caret is in the answer, for whoever draws the row.
+    #[must_use]
+    pub fn caret(&self) -> usize {
+        self.text.caret().get()
+    }
+
+    /// Which characters of the answer the reader has hold of.
+    #[must_use]
+    pub fn held(&self) -> Option<std::ops::Range<usize>> {
+        self.text.held()
+    }
+
+    /// Puts a run of text into the answer, which is what a paste is.
+    pub fn put(&mut self, said: &str) {
+        self.text.put(said);
+    }
+
+    /// What a copy takes from the answer: what is held, or all of it.
+    #[must_use]
+    pub fn copied(&self) -> (String, &'static str) {
+        self.text.copied()
+    }
+
+    /// The same, and takes it out.
+    pub fn cut(&mut self) -> (String, &'static str) {
+        self.text.cut()
     }
 
     /// The whole row: the label and the answer so far.
     #[must_use]
     pub fn line(&self) -> String {
-        format!("{}{}", self.kind.label(), self.text)
+        format!("{}{}", self.kind.label(), self.text.said())
     }
 
     /// Handles a key.
@@ -143,26 +188,19 @@ impl Prompt {
                 if self.text.is_empty() {
                     PromptOutcome::Consumed
                 } else {
-                    PromptOutcome::Accepted(self.text.clone())
+                    PromptOutcome::Accepted(self.text.said())
                 }
             }
-            KeyCode::Backspace if bare => {
-                self.text.pop();
-                PromptOutcome::Consumed
-            }
-            // Only a bare or shifted character is text, the same rule the
-            // picker's query follows -- and only a character this question
-            // has any use for.
-            KeyCode::Char(character) if (modifiers - KeyModifiers::SHIFT).is_empty() => {
-                if self.kind.accepts(character) {
-                    self.text.push(character);
-                }
-                // Consumed either way: a key the prompt refuses is still a
-                // key it *saw*, and letting it fall through to the key table
-                // would run a command from inside a prompt.
-                PromptOutcome::Consumed
-            }
-            _ => PromptOutcome::Ignored,
+            // Everything else goes to the answer, which is a line with a
+            // caret in it: the arrows, the words, what is held, what is
+            // typed, and the question's own rule about which characters
+            // belong in it. A key the line refuses is still a key it saw,
+            // which is how `ctrl+q` reaches the key table and a stray
+            // letter does not run a command from inside a question.
+            _ => match self.text.handle_key(key) {
+                true => PromptOutcome::Consumed,
+                false => PromptOutcome::Ignored,
+            },
         }
     }
 }

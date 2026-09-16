@@ -406,9 +406,11 @@ impl App {
                 true
             }
             // Enter chooses from the list, like enter chooses in every other
-            // list. What sends the message is enter *after* the name is
-            // settled, by which time there is no list.
-            KeyCode::Tab | KeyCode::Enter => {
+            // list -- and like every other completion in obelus, which is
+            // one rule rather than a key per panel. What sends the message
+            // is enter *after* the name is settled, by which time there is
+            // no list.
+            KeyCode::Enter => {
                 let chosen = slash.selected_item().map(|item| item.label.clone());
                 if let Some(name) = chosen {
                     // The name and a blank after it: the blank is what

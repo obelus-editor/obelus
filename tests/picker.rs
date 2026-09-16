@@ -505,15 +505,27 @@ fn paging_stops_at_the_ends_rather_than_wrapping() {
     );
 }
 
+/// With control, which is what reaches the ends of a document in a file
+/// and reaches the ends of a list here. Bare home and end are the query's:
+/// it is a line with a caret in it, and that is where a caret goes.
 #[test]
 fn home_and_end_reach_both_ends_at_once() {
     let mut picker = Picker::new(many(50), PickerLayout::FullArea);
 
-    picker.handle_key(&key(KeyCode::End), PAGE);
+    picker.handle_key(&control(KeyCode::End), PAGE);
     assert_eq!(picker.selected(), 49);
 
-    picker.handle_key(&key(KeyCode::Home), PAGE);
+    picker.handle_key(&control(KeyCode::Home), PAGE);
     assert_eq!(picker.selected(), 0);
+
+    // And bare, they leave the rows alone.
+    picker.handle_key(&control(KeyCode::End), PAGE);
+    picker.handle_key(&key(KeyCode::Home), PAGE);
+    assert_eq!(
+        picker.selected(),
+        49,
+        "a bare home walked the list instead of the query"
+    );
 }
 
 #[test]
@@ -804,7 +816,7 @@ fn the_key_is_not_offered_where_it_would_do_nothing() {
         "the key is not offered on the tab it works on:\n{all}"
     );
 
-    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Tab);
     let changed = support::render(&mut app, 72, 24);
     assert!(
         !support::text_block(&changed).contains("ignored files"),
@@ -996,7 +1008,7 @@ fn a_glyph_is_the_colour_of_the_name_beside_it() {
     support::lay_out(&mut app, 60, 12);
     press_function(&mut app, 1);
     // The changed listing, which is the one whose rows git has coloured.
-    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Tab);
 
     let dump = support::render(&mut app, 60, 12);
     let text: Vec<&str> = support::text_block(&dump).lines().collect();
@@ -2715,7 +2727,7 @@ fn the_palette_groups_its_commands_into_tabs() {
 
     // One step right is the first group, which is a subset and not the whole
     // list.
-    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Tab);
     let files = listed(&app);
     assert!(files.contains(&"open-file".to_string()), "{files:?}");
     assert!(!files.contains(&"quit".to_string()), "{files:?}");
@@ -2733,8 +2745,8 @@ fn the_palette_groups_its_commands_into_tabs() {
 
     // Left from the first group wraps to the last, so walking the tabs never
     // dead-ends.
-    press(&mut app, KeyCode::Left);
-    press(&mut app, KeyCode::Left);
+    press(&mut app, KeyCode::BackTab);
+    press(&mut app, KeyCode::BackTab);
     let last = listed(&app);
     assert!(last.contains(&"quit".to_string()), "{last:?}");
 
@@ -2749,7 +2761,7 @@ fn the_palette_groups_its_commands_into_tabs() {
             .unwrap_or_else(|| panic!("no tabs on screen:\n{dump}"))
     };
     let one = row_of_tabs(&support::render(&mut app, 62, 20));
-    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Tab);
     let two = row_of_tabs(&support::render(&mut app, 62, 20));
     assert_eq!(one, two, "the block changed height with the tab");
 }
@@ -2952,7 +2964,9 @@ fn an_outline_indents_what_is_nested() {
     ]);
     support::lay_out(&mut app, 60, 24);
     press_function(&mut app, 7);
-    press(&mut app, KeyCode::End);
+    // To the last row, which is what reaches the nested names: with
+    // control, because bare end is the query's caret now.
+    press_control_key(&mut app, KeyCode::End);
 
     let dump = support::render(&mut app, 60, 24);
     let rows: Vec<&str> = support::text_block(&dump)
@@ -3146,7 +3160,7 @@ fn a_line_prompt_takes_digits_and_clamps_them() {
     type_text(&mut app, "zz");
     assert_eq!(
         app.prompt().map(obelus::component::prompt::Prompt::text),
-        Some(""),
+        Some(String::new()),
         "a letter got into a line number"
     );
     press(&mut app, KeyCode::Enter);
@@ -3387,7 +3401,7 @@ fn the_file_list_has_a_tab_for_what_has_changed() {
     // The right arrow moves to it, and its rows are the changed files --
     // sorted by name, because the order git walks the tree in is not an
     // order anyone can learn.
-    press(&mut dirty, KeyCode::Right);
+    press(&mut dirty, KeyCode::Tab);
     let rows: Vec<(String, Option<FileStatus>)> = dirty
         .picker()
         .expect("the file list")
@@ -3405,7 +3419,7 @@ fn the_file_list_has_a_tab_for_what_has_changed() {
 
     // And back to everything: the rows are gone and a walk is running for
     // them again.
-    press(&mut dirty, KeyCode::Left);
+    press(&mut dirty, KeyCode::BackTab);
     let picker = dirty.picker().expect("the file list");
     assert_eq!(picker.tab(), 0);
     assert_eq!(picker.match_count(), 0, "the changed rows stayed");
@@ -3440,7 +3454,7 @@ fn a_walk_in_flight_does_not_land_in_the_changed_listing() {
     });
     assert_eq!(app.picker().expect("the file list").match_count(), 1);
 
-    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Tab);
     app.handle(Event::FilesFound {
         generation: 1,
         paths: vec!["src/late.rs".into()],

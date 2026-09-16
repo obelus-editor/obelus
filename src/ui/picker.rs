@@ -50,7 +50,7 @@ fn list_region_rows(picker: &Picker, width: u16) -> u16 {
 /// draws all of them with the rest greyed.
 ///
 /// Nothing about enter or escape: a list is a list, and what a reader does
-/// to one is not news. Nothing about the arrows that walk the tabs either --
+/// to one is not news. Nothing about the keys that walk the tabs either --
 /// the tab row draws those itself, right where the tabs are, which says it
 /// better than a word at the foot could.
 ///
@@ -137,9 +137,9 @@ const LEAST_PREVIEW_ROWS: u16 = 4;
 
 /// How much of the tab row's right-hand end is spoken for.
 ///
-/// The arrows that say the tabs can be walked, and a column either side of
-/// them, so a note about what is still arriving sits beside the arrows
-/// rather than on top of them.
+/// The glyphs that say the tabs can be walked, and a column either side of
+/// them, so a note about what is still arriving sits beside them rather
+/// than on top of them.
 const FILLING_INSET: usize = 6;
 
 /// Where the preview goes, if there is room for one.
@@ -334,7 +334,7 @@ impl Widget for PickerView<'_> {
                 self.picker.tab(),
                 self.theme,
             );
-            // Beside the tabs, inside the arrows that already sit there: a
+            // Beside the tabs, inside the key glyphs that already sit there: a
             // list still filling has to say so somewhere that does not move
             // its rows out from under the reader when it stops.
             if let Some(note) = self.picker.is_filling() {

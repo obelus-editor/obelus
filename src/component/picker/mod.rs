@@ -23,7 +23,10 @@ use nucleo_matcher::{
 use crate::{
     buffer::BufferId,
     command::Command,
-    component::window::{Move, Window, Wrap},
+    component::{
+        field::Field,
+        window::{Move, Window, Wrap},
+    },
     question::Question,
 };
 
@@ -292,7 +295,7 @@ pub enum PickerOutcome {
 /// A prompt and a filtered list.
 pub struct Picker {
     items: Vec<PickerItem>,
-    query: String,
+    query: Field,
     /// Indices into `items` that match, best first.
     ///
     /// A field rather than a return value so the allocation survives every
@@ -467,7 +470,7 @@ impl std::fmt::Debug for Picker {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("Picker")
-            .field("query", &self.query)
+            .field("query", &self.query.said())
             .field("items", &self.items.len())
             .field("matched", &self.matched.len())
             .field("selected", &self.window.focus())
@@ -482,7 +485,7 @@ impl Picker {
     pub fn new(items: Vec<PickerItem>, layout: PickerLayout) -> Self {
         let mut picker = Self {
             items,
-            query: String::new(),
+            query: Field::new(),
             matched: Vec::new(),
             indices: Vec::new(),
             window: Window::new(),
@@ -883,7 +886,7 @@ impl Picker {
     /// Puts a query back, for a list that has been rebuilt under a reader
     /// who had already typed one.
     pub fn set_query(&mut self, query: &str) {
-        self.query = query.to_string();
+        self.query.replace(query);
         self.refilter();
     }
 
@@ -1051,8 +1054,43 @@ impl Picker {
 
     /// What has been typed.
     #[must_use]
-    pub fn query(&self) -> &str {
-        &self.query
+    pub fn query(&self) -> String {
+        self.query.said()
+    }
+
+    /// Where the caret is in it, and which of it is held.
+    ///
+    /// For whoever draws the row: the caret is a column worked out from
+    /// what comes before it, and a run held is a run marked. Both are the
+    /// query's own, because the query is a text with a caret in it.
+    #[must_use]
+    pub fn query_caret(&self) -> usize {
+        self.query.caret().get()
+    }
+
+    /// Which characters of it the reader has hold of.
+    #[must_use]
+    pub fn query_held(&self) -> Option<std::ops::Range<usize>> {
+        self.query.held()
+    }
+
+    /// Puts a run of text into the query, which is what a paste is.
+    pub fn put_in_query(&mut self, said: &str) {
+        self.query.put(said);
+        self.refilter();
+    }
+
+    /// What a copy takes from the query: what is held, or all of it.
+    #[must_use]
+    pub fn copy_query(&self) -> (String, &'static str) {
+        self.query.copied()
+    }
+
+    /// The same, and takes it out.
+    pub fn cut_query(&mut self) -> (String, &'static str) {
+        let taken = self.query.cut();
+        self.refilter();
+        taken
     }
 
     /// The matching rows, best first.
@@ -1111,7 +1149,8 @@ impl Picker {
             return Vec::new();
         };
         let mut indices = Vec::new();
-        self.marks_in(index, &mut indices);
+        let said = self.query.said();
+        self.marks_in(index, &said, &mut indices);
         indices
     }
 
@@ -1122,18 +1161,22 @@ impl Picker {
     /// a name they half remember, loosely. A search is asking where a string
     /// is, and `ac` is not in `abc` -- so it marks the run it found and
     /// nothing else.
-    fn marks_in(&mut self, index: usize, indices: &mut Vec<u32>) {
+    ///
+    /// `said` is the query, passed in rather than read: this runs once per
+    /// row on screen, and the query lives in a rope that would be walked
+    /// into a fresh string for every one of them.
+    fn marks_in(&mut self, index: usize, said: &str, indices: &mut Vec<u32>) {
         indices.clear();
         let label = &self.items[index].label;
         if self.searching {
             let how = self.looking.unwrap_or_default();
-            let Some(run) = crate::search::Needle::new(&self.query, how).found_in(label) else {
+            let Some(run) = crate::search::Needle::new(said, how).found_in(label) else {
                 return;
             };
             indices.extend(run.map(|at| u32::try_from(at).unwrap_or(u32::MAX)));
             return;
         }
-        let pattern = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
+        let pattern = Pattern::parse(said, CaseMatching::Smart, Normalization::Smart);
         let haystack = Utf32Str::new(label, &mut self.haystack);
         pattern.indices(haystack, &mut self.matcher, indices);
         indices.sort_unstable();
@@ -1189,12 +1232,13 @@ impl Picker {
         }
 
         let first = self.first_visible(height);
+        let said = self.query.said();
         for row in first..first.saturating_add(usize::from(height)) {
             let Some((index, _)) = self.matched.get(row).copied() else {
                 break;
             };
             let mut indices = spare.pop().unwrap_or_default();
-            self.marks_in(index, &mut indices);
+            self.marks_in(index, &said, &mut indices);
             self.indices.push((row, indices));
         }
     }
@@ -1247,14 +1291,21 @@ impl Picker {
                 self.select(self.matched.len().saturating_sub(1));
                 PickerOutcome::Consumed
             }
+            // `tab` walks the tabs, which is the key's own name and the
+            // only thing it can mean in a list: nothing here indents, and
+            // the one completion obelus accepts with a key accepts with
+            // enter. The arrows used to do this and cannot any more -- the
+            // query is a text with a caret in it, and left and right are
+            // where a caret goes.
+            //
             // Only where there are tabs to walk. Elsewhere they fall
             // through, which is what a picker with nothing to switch should
-            // do with an arrow that means nothing to it.
-            KeyCode::Right if bare && !self.tabs.is_empty() => {
+            // do with a key that means nothing to it.
+            KeyCode::Tab if bare && !self.tabs.is_empty() => {
                 self.step_tab(true);
                 PickerOutcome::Consumed
             }
-            KeyCode::Left if bare && !self.tabs.is_empty() => {
+            KeyCode::BackTab if !self.tabs.is_empty() => {
                 self.step_tab(false);
                 PickerOutcome::Consumed
             }
@@ -1282,7 +1333,15 @@ impl Picker {
             // row that cannot be chosen is stepped over rather than landed
             // on, so the moving goes through `move_selection` rather than
             // straight to the window.
+            //
+            // Bare home and end are not among them any more. They used to
+            // reach the first and last row, duplicating `ctrl+home` and
+            // `ctrl+end` on purpose -- but the query is a line with a caret
+            // in it now, and bare home and end are where a caret goes in
+            // every other text obelus holds. The duplicate was what made
+            // them free to give away.
             code if (bare || (control && paging))
+                && !(bare && matches!(code, KeyCode::Home | KeyCode::End))
                 && let Some(movement) = Move::of(code) =>
             {
                 match movement {
@@ -1299,20 +1358,18 @@ impl Picker {
                 }
                 PickerOutcome::Consumed
             }
-            KeyCode::Backspace if bare => {
-                self.query.pop();
-                self.refilter();
-                PickerOutcome::Consumed
-            }
-            // Only a bare or shifted character is text. `ctrl+q` has to reach
-            // the key table, or there would be no way out of a picker other
-            // than Escape.
-            KeyCode::Char(character) if (modifiers - KeyModifiers::SHIFT).is_empty() => {
-                self.query.push(character);
-                self.refilter();
-                PickerOutcome::Consumed
-            }
-            _ => PickerOutcome::Ignored,
+            // Everything the list did not want goes to the query, which
+            // is a line with a caret in it and takes the keys a line takes:
+            // the arrows, the words, what is held, what is typed. A key it
+            // has no use for it refuses, and that is how `ctrl+q` still
+            // reaches the key table and leaves obelus from in here.
+            _ => match self.query.handle_key(key) {
+                true => {
+                    self.refilter();
+                    PickerOutcome::Consumed
+                }
+                false => PickerOutcome::Ignored,
+            },
         };
 
         // The reader has taken over. One place rather than a line in each arm
@@ -1398,7 +1455,11 @@ impl Picker {
                     .map(|(index, _)| (index, 0)),
             );
         } else {
-            let pattern = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
+            let pattern = Pattern::parse(
+                &self.query.said(),
+                CaseMatching::Smart,
+                Normalization::Smart,
+            );
             // Whether the last row a query could be about matched, for the
             // rows that hang under it.
             let mut parent = false;

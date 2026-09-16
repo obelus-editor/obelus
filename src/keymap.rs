@@ -237,7 +237,14 @@ pub enum Context {
     /// The list of open files: the one dialog with a command of its own,
     /// which is the command that closes a file.
     Buffers,
-    /// Any other dialog. Nothing is bound here, and that is the point.
+    /// Any other dialog.
+    ///
+    /// Almost nothing is bound here, and that is the point: a global key
+    /// that reached a dialog would be a global key opening a second one
+    /// over it. The exception is the three that act on what the reader has
+    /// hold of -- copy, cut and paste -- because a dialog with a box in it
+    /// has a caret, and a box a reader can select in but not copy out of
+    /// is a box with half a selection.
     Dialog,
 }
 
@@ -476,6 +483,26 @@ impl Keymap {
                     context: Context::Normal,
                     chord: control('v'),
                 },
+                // And again inside a dialog. These three are not about the
+                // file, they are about whatever has a caret in it -- and a
+                // list, the settings and a conversation all have a box a
+                // reader types into. Bound rather than left to fall
+                // through, because a dialog answers no global key at all.
+                Binding {
+                    command: Command::SelectionCopy,
+                    context: Context::Dialog,
+                    chord: control('c'),
+                },
+                Binding {
+                    command: Command::SelectionCut,
+                    context: Context::Dialog,
+                    chord: control('x'),
+                },
+                Binding {
+                    command: Command::Paste,
+                    context: Context::Dialog,
+                    chord: control('v'),
+                },
                 Binding {
                     command: Command::Undo,
                     context: Context::Normal,
@@ -655,6 +682,13 @@ impl Keymap {
     pub fn lookup(&self, event: &KeyEvent, context: Context) -> Option<Command> {
         let chord = KeyChord::from_event(event)?;
         if let Some(command) = self.find(chord, context) {
+            return Some(command);
+        }
+        // The list of open files is a dialog with one command of its own,
+        // so what every dialog answers it answers too.
+        if context == Context::Buffers
+            && let Some(command) = self.find(chord, Context::Dialog)
+        {
             return Some(command);
         }
         if !context.has_global_keys() {

@@ -2331,7 +2331,7 @@ fn the_history_opens_at_the_radius_its_key_names() {
     // The other tab is a walk away, and walking onto it asks its own
     // question: not which commits changed this file, but which names point
     // at a commit it can be read from.
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     let rows: Vec<String> = app
         .picker()
         .expect("the history")
@@ -4234,7 +4234,7 @@ fn the_refs_tab_opens_this_file_as_a_name_has_it() {
     // The refs tab does: both names, and the one being read marked. Not in
     // a fixed order -- two branches committed in the same second are two
     // commits of the same age, and the tie goes to the name.
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     let picker = app.picker().expect("the history");
     let rows: Vec<(String, bool)> = picker
         .matches()
@@ -4296,7 +4296,7 @@ fn a_query_for_a_name_finds_the_nearest_name() {
     support::lay_out(&mut app, 74, 16);
     support::press_function(&mut app, 9);
     support::read_history(&mut app, &events);
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     support::type_text(&mut app, "v0.1");
 
     let rows: Vec<String> = app

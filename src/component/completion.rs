@@ -410,11 +410,13 @@ impl Completion {
                 };
                 CompletionOutcome::Consumed
             }
-            // Both keys take what is selected. `tab` because it is what
-            // every editor accepts a completion with, and `enter` because
-            // the reader asked for the panel to come up already chosen --
-            // which is the whole of what makes one key enough.
-            KeyCode::Enter | KeyCode::Tab => CompletionOutcome::Accepted,
+            // Enter takes what is selected, and only enter. The panel comes
+            // up already chosen, so one key is the whole of what it needs --
+            // and `tab` is worth more elsewhere than it is as a second way
+            // to do what enter does: it steps a snippet's holes, and it
+            // walks the tabs of a list, neither of which has another key
+            // that reads as well.
+            KeyCode::Enter => CompletionOutcome::Accepted,
             KeyCode::Esc => CompletionOutcome::Cancelled,
             _ => CompletionOutcome::Ignored,
         }

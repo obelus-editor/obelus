@@ -95,7 +95,7 @@ fn the_counts_are_a_table_of_languages_biggest_first() {
 #[test]
 fn the_other_page_is_the_files() {
     let mut app = open(76, 24);
-    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Tab);
     support::check("counts_files_76x24", &support::render(&mut app, 76, 24));
 }
 
@@ -125,7 +125,7 @@ fn many_files(width: u16, height: u16) -> App {
             blanks: 400,
         },
     })));
-    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Tab);
     app
 }
 
@@ -341,7 +341,7 @@ fn enter_on_a_file_opens_it() {
         },
     })));
 
-    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Tab);
     // `tests`, then `fixtures`, then the file: enter opens a directory and
     // stays on it, so the way down is a step and a press at each level.
     press(&mut app, KeyCode::Enter);
@@ -427,7 +427,7 @@ fn nothing_of_obeluss_own_opens_over_the_counts() {
 #[test]
 fn the_counts_say_what_their_keys_do() {
     let mut app = open(76, 18);
-    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Tab);
     let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
     for word in ["open", "leave", "keys"] {
         assert!(text.contains(word), "{word:?} is not at the foot:\n{text}");

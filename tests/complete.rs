@@ -106,7 +106,9 @@ fn a_candidate_replaces_the_word_it_was_offered_for() {
     support::press(&mut app, crossterm::event::KeyCode::Down);
     support::press(&mut app, crossterm::event::KeyCode::End);
     app.complete_for_test(labels(&["push_str", "pop"]));
-    support::press(&mut app, crossterm::event::KeyCode::Tab);
+    // Enter, and only enter: the panel comes up already chosen, and `tab`
+    // means something else everywhere it is used.
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
 
     assert_eq!(
         text(&app),

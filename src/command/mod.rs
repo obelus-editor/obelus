@@ -190,6 +190,15 @@ pub enum Requires {
     Nothing,
     /// Some file has to be open.
     AFileOpen,
+    /// There has to be somewhere with a caret in it.
+    ///
+    /// A file, or a box a reader is typing into -- a list's query, the
+    /// settings' filter, a question on the status bar, a note, a message
+    /// to an agent. Not the same as a file being open, which is what these
+    /// asked for until a box could hold a selection: `ob some-directory`
+    /// opens on a list with no file behind it, and copying out of the box
+    /// a reader is typing in has nothing to do with whether there is one.
+    ACaret,
     /// The open file has to be in a language obelus can parse.
     AKnownLanguage,
     /// The open file has to have a reading, or be showing one.
@@ -739,17 +748,17 @@ impl Command {
             // nothing on CSS and works on Rust.
             Self::CommentToggle => Requires::ALineComment,
             // Not a selection: with nothing selected these are about the
-            // line the cursor is on, which is what a reader means by them
-            // far more often than they mean "nothing".
-            Self::SelectionCopy | Self::SelectionCut => {
-                Requires::AFileOpen
-            }
+            // line the cursor is on -- or the whole of the box -- which is
+            // what a reader means by them far more often than they mean
+            // "nothing". And wherever there is a caret rather than
+            // wherever there is a file: what holds what they have hold of
+            // may be a box.
+            Self::SelectionCopy | Self::SelectionCut | Self::Paste => Requires::ACaret,
             // Not "is there anything to paste": obelus's own store knows
             // without being asked, and an external clipboard has to be run
             // to find out. A requirement that cannot be answered cheaply
             // becomes a key that does nothing and a row grey for ever,
             // because `offers` gates both. The command says what it found.
-            Self::Paste => Requires::AFileOpen,
             Self::Undo => Requires::SomethingToUndo,
             Self::Redo => Requires::SomethingToRedo,
             // Not a selection: this is how one is made. A file, though --

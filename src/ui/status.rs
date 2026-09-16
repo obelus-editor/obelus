@@ -16,7 +16,7 @@ use crate::{
     icons,
     lsp::ServerState,
     theme::Theme,
-    ui::{fill, relative_to, text_width, truncate_from_left, write},
+    ui::{Marked, fill, relative_to, text_width, truncate_from_left, write, write_marked},
 };
 
 /// The status region.
@@ -99,12 +99,25 @@ impl Widget for StatusView<'_> {
             // thing: what has been typed narrows what is above it. And
             // nothing else on the row -- what narrowing did is on the
             // screen above it, in the rows themselves.
-            write(
+            let said = settings.query();
+            let marked = match settings.query_held() {
+                Some(held) => {
+                    let ahead = typed(None, "").chars().count();
+                    Marked::run(
+                        held.start + ahead..held.end + ahead,
+                        self.theme.selection_background,
+                    )
+                }
+                None => Marked::plain(),
+            };
+            write_marked(
                 cells,
+                area,
                 area.x + 1,
                 area.y,
-                &typed(None, settings.query()),
+                &typed(None, &said),
                 style,
+                &marked,
             );
         } else if let Some(buffer) = self.buffer {
             self.render_file(buffer, area, cells, style);
@@ -202,16 +215,22 @@ fn typed(question: Option<&str>, words: &str) -> String {
 }
 
 /// Which column the caret belongs in on a row that is typed into.
+///
+/// `at` is how many characters of `words` are in front of the caret, which
+/// is not the same as how many there are: a caret that could only ever sit
+/// at the end was the whole of what made these boxes unable to reach the
+/// middle of what a reader had typed.
 #[must_use]
-pub fn typed_caret(question: Option<&str>, words: &str) -> u16 {
-    let caret = 1usize.saturating_add(text_width(&typed(question, words)));
+pub fn typed_caret(question: Option<&str>, words: &str, at: usize) -> u16 {
+    let before: String = words.chars().take(at).collect();
+    let caret = 1usize.saturating_add(text_width(&typed(question, &before)));
     u16::try_from(caret).unwrap_or(u16::MAX)
 }
 
 /// Which column the caret belongs in after a filter's text.
 #[must_use]
-pub fn filter_caret(query: &str) -> u16 {
-    typed_caret(None, query)
+pub fn filter_caret(query: &str, at: usize) -> u16 {
+    typed_caret(None, query, at)
 }
 
 /// Which column the caret belongs in while a question is being asked.
@@ -220,7 +239,12 @@ pub fn filter_caret(query: &str) -> u16 {
 /// cannot disagree about where the answer ends.
 #[must_use]
 pub fn answer_caret(prompt: &crate::component::prompt::Prompt) -> u16 {
-    let caret = 1usize.saturating_add(text_width(&prompt.line()));
+    // The label and what is in front of the caret, which is not all of
+    // what was typed: an answer that starts with the old name in it is
+    // one a reader edits, and the caret goes where they put it.
+    let said = prompt.text();
+    let before: String = said.chars().take(prompt.caret()).collect();
+    let caret = 1usize.saturating_add(text_width(prompt.kind().label()) + text_width(&before));
     u16::try_from(caret).unwrap_or(u16::MAX)
 }
 
@@ -230,7 +254,7 @@ pub fn answer_caret(prompt: &crate::component::prompt::Prompt) -> u16 {
 /// Shared with the renderer so the text and the caret cannot disagree.
 #[must_use]
 pub fn prompt_caret(picker: &Picker) -> u16 {
-    typed_caret(picker.question(), picker.query())
+    typed_caret(picker.question(), &picker.query(), picker.query_caret())
 }
 
 impl StatusView<'_> {
@@ -423,8 +447,22 @@ impl StatusView<'_> {
     /// on the row they are typing into is a number in the corner of their
     /// eye.
     fn render_prompt(&self, picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style) {
-        let line = typed(picker.question(), picker.query());
-        write(cells, area.x + 1, area.y, &line, style);
+        let said = picker.query();
+        let line = typed(picker.question(), &said);
+        // What is held, marked where it is: the prefix in front of the
+        // query is not part of what was typed, so the run moves right by
+        // however wide that is.
+        let marked = match picker.query_held() {
+            Some(held) => {
+                let ahead = typed(picker.question(), "").chars().count();
+                Marked::run(
+                    held.start + ahead..held.end + ahead,
+                    self.theme.selection_background,
+                )
+            }
+            None => Marked::plain(),
+        };
+        write_marked(cells, area, area.x + 1, area.y, &line, style, &marked);
     }
 }
 

@@ -145,7 +145,7 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
     // does. After the picker, because a list opened over them is what the
     // reader is typing into.
     if let Some(settings) = app.settings() {
-        let column = status::filter_caret(settings.query());
+        let column = status::filter_caret(&settings.query(), settings.query_caret());
         return (column < regions.status.width).then(|| Position {
             x: regions.status.x + column,
             y: regions.status.y,
@@ -739,7 +739,10 @@ where
         );
     }
 
-    let keys = "\u{2190} \u{2192}";
+    // The keys that walk them, drawn where they are walked. The tab
+    // arrows rather than the left and right ones: those are the caret's
+    // now, and a hint that names the wrong key is worse than none.
+    let keys = "\u{21e4} \u{21e5}";
     if let Ok(offset) = u16::try_from(usize::from(area.width).saturating_sub(text_width(keys) + 1))
         && area.x + offset > column
     {

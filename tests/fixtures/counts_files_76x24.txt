@@ -1,6 +1,6 @@
 screen 76x24  editor 76x22  status 76x1
 -- text --
- 0|  languages  files                                                      ← → 
+ 0|  languages  files                                                      ⇤ ⇥ 
  1|────────────────────────────────────────────────────────────────────────────
  2|                                     files   lines    code comments  blank  
  3| ▸ src                                  2    1789    1491     215      83  

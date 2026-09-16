@@ -557,7 +557,7 @@ fn the_query_walks_between_the_tabs() {
     support::press_function(&mut app, 5);
     support::type_text(&mut app, "greeting");
 
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     let picker = app.picker().expect("the search");
     assert_eq!(
         picker.tabs()[picker.tab()],
@@ -572,7 +572,7 @@ fn the_query_walks_between_the_tabs() {
     assert_eq!(picker.nothing_to_show(), Some("searching\u{2026}"));
 
     // And back again, onto the file's own lines, still narrowed.
-    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::BackTab);
     let picker = app.picker().expect("the search");
     assert_eq!(
         picker.tabs()[picker.tab()],
@@ -742,7 +742,7 @@ fn matches_do_not_land_in_a_list_that_did_not_ask() {
     support::press_function(&mut app, 6);
     support::type_text(&mut app, "greeting");
     let generation = app.search_generation();
-    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::BackTab);
     app.handle(Event::Matches {
         generation,
         hits: vec![hit.clone()],

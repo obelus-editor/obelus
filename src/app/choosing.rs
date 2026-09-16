@@ -149,6 +149,11 @@ impl App {
         match command.requires() {
             Requires::Nothing => true,
             Requires::AFileOpen => buffer.is_some(),
+            // A file, or a box a reader is typing into. The same places a
+            // paste goes into, asked as one question rather than in order:
+            // what these keys need is that there is somewhere with a caret
+            // in it, not which of them it is.
+            Requires::ACaret => buffer.is_some() || self.somewhere_to_type(),
             Requires::AKnownLanguage => buffer.and_then(Buffer::language).is_some(),
             // Either the file has a reading, or it is already showing one
             // -- which is the same question asked from the other side: the

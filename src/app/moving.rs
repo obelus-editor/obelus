@@ -254,6 +254,34 @@ impl App {
 
     /// Copies the selected text to the system clipboard.
     pub fn copy_selection(&mut self) {
+        // Out of whatever is being typed into, nearest first, the same
+        // order a paste goes in by. A box a reader can select in but not
+        // copy out of is a box with half a selection -- and before this,
+        // `ctrl+c` over a list copied the line of the file behind it.
+        //
+        // The notes are not here because they answer these two keys
+        // themselves: a dialog is bound to nothing in the key table, so
+        // nothing it takes ever arrives at one.
+        if let Some(prompt) = self.prompt.as_ref() {
+            let (text, what) = prompt.copied();
+            self.copied(&text, what);
+            return;
+        }
+        if let Some(settings) = self.settings.as_ref() {
+            let (text, what) = settings.copy_query();
+            self.copied(&text, what);
+            return;
+        }
+        if let Some(picker) = self.picker.as_ref() {
+            let (text, what) = picker.copy_query();
+            self.copied(&text, what);
+            return;
+        }
+        if self.showing_chat {
+            let (text, what) = self.chat.copied();
+            self.copied(&text, what);
+            return;
+        }
         let Some(buffer) = self.current_buffer() else {
             return;
         };
@@ -316,6 +344,37 @@ impl App {
     /// rows are lines the file no longer has, and cutting them would be
     /// cutting from a diff.
     pub fn cut_selection(&mut self) {
+        // The same order, and the same reason with more at stake: before
+        // this, `ctrl+x` over a list took a line out of the file behind it,
+        // where nobody could see it go.
+        if let Some(prompt) = self.prompt.as_mut() {
+            let (text, what) = prompt.cut();
+            self.cut_away(&text, what);
+            return;
+        }
+        if let Some(settings) = self.settings.as_mut() {
+            let (text, what) = settings.cut_query();
+            self.cut_away(&text, what);
+            return;
+        }
+        if let Some(picker) = self.picker.as_mut() {
+            let (text, what) = picker.cut_query();
+            let searching = picker.is_searching();
+            self.cut_away(&text, what);
+            if searching {
+                self.refresh_search();
+            }
+            return;
+        }
+        if self.showing_chat {
+            // The width the box really has, from the same function the
+            // view lays it out with: a cut is over a selection, and where
+            // a selection ends was decided by where the rows wrap.
+            let room = ui::chat::writing_width(self.editor_area);
+            let (text, what) = self.chat.cut(room);
+            self.cut_away(&text, what);
+            return;
+        }
         let Some(buffer) = self.current_buffer() else {
             return;
         };
@@ -368,14 +427,56 @@ impl App {
     ///
     /// What the terminal's own paste arrives as, and what the clipboard
     /// hands back. One change either way, so undoing it is one step.
+    /// Whether there is a box a reader is typing into.
+    ///
+    /// The same places [`App::paste_text`] puts a paste, named once so the
+    /// key that is offered and the place it would go cannot come apart: a
+    /// key offered with nowhere to act is a key that does nothing, and one
+    /// refused over a box the reader is looking at is worse.
+    #[must_use]
+    pub(super) fn somewhere_to_type(&self) -> bool {
+        self.prompt.is_some()
+            || self.notes.is_some()
+            || self.settings.is_some()
+            || self.picker.is_some()
+            || self.showing_chat
+    }
+
     pub(super) fn paste_text(&mut self, what: &str) {
-        // Into the notes while they are showing, because that is the page
-        // the reader is writing on: a paste that went past them into the
-        // file behind would put their text somewhere they cannot see it.
-        // Not under a prompt, which is the thing they are answering -- the
-        // same guard the keys go through.
-        if self.prompt.is_none() && self.notes.is_some() {
+        // Into whatever is being typed into, which is what a paste is for.
+        // The order is the keys' order, nearest first: the thing a reader
+        // is answering takes it before the thing behind it.
+        //
+        // This used to name only the notes, and everything else went to the
+        // file -- so a path pasted into the file list landed in the source
+        // behind it, where the list was covering it up. A paste is text
+        // arriving where the caret is, and the caret is not in the file
+        // while a reader is answering something.
+        if let Some(prompt) = self.prompt.as_mut() {
+            prompt.put(what);
+            return;
+        }
+        if self.notes.is_some() {
             self.paste_into_notes(what);
+            return;
+        }
+        if let Some(settings) = self.settings.as_mut() {
+            settings.put_in_query(what);
+            return;
+        }
+        if let Some(picker) = self.picker.as_mut() {
+            // A search's rows come from the query, so a query that changed
+            // by being pasted into has to be asked again -- the same thing
+            // the key path does when a keystroke changes it.
+            let searching = picker.is_searching();
+            picker.put_in_query(what);
+            if searching {
+                self.refresh_search();
+            }
+            return;
+        }
+        if self.showing_chat {
+            self.chat.put(what);
             return;
         }
         let Some(buffer) = self.current_buffer() else {

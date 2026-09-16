@@ -912,6 +912,27 @@ impl Chat {
         }
     }
 
+    /// What a copy takes out of the box: what is held, or the whole of
+    /// what has been written.
+    ///
+    /// The rule the file follows with its line and the notes follow with
+    /// their note: copying nothing is not something a key can usefully do.
+    #[must_use]
+    pub fn copied(&self) -> (String, &'static str) {
+        match self.input.selected() {
+            Some(held) => (held, "selection"),
+            None => (self.input.text(), "message"),
+        }
+    }
+
+    /// The same, and takes it out.
+    pub fn cut(&mut self, room: u16) -> (String, &'static str) {
+        match self.input.cut(room.max(1)) {
+            Some(held) => (held, "selection"),
+            None => (self.input.take(), "message"),
+        }
+    }
+
     /// Puts a whole message in the box, with the caret after it.
     ///
     /// For completing a command from the list of them: what the reader

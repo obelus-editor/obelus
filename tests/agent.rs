@@ -499,11 +499,12 @@ fn a_slash_is_a_command_and_anything_else_is_a_message() {
         .map(|item| item.label.clone())
         .expect("a row is chosen");
     assert_ne!(first, second, "the arrows did not move the selection");
-    support::press(&mut app, KeyCode::Tab);
+    // Enter, which is what every completion in obelus is taken with.
+    support::press(&mut app, KeyCode::Enter);
     assert_eq!(
         app.chat().expect("the chat").writing().text(),
         format!("{second} "),
-        "tab did not take the row that was on"
+        "enter did not take the row that was on"
     );
     // The blank after the name settles it, so the list has nothing left to
     // offer and is gone.

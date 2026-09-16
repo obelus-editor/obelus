@@ -544,11 +544,16 @@ impl Counts {
                 CountsOutcome::Consumed
             }
             KeyCode::Esc if bare => CountsOutcome::Cancelled,
-            KeyCode::Right if bare => {
+            // `tab` walks the two pages, which is what walks the tabs of
+            // every other view here -- and what the tab row itself draws.
+            // Nothing is typed into this page, so the arrows were free to
+            // keep; a key that means one thing on four views and something
+            // else on the fifth is not.
+            KeyCode::Tab if bare => {
                 self.step_page();
                 CountsOutcome::Consumed
             }
-            KeyCode::Left if bare => {
+            KeyCode::BackTab => {
                 self.step_page();
                 CountsOutcome::Consumed
             }
@@ -778,14 +783,14 @@ mod tests {
         );
 
         // And walking to the files tab is the other way back to all of them.
-        counts.handle_key(&press(KeyCode::Left), 10);
-        counts.handle_key(&press(KeyCode::Right), 10);
+        counts.handle_key(&press(KeyCode::BackTab), 10);
+        counts.handle_key(&press(KeyCode::Tab), 10);
         // `Cargo.toml` is back beside `src`, so the narrowing is gone.
         assert_eq!(counts.rows().len(), 2, "walking kept the narrowing");
         assert_eq!(counts.tabs()[1], "files");
 
         // Escape gives up on the language first, not on the whole view.
-        counts.handle_key(&press(KeyCode::Left), 10);
+        counts.handle_key(&press(KeyCode::BackTab), 10);
         counts.handle_key(&press(KeyCode::Down), 10);
         counts.handle_key(&press(KeyCode::Enter), 10);
         assert!(matches!(
@@ -810,13 +815,13 @@ mod tests {
         let mut counts = Counts::new();
         counts.show(counted());
 
-        counts.handle_key(&press(KeyCode::Right), 10);
+        counts.handle_key(&press(KeyCode::Tab), 10);
         assert_eq!(counts.page(), Page::Files);
         // Off the right-hand end.
-        counts.handle_key(&press(KeyCode::Right), 10);
+        counts.handle_key(&press(KeyCode::Tab), 10);
         assert_eq!(counts.page(), Page::Languages);
         // And off the left-hand one.
-        counts.handle_key(&press(KeyCode::Left), 10);
+        counts.handle_key(&press(KeyCode::BackTab), 10);
         assert_eq!(counts.page(), Page::Files);
     }
 
@@ -831,7 +836,7 @@ mod tests {
 
         // Walk to the file page rather than choosing a language, so this is
         // the whole list.
-        counts.handle_key(&press(KeyCode::Right), 10);
+        counts.handle_key(&press(KeyCode::Tab), 10);
         assert_eq!(counts.page(), Page::Files);
         assert_eq!(counts.rows().len(), 2, "the tab was reached narrowed");
 
@@ -859,7 +864,7 @@ mod tests {
     fn a_directory_opens_and_closes_on_the_same_key() {
         let mut counts = Counts::new();
         counts.show(counted());
-        counts.handle_key(&press(KeyCode::Right), 10);
+        counts.handle_key(&press(KeyCode::Tab), 10);
 
         let shut = counts.rows().len();
         assert_eq!(counts.rows()[0].open, Some(false), "it opened opened");
@@ -891,7 +896,7 @@ mod tests {
     fn a_directory_sits_among_the_files_by_size() {
         let mut counts = Counts::new();
         counts.show(counted());
-        counts.handle_key(&press(KeyCode::Right), 10);
+        counts.handle_key(&press(KeyCode::Tab), 10);
 
         // `src` holds a hundred lines and `Cargo.toml` five.
         let names: Vec<&str> = counts.rows().iter().map(|row| row.name.as_str()).collect();

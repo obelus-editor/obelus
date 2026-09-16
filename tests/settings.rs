@@ -328,20 +328,23 @@ fn every_setting_is_on_one_page_under_a_heading() {
         obelus::component::settings::Settings::tabs(),
         ["settings", "keys", "agents"]
     );
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_keys());
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_agents());
     assert!(
         rows(&app).is_empty(),
         "the agents page has settings rows on it"
     );
-    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::BackTab);
     assert!(app.settings().expect("the settings").on_keys());
 
-    // Tab is not one of the keys that walks them: one way to do it is the
-    // way every other tabbed view here works.
-    support::press(&mut app, KeyCode::Tab);
+    // And the arrows are not one of the keys that walks them any more:
+    // the filter is a line with a caret in it, and that is where a caret
+    // goes. One way to do it, the way every other tabbed view here works.
+    support::press(&mut app, KeyCode::Right);
+    assert!(app.settings().expect("the settings").on_keys());
+    support::press(&mut app, KeyCode::Left);
     assert!(app.settings().expect("the settings").on_keys());
 }
 
@@ -866,7 +869,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     );
 
     // And the two tabs a tree may not have.
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     let dump = support::render(&mut app, 76, 32);
     assert!(
         support::text_block(&dump).contains("may not move the keys"),
@@ -1124,7 +1127,7 @@ fn the_agents_page_is_a_list_of_cards() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
     // Onto the agents tab, which is the last one.
-    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::BackTab);
     assert!(app.settings().expect("the settings").on_agents());
 
     let agents: Vec<obelus::agent::Agent> = (0..12)
@@ -1209,7 +1212,7 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
     let scratch = temporary("registry");
     let file = settings_file(&scratch);
     let mut app = open(&file);
-    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::BackTab);
     assert!(app.settings().expect("the settings").on_agents());
 
     // Nothing has arrived yet: the page says what it is doing.
@@ -1242,7 +1245,7 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
         None,
         "reopening the page did not try again"
     );
-    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::BackTab);
 
     // An empty answer with nothing wrong leaves whatever list there is:
     // the cached one arriving after the fetched one must not wipe it.
@@ -1300,7 +1303,7 @@ fn the_cards_scroll_only_at_an_edge() {
     let scratch = temporary("window");
     let file = settings_file(&scratch);
     let mut app = open(&file);
-    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::BackTab);
 
     let agents: Vec<obelus::agent::Agent> = (0..12)
         .map(|index| obelus::agent::Agent {
@@ -1518,7 +1521,7 @@ fn an_agent_that_is_not_installed_is_not_in_use() {
     std::fs::create_dir_all(&binaries).expect("a directory");
     std::fs::write(binaries.join("agent-0"), "").expect("a program");
 
-    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::BackTab);
     app.handle(Event::Registry {
         agents: vec![obelus::agent::Agent {
             id: "agent-0".to_string(),
@@ -1569,7 +1572,7 @@ fn a_command_can_be_put_on_another_key() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
     // The keys tab, which is one across: settings, keys, agents.
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     support::type_text(&mut app, "choose-theme");
     let dump = support::render(&mut app, 66, 12);
     assert!(
@@ -1625,7 +1628,7 @@ fn a_key_that_is_taken_says_so_on_the_row() {
     let _taken = SETTINGS.lock().expect("the lock");
     let scratch = temporary("taken");
     let mut app = open(&settings_file(&scratch));
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     support::type_text(&mut app, "choose-theme");
     support::press(&mut app, KeyCode::Enter);
 
@@ -1678,7 +1681,7 @@ fn a_key_that_could_never_fire_is_refused() {
     let _taken = SETTINGS.lock().expect("the lock");
     let scratch = temporary("never");
     let mut app = open(&settings_file(&scratch));
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     support::type_text(&mut app, "choose-theme");
     support::press(&mut app, KeyCode::Enter);
 
@@ -1727,7 +1730,7 @@ fn delete_takes_a_key_away() {
     let scratch = temporary("unbind");
     let file = settings_file(&scratch);
     let mut app = open(&file);
-    support::press(&mut app, KeyCode::Right);
+    support::press(&mut app, KeyCode::Tab);
     support::type_text(&mut app, "close-file");
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Delete);
