@@ -32,7 +32,13 @@ impl App {
     /// Where each note points is worked out here, once, while the view is
     /// being opened: it is a question for git and for the disk, and the draw
     /// path is the one place that must never ask either.
+    ///
+    /// It reads the file, so it must not be called on a view that is already
+    /// open: making room writes the old one down first, but the reader's
+    /// place in the list would still be lost for nothing. `add_todo` checks,
+    /// which is why.
     pub fn open_todo(&mut self) {
+        self.make_room(Room::Region);
         let todo = Todo::read(&self.working_directory);
         let where_now = todo
             .notes
@@ -169,9 +175,7 @@ impl App {
             // these save: there is no moment where the reader said "done
             // with this note", so every way out of the view is one.
             TodoOutcome::Cancelled => {
-                let todo = notes.todo().clone();
-                self.save_notes(&todo);
-                self.notes = None;
+                self.leave(Layer::Notes);
                 true
             }
             TodoOutcome::Go(path, line) => {

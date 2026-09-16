@@ -173,7 +173,7 @@ impl App {
         picker.keeps_order(true);
         picker.about("what the language server offers to do here");
         self.note = None;
-        self.picker = Some(picker);
+        self.show_list(picker);
     }
 
     /// Does the one the reader chose.

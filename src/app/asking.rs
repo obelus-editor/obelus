@@ -20,7 +20,7 @@ impl App {
     /// turned into, and a list coming back underneath the answer would be
     /// one they had already left.
     pub(super) fn stop_to_ask(&mut self, question: Question) {
-        self.picker = Some(Picker::asking(&question));
+        self.show_list(Picker::asking(&question));
     }
 
     /// Asks before closing a document with something unwritten in it.

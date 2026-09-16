@@ -37,7 +37,7 @@ impl App {
         picker.says_its_keys();
         picker.go_to_tab(tab);
         self.searching = scopes;
-        self.picker = Some(picker);
+        self.show_list(picker);
         self.refresh_search();
     }
 

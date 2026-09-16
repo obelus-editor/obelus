@@ -94,7 +94,7 @@ impl App {
         // none, and a foot saying "enter chooses" would be a row spent on
         // what the reader just did.
         picker.says_its_keys();
-        self.picker = Some(picker);
+        self.show_list(picker);
         self.listing = listings;
         self.refresh_listing();
     }
@@ -307,7 +307,7 @@ impl App {
         if let Some(buffer) = self.current_buffer() {
             picker.prefer(relative(buffer.path(), &self.working_directory));
         }
-        self.picker = Some(picker);
+        self.show_list(picker);
     }
 
     /// Stops showing the current file.

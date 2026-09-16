@@ -46,7 +46,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use documents::Rendered;
 use history::Changed;
-use layers::Layer;
+use layers::{Layer, Room};
 use previewing::Preview;
 use ratatui::{
     Terminal,
@@ -955,6 +955,86 @@ impl App {
             layers::Layer::Picker => self.picker.is_some(),
             layers::Layer::Prompt => self.prompt.is_some(),
         })
+    }
+
+    /// Clears the room a view is about to take.
+    ///
+    /// The one thing every opener does, in one place. There were six of
+    /// them, each with its own idea: two cleared a list and a question, one
+    /// cleared a list and the settings, and three cleared nothing at all --
+    /// including the two added most recently, which is the shape of the
+    /// problem. Nothing made anybody think about it, so nobody did.
+    ///
+    /// The rule is not "opening covers": that is false for a question on the
+    /// status bar, which is about the thing now behind it, and it would
+    /// allow two pages at once. The rule is that a view covers what shares
+    /// its room, which is [`Room::covers`] and is declared beside the view
+    /// rather than here.
+    pub(super) fn make_room(&mut self, room: layers::Room) {
+        for layer in self.layers().nearest_first() {
+            if room.covers(layer.room()) {
+                self.leave(layer);
+            }
+        }
+    }
+
+    /// Takes one layer down, doing whatever leaving it means.
+    ///
+    /// The same door escape goes through, so a view cannot be left one way
+    /// and not the other: the notes are written down however the reader
+    /// leaves them, and a list that was an agent's question is answered on
+    /// the way out however it goes.
+    pub(super) fn leave(&mut self, layer: Layer) {
+        match layer {
+            Layer::Picker => {
+                self.picker = None;
+                self.history = history_view::Showing::default();
+                // What a server offered to do here, which the rows were
+                // indexes into. A row is chosen by its position, so offers
+                // outliving their list are offers pointing at nothing.
+                self.actions.clear();
+                // A list that was an agent's question has to be answered
+                // even when the reader walks away from it: an agent whose
+                // permission request goes unanswered waits for ever.
+                if self.is_asking_permission() {
+                    self.refuse_permission();
+                }
+                // And so does a form: a field left unanswered is the whole
+                // form declined, because the agent is waiting on all of it.
+                if self.is_asking() {
+                    self.refuse_asking();
+                }
+                // A theme previewed but not chosen. Nothing else a picker
+                // shows changes the application while it is open, so
+                // nothing else has to be put back.
+                if let Some((name, before)) = self.theme_before.take() {
+                    self.set_theme(&name, before);
+                }
+            }
+            // Written down on the way out, because leaving a note *is*
+            // finishing it: there is no other moment, and the file is the
+            // only place a note survives.
+            Layer::Notes => {
+                if let Some(notes) = self.notes.as_ref() {
+                    let todo = notes.todo().clone();
+                    self.save_notes(&todo);
+                }
+                self.notes = None;
+            }
+            Layer::Settings => self.settings = None,
+            Layer::Counts => self.counts = None,
+            Layer::Prompt => self.prompt = None,
+            // Hidden rather than ended: what was said is still there, and
+            // the key that opens it brings back every word. A question the
+            // agent is still waiting on goes with it, for the same reason a
+            // list's does.
+            Layer::Chat => {
+                if self.is_asking() {
+                    self.refuse_asking();
+                }
+                self.close_chat();
+            }
+        }
     }
 
     /// Whether something is showing that the reader is *in*.

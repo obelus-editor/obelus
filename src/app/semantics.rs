@@ -252,7 +252,7 @@ impl App {
                 }
             })
             .collect();
-        self.picker = Some(Picker::new(
+        self.show_list(Picker::new(
             items,
             PickerLayout::Compact { rows: COMPACT_ROWS },
         ));
@@ -731,7 +731,7 @@ impl App {
                 self.note = None;
                 let mut picker = Picker::new(items, PickerLayout::FullArea);
                 picker.previews();
-                self.picker = Some(picker);
+                self.show_list(picker);
             }
         }
     }
@@ -834,7 +834,7 @@ impl App {
             picker.when_empty("asking the language server\u{2026}");
             picker.is_outline_of(path);
             picker.previews();
-            self.picker = Some(picker);
+            self.show_list(picker);
             return;
         }
 
@@ -908,7 +908,7 @@ impl App {
         }
         picker.is_outline_of(path);
         picker.previews();
-        self.picker = Some(picker);
+        self.show_list(picker);
     }
 
     /// Asks a server what a file defines, and says whether the question got
@@ -1326,7 +1326,7 @@ impl App {
             counted(&troubles),
             crate::app::relative(&path, &self.working_directory)
         ));
-        self.picker = Some(picker);
+        self.show_list(picker);
     }
 }
 

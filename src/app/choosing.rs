@@ -15,7 +15,7 @@ impl App {
         // Standing in for the application's lists of files and places, which
         // is what every caller of this hands it, and those all preview.
         picker.previews();
-        self.picker = Some(picker);
+        self.show_list(picker);
     }
 
     /// Offers the built-in themes.
@@ -49,7 +49,7 @@ impl App {
         // Open on the one that is on, so the list starts by saying which
         // theme this is rather than making the reader work it out.
         picker.prefer(self.theme_name().to_string());
-        self.picker = Some(picker);
+        self.show_list(picker);
     }
 
     /// Offers every command by name.
@@ -103,7 +103,7 @@ impl App {
         // offers is what the reader came to find out, so the block stays the
         // height it opened at rather than closing up under the query.
         picker.keeps_height();
-        self.picker = Some(picker);
+        self.show_list(picker);
     }
 
     /// Opens the log, as a file like any other.
@@ -265,6 +265,29 @@ impl App {
         }
     }
 
+    /// Puts a list up, over whatever it covers.
+    ///
+    /// Every list goes through here, which is the point: sixteen places
+    /// build one, and a rule about what a list covers that sixteen places
+    /// had to remember is a rule with sixteen chances of being forgotten.
+    /// What it covers is [`Room::Band`] -- a question on the status bar,
+    /// and the list that was there -- and it leaves the pages standing,
+    /// because a setting's choices open *over* the settings and an agent's
+    /// question over the conversation it was asked in.
+    pub(super) fn show_list(&mut self, picker: Picker) {
+        self.make_room(Room::Band);
+        self.picker = Some(picker);
+    }
+
+    /// Puts a question on the status bar, over whatever it covers.
+    ///
+    /// Which is only another question: it is one row, and what it is asking
+    /// about is still on screen behind it.
+    pub(super) fn ask_on_the_status_row(&mut self, prompt: crate::component::prompt::Prompt) {
+        self.make_room(Room::Row);
+        self.prompt = Some(prompt);
+    }
+
     /// Offers a key to the list, and says whether it took it.
     ///
     /// Its own geometry is worked out here rather than passed in, the way
@@ -306,25 +329,7 @@ impl App {
                 true
             }
             PickerOutcome::Cancelled => {
-                self.picker = None;
-                self.history = history_view::Showing::default();
-                // A list that was an agent's question has to be answered
-                // even when the reader walks away from it: an agent whose
-                // permission request goes unanswered waits for ever.
-                if self.is_asking_permission() {
-                    self.refuse_permission();
-                }
-                // And so does a form: a field left unanswered is the whole
-                // form declined, because the agent is waiting on all of it.
-                if self.is_asking() {
-                    self.refuse_asking();
-                }
-                // A theme previewed but not chosen. Nothing else a picker
-                // shows changes the application while it is open, so
-                // nothing else has to be put back.
-                if let Some((name, before)) = self.theme_before.take() {
-                    self.set_theme(&name, before);
-                }
+                self.leave(Layer::Picker);
                 true
             }
             PickerOutcome::Accepted(value) => {

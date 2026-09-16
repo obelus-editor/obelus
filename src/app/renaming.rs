@@ -50,7 +50,7 @@ impl App {
             self.note = Some("the cursor is not on a name".to_string());
             return;
         };
-        self.prompt = Some(crate::component::prompt::Prompt::about(
+        self.ask_on_the_status_row(crate::component::prompt::Prompt::about(
             PromptKind::Name,
             word,
         ));

@@ -1,6 +1,9 @@
 //! How much code is here: opening the view, and what comes back from the walk.
 
-use super::App;
+use super::{
+    App,
+    layers::{Layer, Room},
+};
 use crate::{
     component::counts::{Counts, CountsOutcome},
     counts::Counted,
@@ -19,8 +22,7 @@ impl App {
     /// while it is showing, and two views taking the same keys is two views
     /// neither of which can say what a keypress will do.
     pub fn open_counts(&mut self) {
-        self.picker = None;
-        self.prompt = None;
+        self.make_room(Room::Screen);
         self.counts = Some(Counts::new());
         // Counted on every opening rather than once and kept. A count is a
         // fact about the tree as it is now, and this is a program several
@@ -60,7 +62,7 @@ impl App {
         match counts.handle_key(key, rows) {
             CountsOutcome::Consumed => true,
             CountsOutcome::Cancelled => {
-                self.counts = None;
+                self.leave(Layer::Counts);
                 true
             }
             CountsOutcome::Open(path) => {

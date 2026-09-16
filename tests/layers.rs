@@ -259,3 +259,85 @@ fn the_caret_is_where_the_keys_are() {
         "the conversation's caret was on the status row"
     );
 }
+
+/// Opening something covers the question that was on the status bar.
+///
+/// A question is about the thing behind it -- a line to go to, a new name
+/// for what the cursor is on -- so once a view has taken that, the question
+/// is one nobody can answer. Six openers each decided this for themselves
+/// and three of them decided nothing at all, which is why the notes carried
+/// a guard against a question that no other view needed.
+#[test]
+fn opening_anything_covers_the_question() {
+    for layer in obelus::app::layers::STACK {
+        if layer == Layer::Prompt {
+            continue;
+        }
+        let mut app = reading();
+        dispatch::dispatch(&mut app, Command::GoLine);
+        assert!(app.layers().has(Layer::Prompt), "no question to cover");
+
+        open(&mut app, layer);
+        assert!(
+            !app.layers().has(Layer::Prompt),
+            "{layer:?} opened over the question and left it there"
+        );
+    }
+}
+
+/// Two pages are never open at once.
+///
+/// Dispatched rather than pressed, on purpose: the key table has nothing
+/// bound in a dialog, so a *key* cannot open a second page. That guard is
+/// one enforcement of the rule and not the rule itself -- an agent's
+/// question already goes around it, arriving from the connection rather
+/// than from a key -- so what is asserted here is the rule.
+#[test]
+fn two_pages_are_never_open_at_once() {
+    let pages = [Layer::Chat, Layer::Counts, Layer::Notes, Layer::Settings];
+    for first in pages {
+        for second in pages {
+            let mut app = reading();
+            open(&mut app, first);
+            open(&mut app, second);
+            assert_eq!(
+                app.layers().furthest_first().count(),
+                1,
+                "{first:?} and {second:?} were both showing"
+            );
+            assert_eq!(
+                app.layers().nearest(),
+                Some(second),
+                "{second:?} did not end up in front of {first:?}"
+            );
+        }
+    }
+}
+
+/// And the one nesting that is allowed stays allowed.
+///
+/// A list opens *over* a page rather than instead of it: a setting's
+/// choices, and an agent's own question in the conversation it was asked
+/// in. This is the one place obelus stacks two things the reader is in, and
+/// it is why the rule is "a view covers what shares its room" rather than
+/// "opening covers".
+#[test]
+fn a_list_opens_over_a_page_rather_than_instead_of_it() {
+    let mut app = reading();
+    app.open_agent();
+    dispatch::dispatch(&mut app, Command::BufferList);
+    assert_eq!(
+        app.layers().furthest_first().collect::<Vec<_>>(),
+        [Layer::Chat, Layer::Picker],
+        "the list did not open over the conversation"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        app.layers().furthest_first().collect::<Vec<_>>(),
+        [Layer::Chat],
+        "leaving the list took the conversation with it"
+    );
+    press(&mut app, KeyCode::Esc);
+    assert!(!app.layers().any(), "the conversation would not be left");
+}

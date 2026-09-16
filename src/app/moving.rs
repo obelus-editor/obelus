@@ -204,7 +204,7 @@ impl App {
             self.note = Some("no file to go into".to_string());
             return;
         }
-        self.prompt = Some(Prompt::new(PromptKind::Line));
+        self.ask_on_the_status_row(Prompt::new(PromptKind::Line));
     }
 
     /// Stops selecting, leaving the cursor where it is.
@@ -443,41 +443,51 @@ impl App {
     }
 
     pub(super) fn paste_text(&mut self, what: &str) {
-        // Into whatever is being typed into, which is what a paste is for.
-        // The order is the keys' order, nearest first: the thing a reader
-        // is answering takes it before the thing behind it.
-        //
-        // This used to name only the notes, and everything else went to the
-        // file -- so a path pasted into the file list landed in the source
-        // behind it, where the list was covering it up. A paste is text
-        // arriving where the caret is, and the caret is not in the file
-        // while a reader is answering something.
-        if let Some(prompt) = self.prompt.as_mut() {
-            prompt.put(what);
-            return;
-        }
-        if self.notes.is_some() {
-            self.paste_into_notes(what);
-            return;
-        }
-        if let Some(settings) = self.settings.as_mut() {
-            settings.put_in_query(what);
-            return;
-        }
-        if let Some(picker) = self.picker.as_mut() {
-            // A search's rows come from the query, so a query that changed
-            // by being pasted into has to be asked again -- the same thing
-            // the key path does when a keystroke changes it.
-            let searching = picker.is_searching();
-            picker.put_in_query(what);
-            if searching {
-                self.refresh_search();
+        // Into whatever the reader is writing on, which is the nearest
+        // thing over the file -- the same answer a key gets, asked the same
+        // way. A paste that went past it into the file behind would put
+        // their text somewhere they cannot see it, and that is what this
+        // did with a list or a conversation open: the guard asked about the
+        // notes and a question, and about nothing else.
+        match self.layers().nearest() {
+            Some(Layer::Prompt) => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.put(what);
+                }
+                return;
             }
-            return;
-        }
-        if self.showing_chat {
-            self.chat.put(what);
-            return;
+            Some(Layer::Notes) => {
+                self.paste_into_notes(what);
+                return;
+            }
+            Some(Layer::Settings) => {
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.put_in_query(what);
+                }
+                return;
+            }
+            Some(Layer::Picker) => {
+                // A search's rows come from the query, so a query that
+                // changed by being pasted into has to be asked again -- the
+                // same thing the key path does when a keystroke changes it.
+                let searching = self.picker.as_ref().is_some_and(Picker::is_searching);
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.put_in_query(what);
+                }
+                if searching {
+                    self.refresh_search();
+                }
+                return;
+            }
+            Some(Layer::Chat) => {
+                self.chat.put(what);
+                return;
+            }
+            // Nothing is typed into the counts, so a paste has nowhere to
+            // go here -- and does not fall through to the file behind them
+            // for want of anywhere else.
+            Some(Layer::Counts) => return,
+            None => {}
         }
         let Some(buffer) = self.current_buffer() else {
             return;
@@ -546,7 +556,7 @@ impl App {
         match prompt.handle_key(key) {
             PromptOutcome::Consumed => true,
             PromptOutcome::Cancelled => {
-                self.prompt = None;
+                self.leave(Layer::Prompt);
                 true
             }
             PromptOutcome::Accepted(text) => {

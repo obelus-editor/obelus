@@ -79,10 +79,7 @@ impl App {
 
     /// Opens the settings.
     pub fn open_settings(&mut self) {
-        // Nothing else can be open under it: it is a full-screen view with
-        // its own typing, and two of those would take the same keys.
-        self.picker = None;
-        self.prompt = None;
+        self.make_room(Room::Region);
         // Asked for now rather than when the tab is reached: the fetch
         // takes a moment, and a reader who walks to the agents tab should
         // find a list there rather than watch one arrive.
@@ -96,8 +93,7 @@ impl App {
     /// there are *groups* of settings, and a scope among them would be one
     /// list holding two kinds of thing.
     pub fn open_project_settings(&mut self) {
-        self.picker = None;
-        self.prompt = None;
+        self.make_room(Room::Region);
         self.refresh_registry();
         self.settings = Some(Settings::for_tree());
     }
@@ -125,7 +121,7 @@ impl App {
         match settings.handle_key(key, &self.settled.config, &keymap, &listed, room) {
             SettingsOutcome::Consumed => true,
             SettingsOutcome::Cancelled => {
-                self.settings = None;
+                self.leave(Layer::Settings);
                 true
             }
             SettingsOutcome::Changed(key, value) => {
@@ -212,7 +208,7 @@ impl App {
         if key == "theme" {
             self.theme_before = Some((self.theme_name().to_string(), *self.theme()));
         }
-        self.picker = Some(picker);
+        self.show_list(picker);
     }
 
     /// Where a theme file may be, nearest first.

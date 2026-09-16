@@ -130,7 +130,7 @@ impl App {
         picker.nests();
         picker.previews();
         picker.go_to_tab(tab);
-        self.picker = Some(picker);
+        self.show_list(picker);
         self.history = Showing {
             radii,
             commits: Vec::new(),

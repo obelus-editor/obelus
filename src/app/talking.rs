@@ -66,11 +66,10 @@ impl App {
     /// what was said stays. So this is a flag and a process, not a document
     /// to open.
     pub fn open_agent(&mut self) {
-        self.showing_chat = true;
         // Everything else on screen is something else the reader was
         // looking at, and the conversation is the whole region now.
-        self.picker = None;
-        self.settings = None;
+        self.make_room(Room::Region);
+        self.showing_chat = true;
         if self.talker.is_none() {
             self.start_agent();
         }
@@ -195,7 +194,7 @@ impl App {
         if let Some(current) = current {
             picker.prefer(current);
         }
-        self.picker = Some(picker);
+        self.show_list(picker);
     }
 
     /// Flips one of the agent's switches to its other side.
@@ -478,11 +477,12 @@ impl App {
             ChatOutcome::Cancelled => {
                 // Escape gives up on the nearest thing first, and a question
                 // the agent is waiting on is nearer than the conversation it
-                // was asked in.
+                // was asked in -- so it is refused and the conversation
+                // stays. Only when there is none does escape leave.
                 if self.is_asking() {
                     self.refuse_asking();
                 } else {
-                    self.close_chat();
+                    self.leave(Layer::Chat);
                 }
                 true
             }
