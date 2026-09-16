@@ -1389,17 +1389,6 @@ impl App {
         // be.
         self.note = None;
 
-        // The picker gets first refusal, because the keys it wants are the
-        // ones that move the thing it owns. What it does not want falls
-        // through, which is how `ctrl+q` still works with one open.
-        // A page is the rows actually on screen, which is the region the
-        // list is *drawn* in -- not the region it was offered. A full-area
-        // list gives half of that to a preview, and a page of the whole
-        // editor would walk the selection twice as far as the reader can
-        // see.
-        let page = self.picker.as_ref().map_or(1, |picker| {
-            ui::picker::rows_drawn(picker, self.picker_room())
-        });
         // Except the paging keys, while a preview is on screen: a screenful
         // is what the thing being *read* is moved by, and the list above it
         // is ten rows with its ends a keypress away. With control they page
@@ -1423,64 +1412,11 @@ impl App {
             return;
         }
 
-        if let Some(picker) = self.picker.as_mut() {
-            // What a search is asking, before and after the key. The picker
-            // owns the query and the tab and knows nothing about where rows
-            // come from, so the application watches those two for movement
-            // rather than the picker reporting it.
-            let searching = picker.is_searching();
-            let listing = picker.is_listing();
-            // A history has tabs too, and walking onto one is what asks its
-            // question: the commits of a file and of a project are two
-            // answers, not two views of one.
-            let historic = !self.history.radii.is_empty();
-            let before = (picker.tab(), picker.query().to_string());
-            let outcome = picker.handle_key(&key, page);
-            let after = (picker.tab(), picker.query().to_string());
-            match outcome {
-                PickerOutcome::Consumed => {
-                    if searching && after != before {
-                        self.refresh_search();
-                    }
-                    if listing && after.0 != before.0 {
-                        self.refresh_listing();
-                    }
-                    if historic && after.0 != before.0 {
-                        self.refresh_history();
-                    }
-                    return;
-                }
-                PickerOutcome::Cancelled => {
-                    self.picker = None;
-                    self.history = history_view::Showing::default();
-                    // A list that was an agent's question has to be
-                    // answered even when the reader walks away from it: an
-                    // agent whose permission request goes unanswered waits
-                    // for ever.
-                    if self.is_asking_permission() {
-                        self.refuse_permission();
-                    }
-                    // And so does a form: a field left unanswered is the
-                    // whole form declined, because the agent is waiting on
-                    // all of it.
-                    if self.is_asking() {
-                        self.refuse_asking();
-                    }
-
-                    // A theme previewed but not chosen. Nothing else a picker
-                    // shows changes the application while it is open, so
-                    // nothing else has to be put back.
-                    if let Some((name, before)) = self.theme_before.take() {
-                        self.set_theme(&name, before);
-                    }
-                    return;
-                }
-                PickerOutcome::Accepted(value) => {
-                    self.accept(value);
-                    return;
-                }
-                PickerOutcome::Ignored => {}
-            }
+        // The picker gets first refusal, because the keys it wants are the
+        // ones that move the thing it owns. What it does not want falls
+        // through, which is how `ctrl+q` still works with one open.
+        if self.picker_key(&key) {
+            return;
         }
 
         // The settings take what the picker did not: they are the whole
@@ -1488,56 +1424,8 @@ impl App {
         // theirs to filter with. After the picker, because a list opened
         // over them -- a setting's choices -- is what the reader is
         // looking at.
-        if self.settings.is_some() {
-            // The agents the page would show, worked out before the
-            // component is borrowed: it needs them to know what enter
-            // means on a card, and it is not the thing that knows them.
-            let listed = self.listed_agents();
-            // Cloned for the same reason: the page needs the table to say
-            // which key each command is on, and it is the application that
-            // owns it.
-            let keymap = self.keymap.clone();
-            let Some(settings) = self.settings.as_mut() else {
-                return;
-            };
-            let room = (self.editor_area.width, self.editor_area.height);
-            let outcome = settings.handle_key(&key, &self.settled.config, &keymap, &listed, room);
-            match outcome {
-                SettingsOutcome::Consumed => return,
-                SettingsOutcome::Cancelled => {
-                    self.settings = None;
-                    return;
-                }
-                SettingsOutcome::Changed(key, value) => {
-                    self.change_setting(key, &value);
-                    return;
-                }
-                SettingsOutcome::Unset(key) => {
-                    self.unset_setting(key);
-                    return;
-                }
-                SettingsOutcome::Bind(command, chord) => {
-                    self.rebind(command, chord);
-                    return;
-                }
-                SettingsOutcome::Choose(key, choices, word) => {
-                    self.open_choices(key, choices, &word);
-                    return;
-                }
-                SettingsOutcome::Install(id) => {
-                    self.install_agent(&id);
-                    return;
-                }
-                SettingsOutcome::Activate(id) => {
-                    self.activate_agent(&id);
-                    return;
-                }
-                SettingsOutcome::Deactivate => {
-                    self.deactivate_agent();
-                    return;
-                }
-                SettingsOutcome::Ignored => {}
-            }
+        if self.settings_key(&key) {
+            return;
         }
 
         // The counts take what the settings did not. They are a dialog with
@@ -1652,22 +1540,8 @@ impl App {
         // A question on the status bar takes keys before anything else: it
         // is what the reader is looking at, and it is one row rather than a
         // region, so nothing under it is competing for them.
-        if let Some(prompt) = self.prompt.as_mut() {
-            let kind = prompt.kind();
-            match prompt.handle_key(&key) {
-                PromptOutcome::Consumed => return,
-                PromptOutcome::Cancelled => {
-                    self.prompt = None;
-                    return;
-                }
-                PromptOutcome::Accepted(text) => {
-                    self.prompt = None;
-                    self.answer(kind, &text);
-                    return;
-                }
-                // `ctrl+q` and the rest still reach the key table.
-                PromptOutcome::Ignored => {}
-            }
+        if self.prompt_key(&key) {
+            return;
         }
 
         // What the server said about a place. Before the panels below it

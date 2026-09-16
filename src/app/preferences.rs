@@ -102,6 +102,64 @@ impl App {
         self.settings = Some(Settings::for_tree());
     }
 
+    /// Offers a key to the settings page, and says whether it took it.
+    ///
+    /// The page is the whole editor region while it is open and every
+    /// printable character is its own, to filter with -- so what falls
+    /// through here is only what it has no use for, which is the chords.
+    pub(super) fn settings_key(&mut self, key: &KeyEvent) -> bool {
+        if self.settings.is_none() {
+            return false;
+        }
+        // The agents the page would show, worked out before the component
+        // is borrowed: it needs them to know what enter means on a card,
+        // and it is not the thing that knows them.
+        let listed = self.listed_agents();
+        // Cloned for the same reason: the page needs the table to say which
+        // key each command is on, and it is the application that owns it.
+        let keymap = self.keymap.clone();
+        let room = (self.editor_area.width, self.editor_area.height);
+        let Some(settings) = self.settings.as_mut() else {
+            return false;
+        };
+        match settings.handle_key(key, &self.settled.config, &keymap, &listed, room) {
+            SettingsOutcome::Consumed => true,
+            SettingsOutcome::Cancelled => {
+                self.settings = None;
+                true
+            }
+            SettingsOutcome::Changed(key, value) => {
+                self.change_setting(key, &value);
+                true
+            }
+            SettingsOutcome::Unset(key) => {
+                self.unset_setting(key);
+                true
+            }
+            SettingsOutcome::Bind(command, chord) => {
+                self.rebind(command, chord);
+                true
+            }
+            SettingsOutcome::Choose(key, choices, word) => {
+                self.open_choices(key, choices, &word);
+                true
+            }
+            SettingsOutcome::Install(id) => {
+                self.install_agent(&id);
+                true
+            }
+            SettingsOutcome::Activate(id) => {
+                self.activate_agent(&id);
+                true
+            }
+            SettingsOutcome::Deactivate => {
+                self.deactivate_agent();
+                true
+            }
+            SettingsOutcome::Ignored => false,
+        }
+    }
+
     /// Offers a setting's choices, as the ordinary compact list.
     ///
     /// The same list the symbol menu is, for the same reasons: it filters by

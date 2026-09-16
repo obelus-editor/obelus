@@ -265,6 +265,76 @@ impl App {
         }
     }
 
+    /// Offers a key to the list, and says whether it took it.
+    ///
+    /// Its own geometry is worked out here rather than passed in, the way
+    /// every other view's is: a page is the rows the list is actually
+    /// *drawn* in, a full-area list gives half of that to a preview, and a
+    /// page of the whole editor would walk the selection twice as far as
+    /// the reader can see. Nothing above this needs to know that.
+    pub(super) fn picker_key(&mut self, key: &KeyEvent) -> bool {
+        let page = self.picker.as_ref().map_or(1, |picker| {
+            ui::picker::rows_drawn(picker, self.picker_room())
+        });
+        let Some(picker) = self.picker.as_mut() else {
+            return false;
+        };
+        // What a search is asking, before and after the key. The picker
+        // owns the query and the tab and knows nothing about where rows
+        // come from, so the application watches those two for movement
+        // rather than the picker reporting it.
+        let searching = picker.is_searching();
+        let listing = picker.is_listing();
+        // A history has tabs too, and walking onto one is what asks its
+        // question: the commits of a file and of a project are two
+        // answers, not two views of one.
+        let historic = !self.history.radii.is_empty();
+        let before = (picker.tab(), picker.query().to_string());
+        let outcome = picker.handle_key(key, page);
+        let after = (picker.tab(), picker.query().to_string());
+        match outcome {
+            PickerOutcome::Consumed => {
+                if searching && after != before {
+                    self.refresh_search();
+                }
+                if listing && after.0 != before.0 {
+                    self.refresh_listing();
+                }
+                if historic && after.0 != before.0 {
+                    self.refresh_history();
+                }
+                true
+            }
+            PickerOutcome::Cancelled => {
+                self.picker = None;
+                self.history = history_view::Showing::default();
+                // A list that was an agent's question has to be answered
+                // even when the reader walks away from it: an agent whose
+                // permission request goes unanswered waits for ever.
+                if self.is_asking_permission() {
+                    self.refuse_permission();
+                }
+                // And so does a form: a field left unanswered is the whole
+                // form declined, because the agent is waiting on all of it.
+                if self.is_asking() {
+                    self.refuse_asking();
+                }
+                // A theme previewed but not chosen. Nothing else a picker
+                // shows changes the application while it is open, so
+                // nothing else has to be put back.
+                if let Some((name, before)) = self.theme_before.take() {
+                    self.set_theme(&name, before);
+                }
+                true
+            }
+            PickerOutcome::Accepted(value) => {
+                self.accept(value);
+                true
+            }
+            PickerOutcome::Ignored => false,
+        }
+    }
+
     pub(super) fn accept(&mut self, value: PickerValue) {
         // A commit is not somewhere to go: it opens its files under itself,
         // in place, and the list stays open around them. Asked before the

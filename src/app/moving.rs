@@ -530,6 +530,34 @@ impl App {
         self.prompt.as_ref()
     }
 
+    /// Offers a key to the question on the status bar, and says whether it
+    /// took it.
+    ///
+    /// It takes every bare character, accepted or refused -- a key the
+    /// prompt turns down is still a key it *saw*, and a digit falling into
+    /// the file under a "line:" question would be the reader's answer
+    /// landing somewhere else. What falls through is the chords, which is
+    /// how `ctrl+q` still leaves obelus from inside one.
+    pub(super) fn prompt_key(&mut self, key: &KeyEvent) -> bool {
+        let Some(prompt) = self.prompt.as_mut() else {
+            return false;
+        };
+        let kind = prompt.kind();
+        match prompt.handle_key(key) {
+            PromptOutcome::Consumed => true,
+            PromptOutcome::Cancelled => {
+                self.prompt = None;
+                true
+            }
+            PromptOutcome::Accepted(text) => {
+                self.prompt = None;
+                self.answer(kind, &text);
+                true
+            }
+            PromptOutcome::Ignored => false,
+        }
+    }
+
     /// Acts on an answered prompt.
     ///
     /// Where "what it means" lives: the prompt knows what was typed and what
