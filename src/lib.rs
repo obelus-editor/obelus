@@ -28,6 +28,7 @@ pub mod jump;
 pub mod keymap;
 pub mod logging;
 pub mod lsp;
+pub mod mcp;
 pub mod question;
 pub mod reading;
 pub mod search;

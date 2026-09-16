@@ -33,12 +33,12 @@ use agent_client_protocol::{
             ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
             ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
             ElicitationPropertySchema, ElicitationSchema, FileSystemCapabilities, Implementation,
-            InitializeRequest, LoadSessionRequest, MultiSelectItems, NewSessionRequest,
-            PermissionOptionId, PromptRequest, ReadTextFileRequest, ReadTextFileResponse,
-            RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-            SelectedPermissionOutcome, SessionConfigId, SessionConfigKind, SessionConfigOption,
-            SessionConfigOptionCategory, SessionConfigOptionValue,
-            SessionConfigOptionsCapabilities, SessionConfigSelectOption,
+            InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, MultiSelectItems,
+            NewSessionRequest, PermissionOptionId, PromptRequest, ReadTextFileRequest,
+            ReadTextFileResponse, RequestPermissionOutcome, RequestPermissionRequest,
+            RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId,
+            SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
+            SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionConfigSelectOption,
             SessionConfigSelectOptions, SessionId, SessionModeState, SessionNotification,
             SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent,
             ToolCallContent, ToolCallId, ToolCallLocation, ToolCallUpdateFields,
@@ -511,6 +511,7 @@ pub fn start(
     command: &std::path::Path,
     arguments: &[String],
     root: &std::path::Path,
+    tools: Option<String>,
     events: Sender<Event>,
 ) -> mpsc::UnboundedSender<Ask> {
     let (asks, taken) = mpsc::unbounded();
@@ -531,7 +532,7 @@ pub fn start(
             // crate speaks, and a channel is runtime-agnostic anyway. What
             // tokio is here for is driving them.
             let reason = match tokio::runtime::Builder::new_current_thread().build() {
-                Ok(runtime) => runtime.block_on(talk(config, root, told.clone(), taken)),
+                Ok(runtime) => runtime.block_on(talk(config, root, tools, told.clone(), taken)),
                 Err(error) => Some(error.to_string()),
             };
             let _ = told.send(Event::Acp(Incoming::Gone(reason)));
@@ -555,16 +556,22 @@ pub fn start(
 async fn open_session(
     connection: &ConnectionTo<agent_client_protocol::Agent>,
     root: &std::path::Path,
+    tools: Option<&str>,
     events: &Sender<Event>,
     stopped: &mut std::collections::HashMap<
         SessionId,
         std::sync::Arc<std::sync::atomic::AtomicBool>,
     >,
 ) -> Result<SessionId, agent_client_protocol::Error> {
-    let opened = connection
-        .send_request(NewSessionRequest::new(root.to_path_buf()))
-        .block_task()
-        .await?;
+    // What obelus itself offers the agent, over http on the loopback: a
+    // handful of tools about this reader's notes, which the protocol has no
+    // way to express because it is about talking to an agent rather than
+    // about being talked to.
+    let mut asking = NewSessionRequest::new(root.to_path_buf());
+    if let Some(url) = tools {
+        asking = asking.mcp_servers(vec![McpServer::Http(McpServerHttp::new("obelus", url))]);
+    }
+    let opened = connection.send_request(asking).block_task().await?;
     let session = opened.session_id.clone();
     stopped.entry(session.clone()).or_default();
     // The old mode methods, read into a setting at the edge -- and kept
@@ -588,6 +595,7 @@ async fn open_session(
 async fn talk(
     config: AcpAgentConfig,
     root: PathBuf,
+    tools: Option<String>,
     events: Sender<Event>,
     mut asks: mpsc::UnboundedReceiver<Ask>,
 ) -> Option<String> {
@@ -789,12 +797,19 @@ async fn talk(
 
                 // The first one, opened without being asked for: the reader
                 // opened the view, which is a request to talk.
-                open_session(&connection, &root, &events, &mut stopped).await?;
+                open_session(&connection, &root, tools.as_deref(), &events, &mut stopped).await?;
 
                 while let Some(ask) = asks.next().await {
                     match ask {
                         Ask::Open => {
-                            open_session(&connection, &root, &events, &mut stopped).await?;
+                            open_session(
+                                &connection,
+                                &root,
+                                tools.as_deref(),
+                                &events,
+                                &mut stopped,
+                            )
+                            .await?;
                         }
                         // Gone, because the note it was about is. Two ways
                         // to say it and they mean different things: `delete`
@@ -855,7 +870,14 @@ async fn talk(
                                         "picking the conversation up where it was left",
                                         error.to_string(),
                                     )));
-                                    open_session(&connection, &root, &events, &mut stopped).await?;
+                                    open_session(
+                                        &connection,
+                                        &root,
+                                        tools.as_deref(),
+                                        &events,
+                                        &mut stopped,
+                                    )
+                                    .await?;
                                 }
                             }
                         }

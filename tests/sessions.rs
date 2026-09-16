@@ -36,6 +36,10 @@ fn talking() -> (Talk, Receiver<Event>) {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
         Path::new("."),
+        // No tools offered: what these tests are about is the sessions, and
+        // an agent told about a server nobody is running would be an agent
+        // spending its first moments failing to reach one.
+        None,
         sender,
     );
     (talk, events)

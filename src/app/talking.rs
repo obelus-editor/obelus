@@ -1175,11 +1175,17 @@ impl App {
         // Nothing to fail here: the process is started on the thread, and
         // an agent that will not run says so as the conversation ending
         // with a reason -- which is the same path as one that dies later.
+        // What obelus offers the agent back, if it could take a socket.
+        // Started once and kept for as long as obelus runs: the address is
+        // what each agent is told, so a second one started later reaches the
+        // same tools.
+        let tools = self.tools_url.clone();
         self.talker = Some(acp::Talk::start(
             id,
             command,
             arguments,
             &self.working_directory,
+            tools,
             sender,
         ));
     }

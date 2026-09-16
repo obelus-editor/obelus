@@ -320,6 +320,12 @@ pub struct App {
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
     statuses: std::collections::HashMap<PathBuf, git::FileStatus>,
+    /// Where an agent reaches what obelus offers it, if it could listen.
+    ///
+    /// Taken once and kept: the address is what each agent is told, so a
+    /// second one started later reaches the same tools rather than a second
+    /// server nobody asked for.
+    tools_url: Option<String>,
     /// The agent obelus is talking to, once something has needed it.
     talker: Option<crate::acp::Talk>,
     /// What obelus knows about the agents it could run.
@@ -507,6 +513,7 @@ impl App {
             changes: None,
             statuses: std::collections::HashMap::new(),
 
+            tools_url: None,
             talker: None,
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),
@@ -726,6 +733,18 @@ impl App {
     /// about what obelus does on the way up has nothing else to call.
     pub fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
+        // What obelus offers an agent back. Started with the loop rather
+        // than with the first agent, because the address is what an agent is
+        // told and telling two of them two addresses would be two servers.
+        match crate::mcp::serve(&self.working_directory, sender.clone()) {
+            Ok(url) => self.tools_url = Some(url),
+            Err(error) => {
+                // Not a reason to stop: an obelus that cannot listen is an
+                // obelus an agent cannot ask anything of, which is what it
+                // was until now.
+                tracing::warn!(%error, "obelus is offering an agent nothing");
+            }
+        }
         self.start_watching(sender);
         for index in 0..self.documents.len() {
             self.serve(index);

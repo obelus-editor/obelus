@@ -173,11 +173,38 @@ agent-client-protocol = "2.1.0"
 # The channels and streams the protocol's own crate speaks. Runtime-agnostic,
 # which is why they stay here with tokio driving them.
 futures = "0.3.34"
-# The runtime the agent's connection runs on, one thread of it. `rt` and
-# nothing else: the transport brings its own IO, and a reader talking to one
-# agent has no use for a work-stealing pool or a timer wheel.
-tokio = { version = "1.53.1", default-features = false, features = ["rt"] }
+# The runtime two threads of obelus run on. The agent's connection needs
+# only `rt` -- its transport brings its own IO -- but the tools obelus offers
+# an agent are an HTTP server of its own, and that needs a socket and a timer.
+# Still one thread each and no work-stealing pool: obelus talks to one agent
+# and that agent talks back to one obelus.
+tokio = { version = "1.53.1", default-features = false, features = [
+    "rt",
+    "net",
+    "time",
+    "macros",
+] }
 access_log_parser = "0.11"
+
+# What carries the tools obelus offers an agent. A router for one route,
+# most of which is unused -- but a tool call has to wait for the reader to
+# answer a card, and an `await` on that costs no thread where a blocking
+# server would park one. rmcp's transport hands over a `tower` service, so
+# the two were chosen together.
+axum = "0.8"
+
+# The protocol itself: the types, the handshake, the error codes, and
+# `#[tool]` -- which generates a tool's JSON Schema from the function
+# signature, so the two cannot drift. Written by hand they are two things,
+# and changing one and forgetting the other is a mistake nothing catches.
+# The same reason `lsp-types` is here.
+rmcp = { version = "3.4", features = ["transport-streamable-http-server"] }
+
+# The schemas `#[tool]` builds from those signatures. Already in the tree by
+# way of rmcp; declared here because obelus derives on its own types.
+schemars = "1"
+
 
 [dev-dependencies]
 serde_json = "1"
+

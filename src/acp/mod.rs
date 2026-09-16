@@ -194,11 +194,12 @@ impl Talk {
         command: &Path,
         arguments: &[String],
         root: &Path,
+        tools: Option<String>,
         events: std::sync::mpsc::Sender<crate::event::Event>,
     ) -> Self {
         Self {
             id: id.to_string(),
-            asks: link::start(command, arguments, root, events),
+            asks: link::start(command, arguments, root, tools, events),
             info: None,
             gone: None,
             sessions: std::collections::HashMap::new(),
