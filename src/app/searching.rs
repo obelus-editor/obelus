@@ -183,6 +183,7 @@ impl App {
             .documents
             .iter()
             .flatten()
+            .filter_map(Document::file)
             .find(|buffer| buffer.path() == path);
         let buffer = match open {
             Some(buffer) => buffer,

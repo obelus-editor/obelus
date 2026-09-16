@@ -72,6 +72,7 @@ use crate::{
         settings::{Settings, SettingsOutcome},
     },
     coordinates::{ByteOffset, CharColumn, LineNumber, Span},
+    document::Document,
     editing::motion_for,
     event::{self, Event, Ticker},
     git, icons,
@@ -141,7 +142,7 @@ pub struct App {
     /// file, which is the kind of wrong that shows up as the wrong file
     /// opening a week later. A closed slot makes a stale id dead instead:
     /// whoever holds it gets nothing and does nothing.
-    documents: Vec<Option<Buffer>>,
+    documents: Vec<Option<Document>>,
     current: Option<DocumentId>,
     /// The colours in force, and the name they answer to.
     ///
@@ -476,12 +477,32 @@ pub struct App {
     should_quit: bool,
 }
 
+/// One of what is open, where it is a file, from the list alone.
+///
+/// The same answer [`App::file`] gives, reached without borrowing the whole
+/// application. A caller that holds the buffer while it asks a language
+/// server something needs those two borrows apart, and a method on `App`
+/// cannot give it that -- so the handful of places that do reach the list
+/// through this rather than writing the four lines out again.
+pub(super) fn file_in(documents: &[Option<Document>], id: DocumentId) -> Option<&Buffer> {
+    documents.get(id.get())?.as_ref()?.file()
+}
+
+/// The same, to change.
+pub(super) fn file_in_mut(
+    documents: &mut [Option<Document>],
+    id: DocumentId,
+) -> Option<&mut Buffer> {
+    documents.get_mut(id.get())?.as_mut()?.file_mut()
+}
+
 impl App {
     /// Starts with the shipped key table and the given documents open.
     #[must_use]
     pub fn new(open: Vec<Buffer>) -> Self {
         let current = (!open.is_empty()).then(|| DocumentId::new(0));
-        let documents: Vec<Option<Buffer>> = open.into_iter().map(Some).collect();
+        let documents: Vec<Option<Document>> =
+            open.into_iter().map(Document::from).map(Some).collect();
         Self {
             keymap: Keymap::new(),
             documents,
@@ -572,6 +593,7 @@ impl App {
             .documents
             .iter()
             .flatten()
+            .filter_map(Document::file)
             .filter(|buffer| buffer.is_dirty())
             .count();
         if unsaved > 0 {
@@ -644,15 +666,45 @@ impl App {
         self.list_at_start = true;
     }
 
+    /// One of what is open, by its id.
+    ///
+    /// Four doors rather than forty-odd repetitions of
+    /// `get(id.get()).and_then(Option::as_ref)`: a stale id and a closed
+    /// slot are the same answer here, and the answer is `None`.
+    #[must_use]
+    pub fn document(&self, id: DocumentId) -> Option<&Document> {
+        self.documents.get(id.get())?.as_ref()
+    }
+
+    /// The same, to change.
+    pub fn document_mut(&mut self, id: DocumentId) -> Option<&mut Document> {
+        self.documents.get_mut(id.get())?.as_mut()
+    }
+
+    /// One of what is open, where it is a file.
+    ///
+    /// Which almost everything wants: the motions, the syntax, the language
+    /// server and the margin are all about a file, and a document that is
+    /// not one answers `None` rather than being handed to them.
+    #[must_use]
+    pub fn file(&self, id: DocumentId) -> Option<&Buffer> {
+        self.document(id)?.file()
+    }
+
+    /// The same, to change.
+    pub fn file_mut(&mut self, id: DocumentId) -> Option<&mut Buffer> {
+        self.document_mut(id)?.file_mut()
+    }
+
     /// The document being read, if any is open.
     #[must_use]
     pub fn current_buffer(&self) -> Option<&Buffer> {
-        self.documents.get(self.current?.get())?.as_ref()
+        self.file(self.current?)
     }
 
     /// The same, to change.
     pub fn current_buffer_mut(&mut self) -> Option<&mut Buffer> {
-        self.documents.get_mut(self.current?.get())?.as_mut()
+        self.file_mut(self.current?)
     }
 
     /// Starts everything that needs the loop's channel.
@@ -722,7 +774,11 @@ impl App {
     /// key that had nowhere to go left one behind anyway.
     #[must_use]
     pub fn buffer_count_for_test(&self) -> usize {
-        self.documents.iter().flatten().count()
+        self.documents
+            .iter()
+            .flatten()
+            .filter_map(Document::file)
+            .count()
     }
 
     /// Puts the application on a tree of the test's choosing.
@@ -751,7 +807,7 @@ impl App {
                 return;
             }
         };
-        for buffer in self.documents.iter().flatten() {
+        for buffer in self.documents.iter().flatten().filter_map(Document::file) {
             if let Err(error) = watcher.watch(buffer.path()) {
                 tracing::warn!(%error, path = %buffer.path().display(), "not watching");
             }
@@ -891,6 +947,7 @@ impl App {
         self.documents
             .iter()
             .flatten()
+            .filter_map(Document::file)
             .any(Buffer::syntax_is_behind)
     }
 
@@ -903,7 +960,12 @@ impl App {
         // Nothing else has to be told: the text did not move, only what
         // obelus knows about it, so everything keyed on the version stays
         // keyed on the version it already had.
-        for buffer in self.documents.iter_mut().flatten() {
+        for buffer in self
+            .documents
+            .iter_mut()
+            .flatten()
+            .filter_map(Document::file_mut)
+        {
             buffer.settle_syntax();
         }
     }
@@ -1298,6 +1360,7 @@ impl App {
         let Some(buffer) = current
             .and_then(|id| documents.get(id.get()))
             .and_then(Option::as_ref)
+            .and_then(Document::file)
         else {
             highlights.clear();
             return;

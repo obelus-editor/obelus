@@ -337,9 +337,7 @@ impl App {
             // exactly this, so the list reads as something folded over the
             // file rather than as a way to somewhere new.
             PickerValue::Buffer(id) => {
-                self.documents
-                    .get(id.get())
-                    .and_then(Option::as_ref)
+                self.file(*id)
                     .map(|buffer| {
                         let subject = match buffer.content().at() {
                             Some(id) => Subject::Commit {
@@ -493,6 +491,7 @@ impl App {
         self.documents
             .iter()
             .flatten()
+            .filter_map(Document::file)
             .find(|buffer| buffer.path() == path && buffer.content().at() == at)
             .map_or_else(Marked::top, |buffer| Marked::on(&buffer.cursor()))
     }

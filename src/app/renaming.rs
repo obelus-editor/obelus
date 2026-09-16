@@ -85,7 +85,7 @@ impl App {
     /// Asks the server to rename it.
     pub(super) fn ask_rename(&mut self, name: &str) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         let Some(language) = buffer.language() else {

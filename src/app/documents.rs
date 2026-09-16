@@ -252,7 +252,7 @@ impl App {
             .iter()
             .enumerate()
             // Closed slots are holes, not rows.
-            .filter_map(|(index, buffer)| buffer.as_ref().map(|buffer| (index, buffer)));
+            .filter_map(|(index, document)| Some((index, document.as_ref()?.file()?)));
 
         let statuses = &self.statuses;
         let items = open
@@ -321,8 +321,7 @@ impl App {
         // about: a closed buffer takes its undo with it.
         let which = self.selected_buffer().or(self.current);
         let unsaved = which
-            .and_then(|id| self.documents.get(id.get()))
-            .and_then(Option::as_ref)
+            .and_then(|id| self.file(id))
             .is_some_and(Buffer::is_dirty);
         if let Some(id) = which
             && unsaved
@@ -360,12 +359,7 @@ impl App {
 
     /// Moves to a buffer.
     pub(super) fn go_to_buffer(&mut self, id: DocumentId) {
-        if self
-            .documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .is_some()
-        {
+        if self.file(id).is_some() {
             self.current = Some(id);
         }
     }
@@ -380,7 +374,13 @@ impl App {
 
     /// Stops showing one file, whichever the reader is on.
     pub(super) fn close(&mut self, id: DocumentId) {
-        let Some(buffer) = self.documents.get_mut(id.get()).and_then(Option::take) else {
+        let Some(document) = self.documents.get_mut(id.get()).and_then(Option::take) else {
+            return;
+        };
+        // Everything below is what shutting a *file* means -- a server to
+        // tell, a watch to drop, the tokens it was told about. The slot is
+        // already empty either way, which is what closing is.
+        let Some(buffer) = document.file() else {
             return;
         };
 
@@ -413,7 +413,7 @@ impl App {
             "closed {}",
             relative(buffer.path(), &self.working_directory)
         ));
-        drop(buffer);
+        drop(document);
 
         // Whichever file is nearest, before the closed one for preference:
         // closing the last of several usually means going back to the one
@@ -531,6 +531,7 @@ impl App {
             .position(|buffer| {
                 buffer
                     .as_ref()
+                    .and_then(Document::file)
                     .is_some_and(|open| open.path() == path && open.content().is_file())
             })
         {
@@ -548,7 +549,7 @@ impl App {
                 {
                     tracing::warn!(%error, path = %buffer.path().display(), "not watching");
                 }
-                self.documents.push(Some(buffer));
+                self.documents.push(Some(Document::from(buffer)));
                 let index = self.documents.len() - 1;
                 // Only once the file is known to be readable: a path that
                 // turns out to be a directory leaves the reader where they
@@ -575,6 +576,7 @@ impl App {
         self.documents
             .iter()
             .flatten()
+            .filter_map(Document::file)
             .map(|buffer| (buffer.path().to_path_buf(), buffer.is_dirty()))
             .collect()
     }
@@ -590,9 +592,10 @@ impl App {
     /// is about to be edited, and a server that has not been told has a
     /// different document.
     pub(super) fn open_quietly(&mut self, path: &Path) -> Option<usize> {
-        if let Some(index) = self.documents.iter().position(|buffer| {
-            buffer
+        if let Some(index) = self.documents.iter().position(|document| {
+            document
                 .as_ref()
+                .and_then(Document::file)
                 .is_some_and(|open| open.path() == path && open.content().is_file())
         }) {
             return Some(index);
@@ -604,7 +607,7 @@ impl App {
                 {
                     tracing::warn!(%error, path = %buffer.path().display(), "not watching");
                 }
-                self.documents.push(Some(buffer));
+                self.documents.push(Some(Document::from(buffer)));
                 let index = self.documents.len() - 1;
                 self.serve(index);
                 Some(index)
@@ -673,7 +676,7 @@ impl App {
     /// A commit's version is made from bytes git handed over rather than
     /// from a path, so there is no opening it.
     pub fn open_buffer_for_test(&mut self, buffer: Buffer) {
-        self.documents.push(Some(buffer));
+        self.documents.push(Some(Document::from(buffer)));
         let index = self.documents.len() - 1;
         self.go_to_buffer(DocumentId::new(index));
     }
@@ -689,7 +692,7 @@ impl App {
 
     pub(super) fn reload_path(&mut self, path: &Path) {
         for index in 0..self.documents.len() {
-            let Some(buffer) = self.documents[index].as_mut() else {
+            let Some(buffer) = file_in_mut(&mut self.documents, DocumentId::new(index)) else {
                 continue;
             };
             // A commit's version of a file does not change when the file
@@ -736,7 +739,7 @@ impl App {
             self.note = Some("no file open".to_string());
             return;
         };
-        let Some(buffer) = self.documents.get_mut(index).and_then(Option::as_mut) else {
+        let Some(buffer) = self.file_mut(DocumentId::new(index)) else {
             return;
         };
         // A commit's version is not a file anybody can write back, and the
@@ -802,7 +805,7 @@ impl App {
     /// [`Buffer::reload`] forgets, because what could have been put back was
     /// about text that is not there any more.
     pub(super) fn take_what_is_on_disk(&mut self, index: usize) {
-        let Some(buffer) = self.documents.get_mut(index).and_then(Option::as_mut) else {
+        let Some(buffer) = self.file_mut(DocumentId::new(index)) else {
             return;
         };
         match buffer.take_from_disk() {
@@ -828,7 +831,7 @@ impl App {
     /// It reports because leaving depends on the answer: a save that failed
     /// on the way out is the whole reason the reader was asked.
     pub(super) fn write_now(&mut self, index: usize) -> bool {
-        let Some(buffer) = self.documents.get_mut(index).and_then(Option::as_mut) else {
+        let Some(buffer) = self.file_mut(DocumentId::new(index)) else {
             return false;
         };
         match buffer.save() {
@@ -859,7 +862,7 @@ impl App {
         let Some(index) = self.current.map(DocumentId::get) else {
             return;
         };
-        if let Some(buffer) = self.documents.get_mut(index).and_then(Option::as_mut)
+        if let Some(buffer) = self.file_mut(DocumentId::new(index))
             && reload(buffer)
         {
             self.change_document(index);

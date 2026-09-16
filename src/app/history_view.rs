@@ -596,7 +596,7 @@ impl App {
         if let Some(line) = at {
             buffer.place_cursor(line, crate::coordinates::CharColumn::new(0));
         }
-        self.documents.push(Some(buffer));
+        self.documents.push(Some(Document::from(buffer)));
         let index = self.documents.len() - 1;
         self.go_to_buffer(DocumentId::new(index));
     }

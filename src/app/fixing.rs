@@ -35,7 +35,7 @@ impl App {
             self.note = Some("no file open".to_string());
             return;
         };
-        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         if !buffer.content().is_file() || buffer.mode() != crate::buffer::Mode::Edit {
@@ -193,22 +193,13 @@ impl App {
     /// Asks the server to fill an action in.
     fn resolve_action(&mut self, at: usize) {
         let Some(id) = self.current else { return };
-        let Some(language) = self
-            .documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .and_then(Buffer::language)
-        else {
+        let Some(language) = self.file(id).and_then(Buffer::language) else {
             return;
         };
         let Some(item) = self.actions.get(at).map(|action| action.item.clone()) else {
             return;
         };
-        let version = self
-            .documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .map_or(0, Buffer::version);
+        let version = self.file(id).map_or(0, Buffer::version);
         let Some(client) = self.servers.get_mut(&language) else {
             return;
         };
@@ -311,7 +302,7 @@ impl App {
         let Some(want) = ON_SAVE.get(kind) else {
             return false;
         };
-        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.file(DocumentId::new(index)) else {
             return false;
         };
         let (Some(language), true) = (buffer.language(), buffer.content().is_file()) else {
@@ -410,12 +401,7 @@ impl App {
         kind: usize,
         action: &actions::Action,
     ) -> bool {
-        let Some(language) = self
-            .documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .and_then(Buffer::language)
-        else {
+        let Some(language) = self.file(id).and_then(Buffer::language) else {
             return false;
         };
         let item = action.item.clone();

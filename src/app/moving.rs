@@ -54,7 +54,7 @@ impl App {
         // Before the buffer is borrowed: the area depends on which file is
         // current, which the open above has just settled.
         let area = self.text_area();
-        let Some(buffer) = self.documents.get_mut(id.get()).and_then(Option::as_mut) else {
+        let Some(buffer) = file_in_mut(&mut self.documents, id) else {
             return;
         };
         let (line, column) = match column {
@@ -103,7 +103,7 @@ impl App {
     /// Where the cursor is, for the history.
     pub(super) fn here(&self) -> Option<Jump> {
         let id = self.current?;
-        let cursor = self.documents.get(id.get())?.as_ref()?.cursor();
+        let cursor = self.file(id)?.cursor();
         Some(Jump {
             buffer: id,
             line: cursor.line,
@@ -134,11 +134,7 @@ impl App {
         }
         self.go_to_buffer(to.buffer);
         let area = self.text_area();
-        if let Some(buffer) = self
-            .documents
-            .get_mut(to.buffer.get())
-            .and_then(Option::as_mut)
-        {
+        if let Some(buffer) = self.file_mut(to.buffer) {
             buffer.place_cursor(to.line, to.column);
             // Arriving, like the jump that led here: the line the reader left
             // deserves its context as much as the definition did.
@@ -508,9 +504,7 @@ impl App {
             return;
         };
         let went_back = self
-            .documents
-            .get_mut(index)
-            .and_then(Option::as_mut)
+            .file_mut(DocumentId::new(index))
             .is_some_and(Buffer::undo);
         match went_back {
             true => self.change_document(index),
@@ -524,9 +518,7 @@ impl App {
             return;
         };
         let went_forward = self
-            .documents
-            .get_mut(index)
-            .and_then(Option::as_mut)
+            .file_mut(DocumentId::new(index))
             .is_some_and(Buffer::redo);
         match went_forward {
             true => self.change_document(index),

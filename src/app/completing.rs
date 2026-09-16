@@ -91,7 +91,7 @@ impl App {
     /// The same question, asked because a letter was typed.
     pub(super) fn offer_completion(&mut self) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         // Nothing to complete into: a commit's version of a file, or a file
@@ -144,7 +144,7 @@ impl App {
     /// Asks what the call the cursor is inside takes.
     pub(super) fn ask_signature(&mut self) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         if !buffer.content().is_file() || buffer.mode() != crate::buffer::Mode::Edit {
@@ -235,7 +235,7 @@ impl App {
     /// testing and a server cannot be made to answer on demand.
     pub fn complete_for_test(&mut self, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         let cursor = buffer.cursor();
@@ -302,9 +302,7 @@ impl App {
             return None;
         }
         let buffer = self
-            .documents
-            .get(id.get())
-            .and_then(Option::as_ref)
+            .file(id)
             .filter(|buffer| buffer.mode() == crate::buffer::Mode::Edit)?;
         let cursor = buffer.cursor();
         if cursor.line != from.0 || cursor.column.get() < from.1.get() {
@@ -333,7 +331,7 @@ impl App {
         let Some(query) = self.typed_since(id, from) else {
             return;
         };
-        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         let language = buffer.language();
@@ -421,12 +419,7 @@ impl App {
             return;
         };
         let Some(id) = self.current else { return };
-        let Some(language) = self
-            .documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .and_then(Buffer::language)
-        else {
+        let Some(language) = self.file(id).and_then(Buffer::language) else {
             return;
         };
         let Some(params) = completion
@@ -435,11 +428,7 @@ impl App {
         else {
             return;
         };
-        let version = self
-            .documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .map_or(0, Buffer::version);
+        let version = self.file(id).map_or(0, Buffer::version);
         let Some(client) = self.servers.get_mut(&language) else {
             return;
         };

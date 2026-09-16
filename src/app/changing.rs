@@ -63,6 +63,7 @@ impl App {
                 .documents
                 .iter()
                 .flatten()
+                .filter_map(Document::file)
                 .any(|buffer| buffer.path() == path && buffer.content().is_file());
             let Some(index) = self.open_quietly(&path) else {
                 failed += 1;
@@ -138,7 +139,7 @@ impl App {
         changes: &[Change],
         encoding: &lsp_types::PositionEncodingKind,
     ) -> bool {
-        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.file(DocumentId::new(index)) else {
             return false;
         };
         // Into this document's own coordinates, all of them, before any of
@@ -174,7 +175,7 @@ impl App {
             };
             self.change_in(index, *span, with, doing);
         }
-        if let Some(buffer) = self.documents.get_mut(index).and_then(Option::as_mut) {
+        if let Some(buffer) = self.file_mut(DocumentId::new(index)) {
             buffer.settle_undo();
         }
         true

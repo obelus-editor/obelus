@@ -128,11 +128,9 @@ impl App {
     ///
     /// Which is the only one, where the caller has counted one.
     fn first_unsaved(&self) -> Option<DocumentId> {
-        (0..self.documents.len()).map(DocumentId::new).find(|id| {
-            self.documents[id.get()]
-                .as_ref()
-                .is_some_and(Buffer::is_dirty)
-        })
+        (0..self.documents.len())
+            .map(DocumentId::new)
+            .find(|id| self.file(*id).is_some_and(Buffer::is_dirty))
     }
 
     /// Which document a question is about, in the words the prompt says it
@@ -146,12 +144,9 @@ impl App {
     /// prompt said the name would be one fact drawn twice, taking two rows
     /// and a rule to do it.
     fn buffer_path(&self, id: DocumentId) -> String {
-        self.documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .map_or_else(String::new, |buffer| {
-                relative(buffer.path(), &self.working_directory)
-            })
+        self.file(id).map_or_else(String::new, |buffer| {
+            relative(buffer.path(), &self.working_directory)
+        })
     }
 
     /// Writes every unwritten document, and leaves if they all went.
@@ -162,8 +157,8 @@ impl App {
     /// with four files open names nothing the reader can act on.
     fn save_everything_and_leave(&mut self) {
         for index in 0..self.documents.len() {
-            let unwritten = self.documents[index]
-                .as_ref()
+            let unwritten = self
+                .file(DocumentId::new(index))
                 .is_some_and(|buffer| buffer.is_dirty() && buffer.content().is_file());
             if unwritten && !self.write_now(index) {
                 return;

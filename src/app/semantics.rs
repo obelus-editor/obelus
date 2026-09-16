@@ -48,7 +48,7 @@ impl App {
     /// directory, and asking it about a file outside its own tree gets
     /// answers about a project it cannot see.
     pub(super) fn serve(&mut self, index: usize) {
-        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, DocumentId::new(index)) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -102,7 +102,7 @@ impl App {
 
     /// Tells the server about a document.
     fn open_document(&mut self, index: usize) {
-        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.file(DocumentId::new(index)) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -143,7 +143,7 @@ impl App {
     /// formatter's idea of the last good version -- and none of them can
     /// know from `didChange`, which says only that the text moved.
     pub(super) fn saved_document(&mut self, index: usize) {
-        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.file(DocumentId::new(index)) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -168,7 +168,7 @@ impl App {
     }
 
     pub(super) fn change_document(&mut self, index: usize) {
-        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, DocumentId::new(index)) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -304,7 +304,7 @@ impl App {
     /// around it. While they are typing, the answer goes stale and
     /// [`App::name_at`] falls back to the tree obelus parses itself.
     pub(super) fn ask_tokens(&mut self, index: usize) {
-        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.file(DocumentId::new(index)) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -380,12 +380,7 @@ impl App {
             .collect();
         let tokens =
             lsp::tokens::Tokens::decode(&numbers, legend, client.encoding().clone(), version);
-        let Some(path) = self
-            .documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .map(|buffer| buffer.path().to_path_buf())
-        else {
+        let Some(path) = self.file(id).map(|buffer| buffer.path().to_path_buf()) else {
             return;
         };
         self.tokens.insert(path, tokens);
@@ -426,7 +421,7 @@ impl App {
     /// Asks one of those questions.
     fn ask(&mut self, action: SymbolAction) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -569,11 +564,7 @@ impl App {
     /// somewhere wrong rather than failing.
     #[must_use]
     pub(super) fn unmoved(&self, id: DocumentId, version: i32) -> bool {
-        self.documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .map(Buffer::version)
-            == Some(version)
+        self.file(id).map(Buffer::version) == Some(version)
     }
 
     /// How many messages have gone to the servers.
@@ -642,11 +633,7 @@ impl App {
             return;
         };
 
-        let now = self
-            .documents
-            .get(question.buffer.get())
-            .and_then(Option::as_ref)
-            .map(Buffer::version);
+        let now = self.file(question.buffer).map(Buffer::version);
         let action = match question.asked {
             Asked::Symbol(action) => action,
             Asked::Outline => {
@@ -762,6 +749,7 @@ impl App {
                 self.documents
                     .get(*index)
                     .and_then(Option::as_ref)
+                    .and_then(Document::file)
                     .and_then(Buffer::language)
                     .is_some_and(|of| of == language)
             })
@@ -918,12 +906,7 @@ impl App {
             return false;
         };
         let Some(id) = self.current else { return false };
-        let Some(version) = self
-            .documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .map(Buffer::version)
-        else {
+        let Some(version) = self.file(id).map(Buffer::version) else {
             return false;
         };
         let Some(client) = self.servers.get_mut(&language) else {
@@ -1035,7 +1018,7 @@ impl App {
     /// coming: the reader pressed save, and a setting they turned on is not
     /// a reason to refuse them.
     pub(super) fn ask_formatting(&mut self, index: usize) -> bool {
-        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.file(DocumentId::new(index)) else {
             return false;
         };
         let (Some(language), true) = (buffer.language(), buffer.content().is_file()) else {
@@ -1086,17 +1069,12 @@ impl App {
             tracing::debug!("the file changed while it was being laid out");
             self.note = Some("the file changed while formatting".to_string());
         } else if let Some(edits) = action::edits_in(reply.result.ok()) {
-            let encoding = self
-                .documents
-                .get(id.get())
-                .and_then(Option::as_ref)
-                .and_then(Buffer::language)
-                .map_or_else(
-                    || lsp_types::PositionEncodingKind::UTF16,
-                    |language| self.encoding_for(language),
-                );
+            let encoding = self.file(id).and_then(Buffer::language).map_or_else(
+                || lsp_types::PositionEncodingKind::UTF16,
+                |language| self.encoding_for(language),
+            );
             for edit in edits.into_iter().rev() {
-                if let Some(buffer) = self.documents.get_mut(id.get()).and_then(Option::as_mut) {
+                if let Some(buffer) = self.file_mut(id) {
                     let text = buffer.text();
                     let (line, column) = position::from_lsp(text, edit.range.start, &encoding);
                     let (end_line, end_column) =
@@ -1117,12 +1095,7 @@ impl App {
 
     pub(super) fn ask_workspace_symbols(&mut self, language: LanguageId, query: &str) -> bool {
         let Some(id) = self.current else { return false };
-        let version = self
-            .documents
-            .get(id.get())
-            .and_then(Option::as_ref)
-            .map(Buffer::version)
-            .unwrap_or_default();
+        let version = self.file(id).map(Buffer::version).unwrap_or_default();
         let Some(client) = self.servers.get_mut(&language) else {
             return false;
         };
@@ -1225,6 +1198,7 @@ impl App {
             .documents
             .iter()
             .flatten()
+            .filter_map(Document::file)
             .find(|buffer| buffer.path() == path)
         else {
             return;

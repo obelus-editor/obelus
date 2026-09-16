@@ -56,7 +56,7 @@ impl App {
     /// Sends the question, about the place the pointer is resting on.
     pub(super) fn ask_uses_at(&mut self, at: (LineNumber, CharColumn)) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -99,7 +99,7 @@ impl App {
         if self.current != Some(id) || !self.unmoved(id, version) {
             return;
         }
-        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         let encoding = buffer

@@ -1126,6 +1126,7 @@ impl App {
             .find(|(_, buffer)| {
                 buffer
                     .as_ref()
+                    .and_then(Document::file)
                     .is_some_and(|buffer| buffer.path() == full && buffer.content().is_file())
             })
             .map(|(index, _)| index);
@@ -1136,17 +1137,12 @@ impl App {
             // arrives is the file with the change already in it.
             Some(index) => {
                 let whole = self
-                    .documents
-                    .get(index)
-                    .and_then(Option::as_ref)
+                    .file(DocumentId::new(index))
                     .map(|buffer| buffer.spanning_all());
                 let changed = whole.is_some_and(|span| {
-                    self.documents
-                        .get_mut(index)
-                        .and_then(Option::as_mut)
-                        .is_some_and(|buffer| {
-                            buffer.edit(span, text, crate::buffer::undo::Doing::Whole)
-                        })
+                    self.file_mut(DocumentId::new(index)).is_some_and(|buffer| {
+                        buffer.edit(span, text, crate::buffer::undo::Doing::Whole)
+                    })
                 });
                 if changed {
                     self.change_document(index);
@@ -1188,6 +1184,7 @@ impl App {
             self.documents
                 .iter()
                 .flatten()
+                .filter_map(Document::file)
                 .find(|buffer| buffer.path() == full)
                 .map(|buffer| buffer.text().rope().to_string())
                 .or_else(|| std::fs::read_to_string(&full).ok())
