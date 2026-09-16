@@ -27,6 +27,7 @@ mod hovering;
 mod noting;
 pub use history_view::About;
 mod keys;
+mod layers;
 mod moving;
 mod naming;
 mod preferences;
@@ -935,6 +936,24 @@ impl App {
             return Context::Dialog;
         }
         Context::Normal
+    }
+
+    /// What is on screen over the file, worked out from what is open.
+    ///
+    /// The one answer. Everything that used to ask "is a dialog showing" or
+    /// "which of these is nearest" asks this instead, and the `match` below
+    /// is the single place where which field means which layer is written
+    /// down. It is exhaustive, so a view added without an answer here is a
+    /// view that does not compile.
+    #[must_use]
+    pub fn layers(&self) -> layers::Layers {
+        layers::Layers::showing(|layer| match layer {
+            layers::Layer::Counts => self.counts.is_some(),
+            layers::Layer::Notes => self.notes.is_some(),
+            layers::Layer::Settings => self.settings.is_some(),
+            layers::Layer::Picker => self.picker.is_some(),
+            layers::Layer::Prompt => self.prompt.is_some(),
+        })
     }
 
     /// Whether something is showing that the reader is *in*.
