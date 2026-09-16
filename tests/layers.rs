@@ -184,3 +184,37 @@ fn only_a_question_leaves_the_file_pointable() {
         }
     }
 }
+
+/// A key goes to the nearest layer, not to whichever was asked first.
+///
+/// The order used to live in the chain itself, so the only way to know it
+/// was to read a hundred and thirty lines of `handle_key` and hope the four
+/// other places that also held an order agreed. It is now one array, read
+/// backwards, and this is the assertion that it is read at all.
+///
+/// A list over a conversation is the pair to use because it is one obelus
+/// really has: an agent's own question opens exactly like this.
+#[test]
+fn a_key_goes_to_the_nearest_layer() {
+    let mut app = reading();
+    app.open_agent();
+    dispatch::dispatch(&mut app, Command::BufferList);
+    assert_eq!(
+        app.layers().nearest(),
+        Some(Layer::Picker),
+        "the list did not open over the conversation"
+    );
+
+    press(&mut app, KeyCode::Char('x'));
+
+    assert_eq!(
+        app.picker().expect("the list").query(),
+        "x",
+        "the list did not get the key it was nearest to"
+    );
+    assert_eq!(
+        app.chat().expect("the conversation").writing().rows(1),
+        [""],
+        "the conversation took a key from under the list"
+    );
+}

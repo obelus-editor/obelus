@@ -441,6 +441,103 @@ impl App {
     ///
     /// What it does not take falls through to the table, so `ctrl+q` quits
     /// from a card the way it quits from a list.
+    /// Offers a key to the conversation, and says whether it took it.
+    ///
+    /// Two things in one, because the reader sees one: the agent's own
+    /// commands, while a list of them is following what is being typed, and
+    /// then the conversation itself -- the transcript, the box, and the row
+    /// of settings under it.
+    pub(super) fn chat_key(&mut self, key: &crossterm::event::KeyEvent) -> bool {
+        if !self.showing_chat {
+            return false;
+        }
+        let thinking = self.talking() == Talking::Thinking;
+        // The room the two halves have, from the same functions the view
+        // lays them out with: a page of scrolling is the page on screen,
+        // and the caret moves by the rows the box really has.
+        let room = ChatRoom {
+            transcript: crate::ui::chat::bands(self.editor_area, &self.chat, self.card.as_ref())
+                .transcript
+                .height,
+            reading: crate::ui::chat::reading_width(self.editor_area),
+            writing: crate::ui::chat::writing_width(self.editor_area),
+        };
+        // The list of the agent's own commands, when one is showing: it
+        // follows what is being typed in the box, so it takes the keys that
+        // move about a list and leaves the rest to the box.
+        if self.slash_key(key) {
+            return true;
+        }
+        // What the agent lets the reader change, which is what the row under
+        // the box is showing -- so the keys that walk it need it as much as
+        // the view does. Cloned because the box is about to be borrowed to
+        // take the key.
+        let settings = self.agent_settings().to_vec();
+        match self.chat.handle_key(key, thinking, room, &settings) {
+            ChatOutcome::Consumed => true,
+            ChatOutcome::Cancelled => {
+                // Escape gives up on the nearest thing first, and a question
+                // the agent is waiting on is nearer than the conversation it
+                // was asked in.
+                if self.is_asking() {
+                    self.refuse_asking();
+                } else {
+                    self.close_chat();
+                }
+                true
+            }
+            ChatOutcome::Send(text) => {
+                self.send_to_agent(&text);
+                true
+            }
+            ChatOutcome::Interrupt => {
+                self.interrupt_agent();
+                true
+            }
+            // Where a row of the transcript says the agent was. The
+            // conversation stays as it was behind it: a reader who followed
+            // the agent into a file is still in the conversation about that
+            // file, and escape brings it back.
+            ChatOutcome::GoTo(place) => {
+                // The protocol counts a file's lines from one and the rest
+                // of obelus counts them from zero, which is what `go_to`
+                // takes: a language server's numbering, because that is who
+                // it was written for.
+                let line = place.line.unwrap_or(1).saturating_sub(1);
+                self.go_to(&place.path, line, 0);
+                // And out of the way, because going somewhere means seeing
+                // it: the conversation is the whole region while it is
+                // showing. It is hidden rather than ended, so the key that
+                // opens it brings back every word of it.
+                //
+                // Only if there is something to see, though: a file an agent
+                // named can have gone away, and hiding the conversation to
+                // show a file that never opened would take away the only
+                // thing on screen.
+                if self
+                    .current_buffer()
+                    .is_some_and(|buffer| buffer.path() == place.path)
+                {
+                    self.close_chat();
+                }
+                true
+            }
+            ChatOutcome::Choose(id) => {
+                self.open_agent_setting(&id);
+                true
+            }
+            ChatOutcome::Toggle(id) => {
+                self.flip_agent_setting(&id);
+                true
+            }
+            ChatOutcome::StepMode => {
+                self.step_agent_mode();
+                true
+            }
+            ChatOutcome::Ignored => false,
+        }
+    }
+
     pub(super) fn card_key(&mut self, key: &crossterm::event::KeyEvent) -> bool {
         let Some(card) = self.card.as_ref() else {
             return false;

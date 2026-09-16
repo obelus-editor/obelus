@@ -46,6 +46,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use documents::Rendered;
 use history::Changed;
+use layers::Layer;
 use previewing::Preview;
 use ratatui::{
     Terminal,
@@ -1429,136 +1430,24 @@ impl App {
             return;
         }
 
-        // The picker gets first refusal, because the keys it wants are the
-        // ones that move the thing it owns. What it does not want falls
-        // through, which is how `ctrl+q` still works with one open.
-        if self.picker_key(&key) {
-            return;
-        }
-
-        // The settings take what the picker did not: they are the whole
-        // screen while they are open, and every printable character is
-        // theirs to filter with. After the picker, because a list opened
-        // over them -- a setting's choices -- is what the reader is
-        // looking at.
-        if self.settings_key(&key) {
-            return;
-        }
-
-        // The counts take what the settings did not. They are a dialog with
-        // nothing to type into, so what they take is the keys that walk a
-        // list and the two that leave it -- and everything else falls
-        // through to the table, where nothing is bound in a dialog.
-        // Not while a prompt is open over it: the prompt is a thing the
-        // reader is *in*, and a list that went on taking enter and space
-        // underneath it would swallow the answer and tick something.
-        if self.prompt.is_none() && self.notes.is_some() && self.notes_key(&key) {
-            return;
-        }
-
-        if self.counts.is_some() && self.counts_key(&key) {
-            return;
-        }
-
-        // The conversation takes what the settings did not: it is the whole
-        // editor region while it is showing, and every printable character
-        // goes into what is being typed. After the picker, because a list
-        // opened over it -- an agent's own question -- is what the reader is
-        // answering.
-        if self.showing_chat {
-            let thinking = self.talking() == talking::Talking::Thinking;
-            // The room the two halves have, from the same functions the
-            // view lays them out with: a page of scrolling is the page on
-            // screen, and the caret moves by the rows the box really has.
-            let width = ui::chat::writing_width(self.editor_area);
-            let room = ChatRoom {
-                transcript: ui::chat::bands(self.editor_area, &self.chat, self.card.as_ref())
-                    .transcript
-                    .height,
-                reading: ui::chat::reading_width(self.editor_area),
-                writing: width,
+        // And then whatever is over the file, nearest the reader first --
+        // because escape belongs to whatever is in front, and every other
+        // key belongs to whatever owns the thing it moves. One order, the
+        // one `layers` declares, read backwards. What a layer does not want
+        // falls through it, which is how `ctrl+q` still leaves obelus from
+        // inside any of them.
+        for layer in self.layers().nearest_first() {
+            let taken = match layer {
+                Layer::Prompt => self.prompt_key(&key),
+                Layer::Picker => self.picker_key(&key),
+                Layer::Settings => self.settings_key(&key),
+                Layer::Notes => self.notes_key(&key),
+                Layer::Counts => self.counts_key(&key),
+                Layer::Chat => self.chat_key(&key),
             };
-            // The list of the agent's own commands, when one is showing:
-            // it follows what is being typed in the box, so it takes the
-            // keys that move about a list and leaves the rest to the box.
-            if self.slash_key(&key) {
+            if taken {
                 return;
             }
-            // What the agent lets the reader change, which is what the row
-            // under the box is showing -- so the keys that walk it need it
-            // as much as the view does. Cloned because the box is about to
-            // be borrowed to take the key.
-            let settings = self.agent_settings().to_vec();
-            match self.chat.handle_key(&key, thinking, room, &settings) {
-                ChatOutcome::Consumed => return,
-                ChatOutcome::Cancelled => {
-                    // Escape gives up on the nearest thing first, and a
-                    // question the agent is waiting on is nearer than the
-                    // conversation it was asked in.
-                    if self.is_asking() {
-                        self.refuse_asking();
-                        return;
-                    }
-                    self.close_chat();
-                    return;
-                }
-                ChatOutcome::Send(text) => {
-                    self.send_to_agent(&text);
-                    return;
-                }
-                ChatOutcome::Interrupt => {
-                    self.interrupt_agent();
-                    return;
-                }
-                // Where a row of the transcript says the agent was. The
-                // conversation stays as it was behind it: a reader who
-                // followed the agent into a file is still in the
-                // conversation about that file, and escape brings it back.
-                ChatOutcome::GoTo(place) => {
-                    // The protocol counts a file's lines from one and the
-                    // rest of obelus counts them from zero, which is what
-                    // `go_to` takes: a language server's numbering, because
-                    // that is who it was written for.
-                    let line = place.line.unwrap_or(1).saturating_sub(1);
-                    self.go_to(&place.path, line, 0);
-                    // And out of the way, because going somewhere means
-                    // seeing it: the conversation is the whole region while
-                    // it is showing. It is hidden rather than ended, so the
-                    // key that opens it brings back every word of it.
-                    //
-                    // Only if there is something to see, though: a file an
-                    // agent named can have gone away, and hiding the
-                    // conversation to show a file that never opened would
-                    // take away the only thing on screen.
-                    if self
-                        .current_buffer()
-                        .is_some_and(|buffer| buffer.path() == place.path)
-                    {
-                        self.close_chat();
-                    }
-                    return;
-                }
-                ChatOutcome::Choose(id) => {
-                    self.open_agent_setting(&id);
-                    return;
-                }
-                ChatOutcome::Toggle(id) => {
-                    self.flip_agent_setting(&id);
-                    return;
-                }
-                ChatOutcome::StepMode => {
-                    self.step_agent_mode();
-                    return;
-                }
-                ChatOutcome::Ignored => {}
-            }
-        }
-
-        // A question on the status bar takes keys before anything else: it
-        // is what the reader is looking at, and it is one row rather than a
-        // region, so nothing under it is competing for them.
-        if self.prompt_key(&key) {
-            return;
         }
 
         // What the server said about a place. Before the panels below it
