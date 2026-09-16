@@ -218,3 +218,44 @@ fn a_key_goes_to_the_nearest_layer() {
         "the conversation took a key from under the list"
     );
 }
+
+/// The caret is the nearest layer's, which is where the keys are going.
+///
+/// These were two chains in two orders. The keys walked picker, settings,
+/// notes, counts, conversation, question; the caret walked question,
+/// picker, conversation, settings, notes, counts. So a question with a list
+/// opened over it drew the caret in the question while the typing went to
+/// the list, and a conversation with the notes over it drew the caret in
+/// the conversation while the typing went to the notes. There is one order
+/// now, and this is what says so.
+#[test]
+fn the_caret_is_where_the_keys_are() {
+    let area = ratatui::layout::Rect {
+        x: 0,
+        y: 0,
+        width: WIDTH,
+        height: HEIGHT,
+    };
+
+    // A list over a conversation: the list is nearer, so the caret belongs
+    // on its prompt rather than in the box behind it.
+    let mut app = reading();
+    app.open_agent();
+    dispatch::dispatch(&mut app, Command::BufferList);
+    let over = obelus::ui::cursor_position(area, &app).expect("a caret somewhere");
+    assert_eq!(
+        over.y,
+        HEIGHT - 1,
+        "the caret was not on the list's own prompt"
+    );
+
+    // And the conversation alone puts it in the box, which is in the
+    // region rather than on the status row: a message is a paragraph.
+    let mut app = reading();
+    app.open_agent();
+    let alone = obelus::ui::cursor_position(area, &app).expect("a caret somewhere");
+    assert!(
+        alone.y < HEIGHT - 1,
+        "the conversation's caret was on the status row"
+    );
+}

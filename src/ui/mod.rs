@@ -30,7 +30,11 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthChar as _;
 
-use crate::{app::App, component::picker::Colouring, theme::Theme};
+use crate::{
+    app::{App, layers::Layer},
+    component::picker::{Colouring, Picker},
+    theme::Theme,
+};
 
 /// Where the two regions of the screen are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -116,56 +120,44 @@ pub fn relative_to<'a>(path: &'a std::path::Path, root: &std::path::Path) -> &'a
 #[must_use]
 pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
     let regions = regions(area);
-
-    if let Some(prompt) = app.prompt() {
-        let column = status::answer_caret(prompt);
-        return (column < regions.status.width).then(|| Position {
+    // Most of them filter or answer by typing on the status row, so the
+    // caret goes where that typing does.
+    let on_the_status_row = |column: u16| {
+        (column < regions.status.width).then(|| Position {
             x: regions.status.x + column,
             y: regions.status.y,
-        });
-    }
+        })
+    };
 
-    if let Some(picker) = app.picker() {
-        let column = status::prompt_caret(picker);
-        return (column < regions.status.width).then(|| Position {
-            x: regions.status.x + column,
-            y: regions.status.y,
-        });
-    }
-
-    // The conversation is written into, and its caret is in the box rather
-    // than on the status bar: a message is a paragraph, and a paragraph
-    // does not fit on one row. After the picker, because an agent's own
-    // question is a list opened over it.
-    if let Some(chat) = app.chat() {
-        return chat::ChatView::caret(regions.editor, chat, app.card());
-    }
-
-    // The settings filter by typing too, so the caret goes where the typing
-    // does. After the picker, because a list opened over them is what the
-    // reader is typing into.
-    if let Some(settings) = app.settings() {
-        let column = status::filter_caret(&settings.query(), settings.query_caret());
-        return (column < regions.status.width).then(|| Position {
-            x: regions.status.x + column,
-            y: regions.status.y,
-        });
-    }
-
-    // A note being written has one, in the row it is being written in --
-    // which is the row it will be read in. The same answer the conversation
-    // gives, for the same reason: what is typed is a paragraph, and a
-    // paragraph does not fit on the status bar.
-    if let Some(notes) = app.notes() {
-        return todo::caret(regions.editor, notes);
-    }
-
-    // Nothing is typed into the counts, so there is no caret in them: what
-    // marks where the keys are going is the row's background, and a caret as
-    // well would be two marks for one fact. Without this the file behind
-    // them kept its own, blinking in a view it is not part of.
-    if app.counts().is_some() {
-        return None;
+    // Whatever is nearest, which is where the keys are going. Asked once
+    // rather than walked as a chain of its own: a caret drawn in one view
+    // while the typing reaches another is a screen that lies about what a
+    // key will do, and that is what two chains in two orders produced.
+    match app.layers().nearest() {
+        Some(Layer::Prompt) => return on_the_status_row(status::answer_caret(app.prompt()?)),
+        Some(Layer::Picker) => return on_the_status_row(status::prompt_caret(app.picker()?)),
+        Some(Layer::Settings) => {
+            let settings = app.settings()?;
+            return on_the_status_row(status::filter_caret(
+                &settings.query(),
+                settings.query_caret(),
+            ));
+        }
+        // A note being written has one in the row it is being written in,
+        // which is the row it will be read in. The same answer the
+        // conversation gives, for the same reason: what is typed is a
+        // paragraph, and a paragraph does not fit on the status bar.
+        Some(Layer::Notes) => return todo::caret(regions.editor, app.notes()?),
+        Some(Layer::Chat) => {
+            return chat::ChatView::caret(regions.editor, app.chat()?, app.card());
+        }
+        // Nothing is typed into the counts, so there is no caret in them:
+        // what marks where the keys are going is the row's background, and
+        // a caret as well would be two marks for one fact. Without this the
+        // file behind them kept its own, blinking in a view it is not part
+        // of.
+        Some(Layer::Counts) => return None,
+        None => {}
     }
 
     let buffer = app.current_buffer()?;
@@ -208,12 +200,14 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
 /// nothing painted.
 pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     let regions = regions(area);
+    let layers = app.layers();
     // Under whatever the region holds and over the status bar, once, for
     // every view: what is above it changes and the boundary does not.
     rule(cells, regions.edge, app.theme());
-    // A buffer being shown some other way is shown that way. The editor view
-    // draws the file's own bytes, which in this mode is not what is on
-    // screen.
+
+    // The file being read, under everything. A buffer being shown some
+    // other way is shown that way: the editor view draws the file's own
+    // bytes, which in that mode is not what is on screen.
     match app.rendering() {
         Some(rows) => {
             let top = app
@@ -223,162 +217,79 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
         }
         None => editor::EditorView::new(app).render(regions.editor, cells),
     }
-    // The conversation takes the whole region for the same reason the
-    // settings do: it is its own screen with its own typing, and the file
-    // behind it is not what is being read.
-    if let Some(view) = chat::ChatView::new(app) {
-        // The conversation's status row is obelus's own: one bar, at the
-        // foot of the screen. Unless a list is open over it, in which case
-        // the row is that list's prompt -- the keys are going there and so
-        // is the caret, and a row about the conversation under a list
-        // nobody is typing in is two things asking to be read at once.
-        match app.picker() {
-            Some(_) => status::StatusView::new(app).render(regions.status, cells),
-            None => view.status(cells, regions.status),
-        }
-        view.render(regions.editor, cells);
-        // A list opened over it is the agent's own question, or the
-        // commands it takes: both draw where any compact list draws, with
-        // the conversation behind them.
-        let over = app.picker().or_else(|| app.slash());
-        if let Some(list) = over {
-            let room = app.chat().map_or(regions.editor, |chat| {
-                chat::above_writing(regions.editor, chat)
-            });
-            let region = picker::region(list, room);
-            picker::PickerView::new(list, app.theme()).render(region, cells);
-            picker::foot_of(cells, list, room, app.theme());
-            if region.y > regions.editor.y {
-                rule(
-                    cells,
-                    Rect {
-                        y: region.y - 1,
-                        height: 1,
-                        ..region
-                    },
-                    app.theme(),
-                );
-            }
-        }
-        return;
-    }
-    // The counts take the whole region: a table of numbers with the file
-    // behind it would be a screen with two things on it and no way to tell
-    // which one a key would reach.
-    // The counts take the screen whole -- the status row included, and the
-    // rule that would be above one. A status row says what is being read and
-    // where the cursor is in it; while this is showing there is no file being
-    // read and no cursor anywhere, so obelus's own row could only name the
-    // file behind the view, at a line and column belonging to a cursor that
-    // is nowhere on screen. The two rows that would have said
-    // it go to the list instead.
-    // The notes take the whole region, the way the counts do: a list of
-    // what to come back to with the code behind it would be a screen with
-    // two things on it and no way to tell which one a key would reach.
-    if let Some(view) = todo::TodoUi::new(app) {
-        view.render(regions.editor, cells);
-        status::StatusView::new(app).render(regions.status, cells);
-        return;
-    }
-    if let Some(view) = counts::CountsView::new(app) {
-        view.render(area, cells);
-        return;
-    }
-    // The settings take the whole region: they are their own screen, with
-    // their own typing, and nothing under them is being read.
-    if let Some(view) = settings::SettingsView::new(app) {
-        view.render(regions.editor, cells);
-        // A list opened over them is a setting's choices: it draws where any
-        // compact list draws, and the settings are what is behind it.
-        if let Some(list) = app.picker() {
-            let region = picker::region(list, regions.editor);
-            picker::PickerView::new(list, app.theme()).render(region, cells);
-            picker::foot_of(cells, list, regions.editor, app.theme());
-            if region.y > regions.editor.y {
-                rule(
-                    cells,
-                    Rect {
-                        y: region.y - 1,
-                        height: 1,
-                        ..region
-                    },
-                    app.theme(),
-                );
-            }
-        }
-        status::StatusView::new(app).render(regions.status, cells);
-        return;
-    }
-    // Nothing open: the editor region has been painted and is otherwise
-    // empty, which is the one moment a reader needs telling what the keys are.
-    if app.current_buffer().is_none() {
+    // Nothing open and nothing to open: the one moment a reader needs
+    // telling what the keys are. Not while something has taken the region,
+    // because then the region is not empty -- but a list or a question
+    // leaves it alone, and this is what they would be over.
+    if app.current_buffer().is_none() && !layers.filling() {
         welcome::WelcomeView::new(app).render(regions.editor, cells);
     }
-    // Over the code, because a compact list is meant to leave the code above
-    // it visible.
-    if let Some(list) = app.picker() {
-        let region = picker::region(list, regions.editor);
-        picker::PickerView::new(list, app.theme()).render(region, cells);
 
-        // A compact list sits on top of the code, so it needs an edge: the
-        // same rule the preview gets, for the same reason, which is that two
-        // different things sharing a screen have to be told apart. A list
-        // filling the whole region has no room above it and needs none.
-        if region.y > regions.editor.y {
-            rule(
-                cells,
-                Rect {
-                    y: region.y - 1,
-                    height: 1,
-                    ..region
-                },
-                app.theme(),
-            );
-        }
-
-        // Below the list, with a rule between them. The preview is drawn by
-        // the editor's own view, which is what makes it look like the editor.
-        if let Some(preview) = picker::preview_region(app.picker(), regions.editor) {
-            rule(
-                cells,
-                Rect {
-                    y: preview.y - 1,
-                    height: 1,
-                    ..preview
-                },
-                app.theme(),
-            );
-
-            match app.preview() {
-                Some(shown) => {
-                    editor::EditorView::for_buffer(
-                        shown.buffer,
-                        shown.highlights,
-                        app.theme(),
-                        shown.marked,
-                        shown.changes,
-                    )
-                    .render(preview, cells);
+    // And then whatever is over it, furthest from the reader first, which
+    // is the order `layers` declares and the reverse of the one a key is
+    // offered in. One array holds both, so the thing drawn last is the
+    // thing a key reaches.
+    for layer in layers.furthest_first() {
+        match layer {
+            Layer::Chat => {
+                if let Some(view) = chat::ChatView::new(app) {
+                    view.render(regions.editor, cells);
                 }
-                // Room set aside and nothing to put in it: a file that has
-                // gone, or a row that names no file.
-                None => fill(cells, preview, Style::new().bg(app.theme().background)),
             }
+            // The notes and the settings take the region for the same
+            // reason: each is its own screen, and a list of what to come
+            // back to with the code behind it would be two things on one
+            // screen with no way to tell which a key would reach.
+            Layer::Notes => {
+                if let Some(view) = todo::TodoUi::new(app) {
+                    view.render(regions.editor, cells);
+                }
+            }
+            Layer::Settings => {
+                if let Some(view) = settings::SettingsView::new(app) {
+                    view.render(regions.editor, cells);
+                }
+            }
+            // The counts take `area` rather than the region: they are the
+            // one view that has the status row as well, which is what
+            // `Room::Screen` says about them.
+            Layer::Counts => {
+                if let Some(view) = counts::CountsView::new(app) {
+                    view.render(area, cells);
+                }
+            }
+            Layer::Picker => {
+                if let Some(list) = app.picker() {
+                    list_over(cells, app, list, room_for_a_list(app, regions.editor));
+                }
+            }
+            // Drawn by the status row, which is the row it is on.
+            Layer::Prompt => {}
         }
-
-        // Last, because the card it can put up goes over everything this
-        // list is showing -- the preview included, which is drawn after the
-        // rows and would otherwise be drawn over the bottom half of it.
-        picker::foot_of(cells, list, regions.editor, app.theme());
     }
-    // Over the code and over everything else in the region: what could be
-    // typed next belongs beside the cursor, and the cursor is on top.
+    // The agent's own commands, which are not a layer: the list follows
+    // what is being typed in the box rather than being something the
+    // reader opened, and it goes where any compact list goes. A picker
+    // over the same conversation wins, because that one is a question the
+    // agent is waiting on an answer to.
+    if !layers.has(Layer::Picker)
+        && let Some(list) = app.slash()
+    {
+        list_over(cells, app, list, room_for_a_list(app, regions.editor));
+    }
+
+    // The three panels that belong to a place in the file. Each is empty
+    // while anything is over the file -- they are settled that way once a
+    // frame -- so nothing here has to ask a second time.
+    //
+    // What could be typed next belongs beside the cursor, and the cursor is
+    // on top of everything in the region.
     if let Some(panel) = complete::layout(app, regions.editor) {
         complete::draw(cells, panel, app);
     }
-    // And what the call takes, which is the same kind of thing one
-    // question further back. Never both: the panel's own accessor refuses
-    // to give a signature while there is a list of candidates.
+    // And what the call takes, which is the same kind of thing one question
+    // further back. Never both: the panel's own accessor refuses to give a
+    // signature while there is a list of candidates.
     if let Some(panel) = signature::layout(app, regions.editor) {
         signature::draw(cells, panel, app);
     }
@@ -388,7 +299,90 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     if let Some(panel) = hover::layout(app, regions.editor) {
         hover::draw(cells, panel, app);
     }
-    status::StatusView::new(app).render(regions.status, cells);
+
+    // The status row, last, and whose it is. A conversation puts its own
+    // there -- unless a list is open over it, in which case the row is that
+    // list's prompt: the keys are going there and so is the caret, and a
+    // row about the conversation under a list nobody is typing in is two
+    // things asking to be read at once.
+    if layers.taking_the_status_row() {
+        return;
+    }
+    match chat::ChatView::new(app) {
+        Some(view) if !layers.has(Layer::Picker) => view.status(cells, regions.status),
+        _ => status::StatusView::new(app).render(regions.status, cells),
+    }
+}
+
+/// Where a compact list goes, given what it is over.
+///
+/// The editor region, less what a conversation's box has taken from the
+/// foot of it: a list drawn over the box would cover the thing the reader
+/// is typing into to find the list.
+fn room_for_a_list(app: &App, editor: Rect) -> Rect {
+    app.chat()
+        .map_or(editor, |chat| chat::above_writing(editor, chat))
+}
+
+/// Draws a list over whatever is behind it, with its edge and its preview.
+///
+/// One function for all of them, because a list opened over the code, over
+/// the settings and over a conversation is the same list: what differs is
+/// the room it is given, which is the argument.
+fn list_over(cells: &mut CellBuffer, app: &App, list: &Picker, room: Rect) {
+    let region = picker::region(list, room);
+    picker::PickerView::new(list, app.theme()).render(region, cells);
+
+    // A compact list sits on top of what is behind it, so it needs an edge:
+    // the same rule the preview gets, for the same reason, which is that two
+    // different things sharing a screen have to be told apart. A list
+    // filling the whole room has no space above it and needs none.
+    if region.y > room.y {
+        rule(
+            cells,
+            Rect {
+                y: region.y - 1,
+                height: 1,
+                ..region
+            },
+            app.theme(),
+        );
+    }
+
+    // Below the list, with a rule between them. The preview is drawn by the
+    // editor's own view, which is what makes it look like the editor.
+    if let Some(preview) = picker::preview_region(Some(list), room) {
+        rule(
+            cells,
+            Rect {
+                y: preview.y - 1,
+                height: 1,
+                ..preview
+            },
+            app.theme(),
+        );
+
+        match app.preview() {
+            Some(shown) => {
+                editor::EditorView::for_buffer(
+                    shown.buffer,
+                    shown.highlights,
+                    app.theme(),
+                    shown.marked,
+                    shown.changes,
+                )
+                .render(preview, cells);
+            }
+            // Room set aside and nothing to put in it: a file that has gone,
+            // or a row that names no file.
+            None => fill(cells, preview, Style::new().bg(app.theme().background)),
+        }
+    }
+
+    // Last, because the card it can put up goes over everything this list is
+    // showing -- the preview included, which is drawn after the rows and
+    // would otherwise be drawn over the bottom half of it.
+    picker::foot_of(cells, list, room, app.theme());
 }
 
 /// The block a bar is drawn with, track and thumb alike.

@@ -1143,6 +1143,14 @@ impl App {
         // And the answer about a place, which the pointer resting is what
         // asks for: this is where the resting is noticed.
         self.settle_hover();
+        // And what the call under the caret takes. It is the third of the
+        // panels that belong to a place in the file, and it was the one
+        // that never asked whether the file was still what the reader is
+        // looking at: the other two go when a view opens over them, and
+        // this one stayed, drawn over a screen it is not about.
+        if self.layers().any() {
+            self.signature = None;
+        }
         if let Some(hover) = self.hover.as_mut() {
             // What it is drawn in, so that paging it moves what is on
             // screen rather than a number nothing reads.

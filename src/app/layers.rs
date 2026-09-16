@@ -204,6 +204,30 @@ impl Layers {
             .any(|layer| !matches!(layer.room(), Room::Row))
     }
 
+    /// Whether anything has taken the editor region whole.
+    ///
+    /// Which is what the welcome screen asks: it is what fills an empty
+    /// editor region, and a region something else has filled is not empty.
+    /// A list and a question leave it alone -- both are drawn *over* what
+    /// is there, and what is there is what they are about.
+    #[must_use]
+    pub fn filling(self) -> bool {
+        self.furthest_first()
+            .any(|layer| matches!(layer.room(), Room::Region | Room::Screen))
+    }
+
+    /// Whether anything has taken the status row along with the screen.
+    ///
+    /// A status row says which file is being read and where the cursor is
+    /// in it. A view with no file and no cursor has nothing to put there,
+    /// so rather than name the file behind itself at a line belonging to a
+    /// cursor that is nowhere on screen, it takes the row too.
+    #[must_use]
+    pub fn taking_the_status_row(self) -> bool {
+        self.furthest_first()
+            .any(|layer| matches!(layer.room(), Room::Screen))
+    }
+
     /// Whether this one is among them.
     #[must_use]
     pub fn has(self, layer: Layer) -> bool {
