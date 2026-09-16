@@ -200,16 +200,16 @@ fn an_edit_obelus_will_not_make_is_declined() {
     assert!(open.exists(), "the file was deleted");
 }
 
-/// A save asks what to do about the imports, and says which kind it
-/// means.
+/// A save asks what the server would do to the whole file, and says
+/// which kinds it means.
 ///
-/// The one code action obelus sends without being asked, so it is the one
-/// that has to say `only`: a request with no kind on it comes back with
-/// every refactoring near the cursor, and applying one of those to a file
-/// somebody pressed save on would be obelus editing their code on its own
-/// account.
+/// The only code action obelus sends without being asked, so it is the
+/// one that has to say `only`: a request with no kind on it comes back
+/// with every refactoring near the cursor, and applying one of those to a
+/// file somebody pressed save on would be obelus rewriting their code on
+/// its own initiative.
 #[test]
-fn a_save_asks_about_the_imports_and_only_about_those() {
+fn a_save_asks_only_for_what_a_server_does_to_a_whole_file() {
     use obelus::syntax::LanguageId;
 
     let (_scratch, mut app, open, _closed) = project("save-imports");
@@ -222,7 +222,7 @@ fn a_save_asks_about_the_imports_and_only_about_those() {
     app.declared_for_test(LanguageId::Rust, json!({ "codeActionProvider": true }));
     app.configure(
         obelus::config::Config {
-            organize_imports_on_save: true,
+            code_actions_on_save: true,
             ..obelus::config::Config::default()
         },
         Vec::new(),
@@ -238,44 +238,119 @@ fn a_save_asks_about_the_imports_and_only_about_those() {
         "the file was written before the server had answered"
     );
 
-    // What went out, read back off the wire by a server that echoes.
-    let asked = heard_request(&heard, "textDocument/codeAction").expect("the question");
+    // Every kind in turn, each asked only once the last has been made:
+    // two edits out of one answer would be two edits worked out against
+    // the same text, and the first of them moves what the second is
+    // measured against.
+    let kinds = App::kinds_asked_on_save_for_test();
+    for (at, kind) in kinds.iter().enumerate() {
+        app.saving_for_test(
+            at,
+            json!([
+                { "title": "Whatever this one is", "kind": kind,
+                  "edit": { "changes": { format!("file://{}", open.display()): [
+                      { "range": { "start": { "line": 0, "character": 0 },
+                                   "end": { "line": 0, "character": 0 } },
+                        "newText": format!("// {kind}\n") }
+                  ] } } }
+            ]),
+        );
+    }
+
+    // One request per kind, each naming its own and only its own.
+    let asked = heard_requests(&heard, "textDocument/codeAction", kinds.len());
     assert_eq!(
-        asked["params"]["context"]["only"],
-        json!(["source.organizeImports"]),
-        "the save asked for everything the cursor is near: {asked}"
+        asked.len(),
+        kinds.len(),
+        "the save did not ask about every kind: {asked:?}"
     );
+    let named: Vec<String> = asked
+        .iter()
+        .map(|one| {
+            let only = one["params"]["context"]["only"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            assert_eq!(only.len(), 1, "a save asked for more than one kind at once");
+            only[0].as_str().unwrap_or_default().to_string()
+        })
+        .collect();
+    assert_eq!(named, kinds, "not the kinds a save is meant to ask about");
+
+    // Every edit reached the file, and the file reached the disk: each
+    // answer made its own change and then picked the save back up.
+    let written = text_of(&open);
+    for kind in kinds {
+        assert!(
+            written.contains(&format!("// {kind}\n")),
+            "what the server said about {kind} is not in the file: {written:?}"
+        );
+    }
+    // And the question was about the whole file, with nothing of the
+    // reader's cursor in it.
     assert_eq!(
-        asked["params"]["range"]["start"],
+        asked[0]["params"]["range"]["start"],
         json!({ "line": 0, "character": 0 }),
-        "the question is not about the whole file: {asked}"
+        "the question is not about the whole file: {:?}",
+        asked[0]
     );
     assert!(
-        asked["params"]["context"]["diagnostics"]
+        asked[0]["params"]["context"]["diagnostics"]
             .as_array()
             .is_some_and(Vec::is_empty),
-        "a question about imports carried diagnostics: {asked}"
-    );
-
-    // And the answer finishes the save it stopped.
-    app.organizing_for_test(json!([
-        { "title": "Organize imports", "kind": "source.organizeImports",
-          "edit": { "changes": { format!("file://{}", open.display()): [
-              { "range": { "start": { "line": 0, "character": 0 },
-                           "end": { "line": 0, "character": 0 } },
-                "newText": "use std::fmt;\n" }
-          ] } } }
-    ]));
-    // On disk, with the tidying in it: the answer both made the edit and
-    // finished the save it had stopped.
-    let written = text_of(&open);
-    assert!(
-        written.starts_with("use std::fmt;\n"),
-        "the tidying did not reach the file: {written:?}"
+        "a question about the whole file carried diagnostics: {:?}",
+        asked[0]
     );
     assert!(
         written.contains("fn thing() {}"),
         "the file lost what was in it: {written:?}"
+    );
+    assert!(
+        !app.current_buffer().expect("a buffer").is_dirty(),
+        "the save never finished"
+    );
+}
+
+/// A kind the server has nothing for is not the end of the save.
+///
+/// Most servers answer most of these with nothing, so this is the
+/// ordinary path rather than the odd one: the save has to walk past it to
+/// the next kind and then to the writing.
+#[test]
+fn a_kind_the_server_has_nothing_for_does_not_end_the_save() {
+    use obelus::syntax::LanguageId;
+
+    let (_scratch, mut app, open, _closed) = project("save-nothing");
+    let (sender, heard) = obelus::event::channel();
+    app.events_for_test(sender);
+    assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
+    app.declared_for_test(LanguageId::Rust, json!({ "codeActionProvider": true }));
+    app.configure(
+        obelus::config::Config {
+            code_actions_on_save: true,
+            ..obelus::config::Config::default()
+        },
+        Vec::new(),
+    );
+
+    support::type_text(&mut app, "\n");
+    support::press_control(&mut app, 's');
+
+    // Nothing for any of them, which is what rust-analyzer says to all of
+    // these -- and the file still has to be written.
+    let kinds = App::kinds_asked_on_save_for_test();
+    for at in 0..kinds.len() {
+        app.saving_for_test(at, json!([]));
+    }
+    assert_eq!(
+        heard_requests(&heard, "textDocument/codeAction", kinds.len()).len(),
+        kinds.len(),
+        "a kind with nothing to offer ended the save"
+    );
+    assert!(
+        text_of(&open).starts_with('\n'),
+        "the file was never written: {:?}",
+        text_of(&open)
     );
     assert!(
         !app.current_buffer().expect("a buffer").is_dirty(),
@@ -298,7 +373,7 @@ fn a_save_leaves_the_imports_alone_unless_asked() {
     support::press_control(&mut app, 's');
 
     assert!(
-        heard_request(&heard, "textDocument/codeAction").is_none(),
+        heard_requests(&heard, "textDocument/codeAction", 1).is_empty(),
         "a setting nobody turned on asked a server something"
     );
     assert!(
@@ -493,27 +568,31 @@ fn nothing_offered_is_said_rather_than_listed() {
     );
 }
 
-/// The first message of a kind that obelus wrote, as the echo gave it
-/// back.
+/// The messages of a kind that obelus wrote, as the echo gave them back.
 ///
-/// `None` when nothing of that kind arrives within a moment, which is
-/// the answer for "it asked nobody anything": there is no event to wait
-/// for when the point is that none is coming.
-fn heard_request(
+/// Waits for `want` of them and then stops waiting, so a test that
+/// expects none pays a moment and a test that expects two does not: there
+/// is no event to wait for when the point is that none is coming.
+fn heard_requests(
     heard: &std::sync::mpsc::Receiver<obelus::event::Event>,
     method: &str,
-) -> Option<serde_json::Value> {
+    want: usize,
+) -> Vec<serde_json::Value> {
+    let mut seen = Vec::new();
     let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while let Some(left) = until.checked_duration_since(std::time::Instant::now()) {
+    while seen.len() < want.max(1) {
+        let Some(left) = until.checked_duration_since(std::time::Instant::now()) else {
+            break;
+        };
         match heard.recv_timeout(left) {
             Ok(obelus::event::Event::Lsp { message, .. })
                 if message.get("method").and_then(serde_json::Value::as_str) == Some(method) =>
             {
-                return Some(message);
+                seen.push(message);
             }
             Ok(_) => {}
-            Err(_) => return None,
+            Err(_) => break,
         }
     }
-    None
+    seen
 }

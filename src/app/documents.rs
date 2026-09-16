@@ -771,13 +771,14 @@ impl App {
     /// that moved comes back here too, having settled the one thing the
     /// command stopped for.
     pub(super) fn save_now(&mut self, index: usize) {
-        // The imports first, where that was asked for. Before the layout
-        // because tidying them changes the text and the layout is about
-        // the text that ends up written -- and each step is a round trip
-        // whose answer picks the next one up, rather than the whole
-        // program being held still waiting for another process to reply.
-        if self.settled.config.organize_imports_on_save && self.ask_organize_imports(index) {
-            self.note = Some("tidying the imports\u{2026}".to_string());
+        // What the server offers to do to the whole file first, where
+        // that was asked for. Before the layout, because those change the
+        // text and the layout is about the text that ends up written --
+        // and each step is a round trip whose answer picks the next one
+        // up, rather than the whole program being held still waiting for
+        // another process to reply.
+        if self.settled.config.code_actions_on_save {
+            self.next_on_save(index, 0);
             return;
         }
         self.format_then_write(index);

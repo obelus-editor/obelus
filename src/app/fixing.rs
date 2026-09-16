@@ -10,11 +10,22 @@
 use super::*;
 use crate::lsp::actions;
 
-/// The kind a server files "sort the imports out" under.
+/// The kinds a save asks for, in the order they are made.
 ///
-/// A prefix: the protocol's kinds are dotted paths and a server may
-/// answer with something under this one.
-const ORGANIZE_IMPORTS: &str = "source.organizeImports";
+/// `source.` is the protocol's word for an action about the whole file
+/// rather than about a place in it, which is what makes these the only
+/// ones worth doing to a file nobody pressed a key on. Matched as
+/// prefixes: the kinds are dotted paths and a server may answer with
+/// something under one of them.
+///
+/// The corrections first and the imports after, because a correction can
+/// add an import or take one away: a sort that ran first would be a sort
+/// of a list that then changed.
+///
+/// One at a time, each asked after the last has been made. Two edits from
+/// one answer are two edits worked out against the same text, and the
+/// first of them moves what the second is measured against.
+const ON_SAVE: &[&str] = &["source.fixAll", "source.organizeImports"];
 
 impl App {
     /// Asks what can be done about the selection, or the line the cursor
@@ -69,14 +80,15 @@ impl App {
         let start = position::to_lsp(buffer.text(), span.line, span.column, &encoding);
         let end = position::to_lsp(buffer.text(), span.end_line, span.end_column, &encoding);
 
+        if let Some(why) = self.why_not_asking(language) {
+            self.note = Some(why);
+            return;
+        }
         let Some(client) = self.servers.get_mut(&language) else {
             return;
         };
         if !client.capabilities().is_some_and(actions::supported) {
-            self.note = Some(match lsp::command_for(language) {
-                Some(command) => format!("{command} offers nothing to do here"),
-                None => "no language server for this file".to_string(),
-            });
+            self.note = Some(format!("{} does not offer actions", server_named(language)));
             return;
         }
         let params = serde_json::json!({
@@ -268,18 +280,21 @@ impl App {
         }
     }
 
-    /// Asks what the server would do to this file's imports, because it
-    /// is about to be written.
+    /// Asks for one of the whole-file actions, because the file is about
+    /// to be written.
     ///
-    /// The one code action obelus sends without being asked, which is why
-    /// it is the one that says `only`: a request with no kind on it comes
-    /// back with every refactoring the cursor is near, and applying one of
-    /// those to a file somebody pressed save on would be obelus editing
-    /// their code on its own account.
+    /// The only code action obelus sends on its own account, which is the
+    /// whole of why it says `only`: a request with no kind on it comes
+    /// back with every refactoring the cursor happens to be near, and
+    /// applying one of those to a file somebody pressed save on would be
+    /// obelus rewriting their code on its own initiative.
     ///
     /// Says whether anybody was asked. A save nobody could tidy goes ahead
     /// untidied rather than waiting for an answer that is not coming.
-    pub(super) fn ask_organize_imports(&mut self, index: usize) -> bool {
+    pub(super) fn ask_on_save(&mut self, index: usize, kind: usize) -> bool {
+        let Some(want) = ON_SAVE.get(kind) else {
+            return false;
+        };
         let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
             return false;
         };
@@ -290,9 +305,9 @@ impl App {
             return false;
         };
         let version = buffer.version();
-        // The whole file. Imports are the top of it and the question is
-        // about all of them, so a range around the cursor would be asking
-        // about whichever ones the reader happens to be near.
+        // The whole file, because that is what a `source.` action is
+        // about: a range around the cursor would be asking whichever
+        // lines the reader happens to have stopped on.
         let lines = buffer.text().line_count();
         let Some(client) = self.servers.get_mut(&language) else {
             return false;
@@ -306,7 +321,7 @@ impl App {
                 "start": { "line": 0, "character": 0 },
                 "end": { "line": lines, "character": 0 },
             },
-            "context": { "diagnostics": [], "only": [ORGANIZE_IMPORTS] },
+            "context": { "diagnostics": [], "only": [want] },
         });
         match client.request("textDocument/codeAction", &params) {
             Ok(request) => {
@@ -314,7 +329,7 @@ impl App {
                     language,
                     request,
                     Question {
-                        asked: Asked::Organizing,
+                        asked: Asked::Saving { kind },
                         buffer: BufferId::new(index),
                         version,
                     },
@@ -322,45 +337,62 @@ impl App {
                 true
             }
             Err(error) => {
-                tracing::warn!(%error, "not asking about the imports");
+                tracing::warn!(%error, "not asking what to do before writing");
                 false
             }
         }
     }
 
+    /// Asks for the next kind, and writes the file when there is none.
+    pub(super) fn next_on_save(&mut self, index: usize, from: usize) {
+        for kind in from..ON_SAVE.len() {
+            if self.ask_on_save(index, kind) {
+                self.note = Some("tidying it up\u{2026}".to_string());
+                return;
+            }
+        }
+        self.format_then_write(index);
+    }
+
     /// Takes what the server offered and either does it or asks for it in
     /// full, and gets on with the save either way.
-    pub(super) fn on_organizing(&mut self, id: BufferId, version: i32, reply: Reply) {
+    pub(super) fn on_saving(&mut self, id: BufferId, version: i32, kind: usize, reply: Reply) {
         if !self.unmoved(id, version) {
             // Not a note: the reader pressed save, the save is what they
-            // are waiting for, and the imports were obelus's own idea.
-            tracing::debug!("the file changed while its imports were being looked at");
+            // are waiting for, and this was obelus's own idea.
+            tracing::debug!("the file changed while it was being looked at");
             self.write_now(id.get());
             return;
         }
+        let want = ON_SAVE.get(kind).copied().unwrap_or_default();
         let Some(action) = actions::offered_in(&reply.result)
             .into_iter()
             .find(|action| {
                 action
                     .kind
                     .as_deref()
-                    .is_some_and(|kind| kind.starts_with(ORGANIZE_IMPORTS))
+                    .is_some_and(|kind| kind.starts_with(want))
             })
         else {
-            // A server with nothing to say about the imports, which is
-            // most of them: rust-analyzer offers nothing under `source.`
-            // at all.
-            self.format_then_write(id.get());
+            // A server with nothing to say about the file as a whole,
+            // which is many of them.
+            self.next_on_save(id.get(), kind + 1);
             return;
         };
-        if action.unresolved() && self.resolve_organized(id, version, &action) {
+        if action.unresolved() && self.resolve_on_save(id, version, kind, &action) {
             return;
         }
-        self.tidy_with(id, action.edit());
+        self.made_on_save(id, kind, action.edit());
     }
 
     /// Asks for the edit of an offer that arrived without one.
-    fn resolve_organized(&mut self, id: BufferId, version: i32, action: &actions::Action) -> bool {
+    fn resolve_on_save(
+        &mut self,
+        id: BufferId,
+        version: i32,
+        kind: usize,
+        action: &actions::Action,
+    ) -> bool {
         let Some(language) = self
             .buffers
             .get(id.get())
@@ -382,7 +414,7 @@ impl App {
                     language,
                     request,
                     Question {
-                        asked: Asked::Organized,
+                        asked: Asked::Saved { kind },
                         buffer: id,
                         version,
                     },
@@ -394,9 +426,9 @@ impl App {
     }
 
     /// The filled-in offer, made.
-    pub(super) fn on_organized(&mut self, id: BufferId, version: i32, reply: Reply) {
+    pub(super) fn on_saved(&mut self, id: BufferId, version: i32, kind: usize, reply: Reply) {
         if !self.unmoved(id, version) {
-            tracing::debug!("the file changed while its imports were being worked out");
+            tracing::debug!("the file changed while the change was being worked out");
             self.write_now(id.get());
             return;
         }
@@ -404,11 +436,16 @@ impl App {
             .result
             .ok()
             .map(|result| crate::lsp::edits::wanted_in(&result));
-        self.tidy_with(id, wanted);
+        self.made_on_save(id, kind, wanted);
     }
 
     /// Makes the edit, if there is one, and carries on saving.
-    fn tidy_with(&mut self, id: BufferId, wanted: Option<crate::lsp::edits::Wanted>) {
+    fn made_on_save(
+        &mut self,
+        id: BufferId,
+        kind: usize,
+        wanted: Option<crate::lsp::edits::Wanted>,
+    ) {
         if let Some(wanted) = wanted
             && !wanted.is_empty()
         {
@@ -417,8 +454,8 @@ impl App {
             // written -- this save is about the one document.
             self.apply_wanted(&wanted);
         }
-        // Whatever happened, the reader is still waiting to be saved.
-        self.format_then_write(id.get());
+        // The next kind, and then the reader still waiting to be saved.
+        self.next_on_save(id.get(), kind + 1);
     }
 
     /// Hands obelus a filled-in offer worked out against a version of the
@@ -436,18 +473,26 @@ impl App {
         );
     }
 
-    /// Hands obelus what a server said about the imports, mid-save.
-    pub fn organizing_for_test(&mut self, answer: serde_json::Value) {
+    /// Hands obelus what a server offered mid-save, for one of the kinds
+    /// a save asks about.
+    pub fn saving_for_test(&mut self, kind: usize, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
         let version = self.current_buffer().map_or(0, Buffer::version);
-        self.on_organizing(
+        self.on_saving(
             id,
             version,
+            kind,
             Reply {
                 id: 0,
                 result: Ok(answer),
             },
         );
+    }
+
+    /// The kinds a save asks about, in order, for a test that walks them.
+    #[must_use]
+    pub fn kinds_asked_on_save_for_test() -> &'static [&'static str] {
+        ON_SAVE
     }
 
     /// Hands obelus a list of offers, as a server would.

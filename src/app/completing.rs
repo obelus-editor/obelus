@@ -54,12 +54,42 @@ impl App {
             .is_some_and(|capabilities| complete::triggered_by(capabilities, character))
     }
 
-    /// Asks what could be typed where the cursor is.
+    /// Asks what could be typed where the cursor is, because a key said
+    /// so.
     ///
-    /// Also a command, so a reader who dismissed the panel can have it
-    /// back: every other way in is typing a letter, and a reader who has
-    /// pressed escape is by definition not going to type one.
+    /// A command, so a reader who dismissed the panel can have it back:
+    /// every other way in is typing a letter, and a reader who has pressed
+    /// escape is by definition not going to type one.
+    ///
+    /// The difference from [`App::offer_completion`] is the whole of why
+    /// there are two: a key that does nothing says why, and a letter that
+    /// finds nothing to offer says nothing at all.
     pub fn ask_completion(&mut self) {
+        let Some(language) = self.current_buffer().and_then(Buffer::language) else {
+            self.note = Some("no language server for this file".to_string());
+            return;
+        };
+        if let Some(why) = self.why_not_asking(language) {
+            self.note = Some(why);
+            return;
+        }
+        if !self
+            .servers
+            .get(&language)
+            .and_then(Client::capabilities)
+            .is_some_and(complete::supported)
+        {
+            self.note = Some(format!(
+                "{} does not offer completions",
+                server_named(language)
+            ));
+            return;
+        }
+        self.offer_completion();
+    }
+
+    /// The same question, asked because a letter was typed.
+    pub(super) fn offer_completion(&mut self) {
         let Some(id) = self.current else { return };
         let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
             return;
@@ -382,7 +412,7 @@ impl App {
             self.completion = None;
         }
         if asking {
-            self.ask_completion();
+            self.offer_completion();
         }
         self.resolve_chosen();
     }
@@ -528,7 +558,7 @@ impl App {
             && let Some(last) = filled.text.chars().next_back()
             && self.triggers_completion(last)
         {
-            self.ask_completion();
+            self.offer_completion();
         }
     }
 
@@ -690,7 +720,7 @@ impl App {
                 // way the server is the only one who can say what a longer
                 // word could be.
                 if self.completion.is_none() {
-                    self.ask_completion();
+                    self.offer_completion();
                 }
             }
             // Punctuation the server said means something: `.` and `::`
@@ -701,7 +731,7 @@ impl App {
                 // Whatever was showing was about the word before the
                 // punctuation, which has just ended.
                 self.completion = None;
-                self.ask_completion();
+                self.offer_completion();
             }
             // Backspace inside the word widens what is showing, and back
             // past the word's start closes it. Both are the settling.

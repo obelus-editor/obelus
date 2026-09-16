@@ -186,9 +186,13 @@ fn a_real_server_declares_the_characters_that_ask_for_a_completion() {
         obelus::lsp::hover::supported(capabilities),
         "rust-analyzer no longer answers textDocument/hover"
     );
+    // And filling one in, which it advertises only to a client that has
+    // said it wants the filling: undeclared, obelus was told no and the
+    // whole `completionItem/resolve` path it has was never reached.
     assert!(
-        !obelus::lsp::complete::resolves(capabilities),
-        "rust-analyzer now resolves items, so the panel should be asking it to"
+        obelus::lsp::complete::resolves(capabilities),
+        "rust-analyzer no longer fills a completion item in, or obelus has \
+         stopped saying which parts of one it wants"
     );
     client.shutdown();
 }
@@ -343,17 +347,32 @@ fn a_real_server_offers_what_could_be_typed() {
                 .all(|candidate| !candidate.insert.is_empty()),
             "a candidate that puts nothing in"
         );
-        // And what the documentation half shows. rust-analyzer says it
-        // does not resolve an item, which is the same server saying it has
-        // already sent everything it has: the documentation is in the
-        // answer itself, and a panel that waited for a resolve would show
-        // the signature and nothing else for every Rust file.
+        // And what the documentation half shows, which now takes a second
+        // question. A server told which parts of an offer the client will
+        // ask for later sends the light form and keeps the rest: that is
+        // what `resolveSupport` buys, and it is why a thousand candidates
+        // no longer arrive carrying a thousand doc comments. So the panel
+        // asks about the one the reader is looking at.
+        let mut candidate = offer
+            .candidates
+            .iter()
+            .find(|candidate| candidate.label == "entries")
+            .expect("the field")
+            .clone();
+        let id = client
+            .request(
+                "completionItem/resolve",
+                &obelus::lsp::complete::resolve_params(&candidate),
+            )
+            .expect("asking");
+        let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+            reply.is_some_and(|reply| reply.id == id)
+        })
+        .expect("an answer");
+        obelus::lsp::complete::resolved_into(&mut candidate, &reply.result, &text, &encoding);
         assert!(
-            offer
-                .candidates
-                .iter()
-                .any(|candidate| candidate.documentation.is_some()),
-            "no candidate carries documentation, and the server will not resolve one"
+            candidate.documentation.is_some() || candidate.detail.is_some(),
+            "a filled-in offer carries neither documentation nor what it is: {candidate:?}"
         );
         break;
     }
@@ -396,7 +415,10 @@ fn a_real_server_finds_a_definition() {
 
     let deadline = Instant::now() + INDEXED;
     loop {
-        assert!(Instant::now() < deadline, "never indexed");
+        assert!(
+            Instant::now() < deadline,
+            "the server never found the definition"
+        );
         let id = client
             .request(
                 SymbolAction::Definition.method(),
@@ -416,20 +438,32 @@ fn a_real_server_finds_a_definition() {
         match action::outcome_of(reply.result, 1, Some(1), indexing) {
             action::Outcome::Places(places) => {
                 let named = &places[0];
+                // The buffer module, however it is spelled on disk: it
+                // was one file and is now a directory, and which of those
+                // it is has nothing to do with what this is testing.
                 assert!(
-                    named.path.ends_with("src/buffer.rs"),
-                    "expected buffer.rs, got {}",
+                    named.path.ends_with("src/buffer.rs")
+                        || named.path.ends_with("src/buffer/mod.rs"),
+                    "expected the buffer module, got {}",
                     named.path.display()
                 );
                 break;
             }
             // Still reading the project. Asking again is what obelus does.
             action::Outcome::NotYet => std::thread::sleep(Duration::from_millis(300)),
-            // Finished reading, and still nothing. `BufferId` has a
-            // definition, so this is the server never having heard of the
-            // document rather than a symbol without one.
-            action::Outcome::Nothing => {
-                panic!("the server has finished indexing and found no definition")
+            // Nothing, which is also what a server that has not finished
+            // loading answers: it reports no progress until it starts, so
+            // "not indexing" and "indexed" look the same from here.
+            // `BufferId` has a definition, so the only question is when --
+            // and the deadline above is what says never.
+            action::Outcome::Nothing => std::thread::sleep(Duration::from_millis(300)),
+            // "content modified" is a server saying the document moved
+            // under it while it was working the answer out, which is what
+            // it says while it is still loading the project. The same
+            // retryable state as `NotYet`, arriving as an error instead
+            // of an empty answer.
+            action::Outcome::Failed(ref why) if why.contains("content modified") => {
+                std::thread::sleep(Duration::from_millis(300));
             }
             other => panic!("{other:?}"),
         }

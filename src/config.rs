@@ -35,14 +35,14 @@ pub struct Config {
     pub tab_width: usize,
     /// Whether to ask a language server to lay the file out before writing.
     pub format_on_save: bool,
-    /// Whether to ask a language server to tidy the imports before writing.
+    /// Whether to make the server's whole-file fixes before writing.
     ///
-    /// The protocol's `source.organizeImports`, which is the one thing a
-    /// server is asked to do to a file nobody pressed a key for -- and
-    /// which server it is decides whether that is anything at all:
-    /// `gopls` and `typescript-language-server` answer it, and
-    /// rust-analyzer offers nothing under `source.` at all.
-    pub organize_imports_on_save: bool,
+    /// The protocol's `source.` code actions: what a server offers to do
+    /// to a file rather than to a place in one -- the imports sorted, the
+    /// corrections it can make on its own. They are the only actions
+    /// obelus takes without a key being pressed, which is why they are the
+    /// only ones it asks for by name.
+    pub code_actions_on_save: bool,
     /// Whether the file list offers the files a tree has said to ignore.
     ///
     /// About the list, not about the files: what `.gitignore` keeps out is
@@ -94,9 +94,9 @@ impl Default for Config {
             // of it is the diff.
             format_on_save: false,
             // Off, for the reason above it: a file somebody opened to read
-            // should not come back from a save with its first ten lines
-            // rearranged.
-            organize_imports_on_save: false,
+            // should not come back from a save with its imports rearranged
+            // and three lines somewhere else rewritten.
+            code_actions_on_save: false,
             // Off, because a tree says what it ignores and mostly means it:
             // a list whose first hundred rows are `target` is a list nobody
             // can find anything in.
@@ -324,9 +324,9 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Switch,
     },
     Setting {
-        key: "organize_imports_on_save",
-        name: "Tidy imports when saving",
-        about: "ask the language server to sort them and drop the unused ones before writing -- gopls and typescript-language-server do this, rust-analyzer does not",
+        key: "code_actions_on_save",
+        name: "Server fixes when saving",
+        about: "before writing, make the changes the language server offers for the whole file -- the imports sorted, the corrections it can make on its own. Servers differ in how much of this they do and some offer none",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -356,7 +356,7 @@ impl Config {
             "tab_width" => Some(Value::Count(self.tab_width)),
             "hover_delay" => Some(Value::Count(self.hover_delay)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
-            "organize_imports_on_save" => Some(Value::Switch(self.organize_imports_on_save)),
+            "code_actions_on_save" => Some(Value::Switch(self.code_actions_on_save)),
             "ignored_files" => Some(Value::Switch(self.ignored_files)),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
@@ -375,7 +375,7 @@ impl Config {
             ("tab_width", Value::Count(width)) => self.tab_width = *width,
             ("hover_delay", Value::Count(delay)) => self.hover_delay = *delay,
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
-            ("organize_imports_on_save", Value::Switch(on)) => self.organize_imports_on_save = *on,
+            ("code_actions_on_save", Value::Switch(on)) => self.code_actions_on_save = *on,
             ("ignored_files", Value::Switch(on)) => self.ignored_files = *on,
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
@@ -585,11 +585,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
         config.format_on_save = on;
     }
     if let Some(on) = table
-        .get("organize_imports_on_save")
+        .get("code_actions_on_save")
         .and_then(toml::Value::as_bool)
-        && allowed("organize_imports_on_save")
+        && allowed("code_actions_on_save")
     {
-        config.organize_imports_on_save = on;
+        config.code_actions_on_save = on;
     }
     if let Some(on) = table.get("ignored_files").and_then(toml::Value::as_bool)
         && allowed("ignored_files")
@@ -667,7 +667,7 @@ pub fn over(existing: &str, config: &Config) -> String {
     document["tab_width"] = toml_edit::value(i64::try_from(config.tab_width).unwrap_or(4));
     document["hover_delay"] = toml_edit::value(i64::try_from(config.hover_delay).unwrap_or(400));
     document["format_on_save"] = toml_edit::value(config.format_on_save);
-    document["organize_imports_on_save"] = toml_edit::value(config.organize_imports_on_save);
+    document["code_actions_on_save"] = toml_edit::value(config.code_actions_on_save);
     document["ignored_files"] = toml_edit::value(config.ignored_files);
     // Written even when there is nobody, so the file says what obelus read
     // rather than leaving the reader to wonder whether it noticed.
@@ -960,7 +960,7 @@ mod tests {
             tab_width: 8,
             hover_delay: 800,
             format_on_save: true,
-            organize_imports_on_save: true,
+            code_actions_on_save: true,
             ignored_files: true,
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and

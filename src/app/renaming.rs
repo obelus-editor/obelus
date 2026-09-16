@@ -30,16 +30,17 @@ impl App {
             self.note = Some("no language server for this file".to_string());
             return;
         };
+        if let Some(why) = self.why_not_asking(language) {
+            self.note = Some(why);
+            return;
+        }
         let renames = self
             .servers
             .get(&language)
             .and_then(Client::capabilities)
             .is_some_and(|capabilities| capabilities.rename_provider.is_some());
         if !renames {
-            self.note = Some(match lsp::command_for(language) {
-                Some(command) => format!("{command} does not rename"),
-                None => "no language server for this file".to_string(),
-            });
+            self.note = Some(format!("{} does not rename", server_named(language)));
             return;
         }
         // The name the caret is in, which is what is being renamed: a

@@ -65,23 +65,25 @@ fn a_question_from_the_server_is_answered() {
 /// conversation that fails silently: a server does not complain about a
 /// capability that is missing, it answers less.
 ///
-/// `code_action` in particular. Undeclared, rust-analyzer answers `null`
-/// to every `textDocument/codeAction` -- measured: twenty-six requests
-/// over three minutes, on ordinary code, every one `null` -- so `alt+a`
-/// had nothing to show anywhere, on a line with a mistake on it or not.
-/// Declared, the same three requests come back with two, three and five
-/// offers.
+/// One entry per thing obelus's own code reads, each with the code it
+/// would kill. This is a canary rather than a tautology: the declaration
+/// and the feature are written in different files by different hands, and
+/// the only sign that they have come apart is a feature that quietly
+/// stops happening on some servers and not others.
 #[test]
 fn what_obelus_says_it_can_do() {
     let declared = obelus::lsp::client::client_capabilities();
     let text = declared
         .text_document
-        .expect("what it says about documents");
+        .expect("nothing said about documents");
 
-    let actions = text.code_action.expect("nothing said about code actions");
+    // `lsp::actions`. Undeclared, rust-analyzer answers `null` to every
+    // `textDocument/codeAction` -- measured: twenty-six requests over
+    // three minutes, on ordinary code, every one `null`.
+    let actions = text.code_action.expect("nothing about code actions");
     let literals = actions
         .code_action_literal_support
-        .expect("a server may then answer with commands, and rust-analyzer answers null");
+        .expect("a server may then answer with commands, and some answer null");
     assert!(
         literals
             .code_action_kind
@@ -90,10 +92,8 @@ fn what_obelus_says_it_can_do() {
             .any(|kind| kind == "quickfix"),
         "the kinds obelus can show are not among the ones it asked for"
     );
-    // The two fields the list is built out of: one sorts it, and the
-    // other is what an offer that arrived without its edit is known by.
-    assert_eq!(actions.is_preferred_support, Some(true));
-    assert_eq!(actions.data_support, Some(true));
+    assert_eq!(actions.is_preferred_support, Some(true), "sorts the list");
+    assert_eq!(actions.data_support, Some(true), "finds the unresolved");
     assert!(
         actions
             .resolve_support
@@ -101,90 +101,246 @@ fn what_obelus_says_it_can_do() {
         "obelus asks the server to fill an action in, and has not said so"
     );
     // And not this one: a server told obelus reads it sends the offers it
-    // knows cannot be taken, and obelus has nowhere to put the reason --
-    // so they would sit in the list looking like the ones that work.
+    // knows cannot be taken, and obelus has nowhere to put the reason.
     assert_eq!(
         actions.disabled_support, None,
         "obelus would be sent offers it shows as though they could be chosen"
     );
 
-    // The one that was there first, and for the same kind of reason:
-    // without it rust-analyzer answers `documentSymbol` flat.
+    // `lsp::complete` and `lsp::snippet`. A server that has not been told
+    // about snippets may not send one, which leaves the whole tab-stop
+    // engine unreachable.
+    let item = text
+        .completion
+        .expect("nothing about completion")
+        .completion_item
+        .expect("nothing about what an offer may carry");
+    assert_eq!(item.snippet_support, Some(true), "lsp::snippet goes unused");
+    assert_eq!(
+        item.label_details_support,
+        Some(true),
+        "the detail beside an offer's name"
+    );
+    assert_eq!(
+        item.insert_replace_support,
+        Some(true),
+        "completing mid-word replaces the word"
+    );
+    assert!(
+        item.resolve_support.is_some_and(|resolve| {
+            resolve
+                .properties
+                .iter()
+                .any(|name| name == "documentation")
+        }),
+        "obelus asks for an offer's documentation, and has not said so"
+    );
+
+    // `lsp::hover` and the markdown renderer behind it.
+    assert!(
+        text.hover
+            .and_then(|hover| hover.content_format)
+            .is_some_and(|formats| formats.contains(&lsp_types::MarkupKind::Markdown)),
+        "a hover would arrive as plain text"
+    );
+
+    // `lsp::signature`. Without the offsets a server sends the parameter
+    // as a piece of text, and obelus has to find it in the label -- which
+    // finds the wrong one when a name appears twice.
+    assert_eq!(
+        text.signature_help
+            .and_then(|help| help.signature_information)
+            .and_then(|information| information.parameter_information)
+            .and_then(|parameter| parameter.label_offset_support),
+        Some(true),
+        "the panel would mark the wrong parameter"
+    );
+
+    // `lsp::outline`. Without it a server *may* answer flat, and
+    // rust-analyzer does.
     assert_eq!(
         text.document_symbol
             .and_then(|symbols| symbols.hierarchical_document_symbol_support),
-        Some(true)
+        Some(true),
+        "the outline would be a flat list of whole definitions"
+    );
+
+    // `lsp::action` reads a `LocationLink`'s target, which is the shape
+    // that carries the name's own range rather than the definition's.
+    for (what, goto) in [
+        ("definition", text.definition),
+        ("type definition", text.type_definition),
+        ("implementation", text.implementation),
+    ] {
+        assert_eq!(
+            goto.and_then(|goto| goto.link_support),
+            Some(true),
+            "a jump to a {what} would land on the whole item"
+        );
+    }
+
+    // `lsp::tokens` reads the server's own legend, so what is declared is
+    // a floor -- but an empty floor is a server entitled to send nothing.
+    let tokens = text.semantic_tokens.expect("nothing about semantic tokens");
+    assert!(
+        tokens.token_types.len() > 10,
+        "obelus asked for almost no kinds of token"
+    );
+    assert!(
+        tokens.formats.contains(&lsp_types::TokenFormat::RELATIVE),
+        "obelus reads the packed form and has not said so"
+    );
+
+    // `lsp::trouble` keeps a diagnostic whole because it goes back in a
+    // code action's context, and a server matches it by every field.
+    assert_eq!(
+        text.publish_diagnostics
+            .and_then(|published| published.data_support),
+        Some(true),
+        "a quick fix would be offered for a diagnostic the server cannot match"
+    );
+
+    let workspace = declared.workspace.expect("nothing said about the project");
+    // `app::changing`. This is the one that permits the whole path from a
+    // code action's command to a refactoring landing in the files: a
+    // server that has not been told never sends the edit at all.
+    assert_eq!(
+        workspace.apply_edit,
+        Some(true),
+        "a server would never ask obelus to make the edit it worked out"
+    );
+    let edits = workspace
+        .workspace_edit
+        .expect("nothing about the edits themselves");
+    assert_eq!(
+        edits.document_changes,
+        Some(true),
+        "lsp::edits reads documentChanges and has not asked for them"
+    );
+    // Empty on purpose, and the same policy the code enforces: obelus
+    // will not create, move or delete a file because a server said so.
+    assert_eq!(
+        edits.resource_operations,
+        Some(Vec::new()),
+        "obelus would be asked to do what it refuses to do"
+    );
+    assert!(workspace.symbol.is_some(), "obelus sends workspace/symbol");
+    assert!(
+        workspace.execute_command.is_some(),
+        "obelus sends workspace/executeCommand"
+    );
+    assert!(
+        workspace.did_change_watched_files.is_some(),
+        "obelus tells servers about files that changed on disk"
+    );
+
+    // Progress, which is the only thing that tells a server still
+    // indexing from one that has answered with nothing.
+    assert_eq!(
+        declared.window.and_then(|window| window.work_done_progress),
+        Some(true),
+        "the status row could not say a server is busy"
     );
 }
 
-/// The one request a server makes that this layer does not answer: an
-/// edit is answered by making it, so it is kept for the side that has the
-/// documents and nothing goes back until that side has said what happened.
+/// A key that asks a server something says why when there is nothing to
+/// ask, rather than doing nothing at all.
+///
+/// Silence and a broken key look the same. These are the states where a
+/// reader has something to do about it -- install the program, wait two
+/// seconds, use another editor for this one file -- and the one thing
+/// that stops them doing it is not being told.
 #[test]
-fn an_edit_the_server_asks_for_is_kept_rather_than_refused() {
+fn a_key_with_no_server_to_ask_says_so() {
     use obelus::{
-        event::Event,
-        lsp::{Server, client::edit_answer},
+        command::{Command, dispatch},
         syntax::LanguageId,
     };
 
-    let scratch = support::Scratch::new("apply-wire");
-    let (sender, events) = obelus::event::channel();
-    // A server that says back whatever it is told, which is how what
-    // obelus writes can be read: the shape on the wire is the whole of
-    // what this test is about.
-    let mut client = Client::start(
-        LanguageId::Rust,
-        Server {
-            command: "cat",
-            arguments: &[],
-        },
-        scratch.path(),
-        sender,
-    )
-    .expect("starting the echo");
-    assert!(
-        client
-            .on_message(&json!({ "id": 0, "result": { "capabilities": {} } }))
-            .is_none(),
-        "the handshake reply was handed back as an answer to a question"
-    );
-    let before = client.sent();
+    let asking = [
+        Command::SymbolActions,
+        Command::SymbolRename,
+        Command::SymbolHover,
+        Command::SymbolComplete,
+    ];
 
+    // A language obelus knows and a server that is not running for it.
+    let (_scratch, mut app) = editing("silent", "fn main() {\n    let name = 1;\n}\n");
+    for command in asking {
+        assert!(
+            app.offers(command),
+            "{command:?} does nothing at all, which is what a broken key does"
+        );
+        dispatch::dispatch(&mut app, command);
+        let said = app.note().unwrap_or_default().to_string();
+        assert!(
+            said.contains("server"),
+            "{command:?} said nothing about why: {said:?}"
+        );
+    }
+
+    // Running and not ready, which is every server for a second or two
+    // and the state where saying "it offers nothing" is a lie.
     assert!(
-        client
-            .on_message(&json!({
-                "jsonrpc": "2.0", "id": 11, "method": "workspace/applyEdit",
-                "params": { "label": "Extract into function", "edit": { "changes": {} } }
-            }))
-            .is_none(),
-        "an edit was handed back as an answer to a question obelus asked"
+        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        "the stand-in would not start"
     );
+    for command in asking {
+        dispatch::dispatch(&mut app, command);
+        assert!(
+            app.note().unwrap_or_default().contains("is still starting"),
+            "{command:?} blamed the server for a handshake that has not landed: {:?}",
+            app.note()
+        );
+    }
+
+    // And once it has said what it does not do, that is what is said.
+    app.declared_for_test(LanguageId::Rust, json!({}));
+    for command in asking {
+        dispatch::dispatch(&mut app, command);
+        let said = app.note().unwrap_or_default().to_string();
+        assert!(
+            said.starts_with("rust-analyzer does not"),
+            "{command:?} did not say what the server cannot do: {said:?}"
+        );
+    }
+}
+
+/// And a letter typed into the same file says nothing at all.
+///
+/// The other half of the rule, and the reason there are two doors into
+/// the same question: a key that was pressed to ask deserves an answer,
+/// and a letter is not a question -- a reader typing a word in a file
+/// with no server would be writing against a status row telling them so
+/// once per keystroke.
+#[test]
+fn a_typed_letter_with_no_server_says_nothing() {
+    let (_scratch, mut app) = editing("silent-typing", "fn main() {\n    \n}\n");
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    support::press(&mut app, crossterm::event::KeyCode::End);
+    support::type_text(&mut app, "let name");
     assert_eq!(
-        client.sent(),
-        before,
-        "something went back before anybody had looked at the edit"
+        app.note(),
+        None,
+        "typing a word talked about language servers"
     );
 
-    let asked = client.take_asked_edits();
-    assert_eq!(asked.len(), 1, "the edit was dropped instead of kept");
-    assert_eq!(asked[0].label.as_deref(), Some("Extract into function"));
-    assert_eq!(asked[0].id, json!(11), "the answer would go to nobody");
+    // A trigger character, which is the other way a letter asks.
+    support::type_text(&mut app, ".");
+    assert_eq!(
+        app.note(),
+        None,
+        "a full stop talked about language servers"
+    );
 
-    // And once it has been made, the answer is what goes out.
-    client.answer_request(&edit_answer(&asked[0].id, true, "made it"));
-    let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    let sent = loop {
-        assert!(std::time::Instant::now() < until, "nothing came back");
-        let left = until - std::time::Instant::now();
-        match events.recv_timeout(left) {
-            Ok(Event::Lsp { message, .. }) if message.get("result").is_some() => break message,
-            Ok(_) => {}
-            Err(_) => panic!("nothing came back"),
-        }
-    };
-    assert_eq!(sent["id"], json!(11), "the answer is to another question");
-    assert_eq!(sent["result"]["applied"], json!(true));
+    // And the key that asks on purpose, in the same file, does say -- the
+    // two doors into one question are the point, so one test holds both.
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::SymbolComplete);
+    assert!(
+        app.note().unwrap_or_default().contains("server"),
+        "the key that asks on purpose said nothing: {:?}",
+        app.note()
+    );
 }
 
 /// A path becomes a uri and comes back the same path.

@@ -53,7 +53,7 @@ use ratatui::{
     buffer::Buffer as CellBuffer,
     layout::{Position, Rect},
 };
-use semantics::{Asked, Question};
+use semantics::{Asked, Question, named as server_named};
 
 use crate::{
     buffer::{Buffer, BufferId, Cursor, Mode, Motion, TextArea},

@@ -277,15 +277,11 @@ impl App {
             return Err("no symbol here".to_string());
         }
 
-        let Some(client) = self.servers.get(&language) else {
-            return Err(match lsp::command_for(language) {
-                Some(command) if !lsp::on_path(command) => format!("{command} is not installed"),
-                Some(_) => format!("no server running for {}", language.name()),
-                None => format!("no language server for {}", language.name()),
-            });
-        };
-        let Some(capabilities) = client.capabilities() else {
-            return Err("the language server is still starting".to_string());
+        if let Some(why) = self.why_not_asking(language) {
+            return Err(why);
+        }
+        let Some(capabilities) = self.servers.get(&language).and_then(Client::capabilities) else {
+            return Err(format!("{} is still starting", named(language)));
         };
         let actions: Vec<SymbolAction> = action::ALL
             .iter()
@@ -540,6 +536,29 @@ impl App {
         }
     }
 
+    /// Why the server for a file cannot be asked anything, if it cannot.
+    ///
+    /// `None` when there is one and it has finished its handshake, which
+    /// is the only state in which a question is worth sending. Every key
+    /// that asks a server something reads this, so that four keys cannot
+    /// give four different accounts of one missing program.
+    pub(super) fn why_not_asking(&self, language: LanguageId) -> Option<String> {
+        let Some(client) = self.servers.get(&language) else {
+            return Some(match lsp::command_for(language) {
+                Some(command) if !lsp::on_path(command) => format!("{command} is not installed"),
+                Some(_) => format!("no server running for {}", language.name()),
+                None => format!("no language server for {}", language.name()),
+            });
+        };
+        // Running and not ready, which is the first second or two of every
+        // session. Worth its own sentence because it is the one of these
+        // that fixes itself: a reader told this presses the key again.
+        client
+            .capabilities()
+            .is_none()
+            .then(|| format!("{} is still starting", named(language)))
+    }
+
     /// Whether a document is still the one a question was asked about.
     ///
     /// Every answer that names places in a text turns on this, and they
@@ -654,12 +673,12 @@ impl App {
                 self.on_actions(question.buffer, question.version, reply);
                 return;
             }
-            Asked::Organizing => {
-                self.on_organizing(question.buffer, question.version, reply);
+            Asked::Saving { kind } => {
+                self.on_saving(question.buffer, question.version, kind, reply);
                 return;
             }
-            Asked::Organized => {
-                self.on_organized(question.buffer, question.version, reply);
+            Asked::Saved { kind } => {
+                self.on_saved(question.buffer, question.version, kind, reply);
                 return;
             }
             Asked::Action { at } => {
@@ -1370,11 +1389,17 @@ pub(super) enum Asked {
     Rename,
     /// What can be done about where the reader is.
     Actions,
-    /// What the server would do to this file's imports, asked because it
-    /// is about to be written.
-    Organizing,
+    /// What the server would do to the whole file, asked because it is
+    /// about to be written.
+    Saving {
+        /// Which of the kinds a save asks about.
+        kind: usize,
+    },
     /// That one, filled in.
-    Organized,
+    Saved {
+        /// The same.
+        kind: usize,
+    },
     /// One of those, filled in.
     Action {
         /// Which of the offers, by its place in the list.
@@ -1497,6 +1522,14 @@ fn place_rows(places: &[crate::lsp::action::Place], root: &Path) -> Vec<PickerIt
             }
         })
         .collect()
+}
+
+/// What to call the server for a language, to a reader.
+///
+/// Its own program's name where there is one, because that is the thing
+/// they would install, start or look in the log of.
+pub(super) fn named(language: LanguageId) -> &'static str {
+    lsp::command_for(language).unwrap_or("the language server")
 }
 
 #[cfg(test)]

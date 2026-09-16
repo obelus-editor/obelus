@@ -660,11 +660,18 @@ impl Command {
             | Self::SymbolTypeDefinition
             | Self::SymbolImplementation
             | Self::SymbolReferences => Requires::AnAnswer,
-            Self::LspStop
-            | Self::SymbolComplete
+            Self::LspStop => Requires::ARunningServer,
+            // Not a running server, for the reason `show-troubles` is not
+            // one: "there is no server for this file", "it is not
+            // installed", "it is still starting" are answers, and they are
+            // answers a reader can act on. A key that does nothing at all
+            // is indistinguishable from a key that is broken, and the
+            // states these report are mostly the ones that go away by
+            // themselves or by installing something.
+            Self::SymbolComplete
             | Self::SymbolHover
             | Self::SymbolRename
-            | Self::SymbolActions => Requires::ARunningServer,
+            | Self::SymbolActions => Requires::AFileOpen,
             // Not a running server: a file with nothing wrong with it is
             // the answer this gives, and it is worth giving.
             Self::SymbolTroubles => Requires::AFileOpen,

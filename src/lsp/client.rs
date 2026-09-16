@@ -17,9 +17,19 @@ use anyhow::{Context as _, Result};
 use lsp_types::{
     ClientCapabilities, CodeActionCapabilityResolveSupport, CodeActionClientCapabilities,
     CodeActionKind, CodeActionKindLiteralSupport, CodeActionLiteralSupport,
-    DocumentSymbolClientCapabilities, GeneralClientCapabilities, InitializeParams,
-    InitializeResult, PositionEncodingKind, ServerCapabilities, TextDocumentClientCapabilities,
-    Uri, WindowClientCapabilities, WorkspaceFolder,
+    CompletionClientCapabilities, CompletionItemCapability, CompletionItemCapabilityResolveSupport,
+    DidChangeWatchedFilesClientCapabilities, DocumentFormattingClientCapabilities,
+    DocumentHighlightClientCapabilities, DocumentSymbolClientCapabilities,
+    ExecuteCommandClientCapabilities, FailureHandlingKind, GeneralClientCapabilities,
+    GotoCapability, HoverClientCapabilities, InitializeParams, InitializeResult, MarkupKind,
+    ParameterInformationSettings, PositionEncodingKind, PublishDiagnosticsClientCapabilities,
+    ReferenceClientCapabilities, RenameClientCapabilities, SemanticTokenType,
+    SemanticTokensClientCapabilities, SemanticTokensClientCapabilitiesRequests,
+    SemanticTokensFullOptions, ServerCapabilities, SignatureHelpClientCapabilities,
+    SignatureInformationSettings, TextDocumentClientCapabilities,
+    TextDocumentSyncClientCapabilities, TokenFormat, Uri, WindowClientCapabilities,
+    WorkspaceClientCapabilities, WorkspaceEditClientCapabilities, WorkspaceFolder,
+    WorkspaceSymbolClientCapabilities,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -746,14 +756,24 @@ pub fn edit_answer(id: &Value, applied: bool, why: &str) -> Value {
 
 /// What obelus tells a server it can do.
 ///
-/// Every line of this is load-bearing, and the way it fails is silence: a
-/// server does not complain about a capability that is missing, it simply
-/// answers less. The one that cost the most was `code_action` -- without
-/// it rust-analyzer answers `null` to every `textDocument/codeAction`,
-/// whatever the file and wherever the range, so the key that asks what
-/// can be done here had nothing to show anywhere.
+/// Every line of this is load-bearing and the way it fails is silence: a
+/// server does not complain about a capability that is missing, it
+/// quietly answers less. The one that cost the most was `code_action` --
+/// undeclared, rust-analyzer answers `null` to every
+/// `textDocument/codeAction`, whatever the file and wherever the range,
+/// so the key that asks what can be done here had nothing to show
+/// anywhere.
+///
+/// That was one instance of a general mistake, which is why this is now
+/// written from the other end: every entry here is something obelus's own
+/// code reads, and the doc comment says which code. A capability declared
+/// and not used invites answers nobody looks at; one used and not
+/// declared is a feature that is written, tested, and never reached --
+/// and which server it goes missing on differs by server, so no one
+/// server finds them all.
 #[must_use]
 pub fn client_capabilities() -> ClientCapabilities {
+    let markup = || Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]);
     ClientCapabilities {
         general: Some(GeneralClientCapabilities {
             // Bytes first. A server that agrees makes an LSP position the
@@ -766,23 +786,115 @@ pub fn client_capabilities() -> ClientCapabilities {
             ..Default::default()
         }),
         text_document: Some(TextDocumentClientCapabilities {
+            // `didOpen`, `didChange`, `didSave`, `didClose`. Not the two
+            // `willSave` messages: obelus has nothing to say before a
+            // write, and `willSaveWaitUntil` is a server being allowed to
+            // hold up the save.
+            synchronization: Some(TextDocumentSyncClientCapabilities {
+                did_save: Some(true),
+                ..Default::default()
+            }),
+            // Read by `lsp::complete`. Snippets because obelus has an
+            // engine for them (`lsp::snippet`), and a server that has not
+            // been told may not send one; label details because the offer
+            // list draws them; insert-and-replace because a completion in
+            // the middle of a word replaces the word.
+            completion: Some(CompletionClientCapabilities {
+                completion_item: Some(CompletionItemCapability {
+                    snippet_support: Some(true),
+                    label_details_support: Some(true),
+                    insert_replace_support: Some(true),
+                    documentation_format: markup(),
+                    // What `completionItem/resolve` is asked for: the
+                    // three things an offer may arrive without.
+                    resolve_support: Some(CompletionItemCapabilityResolveSupport {
+                        properties: vec![
+                            "documentation".to_string(),
+                            "detail".to_string(),
+                            "additionalTextEdits".to_string(),
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            // Rendered as markdown, by the same renderer a README gets.
+            hover: Some(HoverClientCapabilities {
+                content_format: markup(),
+                ..Default::default()
+            }),
+            // The panel marks the parameter the cursor is in, which it
+            // can only do from offsets: given the parameter as a piece of
+            // text instead, obelus has to find it in the label, and a
+            // name that appears twice is found in the wrong place.
+            signature_help: Some(SignatureHelpClientCapabilities {
+                signature_information: Some(SignatureInformationSettings {
+                    documentation_format: markup(),
+                    parameter_information: Some(ParameterInformationSettings {
+                        label_offset_support: Some(true),
+                    }),
+                    active_parameter_support: Some(true),
+                }),
+                ..Default::default()
+            }),
             // Nesting, for the outline. Without this the protocol says a
-            // server *may* answer `documentSymbol` with the flat shape, and
-            // rust-analyzer does: every symbol at the top level, and each
-            // one's position the start of the whole item rather than of its
-            // name -- so a mark on it lands on the line above, on an
-            // attribute or a doc comment. Declared support turns the same
-            // request into a tree of names.
+            // server *may* answer `documentSymbol` with the flat shape,
+            // and rust-analyzer does: every symbol at the top level, and
+            // each one's position the start of the whole item rather than
+            // of its name -- so a mark on it lands on the line above, on
+            // an attribute or a doc comment.
             document_symbol: Some(DocumentSymbolClientCapabilities {
                 hierarchical_document_symbol_support: Some(true),
+                ..Default::default()
+            }),
+            // The three jumps, and `references` beside them. Link support
+            // because `lsp::action` reads a `LocationLink`'s `targetUri`,
+            // and because the link is the shape that carries the name's
+            // own range rather than the whole definition's.
+            definition: Some(GotoCapability {
+                link_support: Some(true),
+                ..Default::default()
+            }),
+            type_definition: Some(GotoCapability {
+                link_support: Some(true),
+                ..Default::default()
+            }),
+            implementation: Some(GotoCapability {
+                link_support: Some(true),
+                ..Default::default()
+            }),
+            references: Some(ReferenceClientCapabilities::default()),
+            document_highlight: Some(DocumentHighlightClientCapabilities::default()),
+            formatting: Some(DocumentFormattingClientCapabilities::default()),
+            rename: Some(RenameClientCapabilities::default()),
+            // The whole file at once, in the packed form, with the
+            // server's own legend: `lsp::tokens` reads the names out of
+            // it rather than assuming the standard set, so what is
+            // declared here is the floor and anything past it still
+            // works. Not the range request: obelus asks for a file once
+            // and keeps the answer.
+            semantic_tokens: Some(SemanticTokensClientCapabilities {
+                requests: SemanticTokensClientCapabilitiesRequests {
+                    full: Some(SemanticTokensFullOptions::Bool(true)),
+                    range: Some(false),
+                },
+                token_types: standard_token_types(),
+                token_modifiers: Vec::new(),
+                formats: vec![TokenFormat::RELATIVE],
+                ..Default::default()
+            }),
+            // The diagnostic obelus keeps is the one the server sent,
+            // whole, because it goes back in a code action's context and
+            // the server matches it by every field -- `data` included.
+            publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
+                data_support: Some(true),
                 ..Default::default()
             }),
             // Without this a server is entitled to answer
             // `textDocument/codeAction` with commands only, and
             // rust-analyzer does something stronger: it answers `null` to
-            // every such request, whatever the file and wherever the range.
-            // Undeclared, `alt+a` has nothing to show -- not on a line with
-            // a mistake on it, not anywhere.
+            // every such request, whatever the file and wherever the
+            // range.
             code_action: Some(CodeActionClientCapabilities {
                 code_action_literal_support: Some(CodeActionLiteralSupport {
                     code_action_kind: CodeActionKindLiteralSupport {
@@ -803,19 +915,46 @@ pub fn client_capabilities() -> ClientCapabilities {
                     },
                 }),
                 // Both read: the first is what sorts the list, and the
-                // second is what an offer that arrived without its edit is
-                // recognised by.
+                // second is what an offer that arrived without its edit
+                // is recognised by.
                 is_preferred_support: Some(true),
                 data_support: Some(true),
                 resolve_support: Some(CodeActionCapabilityResolveSupport {
                     properties: vec!["edit".to_string(), "command".to_string()],
                 }),
                 // Not `disabled_support`. A server told that obelus reads
-                // it sends the offers it knows cannot be taken, each with a
-                // reason obelus has nowhere to put -- so they would sit in
-                // the list looking like the ones that work.
+                // it sends the offers it knows cannot be taken, each with
+                // a reason obelus has nowhere to put -- so they would sit
+                // in the list looking like the ones that work.
                 ..Default::default()
             }),
+            ..Default::default()
+        }),
+        workspace: Some(WorkspaceClientCapabilities {
+            // obelus makes the edits a server asks for, which a server
+            // that has not been told this will never ask for: the whole
+            // path from `workspace/executeCommand` to a refactoring
+            // landing in the files goes through one request, and this is
+            // what permits it.
+            apply_edit: Some(true),
+            workspace_edit: Some(WorkspaceEditClientCapabilities {
+                document_changes: Some(true),
+                // Empty on purpose, and it is the same policy the code
+                // enforces: obelus will not create, move or delete a file
+                // because a server suggested it. Said here, a server has
+                // the chance not to ask.
+                resource_operations: Some(Vec::new()),
+                failure_handling: Some(FailureHandlingKind::Abort),
+                ..Default::default()
+            }),
+            // Each of these is a message obelus sends.
+            symbol: Some(WorkspaceSymbolClientCapabilities::default()),
+            execute_command: Some(ExecuteCommandClientCapabilities::default()),
+            did_change_watched_files: Some(DidChangeWatchedFilesClientCapabilities::default()),
+            // Not `configuration`: obelus keeps no per-server settings,
+            // so a server that asked would be asked to wait for an answer
+            // of nulls. It is answered when it comes anyway, because the
+            // protocol says every request is.
             ..Default::default()
         }),
         window: Some(WindowClientCapabilities {
@@ -824,4 +963,38 @@ pub fn client_capabilities() -> ClientCapabilities {
         }),
         ..Default::default()
     }
+}
+
+/// The token types the protocol itself names.
+///
+/// A floor rather than a list: `lsp::tokens` reads the server's own
+/// legend by name and treats anything it does not know as a name, which
+/// is how `lifetime` and `builtinType` and a dozen kinds of punctuation
+/// work without being here.
+fn standard_token_types() -> Vec<SemanticTokenType> {
+    vec![
+        SemanticTokenType::NAMESPACE,
+        SemanticTokenType::TYPE,
+        SemanticTokenType::CLASS,
+        SemanticTokenType::ENUM,
+        SemanticTokenType::INTERFACE,
+        SemanticTokenType::STRUCT,
+        SemanticTokenType::TYPE_PARAMETER,
+        SemanticTokenType::PARAMETER,
+        SemanticTokenType::VARIABLE,
+        SemanticTokenType::PROPERTY,
+        SemanticTokenType::ENUM_MEMBER,
+        SemanticTokenType::EVENT,
+        SemanticTokenType::FUNCTION,
+        SemanticTokenType::METHOD,
+        SemanticTokenType::MACRO,
+        SemanticTokenType::KEYWORD,
+        SemanticTokenType::MODIFIER,
+        SemanticTokenType::COMMENT,
+        SemanticTokenType::STRING,
+        SemanticTokenType::NUMBER,
+        SemanticTokenType::REGEXP,
+        SemanticTokenType::OPERATOR,
+        SemanticTokenType::DECORATOR,
+    ]
 }

@@ -60,16 +60,34 @@ impl App {
             return;
         }
         let Some(language) = buffer.language() else {
+            if !pointed {
+                self.note = Some("no language server for this file".to_string());
+            }
             return;
         };
         let Ok(uri) = lsp::client::uri_for(buffer.path()) else {
             return;
         };
         let version = buffer.version();
+        // Only where a key asked. The pointer asks this of every word it
+        // rests on, and a reader moving the mouse across a file with no
+        // server would be reading a status row that never stops saying so.
+        if let Some(why) = self.why_not_asking(language) {
+            if !pointed {
+                self.note = Some(why);
+            }
+            return;
+        }
         let Some(client) = self.servers.get_mut(&language) else {
             return;
         };
         if !client.capabilities().is_some_and(hover::supported) {
+            if !pointed {
+                self.note = Some(format!(
+                    "{} does not say what things are",
+                    server_named(language)
+                ));
+            }
             return;
         }
         let position = position::to_lsp(buffer.text(), at.0, at.1, client.encoding());
