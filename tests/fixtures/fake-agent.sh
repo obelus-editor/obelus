@@ -41,7 +41,34 @@ id_of() {
     printf '%s' "$1" | sed -n 's/.*"id":\("[^"]*"\|[0-9]*\).*/\1/p'
 }
 
-turn=''
+# Which conversation a request is about, read out of the request rather than
+# assumed. A client may have several open on one process, and an agent that
+# answered about whichever it opened last would be an agent that cannot be
+# used to find out whether the client routes them.
+session_of() {
+    printf '%s' "$1" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p'
+}
+
+# How many conversations have been opened, so that each gets a name of its
+# own. `s-1` for the first, which is what every test written before this
+# expects to see.
+opened=0
+session='s-1'
+
+# The turn in flight, per conversation.
+#
+# One variable held them all until there were two conversations to hold, and
+# then a prompt in the second overwrote the first's -- so a cancellation
+# meant for one was answered against the other. A real agent keeps them
+# apart; an agent that did not would agree with a client that did not, and
+# the two would be wrong together with nothing to catch it.
+turn_of() {
+    eval "printf '%s' \"\${turn_$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_')-}\""
+}
+set_turn() {
+    eval "turn_$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_')='$2'"
+}
+
 forms=''
 
 # Whether it offers its mode the new way as well as the old.
@@ -104,6 +131,14 @@ options() {
 }
 
 while IFS= read -r line; do
+    # Which conversation this one is about. Every request after the first
+    # names it, and answering about the one opened most recently would make
+    # this agent useless for finding out whether the client keeps them
+    # apart -- the two would agree by accident.
+    named="$(session_of "$line")"
+    if [ -n "$named" ]; then
+        session="$named"
+    fi
     case "$line" in
         *'"method":"initialize"'*)
             # What the client promised. obelus says it reads files and does
@@ -129,19 +164,21 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentInfo":{"name":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$me"
             ;;
         *'"method":"session/new"'*)
+            opened=$((opened + 1))
+            session="s-$opened"
             if [ -n "$bare" ]; then
-                printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1"}}\n' "$(id_of "$line")"
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"'"$session"'"}}\n' "$(id_of "$line")"
             else
-                printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s-1","modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"'"$session"'","modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             fi
             # And, where it was asked to, a question before anything has
             # been said to it.
             if [ -n "$at_once" ]; then
-                printf '{"jsonrpc":"2.0","id":906,"method":"elicitation/create","params":{"mode":"form","sessionId":"s-1","message":"which workspace am I in","requestedSchema":{"type":"object","properties":{"where":{"type":"string","title":"Where"}},"required":["where"]}}}\n'
+                printf '{"jsonrpc":"2.0","id":906,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"which workspace am I in","requestedSchema":{"type":"object","properties":{"where":{"type":"string","title":"Where"}},"required":["where"]}}}\n'
             fi
             # What it takes with a slash, which agents send once the
             # session is ready.
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Summarise the conversation"},{"name":"cost","description":"What this has cost","input":{"hint":"currency"}},{"name":"model","description":"Which model to use"},{"name":"ask","description":"Ask the reader something"},{"name":"help","description":"What it takes"},{"name":"init","description":"Start again"},{"name":"login","description":"Say who you are"},{"name":"quit","description":"Stop"},{"name":"reset","description":"Forget the session"},{"name":"share","description":"Send it somewhere"},{"name":"theme","description":"Its own colours"},{"name":"usage","description":"What it has spent"}]}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Summarise the conversation"},{"name":"cost","description":"What this has cost","input":{"hint":"currency"}},{"name":"model","description":"Which model to use"},{"name":"ask","description":"Ask the reader something"},{"name":"help","description":"What it takes"},{"name":"init","description":"Start again"},{"name":"login","description":"Say who you are"},{"name":"quit","description":"Stop"},{"name":"reset","description":"Forget the session"},{"name":"share","description":"Send it somewhere"},{"name":"theme","description":"Its own colours"},{"name":"usage","description":"What it has spent"}]}}}\n'
             ;;
         *'"method":"session/set_config_option"'*)
             which=$(printf '%s' "$line" | sed -n 's/.*"configId":"\([^"]*\)".*/\1/p')
@@ -167,8 +204,8 @@ while IFS= read -r line; do
             # "what would you like to do": one choice whose options carry a
             # line about themselves, and a free-text field for an answer
             # that is not on the list.
-            turn=$(id_of "$line")
-            printf '{"jsonrpc":"2.0","id":904,"method":"elicitation/create","params":{"mode":"form","sessionId":"s-1","message":"what would you like to do","requestedSchema":{"type":"object","properties":{"task":{"type":"string","title":"Task","oneOf":[{"const":"report","title":"Write the weekly report","description":"Gather the git changes of the week and write them up"},{"const":"review","title":"Review the code","description":"Read the current diff for bugs and simplifications"},{"const":"build","title":"Carry on with obelus","description":"Write code in this repository"},{"const":"survey","title":"Survey the repository","description":"Read the recent commits and describe where things stand"}]},"other":{"type":"string","title":"Other","description":"Type your own answer instead of choosing one above"}},"required":["task"]}}}\n'
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":904,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"what would you like to do","requestedSchema":{"type":"object","properties":{"task":{"type":"string","title":"Task","oneOf":[{"const":"report","title":"Write the weekly report","description":"Gather the git changes of the week and write them up"},{"const":"review","title":"Review the code","description":"Read the current diff for bugs and simplifications"},{"const":"build","title":"Carry on with obelus","description":"Write code in this repository"},{"const":"survey","title":"Survey the repository","description":"Read the recent commits and describe where things stand"}]},"other":{"type":"string","title":"Other","description":"Type your own answer instead of choosing one above"}},"required":["task"]}}}\n'
             ;;
         *'"id":904'*)
             # The form's response is an object: a choice must use the
@@ -186,55 +223,55 @@ while IFS= read -r line; do
                     ;;
                 *) said='you did not pick review' ;;
             esac
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"id":906'*)
             case "$line" in
                 *'"action":"accept"'*) said='you are somewhere' ;;
                 *) said='you would not say where' ;;
             esac
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             ;;
         *'"method":"session/prompt"'*'"text":"/many'*)
             # A turn with a run of tool calls of one kind in it, which is
             # what an agent looking around a repository actually does: a
             # client that draws thirty of these has drawn a log.
-            turn=$(id_of "$line")
+            set_turn "$session" "$(id_of "$line")"
             for name in app acp buffer ui; do
-                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"r-%s","title":"Read src/%s","kind":"read","status":"completed","locations":[{"path":"%s/tests/fixtures/many_lines.rs","line":4}]}}}\n' "$name" "$name" "$PWD"
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"r-%s","title":"Read src/%s","kind":"read","status":"completed","locations":[{"path":"%s/tests/fixtures/many_lines.rs","line":4}]}}}\n' "$name" "$name" "$PWD"
             done
             # And one that failed, after them: the run it belongs to is not
             # the same run, because what failed is not a read.
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"x-1","title":"Run the tests","kind":"execute","status":"failed"}}}\n'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"that is where it is"}}}}\n'
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"x-1","title":"Run the tests","kind":"execute","status":"failed"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"that is where it is"}}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/edit'*)
             # An agent asking to change a file: the call carries the file as
             # it is and as it would be, which the protocol sends instead of
             # a patch, and the client is the one that works out the diff.
-            turn=$(id_of "$line")
+            set_turn "$session" "$(id_of "$line")"
             before='fn step_rows(row: usize) -> usize {\n    row\n}\n'
             after='fn step_rows(row: ScreenRow) -> usize {\n    row.get()\n}\n'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"e-1","title":"Edit the file","kind":"edit","status":"pending","content":[{"type":"diff","path":"%s/tests/fixtures/many_lines.rs","oldText":"%s","newText":"%s"}]}}}\n' "$PWD" "$before" "$after"
-            printf '{"jsonrpc":"2.0","id":907,"method":"session/request_permission","params":{"sessionId":"s-1","toolCall":{"toolCallId":"e-1"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"e-1","title":"Edit the file","kind":"edit","status":"pending","content":[{"type":"diff","path":"%s/tests/fixtures/many_lines.rs","oldText":"%s","newText":"%s"}]}}}\n' "$PWD" "$before" "$after"
+            printf '{"jsonrpc":"2.0","id":907,"method":"session/request_permission","params":{"sessionId":"'"$session"'","toolCall":{"toolCallId":"e-1"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n'
             ;;
         *'"id":907'*)
             case "$line" in
                 *'"optionId":"once"'*) said='I changed it' ;;
                 *) said='I left it alone' ;;
             esac
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call_update","toolCallId":"e-1","status":"completed"}}}\n'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call_update","toolCallId":"e-1","status":"completed"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/nowhere'*)
             # A tool call naming a file that is not there, which is what an
             # agent that deleted one -- or made one up -- sends.
-            turn=$(id_of "$line")
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"g-1","title":"Read the missing file","kind":"read","status":"completed","locations":[{"path":"%s/tests/fixtures/not-here.rs","line":2}]}}}\n' "$PWD"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"g-1","title":"Read the missing file","kind":"read","status":"completed","locations":[{"path":"%s/tests/fixtures/not-here.rs","line":2}]}}}\n' "$PWD"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/die'*)
             # An agent that stops in the middle of a turn: a crash, a kill,
@@ -248,8 +285,8 @@ while IFS= read -r line; do
             # which the schema carries as an array of the ids, plus the
             # free-text field an agent pairs with one to catch what the
             # list does not cover.
-            turn=$(id_of "$line")
-            printf '{"jsonrpc":"2.0","id":905,"method":"elicitation/create","params":{"mode":"form","sessionId":"s-1","message":"which parts should I look at","requestedSchema":{"type":"object","properties":{"areas":{"type":"array","title":"Areas","minItems":2,"items":{"anyOf":[{"const":"app","title":"src/app","description":"the application"},{"const":"acp","title":"src/acp","description":"the agent link"},{"const":"ui","title":"src/ui","description":"the screen"}]}},"other":{"type":"string","title":"Other","description":"Anywhere else it should look"}},"required":["areas"]}}}\n'
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":905,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"which parts should I look at","requestedSchema":{"type":"object","properties":{"areas":{"type":"array","title":"Areas","minItems":2,"items":{"anyOf":[{"const":"app","title":"src/app","description":"the application"},{"const":"acp","title":"src/acp","description":"the agent link"},{"const":"ui","title":"src/ui","description":"the screen"}]}},"other":{"type":"string","title":"Other","description":"Anywhere else it should look"}},"required":["areas"]}}}\n'
             ;;
         *'"id":905'*)
             case "$line" in
@@ -261,16 +298,16 @@ while IFS= read -r line; do
                     ;;
                 *) said='you picked something else' ;;
             esac
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/ask'*)
-            turn=$(id_of "$line")
+            set_turn "$session" "$(id_of "$line")"
             if [ -z "$forms" ]; then
-                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"this client cannot be asked"}}}}\n'
-                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"this client cannot be asked"}}}}\n'
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             else
-                printf '{"jsonrpc":"2.0","id":903,"method":"elicitation/create","params":{"mode":"form","sessionId":"s-1","message":"which way should I do it","requestedSchema":{"type":"object","properties":{"how":{"type":"string","title":"How","oneOf":[{"const":"fast","title":"Quickly"},{"const":"careful","title":"Carefully","description":"and slowly"}]},"sure":{"type":"boolean","title":"Sure"},"times":{"type":"integer","title":"Times","minimum":1,"maximum":9}},"required":["how","sure","times"]}}}\n'
+                printf '{"jsonrpc":"2.0","id":903,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"which way should I do it","requestedSchema":{"type":"object","properties":{"how":{"type":"string","title":"How","oneOf":[{"const":"fast","title":"Quickly"},{"const":"careful","title":"Carefully","description":"and slowly"}]},"sure":{"type":"boolean","title":"Sure"},"times":{"type":"integer","title":"Times","minimum":1,"maximum":9}},"required":["how","sure","times"]}}}\n'
             fi
             ;;
         *'"id":903'*)
@@ -286,41 +323,41 @@ while IFS= read -r line; do
                     ;;
                 *) said='you would not say' ;;
             esac
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/'*)
             # A command: the text starts with a slash, and everything after
             # the name is the command's own input.
-            turn=$(id_of "$line")
+            set_turn "$session" "$(id_of "$line")"
             asked=$(printf '%s' "$line" | sed -n 's/.*"text":"\/\([^" ]*\).*/\1/p')
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ran %s"}}}}\n' "$asked"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ran %s"}}}}\n' "$asked"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'quickly'*)
             # It changes a setting of its own accord and says so, which is
             # the other direction that path runs in: agents pick a model to
             # suit what they were asked and tell the client afterwards.
-            turn=$(id_of "$line")
+            set_turn "$session" "$(id_of "$line")"
             model='fast'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"config_option_update","configOptions":%s}}}\n' "$(options)"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"config_option_update","configOptions":%s}}}\n' "$(options)"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'slowly'*)
             # Asked to take its time: it says nothing and answers nothing,
             # so the turn stays in flight until obelus cancels it.
-            turn=$(id_of "$line")
+            set_turn "$session" "$(id_of "$line")"
             ;;
         *'"method":"session/prompt"'*)
-            turn=$(id_of "$line")
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"working it out"}}}}\n'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"it is "}}}}\n'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"a rust file"}}}}\n'
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"working it out"}}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"it is "}}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"a rust file"}}}}\n'
             # With the kind and the file it is about, the way a real agent
             # sends them: the kind is what the client draws a glyph from,
             # and the location is what makes the row somewhere to go.
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call","toolCallId":"t1","title":"Read the file","kind":"read","status":"in_progress","locations":[{"path":"%s/tests/fixtures/many_lines.rs","line":7}]}}}\n' "$PWD"
-            printf '{"jsonrpc":"2.0","id":900,"method":"fs/read_text_file","params":{"sessionId":"s-1","path":"tests/fixtures/read-me.txt"}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"t1","title":"Read the file","kind":"read","status":"in_progress","locations":[{"path":"%s/tests/fixtures/many_lines.rs","line":7}]}}}\n' "$PWD"
+            printf '{"jsonrpc":"2.0","id":900,"method":"fs/read_text_file","params":{"sessionId":"'"$session"'","path":"tests/fixtures/read-me.txt"}}\n'
             ;;
         *'"id":900'*)
             # What obelus handed back, quoted into a chunk so the test can
@@ -328,19 +365,19 @@ while IFS= read -r line; do
             # Up to the first quote or backslash: the answer ends with an
             # escaped newline, and what the test looks for is the words.
             text=$(printf '%s' "$line" | sed -n 's/.*"content":"\([^"\\]*\).*/\1/p')
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" saying %s"}}}}\n' "$text"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" saying %s"}}}}\n' "$text"
             # And a write outside the tree, which obelus refuses: an agent
             # inside a reader may change what the reader is looking at and
             # nothing else.
-            printf '{"jsonrpc":"2.0","id":902,"method":"fs/write_text_file","params":{"sessionId":"s-1","path":"/tmp/obelus-not-in-the-tree.txt","content":"no"}}\n'
+            printf '{"jsonrpc":"2.0","id":902,"method":"fs/write_text_file","params":{"sessionId":"'"$session"'","path":"/tmp/obelus-not-in-the-tree.txt","content":"no"}}\n'
             ;;
         *'"id":902'*)
             case "$line" in
                 *'"error"'*) wrote='refused to write' ;;
                 *) wrote='wrote the file' ;;
             esac
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and it %s"}}}}\n' "$wrote"
-            printf '{"jsonrpc":"2.0","id":901,"method":"session/request_permission","params":{"sessionId":"s-1","toolCall":{"toolCallId":"t2","title":"Run the tests","kind":"execute","content":[{"type":"content","content":{"type":"text","text":"cargo test --all-features"}}],"locations":[{"path":"/tmp/obelus/Cargo.toml"}]},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and it %s"}}}}\n' "$wrote"
+            printf '{"jsonrpc":"2.0","id":901,"method":"session/request_permission","params":{"sessionId":"'"$session"'","toolCall":{"toolCallId":"t2","title":"Run the tests","kind":"execute","content":[{"type":"content","content":{"type":"text","text":"cargo test --all-features"}}],"locations":[{"path":"/tmp/obelus/Cargo.toml"}]},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n'
             ;;
         *'"id":901'*)
             case "$line" in
@@ -350,18 +387,19 @@ while IFS= read -r line; do
             # Both of them finish: the file it read, and the command it
             # asked about. An agent says how a call ended whether or not it
             # had to ask first.
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call_update","toolCallId":"t1","status":"completed"}}}\n'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"tool_call_update","toolCallId":"t2","status":"completed"}}}\n'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and I was %s"}}}}\n' "$allowed"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$turn"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call_update","toolCallId":"t1","status":"completed"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call_update","toolCallId":"t2","status":"completed"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and I was %s"}}}}\n' "$allowed"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/cancel"'*)
             # Only when there is a turn to cancel. A cancellation that
             # arrives with nothing in flight is a no-op, and answering it
             # with an id nobody sent is a message no client can read.
-            if [ -n "$turn" ]; then
-                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"cancelled"}}\n' "$turn"
-                turn=''
+            pending="$(turn_of "$session")"
+            if [ -n "$pending" ]; then
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"cancelled"}}\n' "$pending"
+                set_turn "$session" ''
             fi
             ;;
     esac

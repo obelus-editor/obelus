@@ -67,6 +67,7 @@ impl App {
     /// What obelus is doing about an agent.
     #[must_use]
     pub fn talking(&self) -> Talking {
+        let session = self.conversation.session.as_ref();
         let Some(talker) = self.talker.as_ref() else {
             return match self.settled.config.agent.as_deref() {
                 None | Some("") => Talking::Nobody,
@@ -75,9 +76,9 @@ impl App {
         };
         if talker.has_exited() {
             Talking::Gone
-        } else if talker.is_thinking() {
+        } else if talker.is_thinking(session) {
             Talking::Thinking
-        } else if talker.is_started() {
+        } else if talker.is_started(session) {
             Talking::Ready
         } else {
             Talking::Starting
@@ -104,27 +105,34 @@ impl App {
     /// named apart because one key steps it.
     #[must_use]
     pub fn agent_mode(&self) -> Option<&acp::Setting> {
-        self.talker.as_ref()?.mode()
+        self.talker
+            .as_ref()?
+            .mode(self.conversation.session.as_ref())
     }
 
     /// The commands it says it takes.
     #[must_use]
     pub fn agent_orders(&self) -> &[acp::Order] {
-        self.talker.as_ref().map_or(&[], acp::Talk::orders)
+        self.talker.as_ref().map_or(&[], |talker| {
+            talker.orders(self.conversation.session.as_ref())
+        })
     }
 
     /// Moves to the agent's next way of working.
     pub(super) fn step_agent_mode(&mut self) {
+        let session = self.conversation.session.clone();
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
-        talker.step_mode();
+        talker.step_mode(session.as_ref());
     }
 
     /// The settings it lets the reader change.
     #[must_use]
     pub fn agent_settings(&self) -> &[acp::Setting] {
-        self.talker.as_ref().map_or(&[], acp::Talk::settings)
+        self.talker.as_ref().map_or(&[], |talker| {
+            talker.settings(self.conversation.session.as_ref())
+        })
     }
 
     /// One setting's values, as the ordinary compact list.
@@ -133,7 +141,12 @@ impl App {
     /// values are a list. A switch never comes here: it has two sides and
     /// is flipped where it stands.
     pub(super) fn open_agent_setting(&mut self, id: &str) {
-        let Some(setting) = self.talker.as_ref().and_then(|talker| talker.setting(id)) else {
+        let session = self.conversation.session.clone();
+        let Some(setting) = self
+            .talker
+            .as_ref()
+            .and_then(|talker| talker.setting(session.as_ref(), id))
+        else {
             return;
         };
         let question = setting.name.clone();
@@ -181,10 +194,11 @@ impl App {
     /// values obelus makes for it is what the settings page needs, and on
     /// the conversation's own row a list of two is a list nobody wants.
     pub(super) fn flip_agent_setting(&mut self, id: &str) {
+        let session = self.conversation.session.clone();
         let Some(other) = self
             .talker
             .as_ref()
-            .and_then(|talker| talker.setting(id))
+            .and_then(|talker| talker.setting(session.as_ref(), id))
             .map(|setting| match setting.current == "on" {
                 true => "off",
                 false => "on",
@@ -197,15 +211,16 @@ impl App {
 
     /// Asks for one of them to be put on one of its values.
     pub(super) fn set_agent_setting(&mut self, setting: &str, value: &str) {
+        let session = self.conversation.session.clone();
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
-        let Some(known) = talker.setting(setting) else {
+        let Some(known) = talker.setting(session.as_ref(), setting) else {
             return;
         };
         let (name, told) = (known.name.clone(), what_to_say(known, value));
         let chosen = acp::Chosen::of(known, value);
-        talker.set(setting, chosen);
+        talker.set(session.as_ref(), setting, chosen);
         // In the transcript, because it is a thing the reader did to the
         // conversation: what the agent answers with is the whole set of
         // settings again, which is not something to show.
@@ -228,6 +243,7 @@ impl App {
             self.stop_agent();
             self.start_agent();
         }
+        let session = self.conversation.session.clone();
         let Some(talker) = self.talker.as_mut() else {
             // `start_agent` has already said why in the transcript.
             return;
@@ -235,15 +251,16 @@ impl App {
         // Held until the session opens, which is the ordinary case for the
         // first thing said: the reader typed while it was starting, and the
         // handle sends it when there is somewhere to send it.
-        talker.say(text);
+        talker.say(session.as_ref(), text);
     }
 
     /// Asks the agent to stop what it is doing.
     pub(super) fn interrupt_agent(&mut self) {
+        let session = self.conversation.session.clone();
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
-        talker.interrupt();
+        talker.interrupt(session.as_ref());
     }
 
     /// Stops the agent, if one is running.
@@ -857,6 +874,34 @@ impl App {
         self.conversation.chat.settle_focus(settings);
     }
 
+    /// Whether a message from the agent belongs to the conversation on
+    /// screen.
+    ///
+    /// The routing, in one place. Most of what arrives names the
+    /// conversation it is about, and a message that names one obelus is not
+    /// looking at must not put its words in the one it is.
+    ///
+    /// The two that name none are the two the protocol does not put a
+    /// session on: an elicitation, and a request for a file. Those go to
+    /// whoever is here, which is right while one conversation is waiting on
+    /// the agent and is a guess when two are. The protocol is where that has
+    /// to be fixed, so this is where it is written down.
+    fn is_this_conversation(&self, incoming: &acp::Incoming) -> bool {
+        let whose = match incoming {
+            acp::Incoming::Update { session, .. }
+            | acp::Incoming::Ended { session, .. }
+            | acp::Incoming::Permission { session, .. } => Some(session),
+            acp::Incoming::Started { .. }
+            | acp::Incoming::Ready(_)
+            | acp::Incoming::Failed(..)
+            | acp::Incoming::Gone(_)
+            | acp::Incoming::Ask { .. }
+            | acp::Incoming::Read { .. }
+            | acp::Incoming::Write { .. } => None,
+        };
+        whose.is_none_or(|session| self.conversation.session.as_ref() == Some(session))
+    }
+
     /// Takes one message from the agent.
     pub(super) fn on_acp(&mut self, incoming: acp::Incoming) {
         let Some(talker) = self.talker.as_mut() else {
@@ -868,17 +913,35 @@ impl App {
         let Some(incoming) = talker.on(incoming) else {
             return;
         };
+        // A conversation opening is the one message that is not routed by
+        // a session: it is what *hands out* one. The first to arrive is
+        // this conversation's, because it was opened for it.
+        if let acp::Incoming::Started { session, .. } = &incoming {
+            if self.conversation.session.is_none() {
+                self.conversation.session = Some(session.clone());
+            }
+            return;
+        }
+        // And everything else goes to the conversation it names. One of
+        // them, for now -- but asking is what stops a second one's words
+        // landing in the first.
+        if !self.is_this_conversation(&incoming) {
+            return;
+        }
         match incoming {
-            acp::Incoming::Update(update) => match update {
+            acp::Incoming::Update { update, .. } => match update {
                 acp::Update::Said(text) => self.conversation.chat.chunk(Speaker::Agent, &text),
                 acp::Update::Thought(text) => self.conversation.chat.chunk(Speaker::Thought, &text),
                 acp::Update::Tool { call, status } => self.conversation.chat.tool(&call, &status),
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
                 // said, and a transcript with them in it is a log.
-                acp::Update::Mode(_) | acp::Update::Orders(_) | acp::Update::Settings(_) => {}
+                acp::Update::Mode(_)
+                | acp::Update::Orders(_)
+                | acp::Update::Settings(_)
+                | acp::Update::Titled(_) => {}
             },
-            acp::Incoming::Ended(reason) => {
+            acp::Incoming::Ended { why: reason, .. } => {
                 // Only the ends that are not the ordinary one: a turn that
                 // finished has its answer above it, and "end turn" under
                 // every answer is noise.
@@ -903,6 +966,7 @@ impl App {
                 reason,
                 options,
                 answer,
+                ..
             } => self.ask_permission(&call, reason.as_deref(), &options, answer),
             acp::Incoming::Ask {
                 message,
@@ -931,7 +995,9 @@ impl App {
                     None => self.conversation.chat.note("the agent stopped"),
                 }
             }
-            // Folded into the handle above.
+            // Folded into the handle above, or -- for a conversation
+            // opening -- dealt with before the routing, because it is what
+            // hands out the name the routing goes by.
             acp::Incoming::Ready(_) | acp::Incoming::Started { .. } => {}
         }
     }

@@ -27,6 +27,11 @@ use crate::{
 /// conversation nobody could leave for a minute.
 #[derive(Debug, Default)]
 pub struct Conversation {
+    /// Which conversation on the agent this is, once it has opened one.
+    ///
+    /// `None` until then, which is a real state and not a gap: opening the
+    /// view starts the process, and a reader types faster than node starts.
+    pub session: Option<acp::SessionId>,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.

@@ -38,10 +38,10 @@ use agent_client_protocol::{
             SelectedPermissionOutcome, SessionConfigId, SessionConfigKind, SessionConfigOption,
             SessionConfigOptionCategory, SessionConfigOptionValue,
             SessionConfigOptionsCapabilities, SessionConfigSelectOption,
-            SessionConfigSelectOptions, SessionModeState, SessionNotification, SessionUpdate,
-            SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent, ToolCallContent,
-            ToolCallId, ToolCallLocation, ToolCallUpdateFields, WriteTextFileRequest,
-            WriteTextFileResponse,
+            SessionConfigSelectOptions, SessionId, SessionModeState, SessionNotification,
+            SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent,
+            ToolCallContent, ToolCallId, ToolCallLocation, ToolCallUpdateFields,
+            WriteTextFileRequest, WriteTextFileResponse,
         },
     },
 };
@@ -59,14 +59,35 @@ use crate::event::Event;
 /// looking at something else entirely.
 #[derive(Clone, Debug)]
 pub enum Ask {
-    /// Say this.
-    Say(String),
-    /// Stop what you are doing.
-    Interrupt,
-    /// Work this way from now on.
-    Mode(String),
-    /// Put one of the session's settings on this value.
+    /// Open another conversation on this connection.
+    ///
+    /// One process, several sessions: an agent holds a project's worth of
+    /// context and starting a second of them to talk about a second note
+    /// would pay for all of it twice.
+    Open,
+    /// Say this, in that conversation.
+    Say {
+        /// Which conversation.
+        session: SessionId,
+        /// What to say.
+        words: String,
+    },
+    /// Stop what you are doing in that one.
+    Interrupt {
+        /// Which conversation.
+        session: SessionId,
+    },
+    /// Work this way from now on, in that one.
+    Mode {
+        /// Which conversation.
+        session: SessionId,
+        /// Which way.
+        mode: String,
+    },
+    /// Put one of a session's settings on this value.
     Set {
+        /// Which conversation.
+        session: SessionId,
         /// Which setting, by the agent's id for it.
         setting: String,
         /// What to put it on.
@@ -116,6 +137,8 @@ pub enum Incoming {
     Ready(Option<String>),
     /// There is a session to talk in.
     Started {
+        /// Which one, which is what everything said in it names.
+        session: SessionId,
         /// The mode it offers through the dedicated methods, if it offers
         /// one that way -- read into a setting like any other, and dropped
         /// if the settings turn out to carry the mode themselves.
@@ -132,14 +155,28 @@ pub enum Incoming {
         /// Whether it was allowed to.
         answer: Answer<bool>,
     },
-    /// Something to show.
-    Update(Update),
-    /// The turn ended, for this reason.
-    Ended(String),
+    /// Something to show, in one of the conversations.
+    Update {
+        /// Which one it belongs to. The protocol puts it on every message
+        /// obelus reads and obelus threw it away, which was free while
+        /// there was one conversation and is the whole of the routing now.
+        session: SessionId,
+        /// What to show.
+        update: Update,
+    },
+    /// A turn ended, for this reason.
+    Ended {
+        /// Whose turn.
+        session: SessionId,
+        /// And why it stopped.
+        why: String,
+    },
     /// Something did not work: what obelus was doing, and what it said.
     Failed(&'static str, String),
     /// The agent is asking to be allowed something.
     Permission {
+        /// Which conversation it is asking in.
+        session: SessionId,
         /// The call it is asking about, which is the same call the
         /// transcript already has a row for -- or is about to.
         call: Call,
@@ -152,6 +189,11 @@ pub enum Incoming {
         answer: Answer<Option<String>>,
     },
     /// The agent is asking the reader for something.
+    ///
+    /// With no conversation on it, because the protocol does not put one
+    /// there: `session/request_permission` names the session and an
+    /// elicitation does not. Whoever routes this has to work it out, and
+    /// the only honest answer is "whichever one is waiting on the agent".
     Ask {
         /// What it says it needs, in its own words.
         message: String,
@@ -196,6 +238,12 @@ pub enum Update {
     /// The commands it takes, sent once the session is ready and again
     /// whenever they change.
     Orders(Vec<Order>),
+    /// What the agent calls this conversation.
+    ///
+    /// The agent's own name for it, which it usually sends once the first
+    /// thing has been said: the note a conversation is about says what the
+    /// reader meant to do, and this says what the conversation turned into.
+    Titled(String),
     /// The settings it lets the reader change, sent when the session opens
     /// and again after every change -- by obelus or by the agent itself.
     Settings(Vec<Setting>),
@@ -480,6 +528,45 @@ pub fn start(
 /// The whole conversation, from the handshake to the end of the stream.
 ///
 /// Returns why it ended, or `None` because it ended tidily.
+/// Opens one conversation on a connection that is already up.
+///
+/// Both the first and every one after it: the first is opened without being
+/// asked for, because opening the view *is* the request, and the rest come
+/// from `Ask::Open`. One path for both, so that what a new conversation
+/// arrives with cannot depend on which it is.
+async fn open_session(
+    connection: &ConnectionTo<agent_client_protocol::Agent>,
+    root: &std::path::Path,
+    events: &Sender<Event>,
+    stopped: &mut std::collections::HashMap<
+        SessionId,
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+    >,
+) -> Result<SessionId, agent_client_protocol::Error> {
+    let opened = connection
+        .send_request(NewSessionRequest::new(root.to_path_buf()))
+        .block_task()
+        .await?;
+    let session = opened.session_id.clone();
+    stopped.entry(session.clone()).or_default();
+    // The old mode methods, read into a setting at the edge -- and kept
+    // only until the settings say they carry the mode themselves, which is
+    // what replaces them.
+    let mode = opened.modes.as_ref().map(mode_setting);
+    let _ = events.send(Event::Acp(Incoming::Started {
+        session: session.clone(),
+        mode,
+    }));
+    if let Some(options) = opened.config_options.as_ref() {
+        let settings = options.iter().filter_map(setting_of).collect();
+        let _ = events.send(Event::Acp(Incoming::Update {
+            session: session.clone(),
+            update: Update::Settings(settings),
+        }));
+    }
+    Ok(session)
+}
+
 async fn talk(
     config: AcpAgentConfig,
     root: PathBuf,
@@ -502,8 +589,14 @@ async fn talk(
         .builder()
         .on_receive_notification(
             async move |notification: SessionNotification, _connection| {
+                // Which conversation it is about, which the protocol has
+                // said all along.
+                let session = notification.session_id;
                 for update in read_update(notification.update) {
-                    let _ = updates.send(Event::Acp(Incoming::Update(update)));
+                    let _ = updates.send(Event::Acp(Incoming::Update {
+                        session: session.clone(),
+                        update,
+                    }));
                 }
                 Ok(())
             },
@@ -518,6 +611,7 @@ async fn talk(
                 // hear to stop waiting.
                 let (answer, answered) = oneshot::channel();
                 let question = Incoming::Permission {
+                    session: request.session_id.clone(),
                     call: call_of(&request.tool_call.tool_call_id, &request.tool_call.fields),
                     reason: reason_of(&request),
                     options: request
@@ -659,42 +753,44 @@ async fn talk(
                 });
                 let _ = events.send(Event::Acp(Incoming::Ready(named)));
 
-                let opened = connection
-                    .send_request(NewSessionRequest::new(root))
-                    .block_task()
-                    .await?;
-                let session = opened.session_id.clone();
-                // The old mode methods, read into a setting at the edge --
-                // and kept only until the settings say they carry the mode
-                // themselves, which is what replaces them.
-                let mode = opened.modes.as_ref().map(mode_setting);
-                let _ = events.send(Event::Acp(Incoming::Started { mode }));
-                if let Some(options) = opened.config_options.as_ref() {
-                    let settings = options.iter().filter_map(setting_of).collect();
-                    let _ = events.send(Event::Acp(Incoming::Update(Update::Settings(settings))));
-                }
-
-                // Whether the turn in flight has been given up on.
+                // Whether each conversation's turn in flight has been
+                // given up on.
                 //
-                // Set by an interruption and cleared by the next prompt,
-                // and read by the answer's callback: an agent that never
+                // One flag per conversation and not one for the connection.
+                // It is set by an interruption, cleared by the next prompt,
+                // and read by the answer's callback -- an agent that never
                 // saw the cancellation answers the prompt anyway, and by
-                // then the reader has been told the turn is over.
-                let stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                // then the reader has been told that turn is over. Shared
+                // between two conversations, stopping one would throw away
+                // the answer arriving in the other, with nothing to say so
+                // and no way to notice but to be talking in two at once.
+                let mut stopped: std::collections::HashMap<
+                    SessionId,
+                    std::sync::Arc<std::sync::atomic::AtomicBool>,
+                > = std::collections::HashMap::new();
+
+                // The first one, opened without being asked for: the reader
+                // opened the view, which is a request to talk.
+                open_session(&connection, &root, &events, &mut stopped).await?;
 
                 while let Some(ask) = asks.next().await {
                     match ask {
+                        Ask::Open => {
+                            open_session(&connection, &root, &events, &mut stopped).await?;
+                        }
                         // The answer is taken in a callback rather than
                         // awaited, so the loop goes straight back to
                         // reading asks: an interruption typed while the
                         // agent is thinking has to reach it.
-                        Ask::Say(words) => {
+                        Ask::Say { session, words } => {
                             let told = events.clone();
-                            let given_up = std::sync::Arc::clone(&stopped);
-                            stopped.store(false, std::sync::atomic::Ordering::Relaxed);
+                            let flag = stopped.entry(session.clone()).or_default();
+                            flag.store(false, std::sync::atomic::Ordering::Relaxed);
+                            let given_up = std::sync::Arc::clone(flag);
+                            let whose = session.clone();
                             connection
                                 .send_request(PromptRequest::new(
-                                    session.clone(),
+                                    session,
                                     vec![ContentBlock::Text(TextContent::new(words))],
                                 ))
                                 .on_receiving_result(move |asked| {
@@ -706,9 +802,10 @@ async fn talk(
                                         return std::future::ready(Ok(()));
                                     }
                                     let _ = told.send(Event::Acp(match asked {
-                                        Ok(answer) => Incoming::Ended(
-                                            format!("{:?}", answer.stop_reason).to_lowercase(),
-                                        ),
+                                        Ok(answer) => Incoming::Ended {
+                                            session: whose,
+                                            why: format!("{:?}", answer.stop_reason).to_lowercase(),
+                                        },
                                         Err(error) => {
                                             Incoming::Failed("the agent", error.to_string())
                                         }
@@ -725,22 +822,32 @@ async fn talk(
                         // cancellation can reach an agent before the prompt
                         // it is about -- goes on working on a turn nobody
                         // is waiting for.
-                        Ask::Interrupt => {
-                            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+                        Ask::Interrupt { session } => {
+                            stopped
+                                .entry(session.clone())
+                                .or_default()
+                                .store(true, std::sync::atomic::Ordering::Relaxed);
                             connection
                                 .send_notification(CancelNotification::new(session.clone()))?;
-                            let _ =
-                                events.send(Event::Acp(Incoming::Ended("cancelled".to_string())));
+                            let _ = events.send(Event::Acp(Incoming::Ended {
+                                session,
+                                why: "cancelled".to_string(),
+                            }));
                         }
-                        Ask::Set { setting, chosen } => {
+                        Ask::Set {
+                            session,
+                            setting,
+                            chosen,
+                        } => {
                             let told = events.clone();
                             let value = match chosen {
                                 Chosen::Value(id) => SessionConfigOptionValue::value_id(id),
                                 Chosen::Switch(on) => SessionConfigOptionValue::boolean(on),
                             };
+                            let whose = session.clone();
                             connection
                                 .send_request(SetSessionConfigOptionRequest::new(
-                                    session.clone(),
+                                    session,
                                     SessionConfigId::new(setting),
                                     value,
                                 ))
@@ -752,13 +859,16 @@ async fn talk(
                                     // so what comes back replaces what is
                                     // shown rather than patching it.
                                     let _ = told.send(Event::Acp(match asked {
-                                        Ok(answer) => Incoming::Update(Update::Settings(
-                                            answer
-                                                .config_options
-                                                .iter()
-                                                .filter_map(setting_of)
-                                                .collect(),
-                                        )),
+                                        Ok(answer) => Incoming::Update {
+                                            session: whose,
+                                            update: Update::Settings(
+                                                answer
+                                                    .config_options
+                                                    .iter()
+                                                    .filter_map(setting_of)
+                                                    .collect(),
+                                            ),
+                                        },
                                         Err(error) => Incoming::Failed(
                                             "changing a setting",
                                             error.to_string(),
@@ -767,11 +877,11 @@ async fn talk(
                                     std::future::ready(Ok(()))
                                 })?;
                         }
-                        Ask::Mode(mode) => {
+                        Ask::Mode { session, mode } => {
                             let told = events.clone();
                             connection
                                 .send_request(SetSessionModeRequest::new(
-                                    session.clone(),
+                                    session,
                                     agent_client_protocol::schema::v1::SessionModeId::new(mode),
                                 ))
                                 .on_receiving_result(move |asked| {
@@ -893,9 +1003,9 @@ fn reason_of(request: &RequestPermissionRequest) -> Option<String> {
 
 /// What a `session/update` means, if it is one obelus shows.
 ///
-/// The protocol has fifteen kinds and this shows five. The rest -- plans,
-/// usage, compaction -- are facts about the agent rather than about the
-/// conversation, and a conversation with them in it is a log.
+/// The protocol has a dozen and a half kinds and this reads eight. The rest
+/// -- plans, usage, compaction -- are facts about the agent rather than
+/// about the conversation, and a conversation with them in it is a log.
 fn read_update(update: SessionUpdate) -> Vec<Update> {
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => words(&chunk.content)
@@ -939,6 +1049,17 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
                 .filter_map(setting_of)
                 .collect(),
         )],
+        // What the agent calls this conversation. A patch rather than a
+        // value: absent means unchanged, null means cleared, and only a
+        // string is a new name -- so the two that are not a string are
+        // nothing to do, not a name of nothing.
+        SessionUpdate::SessionInfoUpdate(info) => match info.title {
+            agent_client_protocol::schema::MaybeUndefined::Value(title) => {
+                vec![Update::Titled(title)]
+            }
+            agent_client_protocol::schema::MaybeUndefined::Undefined
+            | agent_client_protocol::schema::MaybeUndefined::Null => Vec::new(),
+        },
         other => {
             tracing::debug!(?other, "an update obelus does not show");
             Vec::new()

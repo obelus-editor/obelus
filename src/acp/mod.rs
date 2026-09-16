@@ -33,6 +33,7 @@ pub mod link;
 
 use std::path::Path;
 
+pub use agent_client_protocol::schema::v1::SessionId;
 use futures::channel::mpsc;
 pub use link::{
     Answer, Ask, Call, Category, Change, Choice, Chosen, Field, Incoming, Kind, Order, Place,
@@ -53,12 +54,34 @@ pub struct Talk {
     asks: mpsc::UnboundedSender<Ask>,
     /// What it calls itself, once it has said.
     info: Option<String>,
-    /// Whether there is a session to talk in.
-    session: bool,
-    /// Whether a turn is in flight.
-    thinking: bool,
-    /// Whether the conversation has ended, and why.
+    /// Whether the connection has ended, and why.
     gone: Option<Option<String>>,
+    /// The conversations open on it, by the name the agent gave each.
+    ///
+    /// One process, several conversations. The four fields above are the
+    /// *process* -- one name, one pipe, one death -- and everything about
+    /// what is being talked about is in here, one of these each. They were
+    /// flat beside each other while there was one conversation, which made
+    /// the type's own doc untrue: it says "one running agent", and half of
+    /// it was about one thing said to it.
+    sessions: std::collections::HashMap<SessionId, Session>,
+    /// A prompt typed before there was any session to send it in.
+    ///
+    /// The ordinary case for the first thing said: opening the view starts
+    /// the process, and a reader types faster than node starts. On the
+    /// connection rather than on a session, because at that moment there is
+    /// no session for it to be on.
+    held: Option<String>,
+}
+
+/// One conversation, as the main loop needs to see it.
+///
+/// The protocol's own state lives on the thread; this is what a view asks
+/// about on a frame and cannot wait for an answer to.
+#[derive(Debug, Default)]
+pub struct Session {
+    /// Whether a turn is in flight in this one.
+    thinking: bool,
     /// The commands it says it takes.
     orders: Vec<Order>,
     /// The settings it lets the reader change, as the agent's own list of
@@ -72,6 +95,12 @@ pub struct Talk {
     legacy_mode: Option<Setting>,
     /// Both of those, merged: what everything above this reads.
     settings: Vec<Setting>,
+    /// What the agent calls this conversation, once it has said.
+    ///
+    /// Kept rather than only shown, because it is the name a list of open
+    /// conversations goes by: the note one is about says what the reader
+    /// meant to do, and this says what it turned into.
+    title: Option<String>,
     /// What a mode was before the reader stepped it, while the agent has
     /// not answered.
     ///
@@ -80,138 +109,23 @@ pub struct Talk {
     /// back if the agent refuses, or the row goes on naming a mode the
     /// agent is not in.
     guessed: Option<(String, String)>,
-    /// A prompt typed before there was a session to send it in.
-    ///
-    /// The ordinary case for the first thing said: opening the view starts
-    /// the process, and a reader types faster than node starts.
-    held: Option<String>,
 }
 
-impl std::fmt::Debug for Talk {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("Talk")
-            .field("id", &self.id)
-            .field("session", &self.session)
-            .field("thinking", &self.thinking)
-            .field("settings", &self.settings.len())
-            .finish_non_exhaustive()
-    }
-}
-
-impl Talk {
-    /// Starts an agent and returns the handle to it.
-    #[must_use]
-    pub fn start(
-        id: &str,
-        command: &Path,
-        arguments: &[String],
-        root: &Path,
-        events: std::sync::mpsc::Sender<crate::event::Event>,
-    ) -> Self {
-        Self {
-            id: id.to_string(),
-            asks: link::start(command, arguments, root, events),
-            info: None,
-            session: false,
-            thinking: false,
-            gone: None,
-            orders: Vec::new(),
-            options: Vec::new(),
-            legacy_mode: None,
-            settings: Vec::new(),
-            guessed: None,
-            held: None,
-        }
-    }
-
-    /// Which agent this is, by the registry's id.
-    #[must_use]
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-
-    /// What the agent calls itself, once it has said.
-    #[must_use]
-    pub fn info(&self) -> Option<&str> {
-        self.info.as_deref()
-    }
-
-    /// Whether there is a session, and so whether a prompt goes anywhere.
-    #[must_use]
-    pub const fn is_started(&self) -> bool {
-        self.session
-    }
-
-    /// Whether a turn is in flight.
-    #[must_use]
-    pub const fn is_thinking(&self) -> bool {
-        self.thinking
-    }
-
-    /// Whether the conversation has ended.
-    #[must_use]
-    pub const fn has_exited(&self) -> bool {
-        self.gone.is_some()
-    }
-
+impl Session {
     /// The way of working, if the agent offers one.
     ///
     /// Which is a setting like the rest of them -- the protocol's own
     /// `category: "mode"` says which -- and is only named apart because one
     /// key steps it and it is drawn first.
-    #[must_use]
-    pub fn mode(&self) -> Option<&Setting> {
+    fn mode(&self) -> Option<&Setting> {
         self.settings
             .iter()
             .find(|setting| setting.category == Category::Mode)
     }
 
-    /// The commands it says it takes.
-    #[must_use]
-    pub fn orders(&self) -> &[Order] {
-        &self.orders
-    }
-
-    /// The settings it lets the reader change.
-    #[must_use]
-    pub fn settings(&self) -> &[Setting] {
-        &self.settings
-    }
-
     /// One of them, by the agent's id for it.
-    #[must_use]
-    pub fn setting(&self, id: &str) -> Option<&Setting> {
+    fn setting(&self, id: &str) -> Option<&Setting> {
         self.settings.iter().find(|setting| setting.id == id)
-    }
-
-    /// Puts one of them on one of its values.
-    ///
-    /// Two doors, and this is the only thing that knows there are two: a
-    /// setting the agent offered as a config option goes back as one, and
-    /// the mode an agent offers the old way goes back as a mode. When the
-    /// old methods leave the protocol, the second branch leaves with them.
-    ///
-    /// What is shown does not change for a config option: the agent answers
-    /// with the whole set of them again, because one setting's value can
-    /// change what another offers, so a chosen value appears when the agent
-    /// has taken it. `session/set_mode` answers with nothing, so there the
-    /// value is put on now and taken back if the agent refuses.
-    pub fn set(&mut self, setting: &str, chosen: Chosen) {
-        let ask = match (
-            self.setting(setting).is_some_and(|known| known.legacy),
-            &chosen,
-        ) {
-            (true, Chosen::Value(mode)) => {
-                self.guess(setting, mode);
-                Ask::Mode(mode.clone())
-            }
-            _ => Ask::Set {
-                setting: setting.to_string(),
-                chosen,
-            },
-        };
-        let _ = self.asks.unbounded_send(ask);
     }
 
     /// Shows a mode as on before the agent has said so.
@@ -259,22 +173,182 @@ impl Talk {
         settings.extend(self.options.iter().cloned());
         self.settings = settings;
     }
+}
+
+impl std::fmt::Debug for Talk {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Talk")
+            .field("id", &self.id)
+            .field("sessions", &self.sessions.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Talk {
+    /// Starts an agent and returns the handle to it.
+    #[must_use]
+    pub fn start(
+        id: &str,
+        command: &Path,
+        arguments: &[String],
+        root: &Path,
+        events: std::sync::mpsc::Sender<crate::event::Event>,
+    ) -> Self {
+        Self {
+            id: id.to_string(),
+            asks: link::start(command, arguments, root, events),
+            info: None,
+            gone: None,
+            sessions: std::collections::HashMap::new(),
+            held: None,
+        }
+    }
+
+    /// Which agent this is, by the registry's id.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// What the agent calls itself, once it has said.
+    #[must_use]
+    pub fn info(&self) -> Option<&str> {
+        self.info.as_deref()
+    }
+
+    /// Whether this conversation exists, and so whether a prompt in it goes
+    /// anywhere.
+    #[must_use]
+    pub fn is_started(&self, session: Option<&SessionId>) -> bool {
+        session.is_some_and(|session| self.sessions.contains_key(session))
+    }
+
+    /// Whether a turn is in flight in this one.
+    #[must_use]
+    pub fn is_thinking(&self, session: Option<&SessionId>) -> bool {
+        self.session(session).is_some_and(|open| open.thinking)
+    }
+
+    /// One conversation, by the name the agent gave it.
+    #[must_use]
+    fn session(&self, session: Option<&SessionId>) -> Option<&Session> {
+        self.sessions.get(session?)
+    }
+
+    /// The same, to change.
+    fn session_mut(&mut self, session: Option<&SessionId>) -> Option<&mut Session> {
+        self.sessions.get_mut(session?)
+    }
+
+    /// Asks for another conversation on this same process.
+    ///
+    /// One agent holds a project's worth of context, and a second process
+    /// to talk about a second note would pay for all of it twice.
+    pub fn open(&mut self) {
+        let _ = self.asks.unbounded_send(Ask::Open);
+    }
+
+    /// Whether the conversation has ended.
+    #[must_use]
+    pub const fn has_exited(&self) -> bool {
+        self.gone.is_some()
+    }
+
+    /// The way of working, if the agent offers one.
+    ///
+    /// Which is a setting like the rest of them -- the protocol's own
+    /// `category: "mode"` says which -- and is only named apart because one
+    /// key steps it and it is drawn first.
+    #[must_use]
+    pub fn mode(&self, session: Option<&SessionId>) -> Option<&Setting> {
+        self.session(session)?.mode()
+    }
+
+    /// What the agent calls this conversation, once it has said.
+    #[must_use]
+    pub fn title(&self, session: Option<&SessionId>) -> Option<&str> {
+        self.session(session)?.title.as_deref()
+    }
+
+    /// The commands it says it takes.
+    #[must_use]
+    pub fn orders(&self, session: Option<&SessionId>) -> &[Order] {
+        self.session(session).map_or(&[], |open| &open.orders)
+    }
+
+    /// The settings it lets the reader change.
+    #[must_use]
+    pub fn settings(&self, session: Option<&SessionId>) -> &[Setting] {
+        self.session(session).map_or(&[], |open| &open.settings)
+    }
+
+    /// One of them, by the agent's id for it.
+    #[must_use]
+    pub fn setting(&self, session: Option<&SessionId>, id: &str) -> Option<&Setting> {
+        self.session(session)?.setting(id)
+    }
+
+    /// Puts one of them on one of its values.
+    ///
+    /// Two doors, and this is the only thing that knows there are two: a
+    /// setting the agent offered as a config option goes back as one, and
+    /// the mode an agent offers the old way goes back as a mode. When the
+    /// old methods leave the protocol, the second branch leaves with them.
+    ///
+    /// What is shown does not change for a config option: the agent answers
+    /// with the whole set of them again, because one setting's value can
+    /// change what another offers, so a chosen value appears when the agent
+    /// has taken it. `session/set_mode` answers with nothing, so there the
+    /// value is put on now and taken back if the agent refuses.
+    pub fn set(&mut self, session: Option<&SessionId>, setting: &str, chosen: Chosen) {
+        let Some(id) = session.cloned() else {
+            return;
+        };
+        let legacy = self
+            .setting(session, setting)
+            .is_some_and(|known| known.legacy);
+        let ask = match (legacy, &chosen) {
+            (true, Chosen::Value(mode)) => {
+                let mode = mode.clone();
+                if let Some(open) = self.session_mut(session) {
+                    open.guess(setting, &mode);
+                }
+                Ask::Mode { session: id, mode }
+            }
+            _ => Ask::Set {
+                session: id,
+                setting: setting.to_string(),
+                chosen,
+            },
+        };
+        let _ = self.asks.unbounded_send(ask);
+    }
 
     /// Sends a prompt, or holds it until there is a session to send it in.
     ///
     /// Says whether it went: a prompt that is being held is a prompt the
     /// view shows as sent, because the reader has finished with it either
     /// way.
-    pub fn say(&mut self, words: &str) -> bool {
-        if !self.session {
+    pub fn say(&mut self, session: Option<&SessionId>, words: &str) -> bool {
+        let Some(id) = session
+            .filter(|id| self.sessions.contains_key(*id))
+            .cloned()
+        else {
             self.held = Some(words.to_string());
             return false;
-        }
-        self.thinking = self
+        };
+        let sent = self
             .asks
-            .unbounded_send(Ask::Say(words.to_string()))
+            .unbounded_send(Ask::Say {
+                session: id,
+                words: words.to_string(),
+            })
             .is_ok();
-        self.thinking
+        if let Some(open) = self.session_mut(session) {
+            open.thinking = sent;
+        }
+        sent
     }
 
     /// Asks the agent to stop what it is doing.
@@ -282,9 +356,12 @@ impl Talk {
     /// The turn is left in flight: it ends with the agent's own `cancelled`
     /// stop reason, which is the agent saying it has stopped rather than
     /// obelus assuming it.
-    pub fn interrupt(&mut self) {
-        if self.thinking {
-            let _ = self.asks.unbounded_send(Ask::Interrupt);
+    pub fn interrupt(&mut self, session: Option<&SessionId>) {
+        let Some(id) = session.cloned() else {
+            return;
+        };
+        if self.is_thinking(session) {
+            let _ = self.asks.unbounded_send(Ask::Interrupt { session: id });
         }
     }
 
@@ -295,8 +372,8 @@ impl Talk {
     /// key that steps through them means. It goes out through [`Talk::set`]
     /// like every other change, because it *is* one -- the mode is a
     /// setting, whichever way the agent offers it.
-    pub fn step_mode(&mut self) {
-        let Some(mode) = self.mode() else {
+    pub fn step_mode(&mut self, session: Option<&SessionId>) {
+        let Some(mode) = self.mode(session) else {
             return;
         };
         if mode.values.len() < 2 {
@@ -312,10 +389,10 @@ impl Talk {
             mode.values[(at + 1) % mode.values.len()].id.clone(),
         );
         let chosen = self
-            .setting(&id)
+            .setting(session, &id)
             .map(|setting| Chosen::of(setting, &next))
             .unwrap_or(Chosen::Value(next));
-        self.set(&id, chosen);
+        self.set(session, &id, chosen);
     }
 
     /// Stops talking, which ends the conversation and the process with it.
@@ -325,7 +402,7 @@ impl Talk {
     /// has gone -- exits. Which is how a language server is stopped too.
     pub fn shutdown(&mut self) {
         self.asks.close_channel();
-        self.session = false;
+        self.sessions.clear();
     }
 
     /// Whether the conversation is still going, for the frame that checks.
@@ -348,48 +425,89 @@ impl Talk {
                 self.info = named;
                 None
             }
-            Incoming::Started { mode } => {
-                self.session = true;
-                self.legacy_mode = mode;
-                self.merge();
+            Incoming::Started { session, mode } => {
+                // `or_default` rather than an insert, because this is not
+                // always the first word about a conversation: an agent is
+                // free to write its opening notification in the same breath
+                // as the answer that names the session, and the two reach
+                // the main loop in whichever order the connection settles
+                // them. Whatever named it, the agent says it exists.
+                let open = self.sessions.entry(session.clone()).or_default();
+                open.legacy_mode = mode;
+                open.merge();
+                // A prompt typed before there was anywhere to send it.
+                // It goes to whichever conversation opened first, which is
+                // the one the reader was looking at when they typed it --
+                // there was no other.
                 if let Some(held) = self.held.take() {
-                    self.say(&held);
+                    self.say(Some(&session), &held);
                 }
-                None
+                Some(Incoming::Started {
+                    session,
+                    mode: None,
+                })
             }
-            Incoming::Update(Update::Mode(id)) => {
+            Incoming::Update {
+                session,
+                update: Update::Mode(id),
+            } => {
+                let open = self.sessions.entry(session).or_default();
                 // The agent has spoken, so there is no guess left to take
                 // back -- whether it moved because the reader asked or on
                 // its own.
-                self.guessed = None;
-                if let Some(mode) = self.legacy_mode.as_mut() {
+                open.guessed = None;
+                if let Some(mode) = open.legacy_mode.as_mut() {
                     mode.current = id;
                 }
-                self.merge();
+                open.merge();
                 None
             }
-            Incoming::Update(Update::Orders(orders)) => {
-                self.orders = orders;
+            Incoming::Update {
+                session,
+                update: Update::Titled(title),
+            } => {
+                self.sessions.entry(session).or_default().title = Some(title);
                 None
             }
-            Incoming::Update(Update::Settings(options)) => {
-                self.options = options;
-                self.merge();
+            Incoming::Update {
+                session,
+                update: Update::Orders(orders),
+            } => {
+                self.sessions.entry(session).or_default().orders = orders;
                 None
             }
-            Incoming::Ended(reason) => {
-                self.thinking = false;
-                Some(Incoming::Ended(reason))
+            Incoming::Update {
+                session,
+                update: Update::Settings(options),
+            } => {
+                let open = self.sessions.entry(session).or_default();
+                open.options = options;
+                open.merge();
+                None
+            }
+            Incoming::Ended { session, why } => {
+                self.sessions.entry(session.clone()).or_default().thinking = false;
+                Some(Incoming::Ended { session, why })
             }
             Incoming::Failed(what, why) => {
-                self.thinking = false;
-                // A mode obelus showed as on that the agent would not take.
-                self.unguess();
+                // Which conversation it was is not on the message, so every
+                // one of them stops thinking. A turn that is still running
+                // says so again on its next update; a turn that is not
+                // would otherwise spin for ever.
+                for open in self.sessions.values_mut() {
+                    open.thinking = false;
+                    // A mode obelus showed as on that the agent would not
+                    // take.
+                    open.unguess();
+                }
                 Some(Incoming::Failed(what, why))
             }
             Incoming::Gone(why) => {
-                self.thinking = false;
-                self.session = false;
+                // The process is what died, so every conversation on it is
+                // over. Clearing each one's `thinking` is the half that
+                // matters: a conversation left thinking spins a marker for
+                // an agent that is not there.
+                self.sessions.clear();
                 self.gone = Some(why.clone());
                 Some(Incoming::Gone(why))
             }
