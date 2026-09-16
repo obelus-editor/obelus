@@ -11,7 +11,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::*;
-use crate::conversation::Asking;
+use crate::conversation::{Asking, Topic};
 use crate::{
     acp,
     component::{
@@ -61,6 +61,46 @@ impl App {
         self.go_to_document(DocumentId::new(at));
         if self.talker.is_none() {
             self.start_agent();
+        }
+    }
+
+    /// Goes to the conversation about one note, opening one if there is
+    /// none.
+    ///
+    /// By the note's name rather than its place in the list, which is what
+    /// the name is for: the list is read from the file every time it opens,
+    /// and a note added above would otherwise hand the reader somebody
+    /// else's conversation.
+    pub(super) fn talk_about(&mut self, note: &crate::todo::NoteId) {
+        self.make_room(Room::Region);
+        let wanted = Topic::Note(note.clone());
+        let at = self.documents.iter().position(|document| {
+            document
+                .as_ref()
+                .and_then(Document::chat)
+                .is_some_and(|talk| talk.topic == wanted)
+        });
+        let at = at.unwrap_or_else(|| {
+            let talk = crate::conversation::Conversation {
+                topic: wanted,
+                ..crate::conversation::Conversation::default()
+            };
+            self.documents.push(Some(talk.into()));
+            self.documents.len() - 1
+        });
+        self.go_to_document(DocumentId::new(at));
+        if self.talker.is_none() {
+            self.start_agent();
+        } else if self
+            .conversation()
+            .is_some_and(|talk| talk.session.is_none())
+            && let Some(talker) = self.talker.as_mut()
+        {
+            // The process is up and this conversation has no session of its
+            // own yet: one agent, several conversations, because an agent
+            // holds a project's worth of context and a second process would
+            // pay for all of it twice.
+            talker.open();
         }
     }
 

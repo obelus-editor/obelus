@@ -165,6 +165,10 @@ pub enum Marking {
     Aside,
     /// Work that obelus has not written.
     Unwritten,
+    /// Something is happening in it that nobody is watching.
+    Working,
+    /// And something in it is waiting on the reader.
+    Waiting,
 }
 
 /// One row.

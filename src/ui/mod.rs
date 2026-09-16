@@ -320,6 +320,28 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     }
 }
 
+/// The frames a mark that says something is happening turns through.
+///
+/// Braille, which needs no particular font: a terminal that cannot draw
+/// these cannot draw the rest of obelus either, and this is the one thing
+/// on screen that has to be legible without one. Ten frames at the ticker's
+/// twelve a second is a turn a second and a bit.
+const SPINNING: [char; 10] = [
+    '\u{280b}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283c}', '\u{2834}', '\u{2826}', '\u{2827}',
+    '\u{2807}', '\u{280f}',
+];
+
+/// Which frame of it the screen is on.
+///
+/// Here rather than in the conversation, because a conversation is no
+/// longer the only place something turns: a list of open documents says
+/// which of them an agent is working in, and a mark that only turned while
+/// you were looking at that conversation would be a mark that never turned.
+#[must_use]
+pub fn spinning(phase: u32) -> char {
+    SPINNING[phase as usize % SPINNING.len()]
+}
+
 /// Where a compact list goes, given what it is over.
 ///
 /// The editor region, less what a conversation's box has taken from the
@@ -337,7 +359,7 @@ fn room_for_a_list(app: &App, editor: Rect) -> Rect {
 /// the room it is given, which is the argument.
 fn list_over(cells: &mut CellBuffer, app: &App, list: &Picker, room: Rect) {
     let region = picker::region(list, room);
-    picker::PickerView::new(list, app.theme()).render(region, cells);
+    picker::PickerView::new(list, app.theme(), app.phase()).render(region, cells);
 
     // A compact list sits on top of what is behind it, so it needs an edge:
     // the same rule the preview gets, for the same reason, which is that two

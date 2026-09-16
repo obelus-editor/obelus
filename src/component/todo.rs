@@ -68,6 +68,8 @@ pub enum TodoOutcome {
     Changed,
     /// Go to this place.
     Go(PathBuf, LineNumber),
+    /// Talk to an agent about this note.
+    Talk(crate::todo::NoteId),
     /// The reader gave up.
     Cancelled,
     /// Put this on the clipboard.
@@ -613,6 +615,18 @@ impl TodoView {
                 None => TodoOutcome::Consumed,
             },
             // The whole note, because backspace on its own is a character.
+            // Talk about this one. `alt+a` because the agent's other keys
+            // are on `a`, and because it reads as a thing done *to* the row
+            // the caret is in -- which is what every other `alt` key on this
+            // page is.
+            KeyCode::Char('a') if alt => match self.selected_note() {
+                Some(note) => {
+                    let id = note.id.clone();
+                    self.keep();
+                    TodoOutcome::Talk(id)
+                }
+                None => TodoOutcome::Consumed,
+            },
             KeyCode::Backspace | KeyCode::Delete if alt => match self.take_note_away() {
                 true => TodoOutcome::Changed,
                 false => TodoOutcome::Consumed,

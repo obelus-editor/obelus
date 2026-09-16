@@ -8,6 +8,119 @@ use super::*;
 use crate::buffer::Disk;
 
 impl App {
+    /// One row for an open file.
+    fn file_row(
+        index: usize,
+        buffer: &Buffer,
+        statuses: &std::collections::HashMap<PathBuf, git::FileStatus>,
+        root: &Path,
+    ) -> PickerItem {
+        PickerItem {
+            prose: false,
+            // A mark for a document with changes that are not on disk.
+            // `marker` rather than `status`, which is git's and colours
+            // the whole row: "git says this file changed" and "obelus
+            // has not written this" are two different things, and
+            // telling them apart is what this is for.
+            //
+            // The glyph the status row uses for the same fact, so that
+            // the file on screen and its row in the list are visibly
+            // saying one thing rather than two.
+            marker: buffer.is_dirty().then(|| {
+                let glyph = match icons::enabled() {
+                    true => icons::ui::UNSAVED.to_string(),
+                    false => "\u{2022}".to_string(),
+                };
+                (Marking::Unwritten, glyph)
+            }),
+            icon: Some(icons::for_path(buffer.path())),
+            label: relative(buffer.path(), root),
+            detail: None,
+            // Which commit, for a buffer read from one. Two buffers can
+            // wear a path -- the file, and the file as some commit had
+            // it -- and without this they are two rows a reader has no
+            // way to tell apart, of documents that differ in what they
+            // say, in whether they follow the disk, and in what the
+            // margin beside them means. The short id and no more: the
+            // status row marks the same fact in the same words, so a
+            // reader who has seen one has read the other.
+            trailing: buffer.content().short(),
+            changed: None,
+            value: PickerValue::Buffer(DocumentId::new(index)),
+            enabled: true,
+            colours: None,
+            status: statuses.get(buffer.path()).copied(),
+            depth: 0,
+            kind: None,
+            tab: None,
+        }
+    }
+
+    /// One row for an open conversation.
+    ///
+    /// The agent's own name for it where it has given one, and the note's
+    /// first line until then: a note says what the reader set out to do and
+    /// the session's title says what the conversation became, and for a
+    /// list of what they are *in* the second is the more useful of the two.
+    ///
+    /// Which costs something and it is worth saying where: `detail` is not
+    /// matched by the query and says so on purpose, so a conversation can no
+    /// longer be found by typing words from its note. The notes list
+    /// searches note titles, and a note reaches its conversation in one key.
+    fn conversation_row(
+        &self,
+        index: usize,
+        talk: &crate::conversation::Conversation,
+        talker: Option<&crate::acp::Talk>,
+        notes: &crate::todo::Todo,
+    ) -> PickerItem {
+        let about = match &talk.topic {
+            crate::conversation::Topic::Note(id) => notes
+                .notes
+                .iter()
+                .find(|note| note.id == *id)
+                .map(|note| note.title().to_string()),
+            crate::conversation::Topic::Loose => None,
+        };
+        let titled = talker.and_then(|talker| talker.title(talk.session.as_ref()));
+        PickerItem {
+            prose: true,
+            // What is happening in it that the reader is not watching. The
+            // reason a list of conversations animates at all: a mark that
+            // only turns while you are looking at the conversation it is
+            // about is a mark that never turns.
+            marker: match (
+                talk.card.is_some(),
+                talker.is_some_and(|talker| talker.is_thinking(talk.session.as_ref())),
+            ) {
+                (true, _) => Some((Marking::Waiting, icons::ui::READER.to_string())),
+                (_, true) => Some((Marking::Working, String::new())),
+                _ => None,
+            },
+            icon: icons::enabled().then_some(icons::ui::AGENT),
+            label: titled
+                .map(str::to_string)
+                .or_else(|| about.clone())
+                .unwrap_or_else(|| "a conversation".to_string()),
+            // The note it is about, under the name the agent gave it. Two
+            // facts that are both worth having: what the reader meant to do,
+            // and what came of it.
+            detail: titled.and(about),
+            // Whose conversation it is. The same slot a commit's short id
+            // uses, for the same reason: two rows that differ in who is
+            // answering are two rows a reader cannot otherwise tell apart.
+            trailing: talker.map(|talker| talker.id().to_string()),
+            changed: None,
+            value: PickerValue::Buffer(DocumentId::new(index)),
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            kind: None,
+            tab: None,
+        }
+    }
+
     /// Offers every file under the working directory.
     pub fn open_file_picker(&mut self) {
         self.open_files(Listing::All);
@@ -252,48 +365,17 @@ impl App {
             .iter()
             .enumerate()
             // Closed slots are holes, not rows.
-            .filter_map(|(index, document)| Some((index, document.as_ref()?.file()?)));
+            .filter_map(|(index, document)| Some((index, document.as_ref()?)));
 
         let statuses = &self.statuses;
+        let talker = self.talker.as_ref();
+        let notes = crate::todo::Todo::read(&self.working_directory);
         let items = open
-            .map(|(index, buffer)| PickerItem {
-                prose: false,
-                // A mark for a document with changes that are not on disk.
-                // `marker` rather than `status`, which is git's and colours
-                // the whole row: "git says this file changed" and "obelus
-                // has not written this" are two different things, and
-                // telling them apart is what this is for.
-                //
-                // The glyph the status row uses for the same fact, so that
-                // the file on screen and its row in the list are visibly
-                // saying one thing rather than two.
-                marker: buffer.is_dirty().then(|| {
-                    let glyph = match icons::enabled() {
-                        true => icons::ui::UNSAVED.to_string(),
-                        false => "\u{2022}".to_string(),
-                    };
-                    (Marking::Unwritten, glyph)
-                }),
-                icon: Some(icons::for_path(buffer.path())),
-                label: relative(buffer.path(), &self.working_directory),
-                detail: None,
-                // Which commit, for a buffer read from one. Two buffers can
-                // wear a path -- the file, and the file as some commit had
-                // it -- and without this they are two rows a reader has no
-                // way to tell apart, of documents that differ in what they
-                // say, in whether they follow the disk, and in what the
-                // margin beside them means. The short id and no more: the
-                // status row marks the same fact in the same words, so a
-                // reader who has seen one has read the other.
-                trailing: buffer.content().short(),
-                changed: None,
-                value: PickerValue::Buffer(DocumentId::new(index)),
-                enabled: true,
-                colours: None,
-                status: statuses.get(buffer.path()).copied(),
-                depth: 0,
-                kind: None,
-                tab: None,
+            .map(|(index, document)| match document {
+                Document::Chat(talk) => self.conversation_row(index, talk, talker, &notes),
+                Document::File(buffer) => {
+                    Self::file_row(index, buffer, statuses, &self.working_directory)
+                }
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::FullArea);

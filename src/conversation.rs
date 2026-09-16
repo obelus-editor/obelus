@@ -18,7 +18,23 @@
 use crate::{
     acp,
     component::{card::Card, chat::Chat, picker::Picker},
+    todo::NoteId,
 };
+
+/// What a conversation is about.
+///
+/// A note, mostly: a note is something the reader wrote down to come back
+/// to, and a conversation is something they come back to, so the two are
+/// the same shape and pairing them costs nothing. The other kind is the one
+/// started with the key, about nothing in particular.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Topic {
+    /// Nothing in particular: opened with the key rather than from a note.
+    #[default]
+    Loose,
+    /// One of the tree's notes, by the name that outlives its position.
+    Note(NoteId),
+}
 
 /// A conversation with an agent, whether or not it is on screen.
 ///
@@ -27,6 +43,8 @@ use crate::{
 /// conversation nobody could leave for a minute.
 #[derive(Debug, Default)]
 pub struct Conversation {
+    /// What it is about.
+    pub topic: Topic,
     /// Which conversation on the agent this is, once it has opened one.
     ///
     /// `None` until then, which is a real state and not a gap: opening the

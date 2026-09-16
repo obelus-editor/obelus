@@ -872,3 +872,45 @@ fn a_note_being_written_survives_someone_else_saving() {
     );
     assert!(after.contains("theirs"), "their note was lost:\n{after}");
 }
+
+/// Talking about a note opens a conversation of that note's own.
+///
+/// Keyed by the note's name rather than its place: the list is read from
+/// the file every time it opens, so a note added above would otherwise hand
+/// the reader somebody else's conversation.
+#[test]
+fn each_note_gets_a_conversation_of_its_own() {
+    let scratch = tree(
+        "own",
+        "[[todo]]\nsaid = \"the first\"\n\n[[todo]]\nsaid = \"the second\"\n",
+    );
+    let mut app = open(&scratch, 76, 24);
+
+    support::press_alt(&mut app, 'a');
+    let first = app.current_document_for_test().expect("a document");
+    assert!(app.chat().is_some(), "no conversation about the first note");
+
+    // Back to the list, which lands on the note this one came out of -- and
+    // then on to the other note.
+    support::press_alt(&mut app, 't');
+    assert!(app.notes().is_some(), "alt+t did not bring the notes back");
+    support::press(&mut app, KeyCode::Down);
+    support::press_alt(&mut app, 'a');
+    let second = app.current_document_for_test().expect("a document");
+
+    assert_ne!(
+        first, second,
+        "both notes were given one conversation between them"
+    );
+
+    // And asking for the first one again comes back to the first, rather
+    // than starting a third.
+    support::press_alt(&mut app, 't');
+    support::press(&mut app, KeyCode::Up);
+    support::press_alt(&mut app, 'a');
+    assert_eq!(
+        app.current_document_for_test(),
+        Some(first),
+        "asking about a note twice made two conversations"
+    );
+}

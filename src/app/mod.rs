@@ -778,6 +778,13 @@ impl App {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Which document is being read, for a test that wants to know whether
+    /// a key took the reader somewhere new.
+    #[must_use]
+    pub const fn current_document_for_test(&self) -> Option<DocumentId> {
+        self.current
+    }
+
     /// How many buffers are open, for a test that wants to know whether a
     /// key that had nowhere to go left one behind anyway.
     #[must_use]
@@ -929,16 +936,34 @@ impl App {
 
     /// Whether anything on screen is moving.
     ///
-    /// One question, because one screen animates at a time: the welcome
-    /// screen's sheen while there is nothing open, and an agent at work
-    /// while the conversation is showing. Asked every frame from what is
-    /// true, rather than switched on and off from the half-dozen places
-    /// that change either, which is how a ticker outlives its reason.
+    /// Three reasons, each said out loud. It was one question with a
+    /// `match` on whether the conversation was showing, and that stopped
+    /// being true the moment a list of open documents could say an agent is
+    /// working in one the reader is not looking at -- a mark that only
+    /// turns while you are watching it is a mark that never turns.
+    ///
+    /// Asked every frame from what is true, rather than switched on and off
+    /// from the half-dozen places that change any of it, which is how a
+    /// ticker outlives its reason.
     fn wants_animating(&self, working: bool) -> bool {
         // Nothing open at all: the welcome screen's sheen.
         self.current.is_none()
-            // Or an agent at work in the conversation being read.
+            // An agent at work in the conversation being read.
             || working
+            // Or in one that is not, while the list that says so is open.
+            || (self.selected_buffer().is_some() && self.anything_working())
+    }
+
+    /// Whether an agent is at work in any conversation at all.
+    fn anything_working(&self) -> bool {
+        let Some(talker) = self.talker.as_ref() else {
+            return false;
+        };
+        self.documents
+            .iter()
+            .flatten()
+            .filter_map(Document::chat)
+            .any(|talk| talker.is_thinking(talk.session.as_ref()))
     }
 
     /// Whether the last frame asked to be woken again.
@@ -1008,6 +1033,9 @@ impl App {
         }
         if self.is_showing_dialog() {
             return Context::Dialog;
+        }
+        if self.conversation().is_some() {
+            return Context::Chat;
         }
         Context::Normal
     }

@@ -184,6 +184,13 @@ pub fn preview_region(picker: Option<&Picker>, editor: Rect) -> Option<Rect> {
 pub struct PickerView<'a> {
     picker: &'a Picker,
     theme: &'a Theme,
+    /// How far the ticker has got, for a row whose mark turns.
+    ///
+    /// The drawing reads nothing else that changes with time, and it is
+    /// here for one thing: a conversation an agent is working in says so
+    /// from this list, because that is where a reader who is not looking at
+    /// it would see it.
+    phase: u32,
 }
 
 impl<'a> PickerView<'a> {
@@ -196,8 +203,12 @@ impl<'a> PickerView<'a> {
     /// the same thing to a reader: rows, one of them chosen, what matched
     /// marked.
     #[must_use]
-    pub const fn new(picker: &'a Picker, theme: &'a Theme) -> Self {
-        Self { picker, theme }
+    pub const fn new(picker: &'a Picker, theme: &'a Theme, phase: u32) -> Self {
+        Self {
+            picker,
+            theme,
+            phase,
+        }
     }
 }
 
@@ -481,6 +492,18 @@ impl PickerView<'_> {
             let colour = match marking {
                 Marking::Unwritten => self.theme.status_stale,
                 Marking::Aside => self.theme.gutter,
+                // An agent at work in a conversation nobody is looking at,
+                // and one waiting on an answer: the second is the reader's
+                // to do something about, so it is the one that stands out.
+                Marking::Working => self.theme.gutter,
+                Marking::Waiting => self.theme.status_stale,
+            };
+            // A mark with nothing in it is one that turns: the frame comes
+            // from the ticker rather than from the row, because what it is
+            // saying is that time is passing somewhere else.
+            let marker = match marker.is_empty() {
+                true => crate::ui::spinning(self.phase).to_string(),
+                false => marker.clone(),
             };
             // With a blank column after it, the way the icon has one: two
             // glyphs touching read as one glyph nobody has seen before.

@@ -38,6 +38,12 @@ impl App {
     /// place in the list would still be lost for nothing. `add_todo` checks,
     /// which is why.
     pub fn open_todo(&mut self) {
+        // What the reader is in, before it is covered: a conversation about
+        // a note is how the list knows where to stand.
+        let about = match self.conversation().map(|talk| talk.topic.clone()) {
+            Some(crate::conversation::Topic::Note(note)) => Some(note),
+            Some(crate::conversation::Topic::Loose) | None => None,
+        };
         self.make_room(Room::Region);
         let todo = Todo::read(&self.working_directory);
         // Names given to notes that had none go back to the file now, not
@@ -61,6 +67,15 @@ impl App {
             && let Err(error) = watcher.watch(&crate::todo::path(&self.working_directory))
         {
             tracing::debug!(%error, "not watching what the tree means to come back to");
+        }
+        // Opened from a conversation: standing on the note it came out of,
+        // which is the return leg of that key. A note that has since been
+        // taken away simply is not found, and the list opens at the top --
+        // which is where a list with nothing to return to puts a reader.
+        if let Some(note) = about
+            && let Some(notes) = self.notes.as_mut()
+        {
+            notes.focus(&note);
         }
     }
 
@@ -218,6 +233,14 @@ impl App {
             // Leaving keeps what was being written, which is why both of
             // these save: there is no moment where the reader said "done
             // with this note", so every way out of the view is one.
+            // Talk about one. The notes are written down first, because
+            // leaving them *is* finishing them and this leaves them.
+            TodoOutcome::Talk(note) => {
+                let todo = notes.todo().clone();
+                self.save_notes(&todo);
+                self.talk_about(&note);
+                true
+            }
             TodoOutcome::Cancelled => {
                 self.leave(Layer::Notes);
                 true

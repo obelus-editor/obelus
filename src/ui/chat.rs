@@ -227,23 +227,6 @@ const SEPARATOR: &str = " \u{b7} ";
 /// How many cells that takes.
 const SEPARATOR_WIDTH: usize = 3;
 
-/// The frames the row that says something is happening turns through.
-///
-/// Braille, which needs no particular font: a terminal that cannot draw
-/// these cannot draw the rest of obelus either, and this is the one thing
-/// on screen that has to be legible without one. Ten frames at the
-/// ticker's twelve a second is a turn a second and a bit.
-const SPINNING: [char; 10] = [
-    '\u{280b}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283c}', '\u{2834}', '\u{2826}', '\u{2827}',
-    '\u{2807}', '\u{280f}',
-];
-
-/// Which frame of it the screen is on.
-fn spinning(phase: u32) -> char {
-    let at = phase as usize % SPINNING.len();
-    SPINNING[at]
-}
-
 /// The bar a line of a change carries, which is the one an opened hunk
 /// carries in a file.
 const BAR: char = '\u{2590}';
@@ -486,7 +469,7 @@ impl ChatView<'_> {
                 // cog says a tool was used, and only movement says it is
                 // still going.
                 if row.speaker == Speaker::Doing {
-                    put(cells, at, y, spinning(self.phase), style);
+                    put(cells, at, y, crate::ui::spinning(self.phase), style);
                 } else if icons::enabled() {
                     put(cells, at, y, glyph, style);
                 } else {

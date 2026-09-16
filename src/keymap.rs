@@ -237,6 +237,13 @@ pub enum Context {
     /// The list of open files: the one dialog with a command of its own,
     /// which is the command that closes a file.
     Buffers,
+    /// Reading a conversation with an agent, with nothing over it.
+    ///
+    /// A document, so obelus's own keys reach it -- but not quite the same
+    /// document as a file: a key that reads as "the note about what I am
+    /// looking at" means "write one about this line" in a file and "show me
+    /// the one this came from" here, and those are two commands on one key.
+    Chat,
     /// Any other dialog.
     ///
     /// Almost nothing is bound here, and that is the point: a global key
@@ -251,11 +258,11 @@ pub enum Context {
 impl Context {
     /// Whether what is bound everywhere is bound here.
     ///
-    /// Only where a file is what is showing. A global key that reached a
-    /// dialog would be a global key opening a second one over it.
+    /// Only where a document is what is showing. A global key that reached
+    /// a dialog would be a global key opening a second one over it.
     #[must_use]
     pub const fn has_global_keys(self) -> bool {
-        matches!(self, Self::Normal)
+        matches!(self, Self::Normal | Self::Chat)
     }
 }
 
@@ -399,6 +406,20 @@ impl Keymap {
                 Binding {
                     command: Command::TodoAdd,
                     context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('t'), KeyModifiers::ALT),
+                },
+                // The same key in a conversation, meaning the same thing a
+                // level up: "the note about what I am looking at". In a
+                // file that is one to write; here it is the one this came
+                // out of, and the list opens standing on it.
+                //
+                // Which is also the only way back, and was worth a key on
+                // its own account: `TodoOpen` has been in the palette and
+                // on nothing since it was written, so the round trip had an
+                // outward leg and no return.
+                Binding {
+                    command: Command::TodoOpen,
+                    context: Context::Chat,
                     chord: KeyChord::new(KeyCode::Char('t'), KeyModifiers::ALT),
                 },
                 // Control, on the letter of the word. `ctrl+p` for the
@@ -688,6 +709,16 @@ impl Keymap {
         // so what every dialog answers it answers too.
         if context == Context::Buffers
             && let Some(command) = self.find(chord, Context::Dialog)
+        {
+            return Some(command);
+        }
+        // A conversation is a file's context with a handful of keys that
+        // mean something else in it. Falling back rather than repeating the
+        // whole table: a key added for a reader in a file should work in a
+        // conversation too, and a table that had to name both would be a
+        // table with two chances to forget.
+        if context == Context::Chat
+            && let Some(command) = self.find(chord, Context::Normal)
         {
             return Some(command);
         }
