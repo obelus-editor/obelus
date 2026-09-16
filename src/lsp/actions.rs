@@ -23,6 +23,15 @@ pub struct Action {
     pub kind: Option<String>,
     /// Whether the server marked it as the obvious one.
     pub preferred: bool,
+    /// Why it cannot be done here, where the server said it cannot.
+    ///
+    /// An offer the server means the reader to *see* and not to take: the
+    /// action applies to this place, and something about the place stops
+    /// it -- a selection that crosses a `?`, a name that is already
+    /// taken. Without it a server has two bad choices, leave the offer
+    /// out and let nobody learn it exists, or send one that does nothing
+    /// when it is chosen.
+    pub disabled: Option<String>,
     /// The action as it arrived, to send back to `codeAction/resolve` or
     /// to read an edit out of.
     pub item: Value,
@@ -48,6 +57,12 @@ impl Action {
             CodeActionOrCommand::Command(command) => Some(command),
             CodeActionOrCommand::CodeAction(action) => action.command,
         }
+    }
+
+    /// Whether it is an offer to look at rather than to take.
+    #[must_use]
+    pub fn refused(&self) -> bool {
+        self.disabled.is_some()
     }
 
     /// Whether the server has still to say what this does.
@@ -98,16 +113,22 @@ pub fn offered_in(result: &Result<Value, String>) -> Vec<Action> {
                 title: command.title,
                 kind: None,
                 preferred: false,
+                disabled: None,
                 item,
             },
             CodeActionOrCommand::CodeAction(action) => Action {
                 title: action.title,
                 kind: action.kind.map(|kind| kind.as_str().to_string()),
                 preferred: action.is_preferred.unwrap_or(false),
+                disabled: action.disabled.map(|disabled| disabled.reason),
                 item,
             },
         })
         .collect();
-    actions.sort_by_key(|action| !action.preferred);
+    // What can be done, then what cannot. The protocol says to show the
+    // second faded where it stands, which is right for a menu that pops
+    // up under the cursor; this is a list the reader steps through, and a
+    // row they step over belongs after the ones they do not.
+    actions.sort_by_key(|action| (action.disabled.is_some(), !action.preferred));
     actions
 }

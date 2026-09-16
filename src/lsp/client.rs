@@ -922,10 +922,14 @@ pub fn client_capabilities() -> ClientCapabilities {
                 resolve_support: Some(CodeActionCapabilityResolveSupport {
                     properties: vec!["edit".to_string(), "command".to_string()],
                 }),
-                // Not `disabled_support`. A server told that obelus reads
-                // it sends the offers it knows cannot be taken, each with
-                // a reason obelus has nowhere to put -- so they would sit
-                // in the list looking like the ones that work.
+                // The offers a server knows cannot be taken here, each
+                // with a reason. Worth asking for: without it a server
+                // leaves them out, and a reader never learns that
+                // "extract into a function" exists because the one time
+                // they would have wanted it their selection crossed a
+                // `?`. The reason is the row's own detail, and the list
+                // steps over the row.
+                disabled_support: Some(true),
                 ..Default::default()
             }),
             ..Default::default()

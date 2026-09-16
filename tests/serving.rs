@@ -100,11 +100,14 @@ fn what_obelus_says_it_can_do() {
             .is_some_and(|resolve| resolve.properties.iter().any(|name| name == "edit")),
         "obelus asks the server to fill an action in, and has not said so"
     );
-    // And not this one: a server told obelus reads it sends the offers it
-    // knows cannot be taken, and obelus has nowhere to put the reason.
+    // The offers a server knows cannot be taken. Asked for so the reader
+    // learns they exist: the reason is the row's detail, and the list
+    // steps over the row.
     assert_eq!(
-        actions.disabled_support, None,
-        "obelus would be sent offers it shows as though they could be chosen"
+        actions.disabled_support,
+        Some(true),
+        "a server would leave out the offers it will not carry out, and the \
+         reader would never learn they exist"
     );
 
     // `lsp::complete` and `lsp::snippet`. A server that has not been told

@@ -358,6 +358,69 @@ fn a_kind_the_server_has_nothing_for_does_not_end_the_save() {
     );
 }
 
+/// A save does not take an offer the server said it will not carry out.
+///
+/// Nobody is watching a save the way they watch a menu: the row that
+/// would have been dim is not on screen at all, so the only thing that
+/// stops obelus doing what the server said cannot be done is the save
+/// itself checking.
+#[test]
+fn a_save_passes_over_an_offer_the_server_will_not_carry_out() {
+    use obelus::syntax::LanguageId;
+
+    let (_scratch, mut app, open, _closed) = project("save-disabled");
+    let (sender, heard) = obelus::event::channel();
+    app.events_for_test(sender);
+    assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
+    app.declared_for_test(LanguageId::Rust, json!({ "codeActionProvider": true }));
+    app.configure(
+        obelus::config::Config {
+            code_actions_on_save: true,
+            ..obelus::config::Config::default()
+        },
+        Vec::new(),
+    );
+
+    support::type_text(&mut app, "\n");
+    support::press_control(&mut app, 's');
+
+    // An offer of the right kind, carrying an edit, that the server has
+    // marked as one it will not make. Taking it would be obelus doing
+    // what it was told could not be done.
+    let kinds = App::kinds_asked_on_save_for_test();
+    for (at, kind) in kinds.iter().enumerate() {
+        app.saving_for_test(
+            at,
+            json!([
+                { "title": "Something that cannot be done", "kind": kind,
+                  "disabled": { "reason": "the file is generated" },
+                  "edit": { "changes": { format!("file://{}", open.display()): [
+                      { "range": { "start": { "line": 0, "character": 0 },
+                                   "end": { "line": 0, "character": 0 } },
+                        "newText": "// SHOULD NOT BE HERE\n" }
+                  ] } } }
+            ]),
+        );
+    }
+
+    let written = text_of(&open);
+    assert!(
+        !written.contains("SHOULD NOT BE HERE"),
+        "the save made an edit the server said it would not: {written:?}"
+    );
+    // And it still asked about every kind and still wrote the file: a
+    // refusal is not the end of the save.
+    assert_eq!(
+        heard_requests(&heard, "textDocument/codeAction", kinds.len()).len(),
+        kinds.len(),
+        "a refused offer ended the save"
+    );
+    assert!(
+        written.starts_with('\n'),
+        "the file was never written: {written:?}"
+    );
+}
+
 /// And with the switch off it asks nobody anything.
 #[test]
 fn a_save_leaves_the_imports_alone_unless_asked() {
@@ -532,6 +595,78 @@ fn what_can_be_done_here_is_a_list_and_choosing_one_does_it() {
         open_text(&app),
         "\nfn main() {\n    thing();\n}\n",
         "the offer that was chosen was not carried out"
+    );
+}
+
+/// An offer the server will not carry out is shown, with its reason, and
+/// cannot be chosen.
+///
+/// The point of it is that the reader learns the thing exists: a server
+/// that left it out would leave them never finding out obelus can extract
+/// a function, because the one time they wanted it their selection was
+/// wrong. So the row is there, the reason is beside it, and stepping
+/// through the list goes past it.
+#[test]
+fn an_offer_the_server_will_not_carry_out_is_shown_and_not_offered() {
+    let (_scratch, mut app, open, _closed) = project("actions-disabled");
+    app.actions_for_test(json!([
+        { "title": "Extract into function", "kind": "refactor.extract",
+          "disabled": { "reason": "the selection crosses a `?`" } },
+        { "title": "Remove unused import", "kind": "quickfix",
+          "edit": { "changes": { format!("file://{}", open.display()): [
+              { "range": { "start": { "line": 0, "character": 0 },
+                           "end": { "line": 1, "character": 0 } }, "newText": "" }
+          ] } } }
+    ]));
+
+    let picker = app.picker().expect("the list");
+    let rows: Vec<(String, Option<String>, bool)> = picker
+        .matches()
+        .map(|item| (item.label.clone(), item.detail.clone(), item.enabled))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("Remove unused import".to_string(), None, true),
+            (
+                "Extract into function".to_string(),
+                Some("the selection crosses a `?`".to_string()),
+                false
+            ),
+        ],
+        "the one that cannot be done is not last, not dim, or not saying why"
+    );
+
+    // Enter reaches the one that can be done, because the list steps over
+    // the one that cannot.
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        open_text(&app),
+        "\nfn main() {\n    thing();\n}\n",
+        "the row the list can reach was not the one that was carried out"
+    );
+}
+
+/// And where every offer is one the server will not carry out, the
+/// reasons are the answer rather than a list nobody can use.
+#[test]
+fn offers_that_can_all_be_refused_are_said_rather_than_listed() {
+    let (_scratch, mut app, _open, _closed) = project("actions-all-disabled");
+    app.actions_for_test(json!([
+        { "title": "Extract into function", "kind": "refactor.extract",
+          "disabled": { "reason": "the selection crosses a `?`" } },
+        { "title": "Inline variable", "kind": "refactor.inline",
+          "disabled": { "reason": "it is used in a macro" } }
+    ]));
+
+    assert!(
+        app.picker().is_none(),
+        "a list opened in which every row is one the reader steps over"
+    );
+    let note = app.note().unwrap_or_default().to_string();
+    assert!(
+        note.contains("crosses a `?`") && note.contains("used in a macro"),
+        "the reader was not told why nothing can be done: {note:?}"
     );
 }
 

@@ -127,18 +127,34 @@ impl App {
             self.note = Some("nothing to do here".to_string());
             return;
         }
+        // Everything the server offered is an offer it will not carry
+        // out. A list of rows the reader can only step over is a list
+        // that answers nothing: the reasons are the answer, so they go
+        // where a sentence goes.
+        if offered.iter().all(actions::Action::refused) {
+            let reasons: Vec<&str> = offered
+                .iter()
+                .filter_map(|action| action.disabled.as_deref())
+                .collect();
+            self.note = Some(format!("nothing can be done here: {}", reasons.join("; ")));
+            return;
+        }
         let items = offered
             .iter()
             .enumerate()
             .map(|(at, action)| PickerItem {
                 icon: icons::enabled().then_some(icons::for_command(Command::SymbolActions)),
                 label: action.title.clone(),
-                // No detail. The only thing to put there is the kind,
-                // which is the protocol's own word for its own filing --
-                // `refactor.rewrite`, `quickfix` -- and it tells a reader
-                // choosing between two offers nothing the titles have not
-                // already said.
-                detail: None,
+                // The reason it cannot be done, where there is one, and
+                // nothing otherwise. The other thing that could go here
+                // is the kind -- `refactor.rewrite`, `quickfix` -- which
+                // is the protocol's own word for its own filing and tells
+                // a reader choosing between two offers nothing the titles
+                // have not already said. A reason is the opposite: it is
+                // the whole of what a row they cannot choose is for, and
+                // the list steps over such a row, so there is no moment
+                // later at which it could be said instead.
+                detail: action.disabled.clone(),
                 prose: true,
                 marker: None,
                 trailing: None,
@@ -146,7 +162,7 @@ impl App {
                 value: PickerValue::Action(at),
                 depth: 0,
                 status: None,
-                enabled: true,
+                enabled: !action.refused(),
                 colours: None,
                 kind: None,
                 tab: None,
@@ -368,10 +384,11 @@ impl App {
         let Some(action) = actions::offered_in(&reply.result)
             .into_iter()
             .find(|action| {
-                action
-                    .kind
-                    .as_deref()
-                    .is_some_and(|kind| kind.starts_with(want))
+                !action.refused()
+                    && action
+                        .kind
+                        .as_deref()
+                        .is_some_and(|kind| kind.starts_with(want))
             })
         else {
             // A server with nothing to say about the file as a whole,
