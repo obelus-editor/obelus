@@ -30,6 +30,7 @@
 //! what is on screen is what they did to it.
 
 pub mod link;
+pub mod sessions;
 
 use std::path::Path;
 
@@ -249,6 +250,29 @@ impl Talk {
         let _ = self.asks.unbounded_send(Ask::Open);
     }
 
+    /// Lets one go, because the note it was about has gone.
+    ///
+    /// Told to the agent rather than only forgotten here: an agent left
+    /// holding conversations nobody can reach is the same complaint that
+    /// got the language server killed on the way out.
+    pub fn let_go(&mut self, session: &SessionId) {
+        self.sessions.remove(session);
+        let _ = self.asks.unbounded_send(Ask::Drop {
+            session: session.clone(),
+        });
+    }
+
+    /// Asks for one it had before, by the name obelus wrote down.
+    ///
+    /// An agent that will not take it up -- it has forgotten, it never
+    /// could -- opens a new one instead and says so, because a reader who
+    /// pressed a key has to end up somewhere they can talk.
+    pub fn reopen(&mut self, session: &str) {
+        let _ = self.asks.unbounded_send(Ask::Reopen {
+            session: SessionId::new(session),
+        });
+    }
+
     /// Whether the conversation has ended.
     #[must_use]
     pub const fn has_exited(&self) -> bool {
@@ -466,8 +490,15 @@ impl Talk {
                 session,
                 update: Update::Titled(title),
             } => {
-                self.sessions.entry(session).or_default().title = Some(title);
-                None
+                self.sessions.entry(session.clone()).or_default().title = Some(title.clone());
+                // Kept *and* passed up, which none of the other folded
+                // updates are: it is the name a conversation goes by in the
+                // list of open documents, and a name has to survive obelus
+                // being shut. Whoever writes that down is above this.
+                Some(Incoming::Update {
+                    session,
+                    update: Update::Titled(title),
+                })
             }
             Incoming::Update {
                 session,

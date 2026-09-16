@@ -91,17 +91,88 @@ impl App {
         self.go_to_document(DocumentId::new(at));
         if self.talker.is_none() {
             self.start_agent();
-        } else if self
-            .conversation()
-            .is_some_and(|talk| talk.session.is_none())
-            && let Some(talker) = self.talker.as_mut()
-        {
-            // The process is up and this conversation has no session of its
-            // own yet: one agent, several conversations, because an agent
-            // holds a project's worth of context and a second process would
-            // pay for all of it twice.
-            talker.open();
+            return;
         }
+        if self
+            .conversation()
+            .is_some_and(|talk| talk.session.is_some())
+        {
+            return;
+        }
+        // The process is up and this conversation has no session of its own
+        // yet: one agent, several conversations, because an agent holds a
+        // project's worth of context and a second process would pay for all
+        // of it twice.
+        //
+        // Or one it had before, if obelus wrote the name down: the agent
+        // kept every word of it, which is why obelus keeps none.
+        let had = self.remembered_session(note);
+        let Some(talker) = self.talker.as_mut() else {
+            return;
+        };
+        match had {
+            Some(session) => talker.reopen(&session),
+            None => talker.open(),
+        }
+    }
+
+    /// The conversation obelus had about this note with the agent that is
+    /// running, if it wrote one down.
+    fn remembered_session(&self, note: &crate::todo::NoteId) -> Option<String> {
+        let agent = self.talker.as_ref()?.id();
+        let kept = crate::acp::sessions::read(&self.working_directory);
+        Some(kept.get(note, agent)?.session.clone())
+    }
+
+    /// Writes down which conversation is about which note.
+    ///
+    /// Every time one is named or renamed, because the moment obelus does
+    /// not survive is the one nobody plans for: a crash between opening a
+    /// conversation and remembering it is a conversation the agent keeps
+    /// and nobody can reach.
+    pub(super) fn remember_the_conversations(&self) {
+        let Some(agent) = self.talker.as_ref().map(|talker| talker.id().to_string()) else {
+            return;
+        };
+        let talker = self.talker.as_ref();
+        let mine: Vec<(crate::todo::NoteId, crate::acp::sessions::Kept)> = self
+            .documents
+            .iter()
+            .flatten()
+            .filter_map(Document::chat)
+            .filter_map(|talk| {
+                let Topic::Note(note) = &talk.topic else {
+                    return None;
+                };
+                let session = talk.session.as_ref()?;
+                Some((
+                    note.clone(),
+                    crate::acp::sessions::Kept {
+                        session: session.0.to_string(),
+                        title: talker
+                            .and_then(|talker| talker.title(Some(session)))
+                            .map(str::to_string),
+                    },
+                ))
+            })
+            .collect();
+        if mine.is_empty() {
+            return;
+        }
+        // The notes as the file has them, so that anything about a note
+        // somebody has taken away goes at the same time. A note can go
+        // without obelus watching, so the collecting is done on the way past
+        // rather than when one is deleted.
+        let notes: Vec<crate::todo::NoteId> = crate::todo::Todo::read(&self.working_directory)
+            .notes
+            .into_iter()
+            .map(|note| note.id)
+            .collect();
+        crate::acp::sessions::change(&self.working_directory, &notes, |kept| {
+            for (note, what) in mine {
+                kept.put(&note, &agent, what);
+            }
+        });
     }
 
     /// The conversation, while it is what the reader is looking at.
@@ -1001,6 +1072,7 @@ impl App {
             {
                 talk.session = Some(session);
             }
+            self.remember_the_conversations();
             return;
         }
         // And everything else goes to the conversation it names. One of
@@ -1020,13 +1092,14 @@ impl App {
                 acp::Update::Tool { call, status } => {
                     self.in_transcript(|chat| chat.tool(&call, &status))
                 }
+                // What the agent calls this conversation, which is the
+                // name it goes by in the list of open documents -- so it is
+                // written down rather than only shown.
+                acp::Update::Titled(_) => self.remember_the_conversations(),
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
                 // said, and a transcript with them in it is a log.
-                acp::Update::Mode(_)
-                | acp::Update::Orders(_)
-                | acp::Update::Settings(_)
-                | acp::Update::Titled(_) => {}
+                acp::Update::Mode(_) | acp::Update::Orders(_) | acp::Update::Settings(_) => {}
             },
             acp::Incoming::Ended { why: reason, .. } => {
                 // Only the ends that are not the ordinary one: a turn that

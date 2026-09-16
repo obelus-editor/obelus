@@ -392,6 +392,18 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and I was %s"}}}}\n' "$allowed"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
+        *'"method":"session/load"'*)
+            # A conversation taken up again. A real agent replays what was
+            # said; what matters here is that it answers about the session
+            # the client named rather than minting a new one, because that
+            # is the whole of what the client has to get right.
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"where we were"}}}}\n'
+            ;;
+        *'"method":"session/delete"'*)
+            set_turn "$session" ''
+            printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$(id_of "$line")"
+            ;;
         *'"method":"session/cancel"'*)
             # Only when there is a turn to cancel. A cancellation that
             # arrives with nothing in flight is a no-op, and answering it

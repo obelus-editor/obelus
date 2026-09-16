@@ -184,6 +184,43 @@ impl App {
             tracing::warn!(%error, "the notes were not written");
             self.note = Some("the notes could not be written".to_string());
         }
+        self.let_go_of_notes_that_are_gone(todo);
+    }
+
+    /// Lets go of every conversation whose note is no longer in the file.
+    ///
+    /// Reconciled against what was just written rather than acted on when a
+    /// key deletes one: a note can go several ways -- the key, another
+    /// obelus, the reader's own editor -- and a rule that only fired for one
+    /// of them is a rule that mostly does not.
+    ///
+    /// The conversation itself is closed too. A document about a note that
+    /// no longer exists is a document nothing can name, and its row in the
+    /// list would be a row with nothing behind it.
+    fn let_go_of_notes_that_are_gone(&mut self, todo: &Todo) {
+        let left: Vec<crate::todo::NoteId> =
+            todo.notes.iter().map(|note| note.id.clone()).collect();
+        let orphaned: Vec<(crate::buffer::DocumentId, Option<crate::acp::SessionId>)> = self
+            .documents
+            .iter()
+            .enumerate()
+            .filter_map(|(index, document)| {
+                let talk = document.as_ref()?.chat()?;
+                let crate::conversation::Topic::Note(note) = &talk.topic else {
+                    return None;
+                };
+                (!left.contains(note))
+                    .then(|| (crate::buffer::DocumentId::new(index), talk.session.clone()))
+            })
+            .collect();
+        for (id, session) in orphaned {
+            if let Some(session) = session.as_ref()
+                && let Some(talker) = self.talker.as_mut()
+            {
+                talker.let_go(session);
+            }
+            self.close(id);
+        }
     }
 
     /// How wide a note's own text is, and whether it wraps there.

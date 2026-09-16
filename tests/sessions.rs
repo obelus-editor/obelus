@@ -11,6 +11,8 @@
 //! opened last" would look correct against an agent that did the same -- and
 //! the two would be wrong together.
 
+mod support;
+
 use std::{
     path::Path,
     sync::mpsc::{Receiver, channel},
@@ -171,5 +173,77 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
         answered.as_deref(),
         Some("endturn"),
         "the second conversation's turn did not finish on its own"
+    );
+}
+
+/// What obelus has to keep, and what it does not.
+///
+/// The agent keeps every word: `session/load` replays it, so obelus keeps
+/// none. What obelus keeps is the one thing the agent cannot know, which is
+/// which of its conversations is about which of this tree's notes -- and
+/// the name the agent gave that conversation, because that is what a list
+/// of open documents calls it and a replay is not obliged to send it again.
+#[test]
+fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
+    use obelus::{acp::sessions, todo::NoteId};
+
+    let scratch = support::Scratch::new("sessions-kept");
+    // The table lives in obelus's state directory, and a test that wrote to
+    // the reader's would be a test that left something on their machine.
+    // Set for this binary, which is the only one that touches it.
+    //
+    // SAFETY: nothing else in this test binary reads the environment, and
+    // the tests that share it do not touch the state directory at all.
+    unsafe {
+        std::env::set_var("XDG_STATE_HOME", scratch.path());
+    }
+    let root = scratch.path();
+    let note = NoteId::read("ABCDEFGH").expect("a name");
+
+    sessions::change(root, std::slice::from_ref(&note), |kept| {
+        kept.put(
+            &note,
+            "fake",
+            sessions::Kept {
+                session: "s-1".to_string(),
+                title: Some("why refilter drops rows".to_string()),
+            },
+        );
+    });
+
+    let back = sessions::read(root);
+    let kept = back.get(&note, "fake").expect("the conversation");
+    assert_eq!(kept.session, "s-1");
+    assert_eq!(kept.title.as_deref(), Some("why refilter drops rows"));
+
+    // And a second sitting on the same tree does not put back what the
+    // first one wrote: read-modify-write, because a second obelus on one
+    // tree is an ordinary thing to have running.
+    let other = NoteId::read("JKMNPQRS").expect("a name");
+    sessions::change(root, &[note.clone(), other.clone()], |kept| {
+        kept.put(
+            &other,
+            "fake",
+            sessions::Kept {
+                session: "s-2".to_string(),
+                title: None,
+            },
+        );
+    });
+    let back = sessions::read(root);
+    assert!(
+        back.get(&note, "fake").is_some(),
+        "the second write put back what the first wrote"
+    );
+    assert!(back.get(&other, "fake").is_some());
+
+    // A note that has gone takes its conversation with it, collected on the
+    // way past rather than when the note was deleted -- because a note can
+    // go without obelus watching.
+    sessions::change(root, std::slice::from_ref(&other), |_| {});
+    let back = sessions::read(root);
+    assert!(
+        back.get(&note, "fake").is_none(),
+        "a conversation outlived the note it was about"
     );
 }

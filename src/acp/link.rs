@@ -28,11 +28,12 @@ use agent_client_protocol::{
         ProtocolVersion,
         v1::{
             AvailableCommand, BooleanConfigOptionCapabilities, CancelNotification,
-            ClientCapabilities, ClientSessionCapabilities, ContentBlock, CreateElicitationRequest,
-            CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction,
-            ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities,
-            ElicitationMode, ElicitationPropertySchema, ElicitationSchema, FileSystemCapabilities,
-            Implementation, InitializeRequest, MultiSelectItems, NewSessionRequest,
+            ClientCapabilities, ClientSessionCapabilities, CloseSessionRequest, ContentBlock,
+            CreateElicitationRequest, CreateElicitationResponse, DeleteSessionRequest,
+            ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
+            ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
+            ElicitationPropertySchema, ElicitationSchema, FileSystemCapabilities, Implementation,
+            InitializeRequest, LoadSessionRequest, MultiSelectItems, NewSessionRequest,
             PermissionOptionId, PromptRequest, ReadTextFileRequest, ReadTextFileResponse,
             RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
             SelectedPermissionOutcome, SessionConfigId, SessionConfigKind, SessionConfigOption,
@@ -65,6 +66,23 @@ pub enum Ask {
     /// context and starting a second of them to talk about a second note
     /// would pay for all of it twice.
     Open,
+    /// Let one go, because the note it was about has gone.
+    ///
+    /// Told to the agent rather than only forgotten here, because an agent
+    /// left holding conversations nobody can reach is the same complaint
+    /// that got the language server killed on the way out.
+    Drop {
+        /// Which conversation.
+        session: SessionId,
+    },
+    /// Take up one the agent already has, from a previous sitting.
+    ///
+    /// The agent kept every word of it, so obelus keeps none: what it keeps
+    /// is the name, because the agent has no idea a note exists.
+    Reopen {
+        /// The name obelus wrote down last time.
+        session: SessionId,
+    },
     /// Say this, in that conversation.
     Say {
         /// Which conversation.
@@ -777,6 +795,69 @@ async fn talk(
                     match ask {
                         Ask::Open => {
                             open_session(&connection, &root, &events, &mut stopped).await?;
+                        }
+                        // Gone, because the note it was about is. Two ways
+                        // to say it and they mean different things: `delete`
+                        // is "forget this", `close` is "I am done talking in
+                        // it". The first is what a deleted note means, so it
+                        // is tried first and the second is the fallback for
+                        // an agent that only offers that.
+                        Ask::Drop { session } => {
+                            stopped.remove(&session);
+                            let forgotten = connection
+                                .send_request(DeleteSessionRequest::new(session.clone()))
+                                .block_task()
+                                .await;
+                            if forgotten.is_err() {
+                                let _ = connection
+                                    .send_request(CloseSessionRequest::new(session))
+                                    .block_task()
+                                    .await;
+                            }
+                        }
+                        // What the reader had before, taken up again. The
+                        // agent replays it, so nothing here has to hold a
+                        // transcript between sittings.
+                        //
+                        // Every way this can fail ends in a conversation the
+                        // reader can talk in: an agent that will not load
+                        // one -- it has forgotten it, it never could -- gets
+                        // asked for a new one instead, and the reader is
+                        // told what happened rather than left looking at an
+                        // empty screen that used to have something in it.
+                        Ask::Reopen { session } => {
+                            let taken = connection
+                                .send_request(LoadSessionRequest::new(
+                                    session.clone(),
+                                    root.clone(),
+                                ))
+                                .block_task()
+                                .await;
+                            match taken {
+                                Ok(loaded) => {
+                                    stopped.entry(session.clone()).or_default();
+                                    let mode = loaded.modes.as_ref().map(mode_setting);
+                                    let _ = events.send(Event::Acp(Incoming::Started {
+                                        session: session.clone(),
+                                        mode,
+                                    }));
+                                    if let Some(options) = loaded.config_options.as_ref() {
+                                        let settings =
+                                            options.iter().filter_map(setting_of).collect();
+                                        let _ = events.send(Event::Acp(Incoming::Update {
+                                            session,
+                                            update: Update::Settings(settings),
+                                        }));
+                                    }
+                                }
+                                Err(error) => {
+                                    let _ = events.send(Event::Acp(Incoming::Failed(
+                                        "picking the conversation up where it was left",
+                                        error.to_string(),
+                                    )));
+                                    open_session(&connection, &root, &events, &mut stopped).await?;
+                                }
+                            }
                         }
                         // The answer is taken in a callback rather than
                         // awaited, so the loop goes straight back to

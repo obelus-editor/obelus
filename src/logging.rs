@@ -214,13 +214,24 @@ fn newest_log(directory: &Path, prefix: &str) -> Option<PathBuf> {
         .map(|(_, path)| path)
 }
 
-/// Where the log files go.
-fn log_directory() -> Option<PathBuf> {
+/// Where obelus keeps what it has worked out and could work out again.
+///
+/// State rather than config or data, which is what the directory is for: a
+/// reader who deleted all of this would lose nothing they wrote and nothing
+/// they chose. The logs are here, and what obelus remembers about the
+/// conversations it has had.
+#[must_use]
+pub fn state_directory() -> Option<PathBuf> {
     if let Some(state) = std::env::var_os("XDG_STATE_HOME") {
         return Some(PathBuf::from(state).join("obelus"));
     }
     let home = std::env::var_os("HOME")?;
     Some(PathBuf::from(home).join(".local/state/obelus"))
+}
+
+/// Where the log files go.
+fn log_directory() -> Option<PathBuf> {
+    state_directory()
 }
 
 #[cfg(test)]
