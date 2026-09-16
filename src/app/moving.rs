@@ -54,7 +54,7 @@ impl App {
         // Before the buffer is borrowed: the area depends on which file is
         // current, which the open above has just settled.
         let area = self.text_area();
-        let Some(buffer) = self.buffers.get_mut(id.get()).and_then(Option::as_mut) else {
+        let Some(buffer) = self.documents.get_mut(id.get()).and_then(Option::as_mut) else {
             return;
         };
         let (line, column) = match column {
@@ -103,7 +103,7 @@ impl App {
     /// Where the cursor is, for the history.
     pub(super) fn here(&self) -> Option<Jump> {
         let id = self.current?;
-        let cursor = self.buffers.get(id.get())?.as_ref()?.cursor();
+        let cursor = self.documents.get(id.get())?.as_ref()?.cursor();
         Some(Jump {
             buffer: id,
             line: cursor.line,
@@ -129,13 +129,13 @@ impl App {
     }
 
     fn go(&mut self, to: Jump) {
-        if to.buffer.get() >= self.buffers.len() {
+        if to.buffer.get() >= self.documents.len() {
             return;
         }
         self.go_to_buffer(to.buffer);
         let area = self.text_area();
         if let Some(buffer) = self
-            .buffers
+            .documents
             .get_mut(to.buffer.get())
             .and_then(Option::as_mut)
         {
@@ -504,11 +504,11 @@ impl App {
 
     /// Puts back what the last change took away.
     pub fn undo(&mut self) {
-        let Some(index) = self.current.map(BufferId::get) else {
+        let Some(index) = self.current.map(DocumentId::get) else {
             return;
         };
         let went_back = self
-            .buffers
+            .documents
             .get_mut(index)
             .and_then(Option::as_mut)
             .is_some_and(Buffer::undo);
@@ -520,11 +520,11 @@ impl App {
 
     /// Does again what [`undo`](Self::undo) put back.
     pub fn redo(&mut self) {
-        let Some(index) = self.current.map(BufferId::get) else {
+        let Some(index) = self.current.map(DocumentId::get) else {
             return;
         };
         let went_forward = self
-            .buffers
+            .documents
             .get_mut(index)
             .and_then(Option::as_mut)
             .is_some_and(Buffer::redo);

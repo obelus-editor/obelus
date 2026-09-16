@@ -35,7 +35,7 @@ impl App {
             self.note = Some("no file open".to_string());
             return;
         };
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         if !buffer.content().is_file() || buffer.mode() != crate::buffer::Mode::Edit {
@@ -117,7 +117,7 @@ impl App {
     /// that has changed has moved them: the offers would still apply, to
     /// the wrong text, without anything going wrong loudly enough to
     /// notice.
-    pub(super) fn on_actions(&mut self, id: BufferId, version: i32, reply: Reply) {
+    pub(super) fn on_actions(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
             self.note = Some("the file changed while asking".to_string());
             return;
@@ -194,7 +194,7 @@ impl App {
     fn resolve_action(&mut self, at: usize) {
         let Some(id) = self.current else { return };
         let Some(language) = self
-            .buffers
+            .documents
             .get(id.get())
             .and_then(Option::as_ref)
             .and_then(Buffer::language)
@@ -205,7 +205,7 @@ impl App {
             return;
         };
         let version = self
-            .buffers
+            .documents
             .get(id.get())
             .and_then(Option::as_ref)
             .map_or(0, Buffer::version);
@@ -235,7 +235,7 @@ impl App {
     /// two: the list has closed by now, so the keys are the document's
     /// again and the reader can type the whole time the server is working
     /// the edit out.
-    pub(super) fn on_action(&mut self, at: usize, id: BufferId, version: i32, reply: Reply) {
+    pub(super) fn on_action(&mut self, at: usize, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
             self.note = Some("the file changed while asking".to_string());
             return;
@@ -311,7 +311,7 @@ impl App {
         let Some(want) = ON_SAVE.get(kind) else {
             return false;
         };
-        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
             return false;
         };
         let (Some(language), true) = (buffer.language(), buffer.content().is_file()) else {
@@ -346,7 +346,7 @@ impl App {
                     request,
                     Question {
                         asked: Asked::Saving { kind },
-                        buffer: BufferId::new(index),
+                        buffer: DocumentId::new(index),
                         version,
                     },
                 );
@@ -372,7 +372,7 @@ impl App {
 
     /// Takes what the server offered and either does it or asks for it in
     /// full, and gets on with the save either way.
-    pub(super) fn on_saving(&mut self, id: BufferId, version: i32, kind: usize, reply: Reply) {
+    pub(super) fn on_saving(&mut self, id: DocumentId, version: i32, kind: usize, reply: Reply) {
         if !self.unmoved(id, version) {
             // Not a note: the reader pressed save, the save is what they
             // are waiting for, and this was obelus's own idea.
@@ -405,13 +405,13 @@ impl App {
     /// Asks for the edit of an offer that arrived without one.
     fn resolve_on_save(
         &mut self,
-        id: BufferId,
+        id: DocumentId,
         version: i32,
         kind: usize,
         action: &actions::Action,
     ) -> bool {
         let Some(language) = self
-            .buffers
+            .documents
             .get(id.get())
             .and_then(Option::as_ref)
             .and_then(Buffer::language)
@@ -443,7 +443,7 @@ impl App {
     }
 
     /// The filled-in offer, made.
-    pub(super) fn on_saved(&mut self, id: BufferId, version: i32, kind: usize, reply: Reply) {
+    pub(super) fn on_saved(&mut self, id: DocumentId, version: i32, kind: usize, reply: Reply) {
         if !self.unmoved(id, version) {
             tracing::debug!("the file changed while the change was being worked out");
             self.write_now(id.get());
@@ -459,7 +459,7 @@ impl App {
     /// Makes the edit, if there is one, and carries on saving.
     fn made_on_save(
         &mut self,
-        id: BufferId,
+        id: DocumentId,
         kind: usize,
         wanted: Option<crate::lsp::edits::Wanted>,
     ) {

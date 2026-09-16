@@ -390,7 +390,7 @@ impl App {
                     let from = self.here();
                     self.record(from);
                 }
-                if id.get() < self.buffers.len() {
+                if id.get() < self.documents.len() {
                     self.go_to_buffer(id);
                 }
             }

@@ -180,7 +180,7 @@ impl App {
         // The file being read is already parsed, and its tree is the one
         // that matches what the reader is looking at.
         let open = self
-            .buffers
+            .documents
             .iter()
             .flatten()
             .find(|buffer| buffer.path() == path);

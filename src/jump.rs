@@ -1,7 +1,7 @@
 //! Where the reader has been, and how to get back.
 
 use crate::{
-    buffer::BufferId,
+    buffer::DocumentId,
     coordinates::{CharColumn, LineNumber},
 };
 
@@ -9,7 +9,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Jump {
     /// Which open document.
-    pub buffer: BufferId,
+    pub buffer: DocumentId,
     /// Where in it.
     pub line: LineNumber,
     /// And how far along the line.
@@ -100,7 +100,7 @@ impl JumpList {
     /// where the edit began.
     pub fn keep_across(
         &mut self,
-        buffer: BufferId,
+        buffer: DocumentId,
         from: LineNumber,
         to: LineNumber,
         moved: isize,
@@ -126,7 +126,7 @@ mod tests {
 
     fn jump(line: usize) -> Jump {
         Jump {
-            buffer: BufferId::new(0),
+            buffer: DocumentId::new(0),
             line: LineNumber::new(line),
             column: CharColumn::new(0),
         }

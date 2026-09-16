@@ -53,7 +53,7 @@ impl App {
     /// Asks about a place, saying which gesture asked.
     pub(super) fn ask_hover_at(&mut self, at: (LineNumber, CharColumn), pointed: bool) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         if !buffer.content().is_file() || buffer.mode() != crate::buffer::Mode::Edit {
@@ -111,7 +111,7 @@ impl App {
     /// Takes an answer, if the reader is still where it is about.
     pub(super) fn on_hover(
         &mut self,
-        id: BufferId,
+        id: DocumentId,
         at: (LineNumber, CharColumn),
         pointed: bool,
         reply: Reply,
@@ -119,7 +119,7 @@ impl App {
         if self.current != Some(id) || !self.still_at(at, pointed) {
             return;
         }
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         let encoding = buffer

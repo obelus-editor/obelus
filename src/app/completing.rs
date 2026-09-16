@@ -91,7 +91,7 @@ impl App {
     /// The same question, asked because a letter was typed.
     pub(super) fn offer_completion(&mut self) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         // Nothing to complete into: a commit's version of a file, or a file
@@ -144,7 +144,7 @@ impl App {
     /// Asks what the call the cursor is inside takes.
     pub(super) fn ask_signature(&mut self) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         if !buffer.content().is_file() || buffer.mode() != crate::buffer::Mode::Edit {
@@ -186,7 +186,7 @@ impl App {
     }
 
     /// Keeps what a server said a call takes, if the reader is still in it.
-    pub(super) fn on_signature(&mut self, id: BufferId, line: LineNumber, reply: Reply) {
+    pub(super) fn on_signature(&mut self, id: DocumentId, line: LineNumber, reply: Reply) {
         // The line the question was asked on. A call spans one line often
         // enough, and a reader who has gone to another one is writing
         // something else -- a panel about the call above would be a panel
@@ -235,7 +235,7 @@ impl App {
     /// testing and a server cannot be made to answer on demand.
     pub fn complete_for_test(&mut self, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         let cursor = buffer.cursor();
@@ -297,12 +297,12 @@ impl App {
     /// cursor is somewhere that is not the end of that word. Both the
     /// answer arriving and the frame after every keystroke ask it, and two
     /// implementations of it would be two rules.
-    fn typed_since(&self, id: BufferId, from: (LineNumber, CharColumn)) -> Option<String> {
+    fn typed_since(&self, id: DocumentId, from: (LineNumber, CharColumn)) -> Option<String> {
         if self.current != Some(id) {
             return None;
         }
         let buffer = self
-            .buffers
+            .documents
             .get(id.get())
             .and_then(Option::as_ref)
             .filter(|buffer| buffer.mode() == crate::buffer::Mode::Edit)?;
@@ -326,14 +326,14 @@ impl App {
     /// Takes an answer, if the reader is still in the word it is about.
     pub(super) fn on_completion(
         &mut self,
-        id: BufferId,
+        id: DocumentId,
         from: (LineNumber, CharColumn),
         reply: Reply,
     ) {
         let Some(query) = self.typed_since(id, from) else {
             return;
         };
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         let language = buffer.language();
@@ -422,7 +422,7 @@ impl App {
         };
         let Some(id) = self.current else { return };
         let Some(language) = self
-            .buffers
+            .documents
             .get(id.get())
             .and_then(Option::as_ref)
             .and_then(Buffer::language)
@@ -436,7 +436,7 @@ impl App {
             return;
         };
         let version = self
-            .buffers
+            .documents
             .get(id.get())
             .and_then(Option::as_ref)
             .map_or(0, Buffer::version);

@@ -248,7 +248,7 @@ impl App {
         // and the one file whose place they might have to hunt for, the one
         // they are in, is the row the list opens on anyway.
         let open = self
-            .buffers
+            .documents
             .iter()
             .enumerate()
             // Closed slots are holes, not rows.
@@ -287,7 +287,7 @@ impl App {
                 // reader who has seen one has read the other.
                 trailing: buffer.content().short(),
                 changed: None,
-                value: PickerValue::Buffer(BufferId::new(index)),
+                value: PickerValue::Buffer(DocumentId::new(index)),
                 enabled: true,
                 colours: None,
                 status: statuses.get(buffer.path()).copied(),
@@ -312,7 +312,7 @@ impl App {
 
     /// Stops showing the current file.
     ///
-    /// The slot stays: [`BufferId`] is an index, and the jump list holds
+    /// The slot stays: [`DocumentId`] is an index, and the jump list holds
     /// them. What goes is the file, the language server's copy of it, and
     /// the watch on it -- and the reader is left on whichever file is
     /// nearest, or on the welcome screen if that was the last one.
@@ -321,7 +321,7 @@ impl App {
         // about: a closed buffer takes its undo with it.
         let which = self.selected_buffer().or(self.current);
         let unsaved = which
-            .and_then(|id| self.buffers.get(id.get()))
+            .and_then(|id| self.documents.get(id.get()))
             .and_then(Option::as_ref)
             .is_some_and(Buffer::is_dirty);
         if let Some(id) = which
@@ -359,9 +359,9 @@ impl App {
     }
 
     /// Moves to a buffer.
-    pub(super) fn go_to_buffer(&mut self, id: BufferId) {
+    pub(super) fn go_to_buffer(&mut self, id: DocumentId) {
         if self
-            .buffers
+            .documents
             .get(id.get())
             .and_then(Option::as_ref)
             .is_some()
@@ -371,7 +371,7 @@ impl App {
     }
 
     /// The buffer the open picker's selection names, if that is what it is.
-    pub(super) fn selected_buffer(&self) -> Option<BufferId> {
+    pub(super) fn selected_buffer(&self) -> Option<DocumentId> {
         match self.picker.as_ref()?.selected_item()?.value {
             PickerValue::Buffer(id) => Some(id),
             _ => None,
@@ -379,8 +379,8 @@ impl App {
     }
 
     /// Stops showing one file, whichever the reader is on.
-    pub(super) fn close(&mut self, id: BufferId) {
-        let Some(buffer) = self.buffers.get_mut(id.get()).and_then(Option::take) else {
+    pub(super) fn close(&mut self, id: DocumentId) {
+        let Some(buffer) = self.documents.get_mut(id.get()).and_then(Option::take) else {
             return;
         };
 
@@ -424,12 +424,12 @@ impl App {
     }
 
     /// The open buffer nearest to a slot, looking back first.
-    fn nearest_open(&self, from: usize) -> Option<BufferId> {
+    fn nearest_open(&self, from: usize) -> Option<DocumentId> {
         (0..from)
             .rev()
-            .chain(from + 1..self.buffers.len())
-            .find(|index| self.buffers.get(*index).is_some_and(Option::is_some))
-            .map(BufferId::new)
+            .chain(from + 1..self.documents.len())
+            .find(|index| self.documents.get(*index).is_some_and(Option::is_some))
+            .map(DocumentId::new)
     }
 
     /// Shows the current file as whatever reading it has, or stops.
@@ -523,7 +523,7 @@ impl App {
         let from = self.here();
 
         if let Some(index) = self
-            .buffers
+            .documents
             .iter()
             // The file on disk, not a commit's version of it: those share
             // a path and are different documents, and a reader asking to
@@ -534,7 +534,7 @@ impl App {
                     .is_some_and(|open| open.path() == path && open.content().is_file())
             })
         {
-            let id = BufferId::new(index);
+            let id = DocumentId::new(index);
             if self.current != Some(id) {
                 self.record(from);
             }
@@ -548,14 +548,14 @@ impl App {
                 {
                     tracing::warn!(%error, path = %buffer.path().display(), "not watching");
                 }
-                self.buffers.push(Some(buffer));
-                let index = self.buffers.len() - 1;
+                self.documents.push(Some(buffer));
+                let index = self.documents.len() - 1;
                 // Only once the file is known to be readable: a path that
                 // turns out to be a directory leaves the reader where they
                 // were, and a history entry for a leap that did not happen
                 // is a place `go-back` would take them for no reason.
                 self.record(from);
-                let id = BufferId::new(index);
+                let id = DocumentId::new(index);
                 self.go_to_buffer(id);
                 self.serve(index);
             }
@@ -572,7 +572,7 @@ impl App {
     /// unwritten, and nothing else can see either.
     #[must_use]
     pub fn buffers_for_test(&self) -> Vec<(std::path::PathBuf, bool)> {
-        self.buffers
+        self.documents
             .iter()
             .flatten()
             .map(|buffer| (buffer.path().to_path_buf(), buffer.is_dirty()))
@@ -590,7 +590,7 @@ impl App {
     /// is about to be edited, and a server that has not been told has a
     /// different document.
     pub(super) fn open_quietly(&mut self, path: &Path) -> Option<usize> {
-        if let Some(index) = self.buffers.iter().position(|buffer| {
+        if let Some(index) = self.documents.iter().position(|buffer| {
             buffer
                 .as_ref()
                 .is_some_and(|open| open.path() == path && open.content().is_file())
@@ -604,8 +604,8 @@ impl App {
                 {
                     tracing::warn!(%error, path = %buffer.path().display(), "not watching");
                 }
-                self.buffers.push(Some(buffer));
-                let index = self.buffers.len() - 1;
+                self.documents.push(Some(buffer));
+                let index = self.documents.len() - 1;
                 self.serve(index);
                 Some(index)
             }
@@ -673,9 +673,9 @@ impl App {
     /// A commit's version is made from bytes git handed over rather than
     /// from a path, so there is no opening it.
     pub fn open_buffer_for_test(&mut self, buffer: Buffer) {
-        self.buffers.push(Some(buffer));
-        let index = self.buffers.len() - 1;
-        self.go_to_buffer(BufferId::new(index));
+        self.documents.push(Some(buffer));
+        let index = self.documents.len() - 1;
+        self.go_to_buffer(DocumentId::new(index));
     }
 
     /// Opens a path the way choosing it from a list does.
@@ -688,8 +688,8 @@ impl App {
     }
 
     pub(super) fn reload_path(&mut self, path: &Path) {
-        for index in 0..self.buffers.len() {
-            let Some(buffer) = self.buffers[index].as_mut() else {
+        for index in 0..self.documents.len() {
+            let Some(buffer) = self.documents[index].as_mut() else {
                 continue;
             };
             // A commit's version of a file does not change when the file
@@ -732,11 +732,11 @@ impl App {
 
     /// Writes the file being read back to disk.
     pub fn save_current(&mut self) {
-        let Some(index) = self.current.map(BufferId::get) else {
+        let Some(index) = self.current.map(DocumentId::get) else {
             self.note = Some("no file open".to_string());
             return;
         };
-        let Some(buffer) = self.buffers.get_mut(index).and_then(Option::as_mut) else {
+        let Some(buffer) = self.documents.get_mut(index).and_then(Option::as_mut) else {
             return;
         };
         // A commit's version is not a file anybody can write back, and the
@@ -758,10 +758,10 @@ impl App {
         // it. It is also the place to find out that the file moved back.
         match buffer.conflicted() {
             Disk::Unchanged => self.save_now(index),
-            Disk::Written => self.ask_before_saving(BufferId::new(index)),
+            Disk::Written => self.ask_before_saving(DocumentId::new(index)),
             // A different question with different answers: there is nothing
             // on a disk that has nothing on it to take instead.
-            Disk::Deleted => self.ask_before_writing_back(BufferId::new(index)),
+            Disk::Deleted => self.ask_before_writing_back(DocumentId::new(index)),
         }
     }
 
@@ -802,7 +802,7 @@ impl App {
     /// [`Buffer::reload`] forgets, because what could have been put back was
     /// about text that is not there any more.
     pub(super) fn take_what_is_on_disk(&mut self, index: usize) {
-        let Some(buffer) = self.buffers.get_mut(index).and_then(Option::as_mut) else {
+        let Some(buffer) = self.documents.get_mut(index).and_then(Option::as_mut) else {
             return;
         };
         match buffer.take_from_disk() {
@@ -828,7 +828,7 @@ impl App {
     /// It reports because leaving depends on the answer: a save that failed
     /// on the way out is the whole reason the reader was asked.
     pub(super) fn write_now(&mut self, index: usize) -> bool {
-        let Some(buffer) = self.buffers.get_mut(index).and_then(Option::as_mut) else {
+        let Some(buffer) = self.documents.get_mut(index).and_then(Option::as_mut) else {
             return false;
         };
         match buffer.save() {
@@ -856,10 +856,10 @@ impl App {
 
     /// Re-reads the current file and reparses what changed.
     pub fn reload_current(&mut self) {
-        let Some(index) = self.current.map(BufferId::get) else {
+        let Some(index) = self.current.map(DocumentId::get) else {
             return;
         };
-        if let Some(buffer) = self.buffers.get_mut(index).and_then(Option::as_mut)
+        if let Some(buffer) = self.documents.get_mut(index).and_then(Option::as_mut)
             && reload(buffer)
         {
             self.change_document(index);

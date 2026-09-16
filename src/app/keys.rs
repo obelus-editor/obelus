@@ -653,7 +653,7 @@ impl App {
         with: &str,
         doing: crate::buffer::undo::Doing,
     ) {
-        let Some(index) = self.current.map(BufferId::get) else {
+        let Some(index) = self.current.map(DocumentId::get) else {
             return;
         };
         self.change_in(index, span, with, doing);
@@ -673,7 +673,7 @@ impl App {
         doing: crate::buffer::undo::Doing,
     ) {
         let before = self
-            .buffers
+            .documents
             .get(index)
             .and_then(Option::as_ref)
             .map_or(0, |buffer| buffer.text().line_count());
@@ -681,7 +681,7 @@ impl App {
         // a snippet's holes are kept in. Taken before the edit, because
         // afterwards the document it is measured against is gone.
         let moving = self
-            .buffers
+            .documents
             .get(index)
             .and_then(Option::as_ref)
             .map(|buffer| {
@@ -691,7 +691,7 @@ impl App {
                 (at, to.get().saturating_sub(at.get()), with.chars().count())
             });
         let changed = self
-            .buffers
+            .documents
             .get_mut(index)
             .and_then(Option::as_mut)
             .is_some_and(|buffer| buffer.edit(span, with, doing));
@@ -699,12 +699,12 @@ impl App {
             // The places the reader can go back to are line numbers in this
             // document, and the edit has just moved some of them.
             let after = self
-                .buffers
+                .documents
                 .get(index)
                 .and_then(Option::as_ref)
                 .map_or(0, |buffer| buffer.text().line_count());
             self.jumps.keep_across(
-                BufferId::new(index),
+                DocumentId::new(index),
                 span.line,
                 span.end_line,
                 after as isize - before as isize,

@@ -56,7 +56,7 @@ impl App {
     /// Sends the question, about the place the pointer is resting on.
     pub(super) fn ask_uses_at(&mut self, at: (LineNumber, CharColumn)) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -94,12 +94,12 @@ impl App {
     }
 
     /// Keeps what a server said, if it is still about what is on screen.
-    pub(super) fn on_uses(&mut self, id: BufferId, version: i32, reply: Reply) {
+    pub(super) fn on_uses(&mut self, id: DocumentId, version: i32, reply: Reply) {
         // The document it was asked about, unchanged since.
         if self.current != Some(id) || !self.unmoved(id, version) {
             return;
         }
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         let encoding = buffer

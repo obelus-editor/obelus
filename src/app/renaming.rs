@@ -85,7 +85,7 @@ impl App {
     /// Asks the server to rename it.
     pub(super) fn ask_rename(&mut self, name: &str) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -131,7 +131,7 @@ impl App {
     /// places in the file as it was, and a file that has been typed into is
     /// not that file. A reader whose rename is refused can ask again, where
     /// one whose rename lands two characters out has a mess to find.
-    pub(super) fn on_rename(&mut self, id: BufferId, version: i32, reply: Reply) {
+    pub(super) fn on_rename(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
             self.note = Some("the file changed while renaming".to_string());
             return;

@@ -21,7 +21,7 @@ use nucleo_matcher::{
 };
 
 use crate::{
-    buffer::BufferId,
+    buffer::DocumentId,
     command::Command,
     component::{
         field::Field,
@@ -44,7 +44,7 @@ pub enum PickerValue {
     /// Open a file.
     File(PathBuf),
     /// Switch to an open buffer.
-    Buffer(BufferId),
+    Buffer(DocumentId),
     /// Switch theme.
     /// A theme, by the name it answers to.
     ///

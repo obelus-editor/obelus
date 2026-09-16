@@ -337,7 +337,7 @@ impl App {
             // exactly this, so the list reads as something folded over the
             // file rather than as a way to somewhere new.
             PickerValue::Buffer(id) => {
-                self.buffers
+                self.documents
                     .get(id.get())
                     .and_then(Option::as_ref)
                     .map(|buffer| {
@@ -490,7 +490,7 @@ impl App {
     /// same file as some commit had it -- and matching on the path alone
     /// would show a reader the other one's place in it.
     fn read_at(&self, path: &Path, at: Option<gix::ObjectId>) -> Marked {
-        self.buffers
+        self.documents
             .iter()
             .flatten()
             .find(|buffer| buffer.path() == path && buffer.content().at() == at)

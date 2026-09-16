@@ -397,7 +397,7 @@ fn a_real_server_finds_a_definition() {
         client.is_ready()
     });
 
-    // `buffer::BufferId` on line three of jump.rs, at column twelve.
+    // `buffer::DocumentId` on line three of jump.rs, at column twelve.
     let path = root().join("src/jump.rs");
     let text = std::fs::read_to_string(&path).expect("reading the file");
     let uri = obelus::lsp::client::uri_for(&path).expect("a uri");
@@ -454,7 +454,7 @@ fn a_real_server_finds_a_definition() {
             // Nothing, which is also what a server that has not finished
             // loading answers: it reports no progress until it starts, so
             // "not indexing" and "indexed" look the same from here.
-            // `BufferId` has a definition, so the only question is when --
+            // `DocumentId` has a definition, so the only question is when --
             // and the deadline above is what says never.
             action::Outcome::Nothing => std::thread::sleep(Duration::from_millis(300)),
             // "content modified" is a server saying the document moved

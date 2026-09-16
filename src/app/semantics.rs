@@ -48,7 +48,7 @@ impl App {
     /// directory, and asking it about a file outside its own tree gets
     /// answers about a project it cannot see.
     pub(super) fn serve(&mut self, index: usize) {
-        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -102,7 +102,7 @@ impl App {
 
     /// Tells the server about a document.
     fn open_document(&mut self, index: usize) {
-        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -143,7 +143,7 @@ impl App {
     /// formatter's idea of the last good version -- and none of them can
     /// know from `didChange`, which says only that the text moved.
     pub(super) fn saved_document(&mut self, index: usize) {
-        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -168,7 +168,7 @@ impl App {
     }
 
     pub(super) fn change_document(&mut self, index: usize) {
-        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -304,7 +304,7 @@ impl App {
     /// around it. While they are typing, the answer goes stale and
     /// [`App::name_at`] falls back to the tree obelus parses itself.
     pub(super) fn ask_tokens(&mut self, index: usize) {
-        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -318,7 +318,7 @@ impl App {
             return;
         };
         let version = buffer.version();
-        let id = BufferId::new(index);
+        let id = DocumentId::new(index);
         let Some(client) = self.servers.get_mut(&language) else {
             return;
         };
@@ -345,7 +345,7 @@ impl App {
     /// Keeps a classification of a document, if it is still about it.
     fn on_tokens(
         &mut self,
-        id: BufferId,
+        id: DocumentId,
         version: i32,
         language: LanguageId,
         reply: lsp::client::Reply,
@@ -381,7 +381,7 @@ impl App {
         let tokens =
             lsp::tokens::Tokens::decode(&numbers, legend, client.encoding().clone(), version);
         let Some(path) = self
-            .buffers
+            .documents
             .get(id.get())
             .and_then(Option::as_ref)
             .map(|buffer| buffer.path().to_path_buf())
@@ -426,7 +426,7 @@ impl App {
     /// Asks one of those questions.
     fn ask(&mut self, action: SymbolAction) {
         let Some(id) = self.current else { return };
-        let Some(buffer) = self.buffers.get(id.get()).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(id.get()).and_then(Option::as_ref) else {
             return;
         };
         let Some(language) = buffer.language() else {
@@ -568,8 +568,8 @@ impl App {
     /// is usually still a real place in the new text, so the edit lands
     /// somewhere wrong rather than failing.
     #[must_use]
-    pub(super) fn unmoved(&self, id: BufferId, version: i32) -> bool {
-        self.buffers
+    pub(super) fn unmoved(&self, id: DocumentId, version: i32) -> bool {
+        self.documents
             .get(id.get())
             .and_then(Option::as_ref)
             .map(Buffer::version)
@@ -643,7 +643,7 @@ impl App {
         };
 
         let now = self
-            .buffers
+            .documents
             .get(question.buffer.get())
             .and_then(Option::as_ref)
             .map(Buffer::version);
@@ -757,9 +757,9 @@ impl App {
         // Announce every open file of that language to the new server, not
         // just the current one: the others are still open, and a server that
         // has not been told about a file answers nothing about it.
-        let indices: Vec<usize> = (0..self.buffers.len())
+        let indices: Vec<usize> = (0..self.documents.len())
             .filter(|index| {
-                self.buffers
+                self.documents
                     .get(*index)
                     .and_then(Option::as_ref)
                     .and_then(Buffer::language)
@@ -919,7 +919,7 @@ impl App {
         };
         let Some(id) = self.current else { return false };
         let Some(version) = self
-            .buffers
+            .documents
             .get(id.get())
             .and_then(Option::as_ref)
             .map(Buffer::version)
@@ -1035,7 +1035,7 @@ impl App {
     /// coming: the reader pressed save, and a setting they turned on is not
     /// a reason to refuse them.
     pub(super) fn ask_formatting(&mut self, index: usize) -> bool {
-        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
             return false;
         };
         let (Some(language), true) = (buffer.language(), buffer.content().is_file()) else {
@@ -1062,7 +1062,7 @@ impl App {
                     request,
                     Question {
                         asked: Asked::Formatting,
-                        buffer: BufferId::new(index),
+                        buffer: DocumentId::new(index),
                         version,
                     },
                 );
@@ -1081,13 +1081,13 @@ impl App {
     /// asked about, so one that has moved since cannot take them -- and
     /// applying them in order would be applying each one to a document the
     /// last one changed, so they go in from the bottom up.
-    fn on_formatting(&mut self, id: BufferId, version: i32, reply: Reply) {
+    fn on_formatting(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
             tracing::debug!("the file changed while it was being laid out");
             self.note = Some("the file changed while formatting".to_string());
         } else if let Some(edits) = action::edits_in(reply.result.ok()) {
             let encoding = self
-                .buffers
+                .documents
                 .get(id.get())
                 .and_then(Option::as_ref)
                 .and_then(Buffer::language)
@@ -1096,7 +1096,7 @@ impl App {
                     |language| self.encoding_for(language),
                 );
             for edit in edits.into_iter().rev() {
-                if let Some(buffer) = self.buffers.get_mut(id.get()).and_then(Option::as_mut) {
+                if let Some(buffer) = self.documents.get_mut(id.get()).and_then(Option::as_mut) {
                     let text = buffer.text();
                     let (line, column) = position::from_lsp(text, edit.range.start, &encoding);
                     let (end_line, end_column) =
@@ -1118,7 +1118,7 @@ impl App {
     pub(super) fn ask_workspace_symbols(&mut self, language: LanguageId, query: &str) -> bool {
         let Some(id) = self.current else { return false };
         let version = self
-            .buffers
+            .documents
             .get(id.get())
             .and_then(Option::as_ref)
             .map(Buffer::version)
@@ -1222,7 +1222,7 @@ impl App {
             return;
         };
         let Some(buffer) = self
-            .buffers
+            .documents
             .iter()
             .flatten()
             .find(|buffer| buffer.path() == path)
@@ -1360,7 +1360,7 @@ fn counted(troubles: &[crate::lsp::trouble::Trouble]) -> String {
 #[derive(Debug)]
 pub(super) struct Question {
     pub(super) asked: Asked,
-    pub(super) buffer: BufferId,
+    pub(super) buffer: DocumentId,
     /// The document version it was asked against.
     pub(super) version: i32,
 }

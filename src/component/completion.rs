@@ -21,7 +21,7 @@ use nucleo_matcher::{
 };
 
 use crate::{
-    buffer::BufferId,
+    buffer::DocumentId,
     component::window::{Move, Window, Wrap},
     coordinates::{CharColumn, LineNumber},
     lsp::complete::{Candidate, Offer},
@@ -75,7 +75,7 @@ struct Rendered {
 pub struct Completion {
     /// The document this is about. A list offered for one file means
     /// nothing in another.
-    buffer: BufferId,
+    buffer: DocumentId,
     /// Where the word being completed starts.
     ///
     /// The anchor for everything: the panel is drawn from this column, the
@@ -136,7 +136,7 @@ impl Completion {
     /// worth covering code with.
     #[must_use]
     pub fn new(
-        buffer: BufferId,
+        buffer: DocumentId,
         from: (LineNumber, CharColumn),
         language: Option<&'static str>,
         offer: Offer,
@@ -166,7 +166,7 @@ impl Completion {
 
     /// Which document it belongs to.
     #[must_use]
-    pub const fn buffer(&self) -> BufferId {
+    pub const fn buffer(&self) -> DocumentId {
         self.buffer
     }
 

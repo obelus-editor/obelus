@@ -27,20 +27,27 @@ pub use crate::editing::{Cursor, Editing, Motion, Typing};
 
 /// Which open document, by position in the list.
 ///
-/// An index rather than a generational key because M0 cannot close a buffer.
-/// The day it can, this becomes the thing that has to change, and the type
-/// makes that one place instead of every `usize` that happened to be a buffer.
+/// An index and not a generational key, which works because a closed
+/// document leaves a hole rather than being taken out: the slot is emptied
+/// and never filled again, so an id nobody threw away goes on naming the
+/// same thing, and one that was closed names nothing. The list only grows,
+/// for a session.
+///
+/// A *document* rather than a buffer, because a buffer is one kind: a file,
+/// with text and a syntax tree and a cursor in it. What this names is a
+/// place in the list of what the reader can switch between, and that list
+/// is about to hold something else as well.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BufferId(usize);
+pub struct DocumentId(usize);
 
-impl BufferId {
-    /// Wraps a position in the buffer list.
+impl DocumentId {
+    /// Wraps a position in the list.
     #[must_use]
     pub const fn new(index: usize) -> Self {
         Self(index)
     }
 
-    /// The position in the buffer list.
+    /// The position in the list.
     #[must_use]
     pub const fn get(self) -> usize {
         self.0

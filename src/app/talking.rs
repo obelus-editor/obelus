@@ -1120,7 +1120,7 @@ impl App {
         }
 
         let open = self
-            .buffers
+            .documents
             .iter()
             .enumerate()
             .find(|(_, buffer)| {
@@ -1136,12 +1136,12 @@ impl App {
             // arrives is the file with the change already in it.
             Some(index) => {
                 let whole = self
-                    .buffers
+                    .documents
                     .get(index)
                     .and_then(Option::as_ref)
                     .map(|buffer| buffer.spanning_all());
                 let changed = whole.is_some_and(|span| {
-                    self.buffers
+                    self.documents
                         .get_mut(index)
                         .and_then(Option::as_mut)
                         .is_some_and(|buffer| {
@@ -1185,7 +1185,7 @@ impl App {
             .ok()
             .is_some_and(|full| full.starts_with(&self.working_directory));
         let text = if inside {
-            self.buffers
+            self.documents
                 .iter()
                 .flatten()
                 .find(|buffer| buffer.path() == full)

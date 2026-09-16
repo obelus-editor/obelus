@@ -27,7 +27,7 @@ impl App {
     ///
     /// Worth asking about at all because a closed buffer takes its undo with
     /// it: there is no other way back to what was in it.
-    pub(super) fn ask_before_closing(&mut self, id: BufferId) {
+    pub(super) fn ask_before_closing(&mut self, id: DocumentId) {
         self.stop_to_ask(
             Question::new(format!("{} is unsaved", self.buffer_path(id)))
                 .way("save and close it", Answer::Closing(id, Closing::Save))
@@ -67,7 +67,7 @@ impl App {
     /// two versions and loses the other, and only the reader knows which one
     /// matters. Which is why it says whose is whose rather than "yes" and
     /// "no".
-    pub(super) fn ask_before_saving(&mut self, id: BufferId) {
+    pub(super) fn ask_before_saving(&mut self, id: DocumentId) {
         self.stop_to_ask(
             Question::new(format!("{} changed on disk", self.buffer_path(id)))
                 .way("save mine over it", Answer::Saving(id, Saving::Mine))
@@ -84,7 +84,7 @@ impl App {
     /// Its own question because two of the answers to a file that merely
     /// changed are not available here: there is nothing on disk to take
     /// instead, and nothing there to write over.
-    pub(super) fn ask_before_writing_back(&mut self, id: BufferId) {
+    pub(super) fn ask_before_writing_back(&mut self, id: DocumentId) {
         self.stop_to_ask(
             Question::new(format!("{} was deleted", self.buffer_path(id)))
                 .way("write it back", Answer::Writing(id, Writing::Back))
@@ -127,9 +127,9 @@ impl App {
     /// The first document with something unwritten in it.
     ///
     /// Which is the only one, where the caller has counted one.
-    fn first_unsaved(&self) -> Option<BufferId> {
-        (0..self.buffers.len()).map(BufferId::new).find(|id| {
-            self.buffers[id.get()]
+    fn first_unsaved(&self) -> Option<DocumentId> {
+        (0..self.documents.len()).map(DocumentId::new).find(|id| {
+            self.documents[id.get()]
                 .as_ref()
                 .is_some_and(Buffer::is_dirty)
         })
@@ -145,8 +145,8 @@ impl App {
     /// the block above the ways out: a block that said the path while the
     /// prompt said the name would be one fact drawn twice, taking two rows
     /// and a rule to do it.
-    fn buffer_path(&self, id: BufferId) -> String {
-        self.buffers
+    fn buffer_path(&self, id: DocumentId) -> String {
+        self.documents
             .get(id.get())
             .and_then(Option::as_ref)
             .map_or_else(String::new, |buffer| {
@@ -161,8 +161,8 @@ impl App {
     /// first failure stops it, and says which file, because "saving failed"
     /// with four files open names nothing the reader can act on.
     fn save_everything_and_leave(&mut self) {
-        for index in 0..self.buffers.len() {
-            let unwritten = self.buffers[index]
+        for index in 0..self.documents.len() {
+            let unwritten = self.documents[index]
                 .as_ref()
                 .is_some_and(|buffer| buffer.is_dirty() && buffer.content().is_file());
             if unwritten && !self.write_now(index) {

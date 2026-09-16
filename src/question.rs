@@ -12,7 +12,7 @@
 //! escape key, the drawing and the preview all already know what a question
 //! is.
 
-use crate::buffer::BufferId;
+use crate::buffer::DocumentId;
 
 /// A question, and the ways out of it in the order they are offered.
 ///
@@ -118,13 +118,13 @@ impl Question {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Answer {
     /// Closing a document with something unwritten in it.
-    Closing(BufferId, Closing),
+    Closing(DocumentId, Closing),
     /// Leaving with something unwritten anywhere.
     Leaving(Leaving),
     /// Saving over a file that moved while it was being edited.
-    Saving(BufferId, Saving),
+    Saving(DocumentId, Saving),
     /// Saving a file somebody else took away.
-    Writing(BufferId, Writing),
+    Writing(DocumentId, Writing),
     /// Do none of it, whatever it was.
     Cancel,
 }

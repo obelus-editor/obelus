@@ -57,7 +57,7 @@ use ratatui::{
 use semantics::{Asked, Question, named as server_named};
 
 use crate::{
-    buffer::{Buffer, BufferId, Cursor, Mode, Motion, TextArea},
+    buffer::{Buffer, Cursor, DocumentId, Mode, Motion, TextArea},
     command::{Command, Requires, dispatch},
     component::{
         chat::{ChatOutcome, Room as ChatRoom},
@@ -132,16 +132,17 @@ pub(super) struct Committed {
 #[derive(Debug)]
 pub struct App {
     keymap: Keymap,
-    /// Every file opened this session, with a hole where one has been closed.
+    /// Everything opened this session, with a hole where one has been
+    /// closed.
     ///
-    /// Holes rather than removal, because [`BufferId`] is an index and the
+    /// Holes rather than removal, because [`DocumentId`] is an index and the
     /// jump list, the pending questions and `current` all hold one. Removing
     /// an element would leave every id above it pointing at a *different*
     /// file, which is the kind of wrong that shows up as the wrong file
     /// opening a week later. A closed slot makes a stale id dead instead:
     /// whoever holds it gets nothing and does nothing.
-    buffers: Vec<Option<Buffer>>,
-    current: Option<BufferId>,
+    documents: Vec<Option<Buffer>>,
+    current: Option<DocumentId>,
     /// The colours in force, and the name they answer to.
     ///
     /// Owned rather than borrowed from the built-in ones, because a theme
@@ -478,12 +479,12 @@ pub struct App {
 impl App {
     /// Starts with the shipped key table and the given documents open.
     #[must_use]
-    pub fn new(buffers: Vec<Buffer>) -> Self {
-        let current = (!buffers.is_empty()).then(|| BufferId::new(0));
-        let buffers: Vec<Option<Buffer>> = buffers.into_iter().map(Some).collect();
+    pub fn new(open: Vec<Buffer>) -> Self {
+        let current = (!open.is_empty()).then(|| DocumentId::new(0));
+        let documents: Vec<Option<Buffer>> = open.into_iter().map(Some).collect();
         Self {
             keymap: Keymap::new(),
-            buffers,
+            documents,
             current,
             theme: builtin::DARK,
             theme_name: builtin::DEFAULT.to_string(),
@@ -568,7 +569,7 @@ impl App {
         // two things they might have meant -- write them, or let them go --
         // are not the same key twice.
         let unsaved = self
-            .buffers
+            .documents
             .iter()
             .flatten()
             .filter(|buffer| buffer.is_dirty())
@@ -646,12 +647,12 @@ impl App {
     /// The document being read, if any is open.
     #[must_use]
     pub fn current_buffer(&self) -> Option<&Buffer> {
-        self.buffers.get(self.current?.get())?.as_ref()
+        self.documents.get(self.current?.get())?.as_ref()
     }
 
     /// The same, to change.
     pub fn current_buffer_mut(&mut self) -> Option<&mut Buffer> {
-        self.buffers.get_mut(self.current?.get())?.as_mut()
+        self.documents.get_mut(self.current?.get())?.as_mut()
     }
 
     /// Starts everything that needs the loop's channel.
@@ -666,7 +667,7 @@ impl App {
     pub fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
         self.start_watching(sender);
-        for index in 0..self.buffers.len() {
+        for index in 0..self.documents.len() {
             self.serve(index);
         }
         // Last, and here rather than at the command line: the rows come
@@ -701,7 +702,7 @@ impl App {
     /// want a channel and no subprocesses -- so a test that is about
     /// talking to a real server asks for it by name.
     pub fn serve_for_test(&mut self) {
-        for index in 0..self.buffers.len() {
+        for index in 0..self.documents.len() {
             self.serve(index);
         }
     }
@@ -721,7 +722,7 @@ impl App {
     /// key that had nowhere to go left one behind anyway.
     #[must_use]
     pub fn buffer_count_for_test(&self) -> usize {
-        self.buffers.iter().flatten().count()
+        self.documents.iter().flatten().count()
     }
 
     /// Puts the application on a tree of the test's choosing.
@@ -750,7 +751,7 @@ impl App {
                 return;
             }
         };
-        for buffer in self.buffers.iter().flatten() {
+        for buffer in self.documents.iter().flatten() {
             if let Err(error) = watcher.watch(buffer.path()) {
                 tracing::warn!(%error, path = %buffer.path().display(), "not watching");
             }
@@ -887,7 +888,10 @@ impl App {
 
     /// Whether any open document's tree is older than its text.
     fn anything_behind(&self) -> bool {
-        self.buffers.iter().flatten().any(Buffer::syntax_is_behind)
+        self.documents
+            .iter()
+            .flatten()
+            .any(Buffer::syntax_is_behind)
     }
 
     /// Works out what every document that owes it means now.
@@ -899,7 +903,7 @@ impl App {
         // Nothing else has to be told: the text did not move, only what
         // obelus knows about it, so everything keyed on the version stays
         // keyed on the version it already had.
-        for buffer in self.buffers.iter_mut().flatten() {
+        for buffer in self.documents.iter_mut().flatten() {
             buffer.settle_syntax();
         }
     }
@@ -1286,13 +1290,13 @@ impl App {
         self.refresh_preview(editor_area);
 
         let Self {
-            buffers,
+            documents,
             current,
             highlights,
             ..
         } = self;
         let Some(buffer) = current
-            .and_then(|id| buffers.get(id.get()))
+            .and_then(|id| documents.get(id.get()))
             .and_then(Option::as_ref)
         else {
             highlights.clear();

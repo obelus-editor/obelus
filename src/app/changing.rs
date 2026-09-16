@@ -60,7 +60,7 @@ impl App {
             // The cost is a buffer list with the files a rename touched in
             // it, which is the honest shape of what just happened.
             let was_open = self
-                .buffers
+                .documents
                 .iter()
                 .flatten()
                 .any(|buffer| buffer.path() == path && buffer.content().is_file());
@@ -138,7 +138,7 @@ impl App {
         changes: &[Change],
         encoding: &lsp_types::PositionEncodingKind,
     ) -> bool {
-        let Some(buffer) = self.buffers.get(index).and_then(Option::as_ref) else {
+        let Some(buffer) = self.documents.get(index).and_then(Option::as_ref) else {
             return false;
         };
         // Into this document's own coordinates, all of them, before any of
@@ -174,7 +174,7 @@ impl App {
             };
             self.change_in(index, *span, with, doing);
         }
-        if let Some(buffer) = self.buffers.get_mut(index).and_then(Option::as_mut) {
+        if let Some(buffer) = self.documents.get_mut(index).and_then(Option::as_mut) {
             buffer.settle_undo();
         }
         true
