@@ -40,6 +40,13 @@ impl App {
     pub fn open_todo(&mut self) {
         self.make_room(Room::Region);
         let todo = Todo::read(&self.working_directory);
+        // Names given to notes that had none go back to the file now, not
+        // the next time something happens to write it: a name minted and
+        // not written is a name minted again on the next open, and nothing
+        // could be keyed to one.
+        if todo.minted {
+            self.save_notes(&todo);
+        }
         let where_now = todo
             .notes
             .iter()

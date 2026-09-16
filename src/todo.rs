@@ -44,9 +44,92 @@ pub struct At {
     pub commit: Option<gix::ObjectId>,
 }
 
+/// What names one note, for as long as the note exists.
+///
+/// A note is found by where it is in the list everywhere else, which is
+/// fine for a list somebody is looking at and no use at all for anything
+/// that has to still mean the same note next week: insert one above and
+/// every position below it is about a different note. So a note carries a
+/// name of its own, written down beside it.
+///
+/// Eight characters of Crockford's base32, which is the alphabet without
+/// the four letters a person copying by hand gets wrong -- no `I`, `L`, `O`
+/// or `U`. Short enough to read out, and the file is the reader's as much
+/// as it is obelus's.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NoteId(String);
+
+/// The alphabet, without the letters that read as digits.
+const CROCKFORD: [u8; 32] = *b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/// How many of them a name is.
+const NAME_LENGTH: usize = 8;
+
+impl NoteId {
+    /// Mints one.
+    ///
+    /// No dependency for it. What randomness needs to buy here is only that
+    /// two notes made in one second, in two obeluses, on one tree, do not
+    /// collide -- the file is read back and a clash is minted over anyway,
+    /// so this is a cheap first line rather than the only one. The clock
+    /// separates seconds, a counter separates notes within one, and the
+    /// hasher's per-process key separates two obeluses.
+    #[must_use]
+    pub fn mint() -> Self {
+        use std::hash::{BuildHasher as _, Hasher as _};
+
+        static MADE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let counted = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let since = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |gone| gone.as_nanos() as u64);
+
+        let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+        hasher.write_u64(since);
+        hasher.write_u64(counted);
+        let mut bits = hasher.finish();
+
+        let name = (0..NAME_LENGTH)
+            .map(|_| {
+                let at = (bits & 0x1f) as usize;
+                bits >>= 5;
+                CROCKFORD[at] as char
+            })
+            .collect();
+        Self(name)
+    }
+
+    /// What it says, which is what the file holds.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// One read back out of the file, if it is one.
+    ///
+    /// Anything else is treated as no name at all and a fresh one is minted
+    /// over it: a name is only worth having while everything agrees what it
+    /// looks like, and a file somebody has edited by hand is exactly where
+    /// that stops being true.
+    #[must_use]
+    pub fn read(said: &str) -> Option<Self> {
+        let right = said.len() == NAME_LENGTH
+            && said.bytes().all(|character| CROCKFORD.contains(&character));
+        right.then(|| Self(said.to_string()))
+    }
+}
+
+impl std::fmt::Display for NoteId {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        out.write_str(&self.0)
+    }
+}
+
 /// One note.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Note {
+    /// What names it, for as long as it exists.
+    pub id: NoteId,
     /// What it says. Never empty, and its first line is the row.
     pub said: String,
     /// Whether it is done.
@@ -87,6 +170,14 @@ impl Note {
 pub struct Todo {
     /// The notes.
     pub notes: Vec<Note>,
+    /// Whether reading gave any of them a name it did not have.
+    ///
+    /// Reading is not allowed to write -- a function called `read` that
+    /// touches the disk is one nobody expects to -- so it says instead, and
+    /// whoever asked for the notes puts them back. Without that the names
+    /// would be minted afresh on every open and nothing could be keyed to
+    /// one.
+    pub minted: bool,
 }
 
 impl Todo {
@@ -113,8 +204,9 @@ impl Todo {
 
     fn from_table(table: &toml::Table) -> Self {
         let mut notes = Vec::new();
+        let mut minted = false;
         let Some(written) = table.get("todo").and_then(toml::Value::as_array) else {
-            return Self { notes };
+            return Self { notes, minted };
         };
         for value in written {
             let Some(note) = value.as_table() else {
@@ -147,7 +239,26 @@ impl Todo {
                     .and_then(toml::Value::as_str)
                     .and_then(|id| gix::ObjectId::from_hex(id.as_bytes()).ok()),
             });
+            // A note with no name, or with one somebody else in this file
+            // already has: both get a fresh one, and both mean the file
+            // wants writing back. Duplicates are what copying a block by
+            // hand produces, and two notes with one name is worse than
+            // either having a new one -- whatever was keyed to it would
+            // follow whichever came first.
+            let named = note
+                .get("id")
+                .and_then(toml::Value::as_str)
+                .and_then(NoteId::read)
+                .filter(|id| !notes.iter().any(|note: &Note| note.id == *id));
+            let id = match named {
+                Some(id) => id,
+                None => {
+                    minted = true;
+                    NoteId::mint()
+                }
+            };
             notes.push(Note {
+                id,
                 said,
                 done: note
                     .get("done")
@@ -156,7 +267,7 @@ impl Todo {
                 at,
             });
         }
-        Self { notes }
+        Self { notes, minted }
     }
 
     /// Writes them back, making the directory if it is not there.
@@ -185,6 +296,7 @@ impl Todo {
         let mut out = String::new();
         for note in &self.notes {
             out.push_str("[[todo]]\n");
+            out.push_str(&format!("id = \"{}\"\n", note.id));
             out.push_str(&format!("said = {}\n", quoted(&note.said)));
             out.push_str(&format!("done = {}\n", note.done));
             if let Some(at) = &note.at {
@@ -286,9 +398,19 @@ mod tests {
 
     fn note(said: &str) -> Note {
         Note {
+            id: NoteId::mint(),
             said: said.to_string(),
             done: false,
             at: None,
+        }
+    }
+
+    /// The notes, with nothing minted: what a file that already names them
+    /// all reads back as.
+    fn named(notes: Vec<Note>) -> Todo {
+        Todo {
+            notes,
+            minted: false,
         }
     }
 
@@ -299,25 +421,25 @@ mod tests {
     /// the round trip came back empty.
     #[test]
     fn a_note_survives_the_file() {
-        let todo = Todo {
-            notes: vec![
-                note("one line"),
-                Note {
-                    said: "a title\nand a body\nof two lines".to_string(),
-                    done: true,
-                    at: None,
-                },
-                Note {
-                    said: "quotes \" and \\ backslashes".to_string(),
-                    done: false,
-                    at: Some(At {
-                        path: PathBuf::from("src/ui/picker.rs"),
-                        line: LineNumber::new(411),
-                        commit: None,
-                    }),
-                },
-            ],
-        };
+        let todo = named(vec![
+            note("one line"),
+            Note {
+                id: NoteId::mint(),
+                said: "a title\nand a body\nof two lines".to_string(),
+                done: true,
+                at: None,
+            },
+            Note {
+                id: NoteId::mint(),
+                said: "quotes \" and \\ backslashes".to_string(),
+                done: false,
+                at: Some(At {
+                    path: PathBuf::from("src/ui/picker.rs"),
+                    line: LineNumber::new(411),
+                    commit: None,
+                }),
+            },
+        ]);
         let table = todo
             .to_toml()
             .parse::<toml::Table>()
@@ -329,17 +451,16 @@ mod tests {
     /// does, and the two are one apart.
     #[test]
     fn the_line_is_written_as_a_reader_would_say_it() {
-        let todo = Todo {
-            notes: vec![Note {
-                said: "here".to_string(),
-                done: false,
-                at: Some(At {
-                    path: PathBuf::from("a.rs"),
-                    line: LineNumber::new(411),
-                    commit: None,
-                }),
-            }],
-        };
+        let todo = named(vec![Note {
+            id: NoteId::mint(),
+            said: "here".to_string(),
+            done: false,
+            at: Some(At {
+                path: PathBuf::from("a.rs"),
+                line: LineNumber::new(411),
+                commit: None,
+            }),
+        }]);
         assert!(todo.to_toml().contains("line = 412"), "{}", todo.to_toml());
     }
 
@@ -352,6 +473,54 @@ mod tests {
         let todo = Todo::from_table(&table);
         assert_eq!(todo.notes.len(), 1);
         assert_eq!(todo.notes[0].said, "real");
+    }
+
+    /// A name is minted for a note that has none, and for one whose name
+    /// somebody else in the file already has.
+    ///
+    /// The second is what copying a block by hand produces, and two notes
+    /// answering to one name is worse than either getting a new one:
+    /// whatever was keyed to it would follow whichever came first and the
+    /// reader would never be told.
+    #[test]
+    fn every_note_ends_up_with_a_name_of_its_own() {
+        let table = concat!(
+            "[[todo]]\nsaid = \"no name at all\"\n\n",
+            "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"named\"\n\n",
+            "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"named the same\"\n\n",
+            "[[todo]]\nid = \"not a name\"\nsaid = \"named badly\"\n",
+        )
+        .parse::<toml::Table>()
+        .expect("the table");
+        let todo = Todo::from_table(&table);
+
+        assert_eq!(todo.notes.len(), 4);
+        let names: Vec<&NoteId> = todo.notes.iter().map(|note| &note.id).collect();
+        for (at, name) in names.iter().enumerate() {
+            assert!(
+                !names[at + 1..].contains(name),
+                "two notes answer to {name}"
+            );
+        }
+        assert_eq!(
+            todo.notes[1].id.as_str(),
+            "ABCDEFGH",
+            "a name the file already had was not kept"
+        );
+        assert!(todo.minted, "reading minted names and did not say so");
+    }
+
+    /// A file that names every note is read without changing anything.
+    ///
+    /// Which is what makes the write-back safe: `minted` is what asks for
+    /// one, so a file already in order is not rewritten on every open.
+    #[test]
+    fn a_file_that_names_them_all_is_left_alone() {
+        let before = named(vec![note("one"), note("two")]);
+        let table = before.to_toml().parse::<toml::Table>().expect("the table");
+        let after = Todo::from_table(&table);
+        assert_eq!(after, before);
+        assert!(!after.minted, "a file in order was rewritten");
     }
 
     /// A row is the first line; folding it open is the rest.

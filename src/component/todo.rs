@@ -211,6 +211,7 @@ impl TodoView {
     pub fn write_new(&mut self, at: Option<crate::todo::At>) {
         self.keep();
         self.todo.notes.push(Note {
+            id: crate::todo::NoteId::mint(),
             said: String::new(),
             done: false,
             at,
@@ -470,6 +471,7 @@ impl TodoView {
                 self.todo.notes.insert(
                     after,
                     Note {
+                        id: crate::todo::NoteId::mint(),
                         said: String::new(),
                         done: false,
                         at: None,
