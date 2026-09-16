@@ -148,16 +148,21 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
         // conversation gives, for the same reason: what is typed is a
         // paragraph, and a paragraph does not fit on the status bar.
         Some(Layer::Notes) => return todo::caret(regions.editor, app.notes()?),
-        Some(Layer::Chat) => {
-            return chat::ChatView::caret(regions.editor, app.chat()?, app.card());
-        }
         // Nothing is typed into the counts, so there is no caret in them:
         // what marks where the keys are going is the row's background, and
         // a caret as well would be two marks for one fact. Without this the
         // file behind them kept its own, blinking in a view it is not part
         // of.
         Some(Layer::Counts) => return None,
-        None => {}
+        // Nothing over the document, so the caret is the document's own.
+        None => {
+            // A conversation is written into, and its caret is in the box
+            // rather than on the status bar: a message is a paragraph, and
+            // a paragraph does not fit on one row.
+            if let Some(chat) = app.chat() {
+                return chat::ChatView::caret(regions.editor, chat, app.card());
+            }
+        }
     }
 
     let buffer = app.current_buffer()?;
@@ -205,23 +210,29 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // every view: what is above it changes and the boundary does not.
     rule(cells, regions.edge, app.theme());
 
-    // The file being read, under everything. A buffer being shown some
-    // other way is shown that way: the editor view draws the file's own
-    // bytes, which in that mode is not what is on screen.
-    match app.rendering() {
-        Some(rows) => {
-            let top = app
-                .current_buffer()
-                .map_or(0, |buffer| buffer.viewport().top.get());
-            reading::draw(cells, regions.editor, rows, top, app.theme());
-        }
-        None => editor::EditorView::new(app).render(regions.editor, cells),
+    // The document being read, under everything. Which is a file or a
+    // conversation: both fill the editor region, and neither is over the
+    // other -- switching between them is switching documents, not opening
+    // something. A file being shown some other way is shown that way: the
+    // editor view draws the file's own bytes, which in that mode is not
+    // what is on screen.
+    match chat::ChatView::new(app) {
+        Some(view) => view.render(regions.editor, cells),
+        None => match app.rendering() {
+            Some(rows) => {
+                let top = app
+                    .current_buffer()
+                    .map_or(0, |buffer| buffer.viewport().top.get());
+                reading::draw(cells, regions.editor, rows, top, app.theme());
+            }
+            None => editor::EditorView::new(app).render(regions.editor, cells),
+        },
     }
     // Nothing open and nothing to open: the one moment a reader needs
     // telling what the keys are. Not while something has taken the region,
     // because then the region is not empty -- but a list or a question
     // leaves it alone, and this is what they would be over.
-    if app.current_buffer().is_none() && !layers.filling() {
+    if app.reading_nothing() && !layers.filling() {
         welcome::WelcomeView::new(app).render(regions.editor, cells);
     }
 
@@ -231,11 +242,6 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // thing a key reaches.
     for layer in layers.furthest_first() {
         match layer {
-            Layer::Chat => {
-                if let Some(view) = chat::ChatView::new(app) {
-                    view.render(regions.editor, cells);
-                }
-            }
             // The notes and the settings take the region for the same
             // reason: each is its own screen, and a list of what to come
             // back to with the code behind it would be two things on one

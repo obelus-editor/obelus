@@ -40,7 +40,6 @@ fn reading() -> App {
 /// layer these tests would silently skip.
 fn open(app: &mut App, layer: Layer) {
     match layer {
-        Layer::Chat => app.open_agent(),
         Layer::Counts => dispatch::dispatch(app, Command::CountLines),
         Layer::Notes => dispatch::dispatch(app, Command::TodoOpen),
         Layer::Settings => dispatch::dispatch(app, Command::ConfigOpen),
@@ -192,17 +191,17 @@ fn only_a_question_leaves_the_file_pointable() {
 /// other places that also held an order agreed. It is now one array, read
 /// backwards, and this is the assertion that it is read at all.
 ///
-/// A list over a conversation is the pair to use because it is one obelus
-/// really has: an agent's own question opens exactly like this.
+/// A list over a page is the pair to use because it is one obelus really
+/// has: a setting's choices, and any list opened while a page is showing.
 #[test]
 fn a_key_goes_to_the_nearest_layer() {
     let mut app = reading();
-    app.open_agent();
+    dispatch::dispatch(&mut app, Command::TodoOpen);
     dispatch::dispatch(&mut app, Command::BufferList);
     assert_eq!(
         app.layers().nearest(),
         Some(Layer::Picker),
-        "the list did not open over the conversation"
+        "the list did not open over the page"
     );
 
     press(&mut app, KeyCode::Char('x'));
@@ -212,10 +211,9 @@ fn a_key_goes_to_the_nearest_layer() {
         "x",
         "the list did not get the key it was nearest to"
     );
-    assert_eq!(
-        app.chat().expect("the conversation").writing().rows(1),
-        [""],
-        "the conversation took a key from under the list"
+    assert!(
+        app.layers().has(Layer::Notes),
+        "the page went away under the list"
     );
 }
 
@@ -237,10 +235,10 @@ fn the_caret_is_where_the_keys_are() {
         height: HEIGHT,
     };
 
-    // A list over a conversation: the list is nearer, so the caret belongs
-    // on its prompt rather than in the box behind it.
+    // A list over the notes: the list is nearer, so the caret belongs on
+    // its prompt rather than in the note behind it.
     let mut app = reading();
-    app.open_agent();
+    dispatch::dispatch(&mut app, Command::TodoOpen);
     dispatch::dispatch(&mut app, Command::BufferList);
     let over = obelus::ui::cursor_position(area, &app).expect("a caret somewhere");
     assert_eq!(
@@ -249,10 +247,12 @@ fn the_caret_is_where_the_keys_are() {
         "the caret was not on the list's own prompt"
     );
 
-    // And the conversation alone puts it in the box, which is in the
-    // region rather than on the status row: a message is a paragraph.
+    // And a conversation, which is a document rather than a layer, puts it
+    // in the box: in the region rather than on the status row, because a
+    // message is a paragraph.
     let mut app = reading();
     app.open_agent();
+    assert!(!app.layers().any(), "a conversation is not over anything");
     let alone = obelus::ui::cursor_position(area, &app).expect("a caret somewhere");
     assert!(
         alone.y < HEIGHT - 1,
@@ -294,7 +294,7 @@ fn opening_anything_covers_the_question() {
 /// than from a key -- so what is asserted here is the rule.
 #[test]
 fn two_pages_are_never_open_at_once() {
-    let pages = [Layer::Chat, Layer::Counts, Layer::Notes, Layer::Settings];
+    let pages = [Layer::Counts, Layer::Notes, Layer::Settings];
     for first in pages {
         for second in pages {
             let mut app = reading();
@@ -317,27 +317,26 @@ fn two_pages_are_never_open_at_once() {
 /// And the one nesting that is allowed stays allowed.
 ///
 /// A list opens *over* a page rather than instead of it: a setting's
-/// choices, and an agent's own question in the conversation it was asked
-/// in. This is the one place obelus stacks two things the reader is in, and
-/// it is why the rule is "a view covers what shares its room" rather than
-/// "opening covers".
+/// choices, and an agent's own question. This is the one place obelus
+/// stacks two things the reader is in, and it is why the rule is "a view
+/// covers what shares its room" rather than "opening covers".
 #[test]
 fn a_list_opens_over_a_page_rather_than_instead_of_it() {
     let mut app = reading();
-    app.open_agent();
+    dispatch::dispatch(&mut app, Command::TodoOpen);
     dispatch::dispatch(&mut app, Command::BufferList);
     assert_eq!(
         app.layers().furthest_first().collect::<Vec<_>>(),
-        [Layer::Chat, Layer::Picker],
-        "the list did not open over the conversation"
+        [Layer::Notes, Layer::Picker],
+        "the list did not open over the page"
     );
 
     press(&mut app, KeyCode::Esc);
     assert_eq!(
         app.layers().furthest_first().collect::<Vec<_>>(),
-        [Layer::Chat],
-        "leaving the list took the conversation with it"
+        [Layer::Notes],
+        "leaving the list took the page with it"
     );
     press(&mut app, KeyCode::Esc);
-    assert!(!app.layers().any(), "the conversation would not be left");
+    assert!(!app.layers().any(), "the page would not be left");
 }

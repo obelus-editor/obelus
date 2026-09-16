@@ -273,8 +273,7 @@ impl App {
             self.copied(&text, what);
             return;
         }
-        if self.showing_chat {
-            let (text, what) = self.conversation.chat.copied();
+        if let Some((text, what)) = self.chat().map(crate::component::chat::Chat::copied) {
             self.copied(&text, what);
             return;
         }
@@ -362,13 +361,14 @@ impl App {
             }
             return;
         }
-        if self.showing_chat {
+        if self.conversation().is_some() {
             // The width the box really has, from the same function the
             // view lays it out with: a cut is over a selection, and where
             // a selection ends was decided by where the rows wrap.
             let room = ui::chat::writing_width(self.editor_area);
-            let (text, what) = self.conversation.chat.cut(room);
-            self.cut_away(&text, what);
+            if let Some((text, what)) = self.conversation_mut().map(|talk| talk.chat.cut(room)) {
+                self.cut_away(&text, what);
+            }
             return;
         }
         let Some(buffer) = self.current_buffer() else {
@@ -435,7 +435,7 @@ impl App {
             || self.notes.is_some()
             || self.settings.is_some()
             || self.picker.is_some()
-            || self.showing_chat
+            || self.conversation().is_some()
     }
 
     pub(super) fn paste_text(&mut self, what: &str) {
@@ -473,10 +473,6 @@ impl App {
                 if searching {
                     self.refresh_search();
                 }
-                return;
-            }
-            Some(Layer::Chat) => {
-                self.conversation.chat.put(what);
                 return;
             }
             // Nothing is typed into the counts, so a paste has nowhere to

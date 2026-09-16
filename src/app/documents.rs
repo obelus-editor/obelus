@@ -364,6 +364,17 @@ impl App {
         }
     }
 
+    /// Moves to whatever is in that slot, file or not.
+    ///
+    /// The slot has to hold something: an id whose document was closed
+    /// names nothing, and going to nothing would leave the reader on a
+    /// screen with no document and no way back to one.
+    pub(super) fn go_to_document(&mut self, id: DocumentId) {
+        if self.document(id).is_some() {
+            self.current = Some(id);
+        }
+    }
+
     /// The buffer the open picker's selection names, if that is what it is.
     pub(super) fn selected_buffer(&self) -> Option<DocumentId> {
         match self.picker.as_ref()?.selected_item()?.value {

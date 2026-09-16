@@ -430,12 +430,16 @@ mod in_place {
     /// the places a reader types.
     #[test]
     fn a_cut_comes_out_of_the_message_being_written() {
-        let (_scratch, mut app) = open("field-chat-cut");
+        let (scratch, mut app) = open("field-chat-cut");
         let before = "fn main() {}\n";
         dispatch::dispatch(&mut app, Command::AgentOpen);
         assert!(app.chat().is_some(), "the chat did not open");
 
         dispatch::dispatch(&mut app, Command::SelectionCut);
+        // Back to the file, which is a document of its own rather than
+        // something the conversation is drawn over: what the cut must not
+        // have done is take a line out of it while the reader was elsewhere.
+        app.open_for_test(&scratch.path().join("one.rs"));
         assert_eq!(
             app.current_buffer()
                 .expect("a file")
@@ -443,7 +447,7 @@ mod in_place {
                 .rope()
                 .to_string(),
             before,
-            "the cut took a line out of the file behind the chat"
+            "the cut took a line out of the file the reader left"
         );
     }
 

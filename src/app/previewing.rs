@@ -209,15 +209,6 @@ impl App {
                 }
                 true
             }
-            // The conversation's transcript, which is the one thing here
-            // that scrolls with no cursor in it.
-            Layer::Chat => {
-                if !self.showing_chat {
-                    return false;
-                }
-                self.conversation.chat.scroll(rows);
-                true
-            }
             // A question is one row and has nothing to scroll; the notes
             // and the settings scroll with the keys and have never taken
             // the wheel. Saying so is the point: the next view added has to

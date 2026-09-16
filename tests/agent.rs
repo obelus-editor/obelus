@@ -292,9 +292,11 @@ fn closing_it_keeps_what_was_said() {
         app.talking() == obelus::app::talking::Talking::Ready
     });
 
-    // Idle, so now it closes.
+    // And with nothing in flight it does nothing at all: a conversation is
+    // a document, and escape leaves whatever is *over* the document being
+    // read. There is nothing over this one.
     support::press(&mut app, KeyCode::Esc);
-    assert!(app.chat().is_none(), "escape did not close it");
+    assert!(app.chat().is_some(), "escape closed a document");
 
     support::press_function(&mut app, 4);
     let text = screen(&mut app);
@@ -1137,40 +1139,32 @@ fn a_permission_question_says_what_it_will_do() {
     );
 }
 
-/// The conversation is a dialog: nothing of obelus's own opens over it.
+/// obelus's own keys work inside a conversation.
 ///
-/// It is the whole region and it has its own keys, so a command that put a
-/// list on top of it would leave two things on screen with one caret and no
-/// way to tell which was listening. Escape closes the conversation, and the
-/// keys are obelus's again after that.
+/// They did not while it was a region over the editor: it answered
+/// `Context::Dialog`, where nothing is bound, so `ctrl+p` did nothing and
+/// the only way to the palette was to leave. A conversation is a document
+/// now, and a document is what obelus's keys are for -- a list opens over
+/// it the way it opens over a file, and leaving the list leaves the
+/// conversation where it was.
 #[test]
-fn nothing_of_obeluss_own_opens_over_the_conversation() {
+fn obeluss_own_keys_work_inside_a_conversation() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus::app::talking::Talking::Ready
     });
-    let conversation = screen(&mut app);
-    for key in ['o', 'e', 'p', 'q'] {
-        support::press_control(&mut app, key);
-    }
+
+    support::press_control(&mut app, 'p');
     assert!(
-        app.picker().is_none(),
-        "a list opened over the conversation"
-    );
-    assert!(!app.should_quit(), "ctrl+q reached the key table");
-    assert_eq!(
-        screen(&mut app),
-        conversation,
-        "something opened over the conversation"
+        app.picker().is_some(),
+        "the palette would not open in a conversation"
     );
 
     support::press(&mut app, KeyCode::Esc);
-    // A key whose command can run with nothing open: the list of open
-    // files is dim on this screen, and a dim command's key does nothing.
-    support::press_function(&mut app, 1);
+    assert!(app.picker().is_none(), "the list would not close");
     assert!(
-        app.picker().is_some(),
-        "escape did not give the key table back"
+        app.chat().is_some(),
+        "leaving the list took the conversation with it"
     );
 }
 
@@ -1584,20 +1578,22 @@ fn the_box_on_a_ticked_card_is_ticked_open() {
 /// A question asked while the reader is away from the conversation brings
 /// it back.
 ///
-/// The card is drawn inside the conversation, so a question asked after
-/// they escaped out of it would be a card nobody can see -- taking their
-/// keys, and holding up an agent waiting for an answer it never showed
-/// them. Agents ask before anything is said to them: a login, a workspace.
+/// The card is drawn inside the conversation, so a question asked while the
+/// reader is looking at something else would be a card nobody can see --
+/// taking their keys, and holding up an agent waiting for an answer it
+/// never showed them. Agents ask before anything is said to them: a login,
+/// a workspace.
 #[test]
 fn a_question_asked_while_the_conversation_is_away_brings_it_back() {
     let (mut app, events) = playing(&["asks-at-once"]);
 
-    // Away from it before it has even opened, which escape does while it is
-    // not working: the agent goes on starting, and asks with nobody there.
-    support::press(&mut app, KeyCode::Esc);
+    // Away from it before it has even opened: a file is opened over the top
+    // of it, the way switching documents does, and the agent goes on
+    // starting with nobody looking.
+    app.open_for_test(std::path::Path::new("tests/fixtures/sample.rs"));
     assert!(
         app.chat().is_none(),
-        "escape did not close the conversation"
+        "the conversation is still what is being read"
     );
     assert!(app.card().is_none(), "the question was already here");
 
@@ -2024,8 +2020,11 @@ fn a_row_naming_a_file_that_is_gone_changes_nothing() {
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus::app::talking::Talking::Ready
     });
+    // Where the reader left their own file. Not `current_buffer`, because
+    // the conversation is what is current now -- it is a document, and
+    // opening it is switching to it.
     let reading = app
-        .current_buffer()
+        .file(obelus::buffer::DocumentId::new(0))
         .expect("the reader's own file")
         .cursor()
         .line;
@@ -2040,9 +2039,13 @@ fn a_row_naming_a_file_that_is_gone_changes_nothing() {
     support::press(&mut app, KeyCode::Enter);
     assert!(
         app.chat().is_some(),
-        "the conversation hid itself for a file that never opened"
+        "the conversation went away for a file that never opened"
     );
-    let buffer = app.current_buffer().expect("the reader's own file");
+    // Which file the reader still has, rather than which is current: the
+    // conversation is what is current, because going nowhere went nowhere.
+    let buffer = app
+        .file(obelus::buffer::DocumentId::new(0))
+        .expect("the reader's own file");
     assert!(
         buffer.path().ends_with("many_lines.rs"),
         "it opened {} out of nothing",

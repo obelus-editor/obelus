@@ -18,13 +18,32 @@
 //! arrives afterwards. If moving them churns a test, the shape was wrong
 //! and better to know before there is a second kind of thing riding on it.
 
-use crate::buffer::Buffer;
+use crate::{buffer::Buffer, conversation::Conversation};
 
 /// One of the things the reader can be looking at.
 #[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a buffer is what a slot in this list usually holds, so it is \
+              the one that should not be behind a pointer; the conversation \
+              is boxed because it was twice the size and there are a handful \
+              of them against a reader's whole tree of files"
+)]
 pub enum Document {
     /// A file, or a file as a commit had it.
     File(Buffer),
+    /// A conversation with an agent.
+    ///
+    /// Not a view over the file behind it, which is what it was: a
+    /// conversation is somewhere the reader goes and comes back to, and
+    /// something they go back to is a document. Which is also what stops
+    /// escape meaning two things -- it leaves whatever is *over* the
+    /// document being read, and a conversation is no longer over anything.
+    ///
+    /// Boxed, because a conversation is twice the size of a buffer and
+    /// every slot in the list would be that big: a reader with forty files
+    /// open would pay for forty conversations they have not had.
+    Chat(Box<Conversation>),
 }
 
 impl Document {
@@ -41,6 +60,7 @@ impl Document {
     pub const fn file(&self) -> Option<&Buffer> {
         match self {
             Self::File(buffer) => Some(buffer),
+            Self::Chat(_) => None,
         }
     }
 
@@ -49,7 +69,31 @@ impl Document {
     pub const fn file_mut(&mut self) -> Option<&mut Buffer> {
         match self {
             Self::File(buffer) => Some(buffer),
+            Self::Chat(_) => None,
         }
+    }
+
+    /// The conversation, where this is one.
+    #[must_use]
+    pub fn chat(&self) -> Option<&Conversation> {
+        match self {
+            Self::Chat(talk) => Some(talk),
+            Self::File(_) => None,
+        }
+    }
+
+    /// And to change it.
+    pub fn chat_mut(&mut self) -> Option<&mut Conversation> {
+        match self {
+            Self::Chat(talk) => Some(talk),
+            Self::File(_) => None,
+        }
+    }
+}
+
+impl From<Conversation> for Document {
+    fn from(talk: Conversation) -> Self {
+        Self::Chat(Box::new(talk))
     }
 }
 

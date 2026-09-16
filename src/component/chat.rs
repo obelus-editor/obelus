@@ -201,8 +201,6 @@ pub enum ChatOutcome {
     Choose(String),
     /// Flip one of its switches, by its id.
     Toggle(String),
-    /// Close the view, keeping what is in it.
-    Cancelled,
 }
 
 /// What the conversation's keys are moving.
@@ -760,8 +758,13 @@ impl Chat {
         }
 
         match key.code {
+            // Stopping the agent is the one thing escape does here. A
+            // conversation is a document, not something over one, and
+            // escape is what leaves whatever is over the document being
+            // read -- so with nothing in flight there is nothing for it to
+            // give up on, and it leaves the box alone rather than taking
+            // the reader somewhere.
             KeyCode::Esc if bare && thinking => ChatOutcome::Interrupt,
-            KeyCode::Esc if bare => ChatOutcome::Cancelled,
             // Which is why the box takes shift: a message to an agent is a
             // paragraph, and enter is how you send one.
             KeyCode::Enter if !bare => {
@@ -1576,15 +1579,18 @@ mod tests {
     /// What escape means depends on whether anything is happening, and
     /// nothing else about the keys does.
     #[test]
-    fn escape_stops_the_agent_first_and_closes_the_view_second() {
+    fn escape_stops_the_agent_and_otherwise_does_nothing() {
         let mut chat = Chat::new();
         assert_eq!(
             chat.handle_key(&key(KeyCode::Esc), true, ROOM, &[]),
             ChatOutcome::Interrupt
         );
+        // And with nothing in flight it is not the conversation's key: a
+        // conversation is a document, and escape leaves what is *over* a
+        // document. There is nothing over this one.
         assert_eq!(
             chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
-            ChatOutcome::Cancelled
+            ChatOutcome::Ignored
         );
     }
 

@@ -320,16 +320,6 @@ pub struct App {
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
     statuses: std::collections::HashMap<PathBuf, git::FileStatus>,
-    /// The conversation with an agent: what was said, what is being typed,
-    /// and what it is waiting on.
-    ///
-    /// One, for now, and always there. It is the shape rather than the
-    /// count that this is about: what belongs to a conversation is in one
-    /// place, so that a second one is a second of these rather than a
-    /// second set of fields nobody remembered to pair up.
-    conversation: crate::conversation::Conversation,
-    /// Whether the conversation is what the editor region is showing.
-    showing_chat: bool,
     /// The agent obelus is talking to, once something has needed it.
     talker: Option<crate::acp::Talk>,
     /// What obelus knows about the agents it could run.
@@ -516,8 +506,7 @@ impl App {
             prompt: None,
             changes: None,
             statuses: std::collections::HashMap::new(),
-            conversation: crate::conversation::Conversation::default(),
-            showing_chat: false,
+
             talker: None,
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),
@@ -660,6 +649,44 @@ impl App {
     /// The same, to change.
     pub fn document_mut(&mut self, id: DocumentId) -> Option<&mut Document> {
         self.documents.get_mut(id.get())?.as_mut()
+    }
+
+    /// Does something to the transcript of the conversation being read.
+    ///
+    /// A closure because the alternative is a guard at two dozen call sites
+    /// that all say the same thing: a note about a conversation nobody is
+    /// in goes nowhere, and every one of them was written when there was
+    /// one conversation and it was always there.
+    pub(super) fn in_transcript(&mut self, what: impl FnOnce(&mut crate::component::chat::Chat)) {
+        if let Some(talk) = self.conversation_mut() {
+            what(&mut talk.chat);
+        }
+    }
+
+    /// Whether there is anything being read at all.
+    ///
+    /// Which is not "no file": a conversation is something to read, and it
+    /// is what the reader is on while they are in one. The welcome screen
+    /// asks this, and asked about a file until a conversation could be the
+    /// answer -- so it drew itself over one.
+    #[must_use]
+    pub fn reading_nothing(&self) -> bool {
+        self.current.is_none_or(|id| self.document(id).is_none())
+    }
+
+    /// The conversation being read, where that is what is being read.
+    ///
+    /// There is no flag for this any more. A conversation is showing when it
+    /// is the document the reader is on, which is one fact in one place --
+    /// and a `showing_chat` beside a conversation that exists was two.
+    #[must_use]
+    pub(super) fn conversation(&self) -> Option<&crate::conversation::Conversation> {
+        self.document(self.current?)?.chat()
+    }
+
+    /// The same, to change.
+    pub(super) fn conversation_mut(&mut self) -> Option<&mut crate::conversation::Conversation> {
+        self.document_mut(self.current?)?.chat_mut()
     }
 
     /// One of what is open, where it is a file.
@@ -907,11 +934,11 @@ impl App {
     /// while the conversation is showing. Asked every frame from what is
     /// true, rather than switched on and off from the half-dozen places
     /// that change either, which is how a ticker outlives its reason.
-    const fn wants_animating(&self, working: bool) -> bool {
-        match self.showing_chat {
-            true => working,
-            false => self.current.is_none(),
-        }
+    fn wants_animating(&self, working: bool) -> bool {
+        // Nothing open at all: the welcome screen's sheen.
+        self.current.is_none()
+            // Or an agent at work in the conversation being read.
+            || working
     }
 
     /// Whether the last frame asked to be woken again.
@@ -995,7 +1022,6 @@ impl App {
     #[must_use]
     pub fn layers(&self) -> layers::Layers {
         layers::Layers::showing(|layer| match layer {
-            layers::Layer::Chat => self.showing_chat,
             layers::Layer::Counts => self.counts.is_some(),
             layers::Layer::Notes => self.notes.is_some(),
             layers::Layer::Settings => self.settings.is_some(),
@@ -1078,12 +1104,6 @@ impl App {
             // the key that opens it brings back every word. A question the
             // agent is still waiting on goes with it, for the same reason a
             // list's does.
-            Layer::Chat => {
-                if self.is_asking() {
-                    self.refuse_asking();
-                }
-                self.close_chat();
-            }
         }
     }
 
@@ -1212,7 +1232,7 @@ impl App {
             | talking::Talking::Ready
             | talking::Talking::Gone => None,
         };
-        self.conversation.chat.doing(doing);
+        self.in_transcript(|chat| chat.doing(doing));
         // A grammar too slow to keep up with typing leaves a tree owing an
         // answer, and the ticker is what comes back for it: the reader
         // stops, the next tick lands, and the colours catch up.
@@ -1557,14 +1577,6 @@ impl App {
         if self.page_preview(&key) {
             return;
         }
-        // The card an agent's question is answered on, which is nearer
-        // than anything else on screen: it covers the box a message would
-        // be written in, because while the agent is waiting on an answer
-        // there is no message to send.
-        if self.card_key(&key) {
-            return;
-        }
-
         // The keys a file list and a search have that are not about moving
         // around them. Before the picker, because the picker would not know
         // them: what they change is where the rows come from, which is the
@@ -1586,11 +1598,18 @@ impl App {
                 Layer::Settings => self.settings_key(&key),
                 Layer::Notes => self.notes_key(&key),
                 Layer::Counts => self.counts_key(&key),
-                Layer::Chat => self.chat_key(&key),
             };
             if taken {
                 return;
             }
+        }
+
+        // The document being read, where that document is a conversation.
+        // After the layers, because a list or a page is over it the way it
+        // is over a file; before the panels and the file's own keys, which
+        // are about a file and there is not one.
+        if self.chat_key(&key) {
+            return;
         }
 
         // What the server said about a place. Before the panels below it
