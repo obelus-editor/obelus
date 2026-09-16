@@ -18,6 +18,13 @@ use crate::{
     text::{Edit, Text},
 };
 
+/// A caret in a text, and the two vocabularies that move and change it.
+///
+/// Re-exported rather than owned: a buffer *is* one of these with a file and
+/// a syntax tree attached, and so is the box a note is written in. What they
+/// share lives in [`crate::editing`].
+pub use crate::editing::{Cursor, Editing, Motion, Typing};
+
 /// Which open document, by position in the list.
 ///
 /// An index rather than a generational key because M0 cannot close a buffer.
@@ -466,13 +473,6 @@ impl Block {
 /// Two things are drawn the same way -- rows of text the file does not have,
 /// between two lines it does -- and they are not the same thing, so they do
 /// not read the same: lines a commit removed are gone, and a commit's
-/// A caret in a text, and the two vocabularies that move and change it.
-///
-/// Re-exported rather than owned: a buffer *is* one of these with a file and
-/// a syntax tree attached, and so is the box a note is written in. What they
-/// share lives in [`crate::editing`].
-pub use crate::editing::{Cursor, Editing, Motion, Typing};
-
 /// message is a note.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Held {
