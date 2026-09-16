@@ -111,7 +111,12 @@ impl App {
             return;
         };
         match had {
-            Some(session) => talker.reopen(&session),
+            Some(session) => {
+                talker.reopen(&session);
+                if let Some(talk) = self.conversation_mut() {
+                    talk.asked_for = Some(crate::acp::SessionId::new(session));
+                }
+            }
             None => talker.open(),
         }
     }
@@ -173,6 +178,25 @@ impl App {
                 kept.put(&note, &agent, what);
             }
         });
+    }
+
+    /// The note the conversation being read is about, in the words the
+    /// reader wrote.
+    ///
+    /// Read from the file rather than kept, like everything else about the
+    /// notes: the reader can change what one says from the notes page, from
+    /// their own editor, or from a second obelus, and a header holding a
+    /// copy would go on saying what the note used to.
+    #[must_use]
+    pub fn what_this_conversation_is_about(&self) -> Option<String> {
+        let Topic::Note(id) = &self.conversation()?.topic else {
+            return None;
+        };
+        crate::todo::Todo::read(&self.working_directory)
+            .notes
+            .into_iter()
+            .find(|note| note.id == *id)
+            .map(|note| note.title().to_string())
     }
 
     /// The conversation, while it is what the reader is looking at.
@@ -1063,13 +1087,38 @@ impl App {
         // a session only when it is opened and only ever needs the one.
         if let acp::Incoming::Started { session, .. } = &incoming {
             let session = session.clone();
-            if let Some(talk) = self
+            // The one that asked for this name, if one did -- a conversation
+            // being taken up again knows which it wants. Only then the first
+            // that has none, which is what a freshly opened one is.
+            //
+            // Two of them starting at once is the case this is for: told
+            // apart by nothing, the second answer would go to whichever
+            // happened to be first in the list.
+            let asked = self
                 .documents
-                .iter_mut()
-                .flatten()
-                .filter_map(Document::chat_mut)
-                .find(|talk| talk.session.is_none())
-            {
+                .iter()
+                .position(|document| {
+                    document
+                        .as_ref()
+                        .and_then(Document::chat)
+                        .is_some_and(|talk| talk.asked_for.as_ref() == Some(&session))
+                })
+                .or_else(|| {
+                    self.documents.iter().position(|document| {
+                        document
+                            .as_ref()
+                            .and_then(Document::chat)
+                            .is_some_and(|talk| talk.session.is_none() && talk.asked_for.is_none())
+                    })
+                });
+            let mine = asked.and_then(|at| {
+                self.documents
+                    .get_mut(at)
+                    .and_then(Option::as_mut)
+                    .and_then(Document::chat_mut)
+            });
+            if let Some(talk) = mine {
+                talk.asked_for = None;
                 talk.session = Some(session);
             }
             self.remember_the_conversations();

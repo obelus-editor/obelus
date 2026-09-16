@@ -275,6 +275,13 @@ pub struct ChatView<'a> {
     root: &'a Path,
     /// Where the animation has got to, for the row that turns.
     phase: u32,
+    /// The note this conversation is about, where it is about one.
+    ///
+    /// A header earns its row by carrying something, and this is what it
+    /// carries: a reader with four conversations open has four screens that
+    /// would otherwise differ only in what was said in them. A label reading
+    /// "chat" would answer a question nobody asked -- they pressed the key.
+    about: Option<String>,
 }
 
 impl<'a> ChatView<'a> {
@@ -292,6 +299,7 @@ impl<'a> ChatView<'a> {
             card: app.card(),
             root: app.working_directory(),
             phase: app.phase(),
+            about: app.what_this_conversation_is_about(),
         })
     }
 
@@ -716,11 +724,11 @@ impl ChatView<'_> {
         }
     }
 
-    /// Who is being talked to, and what they are doing.
-    /// Who is being talked to, and nothing else.
+    /// Who is being talked to, and what about.
     ///
-    /// A header says what the thing it names *is*, which for an agent is
-    /// its name. What is *happening* goes at the foot of the transcript,
+    /// A header says what the thing it names *is*, which for an agent is its
+    /// name -- and, once a reader can have four conversations open, which of
+    /// them this is. What is *happening* goes at the foot of the transcript,
     /// where the next thing will appear; what went wrong is a line in the
     /// transcript where it went wrong. Five states used to sit here, two of
     /// them saying what the screen already said better and one of them
@@ -732,12 +740,35 @@ impl ChatView<'_> {
             column += INDENT;
         }
         let name = self.name.unwrap_or("no agent");
-        write(
+        column = write(
             cells,
             column,
             area.y,
             name,
             plain.fg(self.theme.gutter_current),
+        );
+        // The note, dimmed after it, for as much of the row as is left. It
+        // is what the reader called this conversation and the agent's name
+        // is the same on all of them, so this is the half that tells one
+        // screen from another.
+        let Some(about) = self.about.as_deref() else {
+            return;
+        };
+        let left = area.x + area.width;
+        if column + 2 >= left {
+            return;
+        }
+        column = write(cells, column, area.y, "  ", dim);
+        // From the right, because a note's first words are the ones a
+        // reader wrote to recognise it by: "wire the counts tree up to the
+        // search" cut at the back is still the note they meant.
+        let room = usize::from(left - column);
+        write(
+            cells,
+            column,
+            area.y,
+            &crate::ui::truncate_from_right(about, room),
+            dim,
         );
     }
 

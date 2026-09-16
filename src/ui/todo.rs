@@ -71,6 +71,9 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
         Hint::common(alt(KeyCode::Enter), "go there")
             .saying("go to what it is about")
             .when(notes.can_go()),
+        Hint::common(alt(KeyCode::Char('a')), "talk")
+            .saying("talk to an agent about this one")
+            .when(on.is_some()),
         // At the foot rather than on the card alone: taking a whole note
         // away is the one thing here a reader will go looking for and not
         // find, because backspace on its own is a letter.

@@ -50,6 +50,15 @@ pub struct Conversation {
     /// `None` until then, which is a real state and not a gap: opening the
     /// view starts the process, and a reader types faster than node starts.
     pub session: Option<acp::SessionId>,
+    /// The one it asked the agent to take up again, while it waits.
+    ///
+    /// Only for a conversation being reopened, where obelus already knows
+    /// the name because it wrote it down. It is not put straight into
+    /// `session`, because until the agent has answered the conversation is
+    /// still starting and the screen should say so -- and it is kept apart
+    /// from "no session yet" because two conversations opening at once would
+    /// otherwise be told apart by nothing, and could take each other's.
+    pub asked_for: Option<acp::SessionId>,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.
