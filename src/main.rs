@@ -14,7 +14,10 @@ use obelus::{
 #[derive(Parser)]
 #[command(version, about)]
 struct Arguments {
-    /// Files to open.
+    /// What to open: a file, or a directory to work in.
+    ///
+    /// A file names the tree it is in and is opened. A directory is the
+    /// tree itself, and obelus opens on the list of what is in it.
     paths: Vec<PathBuf>,
 }
 
@@ -27,6 +30,10 @@ fn main() -> Result<()> {
     // Before anything that can panic, so a panic on the way up is in the
     // log as well.
     logging::catch_panics();
+    // What the paths mean: which tree, which files, and whether the
+    // question left over is "which file".
+    let opening = app::opening(&arguments.paths);
+
     // The first line of every session, and the one a reader of the log
     // needs before any other: which obelus this is, where it was run, and
     // what the terminal said it was. Without it there is no telling which
@@ -34,7 +41,12 @@ fn main() -> Result<()> {
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         directory = ?std::env::current_dir().ok(),
-        files = arguments.paths.len(),
+        // And the tree obelus settled on, which the arguments may have
+        // moved: every path in the rest of the log is relative to it.
+        tree = ?opening.root,
+        paths = arguments.paths.len(),
+        opens = opening.files.len(),
+        list = opening.list,
         term = ?std::env::var("TERM").ok(),
         colours = ?std::env::var("COLORTERM").ok(),
         "obelus starting"
@@ -42,8 +54,8 @@ fn main() -> Result<()> {
 
     // Opened before the terminal is taken over, so a bad path reports itself
     // on a normal screen rather than flashing past inside an alternate one.
-    let buffers = arguments
-        .paths
+    let buffers = opening
+        .files
         .iter()
         .map(|path| Buffer::open(path))
         .collect::<Result<Vec<_>>>()?;
@@ -78,6 +90,14 @@ fn main() -> Result<()> {
     // cannot otherwise report.
     let keyboard = enable_keyboard();
     let mut app = App::new(buffers);
+    // Before the settings, because a tree has settings of its own and
+    // reading those means knowing which tree.
+    if let Some(root) = opening.root {
+        app.work_in(root);
+    }
+    if opening.list {
+        app.list_at_start();
+    }
     // Read here rather than in `App::new`, so that a test gets the defaults
     // rather than whatever the machine it runs on has in `~/.config`.
     app.load_config();

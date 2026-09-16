@@ -463,6 +463,14 @@ pub struct App {
     /// geometry the user is looking at.
     editor_area: Rect,
     working_directory: PathBuf,
+    /// Whether to open on the file list.
+    ///
+    /// A directory on the command line is a reader saying which tree
+    /// rather than which file, and "which file" is what the list answers.
+    /// A flag rather than a list opened on the spot, because the rows come
+    /// from a walk on the loop's own channel and there is no channel until
+    /// [`App::start`].
+    list_at_start: bool,
     should_quit: bool,
 }
 
@@ -541,6 +549,7 @@ impl App {
             // whole session even if something else changes the process's
             // directory.
             working_directory: std::env::current_dir().unwrap_or_default(),
+            list_at_start: false,
             should_quit: false,
         }
     }
@@ -618,6 +627,21 @@ impl App {
         &self.working_directory
     }
 
+    /// Puts the application on a tree.
+    ///
+    /// Before the settings are read, always: a tree has settings of its
+    /// own and a theme beside them, and finding those means knowing which
+    /// tree first. [`App::load_config`] lays the tree's answers over the
+    /// reader's at the end, so this only has to have happened by then.
+    pub fn work_in(&mut self, root: PathBuf) {
+        self.working_directory = root;
+    }
+
+    /// Says to open on the file list rather than on a file.
+    pub fn list_at_start(&mut self) {
+        self.list_at_start = true;
+    }
+
     /// The document being read, if any is open.
     #[must_use]
     pub fn current_buffer(&self) -> Option<&Buffer> {
@@ -635,11 +659,20 @@ impl App {
     /// server that is not installed, is logged and then done without.
     /// Refusing to run because a convenience is missing would trade it for a
     /// missing program.
-    fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
+    ///
+    /// Public because it is the whole of what starting means, and a test
+    /// about what obelus does on the way up has nothing else to call.
+    pub fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
         self.start_watching(sender);
         for index in 0..self.buffers.len() {
             self.serve(index);
+        }
+        // Last, and here rather than at the command line: the rows come
+        // from a walk that sends on this channel, so a list opened before
+        // there was one would be a list nothing ever fills.
+        if self.list_at_start {
+            self.open_file_picker();
         }
     }
 
@@ -699,7 +732,7 @@ impl App {
     /// is then a golden grid that passes where it was written and nowhere
     /// else, so a test that renders one says which tree it is on.
     pub fn working_directory_for_test(&mut self, root: PathBuf) {
-        self.working_directory = root;
+        self.work_in(root);
         // And whatever that tree has to say about the settings, which is
         // what putting obelus on a tree means: at startup the two happen
         // together, and a test that moved one without the other would be
@@ -1957,6 +1990,69 @@ where
         terminal.show_cursor()?;
     }
     Ok(())
+}
+
+/// What the command line asked obelus to open.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Opening {
+    /// The tree to work in, absolute, where the arguments named one.
+    ///
+    /// `None` for no arguments at all, which leaves the directory obelus
+    /// was started in -- the shell's answer to the same question.
+    pub root: Option<PathBuf>,
+    /// The files to open, in the order they were given.
+    pub files: Vec<PathBuf>,
+    /// Whether to open on the file list.
+    pub list: bool,
+}
+
+/// What a set of command-line paths means.
+///
+/// A file names the tree it is in and is opened; a directory *is* the
+/// tree, and the question it leaves -- which file -- is the one the list
+/// answers. The first path decides the tree, because a reader who names
+/// two has said which they meant first.
+///
+/// Absolute, and by the same rule [`crate::buffer::Buffer::open`] uses on
+/// a file: made absolute rather than canonical, so a tree reached through
+/// a symlink is still shown under the name the reader typed. A relative
+/// root would fail quietly -- every path obelus shows is worked out by
+/// stripping this off an absolute one, and git is asked about it from a
+/// process whose own directory nothing here controls.
+#[must_use]
+pub fn opening(paths: &[PathBuf]) -> Opening {
+    let Some(first) = paths.first() else {
+        return Opening::default();
+    };
+    // Anything that is not a directory is a file to open, including one
+    // that is not there: what to say about a path that cannot be read is
+    // `Buffer::open`'s to say, and it says it better than this could.
+    let files: Vec<PathBuf> = paths
+        .iter()
+        .filter(|path| !path.is_dir())
+        .cloned()
+        .collect();
+    let root = match first.is_dir() {
+        true => first.clone(),
+        // The directory the file is in. Absolute first, because the parent
+        // of a bare `main.rs` is nothing at all.
+        false => absolute(first)
+            .parent()
+            .map_or_else(|| absolute(first), Path::to_path_buf),
+    };
+    Opening {
+        root: Some(absolute(&root)),
+        // Nothing to open means the list is the whole answer: `ob src`
+        // is a reader saying which tree and asking which file.
+        list: files.is_empty(),
+        files,
+    }
+}
+
+/// A path from the command line, made absolute against where obelus was
+/// started.
+fn absolute(path: &Path) -> PathBuf {
+    std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Runs until the application asks to quit or input ends.
