@@ -29,6 +29,16 @@ use crate::keymap::Context;
 /// do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layer {
+    /// A conversation with an agent.
+    ///
+    /// Here because it is one today: it takes the editor region, it is left
+    /// with escape, and obelus's own keys do not reach past it. It is the
+    /// one of these that should not be a layer at all -- a conversation is
+    /// somewhere the reader goes back to, which is a document rather than
+    /// something over one -- and when it becomes a document this variant
+    /// goes, and every place that had to answer for it says so by failing
+    /// to compile.
+    Chat,
     /// How much code is here.
     Counts,
     /// What the tree means to come back to.
@@ -45,11 +55,14 @@ pub enum Layer {
 /// Every layer there is, furthest from the reader first.
 ///
 /// Drawing walks this forwards and keys walk it backwards, and nothing else
-/// may hold an order. The three pages -- the counts, the notes and the
+/// may hold an order. Public so that anything which has to answer for all of
+/// them -- a test, most of all -- reads the list from here rather than
+/// keeping a second copy that can fall behind. The three pages -- the counts, the notes and the
 /// settings -- cannot be open together, so their order among themselves is
 /// never observed; it is declared anyway, because an order nobody wrote down
 /// is an order every reader of the code guesses at.
-const STACK: [Layer; 5] = [
+pub const STACK: [Layer; 6] = [
+    Layer::Chat,
     Layer::Counts,
     Layer::Notes,
     Layer::Settings,
@@ -102,7 +115,7 @@ impl Layer {
     pub const fn room(self) -> Room {
         match self {
             Self::Counts => Room::Screen,
-            Self::Notes | Self::Settings => Room::Region,
+            Self::Chat | Self::Notes | Self::Settings => Room::Region,
             Self::Picker => Room::Band,
             Self::Prompt => Room::Row,
         }
@@ -262,7 +275,13 @@ mod tests {
     #[test]
     fn only_a_row_leaves_the_global_keys_alone() {
         assert_eq!(Layer::Prompt.context(), Context::Normal);
-        for layer in [Layer::Counts, Layer::Notes, Layer::Settings, Layer::Picker] {
+        for layer in [
+            Layer::Chat,
+            Layer::Counts,
+            Layer::Notes,
+            Layer::Settings,
+            Layer::Picker,
+        ] {
             assert_eq!(layer.context(), Context::Dialog, "{layer:?}");
         }
     }

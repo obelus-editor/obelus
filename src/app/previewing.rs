@@ -179,6 +179,53 @@ impl App {
     /// arrives as arrow keys, so a picker that ignored it would have lost
     /// something -- and otherwise the file, by rows, with the cursor left
     /// where it was put.
+    /// Gives one layer the notch, and says whether it took it.
+    ///
+    /// Every layer answers, including the ones with nothing to scroll: a
+    /// match the compiler checks is what stops the next view being left out
+    /// of this the way the notes were.
+    fn scroll_layer(&mut self, layer: crate::app::layers::Layer, rows: isize) -> bool {
+        use crate::app::layers::Layer;
+        match layer {
+            // One row a notch in a list. Three is right for text, where a
+            // notch is a gesture at a paragraph; a list is chosen through
+            // one row at a time.
+            Layer::Picker => {
+                let Some(picker) = self.picker.as_mut() else {
+                    return false;
+                };
+                picker.move_selection_by(rows.signum());
+                true
+            }
+            // The counts, which are a list as well: the notch steps the row
+            // rather than the view, for the same reason it does in a picker.
+            Layer::Counts => {
+                let Some(counts) = self.counts.as_ref() else {
+                    return false;
+                };
+                let height = crate::ui::counts::list_height(self.screen_area, counts);
+                if let Some(counts) = self.counts.as_mut() {
+                    counts.scroll(rows, height);
+                }
+                true
+            }
+            // The conversation's transcript, which is the one thing here
+            // that scrolls with no cursor in it.
+            Layer::Chat => {
+                if !self.showing_chat {
+                    return false;
+                }
+                self.chat.scroll(rows);
+                true
+            }
+            // A question is one row and has nothing to scroll; the notes
+            // and the settings scroll with the keys and have never taken
+            // the wheel. Saying so is the point: the next view added has to
+            // answer here rather than being quietly left out.
+            Layer::Prompt | Layer::Notes | Layer::Settings => false,
+        }
+    }
+
     pub(super) fn scroll(&mut self, rows: isize) {
         // What a server said about a place, while it is up: it is what the
         // reader is looking at, and the file behind it is not going
@@ -193,27 +240,15 @@ impl App {
             completion.scroll(rows.signum());
             return;
         }
-        if let Some(picker) = self.picker.as_mut() {
-            // One row a notch in a list. Three is right for text, where a
-            // notch is a gesture at a paragraph; a list is chosen through one
-            // row at a time.
-            picker.move_selection_by(rows.signum());
-            return;
-        }
-        // The counts, which are a list as well: the notch steps the row
-        // rather than the view, for the same reason it does in a picker.
-        if let Some(counts) = self.counts.as_ref() {
-            let height = crate::ui::counts::list_height(self.screen_area, counts);
-            if let Some(counts) = self.counts.as_mut() {
-                counts.scroll(rows, height);
+        // And then whatever is over the file, nearest first -- the same
+        // order a key is offered in, because a notch is a key by another
+        // name. The two that answer `false` do so on purpose: this used to
+        // be a chain that simply did not mention them, so a notch over the
+        // notes scrolled the file behind them.
+        for layer in self.layers().nearest_first() {
+            if self.scroll_layer(layer, rows) {
+                return;
             }
-            return;
-        }
-        // The conversation's transcript, which is the only thing under a
-        // list here that scrolls without a cursor in it.
-        if self.showing_chat {
-            self.chat.scroll(rows);
-            return;
         }
         let height = self.editor_area.height;
         if let Some(rows_in_view) = self.rendered_rows()

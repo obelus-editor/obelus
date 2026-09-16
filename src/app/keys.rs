@@ -7,6 +7,82 @@
 
 use super::*;
 
+impl App {
+    /// What a key does to the file being read, and whether it did anything.
+    ///
+    /// The motions, the paging, the scrolling of a rendering and the
+    /// typing: four things that are all about the document under everything
+    /// else, which is why they share one refusal. Four separate guards were
+    /// four chances to leave a view out, and two of them did -- a letter
+    /// typed over the counts went into the file behind, and `ctrl+left`
+    /// under either the counts or a question on the status bar moved a
+    /// cursor nobody could see.
+    ///
+    /// It answers `false` rather than swallowing the key, so what it has no
+    /// use for goes on to the key table: `ctrl+q` still leaves obelus, and
+    /// `ctrl+w` still closes a file from the list of them.
+    pub(super) fn editor_key(&mut self, key: &KeyEvent) -> bool {
+        if self.layers().any() {
+            return false;
+        }
+
+        // A rendering scrolls by rows. Its rows are not the file's lines, so
+        // the cursor has nowhere to be in it and the motions have nothing to
+        // move: what the keys do here is move the window.
+        if let Some(rows) = self.rendered_rows()
+            && let Some(step) = view_step(key, self.editor_area.height)
+        {
+            let height = self.editor_area.height;
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.scroll_rendering(step, rows, height);
+            }
+            return true;
+        }
+
+        // Paging the file being read, which is scrolling and not a motion:
+        // the cursor stays where the reader left it.
+        if let Some((pages, extend_selection)) = editor_paging(key) {
+            let area = self.text_area();
+            if let Some(buffer) = self.current_buffer_mut() {
+                if extend_selection {
+                    buffer.extend_selection_by_page(pages, area);
+                } else {
+                    buffer.page(pages, area);
+                }
+            }
+            return true;
+        }
+
+        if let Some((motion, extend_selection)) = motion_for(key) {
+            let area = self.text_area();
+            if let Some(buffer) = self.current_buffer_mut() {
+                if extend_selection {
+                    buffer.extend_selection(motion, area);
+                } else {
+                    buffer.move_cursor(motion, area);
+                }
+            }
+            return true;
+        }
+
+        // What a key puts into the document. After the motions, which have
+        // the arrows and the ends of a line, and before the table, which has
+        // the chords: a bare character is neither of those, and `Backspace`,
+        // `Delete`, `Enter` and `Tab` cannot be in the table at all --
+        // `why_not` refuses them, because every list and box takes them
+        // itself.
+        if let Some(typing) = crate::editing::typing_for(key) {
+            self.typed(typing);
+            // A letter is a reason to ask what could follow it; everything
+            // else is a reason to stop offering.
+            self.after_typing(typing);
+            return true;
+        }
+
+        false
+    }
+}
+
 /// How far a key moves a rendered view, in rows.
 ///
 /// The arrows, the paging keys and the ends of the document, over a document

@@ -101,7 +101,7 @@ impl App {
         }
         // A list is already taking every key, so a second one beside the
         // cursor would be a panel nothing can reach.
-        if self.picker.is_some() || self.showing_chat || self.settings.is_some() {
+        if self.layers().any() {
             return;
         }
         let Some(language) = buffer.language() else {
@@ -388,12 +388,7 @@ impl App {
         // A list, a dialog or the conversation opened over the file takes
         // every key: a panel under one of those is a panel nothing can
         // reach, drawn over something the reader is using.
-        if self.picker.is_some()
-            || self.settings.is_some()
-            || self.counts.is_some()
-            || self.prompt.is_some()
-            || self.showing_chat
-        {
+        if self.layers().any() {
             self.completion = None;
             return;
         }

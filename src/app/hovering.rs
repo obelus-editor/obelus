@@ -189,12 +189,7 @@ impl App {
     pub(super) fn settle_hover(&mut self) {
         // A list or a dialog is what the screen is showing; the other two
         // panels want the same cells and are nearer questions.
-        if self.picker.is_some()
-            || self.settings.is_some()
-            || self.counts.is_some()
-            || self.prompt.is_some()
-            || self.showing_chat
-        {
+        if self.layers().any() {
             self.hover = None;
             self.resting = None;
             return;

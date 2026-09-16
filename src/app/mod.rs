@@ -27,7 +27,7 @@ mod hovering;
 mod noting;
 pub use history_view::About;
 mod keys;
-mod layers;
+pub mod layers;
 mod moving;
 mod naming;
 mod preferences;
@@ -46,7 +46,6 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use documents::Rendered;
 use history::Changed;
-use keys::{editor_paging, view_step};
 use previewing::Preview;
 use ratatui::{
     Terminal,
@@ -948,6 +947,7 @@ impl App {
     #[must_use]
     pub fn layers(&self) -> layers::Layers {
         layers::Layers::showing(|layer| match layer {
+            layers::Layer::Chat => self.showing_chat,
             layers::Layer::Counts => self.counts.is_some(),
             layers::Layer::Notes => self.notes.is_some(),
             layers::Layer::Settings => self.settings.is_some(),
@@ -967,12 +967,10 @@ impl App {
     /// rather than a screen, what it is asking about is still visible
     /// behind it, and it says its own answer to escape.
     #[must_use]
-    pub const fn is_showing_dialog(&self) -> bool {
-        self.picker.is_some()
-            || self.settings.is_some()
-            || self.counts.is_some()
-            || self.notes.is_some()
-            || self.showing_chat
+    pub fn is_showing_dialog(&self) -> bool {
+        self.layers()
+            .furthest_first()
+            .any(|layer| matches!(layer.context(), crate::keymap::Context::Dialog))
     }
 
     /// How far along the welcome screen's colours have travelled, in ticks.
@@ -1584,65 +1582,11 @@ impl App {
             return;
         }
 
-        // A rendering scrolls by rows. Its rows are not the file's lines, so
-        // the cursor has nowhere to be in it and the motions have nothing to
-        // move: what the keys do here is move the window.
-        if self.picker.is_none()
-            && let Some(rows) = self.rendered_rows()
-            && let Some(step) = view_step(&key, self.editor_area.height)
-        {
-            let height = self.editor_area.height;
-            if let Some(buffer) = self.current_buffer_mut() {
-                buffer.scroll_rendering(step, rows, height);
-            }
-            return;
-        }
-
-        // Paging the file being read, which is scrolling and not a motion:
-        // the cursor stays where the reader left it.
-        if self.picker.is_none()
-            && let Some((pages, extend_selection)) = editor_paging(&key)
-        {
-            let area = self.text_area();
-            if let Some(buffer) = self.current_buffer_mut() {
-                if extend_selection {
-                    buffer.extend_selection_by_page(pages, area);
-                } else {
-                    buffer.page(pages, area);
-                }
-            }
-            return;
-        }
-
-        if self.picker.is_none()
-            && let Some((motion, extend_selection)) = motion_for(&key)
-        {
-            let area = self.text_area();
-            if let Some(buffer) = self.current_buffer_mut() {
-                if extend_selection {
-                    buffer.extend_selection(motion, area);
-                } else {
-                    buffer.move_cursor(motion, area);
-                }
-            }
-            return;
-        }
-
-        // What a key puts into the document. After the motions, which have
-        // the arrows and the ends of a line, and before the table, which has
-        // the chords: a bare character is neither of those, and `Backspace`,
-        // `Delete`, `Enter` and `Tab` cannot be in the table at all --
-        // `why_not` refuses them, because every list and box takes them
-        // itself.
-        if self.picker.is_none()
-            && self.settings.is_none()
-            && !self.showing_chat
-            && let Some(typing) = crate::editing::typing_for(&key)
-        {
-            self.typed(typing);
-            // A letter is a reason to ask what could follow it; everything
-            // else is a reason to stop offering.
-            self.after_typing(typing);
+        // The file being read: the motions, the paging and the typing. It
+        // goes last of the keys because everything above it is something
+        // opened *over* the file, and it refuses outright while any of
+        // those is showing.
+        if self.editor_key(&key) {
             return;
         }
 
@@ -1754,11 +1698,10 @@ impl App {
         if self.pointer_on_status(kind, x, y) {
             return;
         }
-        if self.picker.is_some()
-            || self.settings.is_some()
-            || self.counts.is_some()
-            || self.showing_chat
-        {
+        // Covering rather than merely open: a question on the status bar
+        // leaves every line of the file where the reader can see it, and a
+        // line they can see is a line they can point at.
+        if self.layers().covering() {
             return;
         }
         let Some(buffer) = self.current_buffer() else {
