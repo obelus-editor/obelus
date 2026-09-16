@@ -302,6 +302,7 @@ impl App {
         self.theme_before = None;
         match value {
             PickerValue::Command(command) => dispatch::dispatch(self, command),
+            PickerValue::Action(at) => self.do_action(at),
             PickerValue::Answer(answer) => self.answered(answer),
             PickerValue::File(path) => self.open(&self.working_directory.join(path)),
             PickerValue::Buffer(id) => {

@@ -95,6 +95,12 @@ pub struct Trouble {
     pub message: String,
     /// Which tool said it: `rustc`, `clippy`, a linter behind the server.
     pub source: Option<String>,
+    /// The diagnostic as it arrived.
+    ///
+    /// Kept whole because it goes back: a code action is asked for *about*
+    /// diagnostics, and the server matches them by every field it sent --
+    /// the code, the data, the related information -- not by the message.
+    pub item: Value,
 }
 
 impl Trouble {
@@ -116,13 +122,15 @@ impl Trouble {
 /// that would read it.
 #[must_use]
 pub fn published(params: &Value, text: &Text, encoding: &PositionEncodingKind) -> Vec<Trouble> {
+    let raw = diagnostics_of(params);
     let Ok(params) = serde_json::from_value::<PublishDiagnosticsParams>(params.clone()) else {
         return Vec::new();
     };
     params
         .diagnostics
         .into_iter()
-        .map(|diagnostic| {
+        .enumerate()
+        .map(|(at, diagnostic)| {
             let (line, column) = super::position::from_lsp(text, diagnostic.range.start, encoding);
             let (end_line, end_column) =
                 super::position::from_lsp(text, diagnostic.range.end, encoding);
@@ -136,39 +144,23 @@ pub fn published(params: &Value, text: &Text, encoding: &PositionEncodingKind) -
                 severity: Severity::of(diagnostic.severity),
                 message: diagnostic.message,
                 source: diagnostic.source,
+                item: raw.get(at).cloned().unwrap_or(Value::Null),
             }
         })
         .collect()
 }
 
+/// The diagnostics of a notification, untouched.
+fn diagnostics_of(params: &Value) -> Vec<Value> {
+    params
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
 /// The path a `publishDiagnostics` notification is about.
 #[must_use]
 pub fn path_of(params: &Value) -> Option<std::path::PathBuf> {
-    let uri = params.get("uri")?.as_str()?;
-    let path = uri.strip_prefix("file://")?;
-    Some(std::path::PathBuf::from(
-        percent_decode(path).unwrap_or_else(|| path.to_string()),
-    ))
-}
-
-/// A uri's escapes, undone.
-///
-/// Only the ones a path can carry: a server sends back the uri obelus gave
-/// it, and obelus builds those with the same escaping.
-fn percent_decode(text: &str) -> Option<String> {
-    if !text.contains('%') {
-        return None;
-    }
-    let mut out = String::with_capacity(text.len());
-    let mut characters = text.chars();
-    while let Some(character) = characters.next() {
-        if character != '%' {
-            out.push(character);
-            continue;
-        }
-        let high = characters.next()?.to_digit(16)?;
-        let low = characters.next()?.to_digit(16)?;
-        out.push(char::from_u32(high * 16 + low)?);
-    }
-    Some(out)
+    super::path_of_uri(params.get("uri")?.as_str()?)
 }

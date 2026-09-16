@@ -565,6 +565,57 @@ impl App {
         }
     }
 
+    /// Every open document, as its path and whether it is unwritten.
+    ///
+    /// For a test about a change made to files the reader is not looking
+    /// at: what matters is that they are documents and that they are
+    /// unwritten, and nothing else can see either.
+    #[must_use]
+    pub fn buffers_for_test(&self) -> Vec<(std::path::PathBuf, bool)> {
+        self.buffers
+            .iter()
+            .flatten()
+            .map(|buffer| (buffer.path().to_path_buf(), buffer.is_dirty()))
+            .collect()
+    }
+
+    /// Opens a file without going to it, and says where it landed.
+    ///
+    /// What a rename needs: the files it changes have to be documents --
+    /// so the change is an edit the reader can undo and a file they decide
+    /// when to write -- and taking the reader to each of them in turn
+    /// would be a tour of a dozen files they did not ask for.
+    ///
+    /// The server is told about it, as it is for any file obelus opens: it
+    /// is about to be edited, and a server that has not been told has a
+    /// different document.
+    pub(super) fn open_quietly(&mut self, path: &Path) -> Option<usize> {
+        if let Some(index) = self.buffers.iter().position(|buffer| {
+            buffer
+                .as_ref()
+                .is_some_and(|open| open.path() == path && open.content().is_file())
+        }) {
+            return Some(index);
+        }
+        match Buffer::open(path) {
+            Ok(buffer) => {
+                if let Some(watcher) = self.watcher.as_mut()
+                    && let Err(error) = watcher.watch(buffer.path())
+                {
+                    tracing::warn!(%error, path = %buffer.path().display(), "not watching");
+                }
+                self.buffers.push(Some(buffer));
+                let index = self.buffers.len() - 1;
+                self.serve(index);
+                Some(index)
+            }
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "could not open");
+                None
+            }
+        }
+    }
+
     /// Folds what the cursor is in, or unfolds what it is on.
     ///
     /// Silent when there is nothing here to fold, because `AFoldHere` has

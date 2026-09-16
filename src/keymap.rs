@@ -566,6 +566,21 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Down, KeyModifiers::ALT),
                 },
+                // `alt+a` for the actions offered here, on the letter like
+                // the rest of this family.
+                Binding {
+                    command: Command::SymbolActions,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('a'), KeyModifiers::ALT),
+                },
+                // `alt+r` for rename, on the letter of the word like the
+                // rest of this family -- and the one key here that changes
+                // files the reader cannot see, which is why it asks first.
+                Binding {
+                    command: Command::SymbolRename,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('r'), KeyModifiers::ALT),
+                },
                 // `alt+h` for what this is -- hover, which is what every
                 // editor calls it and what the protocol calls it, on the
                 // letter of the word like the rest of this family.

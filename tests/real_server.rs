@@ -167,6 +167,20 @@ fn a_real_server_declares_the_characters_that_ask_for_a_completion() {
             "rust-analyzer no longer says {character:?} asks what a call takes"
         );
     }
+    // Renaming, and what can be done here: the two that change files.
+    assert!(
+        capabilities.rename_provider.is_some(),
+        "rust-analyzer no longer renames"
+    );
+    assert!(
+        obelus::lsp::actions::supported(capabilities),
+        "rust-analyzer no longer offers anything to do"
+    );
+    // Where else a name is used, which obelus asks without being asked.
+    assert!(
+        obelus::lsp::uses::supported(capabilities),
+        "rust-analyzer no longer answers textDocument/documentHighlight"
+    );
     // And what a place is, which is the third thing the panels ask.
     assert!(
         obelus::lsp::hover::supported(capabilities),
@@ -175,6 +189,64 @@ fn a_real_server_declares_the_characters_that_ask_for_a_completion() {
     assert!(
         !obelus::lsp::complete::resolves(capabilities),
         "rust-analyzer now resolves items, so the panel should be asking it to"
+    );
+    client.shutdown();
+}
+
+/// A request from the server is answered *on the wire*, not merely
+/// answerable: the shape of the answer is tested against values elsewhere,
+/// and what this pins is that the client sends one at all.
+///
+/// Against a real client because that is what the wiring is: a message
+/// arrives, and one goes out.
+#[test]
+fn a_question_from_the_server_is_answered_on_the_wire() {
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+
+    let before = client.sent();
+    let answered = client.on_message(&serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 4242,
+        "method": "workspace/configuration",
+        "params": { "items": [{ "section": "obelus" }] }
+    }));
+    assert!(
+        answered.is_none(),
+        "a question from the server was taken for an answer to one of ours"
+    );
+    assert_eq!(
+        client.sent(),
+        before + 1,
+        "nothing went back, so the server is still waiting"
+    );
+    client.shutdown();
+}
+
+/// Taking a question back is a message, not a hope: the client sends
+/// `$/cancelRequest` and stops waiting.
+#[test]
+fn a_question_can_be_taken_back() {
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+
+    let id = client
+        .request("textDocument/documentSymbol", &serde_json::json!({}))
+        .expect("asking");
+    let before = client.sent();
+    client.cancel(id);
+    assert_eq!(
+        client.sent(),
+        before + 1,
+        "the server was never told to stop"
     );
     client.shutdown();
 }
@@ -548,6 +620,82 @@ fn a_real_server_outlines_a_file_by_name_and_by_nesting() {
     assert!(
         line.contains("struct Jump"),
         "the position is not on the line the name is on: {line:?}"
+    );
+}
+
+/// A real server offers something to do on ordinary code.
+///
+/// The assumption `alt+a` rests on, and the one that was wrong: obelus
+/// declared nothing about code actions, and rust-analyzer answers `null`
+/// to every `textDocument/codeAction` from a client that has not said it
+/// understands the literal shape -- whatever the file, wherever the
+/// range, mistake on the line or not. Nothing about that is visible from
+/// this side: it is a well-formed answer meaning "nothing to do here",
+/// which is also what a line with genuinely nothing to do says.
+///
+/// So the line this asks about is chosen to have nothing wrong with it.
+/// An answer with offers in it is the declaration being honoured; an
+/// empty one is the whole feature quietly gone.
+#[test]
+fn a_real_server_offers_something_to_do_on_ordinary_code() {
+    use obelus::lsp::actions;
+
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    let path = root().join("src/lsp/actions.rs");
+    let uri = obelus::lsp::client::uri_for(&path).expect("a uri");
+    let text = std::fs::read_to_string(&path).expect("reading the file");
+    client
+        .notify(
+            "textDocument/didOpen",
+            &serde_json::json!({ "textDocument": {
+                "uri": uri, "languageId": "rust", "version": 1, "text": text,
+            }}),
+        )
+        .expect("saying the file is open");
+
+    // `pub struct Action {` -- a declaration with nothing wrong with it,
+    // so nothing here is a quick fix for a diagnostic.
+    let line = text
+        .lines()
+        .position(|line| line.contains("pub struct Action {"))
+        .expect("the line is still in there");
+    let length = text.lines().nth(line).expect("the line").len();
+    let asked = client
+        .request(
+            "textDocument/codeAction",
+            &serde_json::json!({
+                "textDocument": { "uri": uri },
+                "range": {
+                    "start": { "line": line, "character": 0 },
+                    "end": { "line": line, "character": length },
+                },
+                "context": { "diagnostics": [] },
+            }),
+        )
+        .expect("asking");
+
+    let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+        reply.is_some_and(|reply| reply.id == asked)
+    })
+    .expect("an answer");
+    client.shutdown();
+
+    let offered = actions::offered_in(&reply.result);
+    assert!(
+        !offered.is_empty(),
+        "a real server offered nothing to do on a struct declaration, which          is what it answers when obelus has not declared it understands          code actions: {:?}",
+        reply.result
+    );
+    // And they arrive as actions rather than as bare commands, which is
+    // what the declaration was for: a bare command has no kind and no
+    // edit to read.
+    assert!(
+        offered
+            .iter()
+            .any(|action| action.kind.is_some() || action.unresolved()),
+        "every offer came back as a bare command: {offered:?}"
     );
 }
 

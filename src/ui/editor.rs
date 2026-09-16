@@ -281,9 +281,9 @@ impl<'a> EditorView<'a> {
             buffer: app.current_buffer(),
             highlights: app.highlights(),
             theme: app.theme(),
-            // The characters a hover is about, where one is up: the same
-            // mark a preview puts on the symbol it was opened for.
-            marked: app.hovered_range(),
+            // What is being talked about: the uses of the name the pointer
+            // is resting on, or what a hover is about while one is up.
+            marked: app.marked_runs(),
             selection: app.current_buffer().and_then(Buffer::selection),
             troubles: app.troubles(),
             changes: app.changes(),

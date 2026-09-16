@@ -32,6 +32,12 @@ use crate::{
 pub enum PickerValue {
     /// Run a command.
     Command(Command),
+    /// Do one of the things a language server offered to do here.
+    ///
+    /// By its place in the list rather than by the action itself: an
+    /// action is a lump of the server's own json, and a list of rows is
+    /// not where it belongs.
+    Action(usize),
     /// Open a file.
     File(PathBuf),
     /// Switch to an open buffer.

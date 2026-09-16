@@ -15,10 +15,12 @@
 //! itself, the keys, the frame, and the loop.
 pub mod agents;
 mod asking;
+mod changing;
 mod choosing;
 mod completing;
 mod counting;
 mod documents;
+mod fixing;
 mod history;
 mod history_view;
 mod hovering;
@@ -26,8 +28,10 @@ mod noting;
 pub use history_view::About;
 mod keys;
 mod moving;
+mod naming;
 mod preferences;
 mod previewing;
+mod renaming;
 mod searching;
 mod semantics;
 pub mod talking;
@@ -221,6 +225,15 @@ pub struct App {
     signature: Option<crate::lsp::signature::Signature>,
     /// What the server says the place under the caret is, while it is up.
     hover: Option<Hover>,
+    /// What the server offered to do here, while a list of it is open.
+    actions: Vec<crate::lsp::actions::Action>,
+    /// Every use of the name the pointer is resting on, in this file.
+    ///
+    /// Marked in the text rather than listed: the answer is "these, here",
+    /// and a list would take a region of screen to say what a background
+    /// says in place.
+    uses: Vec<Span>,
+
     /// Where the pointer is resting, since when, and whether that rest
     /// has already asked its question.
     ///
@@ -472,6 +485,8 @@ impl App {
             clicked: None,
             signature: None,
             hover: None,
+            actions: Vec::new(),
+            uses: Vec::new(),
             resting: None,
             troubles: HashMap::new(),
             completion: None,
@@ -1204,6 +1219,14 @@ impl App {
                 } else {
                     self.reload_path(&path);
                 }
+                // And the servers, whatever it was: a file changing on
+                // disk is news to them as much as to obelus -- a branch
+                // checked out, a build script's output, an editor
+                // somewhere else. Some of them watch for themselves and
+                // will have heard already; the protocol's own answer is
+                // that the client says so, and a server that relies on it
+                // is otherwise answering about a file nobody has.
+                self.told_servers_about(&path);
             }
             Event::Lsp { language, message } => {
                 let Some(client) = self.servers.get_mut(&language) else {
@@ -1216,8 +1239,14 @@ impl App {
                 // Unasked-for news about a file, which arrives on the same
                 // pipe as the answers and belongs to nobody's question.
                 let published = client.take_published();
+                // And the edits it wants made, which arrive the same way
+                // and are answered by making them.
+                let asked = client.take_asked_edits();
                 for params in published {
                     self.on_published(language, &params);
+                }
+                for edit in &asked {
+                    self.on_asked_edit(language, edit);
                 }
                 if let Some(reply) = reply {
                     self.on_reply(language, reply);

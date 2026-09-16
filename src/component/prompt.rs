@@ -25,6 +25,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub enum PromptKind {
     /// A line to go to.
     Line,
+    /// A new name for the symbol under the cursor.
+    Name,
 }
 
 impl PromptKind {
@@ -36,6 +38,7 @@ impl PromptKind {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Line => "line: ",
+            Self::Name => "rename to: ",
         }
     }
 
@@ -52,6 +55,12 @@ impl PromptKind {
     pub const fn accepts(self, character: char) -> bool {
         match self {
             Self::Line => character.is_ascii_digit(),
+            // Whatever a name can be, which differs by language and is the
+            // server's to judge: it is the one who will refuse. What is
+            // refused here is only what cannot be part of any name --
+            // a newline is the key that answers, and a blank is the reader
+            // having typed nothing.
+            Self::Name => !character.is_whitespace(),
         }
     }
 }
@@ -84,6 +93,16 @@ impl Prompt {
             kind,
             text: String::new(),
         }
+    }
+
+    /// Asks something with an answer already in it.
+    ///
+    /// A rename starts at the name being renamed: it is what the reader is
+    /// changing, most renames are an edit of it rather than a new word,
+    /// and a blank prompt would make them type the whole thing again.
+    #[must_use]
+    pub fn about(kind: PromptKind, text: String) -> Self {
+        Self { kind, text }
     }
 
     /// What it is asking for.

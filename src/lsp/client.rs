@@ -15,9 +15,11 @@ use std::{
 
 use anyhow::{Context as _, Result};
 use lsp_types::{
-    ClientCapabilities, DocumentSymbolClientCapabilities, GeneralClientCapabilities,
-    InitializeParams, InitializeResult, PositionEncodingKind, ServerCapabilities,
-    TextDocumentClientCapabilities, Uri, WindowClientCapabilities, WorkspaceFolder,
+    ClientCapabilities, CodeActionCapabilityResolveSupport, CodeActionClientCapabilities,
+    CodeActionKind, CodeActionKindLiteralSupport, CodeActionLiteralSupport,
+    DocumentSymbolClientCapabilities, GeneralClientCapabilities, InitializeParams,
+    InitializeResult, PositionEncodingKind, ServerCapabilities, TextDocumentClientCapabilities,
+    Uri, WindowClientCapabilities, WorkspaceFolder,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -37,6 +39,20 @@ pub struct Reply {
     pub id: i64,
     /// The result, or the error the server reported.
     pub result: Result<Value, String>,
+}
+
+/// An edit a server has asked obelus to make across the project.
+///
+/// A request rather than an answer: the server is waiting to be told
+/// whether it happened, which is why the id is kept with it.
+#[derive(Debug)]
+pub struct AskedEdit {
+    /// The request to answer once the edit has been made, or not.
+    pub id: Value,
+    /// What the server calls it, where it says.
+    pub label: Option<String>,
+    /// The `WorkspaceEdit` itself.
+    pub edit: Value,
 }
 
 /// A running language server.
@@ -71,6 +87,14 @@ pub struct Client {
     /// here and drained by the caller, which is the only side that knows
     /// whether the file they are about is still open.
     published: Vec<Value>,
+    /// The edits the server has asked obelus to make, since the caller
+    /// last looked.
+    ///
+    /// Here for the same reason [`Client::published`] is, and for one
+    /// more: this layer knows the protocol and not the documents, so the
+    /// only side that can make the edit -- or say why it could not -- is
+    /// the caller.
+    asked: Vec<AskedEdit>,
     /// How many messages have gone to the writer.
     ///
     /// Alongside [`Client::queued`] because between them they are the only
@@ -139,6 +163,7 @@ impl Client {
             encoding: PositionEncodingKind::UTF16,
             working: HashMap::new(),
             published: Vec::new(),
+            asked: Vec::new(),
             sent: 0,
         };
         client.send_initialize(root)?;
@@ -231,6 +256,23 @@ impl Client {
         std::mem::take(&mut self.published)
     }
 
+    /// Every edit the server has asked for since this was last asked.
+    ///
+    /// Each one is a question still open: whoever takes it owes the
+    /// server an [`answer_request`](Client::answer_request) saying what
+    /// became of it.
+    pub fn take_asked_edits(&mut self) -> Vec<AskedEdit> {
+        std::mem::take(&mut self.asked)
+    }
+
+    /// Sends an answer to something the server asked.
+    ///
+    /// For the requests this layer cannot answer by itself, which is the
+    /// ones that are about the documents rather than about the protocol.
+    pub fn answer_request(&mut self, answer: &Value) {
+        let _ = self.send(answer);
+    }
+
     /// Sends a request and returns the id its answer will carry.
     pub fn request<P>(&mut self, method: &str, params: &P) -> Result<i64>
     where
@@ -266,6 +308,33 @@ impl Client {
     /// own log lines — is dealt with here and reported as `None`.
     pub fn on_message(&mut self, message: &Value) -> Option<Reply> {
         if let Some(method) = message.get("method").and_then(Value::as_str) {
+            // A message with a method *and* an id is the server asking
+            // obelus something, and the protocol says every request gets
+            // an answer. Left unanswered -- which is what this did -- a
+            // server that waits for one waits for ever, and the ones that
+            // do not wait have still been told nothing: a server asking
+            // for its configuration and hearing nothing uses its defaults
+            // and never says so.
+            if let Some(id) = message.get("id") {
+                // Except the one request that is answered by doing
+                // something rather than by saying something. Kept for the
+                // caller, who has the documents; the answer goes back when
+                // they have said what happened.
+                if method == "workspace/applyEdit" {
+                    let params = &message["params"];
+                    self.asked.push(AskedEdit {
+                        id: id.clone(),
+                        label: params
+                            .get("label")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                        edit: params.get("edit").cloned().unwrap_or(Value::Null),
+                    });
+                    return None;
+                }
+                self.answer(id, method, &message["params"]);
+                return None;
+            }
             self.on_notification(method, &message["params"]);
             return None;
         }
@@ -300,6 +369,41 @@ impl Client {
     /// clean shutdown, which is worth a moment, and no server is worth
     /// hanging the exit on.
     const PATIENCE: std::time::Duration = std::time::Duration::from_millis(500);
+
+    /// Says obelus has stopped waiting for an answer.
+    ///
+    /// A notification, so there is nothing to wait for and nothing to go
+    /// wrong: a server that has already answered ignores it, and one that
+    /// is still working on it stops. What it saves is real -- a reader
+    /// typing a word asks for a completion per letter, and without this
+    /// every one of them is computed in full before being thrown away.
+    pub fn cancel(&mut self, request: i64) {
+        let _ = self.notify("$/cancelRequest", &json!({ "id": request }));
+    }
+
+    /// What obelus would send back for a message from a server.
+    ///
+    /// The answering itself, without a server to send it to: what is
+    /// interesting is the shape of the answer, and a live server cannot be
+    /// made to ask an awkward question on demand.
+    #[must_use]
+    pub fn answered_for_test(message: &Value) -> Option<Value> {
+        let method = message.get("method")?.as_str()?;
+        let id = message.get("id")?;
+        Some(answered(id, method, &message["params"]))
+    }
+
+    /// Answers a request the server made of obelus.
+    ///
+    /// The answers are the smallest legal ones. Saying nothing useful is
+    /// allowed and saying nothing at all is not: `null` for a setting
+    /// obelus does not have is exactly what the protocol asks a client to
+    /// send for a scope it cannot answer for, and a method obelus does not
+    /// know gets the error the protocol has for that -- which is an answer
+    /// a server can act on, where silence is a server waiting.
+    fn answer(&mut self, id: &Value, method: &str, params: &Value) {
+        let _ = self.send(&answered(id, method, params));
+    }
 
     /// Asks the server to stop, and stops waiting for it if it will not.
     ///
@@ -346,38 +450,7 @@ impl Client {
         let uri = uri_for(root)?;
         let params = InitializeParams {
             process_id: Some(std::process::id()),
-            capabilities: ClientCapabilities {
-                general: Some(GeneralClientCapabilities {
-                    // Bytes first. A server that agrees makes an LSP position
-                    // the same thing as a tree-sitter point, and the whole
-                    // UTF-16 path becomes a fallback nothing exercises.
-                    position_encodings: Some(vec![
-                        PositionEncodingKind::UTF8,
-                        PositionEncodingKind::UTF16,
-                    ]),
-                    ..Default::default()
-                }),
-                text_document: Some(TextDocumentClientCapabilities {
-                    // Nesting, for the outline. Without this the protocol
-                    // says a server *may* answer `documentSymbol` with the
-                    // flat shape, and rust-analyzer does: every symbol at
-                    // the top level, and each one's position the start of
-                    // the whole item rather than of its name -- so a mark on
-                    // it lands on the line above, on an attribute or a doc
-                    // comment. Declared support turns the same request into
-                    // a tree of names.
-                    document_symbol: Some(DocumentSymbolClientCapabilities {
-                        hierarchical_document_symbol_support: Some(true),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                }),
-                window: Some(WindowClientCapabilities {
-                    work_done_progress: Some(true),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
+            capabilities: client_capabilities(),
             workspace_folders: Some(vec![WorkspaceFolder {
                 uri: uri.clone(),
                 name: root
@@ -598,5 +671,157 @@ impl Drop for Client {
             return;
         }
         self.shutdown();
+    }
+}
+
+/// The answer obelus sends for one of the server's own requests.
+///
+/// The answers are the smallest legal ones. Saying nothing useful is
+/// allowed and saying nothing at all is not: `null` for a setting obelus
+/// does not have is exactly what the protocol asks a client to send for a
+/// scope it cannot answer for.
+///
+/// A free function so that a test can read the answer without a server to
+/// send it to: the shape of the answer is the whole of what is
+/// interesting, and a live server cannot be made to ask an awkward
+/// question on demand.
+fn answered(id: &Value, method: &str, params: &Value) -> Value {
+    let result = match method {
+        // One entry per item asked about, all of them nothing: obelus
+        // keeps no per-server settings, and a shorter array than the
+        // question is a malformed answer.
+        "workspace/configuration" => {
+            let items = params
+                .get("items")
+                .and_then(Value::as_array)
+                .map_or(0, Vec::len);
+            Some(Value::Array(vec![Value::Null; items]))
+        }
+        // Acknowledged and nothing more. obelus declares no dynamic
+        // registration, so a server should not be asking; one that asks
+        // anyway is told yes rather than left hanging.
+        "client/registerCapability" | "client/unregisterCapability" => Some(Value::Null),
+        // A progress token the server wants to use, which obelus reads
+        // from the notifications it already handles.
+        "window/workDoneProgress/create" => Some(Value::Null),
+        // A message with buttons on it. obelus has nowhere to put the
+        // buttons, and `null` is the protocol's word for "the reader
+        // pressed none of them".
+        "window/showMessageRequest" => Some(Value::Null),
+        // `workspace/applyEdit` is not here: it is answered by making the
+        // edit, so [`Client::on_message`] keeps it for the side that has
+        // the documents and the answer goes back through [`edit_answer`].
+        other => {
+            tracing::debug!(method = other, "a request obelus has no answer for");
+            None
+        }
+    };
+    match result {
+        Some(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+        // -32601 is the protocol's "method not found", which is what this
+        // is: an answer a server can act on, where silence is a server
+        // waiting.
+        None => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32601, "message": format!("obelus does not answer {method}") },
+        }),
+    }
+}
+
+/// What obelus sends back for an edit a server asked it to make.
+///
+/// The protocol asks for a plain yes or no, and a reason when it is no.
+/// Saying yes to an edit that did not happen is the failure worth
+/// avoiding: a server told its refactoring landed goes on to the next
+/// step of it.
+#[must_use]
+pub fn edit_answer(id: &Value, applied: bool, why: &str) -> Value {
+    let mut result = json!({ "applied": applied });
+    if !applied {
+        result["failureReason"] = Value::String(why.to_string());
+    }
+    json!({ "jsonrpc": "2.0", "id": id, "result": result })
+}
+
+/// What obelus tells a server it can do.
+///
+/// Every line of this is load-bearing, and the way it fails is silence: a
+/// server does not complain about a capability that is missing, it simply
+/// answers less. The one that cost the most was `code_action` -- without
+/// it rust-analyzer answers `null` to every `textDocument/codeAction`,
+/// whatever the file and wherever the range, so the key that asks what
+/// can be done here had nothing to show anywhere.
+#[must_use]
+pub fn client_capabilities() -> ClientCapabilities {
+    ClientCapabilities {
+        general: Some(GeneralClientCapabilities {
+            // Bytes first. A server that agrees makes an LSP position the
+            // same thing as a tree-sitter point, and the whole UTF-16 path
+            // becomes a fallback nothing exercises.
+            position_encodings: Some(vec![
+                PositionEncodingKind::UTF8,
+                PositionEncodingKind::UTF16,
+            ]),
+            ..Default::default()
+        }),
+        text_document: Some(TextDocumentClientCapabilities {
+            // Nesting, for the outline. Without this the protocol says a
+            // server *may* answer `documentSymbol` with the flat shape, and
+            // rust-analyzer does: every symbol at the top level, and each
+            // one's position the start of the whole item rather than of its
+            // name -- so a mark on it lands on the line above, on an
+            // attribute or a doc comment. Declared support turns the same
+            // request into a tree of names.
+            document_symbol: Some(DocumentSymbolClientCapabilities {
+                hierarchical_document_symbol_support: Some(true),
+                ..Default::default()
+            }),
+            // Without this a server is entitled to answer
+            // `textDocument/codeAction` with commands only, and
+            // rust-analyzer does something stronger: it answers `null` to
+            // every such request, whatever the file and wherever the range.
+            // Undeclared, `alt+a` has nothing to show -- not on a line with
+            // a mistake on it, not anywhere.
+            code_action: Some(CodeActionClientCapabilities {
+                code_action_literal_support: Some(CodeActionLiteralSupport {
+                    code_action_kind: CodeActionKindLiteralSupport {
+                        value_set: [
+                            CodeActionKind::EMPTY,
+                            CodeActionKind::QUICKFIX,
+                            CodeActionKind::REFACTOR,
+                            CodeActionKind::REFACTOR_EXTRACT,
+                            CodeActionKind::REFACTOR_INLINE,
+                            CodeActionKind::REFACTOR_REWRITE,
+                            CodeActionKind::SOURCE,
+                            CodeActionKind::SOURCE_ORGANIZE_IMPORTS,
+                            CodeActionKind::SOURCE_FIX_ALL,
+                        ]
+                        .iter()
+                        .map(|kind| kind.as_str().to_string())
+                        .collect(),
+                    },
+                }),
+                // Both read: the first is what sorts the list, and the
+                // second is what an offer that arrived without its edit is
+                // recognised by.
+                is_preferred_support: Some(true),
+                data_support: Some(true),
+                resolve_support: Some(CodeActionCapabilityResolveSupport {
+                    properties: vec!["edit".to_string(), "command".to_string()],
+                }),
+                // Not `disabled_support`. A server told that obelus reads
+                // it sends the offers it knows cannot be taken, each with a
+                // reason obelus has nowhere to put -- so they would sit in
+                // the list looking like the ones that work.
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        window: Some(WindowClientCapabilities {
+            work_done_progress: Some(true),
+            ..Default::default()
+        }),
+        ..Default::default()
     }
 }

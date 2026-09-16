@@ -334,8 +334,9 @@ impl App {
         }
         let params = serde_json::json!({ "textDocument": { "uri": uri } });
         if let Ok(request) = client.request("textDocument/semanticTokens/full", &params) {
-            self.asked.insert(
-                (language, request),
+            self.remember(
+                language,
+                request,
                 Question {
                     asked: Asked::Tokens,
                     buffer: id,
@@ -457,8 +458,9 @@ impl App {
 
         match client.request(action.method(), &params) {
             Ok(request) => {
-                self.asked.insert(
-                    (language, request),
+                self.remember(
+                    language,
+                    request,
                     Question {
                         asked: Asked::Symbol(action),
                         buffer: id,
@@ -472,6 +474,105 @@ impl App {
                 self.note = Some("the language server is not listening".to_string());
             }
         }
+    }
+
+    /// Tells every running server that a file on disk changed.
+    ///
+    /// Every server rather than the one for that language: a change to a
+    /// `Cargo.toml` is news to rust-analyzer, and a change to a `.proto`
+    /// is news to whoever generates from it. Which of them cares is the
+    /// server's to decide, and the protocol is built that way -- the
+    /// client reports, the server filters.
+    pub(super) fn told_servers_about(&mut self, path: &Path) {
+        let Some(params) = lsp::watched_change(path) else {
+            return;
+        };
+        for client in self.servers.values_mut() {
+            let _ = client.notify("workspace/didChangeWatchedFiles", &params);
+        }
+    }
+
+    /// Writes down a question that is out, and stops waiting for whatever
+    /// it replaces.
+    ///
+    /// One door for all of them, because they all want the same thing: the
+    /// *latest* answer to a kind of question is the only one anybody is
+    /// going to look at. A reader typing a word asks for a completion per
+    /// letter, moves the caret and asks what is under it per move; without
+    /// this every superseded question is computed in full by the server
+    /// and thrown away here, and the ones that are never answered stay in
+    /// the table for the rest of the session.
+    pub(super) fn remember(&mut self, language: LanguageId, request: i64, question: Question) {
+        // The same kind, about the same document. Two questions of
+        // different kinds are two things the reader wants; two of the same
+        // kind are one thing asked twice.
+        let kind = std::mem::discriminant(&question.asked);
+        let buffer = question.buffer;
+        let stale: Vec<i64> = self
+            .asked
+            .iter()
+            .filter(|((asked, _), earlier)| {
+                *asked == language
+                    && earlier.buffer == buffer
+                    && std::mem::discriminant(&earlier.asked) == kind
+            })
+            .map(|((_, id), _)| *id)
+            .collect();
+        for id in stale {
+            self.asked.remove(&(language, id));
+            if let Some(client) = self.servers.get_mut(&language) {
+                client.cancel(id);
+            }
+        }
+        self.asked.insert((language, request), question);
+    }
+
+    /// How many messages have gone to the servers.
+    ///
+    /// For a test about a notification that has no answer: nothing comes
+    /// back from telling a server something, so the only way to see that
+    /// it was told is to count what went out.
+    #[must_use]
+    pub fn told_servers_for_test(&self) -> usize {
+        self.servers.values().map(Client::sent).sum()
+    }
+
+    /// Puts a server in front of the application, for a test that needs
+    /// the whole way a message comes in rather than the end of it.
+    ///
+    /// The program is the test's, because what is being read is obelus's
+    /// half of the conversation: one that says nothing back is enough for
+    /// that, and a real server cannot be made to ask an awkward question
+    /// on demand. Nothing reads what obelus says to it -- the wire is
+    /// read elsewhere, where a server that echoes is the point.
+    pub fn stand_in_server_for_test(
+        &mut self,
+        language: LanguageId,
+        command: &'static str,
+    ) -> bool {
+        let (sender, receiver) = crate::event::channel();
+        drop(receiver);
+        let server = lsp::Server {
+            command,
+            arguments: &[],
+        };
+        match Client::start(language, server, &self.working_directory, sender) {
+            Ok(client) => {
+                self.servers.insert(language, client);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// How many questions are still out.
+    ///
+    /// For a test about the table not growing: a question that is
+    /// superseded and never answered would otherwise sit in it for the
+    /// rest of the session, and nothing else can see that happening.
+    #[must_use]
+    pub fn outstanding_for_test(&self) -> usize {
+        self.asked.len()
     }
 
     /// Takes an answer, if it still means anything.
@@ -510,6 +611,22 @@ impl App {
             }
             Asked::Completion { from } => {
                 self.on_completion(question.buffer, from, reply);
+                return;
+            }
+            Asked::Actions => {
+                self.on_actions(reply);
+                return;
+            }
+            Asked::Action { at } => {
+                self.on_action(at, reply);
+                return;
+            }
+            Asked::Rename => {
+                self.on_rename(question.buffer, question.version, reply);
+                return;
+            }
+            Asked::Uses => {
+                self.on_uses(question.buffer, question.version, reply);
                 return;
             }
             Asked::Hover { at, pointed } => {
@@ -751,8 +868,9 @@ impl App {
         let params = serde_json::json!({ "textDocument": { "uri": uri } });
         match client.request("textDocument/documentSymbol", &params) {
             Ok(request) => {
-                self.asked.insert(
-                    (language, request),
+                self.remember(
+                    language,
+                    request,
                     Question {
                         asked: Asked::Outline,
                         buffer: id,
@@ -875,8 +993,9 @@ impl App {
         });
         match client.request("textDocument/formatting", &params) {
             Ok(request) => {
-                self.asked.insert(
-                    (language, request),
+                self.remember(
+                    language,
+                    request,
                     Question {
                         asked: Asked::Formatting,
                         buffer: BufferId::new(index),
@@ -951,8 +1070,9 @@ impl App {
         let params = serde_json::json!({ "query": query });
         match client.request("workspace/symbol", &params) {
             Ok(request) => {
-                self.asked.insert(
-                    (language, request),
+                self.remember(
+                    language,
+                    request,
                     Question {
                         asked: Asked::Workspace,
                         buffer: id,
@@ -1203,6 +1323,18 @@ pub(super) enum Asked {
     Formatting,
     /// What every token in the file is.
     Tokens,
+    /// Where else the name under the caret is used.
+    Uses,
+    /// Everywhere a symbol would have to change to be called something
+    /// else.
+    Rename,
+    /// What can be done about where the reader is.
+    Actions,
+    /// One of those, filled in.
+    Action {
+        /// Which of the offers, by its place in the list.
+        at: usize,
+    },
     /// What could be typed where the cursor was.
     ///
     /// The word's start rather than the cursor, because that is what makes

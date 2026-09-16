@@ -686,6 +686,65 @@ mod against_a_real_server {
         );
     }
 
+    /// A question nobody wants the answer to is taken back.
+    ///
+    /// A reader typing a word asks for a completion per letter. Without
+    /// this the server computes every one of them in full, and the ones
+    /// that are never answered sit in obelus's table for the rest of the
+    /// session.
+    #[test]
+    #[ignore = "starts a server and waits for the project to be read"]
+    fn a_question_that_has_been_superseded_is_taken_back() {
+        let Some((mut app, events)) = served() else {
+            return;
+        };
+        warm(&mut app, &events);
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::Home);
+
+        // A word, typed fast: one question per letter, and only the last
+        // of them is worth an answer.
+        support::type_text(&mut app, "self.entr");
+        assert!(
+            app.outstanding_for_test() <= 2,
+            "{} questions are still out, which is one per letter",
+            app.outstanding_for_test()
+        );
+
+        // And the last one is answered, so the typing still completes.
+        assert!(
+            pump(&mut app, &events, ANSWER, |app| app.completion().is_some()),
+            "the question that was not taken back went unanswered too"
+        );
+    }
+
+    /// A file changing on disk is news to the server as much as to
+    /// obelus: a branch checked out under it, a build script's output, an
+    /// editor somewhere else.
+    #[test]
+    #[ignore = "starts a server and waits for the project to be read"]
+    fn a_file_that_changed_on_disk_is_reported() {
+        let Some((mut app, events)) = served() else {
+            return;
+        };
+        assert!(
+            pump(&mut app, &events, READY, |app| {
+                matches!(app.server_state(), Some((_, ServerState::Ready)))
+            }),
+            "the server never started"
+        );
+
+        let before = app.told_servers_for_test();
+        app.handle(Event::FileChanged {
+            path: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
+        });
+        assert_eq!(
+            app.told_servers_for_test(),
+            before + 1,
+            "the server was not told the file changed"
+        );
+    }
+
     /// The pointer resting on a word asks what it is, which is the one
     /// thing in obelus that happens because the reader did nothing.
     #[test]
@@ -727,6 +786,15 @@ mod against_a_real_server {
         assert!(
             pump(&mut app, &events, ANSWER, |app| app.hover().is_some()),
             "the pointer rested on a name and nothing was asked"
+        );
+        // And the other half of the same question: where else that name
+        // is. It is marked in the text rather than shown in the panel, so
+        // it is asked for separately and arrives separately.
+        assert!(
+            pump(&mut app, &events, ANSWER, |app| {
+                app.uses_marked_for_test() > 0
+            }),
+            "the pointer rested on a name and its other uses were not marked"
         );
         // Reaching for the answer with the pointer is not leaving it:
         // every cell on the way is a pointer that has left the word, and

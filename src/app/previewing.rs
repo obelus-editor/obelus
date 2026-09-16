@@ -335,6 +335,9 @@ impl App {
                 },
             )),
             PickerValue::Command(_)
+            // A thing the server offers to do has nowhere to show: what it
+            // would change is not worked out until it is chosen.
+            | PickerValue::Action(_)
             | PickerValue::Theme(_)
             | PickerValue::Setting { .. }
             | PickerValue::AgentValue { .. } => None,

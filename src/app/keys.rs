@@ -580,6 +580,22 @@ impl App {
         let Some(index) = self.current.map(BufferId::get) else {
             return;
         };
+        self.change_in(index, span, with, doing);
+    }
+
+    /// The same, to a document that is not the one being read.
+    ///
+    /// What a rename does: a server names places in files the reader has
+    /// not opened, and the ones that *are* open have to be edited rather
+    /// than written over -- an unwritten buffer is the reader's work, and
+    /// a file written under it would take it away.
+    pub(super) fn change_in(
+        &mut self,
+        index: usize,
+        span: crate::coordinates::Span,
+        with: &str,
+        doing: crate::buffer::undo::Doing,
+    ) {
         let before = self
             .buffers
             .get(index)

@@ -99,8 +99,9 @@ impl App {
             "position": at,
         });
         if let Ok(request) = client.request("textDocument/completion", &params) {
-            self.asked.insert(
-                (language, request),
+            self.remember(
+                language,
+                request,
                 Question {
                     asked: Asked::Completion { from },
                     buffer: id,
@@ -142,8 +143,9 @@ impl App {
             "position": at,
         });
         if let Ok(request) = client.request("textDocument/signatureHelp", &params) {
-            self.asked.insert(
-                (language, request),
+            self.remember(
+                language,
+                request,
                 Question {
                     asked: Asked::Signature { line: cursor.line },
                     buffer: id,
@@ -425,8 +427,9 @@ impl App {
         let Ok(request) = client.request("completionItem/resolve", &params) else {
             return;
         };
-        self.asked.insert(
-            (language, request),
+        self.remember(
+            language,
+            request,
             Question {
                 asked: Asked::Resolve { index },
                 buffer: id,

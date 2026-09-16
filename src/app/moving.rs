@@ -438,6 +438,16 @@ impl App {
     /// note, because it is the reader's slip and not the file's.
     pub(super) fn answer(&mut self, kind: PromptKind, text: &str) {
         match kind {
+            // The new name for whatever the cursor is on. Empty is the
+            // reader having deleted the name and pressed enter, which is
+            // not a rename to nothing -- it is a change of mind.
+            PromptKind::Name => {
+                let name = text.trim();
+                if name.is_empty() {
+                    return;
+                }
+                self.ask_rename(name);
+            }
             PromptKind::Line => {
                 let Ok(line) = text.trim().parse::<usize>() else {
                     self.note = Some(format!("{text:?} is not a line number"));

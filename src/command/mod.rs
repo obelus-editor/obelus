@@ -40,6 +40,10 @@ pub enum Command {
     SymbolComplete,
     /// What the language server says the place under the caret is.
     SymbolHover,
+    /// What the language server offers to do about where the reader is.
+    SymbolActions,
+    /// Call the symbol under the cursor something else, everywhere.
+    SymbolRename,
     /// Everything the language server says is wrong with this file.
     SymbolTroubles,
     /// Every symbol this file defines, to jump to.
@@ -328,6 +332,16 @@ pub const ALL: &[CommandSpec] = &[
         title: "What this is",
     },
     CommandSpec {
+        command: Command::SymbolActions,
+        name: "do-something-here",
+        title: "What can be done here",
+    },
+    CommandSpec {
+        command: Command::SymbolRename,
+        name: "rename-symbol",
+        title: "Rename this, everywhere it is",
+    },
+    CommandSpec {
         command: Command::SymbolTroubles,
         name: "show-problems",
         title: "What is wrong with this file",
@@ -581,6 +595,8 @@ impl Command {
             | Self::TodoOpen
             | Self::TodoAdd => Group::Files,
             Self::SymbolMenu
+            | Self::SymbolActions
+            | Self::SymbolRename
             | Self::SymbolHover
             | Self::SymbolComplete
             | Self::SymbolTroubles
@@ -644,9 +660,11 @@ impl Command {
             | Self::SymbolTypeDefinition
             | Self::SymbolImplementation
             | Self::SymbolReferences => Requires::AnAnswer,
-            Self::LspStop | Self::SymbolComplete | Self::SymbolHover => {
-                Requires::ARunningServer
-            }
+            Self::LspStop
+            | Self::SymbolComplete
+            | Self::SymbolHover
+            | Self::SymbolRename
+            | Self::SymbolActions => Requires::ARunningServer,
             // Not a running server: a file with nothing wrong with it is
             // the answer this gives, and it is worth giving.
             Self::SymbolTroubles => Requires::AFileOpen,

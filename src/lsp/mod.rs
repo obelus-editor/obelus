@@ -1,8 +1,10 @@
 //! Talking to a language server.
 
 pub mod action;
+pub mod actions;
 pub mod client;
 pub mod complete;
+pub mod edits;
 pub mod hover;
 pub mod outline;
 pub mod position;
@@ -11,8 +13,9 @@ pub mod snippet;
 pub mod tokens;
 pub mod transport;
 pub mod trouble;
+pub mod uses;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::syntax::LanguageId;
 
@@ -135,6 +138,39 @@ pub const fn command_for(language: LanguageId) -> Option<&'static str> {
         Some(server) => Some(server.command),
         None => None,
     }
+}
+
+/// The path a `file:` uri names.
+///
+/// `None` for anything else -- `untitled:`, a scheme obelus has never
+/// heard of -- which is a document obelus cannot open and so cannot edit.
+///
+/// [`client::path_of`] does the work, because it is written next to
+/// [`client::uri_for`]: an escaping and an unescaping that disagree name a
+/// different file. The one this replaced disagreed -- it turned each
+/// escaped *byte* into a character, so every path with a non-ASCII letter
+/// in it came back mojibake and named nothing.
+#[must_use]
+pub fn path_of_uri(uri: &str) -> Option<PathBuf> {
+    client::path_of(uri)
+}
+
+/// What to tell a server about a file that changed on disk.
+///
+/// `None` for a path that cannot be a uri, which is the one case there is
+/// nothing to say. The kind is worked out from what is there *now*: the
+/// watcher says a path moved and not how, and a file that is gone is the
+/// one case a server must not go on reading -- told that it merely
+/// changed, it would try.
+#[must_use]
+pub fn watched_change(path: &Path) -> Option<serde_json::Value> {
+    let uri = client::uri_for(path).ok()?;
+    // 1 created, 2 changed, 3 deleted, as the protocol numbers them.
+    let kind = match path.exists() {
+        true => 2,
+        false => 3,
+    };
+    Some(serde_json::json!({ "changes": [{ "uri": uri, "type": kind }] }))
 }
 
 /// Whether a command can be found.

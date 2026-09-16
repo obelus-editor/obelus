@@ -78,8 +78,9 @@ impl App {
             "position": position,
         });
         if let Ok(request) = client.request("textDocument/hover", &params) {
-            self.asked.insert(
-                (language, request),
+            self.remember(
+                language,
+                request,
                 Question {
                     asked: Asked::Hover { at, pointed },
                     buffer: id,
@@ -199,6 +200,12 @@ impl App {
                 ..resting
             });
             self.ask_hover_at(at, true);
+            // And where else that name is, which is the same question
+            // asked of the same place: a reader pointing at something is
+            // asking about it, and this half of the answer needs no panel.
+            if self.a_name_at(at) {
+                self.ask_uses_at(at);
+            }
         }
     }
 
@@ -253,9 +260,12 @@ impl App {
             since: std::time::Instant::now(),
             asked: reading,
         });
-        // The answer on screen was about wherever the pointer was.
-        if !reading && self.hover.as_ref().is_some_and(Hover::pointed) {
-            self.hover = None;
+        // The answers on screen were about wherever the pointer was.
+        if !reading {
+            if self.hover.as_ref().is_some_and(Hover::pointed) {
+                self.hover = None;
+            }
+            self.forget_uses();
         }
     }
 
