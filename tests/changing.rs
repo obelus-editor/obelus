@@ -258,7 +258,7 @@ fn a_save_asks_only_for_what_a_server_does_to_a_whole_file() {
     }
 
     // One request per kind, each naming its own and only its own.
-    let asked = heard_requests(&heard, "textDocument/codeAction", kinds.len());
+    let asked = support::heard_requests(&heard, "textDocument/codeAction", kinds.len());
     assert_eq!(
         asked.len(),
         kinds.len(),
@@ -343,7 +343,7 @@ fn a_kind_the_server_has_nothing_for_does_not_end_the_save() {
         app.saving_for_test(at, json!([]));
     }
     assert_eq!(
-        heard_requests(&heard, "textDocument/codeAction", kinds.len()).len(),
+        support::heard_requests(&heard, "textDocument/codeAction", kinds.len()).len(),
         kinds.len(),
         "a kind with nothing to offer ended the save"
     );
@@ -411,7 +411,7 @@ fn a_save_passes_over_an_offer_the_server_will_not_carry_out() {
     // And it still asked about every kind and still wrote the file: a
     // refusal is not the end of the save.
     assert_eq!(
-        heard_requests(&heard, "textDocument/codeAction", kinds.len()).len(),
+        support::heard_requests(&heard, "textDocument/codeAction", kinds.len()).len(),
         kinds.len(),
         "a refused offer ended the save"
     );
@@ -436,7 +436,7 @@ fn a_save_leaves_the_imports_alone_unless_asked() {
     support::press_control(&mut app, 's');
 
     assert!(
-        heard_requests(&heard, "textDocument/codeAction", 1).is_empty(),
+        support::heard_requests(&heard, "textDocument/codeAction", 1).is_empty(),
         "a setting nobody turned on asked a server something"
     );
     assert!(
@@ -701,33 +701,4 @@ fn nothing_offered_is_said_rather_than_listed() {
         app.note().unwrap_or_default().contains("nothing to do"),
         "the reader was not told"
     );
-}
-
-/// The messages of a kind that obelus wrote, as the echo gave them back.
-///
-/// Waits for `want` of them and then stops waiting, so a test that
-/// expects none pays a moment and a test that expects two does not: there
-/// is no event to wait for when the point is that none is coming.
-fn heard_requests(
-    heard: &std::sync::mpsc::Receiver<obelus::event::Event>,
-    method: &str,
-    want: usize,
-) -> Vec<serde_json::Value> {
-    let mut seen = Vec::new();
-    let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while seen.len() < want.max(1) {
-        let Some(left) = until.checked_duration_since(std::time::Instant::now()) else {
-            break;
-        };
-        match heard.recv_timeout(left) {
-            Ok(obelus::event::Event::Lsp { message, .. })
-                if message.get("method").and_then(serde_json::Value::as_str) == Some(method) =>
-            {
-                seen.push(message);
-            }
-            Ok(_) => {}
-            Err(_) => break,
-        }
-    }
-    seen
 }

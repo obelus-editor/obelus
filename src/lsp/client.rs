@@ -18,13 +18,13 @@ use lsp_types::{
     ClientCapabilities, CodeActionCapabilityResolveSupport, CodeActionClientCapabilities,
     CodeActionKind, CodeActionKindLiteralSupport, CodeActionLiteralSupport,
     CompletionClientCapabilities, CompletionItemCapability, CompletionItemCapabilityResolveSupport,
-    DidChangeWatchedFilesClientCapabilities, DocumentFormattingClientCapabilities,
-    DocumentHighlightClientCapabilities, DocumentSymbolClientCapabilities,
-    ExecuteCommandClientCapabilities, FailureHandlingKind, GeneralClientCapabilities,
-    GotoCapability, HoverClientCapabilities, InitializeParams, InitializeResult, MarkupKind,
-    ParameterInformationSettings, PositionEncodingKind, PublishDiagnosticsClientCapabilities,
-    ReferenceClientCapabilities, RenameClientCapabilities, SemanticTokenType,
-    SemanticTokensClientCapabilities, SemanticTokensClientCapabilitiesRequests,
+    DidChangeWatchedFilesClientCapabilities, DocumentColorClientCapabilities,
+    DocumentFormattingClientCapabilities, DocumentHighlightClientCapabilities,
+    DocumentSymbolClientCapabilities, ExecuteCommandClientCapabilities, FailureHandlingKind,
+    GeneralClientCapabilities, GotoCapability, HoverClientCapabilities, InitializeParams,
+    InitializeResult, MarkupKind, ParameterInformationSettings, PositionEncodingKind,
+    PublishDiagnosticsClientCapabilities, ReferenceClientCapabilities, RenameClientCapabilities,
+    SemanticTokenType, SemanticTokensClientCapabilities, SemanticTokensClientCapabilitiesRequests,
     SemanticTokensFullOptions, ServerCapabilities, SignatureHelpClientCapabilities,
     SignatureInformationSettings, TextDocumentClientCapabilities,
     TextDocumentSyncClientCapabilities, TokenFormat, Uri, WindowClientCapabilities,
@@ -883,6 +883,11 @@ pub fn client_capabilities() -> ClientCapabilities {
                 formats: vec![TokenFormat::RELATIVE],
                 ..Default::default()
             }),
+            // Where the colours are written down. Declared for the reason
+            // everything here is: a server that has not been told asks
+            // itself whether to bother, and the one that answers this is
+            // the one a reader opens a stylesheet with.
+            color_provider: Some(DocumentColorClientCapabilities::default()),
             // The diagnostic obelus keeps is the one the server sent,
             // whole, because it goes back in a code action's context and
             // the server matches it by every field -- `data` included.

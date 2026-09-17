@@ -848,6 +848,7 @@ impl App {
                 // The document has stopped moving on a version nobody has
                 // classified, which is where the server is worth asking.
                 self.ask_tokens(index);
+                self.ask_colours(index);
             }
         }
     }
@@ -932,6 +933,7 @@ impl App {
                 if changed {
                     self.change_document(index);
                     self.ask_tokens(index);
+                    self.ask_colours(index);
                 }
                 self.note = Some("took what is on disk -- undo brings yours back".to_string());
             }
@@ -986,6 +988,7 @@ impl App {
         {
             self.change_document(index);
             self.ask_tokens(index);
+            self.ask_colours(index);
         }
     }
 }

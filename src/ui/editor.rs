@@ -160,6 +160,12 @@ pub struct EditorView<'a> {
     /// search names whatever characters the query matched, which is as many
     /// runs as the match is scattered over.
     marked: &'a [Span],
+    /// The colours a server says are written down in the file, and where.
+    ///
+    /// Painted under everything the reader did -- a selection, a mark --
+    /// because those are answers to something they just asked and this is
+    /// a standing fact about the text.
+    colours: &'a [crate::lsp::colour::Coloured],
     /// The characters selected in the file being read.
     selection: Option<Span>,
     /// What the language server says is wrong with the file being read.
@@ -284,6 +290,7 @@ impl<'a> EditorView<'a> {
             // What is being talked about: the uses of the name the pointer
             // is resting on, or what a hover is about while one is up.
             marked: app.marked_runs(),
+            colours: app.colours(),
             selection: app.current_buffer().and_then(Buffer::selection),
             troubles: app.troubles(),
             changes: app.changes(),
@@ -325,6 +332,10 @@ impl<'a> EditorView<'a> {
             highlights,
             theme,
             marked,
+            // Nothing for a preview: what is drawn there is somewhere else,
+            // and where the colours are is a fact about the file the reader
+            // is in.
+            colours: &[],
             changes,
             // Everything that answers "where am I and what am I doing" is
             // the document's rather than a look at another one's.
@@ -577,6 +588,11 @@ impl Widget for EditorView<'_> {
                                 highlights: &plain,
                                 theme: self.theme,
                                 marked: &[],
+                                // A block is a commit's version of these
+                                // lines, and the colours a server found are
+                                // in the file as it is now -- at columns
+                                // that mean nothing here.
+                                colours: &[],
                                 selection: selected_in(block.above),
                                 // A block is a commit's version of these
                                 // lines. What is wrong with the file is
@@ -709,6 +725,7 @@ impl Widget for EditorView<'_> {
                         highlights: self.highlights,
                         theme: self.theme,
                         marked: self.marked,
+                        colours: self.colours,
                         selection: self.selection,
                         troubles: self.troubles,
                         brackets,
@@ -943,6 +960,8 @@ struct Painting<'a> {
     theme: &'a Theme,
     /// The run a preview is about.
     marked: &'a [Span],
+    /// The colours a server says are written down in the line.
+    colours: &'a [crate::lsp::colour::Coloured],
     /// The characters the reader selected in the file being read.
     selection: Option<Span>,
     /// What the language server says is wrong with the file.
@@ -1010,6 +1029,17 @@ fn draw_row(
         // A foreground, so the background the fill painted stays — except
         // where the run being marked needs one of its own.
         let mut style = Style::new().fg(colour);
+        // A colour written down here, painted as itself. The ink goes with
+        // it: a colour is only worth showing if what is written on it can
+        // still be read, and the syntax colour it replaces was chosen
+        // against the theme's background rather than against this one.
+        if let Some(written) = painting
+            .colours
+            .iter()
+            .find(|written| written.span.contains(line, CharColumn::new(column)))
+        {
+            style = style.fg(written.ink).bg(written.colour);
+        }
         if painting
             .marked
             .iter()

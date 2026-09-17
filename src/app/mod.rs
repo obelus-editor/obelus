@@ -260,6 +260,12 @@ pub struct App {
     /// version it describes and is ignored once the document has moved past
     /// it, so a stale entry is inert rather than wrong.
     tokens: HashMap<PathBuf, crate::lsp::tokens::Tokens>,
+    /// Where the colours are, per file, as a server last said.
+    ///
+    /// Beside the tokens because it is the same kind of answer: about a
+    /// whole file, kept until the file changes, and thrown away rather
+    /// than shown stale.
+    colours: HashMap<PathBuf, Vec<crate::lsp::colour::Coloured>>,
     /// Where the reader has been.
     jumps: JumpList,
     /// The file the picker's selection names, opened so it can be shown.
@@ -504,6 +510,7 @@ impl App {
             completion: None,
             filling: None,
             tokens: HashMap::new(),
+            colours: HashMap::new(),
             jumps: JumpList::default(),
             preview: None,
             phase: 0,

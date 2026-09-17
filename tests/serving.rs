@@ -194,6 +194,14 @@ fn what_obelus_says_it_can_do() {
         "obelus reads the packed form and has not said so"
     );
 
+    // `lsp::colour`. Undeclared, a server is entitled to decide the
+    // question is not worth answering, and the one that answers it is the
+    // one a reader opens a stylesheet with.
+    assert!(
+        text.color_provider.is_some(),
+        "obelus paints the colours a server finds and has not asked for them"
+    );
+
     // `lsp::trouble` keeps a diagnostic whole because it goes back in a
     // code action's context, and a server matches it by every field.
     assert_eq!(

@@ -590,3 +590,32 @@ pub fn place_of(app: &mut App, needle: &str) -> (u16, u16) {
         u16::try_from(column).unwrap_or(u16::MAX),
     )
 }
+
+/// The messages of a kind that obelus wrote, as the echo gave them back.
+///
+/// Waits for `want` of them and then stops waiting, so a test that
+/// expects none pays a moment and a test that expects two does not: there
+/// is no event to wait for when the point is that none is coming.
+pub fn heard_requests(
+    heard: &std::sync::mpsc::Receiver<obelus::event::Event>,
+    method: &str,
+    want: usize,
+) -> Vec<serde_json::Value> {
+    let mut seen = Vec::new();
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while seen.len() < want.max(1) {
+        let Some(left) = until.checked_duration_since(std::time::Instant::now()) else {
+            break;
+        };
+        match heard.recv_timeout(left) {
+            Ok(obelus::event::Event::Lsp { message, .. })
+                if message.get("method").and_then(serde_json::Value::as_str) == Some(method) =>
+            {
+                seen.push(message);
+            }
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    seen
+}

@@ -3,6 +3,7 @@
 pub mod action;
 pub mod actions;
 pub mod client;
+pub mod colour;
 pub mod complete;
 pub mod edits;
 pub mod hover;

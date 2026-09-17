@@ -134,6 +134,7 @@ impl App {
             );
         }
         self.ask_tokens(index);
+        self.ask_colours(index);
     }
 
     /// Tells a server the document has been written to disk.
@@ -164,6 +165,7 @@ impl App {
         // The document has stopped moving, which is when a classification
         // of it is worth having: see [`App::ask_tokens`].
         self.ask_tokens(index);
+        self.ask_colours(index);
     }
 
     /// Tells the server a document changed.
@@ -340,6 +342,116 @@ impl App {
                 },
             );
         }
+    }
+
+    /// Asks a server where the colours in a document are.
+    ///
+    /// Beside the classification because it is the same shape of question:
+    /// about the whole file, answered in the file's own coordinates, and
+    /// worth asking again whenever the file changes. A stylesheet is what
+    /// this is for, and what it buys is that a reader sees the colour
+    /// rather than reads the six digits of it.
+    pub(super) fn ask_colours(&mut self, index: usize) {
+        let Some(buffer) = self.file(DocumentId::new(index)) else {
+            return;
+        };
+        let Some(language) = buffer.language() else {
+            return;
+        };
+        if !buffer.content().is_file() {
+            return;
+        }
+        let Ok(uri) = lsp::client::uri_for(buffer.path()) else {
+            return;
+        };
+        let version = buffer.version();
+        let id = DocumentId::new(index);
+        let Some(client) = self.servers.get_mut(&language) else {
+            return;
+        };
+        if !client
+            .capabilities()
+            .is_some_and(crate::lsp::colour::supported)
+        {
+            return;
+        }
+        let params = serde_json::json!({ "textDocument": { "uri": uri } });
+        if let Ok(request) = client.request("textDocument/documentColor", &params) {
+            self.remember(
+                language,
+                request,
+                Question {
+                    asked: Asked::Colours,
+                    buffer: id,
+                    version,
+                },
+            );
+        }
+    }
+
+    /// Keeps where the colours are, if the answer is still about this
+    /// document.
+    fn on_colours(&mut self, id: DocumentId, version: i32, reply: Reply) {
+        let Some(buffer) = self.file(id) else {
+            return;
+        };
+        // The document it was asked about, unchanged since: these are
+        // places in a text, and a text that has moved has moved them.
+        if buffer.version() != version {
+            return;
+        }
+        let path = buffer.path().to_path_buf();
+        let encoding = buffer
+            .language()
+            .map_or(lsp_types::PositionEncodingKind::UTF16, |language| {
+                self.encoding_for(language)
+            });
+        let Some(buffer) = self.file(id) else {
+            return;
+        };
+        let found = crate::lsp::colour::in_reply(&reply.result, buffer.text(), &encoding);
+        match found.is_empty() {
+            true => self.colours.remove(&path),
+            false => self.colours.insert(path, found),
+        };
+    }
+
+    /// Where the colours are in the file being read.
+    #[must_use]
+    pub fn colours(&self) -> &[crate::lsp::colour::Coloured] {
+        self.current_buffer()
+            .and_then(|buffer| self.colours.get(buffer.path()))
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// The same, about a version of the document that has been left
+    /// behind -- which is what a late answer is.
+    pub fn colours_at_version_for_test(&mut self, answer: serde_json::Value, version: i32) {
+        let Some(id) = self.current else { return };
+        self.on_colours(
+            id,
+            version,
+            Reply {
+                id: 0,
+                result: Ok(answer),
+            },
+        );
+    }
+
+    /// Hands obelus an answer about the colours, as a server would.
+    pub fn colours_for_test(&mut self, answer: serde_json::Value) {
+        let Some(id) = self.current else { return };
+        let version = self
+            .current_buffer()
+            .map_or(0, crate::buffer::Buffer::version);
+        self.on_colours(
+            id,
+            version,
+            Reply {
+                id: 0,
+                result: Ok(answer),
+            },
+        );
     }
 
     /// Keeps a classification of a document, if it is still about it.
@@ -646,6 +758,10 @@ impl App {
             }
             Asked::Formatting => {
                 self.on_formatting(question.buffer, question.version, reply);
+                return;
+            }
+            Asked::Colours => {
+                self.on_colours(question.buffer, question.version, reply);
                 return;
             }
             Asked::Tokens => {
@@ -1356,6 +1472,8 @@ pub(super) enum Asked {
     Formatting,
     /// What every token in the file is.
     Tokens,
+    /// Where the colours in the file are written down.
+    Colours,
     /// Where else the name under the caret is used.
     Uses,
     /// Everywhere a symbol would have to change to be called something
