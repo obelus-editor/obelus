@@ -100,7 +100,9 @@ impl Obelus {
                 let at = note.at.as_ref().map_or_else(String::new, |at| {
                     format!(" ({}:{})", at.path.display(), at.line.get() + 1)
                 });
-                let under = "  ".repeat(usize::from(note.depth));
+                let under = " ".repeat(usize::from(
+                    note.depth * crate::component::todo::INDENT,
+                ));
                 format!("{under}{} [{done}]{at} {}", note.id, note.said)
             })
             .collect();

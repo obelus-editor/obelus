@@ -178,9 +178,22 @@ impl TodoView {
         self.todo = todo;
         self.where_now = where_now;
 
-        let writing = writing.map(|(note, composer)| {
+        let writing = writing.map(|(mut note, composer)| {
             let at = self.todo.notes.iter().position(|other| other.id == note.id);
             let at = at.unwrap_or_else(|| {
+                // At the end, so under whatever is last there rather than
+                // under the note it used to hang under -- that note is in
+                // somebody else's file now, and may not be in it at all. A
+                // depth deeper than the end can carry would be written to
+                // disk illegal and read back a level shallower, which is the
+                // note moving on its own between one open and the next.
+                let room = self
+                    .todo
+                    .notes
+                    .last()
+                    .map_or(0, |last| last.depth + 1)
+                    .min(crate::todo::DEEPEST);
+                note.depth = note.depth.min(room);
                 self.todo.notes.push(note);
                 self.where_now.push(None);
                 self.todo.notes.len() - 1
@@ -506,21 +519,21 @@ impl TodoView {
     /// children behind would leave them under whatever happened to be
     /// above -- a result the reader cannot see at the moment they press it.
     fn drop_subtree(&mut self, at: usize) {
-        let span = 1 + self.todo.under(at);
         if at >= self.todo.notes.len() {
             return;
         }
+        let span = 1 + self.todo.under(at);
         self.todo.notes.drain(at..at + span);
         self.where_now.drain(at..at + span);
     }
 
     /// Whether the selected note has anywhere to go, in or out.
     ///
-    /// Asked by whatever says what the keys do, so a key offered here is a
-    /// key that moves something. Answered by trying it and looking, rather
-    /// than by a second copy of the rules: the rules are three -- the note
-    /// above, the deepest a note may be, and the top -- and a hint spelling
-    /// them out again is a hint that goes wrong on its own.
+    /// The rules, in the one place they are written: the top, the note
+    /// above, and the deepest a note may be. Both the key that does it and
+    /// whatever says whether the key would do anything ask this, so a key
+    /// drawn lit is a key that moves something -- two copies of three rules
+    /// would be a hint that goes wrong on its own.
     #[must_use]
     pub fn can_shift(&self, outwards: bool) -> bool {
         let Some(at) = self.selected() else {
@@ -611,36 +624,13 @@ impl TodoView {
     /// deepest a note is allowed to be, which the run has to fit inside
     /// whole. Going out is bounded by the top.
     fn shift_subtree(&mut self, step: i16) -> bool {
+        if !self.can_shift(step < 0) {
+            return false;
+        }
         let Some(at) = self.selected() else {
             return false;
         };
-        let Some(depth) = self.todo.notes.get(at).map(|note| note.depth) else {
-            return false;
-        };
         let under = self.todo.under(at);
-        let wanted = match u16::try_from(i32::from(depth) + i32::from(step)) {
-            Ok(wanted) => wanted,
-            // Out from the top, which is nowhere.
-            Err(_) => return false,
-        };
-        // One deeper than the note above at the most, whatever its own
-        // depth: a key that means "one level in" that stepped two would be
-        // reading a depth off a note the reader was not pointing at.
-        let room = self
-            .at_index(at.checked_sub(1))
-            .map_or(0, |above| above.depth + 1);
-        let deepest = self
-            .todo
-            .notes
-            .iter()
-            .skip(at)
-            .take(1 + under)
-            .map(|note| note.depth)
-            .max()
-            .unwrap_or(depth);
-        if wanted > room || deepest.saturating_add(wanted) > depth.saturating_add(crate::todo::DEEPEST) {
-            return false;
-        }
         for note in self.todo.notes.iter_mut().skip(at).take(1 + under) {
             note.depth = match step > 0 {
                 true => note.depth + 1,
@@ -659,12 +649,6 @@ impl TodoView {
         self.rebuild();
         self.follow_caret();
         true
-    }
-
-    /// One note by index, for the places that have an index that may not be
-    /// one.
-    fn at_index(&self, at: Option<usize>) -> Option<&Note> {
-        self.todo.notes.get(at?)
     }
 
     /// Which note the selection is on, whichever of its rows that is.
@@ -1001,8 +985,7 @@ impl TodoView {
     }
 
     /// How deep the deepest note in the list sits.
-    #[must_use]
-    pub fn deepest(&self) -> u16 {
+    fn deepest(&self) -> u16 {
         self.todo
             .notes
             .iter()

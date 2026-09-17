@@ -1374,3 +1374,44 @@ fn a_new_note_can_be_stepped_in_before_it_says_anything() {
     );
     assert_eq!(depths(&scratch), vec![0, 1, 2, 1, 0, 1]);
 }
+
+/// What the view writes is already a depth the file can be read back at.
+///
+/// A note the reader is writing that somebody else deletes is kept, at the
+/// end of the list -- and the note it used to hang under is not there any
+/// more, so the depth it was written down with may be deeper than the end
+/// can carry. Written that way it comes back a level shallower the next time
+/// the file is read, which is the note moving on its own between one open
+/// and the next.
+#[test]
+fn a_note_that_outlives_its_parent_is_written_at_a_depth_it_reads_back_at() {
+    let scratch = tree("outlives", NESTED);
+    let mut app = open(&scratch, 76, 20);
+
+    // Into "and cache the walk", two levels in, and put a hand on it.
+    for _ in 0..2 {
+        press(&mut app, KeyCode::Down);
+    }
+    support::type_text(&mut app, "!");
+
+    // Somebody else rewrites the file without it, and with nothing it could
+    // hang under.
+    let file = scratch.path().join(".obelus").join("todo.toml");
+    std::fs::write(&file, "[[todo]]\nsaid = \"only this\"\ndone = false\ndepth = 0\n")
+        .expect("the notes");
+    app.handle(Event::FileChanged { path: file.clone() });
+    press(&mut app, KeyCode::Esc);
+
+    let raw = std::fs::read_to_string(&file).expect("the notes");
+    let written: Vec<u16> = raw
+        .lines()
+        .filter_map(|line| line.strip_prefix("depth = "))
+        .filter_map(|depth| depth.parse().ok())
+        .collect();
+    assert_eq!(
+        written,
+        depths(&scratch),
+        "what was written is not what reading it gives back:\n{raw}"
+    );
+    assert_eq!(written, vec![0, 1]);
+}
