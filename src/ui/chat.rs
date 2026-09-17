@@ -345,6 +345,44 @@ impl<'a> ChatView<'a> {
             y,
         })
     }
+
+    /// Which row and cell of the box a point on screen is.
+    ///
+    /// The inverse of [`ChatView::caret`], and beside it because they are
+    /// one geometry: the box is drawn from these numbers and the caret is
+    /// put from them, so where a click lands has to come from them too.
+    ///
+    /// `None` for a point outside the box -- the transcript, the row of
+    /// settings, a card over it. Only the box has a caret in it.
+    ///
+    /// `carded` rather than the card itself: what matters is that one
+    /// covers the box, not which one, and asking for the card would mean
+    /// holding it while the box it is over is changed.
+    #[must_use]
+    pub fn place_at(area: Rect, chat: &Chat, carded: bool, x: u16, y: u16) -> Option<(u16, u16)> {
+        // A card covers the box, and what is typed goes into the card.
+        if carded {
+            return None;
+        }
+        let width = writing_width(area);
+        let rows = chat.writing().rows(width);
+        let regions = regions(area, rows.len());
+        let box_x = regions.writing.x + MARGIN + INDENT;
+        if y < regions.writing.y
+            || y >= regions.writing.bottom()
+            || x < box_x
+            || x >= regions.writing.right()
+        {
+            return None;
+        }
+        // The same scrolling the caret is placed under: a box taller than
+        // its band shows its last rows, so the row on screen counts from
+        // there rather than from the first row of the text.
+        let (caret_row, _) = chat.writing().caret(width);
+        let first = caret_row.saturating_sub(usize::from(regions.writing.height).saturating_sub(1));
+        let row = first + usize::from(y - regions.writing.y);
+        Some((u16::try_from(row).unwrap_or(u16::MAX), x - box_x))
+    }
 }
 
 impl Widget for ChatView<'_> {

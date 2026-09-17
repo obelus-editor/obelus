@@ -1766,6 +1766,82 @@ impl App {
         true
     }
 
+    /// What the pointer did to the box a note is written in.
+    ///
+    /// Where the box is on screen is the view's to say, so it says it --
+    /// the same function that puts the caret there, read backwards.
+    fn pointer_in_notes(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
+        use crate::event::Pointer;
+
+        let area = self.editor_area;
+        let Some(at) = self
+            .notes
+            .as_ref()
+            .and_then(|notes| ui::todo::place_at(area, notes, x, y))
+        else {
+            return;
+        };
+        let clicks = match kind {
+            Pointer::Pressed => self.clicks_at(x, y),
+            _ => 0,
+        };
+        let Some(notes) = self.notes.as_mut() else {
+            return;
+        };
+        let width = notes.caret_width();
+        let Some(composer) = notes.writing_mut() else {
+            return;
+        };
+        match kind {
+            Pointer::Moved | Pointer::Released => {}
+            Pointer::Dragged => composer.place_at_cell(at.0, at.1, width, true),
+            Pointer::Pressed => {
+                composer.place_at_cell(at.0, at.1, width, false);
+                match clicks {
+                    2 => composer.hold_word(width),
+                    3 => composer.hold_line(width),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// What the pointer did to the box a message is written in.
+    fn pointer_in_chat(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
+        use crate::event::Pointer;
+
+        let area = self.editor_area;
+        // Worked out before the conversation is borrowed to change: the
+        // card is the application's and the box is the conversation's.
+        let carded = self.card().is_some();
+        let Some(at) = self
+            .conversation()
+            .and_then(|talk| ui::chat::ChatView::place_at(area, &talk.chat, carded, x, y))
+        else {
+            return;
+        };
+        let clicks = match kind {
+            Pointer::Pressed => self.clicks_at(x, y),
+            _ => 0,
+        };
+        let width = ui::chat::writing_width(area);
+        self.in_transcript(|chat| {
+            let writing = chat.writing_mut();
+            match kind {
+                Pointer::Moved | Pointer::Released => {}
+                Pointer::Dragged => writing.place_at_cell(at.0, at.1, width, true),
+                Pointer::Pressed => {
+                    writing.place_at_cell(at.0, at.1, width, false);
+                    match clicks {
+                        2 => writing.hold_word(width),
+                        3 => writing.hold_line(width),
+                        _ => {}
+                    }
+                }
+            }
+        });
+    }
+
     /// Puts the caret of whichever box is on the status row.
     fn place_on_status(&mut self, cell: u16, extend: bool) {
         if let Some(prompt) = self.prompt.as_mut() {
@@ -1804,10 +1880,24 @@ impl App {
         if self.pointer_on_status(kind, x, y) {
             return;
         }
+        // The notes, which are a page with a box on it: the box takes the
+        // pointer the way the file does, and the rest of the page takes
+        // nothing rather than letting it through to the code behind.
+        if self.notes.is_some() {
+            self.pointer_in_notes(kind, x, y);
+            return;
+        }
         // Covering rather than merely open: a question on the status bar
         // leaves every line of the file where the reader can see it, and a
         // line they can see is a line they can point at.
         if self.layers().covering() {
+            return;
+        }
+        // A conversation is what is being read rather than something over
+        // it, so it is asked here, where a file would be. The box is the
+        // half of it with a caret in it; the transcript has none.
+        if self.conversation().is_some() {
+            self.pointer_in_chat(kind, x, y);
             return;
         }
         let Some(buffer) = self.current_buffer() else {

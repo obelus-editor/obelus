@@ -198,6 +198,62 @@ impl Composer {
         self.writing.write_in(what, width.max(1));
     }
 
+    /// Puts the caret where a cell of a row is, and holds from where it
+    /// was if this is a drag.
+    ///
+    /// `row` and `cell` are counted from the box's own first row and first
+    /// column: where the box sits on screen is the renderer's, and the box
+    /// knows nothing about it. A row past the last one is the end of the
+    /// text and a cell past the end of a row is the end of that row --
+    /// pointing outside means the nearest place inside, which is what
+    /// pointing at a file means.
+    ///
+    /// Held before the caret moves, which is what makes a drag a
+    /// selection: `hold` takes the caret where it *is*, so holding after
+    /// would anchor to the point just reached and every drag would hold
+    /// nothing.
+    pub fn place_at_cell(&mut self, row: u16, cell: u16, width: u16, extend: bool) {
+        let width = width.max(1);
+        let text = self.writing.text();
+        // Below the text there is no row to point at, so the nearest place
+        // is where the text stops -- not the start of the last line, which
+        // is what carrying the column down there would give.
+        let (line, column) = match line_of_row(text, width, usize::from(row)) {
+            Some((line, within)) => (
+                line,
+                text.column_in_row(line, within, DisplayColumn::new(cell), width),
+            ),
+            None => {
+                let last = text.last_line();
+                (last, text.line_length(last))
+            }
+        };
+        match extend {
+            true => self.writing.hold(),
+            false => self.writing.clear_selection(),
+        }
+        self.writing.arrive(line, column);
+    }
+
+    /// Takes hold of the word the caret is in, which is what a second
+    /// click means.
+    pub fn hold_word(&mut self, width: u16) {
+        let width = width.max(1);
+        self.writing
+            .move_to(crate::editing::Motion::WordLeft, &(), width);
+        self.writing
+            .extend_to(crate::editing::Motion::WordRight, &(), width);
+    }
+
+    /// Takes hold of the line the caret is on, which is what a third means.
+    pub fn hold_line(&mut self, width: u16) {
+        let width = width.max(1);
+        self.writing
+            .move_to(crate::editing::Motion::LineStart, &(), width);
+        self.writing
+            .extend_to(crate::editing::Motion::LineEnd, &(), width);
+    }
+
     /// Takes out what is held, and says what it was.
     pub fn cut(&mut self, width: u16) -> Option<String> {
         self.writing.cut(width.max(1))
@@ -251,6 +307,27 @@ fn laid_out(text: &Text, width: u16, held: Option<Span>) -> Vec<Laid> {
     rows
 }
 
+/// Which line a laid-out row belongs to, and which of that line's rows it
+/// is.
+///
+/// The inverse of [`laid_out`], walking the same wrapping in the same
+/// order: a row on screen is a row of some line, and which one is a
+/// question only the wrapping can answer. `None` for a row past the end,
+/// which a click below the last line is.
+fn line_of_row(text: &Text, width: u16, row: usize) -> Option<(LineNumber, usize)> {
+    let width = width.max(1);
+    let mut seen = 0;
+    for index in 0..text.line_count() {
+        let line = LineNumber::new(index);
+        let rows = text.wrap_rows(line, width).len();
+        if seen + rows > row {
+            return Some((line, row - seen));
+        }
+        seen += rows;
+    }
+    None
+}
+
 /// Which of a row's characters a span covers, if it covers any.
 ///
 /// Asked of each character rather than worked out as an intersection,
@@ -262,4 +339,78 @@ fn held_in(span: Span, line: LineNumber, first: CharColumn, shown: usize) -> Opt
     let mut held = (0..shown).filter(|at| span.contains(line, CharColumn::new(first.get() + at)));
     let from = held.next()?;
     Some(from..held.next_back().map_or(from + 1, |last| last + 1))
+}
+
+#[cfg(test)]
+mod pointer_tests {
+    use super::Composer;
+
+    /// A click lands where it points, and a drag from one place to another
+    /// holds what is between them -- across a wrap, because a box wraps and
+    /// the row on screen is not the line in the text.
+    #[test]
+    fn a_drag_holds_what_it_crossed() {
+        let mut composer = Composer::new();
+        composer.replace("hello world");
+        // Six cells wide, so "hello " and "world" are two rows of one line.
+        let rows = composer.rows(6);
+        assert_eq!(rows.len(), 2, "the box did not wrap: {rows:?}");
+
+        composer.place_at_cell(0, 0, 6, false);
+        composer.place_at_cell(1, 5, 6, true);
+        assert_eq!(
+            composer.selected().as_deref(),
+            Some("hello world"),
+            "the drag did not reach across the wrap"
+        );
+
+        // And into the middle of the second row rather than its end: the
+        // end of a wrapped line is also where a row past the text lands,
+        // so a drag that stops there cannot tell the wrapping from the
+        // fallback.
+        composer.place_at_cell(0, 0, 6, false);
+        composer.place_at_cell(1, 2, 6, true);
+        assert_eq!(
+            composer.selected().as_deref(),
+            Some("hello wo"),
+            "the second row was not read as the second row of the line"
+        );
+    }
+
+    /// Pointing below the text is pointing at the end of it, and pointing
+    /// past the end of a row is the end of that row.
+    #[test]
+    fn pointing_outside_lands_at_the_nearest_place() {
+        let mut composer = Composer::new();
+        composer.replace("one\ntwo");
+        composer.place_at_cell(9, 0, 40, false);
+        composer.place_at_cell(0, 0, 40, true);
+        assert_eq!(
+            composer.selected().as_deref(),
+            Some("one\ntwo"),
+            "a click below the last line did not land at the end"
+        );
+
+        composer.place_at_cell(0, 99, 40, false);
+        composer.place_at_cell(0, 0, 40, true);
+        assert_eq!(
+            composer.selected().as_deref(),
+            Some("one"),
+            "a click past the end of a row did not land at its end"
+        );
+    }
+
+    /// Twice is the word and three times is the line, the way it is in the
+    /// file.
+    #[test]
+    fn two_clicks_hold_a_word_and_three_hold_the_line() {
+        let mut composer = Composer::new();
+        composer.replace("hello world");
+        composer.place_at_cell(0, 8, 40, false);
+        composer.hold_word(40);
+        assert_eq!(composer.selected().as_deref(), Some("world"));
+
+        composer.hold_line(40);
+        assert_eq!(composer.selected().as_deref(), Some("hello world"));
+    }
 }

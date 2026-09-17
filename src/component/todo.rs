@@ -268,6 +268,11 @@ impl TodoView {
         self.writing.as_ref().map(|(_, composer)| composer)
     }
 
+    /// The same, to change: what a pointer landing in the box moves.
+    pub fn writing_mut(&mut self) -> Option<&mut Composer> {
+        self.writing.as_mut().map(|(_, composer)| composer)
+    }
+
     /// Puts an empty note at the end and opens it for writing.
     ///
     /// Written where it will live rather than on the status bar: a note is

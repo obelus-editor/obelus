@@ -134,6 +134,38 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
     })
 }
 
+/// Which row and cell of the note being written a point on screen is.
+///
+/// The inverse of [`caret`], and beside it for the reason that one gives
+/// itself: the row is drawn from these numbers and the caret is put from
+/// these numbers, so where a click lands has to come from them too. Three
+/// arithmetics for one geometry is two chances to disagree.
+///
+/// `None` for a point that is not in the note being written -- another
+/// note's row, the foot, outside the page. A click there is not a click in
+/// the box, and the box is the only thing here with a caret in it.
+#[must_use]
+pub fn place_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(u16, u16)> {
+    let composer = notes.writing()?;
+    let at = notes.writing_at()?;
+    let hints = hints(notes);
+    let list = list_region(area, &hints);
+    if y < list.y || y >= list.bottom() || x < list.x + MARGIN || x >= list.right() {
+        return None;
+    }
+    // Where the note's first row sits, in the rows the list is showing.
+    let first = at.checked_sub(notes.window().top())?;
+    let row = usize::from(y - list.y).checked_sub(first)?;
+    // And no further than the note has rows: below it is another note.
+    let rows = composer.rows(notes.caret_width()).len();
+    (row < rows).then(|| {
+        (
+            u16::try_from(row).unwrap_or(u16::MAX),
+            x - (list.x + MARGIN),
+        )
+    })
+}
+
 /// Which column a note's own text starts in: a blank, the box, and the blank
 /// after it.
 ///

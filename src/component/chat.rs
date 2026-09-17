@@ -313,6 +313,11 @@ impl Chat {
         &self.input
     }
 
+    /// The same, to change: what a pointer landing in the box moves.
+    pub const fn writing_mut(&mut self) -> &mut Composer {
+        &mut self.input
+    }
+
     /// The name of the command being typed, if the line is one.
     ///
     /// A message is a command when its first character is a slash and
