@@ -35,7 +35,8 @@ use agent_client_protocol::{
             ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
             ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
             ElicitationPropertySchema, ElicitationSchema, FileSystemCapabilities, Implementation,
-            InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, MultiSelectItems,
+            InitializeRequest, LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp,
+            McpServerSse, MultiSelectItems,
             NewSessionRequest, PermissionOptionId, PromptRequest, ReadTextFileRequest,
             ReadTextFileResponse, RequestPermissionOutcome, RequestPermissionRequest,
             RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId,
@@ -576,23 +577,52 @@ pub fn start(
 /// asked for, because opening the view *is* the request, and the rest come
 /// from `Ask::Open`. One path for both, so that what a new conversation
 /// arrives with cannot depend on which it is.
+/// Which way obelus can hand an agent its tools, if any.
+///
+/// The agent says in the handshake which transports it can connect to, and
+/// the protocol is strict about it: `Http` and `Sse` are "only available
+/// when the agent capabilities indicate" so. Offering one it did not ask
+/// for is a server it is entitled to ignore without saying anything, which
+/// is the shape of an obelus that looks like it works and quietly offers
+/// nothing.
+///
+/// `Stdio` every agent must take, but the agent is the one that spawns
+/// the server there -- obelus's is already running inside obelus, so it
+/// would have to be a second program that connects back to this one. That
+/// is a real option and not this one.
+fn offering(url: Option<&str>, can: &McpCapabilities) -> Option<McpServer> {
+    let url = url?;
+    let server = match (can.http, can.sse) {
+        (true, _) => McpServer::Http(McpServerHttp::new("obelus", url)),
+        (false, true) => McpServer::Sse(McpServerSse::new("obelus", url)),
+        (false, false) => {
+            tracing::warn!(
+                url,
+                "this agent takes neither http nor sse, so obelus offers it no tools"
+            );
+            return None;
+        }
+    };
+    tracing::info!(url, http = can.http, sse = can.sse, "offering the tools");
+    Some(server)
+}
+
 async fn open_session(
     connection: &ConnectionTo<agent_client_protocol::Agent>,
     root: &std::path::Path,
-    tools: Option<&str>,
+    tools: Option<&McpServer>,
     events: &Sender<Event>,
     stopped: &mut std::collections::HashMap<
         SessionId,
         std::sync::Arc<std::sync::atomic::AtomicBool>,
     >,
 ) -> Result<SessionId, agent_client_protocol::Error> {
-    // What obelus itself offers the agent, over http on the loopback: a
-    // handful of tools about this reader's notes, which the protocol has no
-    // way to express because it is about talking to an agent rather than
-    // about being talked to.
+    // What obelus itself offers the agent: a handful of tools about this
+    // reader's notes, which the protocol has no way to express because it is
+    // about talking to an agent rather than about being talked to.
     let mut asking = NewSessionRequest::new(root.to_path_buf());
-    if let Some(url) = tools {
-        asking = asking.mcp_servers(vec![McpServer::Http(McpServerHttp::new("obelus", url))]);
+    if let Some(offered) = tools {
+        asking = asking.mcp_servers(vec![offered.clone()]);
     }
     let opened = connection.send_request(asking).block_task().await?;
     let session = opened.session_id.clone();
@@ -805,6 +835,15 @@ async fn talk(
                 });
                 let _ = events.send(Event::Acp(Incoming::Ready(named)));
 
+                // Which way the tools can be handed over, decided once from
+                // what the agent said it takes rather than guessed afresh
+                // per session: the answer cannot change while the agent
+                // runs, and asking twice would be two answers to keep alike.
+                let offered = offering(
+                    tools.as_deref(),
+                    &ready.agent_capabilities.mcp_capabilities,
+                );
+
                 // Whether each conversation's turn in flight has been
                 // given up on.
                 //
@@ -823,7 +862,7 @@ async fn talk(
 
                 // The first one, opened without being asked for: the reader
                 // opened the view, which is a request to talk.
-                open_session(&connection, &root, tools.as_deref(), &events, &mut stopped).await?;
+                open_session(&connection, &root, offered.as_ref(), &events, &mut stopped).await?;
 
                 while let Some(ask) = asks.next().await {
                     match ask {
@@ -831,7 +870,7 @@ async fn talk(
                             open_session(
                                 &connection,
                                 &root,
-                                tools.as_deref(),
+                                offered.as_ref(),
                                 &events,
                                 &mut stopped,
                             )
@@ -899,7 +938,7 @@ async fn talk(
                                     open_session(
                                         &connection,
                                         &root,
-                                        tools.as_deref(),
+                                        offered.as_ref(),
                                         &events,
                                         &mut stopped,
                                     )
@@ -1611,5 +1650,47 @@ fn words(content: &ContentBlock) -> Option<String> {
         ContentBlock::ResourceLink(link) => Some(format!("({})", link.uri)),
         ContentBlock::Resource(_) => Some("(a resource)".to_string()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The transport is the agent's to choose, and obelus asks.
+    ///
+    /// The protocol is strict about it -- `Http` and `Sse` are "only
+    /// available when the Agent capabilities indicate" so -- and an agent
+    /// that is handed one it did not ask for is entitled to ignore it
+    /// without saying anything. obelus hard-coded `Http` and got away with
+    /// it because the two agents installed today both take it.
+    ///
+    /// Broken deliberately by going back to that: the third case stops
+    /// being `None` and obelus offers an agent a server it cannot reach.
+    #[test]
+    fn the_tools_go_by_whichever_way_the_agent_says_it_takes() {
+        let url = Some("http://127.0.0.1:1/mcp");
+        let takes = |http, sse| McpCapabilities::new().http(http).sse(sse);
+
+        assert!(matches!(
+            offering(url, &takes(true, true)),
+            Some(McpServer::Http(_))
+        ));
+        // Http wins where both are offered: one request and one answer,
+        // against a stream obelus would have to hold open.
+        assert!(matches!(
+            offering(url, &takes(true, false)),
+            Some(McpServer::Http(_))
+        ));
+        assert!(matches!(
+            offering(url, &takes(false, true)),
+            Some(McpServer::Sse(_))
+        ));
+        // Neither: obelus has a server running and no way to hand it over,
+        // and says so rather than offering one that will be dropped.
+        assert!(offering(url, &takes(false, false)).is_none());
+
+        // And nothing to offer is nothing to offer, whatever it takes.
+        assert!(offering(None, &takes(true, true)).is_none());
     }
 }

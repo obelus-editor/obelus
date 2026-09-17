@@ -71,6 +71,11 @@ impl Obelus {
     /// A server on this tree, answering to this main loop.
     #[must_use]
     pub fn new(root: &std::path::Path, events: Sender<Event>) -> Self {
+        // One line per agent that connects, which is the thing that could
+        // not be found out before: obelus offering tools and an agent
+        // taking them up looked exactly alike from outside, and both looked
+        // like nothing at all.
+        tracing::info!(root = %root.display(), "an agent has reached the tools");
         Self {
             root: root.to_path_buf(),
             events,
@@ -91,6 +96,7 @@ impl Obelus {
         above is about the whole of it. Each carries a name -- that is what \
         the other tools take.")]
     fn todo_list(&self) -> Result<CallToolResult, ErrorData> {
+        tracing::info!("an agent asked for the notes");
         let todo = todo::Todo::read(&self.root);
         let said: Vec<String> = todo
             .notes
@@ -118,6 +124,7 @@ impl Obelus {
         &self,
         Parameters(About { note }): Parameters<About>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::info!(note, "an agent says a note's goal looks met");
         let Some(id) = todo::NoteId::read(&note) else {
             return Ok(CallToolResult::error(vec![ContentBlock::text(
                 "that is not a note's name; `todo_list` gives them",
@@ -171,6 +178,7 @@ impl Obelus {
         &self,
         Parameters(Proposed { notes }): Parameters<Proposed>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::info!(offered = notes.len(), "an agent is offering notes");
         if notes.is_empty() {
             return Ok(CallToolResult::error(vec![ContentBlock::text(
                 "there is nothing there to offer",

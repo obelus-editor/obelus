@@ -753,7 +753,13 @@ impl App {
         // than with the first agent, because the address is what an agent is
         // told and telling two of them two addresses would be two servers.
         match crate::mcp::serve(&self.working_directory, sender.clone()) {
-            Ok(url) => self.tools_url = Some(url),
+            // Said, because the silent half of this is the half nobody can
+            // ask about: whether an agent was offered anything, and whether
+            // it took it, were both questions obelus had no answer to.
+            Ok(url) => {
+                tracing::info!(url, "obelus is offering an agent its tools");
+                self.tools_url = Some(url);
+            }
             Err(error) => {
                 // Not a reason to stop: an obelus that cannot listen is an
                 // obelus an agent cannot ask anything of, which is what it
