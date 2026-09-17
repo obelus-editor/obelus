@@ -64,6 +64,15 @@ pub struct Said {
     /// rather than the two texts: the diff is worked out once, when it
     /// arrives.
     pub change: Vec<crate::git::change::Line>,
+    /// What a tool call said in words, in the order it said them.
+    ///
+    /// Appended rather than replaced, which is where this differs from
+    /// [`Self::change`]: a call changes one file and the newest diff is the
+    /// whole of it, but a call *says* things one after another -- the plan
+    /// it wants leave for, and then what became of the asking. Replacing
+    /// would leave a reader who comes back to the row able to see that they
+    /// answered and not what they answered about.
+    pub words: Vec<String>,
     /// Whether the reader has opened or closed what this begins.
     ///
     /// `None` means nobody has said, and obelus decides: a run of tool
@@ -406,6 +415,7 @@ impl Chat {
                 kind: call.kind.clone(),
                 places: places_of(call),
                 change: changed_rows(call),
+                words: call.said.clone(),
                 opened: None,
             });
             return;
@@ -425,6 +435,14 @@ impl Chat {
         }
         if call.change.is_some() {
             said.change = changed_rows(call);
+        }
+        // Appended, and never the same thing twice in a row: a later update
+        // carries only what changed, but an agent that repeats itself would
+        // otherwise be drawn as having said it twice.
+        for words in &call.said {
+            if said.words.last() != Some(words) {
+                said.words.push(words.clone());
+            }
         }
         if !status.is_empty() {
             said.state = Some(status.to_string());
@@ -581,6 +599,24 @@ impl Chat {
             return rows;
         }
 
+        // And words a call carried, under its own row the same way. Not
+        // prose either: the call's row says what it is and the words are
+        // what it is about, which is the shape a change already has. What
+        // they do not get is a diff's markers -- "it is changing this" and
+        // "it is saying this" are different news, and the markers are where
+        // a reader takes that in.
+        if !said.words.is_empty() {
+            let mut rows = vec![self.opening(said, said.text.clone(), depth, Some(at))];
+            if self.is_open(at) {
+                rows.extend(said.words.iter().flat_map(|words| {
+                    crate::text::wrapped(words, inside)
+                        .into_iter()
+                        .map(|text| Self::under(said, text, depth + 1))
+                }));
+            }
+            return rows;
+        }
+
         let words = crate::text::wrapped(&said.text, room);
         // Thinking long enough to be worth putting away gets a heading of
         // its own, which is what folds it. obelus does not fold it away by
@@ -687,7 +723,7 @@ impl Chat {
         // made the file itself has them, and obelus draws a file's changes
         // in the margin beside them -- so the block folds away and the row
         // that opens it stays.
-        if !said.change.is_empty() {
+        if !said.change.is_empty() || !said.words.is_empty() {
             return matches!(said.state.as_deref(), Some("pending" | "in_progress"));
         }
         self.said[self.run_from(at)]
@@ -982,6 +1018,7 @@ impl Chat {
             kind: String::new(),
             places: Vec::new(),
             change: Vec::new(),
+            words: Vec::new(),
             opened: None,
         });
     }
@@ -1188,6 +1225,15 @@ mod tests {
             kind: kind.to_string(),
             places,
             change: None,
+            said: Vec::new(),
+        }
+    }
+
+    /// The same, carrying words.
+    fn saying(id: &str, title: &str, said: &[&str]) -> crate::acp::Call {
+        crate::acp::Call {
+            said: said.iter().map(|words| (*words).to_string()).collect(),
+            ..call(id, title, "other", Vec::new())
         }
     }
 
@@ -1307,6 +1353,64 @@ mod tests {
         assert_eq!(rows.len(), 1, "the reader closed it and it opened itself");
         chat.fold(0);
         assert_eq!(chat.rows(ROOM.reading).len(), 4);
+    }
+
+    /// The words a call carries are under it, and it says them in order.
+    ///
+    /// A call that asks the reader something says two things: what it wants
+    /// leave for, and -- once they have answered -- what came of asking.
+    /// Both belong to the one row, because both are that call. Replacing
+    /// the first with the second, which is what a diff does, would leave a
+    /// reader coming back able to see that they answered and not what about.
+    #[test]
+    fn a_call_keeps_every_word_it_said_under_its_own_row() {
+        let mut chat = Chat::new();
+        chat.tool(&saying("c1", "Approve Plan", &["the plan itself"]), "pending");
+        let said: Vec<String> = chat.rows(ROOM.reading).iter().map(|row| row.text.clone()).collect();
+        assert!(
+            said.iter().any(|text| text == "Approve Plan"),
+            "no row for the call: {said:?}"
+        );
+        assert!(
+            said.iter().any(|text| text == "the plan itself"),
+            "the words are not under it: {said:?}"
+        );
+
+        // Answered: the second thing it says joins the first rather than
+        // taking its place.
+        chat.tool(&saying("c1", "", &["and what came of asking"]), "completed");
+        let kept = &chat.said[0].words;
+        assert_eq!(kept, &["the plan itself", "and what came of asking"]);
+
+        // An update that carries no words leaves them alone, the way an
+        // update that carries no title leaves the title alone.
+        chat.tool(&call("c1", "", "other", Vec::new()), "completed");
+        assert_eq!(chat.said[0].words.len(), 2, "silence wiped what was said");
+
+        // And the same words twice in a row are one thing said twice, not
+        // two: a later update repeats what has not changed.
+        chat.tool(&saying("c1", "", &["and what came of asking"]), "completed");
+        assert_eq!(chat.said[0].words.len(), 2, "it was drawn as said twice");
+    }
+
+    /// A call that is waiting on the reader shows what it is waiting about.
+    ///
+    /// The same rule a change goes by, and for the same reason: while it is
+    /// the question, what it is asking about is the thing to read. Once it
+    /// is answered the row stays and puts its words away -- there to be
+    /// opened again, and not in the way.
+    #[test]
+    fn a_call_shows_its_words_while_it_is_the_question() {
+        let open = |state: &str| {
+            let mut chat = Chat::new();
+            chat.tool(&saying("c1", "Approve Plan", &["the plan itself"]), state);
+            chat.rows(ROOM.reading)
+                .iter()
+                .any(|row| row.text == "the plan itself")
+        };
+        assert!(open("pending"), "a call waiting on the reader hid it");
+        assert!(open("in_progress"), "a call still working hid it");
+        assert!(!open("completed"), "an answered call left it open");
     }
 
     /// Thinking is not folded away, but it can be put away.

@@ -1446,7 +1446,18 @@ impl App {
         // Nothing at all where it said nothing -- what it is asking about
         // is the row above the card, and an empty block is a rule around
         // silence.
-        if let Some(reason) = reason.filter(|reason| !reason.trim().is_empty()) {
+        //
+        // And nothing where the call said it in words either, for the same
+        // reason the line obelus used to write here was deleted: those
+        // words are on the row above now, whole and foldable and still
+        // there after the answer. A card is five rows tall, so a copy here
+        // is the first fifth of something the reader can already see all
+        // of -- and for a plan, which is what the longest of these are, the
+        // first fifth is the heading.
+        if let Some(reason) = reason
+            .filter(|reason| !reason.trim().is_empty())
+            .filter(|_| call.said.is_empty())
+        {
             card.about(reason);
         }
         if let Some(talk) = self.conversation_mut() {

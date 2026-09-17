@@ -20,6 +20,11 @@ use super::composer::Composer;
 use crate::coordinates::DisplayColumn;
 
 /// How many rows of prose the question gets before its answers.
+///
+/// A card is where an answer is given, not where a long thing is read. What
+/// a permission request is about is not put here at all when the call said
+/// it in words -- the transcript has it, whole -- so what is left for this
+/// to clamp is a form field's own question, which is a line or two.
 const MOST_ABOUT: usize = 5;
 
 /// One named answer.

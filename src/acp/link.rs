@@ -474,6 +474,17 @@ pub struct Call {
     pub places: Vec<Place>,
     /// The change it is making, when it said.
     pub change: Option<Change>,
+    /// What it said in words, which is not always nothing.
+    ///
+    /// A call may carry text as well as a diff -- the plan an agent asks
+    /// leave to act on is a call of this shape, and so is anything whose
+    /// result is prose rather than a file. obelus kept the diff and threw
+    /// the words away, so the row that was actually asking the reader
+    /// something had nothing on it.
+    ///
+    /// Empty on an update that carried none, which means "the same as
+    /// before" like every other field here.
+    pub said: Vec<String>,
 }
 
 /// A change to a file, as the agent describes it.
@@ -1239,6 +1250,7 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
                 kind: format!("{:?}", call.kind).to_lowercase(),
                 places: call.locations.iter().map(place_of).collect(),
                 change: change_of(&call.content),
+                said: words_of(&call.content),
             },
             status: format!("{:?}", call.status).to_lowercase(),
         }],
@@ -1637,7 +1649,31 @@ fn call_of(id: &ToolCallId, fields: &ToolCallUpdateFields) -> Call {
             .content
             .clone()
             .and_then(|content| change_of(&content)),
+        said: fields
+            .content
+            .as_deref()
+            .map(words_of)
+            .unwrap_or_default(),
     }
+}
+
+/// The words a call carries, in the order it gave them.
+///
+/// Its own list rather than one string: a call says things at different
+/// moments -- the plan first and what became of it after -- and joining
+/// them at the edge would leave whoever draws them unable to tell one from
+/// the next.
+fn words_of(content: &[ToolCallContent]) -> Vec<String> {
+    content
+        .iter()
+        .filter_map(|content| match content {
+            ToolCallContent::Content(block) => words(&block.content),
+            // A diff and a terminal are not words: they have their own
+            // shapes and their own rows, and reading them as prose would
+            // draw a file twice in two different ways.
+            _ => None,
+        })
+        .collect()
 }
 
 /// The change a call carries, if it carries one.

@@ -12,7 +12,7 @@ screen 76x24  editor 76x22  status 76x1
  9|                                                                            
 10| 󰚩   saying this is what obelus handed over and it refused to write         
 11|                                                                            
-12| 󰆍  Run the tests  /tmp/obelus/Cargo.toml 󰄬                                 
+12| 󰆍  Run the tests  /tmp/obelus/Cargo.toml  ▸ 󰄬                              
 13|                                                                            
 14| 󰚩   and I was allowed                                                      
 15|                                                                            
@@ -37,7 +37,7 @@ screen 76x24  editor 76x22  status 76x1
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-12|abaabbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+12|abaabbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbabbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

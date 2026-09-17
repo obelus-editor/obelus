@@ -233,6 +233,26 @@ while IFS= read -r line; do
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             ;;
+        *'"method":"session/prompt"'*'/plan'*)
+            # A plan put to the reader for leave to act on, which is how an
+            # agent in plan mode ends its turn. The plan itself is the call's
+            # own words -- `ToolCallContent::Content`, the protocol's way of
+            # saying a call carries text -- and it is longer than a card is
+            # tall, which is the case the transcript has to carry.
+            set_turn "$session" "$(id_of "$line")"
+            plan="# The plan\n\n## Context\n\nThere is no hi.py here yet.\n\n## Steps\n\n1. Write the file\n2. Run it\n3. Read the output\n4. Say what happened\n5. Stop"
+            # Through `%s`, not into the format: the plan has `\n` in it and
+            # printf would turn those into real newlines, which is one JSON
+            # message torn into eleven lines that parse as nothing.
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"p1","title":"Approve Plan","kind":"switch_mode","status":"pending","content":[{"type":"content","content":{"type":"text","text":"%s"}}]}}}\n' "$session" "$plan"
+            printf '{"jsonrpc":"2.0","id":908,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"p1","title":"Approve Plan","kind":"switch_mode","content":[{"type":"content","content":{"type":"text","text":"%s"}}]},"options":[{"optionId":"go","name":"Yes, go ahead","kind":"allow_once"},{"optionId":"keep","name":"No, keep planning","kind":"reject_once"}]}}\n' "$session" "$plan"
+            ;;
+        *'"id":908'*)
+            # What became of the asking, on the same call: it says so in
+            # words too, and both belong to that one row.
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call_update","toolCallId":"p1","status":"completed","content":[{"type":"content","content":{"type":"text","text":"the reader answered"}}]}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'/blocks'*)
             # Says what the prompt arrived as: how many blocks, and whether
             # the client put something of its own in front of the reader's

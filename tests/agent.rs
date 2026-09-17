@@ -1110,20 +1110,23 @@ fn a_permission_question_says_what_it_will_do() {
             .position(|row| row.contains(needle))
             .unwrap_or_else(|| panic!("no {needle:?} on screen:\n{dump}"))
     };
-    // The command, above the options, with a rule between them -- and the
-    // title in the transcript, directly above the card, because that is
-    // where what the agent is doing is said.
+    // The command is under the call that is asking, in the transcript --
+    // and above the answers, because the card is at the foot. The card does
+    // not carry it as well: a question a reader can already read in full is
+    // not a thing to print a second time in a five-row window.
     let said = at("cargo test --all-features");
     let allow = at("Allow once");
-    assert!(said < allow, "the reason is not above the answers:\n{dump}");
-    assert!(
-        asking[said + 1].contains('\u{2500}'),
-        "nothing separates the words from the answers:\n{dump}"
-    );
     let asked = at("Run the tests");
-    assert!(
-        asked < said,
-        "what it is asking about is not above the question:\n{dump}"
+    assert!(asked < said, "the words are not under their call:\n{dump}");
+    assert_eq!(said, asked + 1, "something came between them:\n{dump}");
+    assert!(said < allow, "the question is not above the answers:\n{dump}");
+    assert_eq!(
+        asking
+            .iter()
+            .filter(|row| row.contains("cargo test --all-features"))
+            .count(),
+        1,
+        "the same words twice on one screen:\n{dump}"
     );
     // The row of settings is still obelus's status row: a card is part of
     // the conversation rather than a list opened over it.
@@ -2584,4 +2587,69 @@ fn a_note_can_be_offered_in_a_conversation_about_nothing() {
         "the card did not come up in a loose conversation:\n{dump}"
     );
     drop(answered);
+}
+
+/// A plan an agent asks leave to act on is read in the transcript.
+///
+/// It arrives as the words of the call that is asking -- the protocol's
+/// `ToolCallContent::Content`, beside the diff obelus already kept -- and it
+/// is longer than a card is tall. So the card carries the answers and the
+/// transcript carries the plan: there is where things are read, with the
+/// scrolling and the folding and the room, and the plan is still there after
+/// the answer is given.
+#[test]
+fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/plan");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the plan", |app| app.card().is_some());
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    let at = |needle: &str| {
+        screen
+            .iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("no {needle:?} on screen:\n{dump}"))
+    };
+    // The whole of it, not the first fifth: the last step is as visible as
+    // the heading.
+    let call = at("Approve Plan");
+    let heading = at("# The plan");
+    let last = at("5. Stop");
+    assert!(call < heading, "the plan is not under its call:\n{dump}");
+    assert!(heading < last, "the plan is out of order:\n{dump}");
+    assert!(
+        last < at("No, keep planning"),
+        "the plan is not above the answers:\n{dump}"
+    );
+    // And once, because the card does not print what the reader can
+    // already read above it.
+    assert_eq!(
+        screen.iter().filter(|row| row.contains("# The plan")).count(),
+        1,
+        "the plan is on the screen twice:\n{dump}"
+    );
+
+    // Answered: the plan puts itself away and the row keeps the handle, so
+    // what was agreed to is a keypress away rather than gone.
+    // Down to the second answer and take it, the way a card is walked.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    assert!(
+        screen.iter().any(|row| row.contains("Approve Plan")),
+        "the call's row went with the card:\n{dump}"
+    );
+    assert!(
+        !screen.iter().any(|row| row.contains("# The plan")),
+        "an answered plan stayed open:\n{dump}"
+    );
 }
