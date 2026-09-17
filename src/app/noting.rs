@@ -179,6 +179,59 @@ impl App {
     }
 
     /// Writes the notes down, and says so if it cannot.
+    /// Does what an agent asked to the notes, and says what came of it.
+    ///
+    /// Read from the file and written back whole, here rather than on the
+    /// server's own thread: the loop is the one writer, and two of them
+    /// reading and writing a whole file is one losing a change it never
+    /// saw. The view is rebuilt from what was written, so a reader with the
+    /// page open sees it arrive rather than finding it next time they look.
+    ///
+    /// Said in words because the words go back to the agent, which has no
+    /// use for a code and every use for "there is no note by that name any
+    /// more".
+    pub(super) fn change_the_notes(&mut self, doing: crate::todo::Doing) -> String {
+        let mut todo = Todo::read(&self.working_directory);
+        let said = match doing {
+            crate::todo::Doing::Add(notes) => {
+                let written: Vec<String> = notes
+                    .into_iter()
+                    .map(|said| crate::todo::trimmed(&said))
+                    .filter(|said| !said.trim().is_empty())
+                    .collect();
+                if written.is_empty() {
+                    return "there was nothing there to write down".to_string();
+                }
+                for said in &written {
+                    todo.notes.push(crate::todo::Note {
+                        id: crate::todo::NoteId::mint(),
+                        said: said.clone(),
+                        done: false,
+                        at: None,
+                        // At the end and under nothing: a note an agent
+                        // offered was not offered beneath another.
+                        depth: 0,
+                    });
+                }
+                format!("written down: {}", written.len())
+            }
+            crate::todo::Doing::Finish(id) => {
+                let Some(note) = todo.notes.iter_mut().find(|note| note.id == id) else {
+                    return "there is no note by that name any more".to_string();
+                };
+                note.done = true;
+                "ticked off".to_string()
+            }
+        };
+        self.save_notes(&todo);
+        // The page, where it is open: a reader looking at their notes while
+        // an agent writes one should watch it arrive.
+        if self.notes.is_some() {
+            self.reread_notes();
+        }
+        said
+    }
+
     pub(super) fn save_notes(&mut self, todo: &Todo) {
         if let Err(error) = todo.write(&self.working_directory) {
             tracing::warn!(%error, "the notes were not written");

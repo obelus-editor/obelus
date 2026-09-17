@@ -1619,6 +1619,9 @@ impl App {
                 done,
             } => self.on_matches(generation, hits, done),
             Event::Acp(message) => self.on_acp(message),
+            Event::Notes { doing, answer } => {
+                let _ = answer.send(self.change_the_notes(doing));
+            }
             Event::Registry { agents, failure } => self.on_registry(agents, failure),
             Event::Icon { id, svg } => self.on_icon(id, svg),
             Event::Installing { id, progress } => self.on_installing(id, progress),

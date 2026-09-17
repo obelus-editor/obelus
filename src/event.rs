@@ -149,6 +149,20 @@ pub enum Event {
     /// of it carries a channel to answer through -- an agent asking
     /// permission has stopped and is waiting for a keystroke.
     Acp(crate::acp::Incoming),
+    /// An agent asked obelus to change the notes.
+    ///
+    /// Through the loop rather than written from the server's own thread,
+    /// because the loop is the one writer: the file is read, changed and
+    /// written whole, and two threads doing that is one of them losing a
+    /// change it never saw. The answer goes back so the tool can say what
+    /// happened -- a wait on obelus itself, over in microseconds, and not
+    /// the sort a person is at the other end of.
+    Notes {
+        /// What to do to them.
+        doing: crate::todo::Doing,
+        /// What obelus did, or why it did not.
+        answer: crate::acp::Answer<String>,
+    },
     /// A message from a language server.
     Lsp {
         /// Which server it came from.

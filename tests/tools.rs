@@ -131,3 +131,72 @@ fn an_agent_can_read_what_the_tree_means_to_come_back_to() {
         "the note's name was not in the answer, so nothing else could take it:\n{said}"
     );
 }
+
+/// What an agent writes down reaches the tree's file.
+///
+/// The half that was missing: the tools asked the reader and reported what
+/// they chose, and nothing was ever written. A note offered and kept was a
+/// note nobody had.
+///
+/// Driven over the wire and answered by a loop of this test's own, because
+/// the writing is the loop's: the server hands it the act and waits for it
+/// to be done, which is a wait on obelus rather than on a person.
+#[test]
+fn what_an_agent_writes_down_is_in_the_file() {
+    use obelus::app::App;
+
+    let scratch = support::Scratch::new("tools-written");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one that was there\"\ndone = false\n",
+    )
+    .expect("the notes");
+
+    let (sender, events) = channel();
+    let url = obelus::mcp::serve(scratch.path(), sender).expect("a socket");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+
+    // The server is on its own thread and waits on the loop, so the asking
+    // goes in one and the answering happens here.
+    let asking = std::thread::spawn({
+        let url = url.clone();
+        move || {
+            let (_, session) = ask(
+                &url,
+                None,
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+            );
+            let session = session.expect("a session of its own");
+            let (wrote, _) = ask(&url, Some(&session), r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_add","arguments":{"notes":["one worth coming back to","and another"]}}}"#);
+            let (ticked, _) = ask(&url, Some(&session), r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todo_finish","arguments":{"note":"ABCDEFGH"}}}"#);
+            (wrote, ticked)
+        }
+    });
+
+    // Two acts to answer, and the thread is blocked on each in turn.
+    for _ in 0..2 {
+        let event = events
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the server asked the loop for something");
+        app.handle(event);
+    }
+    let (wrote, ticked) = asking.join().expect("the agent's side");
+    assert!(wrote.contains("written down: 2"), "it did not say so: {wrote}");
+    assert!(ticked.contains("ticked off"), "it did not say so: {ticked}");
+
+    // And the file has them, which is the whole of what the tools are for.
+    let todo = obelus::todo::Todo::read(scratch.path());
+    let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
+    assert_eq!(
+        said,
+        vec![
+            "the one that was there",
+            "one worth coming back to",
+            "and another"
+        ]
+    );
+    assert!(todo.notes[0].done, "the one it ticked is not ticked");
+    assert!(!todo.notes[1].done, "it ticked one nobody asked it to");
+}

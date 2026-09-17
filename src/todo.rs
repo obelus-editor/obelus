@@ -175,6 +175,20 @@ impl Note {
     }
 }
 
+/// What an agent asked obelus to do to the notes.
+///
+/// Two acts and not three: a note may be added and a note may be ticked,
+/// and neither loses anything. Taking one away is the reader's, because it
+/// is the one that cannot be undone -- and `done` is already how a list
+/// keeps what was decided against, so an agent has no need of it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Doing {
+    /// Write these down, at the end, one note each.
+    Add(Vec<String>),
+    /// Tick this one off, by the name it answers to.
+    Finish(NoteId),
+}
+
 /// How deep a note may sit.
 ///
 /// Four levels, counted from nothing. A list in a terminal is as wide as

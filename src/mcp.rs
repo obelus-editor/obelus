@@ -1,4 +1,4 @@
-//! What obelus lets an agent do, and how it asks first.
+//! What obelus lets an agent do.
 //!
 //! An agent can read a file and ask permission through the protocol it is
 //! already speaking. What it cannot do through that protocol is anything
@@ -6,15 +6,29 @@
 //! "here are two more worth writing down". MCP is the door for that, and
 //! obelus is the server on the other side of it.
 //!
-//! Two of the three tools raise a card in the conversation and wait for the
-//! reader to answer it. That is the permission model in its entirety: there
-//! is no separate "may I", because asking *is* the asking. A tool that only
-//! changes what the reader is looking at needs no card and gets none.
+//! None of them asks the reader anything. Two of them change the reader's
+//! notes, and the asking before that is the agent's to do -- through
+//! `elicitation/create`, the protocol it is already speaking, which obelus
+//! answers with the very card it used to raise itself.
 //!
-//! The card is the one an agent's own questions are answered on, reached
-//! through the same [`crate::acp::Incoming::Ask`] those arrive as -- the
-//! conversation's box has nothing to send while an agent is waiting, which
-//! is what the card was written for and is exactly the case here.
+//! It was the other way round once: the tools raised that card and waited
+//! on it, on the argument that asking *is* the permission. What that bought
+//! was a guarantee the reader always got a say. What it cost was three
+//! things. A tool call held a request open while a person decided. The card
+//! landed in whichever conversation happened to be waiting, because
+//! obelus's own asking went through the one door the protocol puts no
+//! session on -- so with two conversations open it was a guess. And the
+//! agent's client asked permission for the call as well, which put one act
+//! to the reader twice.
+//!
+//! What is left of the guarantee is that permission request, which is the
+//! agent's to send and the reader's to answer. A weaker promise honestly
+//! kept, against a stronger one bought by making a function wait on a
+//! person.
+//!
+//! Neither of them takes a note away. `done` is how a list keeps what was
+//! decided against, so ticking loses nothing and an agent has no need of
+//! the one act that cannot be undone.
 //!
 //! The dispatch is behind rmcp's macros rather than written out, which is
 //! the one place in obelus where a decision is not on the page beside the
@@ -33,7 +47,7 @@ use rmcp::{
 };
 use serde::Deserialize;
 
-use crate::{acp, event::Event, todo};
+use crate::{event::Event, todo};
 
 /// obelus, as an agent can reach it.
 #[derive(Clone)]
@@ -133,151 +147,69 @@ impl Obelus {
         )]))
     }
 
-    /// The reader is asked what to do about a note the agent thinks is done.
+    /// Ticks a note off.
     #[tool(description = "\
-        Say a note's goal looks met. The reader is asked what to do and this \
-        returns their choice, which may be nothing. For work that is \
-        finished, not to check in.")]
+        Tick a note off, once its work is done. Ask the reader first -- \
+        this writes their file and does not ask for you. It only ticks: a \
+        note that is done is kept, because a list of what was decided \
+        against is worth as much as a list of what was never got to, and \
+        taking one away is the reader's own.")]
     async fn todo_finish(
         &self,
         Parameters(About { note }): Parameters<About>,
     ) -> Result<CallToolResult, ErrorData> {
-        tracing::info!(note, "an agent says a note's goal looks met");
+        tracing::info!(note, "an agent is ticking a note off");
         let Some(id) = todo::NoteId::read(&note) else {
             return Ok(CallToolResult::error(vec![ContentBlock::text(
                 "that is not a note's name; `todo_list` gives them",
             )]));
         };
-        let todo = todo::Todo::read(&self.root);
-        let Some(about) = todo.notes.iter().find(|note| note.id == id) else {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(
-                "there is no note by that name any more",
-            )]));
-        };
-
-        let chosen = ask(
-            self.events.clone(),
-            format!("about \"{}\"", about.title()),
-            vec![acp::Field {
-                name: "what".to_string(),
-                title: "what should happen to it".to_string(),
-                about: None,
-                takes: acp::Takes::One(vec![
-                    value("done", "mark it done"),
-                    value("drop", "take it away"),
-                    value("leave", "leave it as it is"),
-                ]),
-                required: true,
-            }],
-        )
-        .await;
-
-        // Nothing chosen is the reader walking away from the question, which
-        // is an answer: they have not said no, they have said nothing, and
-        // the note stays exactly as it was.
-        let Some(chosen) = chosen else {
-            return Ok(CallToolResult::success(vec![ContentBlock::text(
-                "the reader did not answer; the note is unchanged",
-            )]));
-        };
-        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-            "the reader chose: {chosen}"
-        ))]))
+        Ok(said(self.told(todo::Doing::Finish(id)).await))
     }
 
-    /// Follow-up notes, of which the reader keeps the ones they want.
+    /// Writes notes down.
     #[tool(description = "\
-        Offer notes to add. The reader keeps the ones they want and this \
-        returns which. Offer what somebody would want to come back to, not \
-        a summary of what you just did. From any conversation -- what is \
-        worth writing down usually turns up while doing something else.")]
+        Write notes down in this project. Ask the reader first -- this \
+        writes their file and does not ask for you. Write down what \
+        somebody would want to come back to, not a summary of what you just \
+        did. From any conversation: what is worth writing down usually \
+        turns up while doing something else.")]
     async fn todo_add(
         &self,
         Parameters(Proposed { notes }): Parameters<Proposed>,
     ) -> Result<CallToolResult, ErrorData> {
-        tracing::info!(offered = notes.len(), "an agent is offering notes");
+        tracing::info!(offered = notes.len(), "an agent is writing notes down");
         if notes.is_empty() {
             return Ok(CallToolResult::error(vec![ContentBlock::text(
-                "there is nothing there to offer",
+                "there is nothing there to write down",
             )]));
         }
-        let values: Vec<acp::Value> = notes
-            .iter()
-            .enumerate()
-            .map(|(at, said)| value(&at.to_string(), said))
-            .collect();
+        Ok(said(self.told(todo::Doing::Add(notes)).await))
+    }
 
-        let kept = ask(
-            self.events.clone(),
-            "notes to add".to_string(),
-            vec![acp::Field {
-                name: "keep".to_string(),
-                title: "which of these to write down".to_string(),
-                about: None,
-                takes: acp::Takes::Some {
-                    values,
-                    // None of them, which is a real answer: an agent
-                    // that offered four bad ones should be told so
-                    // rather than made to have one of them written down.
-                    least: Some(0),
-                    most: None,
-                    chosen: Vec::new(),
-                },
-                required: false,
-            }],
-        )
-        .await;
-
-        let Some(kept) = kept else {
-            return Ok(CallToolResult::success(vec![ContentBlock::text(
-                "the reader did not answer; nothing was written down",
-            )]));
-        };
-        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-            "the reader kept: {kept}"
-        ))]))
+    /// Hands one of those to the main loop and waits for it to be done.
+    ///
+    /// A wait on obelus itself, which is over in the time a file takes to
+    /// write. Not the sort a person is at the other end of: an agent that
+    /// wants the reader asked asks them, through the protocol it is already
+    /// speaking.
+    async fn told(&self, doing: todo::Doing) -> Option<String> {
+        let (answer, answered) = futures::channel::oneshot::channel();
+        self.events
+            .send(Event::Notes { doing, answer })
+            .ok()?;
+        answered.await.ok()
     }
 }
 
-/// Puts a question to the reader and waits for it.
+/// What obelus did, as the agent hears it.
 ///
-/// Through the door an agent's own questions come through, which is the
-/// whole of why this layer is thin: the card, the keys that walk it, the
-/// answer that goes back and the refusal when the reader walks away are all
-/// already there, and were written for exactly this shape of thing.
-///
-/// Blocking is right. The conversation genuinely cannot go on -- the agent
-/// is waiting on an answer -- and the row in the list of open documents says
-/// so, so a reader who is somewhere else can see which conversation wants
-/// them. It costs no thread: the wait is an `await`.
-///
-/// Taking the channel by value rather than off `&self`, because the future
-/// outlives the call: a future holding a borrow of the server could not be
-/// the `'static` one the router takes.
-async fn ask(events: Sender<Event>, message: String, fields: Vec<acp::Field>) -> Option<String> {
-    let (answer, answered) = futures::channel::oneshot::channel();
-    let question = acp::Incoming::Ask {
-        message,
-        fields,
-        answer,
-    };
-    // A main loop that has gone is obelus shutting down, and a tool call
-    // answered with "nobody is there" is better than one that never returns.
-    events.send(Event::Acp(question)).ok()?;
-    let given = answered.await.ok()??;
-    let said: Vec<String> = given
-        .into_iter()
-        .map(|(_, reply)| format!("{reply:?}"))
-        .collect();
-    Some(said.join(", "))
-}
-
-/// One of the ways out of a question.
-fn value(id: &str, name: &str) -> acp::Value {
-    acp::Value {
-        id: id.to_string(),
-        name: name.to_string(),
-        about: None,
+/// A loop that has gone is obelus shutting down, and a tool answered with
+/// "nobody is there" is better than one that never returns.
+fn said(what: Option<String>) -> CallToolResult {
+    match what {
+        Some(said) => CallToolResult::success(vec![ContentBlock::text(said)]),
+        None => CallToolResult::error(vec![ContentBlock::text("obelus is not there")]),
     }
 }
 
