@@ -516,6 +516,19 @@ impl ChatView<'_> {
                     style.fg(self.theme.marker_colour(marker)),
                 );
             }
+            // A step of the agent's list for this turn wears how far along
+            // it is in front of itself, which is where a tool call's state
+            // deliberately does not go. The reasons are the same reason: a
+            // reader scans a tool call for its title and the state changes
+            // under them, and scans a list of steps for the states, because
+            // what they are reading it for is how far along it is.
+            if !row.first
+                && row.speaker == Speaker::Doing
+                && let Some(state) = &row.state
+            {
+                let at = area.x + MARGIN + u16::from(row.depth) * DEEPER;
+                self.state_of(cells, at, y, state, dim);
+            }
             if row.first {
                 let at = area.x + MARGIN + u16::from(row.depth) * DEEPER;
                 // The row that says something is happening turns, and it

@@ -233,6 +233,14 @@ while IFS= read -r line; do
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             ;;
+        *'"method":"session/prompt"'*'/steps'*)
+            # A list of what it means to do about this turn, sent whole
+            # every time the way the protocol says: three entries, and then
+            # the same three with the second under way.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"read the counts tree","priority":"high","status":"completed"},{"content":"wire it to the search","priority":"medium","status":"pending"},{"content":"write the test","priority":"low","status":"pending"}]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"read the counts tree","priority":"high","status":"completed"},{"content":"wire it to the search","priority":"medium","status":"in_progress"},{"content":"write the test","priority":"low","status":"pending"}]}}}\n' "$session"
+            ;;
         *'"method":"session/prompt"'*'/plan'*)
             # A plan put to the reader for leave to act on, which is how an
             # agent in plan mode ends its turn. The plan itself is the call's

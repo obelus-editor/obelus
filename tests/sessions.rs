@@ -174,9 +174,12 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
             _ => false,
         },
     );
+    // Spelled the way the wire spells it, which is the way obelus now
+    // reads it: `endturn` was `{:?}` lowercased, and every arm written
+    // against the protocol's own `end_turn` was unreachable.
     assert_eq!(
         answered.as_deref(),
-        Some("endturn"),
+        Some("end_turn"),
         "the second conversation's turn did not finish on its own"
     );
 }

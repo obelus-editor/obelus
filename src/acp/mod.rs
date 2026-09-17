@@ -38,7 +38,7 @@ pub use agent_client_protocol::schema::v1::SessionId;
 use futures::channel::mpsc;
 pub use link::{
     Answer, Ask, Call, Category, Change, Choice, Chosen, Field, Incoming, Kind, Order, Place,
-    Reply, Setting, Takes, Update, Value,
+    Reply, Setting, Step, Takes, Update, Value,
 };
 
 /// One running agent: how to ask it things, and what it has said about

@@ -278,6 +278,13 @@ pub enum Update {
         /// update that did not say, which means it has not changed.
         status: String,
     },
+    /// What it means to do about this turn, and how far along it is.
+    ///
+    /// The whole list every time: the protocol says the agent sends all of
+    /// the entries with their current status and the client replaces what
+    /// it had, so there is nothing here to merge and nothing to keep in
+    /// step.
+    Plan(Vec<Step>),
     /// The way of working changed, which the agent can do on its own.
     Mode(String),
     /// The commands it takes, sent once the session is ready and again
@@ -485,6 +492,50 @@ pub struct Call {
     /// Empty on an update that carried none, which means "the same as
     /// before" like every other field here.
     pub said: Vec<String>,
+}
+
+/// The protocol's own word for one of its enums.
+///
+/// Through serde, which is the only thing that knows: these are
+/// `snake_case` on the wire and `CamelCase` in Rust, and obelus used to
+/// bridge them with `{:?}` lowercased. That gives `inprogress` for
+/// `InProgress` and `switchmode` for `SwitchMode` -- so every arm in
+/// obelus written against the protocol's spelling was an arm nothing could
+/// reach: the glyph that says a call is running, the rule that keeps its
+/// lines open while it runs, the picture on a plan being approved.
+/// Somebody had already met it and papered over it by matching both
+/// spellings of one word.
+///
+/// Derived rather than written out, so a variant obelus has never seen
+/// still comes out as whatever the wire calls it.
+fn said_as(value: &impl serde::Serialize) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+/// One thing an agent means to do about the turn it is working on.
+///
+/// Not a note: a note is what the reader means to come back to next week,
+/// and this is the agent's own list for the next two minutes. They look
+/// alike and are not the same thing, which is why one is written to the
+/// tree's file and the other is gone when the turn ends.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Step {
+    /// What it says it will do.
+    pub said: String,
+    /// `pending`, `in_progress` or `completed` -- the same words a tool
+    /// call's state comes in, so the glyph that says how far along one is
+    /// says it for the other.
+    pub state: String,
+    /// How important the agent thinks it is.
+    ///
+    /// Read and not drawn, which is a decision rather than an oversight:
+    /// obelus's own notes have no priority because the order is the
+    /// reader's, and three shades of urgency on a list the reader cannot
+    /// reorder is colour spent on something they cannot act on.
+    pub priority: String,
 }
 
 /// A change to a file, as the agent describes it.
@@ -754,7 +805,7 @@ async fn talk(
                         .map(|option| Choice {
                             id: option.option_id.0.to_string(),
                             name: option.name.clone(),
-                            kind: format!("{:?}", option.kind).to_lowercase(),
+                            kind: said_as(&option.kind),
                         })
                         .collect(),
                     answer,
@@ -1032,7 +1083,7 @@ async fn talk(
                                     let _ = told.send(Event::Acp(match asked {
                                         Ok(answer) => Incoming::Ended {
                                             session: whose,
-                                            why: format!("{:?}", answer.stop_reason).to_lowercase(),
+                                            why: said_as(&answer.stop_reason),
                                         },
                                         Err(error) => {
                                             Incoming::Failed("the agent", error.to_string())
@@ -1230,9 +1281,16 @@ fn reason_of(request: &RequestPermissionRequest) -> Option<String> {
 
 /// What a `session/update` means, if it is one obelus shows.
 ///
-/// The protocol has a dozen and a half kinds and this reads eight. The rest
-/// -- plans, usage, compaction -- are facts about the agent rather than
-/// about the conversation, and a conversation with them in it is a log.
+/// The protocol has a dozen and a half kinds and this reads nine. The rest
+/// -- usage, compaction -- are facts about the agent rather than about the
+/// conversation, and a conversation with them in it is a log.
+///
+/// A plan was in that list once and does not belong in it: what an agent
+/// means to do about what the reader just asked is the most conversation-
+/// shaped thing the protocol carries. The objection was right about where
+/// it goes, though -- a finished list of seven completed steps *is* a log,
+/// so it is never written into the transcript. It is what is happening
+/// now, and it is drawn where that is drawn.
 fn read_update(update: SessionUpdate) -> Vec<Update> {
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => words(&chunk.content)
@@ -1247,12 +1305,12 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
             call: Call {
                 id: call.tool_call_id.0.to_string(),
                 title: call.title.clone(),
-                kind: format!("{:?}", call.kind).to_lowercase(),
+                kind: said_as(&call.kind),
                 places: call.locations.iter().map(place_of).collect(),
                 change: change_of(&call.content),
                 said: words_of(&call.content),
             },
-            status: format!("{:?}", call.status).to_lowercase(),
+            status: said_as(&call.status),
         }],
         // A later update carries only what changed, so what it leaves out
         // arrives here as nothing and is read as "the same as before".
@@ -1261,9 +1319,19 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
             status: call
                 .fields
                 .status
-                .map(|status| format!("{status:?}").to_lowercase())
+                .map(|status| said_as(&status))
                 .unwrap_or_default(),
         }],
+        SessionUpdate::Plan(plan) => vec![Update::Plan(
+            plan.entries
+                .iter()
+                .map(|entry| Step {
+                    said: entry.content.clone(),
+                    state: said_as(&entry.status),
+                    priority: said_as(&entry.priority),
+                })
+                .collect(),
+        )],
         SessionUpdate::CurrentModeUpdate(mode) => {
             vec![Update::Mode(mode.current_mode_id.0.to_string())]
         }
@@ -1638,7 +1706,7 @@ fn call_of(id: &ToolCallId, fields: &ToolCallUpdateFields) -> Call {
         title: fields.title.clone().unwrap_or_default(),
         kind: fields
             .kind
-            .map(|kind| format!("{kind:?}").to_lowercase())
+            .map(|kind| said_as(&kind))
             .unwrap_or_default(),
         places: fields
             .locations

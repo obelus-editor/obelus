@@ -2653,3 +2653,66 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
         "an answered plan stayed open:\n{dump}"
     );
 }
+
+/// The list an agent keeps while it works is what is happening, not history.
+///
+/// It goes on the row that says what is happening now, folded to one line --
+/// which step of how many, and what that step is. Opened, it is the whole
+/// list with how far along each one is. It is never written into the
+/// transcript: a finished list of completed steps is a log, and what is kept
+/// of a turn is what the agent said and did.
+#[test]
+fn what_the_agent_means_to_do_is_one_row_that_opens() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/steps");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the list", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text.contains("step 2 of 3"))
+        })
+    });
+
+    // One row, and it says where it has got to.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    assert!(
+        screen
+            .iter()
+            .any(|row| row.contains("step 2 of 3") && row.contains("wire it to the search")),
+        "the row does not say which step it is on:\n{dump}"
+    );
+    assert!(
+        !screen.iter().any(|row| row.contains("write the test")),
+        "the whole list is open before anybody asked:\n{dump}"
+    );
+
+    // Opened: the whole of it, in the order the agent gave. Up from the
+    // box reaches it in one, because it is the last row of the transcript
+    // and it is now a row that does something.
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    for step in ["read the counts tree", "wire it to the search", "write the test"] {
+        assert!(
+            screen.iter().any(|row| row.contains(step)),
+            "{step:?} is not on the opened list:\n{dump}"
+        );
+    }
+
+    // And none of it is in the transcript: it is state, so it goes when it
+    // stops being true rather than staying as a record of itself.
+    let said = app.chat().expect("a conversation").rows(WIDTH);
+    assert!(
+        !said
+            .iter()
+            .any(|row| row.speaker != obelus::component::chat::Speaker::Doing
+                && row.text.contains("write the test")),
+        "the list was written into the transcript"
+    );
+}

@@ -460,6 +460,10 @@ impl App {
         // obelus sends in the reader's name is the reader's to see.
         let opening = self.conversation_mut().and_then(|talk| talk.opening.take());
         if let Some(talk) = self.conversation_mut() {
+            // A new turn starts with no plan: an agent that made one last
+            // turn and makes none this turn would otherwise have the old
+            // one shown against the new work.
+            talk.chat.plan_forgotten();
             if opening.is_some() {
                 talk.chat
                     .note("told the agent what this conversation is about");
@@ -1264,6 +1268,11 @@ impl App {
                 acp::Update::Tool { call, status } => {
                     self.in_transcript(|chat| chat.tool(&call, &status))
                 }
+                // What it means to do about this turn. Not a thing said --
+                // it never goes in the transcript -- so it is handed to the
+                // row that says what is happening now, which is where a
+                // state belongs and where one cannot be left behind.
+                acp::Update::Plan(steps) => self.in_transcript(|chat| chat.planning(steps)),
                 // What the agent calls this conversation, which is the
                 // name it goes by in the list of open documents -- so it is
                 // written down rather than only shown.
@@ -1278,10 +1287,10 @@ impl App {
                 // finished has its answer above it, and "end turn" under
                 // every answer is noise.
                 match reason.as_str() {
-                    "endturn" | "end_turn" => {}
+                    "end_turn" => {}
                     "cancelled" => self.in_transcript(|chat| chat.note("stopped")),
                     "refusal" => self.in_transcript(|chat| chat.note("it declined to answer")),
-                    "maxtokens" | "max_tokens" => {
+                    "max_tokens" => {
                         self.in_transcript(|chat| chat.note("it ran out of room to answer in"));
                     }
                     other => self.in_transcript(|chat| chat.note(other)),

@@ -247,6 +247,20 @@ pub struct Chat {
     /// go stale -- what is not stored cannot be left on screen saying
     /// something that has stopped being true.
     doing: Option<String>,
+    /// What the agent means to do about this turn, while it is doing it.
+    ///
+    /// Never written into [`Self::said`]: a finished list of seven
+    /// completed steps is a log, and what is kept of a turn is what the
+    /// agent said and did rather than the order it meant to do it in. This
+    /// is state, and it is drawn where state is drawn.
+    plan: Vec<crate::acp::Step>,
+    /// Whether the reader has opened it.
+    ///
+    /// Folded to its one row by default: while the agent works the
+    /// transcript is filling with what the reader is watching, and a
+    /// checklist holding a third of the screen for a whole turn is a
+    /// checklist they did not ask for.
+    plan_open: bool,
     /// What is being written.
     input: Composer,
     /// Which rows of the transcript are on screen.
@@ -274,6 +288,8 @@ impl Chat {
         Self {
             said: Vec::new(),
             doing: None,
+            plan: Vec::new(),
+            plan_open: false,
             input: Composer::new(),
             window: Window::following(),
             focus: Focus::Writing,
@@ -374,6 +390,40 @@ impl Chat {
     /// Adds one of obelus's own remarks.
     pub fn note(&mut self, text: &str) {
         self.push(Speaker::Note, text, None);
+    }
+
+    /// The one row a folded plan is: which step it is on, and what it is.
+    ///
+    /// The one being worked on, because that is what "now" means. With
+    /// none of them under way -- it has said what it will do and not
+    /// started -- there is no step to name, so it says how many there are.
+    fn step_now(&self) -> String {
+        let at = self
+            .plan
+            .iter()
+            .position(|step| step.state == "in_progress");
+        let total = self.plan.len();
+        match at.and_then(|at| Some((at, self.plan.get(at)?))) {
+            Some((at, step)) => format!("step {} of {total} \u{2014} {}", at + 1, step.said),
+            None => format!("{total} steps"),
+        }
+    }
+
+    /// Takes the agent's list for this turn, replacing whatever it had.
+    ///
+    /// Replaced and not merged, because that is what the protocol says an
+    /// update is: the whole list with every entry's status, every time.
+    pub fn planning(&mut self, steps: Vec<crate::acp::Step>) {
+        self.plan = steps;
+    }
+
+    /// Forgets it, which a new turn does.
+    ///
+    /// An agent that sends a plan for one turn and none for the next would
+    /// otherwise have the first one shown against the second's work.
+    pub fn plan_forgotten(&mut self) {
+        self.plan.clear();
+        self.plan_open = false;
     }
 
     /// Says what is happening now, or that nothing is.
@@ -485,19 +535,58 @@ impl Chat {
             if !first {
                 rows.push(self.blank(self.said.len()));
             }
+            // The agent's list for this turn, where it has one: one row
+            // saying which step it is on, and the whole of it under that
+            // for a reader who wants to see whether it understood the job
+            // -- which is the moment they would interrupt it.
+            //
+            // Folded to the one row by default. While the agent works the
+            // transcript is filling with the thing the reader is actually
+            // watching, and seven rows of checklist is a third of the
+            // screen held for the whole turn.
+            let planning = !self.plan.is_empty();
             rows.push(Row {
                 speaker: Speaker::Doing,
-                text: doing.to_string(),
+                text: match planning {
+                    true => self.step_now(),
+                    false => doing.to_string(),
+                },
                 first: true,
                 state: None,
                 kind: String::new(),
                 place: None,
-                folds: None,
-                open: false,
+                // Anchored one past the end of what was said, which is the
+                // one index that can never name a [`Said`]: a plan is not a
+                // thing that was said, and giving it an index into the
+                // transcript would be filing it as one.
+                folds: planning.then_some(self.said.len()),
+                open: self.plan_open,
                 marker: None,
                 changed: None,
                 depth: 0,
             });
+            if planning && self.plan_open {
+                rows.extend(self.plan.iter().flat_map(|step| {
+                    crate::text::wrapped(&step.said, width.saturating_sub(DEEPER))
+                        .into_iter()
+                        .enumerate()
+                        .map(|(line, text)| Row {
+                            speaker: Speaker::Doing,
+                            text,
+                            first: false,
+                            // On the first row of a step only, so a step
+                            // that wraps is one step with one mark.
+                            state: (line == 0).then(|| step.state.clone()),
+                            kind: String::new(),
+                            place: None,
+                            folds: None,
+                            open: false,
+                            marker: None,
+                            changed: None,
+                            depth: 1,
+                        })
+                }));
+            }
         }
         rows
     }
@@ -733,6 +822,14 @@ impl Chat {
 
     /// Opens what is closed and closes what is open.
     pub fn fold(&mut self, at: usize) {
+        // One past the end is the plan, which is not a thing that was said
+        // and so has no index among them. It is the one index that can
+        // never name a [`Said`], which is what makes it safe to mean
+        // something else.
+        if at == self.said.len() {
+            self.plan_open = !self.plan_open;
+            return;
+        }
         let open = self.is_open(at);
         if let Some(said) = self.said.get_mut(at) {
             said.opened = Some(!open);
