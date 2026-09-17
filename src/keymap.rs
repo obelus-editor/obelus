@@ -10,9 +10,13 @@ use crate::{command::Command, icons};
 
 /// The modifiers a binding can name.
 ///
-/// `SUPER`, `HYPER` and `META` are not among them: they reach a terminal
-/// program only through the kitty keyboard protocol, which obelus does not
-/// ask for, so a binding on one would work in some terminals and not others.
+/// `SUPER`, `HYPER` and `META` are not among them. They do arrive -- obelus
+/// asks for the kitty keyboard protocol, and under it a key is reported with
+/// every modifier held -- but only from the terminals that speak it, and the
+/// desktop takes them first anyway: super is the window manager's modifier
+/// on every system obelus runs on. A binding there would be eaten before the
+/// terminal saw it, which looks to a reader like a broken program. The same
+/// reason `ctrl+alt+arrow` is refused further down.
 ///
 /// A key arriving with one of them is therefore not a key obelus understands,
 /// and [`KeyChord::from_event`] gives no chord for it. That is deliberately
@@ -548,12 +552,20 @@ impl Keymap {
                     context: Context::Always,
                     chord: control('q'),
                 },
-                // Alt: about the cursor. `alt+enter` is what a reader who
-                // has used an IDE presses to ask what can be done with the
-                // thing under the caret, and that is exactly what the
-                // symbol menu is. Alt is also the escape prefix, so it
-                // arrives from every terminal -- unlike `ctrl+enter`, which
-                // needs the keyboard protocol.
+                // Alt: about the cursor. Enter on top of that is "open what
+                // I am on", so the menu of everything a server can say
+                // about the name under the caret is where the two meet.
+                //
+                // Not borrowed from an IDE, whatever the chord looks like:
+                // JetBrains' `alt+enter` is its intentions and quick fixes,
+                // which here is `alt+a` -- the server offering to *change*
+                // the file, not obelus offering to go and look at it. A
+                // comment claiming the muscle memory would be claiming it
+                // for the wrong half.
+                //
+                // Alt is also the escape prefix, so it arrives from every
+                // terminal -- unlike `ctrl+enter`, which needs the keyboard
+                // protocol.
                 Binding {
                     command: Command::SymbolMenu,
                     context: Context::Normal,
@@ -620,6 +632,15 @@ impl Keymap {
                 },
                 // `alt+a` for the actions offered here, on the letter like
                 // the rest of this family.
+                //
+                // This is the one an IDE reader reaches for with a chord --
+                // JetBrains' `alt+enter`, VS Code's `ctrl+.` -- and it is on
+                // a letter anyway, because neither of those can be had here.
+                // `alt+enter` is spent above on a menu obelus invented; and
+                // `ctrl+.` is not a key a terminal has a byte for, so it
+                // arrives only from the terminals speaking the keyboard
+                // protocol and is silence in the rest. The same reason
+                // `ctrl+shift+z` is not redo.
                 Binding {
                     command: Command::SymbolActions,
                     context: Context::Normal,
