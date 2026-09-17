@@ -2704,6 +2704,22 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
             "{step:?} is not on the opened list:\n{dump}"
         );
     }
+    // How to stop it belongs to the one row that says something is going.
+    // The steps under it are the same speaker, so without saying which row
+    // it is for, every step of the list carried it too.
+    assert_eq!(
+        screen
+            .iter()
+            .filter(|row| row.contains("esc stops it"))
+            .count(),
+        1,
+        "the hint is on more than the row it is about:\n{dump}"
+    );
+    // And the whole of it as a picture, because the rest of what is wrong
+    // with a list like this is where things sit: a status drawn in front of
+    // its step *and* after it is two marks for one fact, and no assertion
+    // about the words can see it.
+    support::check("plan_76x24", &dump);
 
     // And none of it is in the transcript: it is state, so it goes when it
     // stops being true rather than staying as a record of itself.

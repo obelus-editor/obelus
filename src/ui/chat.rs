@@ -426,6 +426,15 @@ impl Widget for ChatView<'_> {
     }
 }
 
+/// Whether a row is one step of the list an agent is working through.
+///
+/// Which is the row that says what is happening, opened: its steps are
+/// drawn under it and are the same speaker, because they are the same
+/// thing being said at more length.
+fn step_of_a_plan(row: &Row) -> bool {
+    row.speaker == Speaker::Doing && !row.first
+}
+
 impl ChatView<'_> {
     /// What has been said, and the commands being completed over it.
     fn transcript(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
@@ -522,8 +531,7 @@ impl ChatView<'_> {
             // reader scans a tool call for its title and the state changes
             // under them, and scans a list of steps for the states, because
             // what they are reading it for is how far along it is.
-            if !row.first
-                && row.speaker == Speaker::Doing
+            if step_of_a_plan(row)
                 && let Some(state) = &row.state
             {
                 let at = area.x + MARGIN + u16::from(row.depth) * DEEPER;
@@ -576,13 +584,18 @@ impl ChatView<'_> {
             // A tool call's state goes after its title rather than in front
             // of it: the title is what a reader is scanning, and the state
             // changes under them twice.
-            if let Some(state) = &row.state {
+            if let Some(state) = &row.state
+                && !step_of_a_plan(row)
+            {
                 self.state_of(cells, ended + 1, y, state, dim);
             }
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
             // belongs beside the thing it would stop.
-            if row.speaker == Speaker::Doing && self.state == Talking::Thinking {
+            if row.speaker == Speaker::Doing
+                && row.first
+                && self.state == Talking::Thinking
+            {
                 let hint = "esc stops it";
                 if let Ok(offset) =
                     u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
