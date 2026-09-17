@@ -824,6 +824,102 @@ fn a_loaded_server_does_not_outlive_its_client() {
     );
 }
 
+/// The two halves of a call hierarchy, on the wire: a server is asked to
+/// prepare the name under the cursor, and the item it hands back is what
+/// the next question is asked with.
+///
+/// This is the part no answer fed in by hand can check. The item goes back
+/// as `params.item`, whole and including whatever `data` the server put in
+/// it, and a client that rebuilt it or wrapped it differently would be
+/// answered with nothing -- which looks exactly like a function nobody
+/// calls.
+#[test]
+#[ignore = "waits for the project to be indexed"]
+fn a_real_server_says_who_calls_something() {
+    use obelus::lsp::hierarchy::{self, Direction};
+
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+
+    // A function with a caller in its own file, found by looking rather
+    // than written down: a line number here would be a test that breaks
+    // when the file above it is edited.
+    let path = root().join("src/lsp/hierarchy.rs");
+    let text = std::fs::read_to_string(&path).expect("reading the file");
+    let uri = obelus::lsp::client::uri_for(&path).expect("a uri");
+    let line = text
+        .lines()
+        .position(|line| line.starts_with("fn one_call"))
+        .expect("the function is still called that");
+    let at = serde_json::json!({ "line": line, "character": 3 });
+
+    client
+        .notify(
+            "textDocument/didOpen",
+            &serde_json::json!({
+                "textDocument": {
+                    "uri": uri, "languageId": "rust", "version": 1, "text": text,
+                }
+            }),
+        )
+        .expect("opening the document");
+
+    // Until the project is indexed a server prepares nothing, which is the
+    // same answer it gives for a comma -- so this waits the way obelus
+    // does.
+    let deadline = Instant::now() + INDEXED;
+    let item = loop {
+        assert!(Instant::now() < deadline, "the server prepared nothing");
+        let id = client
+            .request(
+                SymbolAction::Calls.method(),
+                &serde_json::json!({ "textDocument": { "uri": uri }, "position": at }),
+            )
+            .expect("asking");
+        let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+            reply.is_some_and(|reply| reply.id == id)
+        })
+        .expect("an answer");
+        if let Some(item) = hierarchy::prepared(&reply.result) {
+            break item;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    assert_eq!(
+        hierarchy::root_of(&item)
+            .expect("an item obelus can read")
+            .name,
+        "one_call",
+        "the server prepared something else"
+    );
+
+    let id = client
+        .request(
+            Direction::Callers.method(),
+            &serde_json::json!({ "item": item }),
+        )
+        .expect("asking who calls it");
+    let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+        reply.is_some_and(|reply| reply.id == id)
+    })
+    .expect("an answer");
+
+    let callers = hierarchy::called_in(&reply.result, Direction::Callers);
+    assert!(
+        callers.iter().any(|called| called.name == "called_in"),
+        "the one function that calls it is not among {:?}",
+        callers
+            .iter()
+            .map(|called| &called.name)
+            .collect::<Vec<_>>()
+    );
+    client.shutdown();
+}
+
 /// Whether a process is still there, asked the way `kill -0` asks.
 fn alive(pid: u32) -> bool {
     std::process::Command::new("kill")

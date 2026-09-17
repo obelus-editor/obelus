@@ -21,6 +21,7 @@ mod completing;
 mod counting;
 mod documents;
 mod fixing;
+mod hierarchy;
 mod history;
 mod history_view;
 mod hovering;
@@ -360,6 +361,8 @@ pub struct App {
     listing: Vec<Listing>,
     /// The commits an open history view is showing, and what is open in it.
     history: history_view::Showing,
+    /// The tree of calls an open list of them is showing.
+    calls: Option<hierarchy::Calls>,
     /// Which scopes the open search is showing, in tab order.
     ///
     /// The tabs are only the scopes that can answer, so which tab is which
@@ -531,6 +534,7 @@ impl App {
             given_statuses: None,
             listing: Vec::new(),
             history: history_view::Showing::default(),
+            calls: None,
             searching: Vec::new(),
             blames: std::collections::HashMap::new(),
             committed: None,
@@ -986,6 +990,11 @@ impl App {
             || working
             // Or in one that is not, while the list that says so is open.
             || (self.selected_document().is_some() && self.anything_working())
+            // A row of a tree of calls waiting on a server. The same rule
+            // as a conversation's: a mark that turns has to be woken, and
+            // a mark that does not turn is a mark saying nothing is
+            // happening.
+            || self.calls_turning()
     }
 
     /// Whether an agent is at work in any conversation at all.
@@ -1124,6 +1133,7 @@ impl App {
             Layer::Picker => {
                 self.picker = None;
                 self.history = history_view::Showing::default();
+                self.close_calls();
                 // What a server offered to do here, which the rows were
                 // indexes into. A row is chosen by its position, so offers
                 // outliving their list are offers pointing at nothing.

@@ -106,7 +106,7 @@ fn flat(symbol: &SymbolInformation) -> Outlined {
 /// the way the theme groups things rather than kept apart: a list of names
 /// wants to distinguish what is callable from what is a type, and does not
 /// want twenty-six colours.
-fn kind_of(kind: SymbolKind) -> SyntaxKind {
+pub(crate) fn kind_of(kind: SymbolKind) -> SyntaxKind {
     match kind {
         SymbolKind::FUNCTION | SymbolKind::METHOD | SymbolKind::CONSTRUCTOR => SyntaxKind::Function,
         SymbolKind::CLASS

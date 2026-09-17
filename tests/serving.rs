@@ -202,6 +202,14 @@ fn what_obelus_says_it_can_do() {
         "obelus paints the colours a server finds and has not asked for them"
     );
 
+    // `lsp::hierarchy`. Two requests behind one capability: undeclared, a
+    // server is entitled to answer nothing to `prepareCallHierarchy`, and
+    // the tree never has a root to grow from.
+    assert!(
+        text.call_hierarchy.is_some(),
+        "obelus asks who calls this and has not said it can read the answer"
+    );
+
     // `lsp::trouble` keeps a diagnostic whole because it goes back in a
     // code action's context, and a server matches it by every field.
     assert_eq!(

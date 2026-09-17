@@ -56,6 +56,8 @@ pub enum Command {
     SymbolImplementation,
     /// Everywhere it is used.
     SymbolReferences,
+    /// Who calls it, and what it calls.
+    SymbolCalls,
     /// Search the file being read.
     SearchFile,
     /// Search every file under the working directory.
@@ -393,6 +395,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Find references",
     },
     CommandSpec {
+        command: Command::SymbolCalls,
+        name: "show-calls",
+        title: "Who calls this, and what it calls",
+    },
+    CommandSpec {
         command: Command::SearchFile,
         name: "search-file",
         title: "Search this file",
@@ -626,6 +633,7 @@ impl Command {
             | Self::SymbolTypeDefinition
             | Self::SymbolImplementation
             | Self::SymbolReferences
+            | Self::SymbolCalls
             | Self::SearchFile
             | Self::SearchProject
             | Self::SearchSymbols
@@ -680,7 +688,8 @@ impl Command {
             Self::SymbolDefinition
             | Self::SymbolTypeDefinition
             | Self::SymbolImplementation
-            | Self::SymbolReferences => Requires::AnAnswer,
+            | Self::SymbolReferences
+            | Self::SymbolCalls => Requires::AnAnswer,
             Self::LspStop => Requires::ARunningServer,
             // Not a running server, for the reason `show-troubles` is not
             // one: "there is no server for this file", "it is not
@@ -878,6 +887,7 @@ mod tests {
             Command::SymbolTypeDefinition,
             Command::SymbolImplementation,
             Command::SymbolReferences,
+            Command::SymbolCalls,
             Command::SearchFile,
             Command::SearchProject,
             Command::SearchSymbols,

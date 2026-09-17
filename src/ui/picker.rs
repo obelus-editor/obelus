@@ -64,6 +64,20 @@ pub fn hints(picker: &Picker) -> Vec<Hint> {
     if !picker.says_keys() {
         return Vec::new();
     }
+    // The two enters, where a row both holds something and is somewhere to
+    // go. Said at the foot although a list's enter is normally not news,
+    // because here it is: this is the one list where enter does not take
+    // the row. Neither is a switch -- what they do depends on the row the
+    // reader is on -- so neither draws a setting.
+    if picker.rows_open() {
+        let enter = |modifiers| crate::keymap::KeyChord::new(KeyCode::Enter, modifiers);
+        return vec![
+            Hint::common(enter(KeyModifiers::NONE), "open")
+                .saying("show what this row reaches, or hide it again"),
+            Hint::common(enter(KeyModifiers::ALT), "go there")
+                .saying("leave the list and read the line this row names"),
+        ];
+    }
     let alt = |letter| crate::keymap::KeyChord::new(KeyCode::Char(letter), KeyModifiers::ALT);
     if picker.is_searching() {
         let how = picker.looks_how();

@@ -6,6 +6,7 @@ pub mod client;
 pub mod colour;
 pub mod complete;
 pub mod edits;
+pub mod hierarchy;
 pub mod hover;
 pub mod outline;
 pub mod position;

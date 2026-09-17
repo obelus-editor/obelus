@@ -303,6 +303,10 @@ impl App {
         let page = self.picker.as_ref().map_or(1, |picker| {
             ui::picker::rows_drawn(picker, self.picker_area())
         });
+        // A tree of calls: its tabs are the two directions, and walking
+        // onto one asks the other question. Asked before the list is
+        // borrowed, which is the only reason it is up here.
+        let calling = self.showing_calls();
         let Some(picker) = self.picker.as_mut() else {
             return false;
         };
@@ -330,6 +334,15 @@ impl App {
                 if historic && after.0 != before.0 {
                     self.refresh_history();
                 }
+                if calling && after.0 != before.0 {
+                    self.turn_calls_round();
+                }
+                true
+            }
+            // What is behind a row is the application's: the list reports
+            // the key and knows nothing about what opening one costs.
+            PickerOutcome::Open => {
+                self.open_call();
                 true
             }
             PickerOutcome::Cancelled => {
@@ -377,8 +390,10 @@ impl App {
         });
         self.picker = None;
         // The history goes with its list: the radii are what says a history
-        // is open at all.
+        // is open at all. A tree of calls goes the same way, for the same
+        // reason.
         self.history = crate::app::history_view::Showing::default();
+        self.close_calls();
         // A theme worn while walking a list is the reader's choice now,
         // whichever list it was, so there is nothing left to put back. Here
         // rather than on the theme's own arm because the settings page

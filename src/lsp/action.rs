@@ -18,6 +18,14 @@ pub enum SymbolAction {
     Implementation,
     /// Everywhere it is used.
     References,
+    /// Who calls it, and what it calls.
+    ///
+    /// The odd one of the family: the others answer with places and are
+    /// done, and this one answers with an item that every later question
+    /// is asked about. It is here anyway, because to a reader it is the
+    /// same kind of question -- one about the name under the cursor -- and
+    /// keeping it out would mean a second menu with one row in it.
+    Calls,
 }
 
 /// Every action, in the order the menu lists them.
@@ -26,6 +34,7 @@ pub const ALL: &[SymbolAction] = &[
     SymbolAction::TypeDefinition,
     SymbolAction::Implementation,
     SymbolAction::References,
+    SymbolAction::Calls,
 ];
 
 impl SymbolAction {
@@ -37,6 +46,7 @@ impl SymbolAction {
             Self::TypeDefinition => "textDocument/typeDefinition",
             Self::Implementation => "textDocument/implementation",
             Self::References => "textDocument/references",
+            Self::Calls => "textDocument/prepareCallHierarchy",
         }
     }
 
@@ -61,6 +71,7 @@ impl SymbolAction {
             Self::TypeDefinition => Command::SymbolTypeDefinition,
             Self::Implementation => Command::SymbolImplementation,
             Self::References => Command::SymbolReferences,
+            Self::Calls => Command::SymbolCalls,
         }
     }
 
@@ -84,6 +95,7 @@ impl SymbolAction {
             Self::TypeDefinition => capabilities.type_definition_provider.is_some(),
             Self::Implementation => capabilities.implementation_provider.is_some(),
             Self::References => declared(capabilities.references_provider.as_ref()),
+            Self::Calls => super::hierarchy::supported(capabilities),
         }
     }
 }

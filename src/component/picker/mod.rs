@@ -289,6 +289,12 @@ pub enum PickerOutcome {
     Ignored,
     /// Handled. Redraw.
     Consumed,
+    /// The user asked to open the row they are on, or to close it again.
+    ///
+    /// Not handled here: what is behind a row is the caller's, and in the
+    /// one list that has anything behind a row it is a question for a
+    /// language server. All the list knows is that the key was pressed.
+    Open,
     /// The user chose something.
     Accepted(PickerValue),
     /// The user gave up.
@@ -463,6 +469,16 @@ pub struct Picker {
     /// is drawn from it, and a foot that had to guess would guess wrong on
     /// the first frame after the key.
     ignored: Option<bool>,
+    /// Whether the rows of this list open and close.
+    ///
+    /// Which decides what its two enters mean. A list of places answers
+    /// enter by going there; a list whose rows also *hold* something
+    /// answers it by opening -- the way a directory in the counted tree
+    /// and a commit in a history do -- and going there moves to
+    /// `alt+enter`. Both keys are the picker's own, like enter and escape
+    /// before them, rather than commands out of the table: nothing else
+    /// binds them and there is nothing for a reader to rebind.
+    opens: bool,
     /// Scratch for `Utf32Str::new`, which needs somewhere to put a converted
     /// haystack.
     haystack: Vec<char>,
@@ -507,6 +523,7 @@ impl Picker {
             empty: "nothing to choose from".to_string(),
             prefer: None,
             nests: false,
+            opens: false,
             filling: None,
             ordered: false,
             footed: false,
@@ -628,6 +645,18 @@ impl Picker {
     /// about the parents and a child is shown when its parent is.
     pub const fn nests(&mut self) {
         self.nests = true;
+    }
+
+    /// Says the rows of this list open and close.
+    pub const fn opens_rows(&mut self) {
+        self.opens = true;
+        self.footed = true;
+    }
+
+    /// Whether they do.
+    #[must_use]
+    pub const fn rows_open(&self) -> bool {
+        self.opens
     }
 
     /// Says the list is still being filled, and what to show while it is.
@@ -1117,6 +1146,32 @@ impl Picker {
         self.matched.iter().map(|(index, _)| &self.items[*index])
     }
 
+    /// Which of the list's own rows the selection is on.
+    ///
+    /// The list's numbering rather than the query's: a caller who keeps
+    /// something beside the list keeps it per row, and which rows match is
+    /// not a thing that alignment survives.
+    #[must_use]
+    pub fn selected_row(&self) -> Option<usize> {
+        self.matched
+            .get(self.window.focus())
+            .map(|(index, _)| *index)
+    }
+
+    /// Puts the selection on one of the list's own rows.
+    ///
+    /// The inverse of [`selected_row`](Self::selected_row), and the one a
+    /// caller who keeps something beside the list needs: what it knows is
+    /// which row it wants, and where that row sits among the ones matching
+    /// is the list's to work out. Does nothing where the query is hiding
+    /// it, which is the honest answer -- the reader cannot be moved to a
+    /// row that is not on screen.
+    pub fn select_item(&mut self, index: usize) {
+        if let Some(at) = self.matched.iter().position(|(row, _)| *row == index) {
+            self.select(at);
+        }
+    }
+
     /// The selected row, if there is one.
     #[must_use]
     pub fn selected_item(&self) -> Option<&PickerItem> {
@@ -1339,7 +1394,11 @@ impl Picker {
                 self.keys = !self.keys;
                 PickerOutcome::Consumed
             }
-            KeyCode::Enter if bare => self
+            // Enter opens the row where the rows open, and `alt+enter`
+            // goes there -- the pair a list of places that hold places
+            // needs, since one key cannot mean both.
+            KeyCode::Enter if bare && self.opens => PickerOutcome::Open,
+            KeyCode::Enter if bare || (self.opens && modifiers == KeyModifiers::ALT) => self
                 .matched
                 .get(self.window.focus())
                 .map(|(index, _)| &self.items[*index])

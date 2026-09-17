@@ -276,6 +276,9 @@ pub fn for_command(command: crate::command::Command) -> char {
         Command::SymbolTypeDefinition => '\u{f0169}',
         Command::SymbolImplementation => '\u{f04aa}',
         Command::SymbolReferences => '\u{f13b8}',
+        // A tree, which is what the answer is: every other glyph in this
+        // family says "a place", and this one says "a shape".
+        Command::SymbolCalls => '\u{f0645}',
         // One view at three radii, so the glyphs say *where* rather than
         // repeating "search": the plain magnifier for the file in front of
         // the reader, folders for the tree, and a name in code for what a

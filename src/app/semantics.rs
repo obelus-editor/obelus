@@ -559,13 +559,19 @@ impl App {
             params["context"] = serde_json::json!({ "includeDeclaration": true });
         }
 
+        // A tree of calls starts with an item rather than with a place, and
+        // the item is what every question after this one is asked about.
+        let asked = match action == SymbolAction::Calls {
+            true => Asked::Prepared,
+            false => Asked::Symbol(action),
+        };
         match client.request(action.method(), &params) {
             Ok(request) => {
                 self.remember(
                     language,
                     request,
                     Question {
-                        asked: Asked::Symbol(action),
+                        asked,
                         buffer: id,
                         version,
                     },
@@ -724,6 +730,21 @@ impl App {
         }
     }
 
+    /// Hands obelus a reply, by the id it was asked under.
+    ///
+    /// Through the same door the event loop uses, which is the point: what
+    /// a reply *means* is decided by the question it was remembered as,
+    /// and a test that calls the handler itself has chosen that for
+    /// obelus.
+    pub fn answer_for_test(
+        &mut self,
+        language: LanguageId,
+        id: i64,
+        result: Result<serde_json::Value, String>,
+    ) {
+        self.on_reply(language, Reply { id, result });
+    }
+
     /// How many questions are still out.
     ///
     /// For a test about the table not growing: a question that is
@@ -790,6 +811,18 @@ impl App {
             }
             Asked::Rename => {
                 self.on_rename(question.buffer, question.version, reply);
+                return;
+            }
+            Asked::Prepared => {
+                self.on_prepared(question.buffer, language, reply);
+                return;
+            }
+            Asked::Called { direction, id } => {
+                self.on_called(direction, id, reply);
+                return;
+            }
+            Asked::Behind { direction, id } => {
+                self.on_behind(direction, id, reply);
                 return;
             }
             Asked::Uses => {
@@ -1479,6 +1512,38 @@ pub(super) enum Asked {
     /// Everywhere a symbol would have to change to be called something
     /// else.
     Rename,
+    /// The item a tree of calls will be rooted at.
+    ///
+    /// Apart from [`Asked::Symbol`] although it is asked from the same
+    /// menu: the others answer with places and are done with, and this one
+    /// answers with the thing every later question is asked about.
+    Prepared,
+    /// What one item in that tree calls, or who calls it, asked because
+    /// the reader opened that row.
+    Called {
+        /// Which way round it was asked, so an answer that arrives after
+        /// the reader turned round is not hung under the wrong tree.
+        direction: crate::lsp::hierarchy::Direction,
+        /// Which row, by the name the tree gave it.
+        ///
+        /// Its name rather than its place: two questions about one tree
+        /// are in the air at once, and either answer can land after the
+        /// other has moved every row after it.
+        id: u64,
+    },
+    /// Whether there is anything behind one row of that tree, asked
+    /// because nobody has.
+    ///
+    /// Its own kind although it is the same request, because questions of
+    /// a kind supersede each other: sharing one with [`Asked::Called`]
+    /// would mean a probe a busy server is sitting on for two seconds is
+    /// holding the reader's own key press behind it.
+    Behind {
+        /// Which way round it was asked.
+        direction: crate::lsp::hierarchy::Direction,
+        /// Which row, by the name the tree gave it.
+        id: u64,
+    },
     /// What can be done about where the reader is.
     Actions,
     /// What the server would do to the whole file, asked because it is
