@@ -169,8 +169,16 @@ fn what_an_agent_writes_down_is_in_the_file() {
                 r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
             );
             let session = session.expect("a session of its own");
-            let (wrote, _) = ask(&url, Some(&session), r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_add","arguments":{"notes":["one worth coming back to","and another"]}}}"#);
-            let (ticked, _) = ask(&url, Some(&session), r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todo_finish","arguments":{"note":"ABCDEFGH"}}}"#);
+            let (wrote, _) = ask(
+                &url,
+                Some(&session),
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_add","arguments":{"under":"ABCDEFGH","notes":[{"said":"one worth coming back to"},{"said":"and another","depth":1}]}}}"#,
+            );
+            let (ticked, _) = ask(
+                &url,
+                Some(&session),
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todo_finish","arguments":{"note":"ABCDEFGH"}}}"#,
+            );
             (wrote, ticked)
         }
     });
@@ -183,7 +191,10 @@ fn what_an_agent_writes_down_is_in_the_file() {
         app.handle(event);
     }
     let (wrote, ticked) = asking.join().expect("the agent's side");
-    assert!(wrote.contains("written down: 2"), "it did not say so: {wrote}");
+    assert!(
+        wrote.contains("written down: 2"),
+        "it did not say so: {wrote}"
+    );
     assert!(ticked.contains("ticked off"), "it did not say so: {ticked}");
 
     // And the file has them, which is the whole of what the tools are for.
@@ -197,6 +208,140 @@ fn what_an_agent_writes_down_is_in_the_file() {
             "and another"
         ]
     );
+    // Under the one it named, and the second under the first of them: a
+    // depth is counted from the top of what is being written down, and
+    // landing under a note at the top puts the batch one level in.
+    assert_eq!(
+        todo.notes.iter().map(|note| note.depth).collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
     assert!(todo.notes[0].done, "the one it ticked is not ticked");
     assert!(!todo.notes[1].done, "it ticked one nobody asked it to");
+}
+
+/// A note that is a paragraph is still one note in the listing.
+///
+/// The list says a line beginning with a name is a note, and printing the
+/// whole of a paragraph where a line was expected broke that: a three-line
+/// note read as three notes, two of them nameless. Its first line goes
+/// beside the name and the rest under it.
+#[test]
+fn a_note_of_several_lines_is_one_entry() {
+    let scratch = support::Scratch::new("tools-paragraph");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"\"\"\nthe title\nand a body\nof two lines\n\"\"\"\ndone = false\n",
+    )
+    .expect("the notes");
+
+    let (sender, events) = channel();
+    std::mem::forget(events);
+    let url = obelus::mcp::serve(scratch.path(), sender).expect("a socket");
+    let (_, session) = ask(
+        &url,
+        None,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+    );
+    let session = session.expect("a session of its own");
+    let (listed, _) = ask(
+        &url,
+        Some(&session),
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_list","arguments":{}}}"#,
+    );
+
+    // The name is on the line its first words are on, and nowhere else: the
+    // two lines under it carry no name, which is what says they belong to it.
+    // Out of the event stream the transport frames answers in: the note's
+    // own newlines are escaped inside it, so the text has to be taken out
+    // before there are lines to count.
+    // The first `data:` is the stream opening and carries nothing, so it is
+    // the first one that parses rather than the first one there is.
+    let said = listed
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter_map(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+        .find_map(|value| {
+            value["result"]["content"][0]["text"]
+                .as_str()
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| panic!("no answer in:\n{listed}"));
+    let lines: Vec<&str> = said.lines().collect();
+    assert_eq!(
+        lines.iter().filter(|line| line.contains("ABCDEFGH")).count(),
+        1,
+        "the name is not on one line of it:\n{said}"
+    );
+    let named = lines
+        .iter()
+        .position(|line| line.contains("ABCDEFGH"))
+        .expect("the note");
+    assert!(
+        lines[named].ends_with("the title"),
+        "the first line is not beside the name:\n{said}"
+    );
+    // Indented, which is the whole of what says they belong to the note
+    // above rather than starting one of their own. Compared with their
+    // spaces on: trimming them off is throwing away the thing being tested.
+    assert_eq!(
+        &lines[named + 1..=named + 2],
+        ["  and a body", "  of two lines"],
+        "the rest of it is not written under the name:\n{said}"
+    );
+}
+
+/// A depth an agent asked for that nothing could hang at is brought up.
+///
+/// An agent counts from the top of what it is writing down and cannot know
+/// what it will land under, so what it asks for has to be made into
+/// something the file can carry: at most one deeper than the note above,
+/// and never past the deepest a note may be. Written down as asked, it
+/// would come back a level shallower the next time the file was read -- the
+/// note moving on its own between one open and the next.
+///
+/// One call, and the file read as bytes: reading clamps, and a second call
+/// would read and write the file again and launder the very thing this is
+/// looking for.
+#[test]
+fn a_depth_nothing_could_hang_at_is_brought_up_before_it_is_written() {
+    use obelus::app::App;
+
+    let scratch = support::Scratch::new("tools-too-deep");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    let file = scratch.path().join(".obelus").join("todo.toml");
+    std::fs::write(&file, "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one\"\ndone = false\n")
+        .expect("the notes");
+
+    let (sender, events) = channel();
+    let url = obelus::mcp::serve(scratch.path(), sender).expect("a socket");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+
+    let asking = std::thread::spawn(move || {
+        let (_, session) = ask(
+            &url,
+            None,
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+        );
+        let session = session.expect("a session of its own");
+        ask(&url, Some(&session), r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_add","arguments":{"notes":[{"said":"far too deep","depth":9}]}}}"#);
+    });
+    let event = events
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the server asked the loop for something");
+    app.handle(event);
+    asking.join().expect("the agent's side");
+
+    let raw = std::fs::read_to_string(&file).expect("the notes");
+    let written: Vec<u16> = raw
+        .lines()
+        .filter_map(|line| line.strip_prefix("depth = "))
+        .filter_map(|depth| depth.parse().ok())
+        .collect();
+    assert_eq!(
+        written,
+        vec![0, 1],
+        "what was written is not what reading it gives back:\n{raw}"
+    );
 }

@@ -183,8 +183,20 @@ impl Note {
 /// keeps what was decided against, so an agent has no need of it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Doing {
-    /// Write these down, at the end, one note each.
-    Add(Vec<String>),
+    /// Write these down, one note each.
+    Add {
+        /// What they say and how they sit under each other, counted from
+        /// the top of the batch rather than from the list's own top: an
+        /// agent knows the shape of what it is writing and not where in
+        /// somebody else's list it will land.
+        notes: Vec<(String, u16)>,
+        /// The note they hang under, if they hang under one.
+        ///
+        /// They go after the whole of what is already under it, which is
+        /// where the key that starts a note puts one: between a note and
+        /// its children is a place that adopts what is put there.
+        under: Option<NoteId>,
+    },
     /// Tick this one off, by the name it answers to.
     Finish(NoteId),
 }

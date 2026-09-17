@@ -193,27 +193,55 @@ impl App {
     pub(super) fn change_the_notes(&mut self, doing: crate::todo::Doing) -> String {
         let mut todo = Todo::read(&self.working_directory);
         let said = match doing {
-            crate::todo::Doing::Add(notes) => {
-                let written: Vec<String> = notes
+            crate::todo::Doing::Add { notes, under } => {
+                let written: Vec<(String, u16)> = notes
                     .into_iter()
-                    .map(|said| crate::todo::trimmed(&said))
-                    .filter(|said| !said.trim().is_empty())
+                    .map(|(said, depth)| (crate::todo::trimmed(&said), depth))
+                    .filter(|(said, _)| !said.trim().is_empty())
                     .collect();
                 if written.is_empty() {
                     return "there was nothing there to write down".to_string();
                 }
-                for said in &written {
-                    todo.notes.push(crate::todo::Note {
-                        id: crate::todo::NoteId::mint(),
-                        said: said.clone(),
-                        done: false,
-                        at: None,
-                        // At the end and under nothing: a note an agent
-                        // offered was not offered beneath another.
-                        depth: 0,
-                    });
+                // Where they go, and how deep the first of them is. Under a
+                // note means after the whole of what already hangs under it
+                // -- between a note and its children is the one place that
+                // adopts what is put in it.
+                let (at, beneath) = match under {
+                    Some(name) => {
+                        let Some(at) = todo.notes.iter().position(|note| note.id == name) else {
+                            return "there is no note by that name any more".to_string();
+                        };
+                        (at + 1 + todo.under(at), todo.notes[at].depth + 1)
+                    }
+                    None => (todo.notes.len(), 0),
+                };
+                let how_many = written.len();
+                for (offset, (said, depth)) in written.into_iter().enumerate() {
+                    // Clamped twice, because what is written has to be what
+                    // reading it gives back: one deeper than the note above
+                    // at the most, and never past the deepest a note may be.
+                    // An agent counts from the top of its own batch and
+                    // cannot know what it is landing under.
+                    let above = todo
+                        .notes
+                        .get((at + offset).wrapping_sub(1))
+                        .map_or(0, |note| note.depth + 1);
+                    let depth = depth
+                        .saturating_add(beneath)
+                        .min(above)
+                        .min(crate::todo::DEEPEST);
+                    todo.notes.insert(
+                        at + offset,
+                        crate::todo::Note {
+                            id: crate::todo::NoteId::mint(),
+                            said,
+                            done: false,
+                            at: None,
+                            depth,
+                        },
+                    );
                 }
-                format!("written down: {}", written.len())
+                format!("written down: {how_many}")
             }
             crate::todo::Doing::Finish(id) => {
                 let Some(note) = todo.notes.iter_mut().find(|note| note.id == id) else {

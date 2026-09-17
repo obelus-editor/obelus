@@ -75,9 +75,29 @@ pub struct About {
 /// What to write down.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct Proposed {
-    /// One line each. The reader is shown all of them and keeps the ones
-    /// they want, so several small ones are better than one long one.
-    pub notes: Vec<String>,
+    /// The notes, in the order they should be written down.
+    pub notes: Vec<Offered>,
+    /// The note they all go under, by the name `todo_list` gives it.
+    ///
+    /// Left out, they go at the end of the list at the top level. A
+    /// conversation opened on a note is told that note's name in its first
+    /// message, and that is usually the one they belong under.
+    pub under: Option<String>,
+}
+
+/// One note an agent is writing down.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct Offered {
+    /// What it says. Short: several small notes are worth more than one
+    /// long one, and the first line is what the reader sees in the list.
+    pub said: String,
+    /// How far under the note before it this one sits, counted from the
+    /// top of what is being written down.
+    ///
+    /// Left out or zero for a note of its own. One more than the note
+    /// before it at the most -- a note cannot hang under one that is not
+    /// there -- and obelus brings anything deeper up to where it can hang.
+    pub depth: Option<u16>,
 }
 
 #[tool_router]
@@ -122,11 +142,15 @@ impl Obelus {
     /// they write the reader's notes. What spares the question there is not
     /// something obelus can say about a tool -- see the module's own note on
     /// asking being the asking.
-    #[tool(annotations(read_only_hint = true), description = "\
+    #[tool(
+        annotations(read_only_hint = true),
+        description = "\
         Every note this project keeps: what it says, whether it is done, and \
-        where it points. A note indented under another hangs under it, and \
-        finishing the one above is about the whole of it. Each carries the \
-        name the other tools take.")]
+        where it points. A line beginning with a name starts a note and the \
+        lines under it are the rest of what that one says. A note indented \
+        under another hangs under it, and finishing the one above is about \
+        the whole of it. The name is what the other tools take."
+    )]
     fn todo_list(&self) -> Result<CallToolResult, ErrorData> {
         tracing::info!("an agent asked for the notes");
         let todo = todo::Todo::read(&self.root);
@@ -139,7 +163,21 @@ impl Obelus {
                     format!(" ({}:{})", at.path.display(), at.line.get() + 1)
                 });
                 let under = " ".repeat(usize::from(note.depth * crate::component::todo::INDENT));
-                format!("{under}{} [{done}]{at} {}", note.id, note.said)
+                // The first line beside the name and the rest under it. A
+                // note is allowed to be a paragraph, and printing the whole
+                // of one where a line was expected put newlines in the
+                // middle of a row: the list said it was one note per line
+                // and was not, so a three-line note read as three notes
+                // with two of them nameless.
+                let mut said = format!(
+                    "{under}{} [{done}]{at} {}",
+                    note.id,
+                    note.said.lines().next().unwrap_or_default()
+                );
+                for line in note.said.lines().skip(1) {
+                    said.push_str(&format!("\n{under}  {line}"));
+                }
+                said
             })
             .collect();
         Ok(CallToolResult::success(vec![ContentBlock::text(
@@ -173,10 +211,12 @@ impl Obelus {
         writes their file and does not ask for you. Write down what \
         somebody would want to come back to, not a summary of what you just \
         did. From any conversation: what is worth writing down usually \
-        turns up while doing something else.")]
+        turns up while doing something else. Give `under` a note's name to \
+        hang them beneath it, and a note a `depth` to hang it beneath the \
+        one before it.")]
     async fn todo_add(
         &self,
-        Parameters(Proposed { notes }): Parameters<Proposed>,
+        Parameters(Proposed { notes, under }): Parameters<Proposed>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::info!(offered = notes.len(), "an agent is writing notes down");
         if notes.is_empty() {
@@ -184,7 +224,28 @@ impl Obelus {
                 "there is nothing there to write down",
             )]));
         }
-        Ok(said(self.told(todo::Doing::Add(notes)).await))
+        let beneath = match under.as_deref() {
+            Some(name) => match todo::NoteId::read(name) {
+                Some(id) => Some(id),
+                None => {
+                    return Ok(CallToolResult::error(vec![ContentBlock::text(
+                        "that is not a note's name; `todo_list` gives them",
+                    )]));
+                }
+            },
+            None => None,
+        };
+        let notes = notes
+            .into_iter()
+            .map(|note| (note.said, note.depth.unwrap_or(0)))
+            .collect();
+        Ok(said(
+            self.told(todo::Doing::Add {
+                notes,
+                under: beneath,
+            })
+            .await,
+        ))
     }
 
     /// Hands one of those to the main loop and waits for it to be done.
@@ -195,9 +256,7 @@ impl Obelus {
     /// speaking.
     async fn told(&self, doing: todo::Doing) -> Option<String> {
         let (answer, answered) = futures::channel::oneshot::channel();
-        self.events
-            .send(Event::Notes { doing, answer })
-            .ok()?;
+        self.events.send(Event::Notes { doing, answer }).ok()?;
         answered.await.ok()
     }
 }
@@ -220,10 +279,13 @@ impl ServerHandler for Obelus {
         info.instructions = Some(
             "obelus, the reader this conversation is happening inside. It \
              keeps this project's notes.\n\n\
-             `todo_finish` says a note's work is done; `todo_add` offers \
-             work worth returning to. Both ask the reader and change nothing \
-             until they answer, so asking is cheap -- but about finished \
-             work, not progress, and notes worth keeping, not summaries.\n\n\
+             `todo_finish` ticks a note off; `todo_add` writes notes down. \
+             Both change the reader's file and neither asks for them, so ask \
+             before calling either -- about finished work, not progress, and \
+             notes worth returning to, not summaries.\n\n\
+             Work that belongs to a note goes under it: `todo_add` takes \
+             `under`, a note's name, and puts them beneath it. A note's own \
+             `depth` puts it beneath the note before it.\n\n\
              From any conversation. One about a note says so in its first \
              message; otherwise `todo_list`."
                 .to_string(),

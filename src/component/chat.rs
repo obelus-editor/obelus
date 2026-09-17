@@ -1489,7 +1489,10 @@ mod tests {
     #[test]
     fn a_call_shows_what_it_says_now_and_a_later_word_replaces_it() {
         let mut chat = Chat::new();
-        chat.tool(&saying("c1", "Approve Plan", &["the plan itself"]), "pending");
+        chat.tool(
+            &saying("c1", "Approve Plan", &["the plan itself"]),
+            "pending",
+        );
         let said: Vec<String> = chat
             .rows(ROOM.reading)
             .iter()
@@ -1527,7 +1530,10 @@ mod tests {
     #[test]
     fn a_call_that_changes_something_and_says_why_shows_both() {
         let mut chat = Chat::new();
-        chat.tool(&saying_and_changing("c1", "because the cache is wrong"), "pending");
+        chat.tool(
+            &saying_and_changing("c1", "because the cache is wrong"),
+            "pending",
+        );
         let said: Vec<String> = chat
             .rows(ROOM.reading)
             .iter()
@@ -1543,7 +1549,8 @@ mod tests {
         );
         // The account before the thing it accounts for.
         assert!(
-            said.iter().position(|text| text == "because the cache is wrong")
+            said.iter()
+                .position(|text| text == "because the cache is wrong")
                 < said.iter().position(|text| text == "a line"),
             "the why is a footnote to the what: {said:?}"
         );

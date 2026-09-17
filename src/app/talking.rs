@@ -152,10 +152,10 @@ impl App {
             "This conversation is about one of obelus's notes, which says:\n\n\
              {}\n\n\
              Its name is {}.{at}\n\n\
-             When the work it describes is done, call `todo_finish` with that \
-             name -- the reader is asked what to do about it and decides. If \
-             this turns up other work worth coming back to, offer it with \
-             `todo_add`.",
+             When its work is done, tick it off with `todo_finish` and that \
+             name. Work this turns up that belongs to it goes under it: \
+             `todo_add` with `under` set to that name. Both write the \
+             reader's file and neither asks for you, so ask them first.",
             about.said, about.id,
         ))
     }

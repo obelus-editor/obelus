@@ -1119,7 +1119,10 @@ fn a_permission_question_says_what_it_will_do() {
     let asked = at("Run the tests");
     assert!(asked < said, "the words are not under their call:\n{dump}");
     assert_eq!(said, asked + 1, "something came between them:\n{dump}");
-    assert!(said < allow, "the question is not above the answers:\n{dump}");
+    assert!(
+        said < allow,
+        "the question is not above the answers:\n{dump}"
+    );
     assert_eq!(
         asking
             .iter()
@@ -2404,9 +2407,11 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
 
     let (mut app, events) = wired();
     app.working_directory_for_test(scratch.path().to_path_buf());
-    app.talk_to("fake", Path::new("sh"), &[
-        "tests/fixtures/fake-agent.sh".to_string(),
-    ]);
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
     // Into the notes and on to the one note's conversation.
     obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
     support::press_alt(&mut app, 'a');
@@ -2418,8 +2423,11 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
     support::type_text(&mut app, "/blocks");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "what it got", |app| {
-        app.chat()
-            .is_some_and(|chat| chat.rows(WIDTH).iter().any(|row| row.text.contains("blocks=")))
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text.contains("blocks="))
+        })
     });
     let text = screen(&mut app);
     assert!(
@@ -2462,8 +2470,11 @@ fn a_loose_conversation_carries_no_opening() {
     support::type_text(&mut app, "/blocks");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "what it got", |app| {
-        app.chat()
-            .is_some_and(|chat| chat.rows(WIDTH).iter().any(|row| row.text.contains("blocks=")))
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text.contains("blocks="))
+        })
     });
     let text = screen(&mut app);
     assert!(
@@ -2506,9 +2517,11 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
 
     let (mut app, events) = wired();
     app.working_directory_for_test(scratch.path().to_path_buf());
-    app.talk_to("fake", Path::new("sh"), &[
-        "tests/fixtures/fake-agent.sh".to_string(),
-    ]);
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
     obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
     support::press_alt(&mut app, 'a');
     pump(&mut app, &events, "a session of some kind", |app| {
@@ -2583,7 +2596,9 @@ fn a_note_can_be_offered_in_a_conversation_about_nothing() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        rows(&dump).iter().any(|row| row.contains("the cache is wrong")),
+        rows(&dump)
+            .iter()
+            .any(|row| row.contains("the cache is wrong")),
         "the card did not come up in a loose conversation:\n{dump}"
     );
     drop(answered);
@@ -2629,7 +2644,10 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
     // And once, because the card does not print what the reader can
     // already read above it.
     assert_eq!(
-        screen.iter().filter(|row| row.contains("# The plan")).count(),
+        screen
+            .iter()
+            .filter(|row| row.contains("# The plan"))
+            .count(),
         1,
         "the plan is on the screen twice:\n{dump}"
     );
@@ -2698,7 +2716,11 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
     support::press(&mut app, KeyCode::Enter);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
-    for step in ["read the counts tree", "wire it to the search", "write the test"] {
+    for step in [
+        "read the counts tree",
+        "wire it to the search",
+        "write the test",
+    ] {
         assert!(
             screen.iter().any(|row| row.contains(step)),
             "{step:?} is not on the opened list:\n{dump}"

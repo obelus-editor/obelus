@@ -36,11 +36,10 @@ use agent_client_protocol::{
             ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
             ElicitationPropertySchema, ElicitationSchema, FileSystemCapabilities, Implementation,
             InitializeRequest, LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp,
-            McpServerSse, MultiSelectItems,
-            NewSessionRequest, PermissionOptionId, PromptRequest, ReadTextFileRequest,
-            ReadTextFileResponse, RequestPermissionOutcome, RequestPermissionRequest,
-            RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId,
-            SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
+            McpServerSse, MultiSelectItems, NewSessionRequest, PermissionOptionId, PromptRequest,
+            ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
+            RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+            SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
             SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionConfigSelectOption,
             SessionConfigSelectOptions, SessionId, SessionModeState, SessionNotification,
             SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent,
@@ -942,10 +941,8 @@ async fn talk(
                 // what the agent said it takes rather than guessed afresh
                 // per session: the answer cannot change while the agent
                 // runs, and asking twice would be two answers to keep alike.
-                let offered = offering(
-                    tools.as_deref(),
-                    &ready.agent_capabilities.mcp_capabilities,
-                );
+                let offered =
+                    offering(tools.as_deref(), &ready.agent_capabilities.mcp_capabilities);
 
                 // Whether each conversation's turn in flight has been
                 // given up on.
@@ -1704,10 +1701,7 @@ fn call_of(id: &ToolCallId, fields: &ToolCallUpdateFields) -> Call {
     Call {
         id: id.0.to_string(),
         title: fields.title.clone().unwrap_or_default(),
-        kind: fields
-            .kind
-            .map(|kind| said_as(&kind))
-            .unwrap_or_default(),
+        kind: fields.kind.map(|kind| said_as(&kind)).unwrap_or_default(),
         places: fields
             .locations
             .clone()
@@ -1717,11 +1711,7 @@ fn call_of(id: &ToolCallId, fields: &ToolCallUpdateFields) -> Call {
             .content
             .clone()
             .and_then(|content| change_of(&content)),
-        said: fields
-            .content
-            .as_deref()
-            .map(words_of)
-            .unwrap_or_default(),
+        said: fields.content.as_deref().map(words_of).unwrap_or_default(),
     }
 }
 
