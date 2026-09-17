@@ -230,7 +230,12 @@ pub struct App {
     /// What the server says the place under the caret is, while it is up.
     hover: Option<Hover>,
     /// What the server offered to do here, while a list of it is open.
-    actions: Vec<crate::lsp::actions::Action>,
+    ///
+    /// Code actions, which are the server's offers to change the file --
+    /// not [`App::symbol_actions`], which is the menu of questions about
+    /// the name under the caret. Two different things were called actions
+    /// here, and this is the half that edits.
+    code_actions: Vec<crate::lsp::actions::Action>,
     /// Every use of the name the pointer is resting on, in this file.
     ///
     /// Marked in the text rather than listed: the answer is "these, here",
@@ -506,7 +511,7 @@ impl App {
             clicked: None,
             signature: None,
             hover: None,
-            actions: Vec::new(),
+            code_actions: Vec::new(),
             uses: Vec::new(),
             resting: None,
             troubles: HashMap::new(),
@@ -1137,7 +1142,7 @@ impl App {
                 // What a server offered to do here, which the rows were
                 // indexes into. A row is chosen by its position, so offers
                 // outliving their list are offers pointing at nothing.
-                self.actions.clear();
+                self.code_actions.clear();
                 // A list that was an agent's question has to be answered
                 // even when the reader walks away from it: an agent whose
                 // permission request goes unanswered waits for ever.

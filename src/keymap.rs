@@ -642,7 +642,7 @@ impl Keymap {
                 // protocol and is silence in the rest. The same reason
                 // `ctrl+shift+z` is not redo.
                 Binding {
-                    command: Command::SymbolActions,
+                    command: Command::CodeActions,
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('a'), KeyModifiers::ALT),
                 },

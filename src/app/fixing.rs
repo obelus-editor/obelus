@@ -30,7 +30,7 @@ const ON_SAVE: &[&str] = &["source.fixAll", "source.organizeImports"];
 impl App {
     /// Asks what can be done about the selection, or the line the cursor
     /// is on.
-    pub fn ask_actions(&mut self) {
+    pub fn ask_code_actions(&mut self) {
         let Some(id) = self.current else {
             self.note = Some("no file open".to_string());
             return;
@@ -117,7 +117,7 @@ impl App {
     /// that has changed has moved them: the offers would still apply, to
     /// the wrong text, without anything going wrong loudly enough to
     /// notice.
-    pub(super) fn on_actions(&mut self, id: DocumentId, version: i32, reply: Reply) {
+    pub(super) fn on_code_actions(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
             self.note = Some("the file changed while asking".to_string());
             return;
@@ -143,7 +143,7 @@ impl App {
             .iter()
             .enumerate()
             .map(|(at, action)| PickerItem {
-                icon: icons::enabled().then_some(icons::for_command(Command::SymbolActions)),
+                icon: icons::enabled().then_some(icons::for_command(Command::CodeActions)),
                 label: action.title.clone(),
                 // The reason it cannot be done, where there is one, and
                 // nothing otherwise. The other thing that could go here
@@ -168,7 +168,7 @@ impl App {
                 tab: None,
             })
             .collect();
-        self.actions = offered;
+        self.code_actions = offered;
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.keeps_order(true);
         picker.about("what the language server offers to do here");
@@ -178,7 +178,7 @@ impl App {
 
     /// Does the one the reader chose.
     pub(super) fn do_action(&mut self, at: usize) {
-        let Some(action) = self.actions.get(at).cloned() else {
+        let Some(action) = self.code_actions.get(at).cloned() else {
             return;
         };
         // An action that arrived without its edit is one the server said
@@ -196,7 +196,7 @@ impl App {
         let Some(language) = self.file(id).and_then(Buffer::language) else {
             return;
         };
-        let Some(item) = self.actions.get(at).map(|action| action.item.clone()) else {
+        let Some(item) = self.code_actions.get(at).map(|action| action.item.clone()) else {
             return;
         };
         let version = self.file(id).map_or(0, Buffer::version);
@@ -235,7 +235,7 @@ impl App {
             self.note = Some("the server could not work that out".to_string());
             return;
         };
-        let Some(action) = self.actions.get_mut(at) else {
+        let Some(action) = self.code_actions.get_mut(at) else {
             return;
         };
         action.item = result;
@@ -504,7 +504,7 @@ impl App {
         let version = self
             .current_buffer()
             .map_or(0, crate::buffer::Buffer::version);
-        self.on_actions(
+        self.on_code_actions(
             id,
             version,
             Reply {
@@ -518,7 +518,7 @@ impl App {
     /// behind -- which is what a late answer is.
     pub fn actions_at_version_for_test(&mut self, answer: serde_json::Value, version: i32) {
         let Some(id) = self.current else { return };
-        self.on_actions(
+        self.on_code_actions(
             id,
             version,
             Reply {

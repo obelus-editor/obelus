@@ -277,7 +277,7 @@ fn a_key_with_no_server_to_ask_says_so() {
     };
 
     let asking = [
-        Command::SymbolActions,
+        Command::CodeActions,
         Command::SymbolRename,
         Command::SymbolHover,
         Command::SymbolComplete,

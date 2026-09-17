@@ -263,7 +263,7 @@ pub fn for_command(command: crate::command::Command) -> char {
         Command::SymbolComplete => '\u{f0335}',
         // `md-auto_fix`: the wand, which is what every editor draws for
         // the things a server offers to do.
-        Command::SymbolActions => '\u{f0068}',
+        Command::CodeActions => '\u{f0068}',
         // `md-rename_box`: the one command that changes a name.
         Command::SymbolRename => '\u{f0455}',
         // `md-tooltip`: what a thing is, said beside it.

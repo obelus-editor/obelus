@@ -260,7 +260,14 @@ impl App {
         ));
     }
 
-    /// What the server for the current buffer will answer, or why nothing.
+    /// Which questions about the name under the caret this server will
+    /// answer, or why none of them.
+    ///
+    /// [`SymbolAction`]s, which are questions: where it is defined, what
+    /// uses it. Not the server's code actions, which are offers to change
+    /// the file and live in [`crate::app`]'s other half -- the two were
+    /// both called actions, and the command for the second was called
+    /// `SymbolActions` while being about a range rather than a symbol.
     pub(super) fn symbol_actions(&self) -> Result<Vec<SymbolAction>, String> {
         let buffer = self
             .current_buffer()
@@ -794,7 +801,7 @@ impl App {
                 return;
             }
             Asked::Actions => {
-                self.on_actions(question.buffer, question.version, reply);
+                self.on_code_actions(question.buffer, question.version, reply);
                 return;
             }
             Asked::Saving { kind } => {

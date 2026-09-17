@@ -41,7 +41,14 @@ pub enum Command {
     /// What the language server says the place under the caret is.
     SymbolHover,
     /// What the language server offers to do about where the reader is.
-    SymbolActions,
+    ///
+    /// Not a `Symbol` command, though it sits among them: every one of
+    /// those is about the name under the caret, and this is about the
+    /// selection -- or the whole line where there is none. The two were
+    /// told apart by nothing but which of them a reader happened to mean,
+    /// and [`crate::app::App::symbol_actions`] is the other thing that was
+    /// called this.
+    CodeActions,
     /// Call the symbol under the cursor something else, everywhere.
     SymbolRename,
     /// Everything the language server says is wrong with this file.
@@ -355,7 +362,7 @@ pub const ALL: &[CommandSpec] = &[
         title: "What this is",
     },
     CommandSpec {
-        command: Command::SymbolActions,
+        command: Command::CodeActions,
         name: "do-something-here",
         title: "What can be done here",
     },
@@ -623,7 +630,7 @@ impl Command {
             | Self::TodoOpen
             | Self::TodoAdd => Group::Files,
             Self::SymbolMenu
-            | Self::SymbolActions
+            | Self::CodeActions
             | Self::SymbolRename
             | Self::SymbolHover
             | Self::SymbolComplete
@@ -701,7 +708,7 @@ impl Command {
             Self::SymbolComplete
             | Self::SymbolHover
             | Self::SymbolRename
-            | Self::SymbolActions => Requires::AFileOpen,
+            | Self::CodeActions => Requires::AFileOpen,
             // Not a running server: a file with nothing wrong with it is
             // the answer this gives, and it is worth giving.
             Self::SymbolTroubles => Requires::AFileOpen,
