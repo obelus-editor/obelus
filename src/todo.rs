@@ -175,6 +175,14 @@ impl Note {
     }
 }
 
+/// How deep a note may sit.
+///
+/// Four levels, counted from nothing. A list in a terminal is as wide as
+/// the terminal, and what indenting costs is taken from the one column the
+/// reader is actually reading -- so the depth has to stop somewhere, and it
+/// may as well stop where an outline of things to do stops being one.
+pub const DEEPEST: u16 = 3;
+
 /// Every note a tree has, in the order they were written.
 ///
 /// Written order, not sorted: a reader who ticks something off does not want
@@ -284,7 +292,10 @@ impl Todo {
             // is on disk is corrected by the next change to the file rather
             // than by having read it -- and `read` is not a function anybody
             // expects to touch the disk.
-            let under = notes.last().map_or(0, |last: &Note| last.depth + 1);
+            let under = notes
+                .last()
+                .map_or(0, |last: &Note| last.depth + 1)
+                .min(DEEPEST);
             let depth = note
                 .get("depth")
                 .and_then(toml::Value::as_integer)
@@ -598,7 +609,9 @@ mod tests {
         let table = concat!(
             "[[todo]]\nsaid = \"first\"\ndepth = 2\n\n",
             "[[todo]]\nsaid = \"second\"\ndepth = 3\n\n",
-            "[[todo]]\nsaid = \"third\"\ndepth = 9\n",
+            "[[todo]]\nsaid = \"third\"\ndepth = 9\n\n",
+            "[[todo]]\nsaid = \"fourth\"\ndepth = 9\n\n",
+            "[[todo]]\nsaid = \"fifth\"\ndepth = 9\n",
         )
         .parse::<toml::Table>()
         .expect("the table");
@@ -608,8 +621,9 @@ mod tests {
             .map(|note| note.depth)
             .collect();
         // The first can only be at the top; each after it can be one deeper
-        // than the one above, and no more.
-        assert_eq!(depths, vec![0, 1, 2]);
+        // than the one above, and no more -- until the deepest a note is
+        // allowed to be, where a chain of them stops going down.
+        assert_eq!(depths, vec![0, 1, 2, DEEPEST, DEEPEST]);
     }
 
     /// And a depth that is already under something is left where it is,

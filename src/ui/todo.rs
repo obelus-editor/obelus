@@ -85,6 +85,16 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
             .saying("move it up or down")
             .or(alt(KeyCode::Down))
             .when(notes.rows().len() > 1),
+        // One key each, because they are offered separately: a note at the
+        // top can only go in, and one as deep as it may go can only come
+        // out. A single row for both would be on whenever either was, and
+        // would be saying a key works when it does not.
+        Hint::rare(bare(KeyCode::Tab), "under")
+            .saying("put it under the one above")
+            .when(notes.can_shift(false)),
+        Hint::rare(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "out")
+            .saying("bring it back out a level")
+            .when(notes.can_shift(true)),
         // The four a reader arrives already holding, on the card rather
         // than at the foot: they are what these keys are everywhere else,
         // so the foot would spend four of its columns saying nothing. On

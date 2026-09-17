@@ -952,3 +952,276 @@ fn a_conversation_says_how_to_get_back_to_its_note() {
         "the conversation does not say how to get back:\n{screen}"
     );
 }
+
+/// A tree of notes, already indented.
+const NESTED: &str = r#"
+[[todo]]
+said = "the counts tree"
+done = false
+depth = 0
+
+[[todo]]
+said = "walk it once"
+done = false
+depth = 1
+
+[[todo]]
+said = "and cache the walk"
+done = false
+depth = 2
+
+[[todo]]
+said = "then draw it"
+done = false
+depth = 1
+
+[[todo]]
+said = "the settings page"
+done = false
+depth = 0
+"#;
+
+/// The depths of the notes as the file has them, after the view wrote back.
+fn depths(scratch: &support::Scratch) -> Vec<u16> {
+    obelus::todo::Todo::read(scratch.path())
+        .notes
+        .iter()
+        .map(|note| note.depth)
+        .collect()
+}
+
+/// What each note says, in the order the file has them.
+fn titles(scratch: &support::Scratch) -> Vec<String> {
+    obelus::todo::Todo::read(scratch.path())
+        .notes
+        .iter()
+        .map(|note| note.title().to_string())
+        .collect()
+}
+
+/// Tab takes a note one level in, and only one.
+///
+/// The first note has nothing above it to hang under, so it will not go in
+/// at all; and a note cannot step past the one above it, however deep the
+/// note happens to be that comes immediately before it on the page.
+#[test]
+fn tab_takes_a_note_one_level_in_and_no_further() {
+    let scratch = tree("indent", NESTED);
+    let mut app = open(&scratch, 76, 20);
+
+    // The first note: nothing above it, so nothing happens.
+    press(&mut app, KeyCode::Tab);
+    assert_eq!(depths(&scratch), vec![0, 1, 2, 1, 0], "the first note moved");
+
+    // The last note, whose neighbour above is two levels deep: one level in
+    // is one level, not two.
+    for _ in 0..4 {
+        press(&mut app, KeyCode::Down);
+    }
+    press(&mut app, KeyCode::Tab);
+    assert_eq!(depths(&scratch), vec![0, 1, 2, 1, 1]);
+}
+
+/// And what hangs under it comes with it, in or out.
+///
+/// Broken deliberately by shifting only the note the selection is on: the
+/// child stayed where it was and became the child of whatever the note used
+/// to hang under.
+///
+/// The two steps do not undo each other, and that is the right answer rather
+/// than a fault in either: stepping "walk it once" out to the top puts "then
+/// draw it" -- which was its sibling and is still a level deeper than it --
+/// underneath it, so the second step has three notes to carry rather than
+/// two. What hangs under a note is read off the list, and stepping out
+/// changed the list.
+#[test]
+fn a_note_takes_what_hangs_under_it_in_and_out_with_it() {
+    let scratch = tree("shift", NESTED);
+    let mut app = open(&scratch, 76, 20);
+
+    // Onto "walk it once", which has one note under it.
+    press(&mut app, KeyCode::Down);
+    app.handle(Event::Key(KeyEvent::new(
+        KeyCode::BackTab,
+        KeyModifiers::SHIFT,
+    )));
+    assert_eq!(
+        depths(&scratch),
+        vec![0, 0, 1, 1, 0],
+        "the child stayed behind"
+    );
+
+    press(&mut app, KeyCode::Tab);
+    assert_eq!(
+        depths(&scratch),
+        vec![0, 1, 2, 2, 0],
+        "what hangs under it now did not come with it"
+    );
+}
+
+/// Enter starts the next note after the whole of what hangs under this one.
+///
+/// At its depth, so it is the next thing at that level. Between a parent and
+/// its children it would have been adopted without the reader asking.
+#[test]
+fn a_new_note_goes_after_the_children_and_not_among_them() {
+    let scratch = tree("after", NESTED);
+    let mut app = open(&scratch, 76, 20);
+
+    // Onto "walk it once", which has "and cache the walk" under it.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "a fresh one");
+    press(&mut app, KeyCode::Esc);
+
+    assert_eq!(
+        titles(&scratch),
+        vec![
+            "the counts tree",
+            "walk it once",
+            "and cache the walk",
+            "a fresh one",
+            "then draw it",
+            "the settings page",
+        ]
+    );
+    assert_eq!(depths(&scratch), vec![0, 1, 2, 1, 1, 0]);
+}
+
+/// Moving one steps over the neighbour at its own level, children and all.
+///
+/// Broken deliberately by swapping single notes: the parent stepped over
+/// its own first child and left the rest of them behind it.
+#[test]
+fn moving_a_note_steps_over_the_whole_of_its_neighbour() {
+    let scratch = tree("move-subtree", NESTED);
+    let mut app = open(&scratch, 76, 20);
+
+    // "the counts tree" down past "the settings page": it takes three notes
+    // with it, and there is one note at its level to step over.
+    app.handle(alt(KeyCode::Down));
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        titles(&scratch),
+        vec![
+            "the settings page",
+            "the counts tree",
+            "walk it once",
+            "and cache the walk",
+            "then draw it",
+        ]
+    );
+    assert_eq!(depths(&scratch), vec![0, 0, 1, 2, 1], "the shape changed");
+}
+
+/// The first of a parent's children has nobody above it at its own level.
+#[test]
+fn a_first_child_has_nowhere_up_to_go() {
+    let scratch = tree("first-child", NESTED);
+    let mut app = open(&scratch, 76, 20);
+
+    press(&mut app, KeyCode::Down);
+    app.handle(alt(KeyCode::Up));
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        titles(&scratch)[0],
+        "the counts tree",
+        "the child climbed out of its parent"
+    );
+}
+
+/// Taking a note away takes what hangs under it.
+///
+/// The key means "take this note away", and a note and its children are one
+/// thing on the screen. Left behind, they would hang under whatever was
+/// above -- which is not on the screen at the moment the key is pressed.
+#[test]
+fn taking_a_note_away_takes_its_children() {
+    let scratch = tree("drop-subtree", NESTED);
+    let mut app = open(&scratch, 76, 20);
+
+    press(&mut app, KeyCode::Down);
+    app.handle(alt(KeyCode::Backspace));
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        titles(&scratch),
+        vec!["the counts tree", "then draw it", "the settings page"]
+    );
+}
+
+/// But emptying a note's text brings its children up rather than taking
+/// them.
+///
+/// Two doors, because they are two different things being asked for. The key
+/// says "take this note away"; emptying the text asks nothing about the
+/// children at all -- the note goes because a note with nothing in it is not
+/// a note.
+#[test]
+fn emptying_a_note_brings_its_children_up_a_level() {
+    let scratch = tree("empty-parent", NESTED);
+    let mut app = open(&scratch, 76, 20);
+
+    // Onto "walk it once" and take every character of it out.
+    press(&mut app, KeyCode::Down);
+    app.handle(Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)));
+    for _ in 0.."walk it once".len() {
+        press(&mut app, KeyCode::Backspace);
+    }
+    press(&mut app, KeyCode::Esc);
+
+    assert_eq!(
+        titles(&scratch),
+        vec![
+            "the counts tree",
+            "and cache the walk",
+            "then draw it",
+            "the settings page",
+        ]
+    );
+    assert_eq!(depths(&scratch), vec![0, 1, 1, 0]);
+}
+
+/// A step in or out is offered only where there is one to take.
+///
+/// What the card reads to decide whether to draw the key dim, so a key it
+/// shows lit is a key that moves something. Asked of the view rather than
+/// read off the cells: the card draws every key this page has and greys the
+/// ones that would do nothing, so what is on screen says nothing about
+/// which of them those are.
+///
+/// The four answers, on four notes of one list. Going in needs a note above
+/// at this note's own depth or deeper -- a note already hard against its
+/// parent has nothing between them to go under.
+#[test]
+fn a_step_is_offered_only_where_there_is_one() {
+    let scratch = tree("steps", NESTED);
+    let mut app = open(&scratch, 76, 24);
+    let can = |app: &App, outwards: bool| app.notes().expect("the view").can_shift(outwards);
+    let down = |app: &mut App, by: usize| {
+        for _ in 0..by {
+            press(app, KeyCode::Down);
+        }
+    };
+
+    // "the counts tree": nothing above it to go under, and nothing to come
+    // out of.
+    assert!(!can(&app, false), "the first note was offered a step in");
+    assert!(!can(&app, true), "a note at the top was offered a step out");
+
+    // "walk it once", hard against the note it hangs under: there is nothing
+    // between them for it to go under instead.
+    down(&mut app, 1);
+    assert!(!can(&app, false), "a note was offered a step it cannot take");
+    assert!(can(&app, true));
+
+    // "then draw it", whose neighbour above is a level deeper: it can go
+    // under that one, and it can come out.
+    down(&mut app, 2);
+    assert!(can(&app, false));
+    assert!(can(&app, true));
+
+    // "the settings page": in, but nowhere further out.
+    down(&mut app, 1);
+    assert!(can(&app, false));
+    assert!(!can(&app, true), "a note at the top was offered a step out");
+}

@@ -455,7 +455,7 @@ impl TodoView {
             return false;
         };
         self.writing = None;
-        self.drop_note(at);
+        self.drop_subtree(at);
         self.rebuild();
         if !self.todo.notes.is_empty() {
             self.enter_note(at.min(self.todo.notes.len() - 1), false);
@@ -464,12 +464,181 @@ impl TodoView {
     }
 
     /// Takes a note away, and the marks that pointed past it with it.
+    ///
+    /// The note alone: what hung under it comes up a level rather than
+    /// going with it. This is the door a note leaves by when the reader
+    /// empties its text, and emptying one note's text is not asking for
+    /// anything to happen to another -- the note goes because a note with
+    /// nothing in it is not a note, and its children were never in
+    /// question. [`Self::drop_subtree`] is the other door, where they were.
     fn drop_note(&mut self, at: usize) {
         if at >= self.todo.notes.len() {
             return;
         }
+        let under = self.todo.under(at);
         self.todo.notes.remove(at);
         self.where_now.remove(at);
+        for below in self.todo.notes.iter_mut().skip(at).take(under) {
+            below.depth = below.depth.saturating_sub(1);
+        }
+    }
+
+    /// Takes a note away and everything hanging under it.
+    ///
+    /// What the key that means "take this note away" does: a note and what
+    /// hangs under it are one thing on the screen, and a key that left the
+    /// children behind would leave them under whatever happened to be
+    /// above -- a result the reader cannot see at the moment they press it.
+    fn drop_subtree(&mut self, at: usize) {
+        let span = 1 + self.todo.under(at);
+        if at >= self.todo.notes.len() {
+            return;
+        }
+        self.todo.notes.drain(at..at + span);
+        self.where_now.drain(at..at + span);
+    }
+
+    /// Whether the selected note has anywhere to go, in or out.
+    ///
+    /// Asked by whatever says what the keys do, so a key offered here is a
+    /// key that moves something. Answered by trying it and looking, rather
+    /// than by a second copy of the rules: the rules are three -- the note
+    /// above, the deepest a note may be, and the top -- and a hint spelling
+    /// them out again is a hint that goes wrong on its own.
+    #[must_use]
+    pub fn can_shift(&self, outwards: bool) -> bool {
+        let Some(at) = self.selected() else {
+            return false;
+        };
+        let Some(depth) = self.todo.notes.get(at).map(|note| note.depth) else {
+            return false;
+        };
+        if outwards {
+            return depth > 0;
+        }
+        let room = self
+            .todo
+            .notes
+            .get(at.wrapping_sub(1))
+            .map_or(0, |above| above.depth + 1);
+        let deepest = self
+            .todo
+            .notes
+            .iter()
+            .skip(at)
+            .take(1 + self.todo.under(at))
+            .map(|note| note.depth)
+            .max()
+            .unwrap_or(depth);
+        depth < room && deepest < crate::todo::DEEPEST
+    }
+
+    /// Where the note before this one at the same depth starts.
+    ///
+    /// `None` where there is none: the first child of a note has nothing
+    /// above it at its own level, and neither has the first note of all.
+    /// Walked backwards rather than counted, because what ends the search
+    /// is the first note *shallower* than this one -- that is the parent,
+    /// and above it is somebody else's list.
+    fn before_it(&self, at: usize) -> Option<usize> {
+        let depth = self.todo.notes.get(at)?.depth;
+        for (index, note) in self.todo.notes[..at].iter().enumerate().rev() {
+            if note.depth < depth {
+                return None;
+            }
+            if note.depth == depth {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    /// And where the note after this one at the same depth starts.
+    fn after_it(&self, at: usize) -> Option<usize> {
+        let depth = self.todo.notes.get(at)?.depth;
+        let next = at + 1 + self.todo.under(at);
+        self.todo
+            .notes
+            .get(next)
+            .filter(|note| note.depth == depth)
+            .map(|_| next)
+    }
+
+    /// Moves a note and everything under it to where `to` starts.
+    ///
+    /// The whole run, because a note and its children are one thing to
+    /// move: swapping single notes would step a parent over its own first
+    /// child and leave the rest of them behind it. Depths are untouched --
+    /// moving is not what changes who a note hangs under.
+    fn move_subtree(&mut self, at: usize, to: usize) {
+        let span = 1 + self.todo.under(at);
+        let notes: Vec<_> = self.todo.notes.drain(at..at + span).collect();
+        let marks: Vec<_> = self.where_now.drain(at..at + span).collect();
+        // Past the hole the drain left, where it was after us.
+        let to = match to > at {
+            true => to - span,
+            false => to,
+        };
+        self.todo.notes.splice(to..to, notes);
+        self.where_now.splice(to..to, marks);
+        self.enter_note(to, false);
+    }
+
+    /// Takes a note and everything under it one level in or out.
+    ///
+    /// Says whether it moved. The subtree keeps its shape: every note in it
+    /// shifts by the same step, so a child that was two under its parent
+    /// still is.
+    ///
+    /// Going in is bounded twice over -- by the note above, because a note
+    /// may only ever be one deeper than whatever it hangs under, and by the
+    /// deepest a note is allowed to be, which the run has to fit inside
+    /// whole. Going out is bounded by the top.
+    fn shift_subtree(&mut self, step: i16) -> bool {
+        let Some(at) = self.selected() else {
+            return false;
+        };
+        let Some(depth) = self.todo.notes.get(at).map(|note| note.depth) else {
+            return false;
+        };
+        let under = self.todo.under(at);
+        let wanted = match u16::try_from(i32::from(depth) + i32::from(step)) {
+            Ok(wanted) => wanted,
+            // Out from the top, which is nowhere.
+            Err(_) => return false,
+        };
+        // One deeper than the note above at the most, whatever its own
+        // depth: a key that means "one level in" that stepped two would be
+        // reading a depth off a note the reader was not pointing at.
+        let room = self
+            .at_index(at.checked_sub(1))
+            .map_or(0, |above| above.depth + 1);
+        let deepest = self
+            .todo
+            .notes
+            .iter()
+            .skip(at)
+            .take(1 + under)
+            .map(|note| note.depth)
+            .max()
+            .unwrap_or(depth);
+        if wanted > room || deepest.saturating_add(wanted) > depth.saturating_add(crate::todo::DEEPEST) {
+            return false;
+        }
+        for note in self.todo.notes.iter_mut().skip(at).take(1 + under) {
+            note.depth = match step > 0 {
+                true => note.depth + 1,
+                false => note.depth.saturating_sub(1),
+            };
+        }
+        self.enter_note(at, false);
+        true
+    }
+
+    /// One note by index, for the places that have an index that may not be
+    /// one.
+    fn at_index(&self, at: Option<usize>) -> Option<&Note> {
+        self.todo.notes.get(at?)
     }
 
     /// Which note the selection is on, whichever of its rows that is.
@@ -537,11 +706,44 @@ impl TodoView {
                 TodoOutcome::Consumed
             }
 
+            // One level in, and out. Taken from the box, which until now
+            // put a tab character in a note: a literal tab in a paragraph
+            // is worth little, tab is what indents an outline everywhere a
+            // reader has met one, and `shift+tab` was already arriving here
+            // and doing nothing at all.
+            //
+            // Refusing is silent. What says a key did nothing is that
+            // nothing moved, and a note that will not go further in is a
+            // note already as far in as the one above it -- which is on the
+            // screen, one row up.
+            KeyCode::Tab if bare => {
+                self.keep();
+                match self.shift_subtree(1) {
+                    true => TodoOutcome::Changed,
+                    false => TodoOutcome::Consumed,
+                }
+            }
+            KeyCode::BackTab => {
+                self.keep();
+                match self.shift_subtree(-1) {
+                    true => TodoOutcome::Changed,
+                    false => TodoOutcome::Consumed,
+                }
+            }
+
             // Another note, which is what enter means in a page being
             // written. Where it points is `alt+enter`: this is not a list of
             // rows to choose from, it is the text of them.
             KeyCode::Enter if bare => {
-                let after = self.selected().map_or(0, |at| at + 1);
+                // After the whole of what hangs under the selected note,
+                // and at its depth: a note started from a parent is the
+                // next thing at that level. Put between the parent and its
+                // children it would have been adopted by it without the
+                // reader asking for a child at all.
+                let (after, depth) = self.selected().map_or((0, 0), |at| {
+                    let depth = self.todo.notes.get(at).map_or(0, |note| note.depth);
+                    (at + 1 + self.todo.under(at), depth)
+                });
                 self.keep();
                 // The note may have gone with the keep, if it said nothing.
                 let after = after.min(self.todo.notes.len());
@@ -552,7 +754,7 @@ impl TodoView {
                         said: String::new(),
                         done: false,
                         at: None,
-                        depth: 0,
+                        depth,
                     },
                 );
                 self.where_now.insert(after, None);
@@ -647,17 +849,24 @@ impl TodoView {
                 let Some(at) = self.selected() else {
                     return TodoOutcome::Consumed;
                 };
+                // Past the neighbour at this note's own level, and past the
+                // whole of what hangs under *it*: stepping over one note at
+                // a time would put this one in the middle of somebody
+                // else's children. The first of a parent's children has
+                // nobody above it at its level and nowhere to go, which is
+                // what `shift+tab` is for.
                 let to = match key.code {
-                    KeyCode::Up if at > 0 => at - 1,
-                    KeyCode::Down if at + 1 < self.todo.notes.len() => at + 1,
-                    _ => {
-                        self.enter_note(at, false);
-                        return TodoOutcome::Consumed;
-                    }
+                    KeyCode::Up => self.before_it(at),
+                    KeyCode::Down => self
+                        .after_it(at)
+                        .map(|next| next + 1 + self.todo.under(next)),
+                    _ => None,
                 };
-                self.todo.notes.swap(at, to);
-                self.where_now.swap(at, to);
-                self.enter_note(to, false);
+                let Some(to) = to else {
+                    self.enter_note(at, false);
+                    return TodoOutcome::Consumed;
+                };
+                self.move_subtree(at, to);
                 TodoOutcome::Changed
             }
 
