@@ -89,6 +89,7 @@ impl App {
         });
         let at = at.unwrap_or_else(|| {
             let talk = crate::conversation::Conversation {
+                opening: self.about_the_note(note),
                 topic: wanted,
                 ..crate::conversation::Conversation::default()
             };
@@ -126,6 +127,45 @@ impl App {
             }
             None => talker.open(),
         }
+    }
+
+    /// What obelus tells an agent a conversation about a note is about.
+    ///
+    /// The whole of what the note says rather than its first line: the first
+    /// line is what the reader called it and the rest is what they meant,
+    /// and this is the one time the agent is told any of it. Its name goes
+    /// with it, because `todo_finish` takes a name and an agent that had to
+    /// guess which of the notes it was looking at would rather not call it
+    /// at all.
+    ///
+    /// Read from the file, like everything else that asks what a note says:
+    /// the reader may have rewritten it in their own editor since.
+    fn about_the_note(&self, note: &crate::todo::NoteId) -> Option<String> {
+        let about = crate::todo::Todo::read(&self.working_directory)
+            .notes
+            .into_iter()
+            .find(|other| other.id == *note)?;
+        let at = about.at.as_ref().map_or_else(String::new, |at| {
+            format!("\nIt is about {}:{}.", at.path.display(), at.line.get() + 1)
+        });
+        Some(format!(
+            "This conversation is about one of obelus's notes, which says:\n\n\
+             {}\n\n\
+             Its name is {}.{at}\n\n\
+             When the work it describes is done, call `todo_finish` with that \
+             name -- the reader is asked what to do about it and decides. If \
+             this turns up other work worth coming back to, offer it with \
+             `todo_add`.",
+            about.said, about.id,
+        ))
+    }
+
+    /// The same, for a conversation by where it is in the list.
+    fn opening_for(&self, at: usize) -> Option<String> {
+        let Topic::Note(note) = &self.documents.get(at)?.as_ref()?.chat()?.topic else {
+            return None;
+        };
+        self.about_the_note(&note.clone())
     }
 
     /// The conversation obelus had about this note with the agent that is
@@ -414,7 +454,16 @@ impl App {
 
     /// Sends what the reader typed.
     pub(super) fn send_to_agent(&mut self, text: &str) {
+        // What obelus has to say about this conversation, if it has not said
+        // it yet. Taken, not read: gone is what "already said" looks like,
+        // and the transcript carries a line saying obelus said it -- what
+        // obelus sends in the reader's name is the reader's to see.
+        let opening = self.conversation_mut().and_then(|talk| talk.opening.take());
         if let Some(talk) = self.conversation_mut() {
+            if opening.is_some() {
+                talk.chat
+                    .note("told the agent what this conversation is about");
+            }
             talk.chat.asked(text);
         }
         // An agent that has stopped is started again by talking to it,
@@ -437,8 +486,9 @@ impl App {
         };
         // Held until the session opens, which is the ordinary case for the
         // first thing said: the reader typed while it was starting, and the
-        // handle sends it when there is somewhere to send it.
-        talker.say(session.as_ref(), text);
+        // handle sends it when there is somewhere to send it -- opening and
+        // all, because the opening belongs to whatever goes first.
+        talker.say(session.as_ref(), text, opening.as_deref());
     }
 
     /// Asks the agent to stop what it is doing.
@@ -1105,6 +1155,7 @@ impl App {
             | acp::Incoming::Ended { session, .. }
             | acp::Incoming::Permission { session, .. } => Some(session),
             acp::Incoming::Started { .. }
+            | acp::Incoming::Lost { .. }
             | acp::Incoming::Ready(_)
             | acp::Incoming::Failed(..)
             | acp::Incoming::Gone(_)
@@ -1126,6 +1177,33 @@ impl App {
         let Some(incoming) = talker.on(incoming) else {
             return;
         };
+        // A conversation that could not be picked up where it was left. The
+        // agent has forgotten it -- a session it swept up, a version of it
+        // that keeps them differently -- and a fresh one is already on its
+        // way. What this has to do is put the conversation back to how one
+        // with no session yet looks, because that is what the session
+        // arriving next will be looking for; and tell the agent again what
+        // the conversation is about, because the words that told it the
+        // first time went with the session.
+        if let acp::Incoming::Lost { session, why } = &incoming {
+            let at = self.documents.iter().position(|document| {
+                document
+                    .as_ref()
+                    .and_then(Document::chat)
+                    .is_some_and(|talk| talk.asked_for.as_ref() == Some(session))
+            });
+            let opening = at.and_then(|at| self.opening_for(at));
+            if let Some(talk) = at
+                .and_then(|at| self.documents.get_mut(at))
+                .and_then(Option::as_mut)
+                .and_then(Document::chat_mut)
+            {
+                talk.asked_for = None;
+                talk.opening = opening;
+                talk.chat.note(&format!("starting again, because {why}"));
+            }
+            return;
+        }
         // A conversation opening is the one message that is not routed by a
         // session: it is what *hands out* one. It goes to whichever
         // conversation has not got one yet, because a conversation asks for
@@ -1215,6 +1293,8 @@ impl App {
                     talk.chat.note(&format!("{what}: {why}"));
                 }
             }
+            // Answered above, before the session it is about can arrive.
+            acp::Incoming::Lost { .. } => {}
             acp::Incoming::Permission {
                 call,
                 reason,

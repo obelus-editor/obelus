@@ -233,6 +233,29 @@ while IFS= read -r line; do
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             ;;
+        *'"method":"session/prompt"'*'/blocks'*)
+            # Says what the prompt arrived as: how many blocks, and whether
+            # the client put something of its own in front of the reader's
+            # words. A conversation opened on one of obelus's notes sends
+            # two blocks with the note's in front; every message after it
+            # sends one. From here the two look alike otherwise, because
+            # what tells them apart is not in the words the reader typed.
+            #
+            # Read with `case` rather than counted with `grep -o`, which is
+            # not in POSIX: this script is `sh` on purpose.
+            set_turn "$session" "$(id_of "$line")"
+            case "$line" in
+                *'"text":'*'"text":'*) blocks=2 ;;
+                *) blocks=1 ;;
+            esac
+            case "$line" in
+                *'"text":"This conversation is about'*'"text":"/blocks'*) first=obelus ;;
+                *'"text":"/blocks'*) first=reader ;;
+                *) first=neither ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"blocks='"$blocks"' first='"$first"'"}}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'"text":"/many'*)
             # A turn with a run of tool calls of one kind in it, which is
             # what an agent looking around a repository actually does: a
@@ -391,6 +414,12 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call_update","toolCallId":"t2","status":"completed"}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and I was %s"}}}}\n' "$allowed"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/load"'*'"sessionId":"s-gone"'*)
+            # A conversation the agent no longer has. Real agents sweep
+            # theirs up, and one that has been swept is the case a client
+            # has to survive: it asked for a name that means nothing here.
+            printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":"no such session"}}\n' "$(id_of "$line")"
             ;;
         *'"method":"session/load"'*)
             # A conversation taken up again. A real agent replays what was

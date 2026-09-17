@@ -100,9 +100,7 @@ impl Obelus {
                 let at = note.at.as_ref().map_or_else(String::new, |at| {
                     format!(" ({}:{})", at.path.display(), at.line.get() + 1)
                 });
-                let under = " ".repeat(usize::from(
-                    note.depth * crate::component::todo::INDENT,
-                ));
+                let under = " ".repeat(usize::from(note.depth * crate::component::todo::INDENT));
                 format!("{under}{} [{done}]{at} {}", note.id, note.said)
             })
             .collect();
@@ -167,7 +165,8 @@ impl Obelus {
         Offer notes to add to this project. The reader is shown all of them \
         and keeps the ones they want; this returns which were kept. Offer \
         what somebody would want to come back to, not a summary of what you \
-        just did.")]
+        just did. From any conversation, whether or not it is about a note: \
+        the thing worth writing down usually turns up somewhere else.")]
     async fn todo_add(
         &self,
         Parameters(Proposed { notes }): Parameters<Proposed>,
@@ -262,9 +261,21 @@ impl ServerHandler for Obelus {
     fn get_info(&self) -> InitializeResult {
         let mut info = InitializeResult::default();
         info.instructions = Some(
-            "obelus, the reader this conversation is happening inside. Two of \
-             these tools put a question to the reader and wait for an answer; \
-             neither changes anything until they have answered."
+            "obelus, the reader this conversation is happening inside. It \
+             keeps the notes this project means to come back to.\n\n\
+             When the work a note describes is done, say so with \
+             `todo_finish`. When something worth coming back to turns up, \
+             offer it with `todo_add`. Both put the question to the reader \
+             and wait; neither changes anything until they have answered, so \
+             asking is not something to hold back on -- but ask about work \
+             that is finished, not to check in, and offer notes somebody \
+             would want to return to, not a summary of what you just did.\n\n\
+             In any conversation, whatever it was opened on. Something worth \
+             writing down is worth offering wherever it comes up, and most \
+             conversations are not about a note at all.\n\n\
+             A conversation that *is* about one says so in its first \
+             message, and gives the note's name. Otherwise `todo_list` has \
+             them."
                 .to_string(),
         );
         info.capabilities = ServerCapabilities::builder().enable_tools().build();

@@ -91,6 +91,13 @@ pub enum Ask {
         session: SessionId,
         /// What to say.
         words: String,
+        /// What obelus has to say about the conversation first, once.
+        ///
+        /// Its own block rather than stuck to the front of the words: the
+        /// protocol takes a prompt as blocks, and one of these is the
+        /// reader talking while the other is obelus saying what they are
+        /// talking about.
+        opening: Option<String>,
     },
     /// Stop what you are doing in that one.
     Interrupt {
@@ -193,6 +200,23 @@ pub enum Incoming {
     },
     /// Something did not work: what obelus was doing, and what it said.
     Failed(&'static str, String),
+    /// A conversation obelus asked to pick up again is not there any more.
+    ///
+    /// Its own message rather than a [`Self::Failed`], because it names
+    /// which conversation: a failure that says only *what* went wrong lands
+    /// in whichever one the reader happens to be looking at, and the one it
+    /// is about is left waiting for a session that is never coming.
+    ///
+    /// A fresh one is opened straight after, so what this asks for is that
+    /// the conversation go back to how a conversation with no session yet
+    /// looks -- which is what the session about to arrive is expecting to
+    /// find.
+    Lost {
+        /// The one that could not be picked up.
+        session: SessionId,
+        /// What the agent said about it.
+        why: String,
+    },
     /// The agent is asking to be allowed something.
     Permission {
         /// Which conversation it is asking in.
@@ -868,10 +892,10 @@ async fn talk(
                                     }
                                 }
                                 Err(error) => {
-                                    let _ = events.send(Event::Acp(Incoming::Failed(
-                                        "picking the conversation up where it was left",
-                                        error.to_string(),
-                                    )));
+                                    let _ = events.send(Event::Acp(Incoming::Lost {
+                                        session: session.clone(),
+                                        why: error.to_string(),
+                                    }));
                                     open_session(
                                         &connection,
                                         &root,
@@ -887,7 +911,11 @@ async fn talk(
                         // awaited, so the loop goes straight back to
                         // reading asks: an interruption typed while the
                         // agent is thinking has to reach it.
-                        Ask::Say { session, words } => {
+                        Ask::Say {
+                            session,
+                            words,
+                            opening,
+                        } => {
                             let told = events.clone();
                             let flag = stopped.entry(session.clone()).or_default();
                             flag.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -896,7 +924,11 @@ async fn talk(
                             connection
                                 .send_request(PromptRequest::new(
                                     session,
-                                    vec![ContentBlock::Text(TextContent::new(words))],
+                                    opening
+                                        .into_iter()
+                                        .chain(std::iter::once(words))
+                                        .map(|said| ContentBlock::Text(TextContent::new(said)))
+                                        .collect(),
                                 ))
                                 .on_receiving_result(move |asked| {
                                     // A turn the reader stopped is over,

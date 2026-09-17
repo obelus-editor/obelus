@@ -726,18 +726,14 @@ impl TodoView {
             // nothing moved, and a note that will not go further in is a
             // note already as far in as the one above it -- which is on the
             // screen, one row up.
-            KeyCode::Tab if bare => {
-                match self.shift_subtree(1) {
-                    true => TodoOutcome::Changed,
-                    false => TodoOutcome::Consumed,
-                }
-            }
-            KeyCode::BackTab => {
-                match self.shift_subtree(-1) {
-                    true => TodoOutcome::Changed,
-                    false => TodoOutcome::Consumed,
-                }
-            }
+            KeyCode::Tab if bare => match self.shift_subtree(1) {
+                true => TodoOutcome::Changed,
+                false => TodoOutcome::Consumed,
+            },
+            KeyCode::BackTab => match self.shift_subtree(-1) {
+                true => TodoOutcome::Changed,
+                false => TodoOutcome::Consumed,
+            },
 
             // Another note, which is what enter means in a page being
             // written. Where it points is `alt+enter`: this is not a list of

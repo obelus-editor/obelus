@@ -59,6 +59,19 @@ pub struct Conversation {
     /// from "no session yet" because two conversations opening at once would
     /// otherwise be told apart by nothing, and could take each other's.
     pub asked_for: Option<acp::SessionId>,
+    /// What obelus has to tell the agent before the reader's next words.
+    ///
+    /// The thing itself rather than a flag saying it has been said: taken
+    /// when it goes, so "has it been said" is answered by its being gone.
+    /// There is no bit to keep right and nothing to forget to clear.
+    ///
+    /// Filled by whoever opens the conversation, because that is where what
+    /// the conversation is *about* is known -- a note today, and whatever a
+    /// conversation can be opened on next. A conversation about nothing in
+    /// particular leaves it empty, and so does one being picked up where it
+    /// was left: the agent kept every word of that one, and the words that
+    /// told it the first time are among them.
+    pub opening: Option<String>,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.

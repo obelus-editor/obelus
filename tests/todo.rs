@@ -1011,7 +1011,11 @@ fn tab_takes_a_note_one_level_in_and_no_further() {
 
     // The first note: nothing above it, so nothing happens.
     press(&mut app, KeyCode::Tab);
-    assert_eq!(depths(&scratch), vec![0, 1, 2, 1, 0], "the first note moved");
+    assert_eq!(
+        depths(&scratch),
+        vec![0, 1, 2, 1, 0],
+        "the first note moved"
+    );
 
     // The last note, whose neighbour above is two levels deep: one level in
     // is one level, not two.
@@ -1211,7 +1215,10 @@ fn a_step_is_offered_only_where_there_is_one() {
     // "walk it once", hard against the note it hangs under: there is nothing
     // between them for it to go under instead.
     down(&mut app, 1);
-    assert!(!can(&app, false), "a note was offered a step it cannot take");
+    assert!(
+        !can(&app, false),
+        "a note was offered a step it cannot take"
+    );
     assert!(can(&app, true));
 
     // "then draw it", whose neighbour above is a level deeper: it can go
@@ -1251,7 +1258,11 @@ fn a_nested_note_is_drawn_further_in_than_the_one_it_hangs_under() {
     };
 
     let top = starts("the counts tree");
-    assert_eq!(starts("walk it once"), top + 2, "one level is not two cells");
+    assert_eq!(
+        starts("walk it once"),
+        top + 2,
+        "one level is not two cells"
+    );
     assert_eq!(starts("and cache the walk"), top + 4);
     assert_eq!(starts("then draw it"), top + 2);
     assert_eq!(starts("the settings page"), top, "a top note was indented");
@@ -1397,8 +1408,11 @@ fn a_note_that_outlives_its_parent_is_written_at_a_depth_it_reads_back_at() {
     // Somebody else rewrites the file without it, and with nothing it could
     // hang under.
     let file = scratch.path().join(".obelus").join("todo.toml");
-    std::fs::write(&file, "[[todo]]\nsaid = \"only this\"\ndone = false\ndepth = 0\n")
-        .expect("the notes");
+    std::fs::write(
+        &file,
+        "[[todo]]\nsaid = \"only this\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
     app.handle(Event::FileChanged { path: file.clone() });
     press(&mut app, KeyCode::Esc);
 

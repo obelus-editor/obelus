@@ -114,7 +114,7 @@ fn an_answer_comes_back_in_the_conversation_it_was_asked_in() {
     talk.open();
     let second = opened(&mut talk, &events);
 
-    talk.say(Some(&second), "/help");
+    talk.say(Some(&second), "/help", None);
 
     let mut whose = None;
     pump(&mut talk, &events, "an answer", |_, incoming| {
@@ -155,10 +155,10 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
 
     // A turn that stays in flight: the agent says nothing at all about this
     // one until it is cancelled, which is what leaves something to stop.
-    talk.say(Some(&first), "do it slowly");
+    talk.say(Some(&first), "do it slowly", None);
     // A turn that finishes on its own, so that the only thing which could
     // stop it arriving is the interruption meant for the other one.
-    talk.say(Some(&second), "/help");
+    talk.say(Some(&second), "/help", None);
     talk.interrupt(Some(&first));
 
     let mut answered = None;

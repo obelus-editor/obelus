@@ -2379,3 +2379,209 @@ fn a_paste_goes_into_the_card_and_not_behind_it() {
         "the paste went into the message box under the card"
     );
 }
+
+/// A conversation opened on a note tells the agent so, once.
+///
+/// The agent has no other way to know: `Topic` never left obelus, so a
+/// conversation about a note looked exactly like one about nothing, and an
+/// agent that cannot name a note will not call the tool that finishes one.
+/// It goes in a block of its own beside the reader's first words -- not as a
+/// turn of its own, which would have the agent talking before the reader had
+/// said anything.
+#[test]
+fn a_conversation_about_a_note_says_so_in_its_first_message() {
+    let scratch = support::Scratch::new("agent-note-opening");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"0123456J\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to("fake", Path::new("sh"), &[
+        "tests/fixtures/fake-agent.sh".to_string(),
+    ]);
+    // Into the notes and on to the one note's conversation.
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    assert!(app.chat().is_some(), "no conversation about the note");
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        app.chat()
+            .is_some_and(|chat| chat.rows(WIDTH).iter().any(|row| row.text.contains("blocks=")))
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("blocks=2"),
+        "the note did not go with the message:\n{text}"
+    );
+    assert!(
+        text.contains("first=obelus"),
+        "obelus's own block is not the first of them:\n{text}"
+    );
+    // And the reader can see that obelus said it.
+    assert!(
+        text.contains("told the agent what this conversation is about"),
+        "obelus spoke in the reader's name without saying so:\n{text}"
+    );
+
+    // Once. The agent keeps every word of a conversation, so a second
+    // message carrying it again would be telling it twice.
+    support::type_text(&mut app, "/blocks again");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text.contains("blocks=1"))
+        })
+    });
+}
+
+/// A conversation about nothing in particular says nothing.
+///
+/// obelus does not put words in the reader's mouth where it has no fact of
+/// its own to add: what a loose conversation is about is whatever they type.
+#[test]
+fn a_loose_conversation_carries_no_opening() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        app.chat()
+            .is_some_and(|chat| chat.rows(WIDTH).iter().any(|row| row.text.contains("blocks=")))
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("blocks=1"),
+        "something went with a conversation about nothing:\n{text}"
+    );
+}
+
+/// A conversation the agent has forgotten starts a fresh one, in place.
+///
+/// Agents sweep their conversations up, so a name obelus wrote down last
+/// week may mean nothing today. The reply to that is a new session -- which
+/// the protocol side already did -- and the conversation it belongs to has
+/// to be put back to how one with no session yet looks, or the session
+/// arriving next belongs to nobody and every word the reader types is held
+/// for a session that is never coming. What told the agent about the note
+/// goes with the old session, so it is said again.
+#[test]
+fn a_conversation_the_agent_has_forgotten_is_started_again() {
+    let scratch = support::Scratch::new("agent-forgotten");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    let note = "0123456J";
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
+    )
+    .expect("the notes");
+    // Written down against a name the agent will refuse.
+    let id = obelus::todo::NoteId::read(note).expect("a name");
+    obelus::acp::sessions::change(scratch.path(), std::slice::from_ref(&id), |remembered| {
+        remembered.put(
+            &id,
+            "fake",
+            obelus::acp::sessions::Kept {
+                session: "s-gone".to_string(),
+                title: None,
+            },
+        );
+    });
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to("fake", Path::new("sh"), &[
+        "tests/fixtures/fake-agent.sh".to_string(),
+    ]);
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    pump(&mut app, &events, "a session of some kind", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    // Said in the conversation it is about, rather than in whichever one the
+    // reader happens to be looking at.
+    let text = screen(&mut app);
+    assert!(
+        text.contains("starting again"),
+        "nothing says the old conversation was not there:\n{text}"
+    );
+
+    // And it works: the message goes, and the note goes with it, because
+    // what told the agent the first time went with the session that is gone.
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text.contains("blocks="))
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("blocks=2") && text.contains("first=obelus"),
+        "the fresh conversation was not told what it is about:\n{text}"
+    );
+}
+
+/// The tool that offers notes reaches a conversation about nothing.
+///
+/// Most of what is worth writing down turns up while talking about
+/// something else, so `todo_add` is not gated on the conversation having
+/// been opened on a note -- nothing in `src/mcp.rs` asks what it is about.
+/// Driven through the event the tool sends rather than over the socket,
+/// which is the half this is about: the card comes up where the reader is.
+#[test]
+fn a_note_can_be_offered_in_a_conversation_about_nothing() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    assert!(
+        app.what_this_conversation_is_about().is_none(),
+        "this conversation is about a note, so it proves nothing"
+    );
+
+    // The same question `todo_add` puts, arriving the same way.
+    let (answer, answered) = futures::channel::oneshot::channel();
+    app.handle(Event::Acp(obelus::acp::Incoming::Ask {
+        message: "worth writing down?".to_string(),
+        fields: vec![obelus::acp::Field {
+            name: "notes".to_string(),
+            title: "keep which of these".to_string(),
+            about: None,
+            takes: obelus::acp::Takes::Some {
+                values: vec![obelus::acp::Value {
+                    id: "0".to_string(),
+                    name: "the cache is wrong".to_string(),
+                    about: None,
+                }],
+                least: Some(0),
+                most: None,
+                chosen: Vec::new(),
+            },
+            required: false,
+        }],
+        answer,
+    }));
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("the cache is wrong")),
+        "the card did not come up in a loose conversation:\n{dump}"
+    );
+    drop(answered);
+}

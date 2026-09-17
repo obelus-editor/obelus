@@ -72,7 +72,11 @@ pub struct Talk {
     /// the process, and a reader types faster than node starts. On the
     /// connection rather than on a session, because at that moment there is
     /// no session for it to be on.
-    held: Option<String>,
+    ///
+    /// With whatever obelus had to say about the conversation first, because
+    /// the first thing said is what carries it and the first thing said is
+    /// what gets held.
+    held: Option<(String, Option<String>)>,
 }
 
 /// One conversation, as the main loop needs to see it.
@@ -358,12 +362,15 @@ impl Talk {
     /// Says whether it went: a prompt that is being held is a prompt the
     /// view shows as sent, because the reader has finished with it either
     /// way.
-    pub fn say(&mut self, session: Option<&SessionId>, words: &str) -> bool {
+    pub fn say(&mut self, session: Option<&SessionId>, words: &str, opening: Option<&str>) -> bool {
         let Some(id) = session
             .filter(|id| self.sessions.contains_key(*id))
             .cloned()
         else {
-            self.held = Some(words.to_string());
+            // Held with its opening: the opening belongs to the first thing
+            // said in a conversation, and the first thing said is exactly
+            // what gets held while the session is still opening.
+            self.held = Some((words.to_string(), opening.map(str::to_string)));
             return false;
         };
         let sent = self
@@ -371,6 +378,7 @@ impl Talk {
             .unbounded_send(Ask::Say {
                 session: id,
                 words: words.to_string(),
+                opening: opening.map(str::to_string),
             })
             .is_ok();
         if let Some(open) = self.session_mut(session) {
@@ -467,8 +475,8 @@ impl Talk {
                 // It goes to whichever conversation opened first, which is
                 // the one the reader was looking at when they typed it --
                 // there was no other.
-                if let Some(held) = self.held.take() {
-                    self.say(Some(&session), &held);
+                if let Some((held, opening)) = self.held.take() {
+                    self.say(Some(&session), &held, opening.as_deref());
                 }
                 Some(Incoming::Started {
                     session,
