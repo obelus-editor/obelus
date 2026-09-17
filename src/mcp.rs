@@ -79,10 +79,17 @@ impl Obelus {
     }
 
     /// What the tree means to come back to.
+    ///
+    /// Indented the way the reader's own page indents it, because a note may
+    /// hang under another: a flat list would have an agent asking to finish
+    /// a note without knowing what else was under it, and the tools take a
+    /// note at a time.
     #[tool(description = "\
         Every note this project keeps: what it says, whether it is done, and \
-        the file and line it is about where it is about one. Each carries a \
-        name -- that is what the other tools take.")]
+        the file and line it is about where it is about one. A note indented \
+        under another hangs under it, and finishing or dropping the one \
+        above is about the whole of it. Each carries a name -- that is what \
+        the other tools take.")]
     fn todo_list(&self) -> Result<CallToolResult, ErrorData> {
         let todo = todo::Todo::read(&self.root);
         let said: Vec<String> = todo
@@ -93,7 +100,8 @@ impl Obelus {
                 let at = note.at.as_ref().map_or_else(String::new, |at| {
                     format!(" ({}:{})", at.path.display(), at.line.get() + 1)
                 });
-                format!("{} [{done}]{at} {}", note.id, note.said)
+                let under = "  ".repeat(usize::from(note.depth));
+                format!("{under}{} [{done}]{at} {}", note.id, note.said)
             })
             .collect();
         Ok(CallToolResult::success(vec![ContentBlock::text(

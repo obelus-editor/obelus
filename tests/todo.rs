@@ -1225,3 +1225,115 @@ fn a_step_is_offered_only_where_there_is_one() {
     assert!(can(&app, false));
     assert!(!can(&app, true), "a note at the top was offered a step out");
 }
+
+/// A note that hangs under another starts further in, box and all.
+///
+/// Broken deliberately by indenting the words and leaving the box in a
+/// column down the edge: the page read as one flat list of boxes with ragged
+/// words beside it, which says nothing about what is under what.
+#[test]
+fn a_nested_note_is_drawn_further_in_than_the_one_it_hangs_under() {
+    let scratch = tree("indented", NESTED);
+    let mut app = open(&scratch, 76, 20);
+
+    let dump = support::render(&mut app, 76, 20);
+    let rows: Vec<&str> = support::text_block(&dump).lines().collect();
+    let at = |needle: &str| {
+        rows.iter()
+            .find(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("no {needle:?}:\n{dump}"))
+    };
+    // Where the words start, counted from the row's own left edge.
+    let starts = |needle: &str| {
+        let row = at(needle);
+        let (_, said) = row.split_once('|').expect("the row number");
+        said.len() - said.trim_start().len()
+    };
+
+    let top = starts("the counts tree");
+    assert_eq!(starts("walk it once"), top + 2, "one level is not two cells");
+    assert_eq!(starts("and cache the walk"), top + 4);
+    assert_eq!(starts("then draw it"), top + 2);
+    assert_eq!(starts("the settings page"), top, "a top note was indented");
+
+    // And the box with them: the mark is the note's own, not a column down
+    // the edge.
+    let boxes = |needle: &str| {
+        let row = at(needle);
+        let (_, said) = row.split_once('|').expect("the row number");
+        said.find(['\u{f0130}', '\u{f0131}', '[', ' '])
+            .map(|_| said.len() - said.trim_start().len())
+    };
+    assert_eq!(boxes("walk it once"), Some(top + 2));
+}
+
+/// A deep note's words are wrapped to fit where they are drawn.
+///
+/// The room one level of nesting takes comes off the column every note wraps
+/// in, and off every note's rather than off its own: one width is what the
+/// rows, the caret and the wrapping all read, and three widths for three
+/// depths would be three answers to disagree over. What it buys is this -- a
+/// note laid out at the full width and drawn two cells in would have those
+/// two cells cut off the end of every row of it.
+///
+/// Broken deliberately by wrapping at the full width anyway: the indented
+/// note's rows ran past the edge and came back with their ends missing.
+#[test]
+fn a_deep_notes_words_are_wrapped_to_fit_where_they_are_drawn() {
+    // Unbroken runs rather than sentences: they wrap hard against the edge,
+    // every row exactly as wide as the column, which is where the cells an
+    // indent takes are the difference between fitting and not. And two
+    // different letters, or a row of the one note would be found on screen
+    // in a row of the other and the test would prove nothing.
+    let (top, under) = ("a".repeat(150), "b".repeat(150));
+    let scratch = tree(
+        "one-column",
+        &format!(
+            "[[todo]]\nsaid = \"{top}\"\ndone = false\ndepth = 0\n\n\
+             [[todo]]\nsaid = \"{under}\"\ndone = false\ndepth = 1\n"
+        ),
+    );
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(
+        obelus::config::Config {
+            wrap: true,
+            ..obelus::config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 56, 20);
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+
+    let dump = support::render(&mut app, 56, 20);
+    let said: Vec<String> = app
+        .notes()
+        .expect("the view")
+        .rows()
+        .iter()
+        .map(|row| row.said.clone())
+        .collect();
+    assert!(said.len() >= 4, "the notes did not wrap:\n{dump}");
+
+    // Every row the view laid out is on the screen whole. A row laid out
+    // wider than where it is drawn comes back with its end cut off.
+    let screen = support::text_block(&dump);
+    for row in &said {
+        assert!(
+            screen.contains(row.trim_end()),
+            "{row:?} was cut off at the edge:\n{dump}"
+        );
+    }
+
+    // And both notes broke into rows of one width, which is the other half
+    // of it: the indented one is not wrapped tighter than the note above.
+    let widths: Vec<usize> = said
+        .iter()
+        .map(|row| row.chars().count())
+        .filter(|width| *width > 1)
+        .collect();
+    assert!(
+        widths.windows(2).all(|pair| pair[0] == pair[1]),
+        "the notes wrapped in different columns: {widths:?}\n{dump}"
+    );
+}

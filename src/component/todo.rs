@@ -49,6 +49,12 @@ pub struct Row {
     pub place: bool,
     /// Whether the note is done, for the whole of it to be drawn as such.
     pub done: bool,
+    /// How far under the note above its note sits.
+    ///
+    /// On every row of a note, not only its first: a body line that did not
+    /// indent with its head would break the column its head is in, and the
+    /// row where a note points is part of the note too.
+    pub depth: u16,
     /// Which of `said`'s characters the reader has hold of, if any.
     ///
     /// Counted from the start of this row rather than of the note: a row is
@@ -93,6 +99,13 @@ pub enum TodoOutcome {
     /// application's question: this knows about a text and a caret in it.
     Paste,
 }
+
+/// How many cells one level of nesting takes.
+///
+/// A drawing number kept here rather than in the view that draws it,
+/// because it is also an arithmetic one: where the words start is where
+/// they wrap, and the caret is measured against the same figure.
+pub const INDENT: u16 = 2;
 
 /// The notes, while they are showing.
 #[derive(Debug, Default)]
@@ -326,6 +339,7 @@ impl TodoView {
                 head: true,
                 place: false,
                 done: note.done,
+                depth: note.depth,
                 held: first.held,
             });
             for line in lines {
@@ -335,6 +349,7 @@ impl TodoView {
                     head: false,
                     place: false,
                     done: note.done,
+                    depth: note.depth,
                     held: line.held,
                 });
             }
@@ -352,6 +367,7 @@ impl TodoView {
                     head: false,
                     place: true,
                     done: note.done,
+                    depth: note.depth,
                     // Never: it is a fact about the note rather than a word
                     // of it, and it is not the reader's to take a copy of
                     // by selecting it.
@@ -960,12 +976,31 @@ impl TodoView {
     /// The same for every note, because where a note points is a row of its
     /// own: what a note says is laid out the same whether it points anywhere
     /// or not.
+    ///
+    /// And the same however deep a note sits, which is the reason the
+    /// deepest one in the list is what the room is taken from rather than
+    /// each note's own: one number is what the rows, the caret and the
+    /// wrapping all read, and three answers to how wide a note is would be
+    /// three chances for them to disagree. A page whose notes are all at the
+    /// top loses nothing to it; indenting the first one narrows the column
+    /// once, for every note, which is what happens when a column appears.
     #[must_use]
-    pub const fn caret_width(&self) -> u16 {
+    pub fn caret_width(&self) -> u16 {
         match self.laid.1 {
-            true => self.laid.0,
+            true => self.laid.0.saturating_sub(self.deepest() * INDENT).max(1),
             false => u16::MAX,
         }
+    }
+
+    /// How deep the deepest note in the list sits.
+    #[must_use]
+    pub fn deepest(&self) -> u16 {
+        self.todo
+            .notes
+            .iter()
+            .map(|note| note.depth)
+            .max()
+            .unwrap_or(0)
     }
 
     /// Keeps the selection on the row the caret is really in.

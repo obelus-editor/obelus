@@ -138,8 +138,13 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
     let row = at.checked_sub(window.top())?;
     let (line, cell) = composer.caret(notes.caret_width());
     let y = list.y + u16::try_from(row + line).ok()?;
+    // Where that note's own words start, which is where its caret goes.
+    let step = notes
+        .rows()
+        .get(at)
+        .map_or(0, |row| row.depth * crate::component::todo::INDENT);
     (y < list.bottom()).then(|| ratatui::layout::Position {
-        x: (list.x + MARGIN + cell.get()).min(list.right().saturating_sub(1)),
+        x: (list.x + MARGIN + step + cell.get()).min(list.right().saturating_sub(1)),
         y,
     })
 }
@@ -306,10 +311,16 @@ impl TodoUi<'_> {
         // The box, on the note's own row only: a line of a body is part of
         // the note above it and is not separately done. Its column is kept
         // on the rows below, so a note's lines line up under its first.
+        //
+        // Indented with the words rather than left in one column down the
+        // edge: the box is the note's own mark, and a column of them all
+        // hard left with the text stepping away from them reads as one flat
+        // list with ragged words.
+        let step = row.depth * crate::component::todo::INDENT;
         if row.head {
-            put(cells, area.x + 1, y, box_of(row.done), style);
+            put(cells, area.x + 1 + step, y, box_of(row.done), style);
         }
-        let x = area.x + MARGIN;
+        let x = area.x + MARGIN + step;
 
         // A row that is where the note points is dim: it is a fact about
         // the note rather than a word of it, and it is not the reader's to
@@ -336,7 +347,11 @@ impl TodoUi<'_> {
             y,
             &crate::ui::truncate_from_right(
                 &row.said,
-                usize::from(area.width.saturating_sub(MARGIN + SCROLLBAR_WIDTH).max(1)),
+                usize::from(
+                    area.width
+                        .saturating_sub(MARGIN + SCROLLBAR_WIDTH + step)
+                        .max(1),
+                ),
             ),
             Style::new().fg(ink).bg(background),
             &marked,
