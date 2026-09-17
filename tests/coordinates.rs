@@ -669,3 +669,218 @@ mod editing {
         assert_eq!(back.rope().to_string(), SAMPLE);
     }
 }
+
+/// A cell drawn in a line that the line does not contain moves every column
+/// after it one further along.
+///
+/// Which is the whole of what a phantom is, and it has to be true in both
+/// directions at once: the cursor asks where a column is drawn, and the
+/// pointer asks which column a cell belongs to. Two answers that disagree
+/// put the caret somewhere the reader did not click.
+#[test]
+fn a_phantom_moves_every_column_after_it() {
+    use obelus::text::Phantom;
+
+    let line = LineNumber::new(0);
+    let mut text = Text::from_string("let x = 1;\n");
+    let at = |text: &Text, column| text.display_column(line, CharColumn::new(column)).get();
+
+    // Without one, a column and the cell it is drawn in are the same
+    // number: the line is ASCII.
+    assert_eq!(at(&text, 8), 8);
+
+    // One cell in front of the `1`.
+    text.show(&[Phantom {
+        line,
+        column: CharColumn::new(8),
+        cells: 1,
+        which: 0,
+    }]);
+    assert_eq!(at(&text, 7), 7, "a column in front of it moved");
+    assert_eq!(at(&text, 8), 9, "the column it sits on did not move");
+    assert_eq!(at(&text, 9), 10, "a column after it did not move");
+
+    // And back the other way. The cell nothing in the file owns answers
+    // with the character it was drawn in front of, which is where a reader
+    // pointing at it means to be.
+    let back = |cell| text.column_at_display(line, DisplayColumn::new(cell)).get();
+    assert_eq!(back(7), 7);
+    assert_eq!(back(8), 8, "the cell of the phantom belongs to nobody");
+    assert_eq!(back(9), 8, "the character it sits in front of");
+    assert_eq!(back(10), 9);
+}
+
+/// Two cells wide, and in a line whose columns already disagree with its
+/// cells.
+#[test]
+fn a_phantom_and_a_wide_glyph_are_counted_together() {
+    use obelus::text::Phantom;
+
+    let line = LineNumber::new(1);
+    let mut text = sample();
+    // `    你好 world`: four spaces, then two glyphs of two cells each.
+    assert_eq!(text.display_column(line, CharColumn::new(6)).get(), 8);
+
+    text.show(&[Phantom {
+        line,
+        column: CharColumn::new(4),
+        cells: 2,
+        which: 0,
+    }]);
+    assert_eq!(
+        text.display_column(line, CharColumn::new(6)).get(),
+        10,
+        "the wide glyphs and the phantom were not counted together"
+    );
+    // The tab stop a phantom pushes a tab past is the case a cell count
+    // alone would get wrong, which is why the widths are accumulated in
+    // one place rather than added up by whoever asks.
+    assert_eq!(
+        text.column_at_display(line, DisplayColumn::new(5)).get(),
+        4,
+        "a cell inside a two-cell phantom belongs to the character after it"
+    );
+}
+
+/// An edit carries them with it, the way it carries everything else
+/// remembered by line number.
+///
+/// Dropped instead, every keystroke would take every cell off the screen
+/// and the answer that put them there would put them all back a fifth of a
+/// second later -- measured against rust-analyzer -- so a line they made
+/// wrap would unwrap and wrap again under the reader as they typed.
+#[test]
+fn an_edit_carries_the_phantoms_with_it() {
+    use obelus::text::Phantom;
+
+    let line = LineNumber::new(0);
+    let mut text = Text::from_string("let x = 1;\n");
+    text.show(&[Phantom {
+        line,
+        column: CharColumn::new(8),
+        cells: 1,
+        which: 0,
+    }]);
+
+    // Typed in front of it: it moves along by what was typed.
+    text.insert(CharOffset::new(0), "// ");
+    assert_eq!(
+        text.phantoms(line).first().map(|it| it.column.get()),
+        Some(11),
+        "it stayed where the text used to be"
+    );
+
+    // And typed after it: it stays where it is.
+    text.insert(CharOffset::new(13), "23");
+    assert_eq!(
+        text.phantoms(line).first().map(|it| it.column.get()),
+        Some(11),
+        "something typed after it moved it"
+    );
+
+    // Onto the next line, and it goes with the text.
+    text.insert(CharOffset::new(0), "\n");
+    assert_eq!(
+        text.phantoms(LineNumber::new(1))
+            .first()
+            .map(|it| it.column.get()),
+        Some(11),
+        "it did not follow its line down"
+    );
+    assert!(text.phantoms(line).is_empty());
+}
+
+/// What an edit took away takes its cells with it: there is nothing left
+/// for them to be drawn in front of.
+#[test]
+fn what_an_edit_removes_takes_its_phantoms() {
+    use obelus::{coordinates::Span, text::Phantom};
+
+    let line = LineNumber::new(0);
+    let mut text = Text::from_string("let x = compute();\n");
+    text.show(&[
+        Phantom {
+            line,
+            column: CharColumn::new(5),
+            cells: 1,
+            which: 0,
+        },
+        Phantom {
+            line,
+            column: CharColumn::new(14),
+            cells: 1,
+            which: 1,
+        },
+    ]);
+
+    // `x = comp` goes: the cell at the fifth column was inside it, and the
+    // one at the fourteenth was after it.
+    text.remove(Span {
+        line,
+        column: CharColumn::new(4),
+        end_line: line,
+        end_column: CharColumn::new(12),
+    });
+    let left: Vec<usize> = text
+        .phantoms(line)
+        .iter()
+        .map(|it| it.column.get())
+        .collect();
+    assert_eq!(
+        left,
+        [6],
+        "a cell was left drawn in front of text that is gone, or one after it did not move back"
+    );
+}
+/// A cell drawn past the last character of a line is drawn.
+///
+/// Servers put them there: a hint about what a chain returns goes after the
+/// last thing on the line, and one naming the item a closing brace ends
+/// goes after the brace.
+#[test]
+fn a_phantom_at_the_end_of_a_line_is_drawn() {
+    use obelus::text::Phantom;
+
+    let line = LineNumber::new(0);
+    let mut text = Text::from_string("let x = compute()\n");
+    let end = text.line_length(line);
+    text.show(&[Phantom {
+        line,
+        column: end,
+        cells: 5,
+        which: 0,
+    }]);
+    assert_eq!(
+        text.glyphs(line).filter(|g| g.phantom.is_some()).count(),
+        1,
+        "a cell past the last character is never drawn"
+    );
+    assert_eq!(
+        text.line_display_width(line).get(),
+        u16::try_from(end.get()).unwrap_or(0) + 5,
+        "the line is not as wide as what is drawn in it"
+    );
+}
+/// Cells drawn in a line are part of how wide it is, so a line with them
+/// wraps where a line without them would not.
+#[test]
+fn a_phantom_makes_a_line_wrap_earlier() {
+    use obelus::text::Phantom;
+
+    let line = LineNumber::new(0);
+    let mut text = Text::from_string("let x = compute(a, b);\n");
+    let width = 24;
+    assert_eq!(text.wrap_rows(line, width).len(), 1, "it fits as it is");
+
+    text.show(&[Phantom {
+        line,
+        column: CharColumn::new(5),
+        cells: 5,
+        which: 0,
+    }]);
+    assert_eq!(
+        text.wrap_rows(line, width).len(),
+        2,
+        "the cells drawn in it were not counted"
+    );
+}

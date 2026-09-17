@@ -20,11 +20,15 @@ fn styling(name: &str, text: &str) -> (support::Scratch, App) {
     (scratch, app)
 }
 
-/// The characters a server pointed at are painted in the colour they say,
-/// and the characters beside them are not.
+/// A square of the colour itself is drawn in front of the literal, and the
+/// literal keeps its own syntax colour.
+///
+/// The cell is one the file does not contain, so the characters after it
+/// are drawn one further along than the text alone would put them -- which
+/// is the thing everything else on the line has to agree about.
 #[test]
-fn a_colour_is_painted_where_it_is_written() {
-    let (_scratch, mut app) = styling("colour-painted", "a { color: #3264eb; }\n");
+fn a_colour_is_shown_in_front_of_where_it_is_written() {
+    let (_scratch, mut app) = styling("colour-shown", "a { color: #3264eb; }\n");
     app.colours_for_test(json!([{
         "range": { "start": { "line": 0, "character": 11 },
                    "end": { "line": 0, "character": 18 } },
@@ -48,31 +52,41 @@ fn a_colour_is_painted_where_it_is_written() {
     let divider = rows[row].find('|').expect("a divider") + 1;
     let text = &rows[row][divider..];
     let cells = &styles[row][divider..];
-    let at = |offset: usize| {
-        let column = text.find("#3264eb").expect("the literal") + offset;
-        cells.chars().nth(column).expect("a style")
-    };
+    let at = |column: usize| cells.chars().nth(column).expect("a style");
+    // Cells, not bytes: the square in front of it is three bytes and one
+    // cell, and `str::find` hands back a byte.
+    let literal = support::column_of(text, "#3264eb");
 
-    // The colour it says, and ink that can be read on it: blue is dark to
-    // the eye however large the number is.
+    // The cell in front of the literal draws a square of the colour the
+    // server named. Its ink rather than its background: a terminal cell is
+    // about twice as tall as it is wide, so a filled one is an upright bar
+    // and a bar beside a literal reads as a mark on the text rather than
+    // as the colour itself.
     assert_eq!(
-        legend(at(0)),
-        "e fg=#ffffff bg=#3264eb",
-        "the literal is not painted in what it says:\n{dump}"
+        text.chars().nth(literal - 1),
+        Some('\u{25a0}'),
+        "there is no square in front of the literal:\n{dump}"
     );
-    for offset in 1.."#3264eb".len() {
-        assert_eq!(
-            at(offset),
-            at(0),
-            "the literal is painted unevenly:\n{dump}"
+    assert!(
+        legend(at(literal - 1)).contains("fg=#3264eb"),
+        "the square is not the colour the server named:\n{dump}"
+    );
+
+    // And the literal itself is not painted in it any more: it is code,
+    // and it keeps the colour code is written in.
+    for offset in 0.."#3264eb".len() {
+        assert_ne!(
+            at(literal + offset),
+            at(literal - 1),
+            "the literal is painted as well as shown:\n{dump}"
         );
     }
 
-    // And the semicolon after it is the file's own background again.
-    assert_ne!(
-        at("#3264eb".len()),
-        at(0),
-        "the paint ran past the literal:\n{dump}"
+    // And it took a cell of its own: everything after it is drawn one
+    // further along than the file alone would put it.
+    assert!(
+        text.contains("color: \u{25a0}#3264eb"),
+        "the square did not take a cell in front of the literal:\n{dump}"
     );
 }
 

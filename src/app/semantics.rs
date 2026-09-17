@@ -133,8 +133,7 @@ impl App {
                 }),
             );
         }
-        self.ask_tokens(index);
-        self.ask_colours(index);
+        self.ask_standing_questions(index);
     }
 
     /// Tells a server the document has been written to disk.
@@ -163,9 +162,8 @@ impl App {
             );
         }
         // The document has stopped moving, which is when a classification
-        // of it is worth having: see [`App::ask_tokens`].
-        self.ask_tokens(index);
-        self.ask_colours(index);
+        // of it is worth having: see [`Standing::Tokens`].
+        self.ask_standing_questions(index);
     }
 
     /// Tells the server a document changed.
@@ -194,10 +192,25 @@ impl App {
         // With no server running -- no language, none installed, one that
         // died -- this was a copy of the file per keystroke that nothing
         // ever read.
-        let Some(client) = self.servers.get_mut(&language) else {
+        // Whatever a server works out about it is about the file as it was
+        // a keystroke ago. Noted rather than asked: the reader is still
+        // typing, and a question per keystroke is a whole file's worth of
+        // answer thrown away per keystroke.
+        //
+        // Only where there is somebody to ask. A file no server is reading
+        // has no question waiting for it to stop moving, and one noted
+        // anyway would wake the screen for a third of a second after every
+        // keystroke in it -- which is most of what obelus opens.
+        if self.servers.contains_key(&language) {
+            self.will_settle(DocumentId::new(index));
+        }
+        let Some(buffer) = file_in(&self.documents, DocumentId::new(index)) else {
             return;
         };
         let text = buffer.text().rope().to_string();
+        let Some(client) = self.servers.get_mut(&language) else {
+            return;
+        };
         let _ = client.notify(
             "textDocument/didChange",
             &serde_json::json!({
@@ -303,23 +316,82 @@ impl App {
         Ok(actions)
     }
 
-    /// Asks the server to classify every token in a document.
+    /// Tells the server about the file being read, as opening one does.
     ///
-    /// Not on every change, which is what a `didChange` would suggest: the
-    /// answer describes one version, an edit invalidates all of it, and a
-    /// full-file classification per keystroke is work the server does and
-    /// throws away. It is asked where a document stops moving -- opened,
-    /// re-read, written -- which is also where a reader starts looking
-    /// around it. While they are typing, the answer goes stale and
-    /// [`App::name_at`] falls back to the tree obelus parses itself.
-    pub(super) fn ask_tokens(&mut self, index: usize) {
-        let Some(buffer) = self.file(DocumentId::new(index)) else {
+    /// For a test that wants the cold start: a server started and a file
+    /// announced to it before it has answered its handshake.
+    pub fn serve_current_for_test(&mut self) {
+        if let Some(id) = self.current {
+            self.serve(id.get());
+        }
+    }
+
+    /// How long a document has to stop moving before it is asked about.
+    ///
+    /// Long enough not to fire between two keystrokes of somebody typing,
+    /// short enough that it has happened by the time they have looked at
+    /// what they wrote. Not the reader's to set, unlike the pointer's
+    /// dwell: how long a hover should wait is a matter of taste, and this
+    /// is a guess at when a person stopped.
+    pub const SETTLES_AFTER: std::time::Duration = std::time::Duration::from_millis(300);
+
+    /// Says the document has just changed, so that it is asked about once
+    /// it stops.
+    pub(super) fn will_settle(&mut self, id: DocumentId) {
+        self.settling = Some(Settling {
+            buffer: id,
+            since: std::time::Instant::now(),
+        });
+    }
+
+    /// Asks what a server works out about a document the reader has
+    /// stopped changing.
+    ///
+    /// The one moment obelus asks for these that does not depend on the
+    /// server saying anything. A save asks, and so does a server finishing
+    /// its own work -- but a server that reports no work of its own never
+    /// finishes any, and a reader who has not saved has changed the file
+    /// without anything asking about it since.
+    pub(super) fn settle_changes(&mut self) {
+        let Some(settling) = self.settling else {
+            return;
+        };
+        if settling.since.elapsed() < Self::SETTLES_AFTER {
+            return;
+        }
+        self.settling = None;
+        // Not the semantic tokens. They are a whole file's worth of answer
+        // per ask, which is why they wait for a save -- and while the
+        // reader types, the tree obelus parses itself is what answers for
+        // them.
+        self.ask_standing(settling.buffer.get(), Standing::Colours);
+        self.ask_standing(settling.buffer.get(), Standing::Hints);
+    }
+
+    /// Asks one of the standing questions about a document.
+    ///
+    /// Standing because nobody asks them: they are what a server can say
+    /// about a whole file, and obelus asks them wherever the file has
+    /// stopped moving. One function for the three because they differ in
+    /// four things and agree in everything else -- which document, whether
+    /// it is a file at all, what it is called, which version, and what to
+    /// do with the answer when it comes.
+    pub(super) fn ask_standing(&mut self, index: usize, what: Standing) {
+        let id = DocumentId::new(index);
+        // The reader's answer first, where it is theirs to give: a question
+        // asked with nowhere to put the answer is a question not worth a
+        // server's time.
+        if !what.wanted(self.config()) {
+            return;
+        }
+        let Some(buffer) = self.file(id) else {
             return;
         };
         let Some(language) = buffer.language() else {
             return;
         };
-        // Nothing about a commit's version, the same as its siblings.
+        // Nothing about a commit's version of the file: the server is being
+        // asked about what is at this path, and that is not it.
         if !buffer.content().is_file() {
             return;
         }
@@ -327,23 +399,35 @@ impl App {
             return;
         };
         let version = buffer.version();
-        let id = DocumentId::new(index);
+        // The document's own end, not one past it. A line count is one more
+        // than the last line number wherever a file ends in a newline --
+        // which is almost everywhere -- and a server handed a range that
+        // ends past the file refuses the whole request: measured against
+        // rust-analyzer, `Invalid offset LineCol { line: 271, col: 0 }
+        // (line index length: 9349)`, for a file of two hundred and
+        // seventy lines.
+        let last = buffer.text().last_line();
+        let end = buffer.text().line_length(last);
+        let encoding = self.encoding_for(language);
+        let Some(buffer) = self.file(id) else {
+            return;
+        };
+        let stop = position::to_lsp(buffer.text(), last, end, &encoding);
         let Some(client) = self.servers.get_mut(&language) else {
             return;
         };
         if !client
             .capabilities()
-            .is_some_and(|capabilities| capabilities.semantic_tokens_provider.is_some())
+            .is_some_and(|can| what.answered_by(can))
         {
             return;
         }
-        let params = serde_json::json!({ "textDocument": { "uri": uri } });
-        if let Ok(request) = client.request("textDocument/semanticTokens/full", &params) {
+        if let Ok(request) = client.request(what.method(), &what.params(&uri, stop)) {
             self.remember(
                 language,
                 request,
                 Question {
-                    asked: Asked::Tokens,
+                    asked: what.asked(),
                     buffer: id,
                     version,
                 },
@@ -351,49 +435,165 @@ impl App {
         }
     }
 
-    /// Asks a server where the colours in a document are.
+    /// Asks all of them about a document.
+    pub(super) fn ask_standing_questions(&mut self, index: usize) {
+        for what in Standing::ALL {
+            self.ask_standing(index, what);
+        }
+    }
+
+    /// Asks the standing questions about every open file of a language.
     ///
-    /// Beside the classification because it is the same shape of question:
-    /// about the whole file, answered in the file's own coordinates, and
-    /// worth asking again whenever the file changes. A stylesheet is what
-    /// this is for, and what it buys is that a reader sees the colour
-    /// rather than reads the six digits of it.
-    pub(super) fn ask_colours(&mut self, index: usize) {
-        let Some(buffer) = self.file(DocumentId::new(index)) else {
-            return;
-        };
-        let Some(language) = buffer.language() else {
-            return;
-        };
-        if !buffer.content().is_file() {
+    /// For the moment a server finishes its handshake, which is the moment
+    /// it can first be asked anything: everything below is refused while a
+    /// server cannot say what it answers, and the files were opened before
+    /// that. Not `didOpen` again -- that one is queued by the client until
+    /// the handshake finishes and has already gone.
+    pub(super) fn ask_about_open_files(&mut self, language: LanguageId) {
+        let indices: Vec<usize> = (0..self.documents.len())
+            .filter(|index| {
+                self.documents
+                    .get(*index)
+                    .and_then(Option::as_ref)
+                    .and_then(Document::file)
+                    .and_then(Buffer::language)
+                    .is_some_and(|of| of == language)
+            })
+            .collect();
+        for index in indices {
+            self.ask_standing_questions(index);
+        }
+    }
+
+    /// Takes the reader's answer about hints to the screen.
+    ///
+    /// Both ways round, because a switch that only works one way is a
+    /// switch a reader has to restart to use: off takes away what is drawn
+    /// and on asks for what was never asked for.
+    pub(super) fn hints_switched(&mut self) {
+        let documents: Vec<DocumentId> = (0..self.documents.len()).map(DocumentId::new).collect();
+        if self.settled.config.inlay_hints {
+            // Only where nobody has asked. This runs after every change to
+            // every setting -- a theme, a tab width -- and a question per
+            // open file per keystroke in the settings page is a question
+            // nobody wanted.
+            for id in documents {
+                let asked = self
+                    .file(id)
+                    .is_some_and(|buffer| self.hints.contains_key(buffer.path()));
+                if !asked {
+                    self.ask_standing(id.get(), Standing::Hints);
+                }
+            }
             return;
         }
-        let Ok(uri) = lsp::client::uri_for(buffer.path()) else {
+        self.hints.clear();
+        for id in documents {
+            self.redraw_cells(id);
+        }
+    }
+
+    /// Keeps what a server would have the reader know, if the answer is
+    /// still about this document.
+    fn on_hints(&mut self, id: DocumentId, version: i32, reply: Reply) {
+        let Some(buffer) = self.file(id) else {
             return;
         };
-        let version = buffer.version();
-        let id = DocumentId::new(index);
-        let Some(client) = self.servers.get_mut(&language) else {
+        // The document it was asked about, unchanged since: these are
+        // places in a text, and a text that has moved has moved them.
+        if buffer.version() != version {
+            return;
+        }
+        let path = buffer.path().to_path_buf();
+        let encoding = buffer
+            .language()
+            .map_or(lsp_types::PositionEncodingKind::UTF16, |language| {
+                self.encoding_for(language)
+            });
+        let Some(buffer) = self.file(id) else {
             return;
         };
-        if !client
-            .capabilities()
-            .is_some_and(crate::lsp::colour::supported)
-        {
+        let found = lsp::hint::in_reply(&reply.result, buffer.text(), &encoding);
+        match found.is_empty() {
+            true => self.hints.remove(&path),
+            false => self.hints.insert(path, found),
+        };
+        self.redraw_cells(id);
+    }
+
+    /// Works out what is drawn in a document that the document does not
+    /// contain, and tells the text how wide each of them is.
+    ///
+    /// One list from both answers, because a cell points at one entry and
+    /// cannot say which of two lists it meant -- and one pass, because the
+    /// text has to be told all of them at once: what it is told replaces
+    /// whatever it was told before.
+    ///
+    /// Which is the one place either answer can be out of date. An edit
+    /// carries the cells along with the text it is drawing them in, so
+    /// what is on screen stays right; these are the places those cells
+    /// were *made* from, and they are about the file as it was until the
+    /// answer about the file as it is arrives. Between one answer landing
+    /// and the other -- tens of milliseconds, both having been asked
+    /// together -- a hint can be drawn an edit's width from where it
+    /// belongs. The alternative is forgetting them, which takes every cell
+    /// off the screen on every keystroke and puts them all back a fifth of
+    /// a second later: measured, and far worse to read.
+    pub(super) fn redraw_cells(&mut self, id: DocumentId) {
+        let Some(buffer) = self.file(id) else {
             return;
+        };
+        let path = buffer.path().to_path_buf();
+        let colours = self.colours.get(&path).map_or(&[] as &[_], Vec::as_slice);
+        let hints = self.hints.get(&path).map_or(&[] as &[_], Vec::as_slice);
+
+        // Both sources through one loop, numbered where they are put
+        // together: two lists built side by side with an offset between
+        // them is two chances to number them differently, and a cell
+        // numbered wrong draws a hint as a colour.
+        let mut cells = Vec::with_capacity(colours.len() + hints.len());
+        let mut drawn = Vec::with_capacity(colours.len() + hints.len());
+        let swatches = colours.iter().map(|coloured| {
+            (
+                coloured.span.line,
+                coloured.span.column,
+                crate::ui::swatch_cells(),
+                crate::ui::Drawn::Swatch(coloured.colour),
+            )
+        });
+        let worked_out = hints.iter().map(|hint| {
+            (
+                hint.line,
+                hint.column,
+                hint.cells(),
+                crate::ui::Drawn::Hint(hint.clone()),
+            )
+        });
+        for (line, column, wide, what) in swatches.chain(worked_out) {
+            cells.push(crate::text::Phantom {
+                line,
+                column,
+                cells: wide,
+                which: drawn.len(),
+            });
+            drawn.push(what);
         }
-        let params = serde_json::json!({ "textDocument": { "uri": uri } });
-        if let Ok(request) = client.request("textDocument/documentColor", &params) {
-            self.remember(
-                language,
-                request,
-                Question {
-                    asked: Asked::Colours,
-                    buffer: id,
-                    version,
-                },
-            );
+
+        if let Some(buffer) = file_in_mut(&mut self.documents, id) {
+            buffer.show(&cells);
         }
+        match drawn.is_empty() {
+            true => self.drawn.remove(&path),
+            false => self.drawn.insert(path, drawn),
+        };
+    }
+
+    /// What is drawn in the file being read that the file does not contain.
+    #[must_use]
+    pub fn drawn(&self) -> &[crate::ui::Drawn] {
+        self.current_buffer()
+            .and_then(|buffer| self.drawn.get(buffer.path()))
+            .map_or(&[], Vec::as_slice)
     }
 
     /// Keeps where the colours are, if the answer is still about this
@@ -421,6 +621,7 @@ impl App {
             true => self.colours.remove(&path),
             false => self.colours.insert(path, found),
         };
+        self.redraw_cells(id);
     }
 
     /// Where the colours are in the file being read.
@@ -443,6 +644,43 @@ impl App {
                 result: Ok(answer),
             },
         );
+    }
+
+    /// Hands obelus what a server would have the reader know.
+    pub fn hints_for_test(&mut self, answer: serde_json::Value) {
+        let Some(id) = self.current else { return };
+        let version = self
+            .current_buffer()
+            .map_or(0, crate::buffer::Buffer::version);
+        self.on_hints(
+            id,
+            version,
+            Reply {
+                id: 0,
+                result: Ok(answer),
+            },
+        );
+    }
+
+    /// The same, about a version of the document that has been left behind.
+    pub fn hints_at_version_for_test(&mut self, answer: serde_json::Value, version: i32) {
+        let Some(id) = self.current else { return };
+        self.on_hints(
+            id,
+            version,
+            Reply {
+                id: 0,
+                result: Ok(answer),
+            },
+        );
+    }
+
+    /// How many of them are showing.
+    #[must_use]
+    pub fn hints_for_test_count(&self) -> usize {
+        self.current_buffer()
+            .and_then(|buffer| self.hints.get(buffer.path()))
+            .map_or(0, Vec::len)
     }
 
     /// Hands obelus an answer about the colours, as a server would.
@@ -649,11 +887,17 @@ impl App {
     /// the client ends up holding is then whatever the real path would
     /// have put there, and the queue it was holding goes out.
     pub fn declared_for_test(&mut self, language: LanguageId, capabilities: serde_json::Value) {
-        if let Some(client) = self.servers.get_mut(&language) {
-            client.on_message(&serde_json::json!({
+        // Through the door a server's messages come in by, rather than
+        // straight at the client: finishing a handshake is a moment the
+        // application acts on -- it is when the files already open can
+        // first be asked about -- and a test that reached past it would be
+        // testing a path obelus does not have.
+        self.handle(crate::event::Event::Lsp {
+            language,
+            message: serde_json::json!({
                 "id": 0, "result": { "capabilities": capabilities },
-            }));
-        }
+            }),
+        });
     }
 
     /// Why the server for a file cannot be asked anything, if it cannot.
@@ -790,6 +1034,10 @@ impl App {
             }
             Asked::Colours => {
                 self.on_colours(question.buffer, question.version, reply);
+                return;
+            }
+            Asked::Hints => {
+                self.on_hints(question.buffer, question.version, reply);
                 return;
             }
             Asked::Tokens => {
@@ -1486,6 +1734,96 @@ fn counted(troubles: &[crate::lsp::trouble::Trouble]) -> String {
     said.join(", ")
 }
 
+/// A question about a whole document that nobody asked for.
+///
+/// Standing, because the reader never presses anything to send one: they
+/// are what a server can say about a file as a whole, and obelus asks them
+/// wherever the file has stopped moving -- opened, written, re-read, and a
+/// moment after the reader stops typing.
+///
+/// One type because the three differ in four things and agree in
+/// everything else. Which four is what this is: what to send, who answers
+/// it, what to send with it, and what to do with the answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Standing {
+    /// What every token in the file is.
+    Tokens,
+    /// Where the colours in it are written down.
+    Colours,
+    /// What a server would have the reader know that the file does not say.
+    Hints,
+}
+
+impl Standing {
+    /// All of them, for the moments that ask everything.
+    pub(super) const ALL: [Self; 3] = [Self::Tokens, Self::Colours, Self::Hints];
+
+    /// The request that asks it.
+    pub(super) const fn method(self) -> &'static str {
+        match self {
+            Self::Tokens => "textDocument/semanticTokens/full",
+            Self::Colours => "textDocument/documentColor",
+            Self::Hints => "textDocument/inlayHint",
+        }
+    }
+
+    /// Whether the server says it answers this.
+    ///
+    /// A server that has not said so is not asked: an unanswerable question
+    /// is a round trip for an error, and some servers answer one with an
+    /// error that looks like a file with nothing in it.
+    pub(super) fn answered_by(self, capabilities: &lsp_types::ServerCapabilities) -> bool {
+        match self {
+            Self::Tokens => capabilities.semantic_tokens_provider.is_some(),
+            Self::Colours => lsp::colour::supported(capabilities),
+            Self::Hints => lsp::hint::supported(capabilities),
+        }
+    }
+
+    /// Whether the reader wants it at all.
+    ///
+    /// Only the hints have a switch: the other two are colours on a screen
+    /// that was going to be coloured anyway, and these are cells the file
+    /// does not contain.
+    pub(super) const fn wanted(self, config: &crate::config::Config) -> bool {
+        match self {
+            Self::Tokens | Self::Colours => true,
+            Self::Hints => config.inlay_hints,
+        }
+    }
+
+    /// What goes with it.
+    ///
+    /// `stop` is the document's own end, for the one of them that takes a
+    /// range. The whole file rather than the rows on screen, which is what
+    /// that range is for: scrolling would then be a question per screenful,
+    /// and a question per screenful is a question while the reader is
+    /// moving.
+    pub(super) fn params(
+        self,
+        uri: &lsp_types::Uri,
+        stop: lsp_types::Position,
+    ) -> serde_json::Value {
+        let document = serde_json::json!({ "uri": uri });
+        match self {
+            Self::Tokens | Self::Colours => serde_json::json!({ "textDocument": document }),
+            Self::Hints => serde_json::json!({
+                "textDocument": document,
+                "range": { "start": { "line": 0, "character": 0 }, "end": stop },
+            }),
+        }
+    }
+
+    /// What is waited for, so the answer is known for what it is.
+    pub(super) const fn asked(self) -> Asked {
+        match self {
+            Self::Tokens => Asked::Tokens,
+            Self::Colours => Asked::Colours,
+            Self::Hints => Asked::Hints,
+        }
+    }
+}
+
 /// What one question that is still out was about.
 #[derive(Debug)]
 pub(super) struct Question {
@@ -1514,6 +1852,9 @@ pub(super) enum Asked {
     Tokens,
     /// Where the colours in the file are written down.
     Colours,
+    /// What the server would have the reader know that the file does not
+    /// say.
+    Hints,
     /// Where else the name under the caret is used.
     Uses,
     /// Everywhere a symbol would have to change to be called something

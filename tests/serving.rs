@@ -210,6 +210,13 @@ fn what_obelus_says_it_can_do() {
         "obelus asks who calls this and has not said it can read the answer"
     );
 
+    // `lsp::hint`. Undeclared, a server is entitled to answer nothing and
+    // the reader reads the file rather than the one the compiler has.
+    assert!(
+        text.inlay_hint.is_some(),
+        "obelus draws what a server works out and has not asked for it"
+    );
+
     // `lsp::trouble` keeps a diagnostic whole because it goes back in a
     // code action's context, and a server matches it by every field.
     assert_eq!(

@@ -22,10 +22,10 @@ use lsp_types::{
     DocumentColorClientCapabilities, DocumentFormattingClientCapabilities,
     DocumentHighlightClientCapabilities, DocumentSymbolClientCapabilities,
     ExecuteCommandClientCapabilities, FailureHandlingKind, GeneralClientCapabilities,
-    GotoCapability, HoverClientCapabilities, InitializeParams, InitializeResult, MarkupKind,
-    ParameterInformationSettings, PositionEncodingKind, PublishDiagnosticsClientCapabilities,
-    ReferenceClientCapabilities, RenameClientCapabilities, SemanticTokenType,
-    SemanticTokensClientCapabilities, SemanticTokensClientCapabilitiesRequests,
+    GotoCapability, HoverClientCapabilities, InitializeParams, InitializeResult,
+    InlayHintClientCapabilities, MarkupKind, ParameterInformationSettings, PositionEncodingKind,
+    PublishDiagnosticsClientCapabilities, ReferenceClientCapabilities, RenameClientCapabilities,
+    SemanticTokenType, SemanticTokensClientCapabilities, SemanticTokensClientCapabilitiesRequests,
     SemanticTokensFullOptions, ServerCapabilities, SignatureHelpClientCapabilities,
     SignatureInformationSettings, TextDocumentClientCapabilities,
     TextDocumentSyncClientCapabilities, TokenFormat, Uri, WindowClientCapabilities,
@@ -893,6 +893,11 @@ pub fn client_capabilities() -> ClientCapabilities {
             // capability, which is the protocol's own arrangement: the
             // item a server prepares is what both of them are asked with.
             call_hierarchy: Some(CallHierarchyClientCapabilities::default()),
+            // What a server would have the reader know that the file does
+            // not say. Undeclared, a server is entitled to answer nothing,
+            // and a reader would be reading the file rather than the one
+            // the compiler has.
+            inlay_hint: Some(InlayHintClientCapabilities::default()),
             // The diagnostic obelus keeps is the one the server sent,
             // whole, because it goes back in a code action's context and
             // the server matches it by every field -- `data` included.

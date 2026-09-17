@@ -25,6 +25,7 @@ use obelus::{
     },
     syntax::LanguageId,
 };
+use unicode_width::UnicodeWidthStr;
 
 /// Long enough for a cold cargo metadata on a slow machine.
 const HANDSHAKE: Duration = Duration::from_secs(30);
@@ -928,4 +929,91 @@ fn alive(pid: u32) -> bool {
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// What a real server would have the reader know, on the wire.
+///
+/// The request carries a range and the answer carries positions, and both
+/// are things obelus can only get wrong silently: a range spelt wrong is
+/// answered with nothing, which from this side looks exactly like a file
+/// with no types to work out.
+#[test]
+#[ignore = "waits for the project to be indexed"]
+fn a_real_server_works_out_what_the_file_does_not_say() {
+    use obelus::lsp::hint;
+
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+    let capabilities = client.capabilities().expect("ready means capabilities");
+    assert!(
+        hint::supported(capabilities),
+        "rust-analyzer no longer declares that it works these out"
+    );
+
+    // A file with a `let` in it whose type nobody wrote down.
+    let path = root().join("src/lsp/hint.rs");
+    let text = std::fs::read_to_string(&path).expect("reading the file");
+    let uri = obelus::lsp::client::uri_for(&path).expect("a uri");
+    client
+        .notify(
+            "textDocument/didOpen",
+            &serde_json::json!({
+                "textDocument": { "uri": uri, "languageId": "rust", "version": 1, "text": text }
+            }),
+        )
+        .expect("opening the document");
+
+    let lines = text.lines().count();
+    let deadline = Instant::now() + INDEXED;
+    let found = loop {
+        assert!(Instant::now() < deadline, "the server worked out nothing");
+        let id = client
+            .request(
+                "textDocument/inlayHint",
+                &serde_json::json!({
+                    "textDocument": { "uri": uri },
+                    "range": {
+                        "start": { "line": 0, "character": 0 },
+                        "end": { "line": lines, "character": 0 },
+                    },
+                }),
+            )
+            .expect("asking");
+        let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+            reply.is_some_and(|reply| reply.id == id)
+        })
+        .expect("an answer");
+        let found = hint::in_reply(
+            &reply.result,
+            &obelus::text::Text::from_string(&text),
+            client.encoding(),
+        );
+        if !found.is_empty() {
+            break found;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    };
+
+    // Every one of them lands on a line the file has, and says something.
+    let most = text.lines().count();
+    for hint in &found {
+        assert!(
+            hint.line.get() < most,
+            "a hint for a line the file does not have: {hint:?}"
+        );
+        assert!(!hint.label.is_empty(), "a hint saying nothing: {hint:?}");
+        assert_eq!(hint.cells(), hint.label.width(), "a width nothing drew");
+    }
+    // And at least one of them is a type nobody wrote down, which is what
+    // this file is full of.
+    assert!(
+        found.iter().any(|hint| hint.kind == hint::Kind::Type),
+        "nothing was a type: {:?}",
+        found.iter().map(|hint| &hint.label).collect::<Vec<_>>()
+    );
+    client.shutdown();
 }

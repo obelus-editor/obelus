@@ -104,10 +104,12 @@ fn a_tree_of_calls_on_screen() {
         .iter()
         .position(|row| row.contains("run();"))
         .expect("the call in the preview");
-    let column = support::column_of(rows[at], "run(");
-    let glyph = styles[at].chars().nth(column).expect("a style");
-    let marked = support::legend_for(&dump, glyph);
-    let plain = support::legend_for(&dump, styles[at].chars().next().expect("a style"));
+    // After the dump's own row prefix, which the style rows carry too.
+    let divider = rows[at].find('|').expect("a divider") + 1;
+    let column = support::column_of(&rows[at][divider..], "run(");
+    let cells: Vec<char> = styles[at][divider..].chars().collect();
+    let marked = support::legend_of(&dump, cells[column]);
+    let plain = support::legend_of(&dump, cells[0]);
     assert_ne!(
         marked, plain,
         "the call is drawn the same as the rest of the line:\n{dump}"

@@ -5,6 +5,43 @@
 //! stdout; adding slow work to it is the mistake that actually happens, rather
 //! than the write itself being slow.
 
+/// What a colour a server found written down is drawn as.
+///
+/// A square rather than the whole cell filled in. A terminal cell is about
+/// twice as tall as it is wide, so a filled one is an upright bar -- and a
+/// bar beside a colour literal reads as a mark on the text rather than as
+/// the colour itself. One cell wide, which is what the line was measured
+/// with.
+pub(crate) const SWATCH: char = '\u{25a0}';
+
+/// How many cells it takes.
+///
+/// Measured from the glyph rather than written down beside it: the number
+/// the line is laid out with and the thing drawn in it have to agree, and
+/// two constants that must agree are one that can be changed alone.
+#[must_use]
+pub(crate) fn swatch_cells() -> usize {
+    unicode_width::UnicodeWidthChar::width(SWATCH).unwrap_or(1)
+}
+
+/// What one cell a file does not contain is drawn as.
+///
+/// One list per document, because a cell points at one entry and cannot
+/// say which of two lists it meant: the colours a server found written
+/// down and the hints it worked out are drawn from the same one, in the
+/// order the application put them there.
+///
+/// Here rather than beside either of them: the application builds it and
+/// the editor draws it, and a type that lives with one of its two sources
+/// would make the other one a guest.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Drawn {
+    /// A colour, as a cell of itself.
+    Swatch(ratatui::style::Color),
+    /// Something a server would have you read that the file does not say.
+    Hint(crate::lsp::hint::Hinted),
+}
+
 pub mod card;
 pub mod chat;
 pub mod complete;

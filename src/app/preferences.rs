@@ -498,6 +498,11 @@ impl App {
         // applied would leave a rebind that was undone in the file still in
         // force.
         self.keymap = crate::keymap::Keymap::with(&self.settled.config.keys);
+        // What a server works out is drawn or it is not, and the switch has
+        // to reach the screen either way: turned off it takes what is
+        // already drawn away, and turned on it asks for what was never
+        // asked for.
+        self.hints_switched();
     }
 
     /// Reads the configuration file and applies it.

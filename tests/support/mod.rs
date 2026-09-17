@@ -314,6 +314,22 @@ pub fn legend_for(dump: &str, glyph: char) -> String {
         .to_string()
 }
 
+/// What a style letter of a dump's style block stands for.
+///
+/// The letter rather than the character drawn there, which is the other
+/// way round from [`legend_for`] and the one a test wants when it is
+/// comparing two cells: the letters are what the style block is made of,
+/// and looking one up by finding the same letter in the *text* finds
+/// whatever unrelated cell happens to draw it.
+#[must_use]
+pub fn legend_of(dump: &str, letter: char) -> String {
+    legend_block(dump)
+        .lines()
+        .find(|line| line.starts_with(&format!("{letter} ")))
+        .unwrap_or_else(|| panic!("no legend for the style {letter:?}:\n{dump}"))
+        .to_string()
+}
+
 /// A theme's colour, spelled the way the legend spells it.
 ///
 /// So that a test names the colour it means -- `DARK.gutter` -- rather than

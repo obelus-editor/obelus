@@ -2,15 +2,22 @@
 //!
 //! A server that knows a language knows its colours: `#3264eb` in CSS,
 //! `rgba(0, 0, 0, .5)`, a named constant a framework resolves. What it
-//! sends back is a range and three numbers, and what obelus does with them
-//! is paint the run itself -- so a reader looking at a stylesheet sees the
-//! colours rather than reads them.
+//! sends back is a range and three numbers, and what obelus draws from them
+//! is a cell of that colour in front of the literal -- so a reader looking
+//! at a stylesheet sees the colours rather than reads them.
 //!
-//! Painted rather than marked with a swatch beside it. A glyph in front of
-//! the literal would move every character after it one cell right, and a
-//! screen whose columns are not the file's columns is a screen that lies
-//! about where things are -- which is the one thing every other decoration
-//! here is careful not to do.
+//! In front of it rather than over it. Painting the literal said the same
+//! thing over seven characters, took its syntax colour away to say it, and
+//! over the sixteen of an `rgba(0, 0, 0, .5)` said it over half a line.
+//!
+//! A cell in front of a literal is a cell the file does not contain, which
+//! is a thing obelus refused to draw for a long time: a screen whose
+//! columns are not the file's columns is a screen that lies about where
+//! things are. What makes it honest now is that the lie is told in one
+//! place -- [`crate::text::Phantom`], in the module that is the only place
+//! a coordinate turns into another one -- so the cursor, the pointer, the
+//! wrapping and every mark painted on a line all agree about where the
+//! fourth character of a line is drawn.
 
 use lsp_types::{ColorInformation, PositionEncodingKind, ServerCapabilities};
 use ratatui::style::Color;
@@ -25,12 +32,6 @@ pub struct Coloured {
     pub span: Span,
     /// What they mean, ready to paint with.
     pub colour: Color,
-    /// What to write on it so the writing can still be read.
-    ///
-    /// Worked out here rather than where it is drawn: it is a fact about
-    /// the colour, and the one place that knows the colour should be the
-    /// one place that answers for it.
-    pub ink: Color,
 }
 
 /// Whether the server answers `textDocument/documentColor`.
@@ -70,7 +71,6 @@ pub fn in_reply(
                     end_column,
                 },
                 colour,
-                ink: readable_on(found.color),
             }
         })
         .collect()
@@ -100,20 +100,6 @@ fn byte(channel: f32) -> u8 {
     }
 }
 
-/// Black or white, whichever can be read on a colour.
-///
-/// By how bright the colour is to the eye rather than by its average: the
-/// eye takes green for most of the brightness of a colour and blue for
-/// almost none, so an average calls `#0000ff` light and puts black on it.
-/// The weights are the ones every contrast rule uses.
-fn readable_on(colour: lsp_types::Color) -> Color {
-    let brightness = 0.299 * colour.red + 0.587 * colour.green + 0.114 * colour.blue;
-    match brightness > 0.55 {
-        true => Color::Rgb(0, 0, 0),
-        false => Color::Rgb(255, 255, 255),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,27 +126,6 @@ mod tests {
             (11, 18)
         );
         assert_eq!(found[0].colour, Color::Rgb(50, 100, 235));
-    }
-
-    /// What is written on it can be read, which is not a question about
-    /// the average of the three numbers.
-    #[test]
-    fn the_ink_is_whichever_can_be_read() {
-        let on = |red, green, blue| {
-            readable_on(lsp_types::Color {
-                red,
-                green,
-                blue,
-                alpha: 1.0,
-            })
-        };
-        assert_eq!(on(1.0, 1.0, 1.0), Color::Rgb(0, 0, 0), "white");
-        assert_eq!(on(0.0, 0.0, 0.0), Color::Rgb(255, 255, 255), "black");
-        // Pure blue is dark to the eye however large the number is, and an
-        // average of the three would call it light.
-        assert_eq!(on(0.0, 0.0, 1.0), Color::Rgb(255, 255, 255), "blue");
-        // And pure green is light, for the same reason the other way.
-        assert_eq!(on(0.0, 1.0, 0.0), Color::Rgb(0, 0, 0), "green");
     }
 
     /// A server with nothing to say says it in several ways, and none of

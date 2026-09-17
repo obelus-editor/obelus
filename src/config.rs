@@ -43,6 +43,15 @@ pub struct Config {
     /// obelus takes without a key being pressed, which is why they are the
     /// only ones it asks for by name.
     pub code_actions_on_save: bool,
+    /// Whether what a language server works out is drawn in the file.
+    ///
+    /// A type nobody wrote down, the name of the parameter an argument is
+    /// passed to. On, because the thing a reader wants to know about a
+    /// `let` with no type on it is the type -- and a switch nobody finds
+    /// is a feature nobody has. They are cells the file does not contain,
+    /// which is what the switch is for: turned off, the file on disk is
+    /// what is on screen, to the column.
+    pub inlay_hints: bool,
     /// Whether the file list offers the files a tree has said to ignore.
     ///
     /// About the list, not about the files: what `.gitignore` keeps out is
@@ -97,6 +106,7 @@ impl Default for Config {
             // should not come back from a save with its imports rearranged
             // and three lines somewhere else rewritten.
             code_actions_on_save: false,
+            inlay_hints: true,
             // Off, because a tree says what it ignores and mostly means it:
             // a list whose first hundred rows are `target` is a list nobody
             // can find anything in.
@@ -332,6 +342,14 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Switch,
     },
     Setting {
+        key: "inlay_hints",
+        name: "What the server works out",
+        about: "draw the types and parameter names a language server infers, in the places they would be written. They are not in the file: nothing in one can be selected or copied, and turning this off puts every column back where the file has it",
+        group: Group::Reading,
+        reach: Reach::Anywhere,
+        kind: Kind::Switch,
+    },
+    Setting {
         key: "ignored_files",
         name: "Files a tree ignores",
         about: "offer them in the file list as well -- what `.gitignore` keeps out is build output most days and the file you are looking for on the others",
@@ -357,6 +375,7 @@ impl Config {
             "hover_delay" => Some(Value::Count(self.hover_delay)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
             "code_actions_on_save" => Some(Value::Switch(self.code_actions_on_save)),
+            "inlay_hints" => Some(Value::Switch(self.inlay_hints)),
             "ignored_files" => Some(Value::Switch(self.ignored_files)),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
@@ -376,6 +395,7 @@ impl Config {
             ("hover_delay", Value::Count(delay)) => self.hover_delay = *delay,
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
             ("code_actions_on_save", Value::Switch(on)) => self.code_actions_on_save = *on,
+            ("inlay_hints", Value::Switch(on)) => self.inlay_hints = *on,
             ("ignored_files", Value::Switch(on)) => self.ignored_files = *on,
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
@@ -591,6 +611,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     {
         config.code_actions_on_save = on;
     }
+    if let Some(on) = table.get("inlay_hints").and_then(toml::Value::as_bool)
+        && allowed("inlay_hints")
+    {
+        config.inlay_hints = on;
+    }
     if let Some(on) = table.get("ignored_files").and_then(toml::Value::as_bool)
         && allowed("ignored_files")
     {
@@ -668,6 +693,7 @@ pub fn over(existing: &str, config: &Config) -> String {
     document["hover_delay"] = toml_edit::value(i64::try_from(config.hover_delay).unwrap_or(400));
     document["format_on_save"] = toml_edit::value(config.format_on_save);
     document["code_actions_on_save"] = toml_edit::value(config.code_actions_on_save);
+    document["inlay_hints"] = toml_edit::value(config.inlay_hints);
     document["ignored_files"] = toml_edit::value(config.ignored_files);
     // Written even when there is nobody, so the file says what obelus read
     // rather than leaving the reader to wonder whether it noticed.
@@ -961,6 +987,7 @@ mod tests {
             hover_delay: 800,
             format_on_save: true,
             code_actions_on_save: true,
+            inlay_hints: true,
             ignored_files: true,
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and

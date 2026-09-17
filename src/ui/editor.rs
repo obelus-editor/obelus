@@ -160,12 +160,14 @@ pub struct EditorView<'a> {
     /// search names whatever characters the query matched, which is as many
     /// runs as the match is scattered over.
     marked: &'a [Span],
-    /// The colours a server says are written down in the file, and where.
+    /// What is drawn in the file that the file does not contain: the
+    /// colours a server found written down, and what it would have the
+    /// reader know.
     ///
-    /// Painted under everything the reader did -- a selection, a mark --
-    /// because those are answers to something they just asked and this is
-    /// a standing fact about the text.
-    colours: &'a [crate::lsp::colour::Coloured],
+    /// Under everything the reader did -- a selection, a mark -- because
+    /// those are answers to something they just asked and these are
+    /// standing facts about the text.
+    drawn: &'a [crate::ui::Drawn],
     /// The characters selected in the file being read.
     selection: Option<Span>,
     /// What the language server says is wrong with the file being read.
@@ -290,7 +292,7 @@ impl<'a> EditorView<'a> {
             // What is being talked about: the uses of the name the pointer
             // is resting on, or what a hover is about while one is up.
             marked: app.marked_runs(),
-            colours: app.colours(),
+            drawn: app.drawn(),
             selection: app.current_buffer().and_then(Buffer::selection),
             troubles: app.troubles(),
             changes: app.changes(),
@@ -333,9 +335,9 @@ impl<'a> EditorView<'a> {
             theme,
             marked,
             // Nothing for a preview: what is drawn there is somewhere else,
-            // and where the colours are is a fact about the file the reader
-            // is in.
-            colours: &[],
+            // and where a colour or a hint goes is a fact about the file
+            // the reader is in.
+            drawn: &[],
             changes,
             // Everything that answers "where am I and what am I doing" is
             // the document's rather than a look at another one's.
@@ -589,10 +591,10 @@ impl Widget for EditorView<'_> {
                                 theme: self.theme,
                                 marked: &[],
                                 // A block is a commit's version of these
-                                // lines, and the colours a server found are
-                                // in the file as it is now -- at columns
-                                // that mean nothing here.
-                                colours: &[],
+                                // lines, and what a server found is in the
+                                // file as it is now -- at columns that mean
+                                // nothing here.
+                                drawn: &[],
                                 selection: selected_in(block.above),
                                 // A block is a commit's version of these
                                 // lines. What is wrong with the file is
@@ -725,7 +727,7 @@ impl Widget for EditorView<'_> {
                         highlights: self.highlights,
                         theme: self.theme,
                         marked: self.marked,
-                        colours: self.colours,
+                        drawn: self.drawn,
                         selection: self.selection,
                         troubles: self.troubles,
                         brackets,
@@ -960,8 +962,10 @@ struct Painting<'a> {
     theme: &'a Theme,
     /// The run a preview is about.
     marked: &'a [Span],
-    /// The colours a server says are written down in the line.
-    colours: &'a [crate::lsp::colour::Coloured],
+    /// What is drawn in the line that the line does not contain: the
+    /// colours a server found written down, and what it would have the
+    /// reader know.
+    drawn: &'a [crate::ui::Drawn],
     /// The characters the reader selected in the file being read.
     selection: Option<Span>,
     /// What the language server says is wrong with the file.
@@ -999,7 +1003,11 @@ fn draw_row(
     let indent = usize::from(row.indent);
     let mut ended = indent.try_into().unwrap_or(u16::MAX);
 
-    for (column, glyph) in text.glyphs(line).enumerate() {
+    // The glyph's own column, not the number of steps taken: a line can be
+    // drawn with cells in it that the line does not contain, so counting
+    // the steps stopped being the same as counting the columns.
+    for glyph in text.glyphs(line) {
+        let column = glyph.column.get();
         // A glyph the left-hand edge has cut in half leaves its cell blank:
         // half of a wide character is not that character, and drawing it
         // would put the rest of the row a column out of place. This is the
@@ -1029,17 +1037,6 @@ fn draw_row(
         // A foreground, so the background the fill painted stays — except
         // where the run being marked needs one of its own.
         let mut style = Style::new().fg(colour);
-        // A colour written down here, painted as itself. The ink goes with
-        // it: a colour is only worth showing if what is written on it can
-        // still be read, and the syntax colour it replaces was chosen
-        // against the theme's background rather than against this one.
-        if let Some(written) = painting
-            .colours
-            .iter()
-            .find(|written| written.span.contains(line, CharColumn::new(column)))
-        {
-            style = style.fg(written.ink).bg(written.colour);
-        }
         if painting
             .marked
             .iter()
@@ -1077,6 +1074,52 @@ fn draw_row(
             .is_some_and(|(open, close)| glyph.first_byte == open || glyph.first_byte == close)
         {
             style = style.bg(painting.theme.bracket_background);
+        }
+
+        // A cell the file does not contain, drawn as whatever put it
+        // there. Written here rather than left to the character below,
+        // because a phantom has no character: the cell count is what the
+        // rest of the line was laid out against, so what goes in it has to
+        // be exactly that wide.
+        if let Some(drawn) = glyph.phantom.and_then(|which| painting.drawn.get(which)) {
+            match drawn {
+                // A colour written down here, shown as a square of itself
+                // in front of the literal. The literal keeps its own
+                // syntax colour: painting it said the same thing over
+                // seven characters, and over the sixteen of an
+                // `rgba(0, 0, 0, .5)` it said it over half a line.
+                crate::ui::Drawn::Swatch(colour) => {
+                    put(cells, x + offset, y, crate::ui::SWATCH, style.fg(*colour));
+                    ended = offset + 1;
+                }
+                // Dim, and in its own colour: a hint is not code, and a
+                // reader skimming a file for what it says has to be able
+                // to skip it without reading it.
+                crate::ui::Drawn::Hint(hint) => {
+                    let style = style.fg(painting
+                        .theme
+                        .colour_for(Some(crate::theme::SyntaxKind::Comment)));
+                    let mut cell = 0usize;
+                    for character in hint.label.chars() {
+                        let taken = unicode_width::UnicodeWidthChar::width(character)
+                            .unwrap_or(0)
+                            .max(1);
+                        if cell + taken > glyph.cells {
+                            break;
+                        }
+                        let Ok(at) = u16::try_from(usize::from(offset) + cell) else {
+                            break;
+                        };
+                        if at >= width {
+                            break;
+                        }
+                        put(cells, x + at, y, character, style);
+                        ended = at + u16::try_from(taken).unwrap_or(1);
+                        cell += taken;
+                    }
+                }
+            }
+            continue;
         }
 
         // A tab is blanks by definition.

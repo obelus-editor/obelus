@@ -9,6 +9,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
 
+/// A caret in a text, and the two vocabularies that move and change it.
+///
+/// Re-exported rather than owned: a buffer *is* one of these with a file and
+/// a syntax tree attached, and so is the box a note is written in. What they
+/// share lives in [`crate::editing`].
+pub use crate::editing::{Cursor, Editing, Motion, Typing};
 use crate::{
     coordinates::{CharColumn, CharOffset, DisplayColumn, LineNumber, Span},
     syntax::{
@@ -17,13 +23,6 @@ use crate::{
     },
     text::{Edit, Text},
 };
-
-/// A caret in a text, and the two vocabularies that move and change it.
-///
-/// Re-exported rather than owned: a buffer *is* one of these with a file and
-/// a syntax tree attached, and so is the box a note is written in. What they
-/// share lives in [`crate::editing`].
-pub use crate::editing::{Cursor, Editing, Motion, Typing};
 
 /// Which open document, by position in the list.
 ///
@@ -1057,6 +1056,16 @@ impl Buffer {
     #[must_use]
     pub const fn text(&self) -> &Text {
         self.editing.text()
+    }
+
+    /// Says what is drawn in it that it does not contain.
+    ///
+    /// Only that: the text itself is changed through the editing journal,
+    /// which is what an undo walks back. Cells nobody typed are not part of
+    /// that -- they arrive from a language server and go away when the
+    /// document moves.
+    pub fn show(&mut self, phantoms: &[crate::text::Phantom]) {
+        self.editing.text_mut().show(phantoms);
     }
 
     /// Whether the text differs from what is on disk.

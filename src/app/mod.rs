@@ -243,6 +243,12 @@ pub struct App {
     /// says in place.
     uses: Vec<Span>,
 
+    /// The document being changed, and when it last was.
+    ///
+    /// The same shape as [`Resting`] and for the same reason: there is a
+    /// question worth asking once the reader stops, and none worth asking
+    /// while they are still going.
+    settling: Option<Settling>,
     /// Where the pointer is resting, since when, and whether that rest
     /// has already asked its question.
     ///
@@ -272,6 +278,14 @@ pub struct App {
     /// whole file, kept until the file changes, and thrown away rather
     /// than shown stale.
     colours: HashMap<PathBuf, Vec<crate::lsp::colour::Coloured>>,
+    /// What a server would have the reader know, per file, as it last
+    /// said.
+    hints: HashMap<PathBuf, Vec<crate::lsp::hint::Hinted>>,
+    /// What is drawn in each file that the file does not contain.
+    ///
+    /// Both answers in one list, because a cell of a line points at one
+    /// entry of it and cannot say which of two lists it meant.
+    drawn: HashMap<PathBuf, Vec<ui::Drawn>>,
     /// Where the reader has been.
     jumps: JumpList,
     /// The file the picker's selection names, opened so it can be shown.
@@ -514,11 +528,14 @@ impl App {
             code_actions: Vec::new(),
             uses: Vec::new(),
             resting: None,
+            settling: None,
             troubles: HashMap::new(),
             completion: None,
             filling: None,
             tokens: HashMap::new(),
             colours: HashMap::new(),
+            hints: HashMap::new(),
+            drawn: HashMap::new(),
             jumps: JumpList::default(),
             preview: None,
             phase: 0,
@@ -1320,7 +1337,10 @@ impl App {
         // answer, and the ticker is what comes back for it: the reader
         // stops, the next tick lands, and the colours catch up.
         self.animate(
-            self.wants_animating(doing.is_some()) || self.anything_behind() || self.is_resting(),
+            self.wants_animating(doing.is_some())
+                || self.anything_behind()
+                || self.is_resting()
+                || self.settling.is_some(),
         );
 
         // Which rows the list will draw is what decides which rows need
@@ -1376,6 +1396,12 @@ impl App {
         // And the answer about a place, which the pointer resting is what
         // asks for: this is where the resting is noticed.
         self.settle_hover();
+        // And what a server works out about a file the reader has stopped
+        // changing, which is noticed the same way.
+        self.settle_changes();
+        // And what a server works out about a file the reader has stopped
+        // changing, which is noticed the same way.
+        self.settle_changes();
         // And what the call under the caret takes. It is the third of the
         // panels that belong to a place in the file, and it was the one
         // that never asked whether the file was still what the reader is
@@ -1529,6 +1555,20 @@ impl App {
                 let Some(client) = self.servers.get_mut(&language) else {
                     return;
                 };
+                // Whether it had finished its handshake before this
+                // message, because finishing one is a moment obelus has to
+                // act on: every standing question about an open file is
+                // refused while a server cannot say what it answers, and
+                // opening a file is the moment they are all asked.
+                let handshaken = client.capabilities().is_some();
+                // And whether it was busy, because stopping is the other
+                // moment worth acting on: a server that has not finished
+                // reading the project answers what it can, which for the
+                // questions below is nothing at all -- measured against
+                // rust-analyzer, an empty list a second after the
+                // handshake, and nothing asking again for as long as the
+                // reader sits still.
+                let working = client.working_on().is_some();
                 // Everything the protocol needs rather than obelus — the
                 // handshake, progress, the server's own log lines — is dealt
                 // with in there.
@@ -1547,6 +1587,16 @@ impl App {
                 }
                 if let Some(reply) = reply {
                     self.on_reply(language, reply);
+                }
+                // And now it can say what it answers. Without this a file
+                // opened before its server was ready is a file nothing is
+                // ever asked about: the questions were all refused, and the
+                // next thing that asks them is the reader saving.
+                let now = self.servers.get(&language);
+                let ready = now.is_some_and(|client| client.capabilities().is_some());
+                let busy = now.is_some_and(|client| client.working_on().is_some());
+                if ready && (!handshaken || (working && !busy)) {
+                    self.ask_about_open_files(language);
                 }
             }
             Event::Counted(counted) => self.on_counted(*counted),
@@ -2033,6 +2083,15 @@ pub(super) struct Resting {
     pub(super) since: std::time::Instant,
     /// Whether this rest has asked what is under it.
     pub(super) asked: bool,
+}
+
+/// A document that has been changed, waiting to be asked about.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Settling {
+    /// Which document.
+    pub(super) buffer: DocumentId,
+    /// When it last changed.
+    pub(super) since: std::time::Instant,
 }
 
 /// A path as it should be read: relative to the root when it lies under it.

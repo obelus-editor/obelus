@@ -432,10 +432,11 @@ impl App {
             self.ask_before_closing(id);
             return;
         }
-        // Whichever file the screen is about. With the list of what is open that
-        // is the row under the selection, not the file behind it: the list is
-        // what the reader is pointing at, and one key that means "close this"
-        // everywhere beats a second key that only works in one place.
+        // Whichever file the screen is about. With the list of what is open
+        // that is the row under the selection, not the file behind it:
+        // the list is what the reader is pointing at, and one key that
+        // means "close this" everywhere beats a second key that only
+        // works in one place.
         if let Some(id) = self.selected_document() {
             self.close(id);
             // Rebuilt rather than patched, keeping whatever was typed: a
@@ -502,9 +503,10 @@ impl App {
         // early return this used to take left `current` naming a slot with
         // nothing in it.
         if let Some(buffer) = document.file() {
-            // Tell the server before dropping it: the message needs the path, and
-            // a server left believing a file is open answers questions about a
-            // version that no longer exists anywhere.
+            // Tell the server before dropping it: the message needs the path,
+            // and a server left believing a file is open answers
+            // questions about a version that no longer exists
+            // anywhere.
             //
             // Not for a commit's version, which was never opened to it -- the
             // three notifications that go the other way all refuse one, and a
@@ -847,8 +849,7 @@ impl App {
                 self.change_document(index);
                 // The document has stopped moving on a version nobody has
                 // classified, which is where the server is worth asking.
-                self.ask_tokens(index);
-                self.ask_colours(index);
+                self.ask_standing_questions(index);
             }
         }
     }
@@ -932,8 +933,7 @@ impl App {
             Ok(changed) => {
                 if changed {
                     self.change_document(index);
-                    self.ask_tokens(index);
-                    self.ask_colours(index);
+                    self.ask_standing_questions(index);
                 }
                 self.note = Some("took what is on disk -- undo brings yours back".to_string());
             }
@@ -987,8 +987,7 @@ impl App {
             && reload(buffer)
         {
             self.change_document(index);
-            self.ask_tokens(index);
-            self.ask_colours(index);
+            self.ask_standing_questions(index);
         }
     }
 }

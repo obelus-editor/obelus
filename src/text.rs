@@ -71,10 +71,47 @@ impl Edit {
     }
 }
 
+/// A cell drawn inside a line that the line does not contain.
+///
+/// A colour's swatch today, a type a server worked out tomorrow. What they
+/// have in common is the only thing this module cares about: a reader sees
+/// them and a `char` offset does not, so every column past one of them is
+/// drawn one cell further along than the text alone would put it.
+///
+/// Which is why they live here. This module is the only place a coordinate
+/// turns into another one, and a cell that no character owns is exactly
+/// that arithmetic -- worked out anywhere else, the cursor, the pointer,
+/// the wrapping and the painting would each have their own idea of where
+/// the fourth character of a line is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Phantom {
+    /// Which line it is drawn in.
+    pub line: LineNumber,
+    /// The character it is drawn in front of.
+    ///
+    /// In front of, never on: the caret walks characters, and a cell it
+    /// cannot stand on is a cell it never has to know about.
+    pub column: CharColumn,
+    /// How many cells it takes.
+    pub cells: usize,
+    /// Which of whatever the caller registered this one draws.
+    ///
+    /// An index rather than the thing itself: a swatch is a colour and a
+    /// hint is a string, and a module about coordinates has no business
+    /// knowing either.
+    pub which: usize,
+}
+
 /// A document's text, plus the coordinate conversions over it.
 #[derive(Clone, Debug)]
 pub struct Text {
     rope: Rope,
+    /// What is drawn in it that it does not contain, by line.
+    ///
+    /// Empty in almost every document there is: they arrive from a language
+    /// server, about the file the reader is looking at, and a preview or a
+    /// commit's text is a different document that happens to share a name.
+    phantoms: std::collections::HashMap<usize, Vec<Phantom>>,
 }
 
 impl Text {
@@ -83,7 +120,81 @@ impl Text {
     pub fn from_string(contents: &str) -> Self {
         Self {
             rope: Rope::from_str(contents),
+            phantoms: std::collections::HashMap::new(),
         }
+    }
+
+    /// Draws these in it from now on, in place of whatever was there.
+    ///
+    /// All of them at once, because they arrive that way: a server answers
+    /// about a whole document, and a list that were added one at a time
+    /// would be a list nothing could take away.
+    pub fn show(&mut self, phantoms: &[Phantom]) {
+        self.phantoms.clear();
+        for phantom in phantoms {
+            self.phantoms
+                .entry(phantom.line.get())
+                .or_default()
+                .push(*phantom);
+        }
+        // In the order they are drawn, so walking a line's glyphs can take
+        // them in one pass.
+        for line in self.phantoms.values_mut() {
+            line.sort_unstable_by_key(|phantom| phantom.column.get());
+        }
+    }
+
+    /// Where every cell drawn in this text is, as a document-wide offset.
+    ///
+    /// Offsets rather than lines and columns, because that is what an edit
+    /// moves in one number: a line and a column have to be reasoned about
+    /// against where the edit began, where it ended and how many lines it
+    /// was, and every one of those is a chance to be one out.
+    fn held_phantoms(&self) -> Vec<(usize, Phantom)> {
+        self.phantoms
+            .values()
+            .flatten()
+            .map(|phantom| {
+                (
+                    self.char_offset(phantom.line, phantom.column).get(),
+                    *phantom,
+                )
+            })
+            .collect()
+    }
+
+    /// Puts them back where `moved` says they are now.
+    ///
+    /// `None` from it drops one: an edit that took away what a cell was
+    /// drawn in front of took the cell with it.
+    fn put_phantoms_back(
+        &mut self,
+        held: Vec<(usize, Phantom)>,
+        moved: impl Fn(usize) -> Option<usize>,
+    ) {
+        if held.is_empty() {
+            return;
+        }
+        let put: Vec<Phantom> = held
+            .into_iter()
+            .filter_map(|(offset, phantom)| {
+                let (line, column) = self.position(CharOffset::new(moved(offset)?));
+                Some(Phantom {
+                    line,
+                    column,
+                    ..phantom
+                })
+            })
+            .collect();
+        self.show(&put);
+    }
+
+    /// What is drawn in a line that the line does not contain.
+    #[must_use]
+    pub fn phantoms(&self, line: LineNumber) -> &[Phantom] {
+        self.phantoms
+            .get(&line.get())
+            .map_or(&[] as &[Phantom], Vec::as_slice)
     }
 
     /// The underlying rope, for the parser to read through.
@@ -100,8 +211,17 @@ impl Text {
     /// to be measured until the rope has changed.
     pub fn insert(&mut self, at: CharOffset, what: &str) -> Edit {
         let at = CharOffset::new(at.get().min(self.rope.len_chars()));
+        // Where the cells drawn in it are, before the places they are named
+        // by move. They are the last of the things remembered by line
+        // number that an edit has to carry with it -- a fold, a block, a
+        // mark, and these.
+        let held = self.held_phantoms();
         let start = self.place(self.byte_of_char(at));
         self.rope.insert(at.get(), what);
+        self.put_phantoms_back(held, |offset| match offset >= at.get() {
+            true => Some(offset + what.chars().count()),
+            false => Some(offset),
+        });
         Edit {
             start,
             // Nothing was taken out, so the old end is where it began.
@@ -124,7 +244,18 @@ impl Text {
         let start = self.place(self.byte_of_char(from));
         let old_end = self.place(self.byte_of_char(to));
         let removed = self.rope.slice(from.get()..to.get()).to_string();
+        // Where the cells drawn in it are, before the places they are named
+        // by move.
+        let held = self.held_phantoms();
         self.rope.remove(from.get()..to.get());
+        let gone = to.get() - from.get();
+        self.put_phantoms_back(held, |offset| match offset {
+            // Inside what was taken out. There is nothing left for it to
+            // be drawn in front of.
+            offset if offset >= from.get() && offset < to.get() => None,
+            offset if offset >= to.get() => Some(offset - gone),
+            offset => Some(offset),
+        });
         (
             removed,
             Edit {
@@ -388,13 +519,15 @@ impl Text {
     /// The display column a position renders at.
     #[must_use]
     pub fn display_column(&self, line: LineNumber, column: CharColumn) -> DisplayColumn {
-        let slice = self.line(line);
+        // Over the glyphs rather than the characters, because a line can
+        // be drawn with cells in it that it does not contain and every
+        // column past one of those is a cell further along.
         let mut width = 0usize;
-        for (index, character) in slice.chars().enumerate() {
-            if index >= column.get() {
+        for glyph in self.glyphs(line) {
+            if glyph.phantom.is_none() && glyph.column.get() >= column.get() {
                 break;
             }
-            width += char_width(character, width);
+            width += glyph.cells;
         }
         DisplayColumn::saturating_from_usize(width)
     }
@@ -411,17 +544,16 @@ impl Text {
     /// that glyph, not to the one after it.
     #[must_use]
     pub fn column_at_display(&self, line: LineNumber, target: DisplayColumn) -> CharColumn {
-        let slice = self.line(line);
         let target = usize::from(target.get());
-        let mut width = 0usize;
-        for (index, character) in slice.chars().enumerate() {
-            let next = width + char_width(character, width);
-            if target < next {
-                return CharColumn::new(index);
+        for glyph in self.glyphs(line) {
+            if target < glyph.first_cell + glyph.cells {
+                // A cell nothing in the file owns answers with the
+                // character it was drawn in front of, which is where a
+                // reader pointing at it means to be.
+                return glyph.column;
             }
-            width = next;
         }
-        CharColumn::new(slice.len_chars())
+        CharColumn::new(self.line(line).len_chars())
     }
 }
 
@@ -483,8 +615,23 @@ pub struct WrapRow {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Glyph {
     /// The character.
+    ///
+    /// A blank for a phantom, which is a cell with nothing written in it:
+    /// what is drawn there is whatever registered it, and all this knows is
+    /// that the cell is spoken for.
     pub character: char,
+    /// Which character of the line it is.
+    ///
+    /// Carried rather than counted by whoever walks them: the walk yields
+    /// cells that are not characters, so counting the steps stopped being
+    /// the same as counting the columns.
+    pub column: CharColumn,
+    /// Which of the caller's own list this draws, where it is a phantom.
+    pub phantom: Option<usize>,
     /// Where it starts in the document, for looking up its highlight.
+    ///
+    /// The byte of the character a phantom sits in front of, so what is
+    /// drawn there is coloured the way that character is.
     pub first_byte: ByteOffset,
     /// The first cell it occupies, counted from the start of the line.
     pub first_cell: usize,
@@ -670,19 +817,58 @@ impl Text {
 
     /// Every glyph on a line, with the cells it covers.
     pub fn glyphs(&self, line: LineNumber) -> impl Iterator<Item = Glyph> + '_ {
+        let phantoms = self.phantoms(line);
+        // The line's characters, once. `Chars` outlives the slice it came
+        // from, which is what lets this be one walk rather than a lookup
+        // per character -- and a lookup per character is the line's length
+        // squared, forty rows a frame.
+        let mut characters = self.line(line).chars();
         let mut cell = 0usize;
         let mut byte = self.line_start_byte(line).get();
-        self.line(line).chars().map(move |character| {
+        let mut next = 0usize;
+        let mut column = 0usize;
+        let mut held: Option<char> = None;
+        std::iter::from_fn(move || {
+            let character = match held.take() {
+                Some(character) => Some(character),
+                None => characters.next(),
+            };
+            // A phantom comes out in front of the character it sits on, and
+            // wears that character's byte so whatever colours the line
+            // colours it too. The character waits a turn.
+            //
+            // Past the last character as well, where there is no character
+            // to wait: servers put them there, and a hint about what a
+            // chain returns or what a closing brace closes goes after the
+            // last thing on its line.
+            if let Some(phantom) = phantoms.get(next).filter(|it| it.column.get() == column) {
+                next += 1;
+                held = character;
+                let glyph = Glyph {
+                    character: ' ',
+                    column: CharColumn::new(column),
+                    phantom: Some(phantom.which),
+                    first_byte: ByteOffset::new(byte),
+                    first_cell: cell,
+                    cells: phantom.cells,
+                };
+                cell += phantom.cells;
+                return Some(glyph);
+            }
+            let character = character?;
             let cells = char_width(character, cell);
             let glyph = Glyph {
                 character,
+                column: CharColumn::new(column),
+                phantom: None,
                 first_byte: ByteOffset::new(byte),
                 first_cell: cell,
                 cells,
             };
             cell += cells;
             byte += character.len_utf8();
-            glyph
+            column += 1;
+            Some(glyph)
         })
     }
 }
