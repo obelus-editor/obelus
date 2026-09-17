@@ -289,6 +289,9 @@ impl TodoView {
             said: String::new(),
             done: false,
             at,
+            // At the end and under nothing: a note made about a line was
+            // made somewhere else, and there is no note it was made beneath.
+            depth: 0,
         });
         self.where_now.push(None);
         self.enter_note(self.todo.notes.len() - 1, true);
@@ -549,6 +552,7 @@ impl TodoView {
                         said: String::new(),
                         done: false,
                         at: None,
+                        depth: 0,
                     },
                 );
                 self.where_now.insert(after, None);

@@ -139,6 +139,20 @@ pub struct Note {
     pub done: bool,
     /// The place it is about, if it is about one.
     pub at: Option<At>,
+    /// How far under the note above it this one sits.
+    ///
+    /// A number and the order the file already has, rather than a name for
+    /// whoever the parent is. The file is the reader's as much as obelus's
+    /// and an outline is something they can write by hand; a graph of names
+    /// is not. And the order is already the one thing about a note they can
+    /// rely on -- a parent named beside each note would be a second
+    /// authority on what comes after what, which is one more than a list can
+    /// have.
+    ///
+    /// What hangs under a note is therefore the run straight after it that
+    /// is deeper than it: see [`Todo::under`]. Nothing else records it, so
+    /// nothing else can disagree about it.
+    pub depth: u16,
 }
 
 impl Note {
@@ -257,6 +271,26 @@ impl Todo {
                     NoteId::mint()
                 }
             };
+            // One deeper than the note above, at the most. A file saying
+            // otherwise -- a first note already indented, a jump from none
+            // to two -- describes a note hanging under one that is not
+            // there, and the honest reading of it is the nearest one that
+            // is. Clamped here rather than refused, for the reason a note
+            // with no name is given one: the file is written by hand as
+            // well, and losing the list over an extra space would be the
+            // worse answer.
+            //
+            // Not written back on its own. Reading always clamps, so what
+            // is on disk is corrected by the next change to the file rather
+            // than by having read it -- and `read` is not a function anybody
+            // expects to touch the disk.
+            let under = notes.last().map_or(0, |last: &Note| last.depth + 1);
+            let depth = note
+                .get("depth")
+                .and_then(toml::Value::as_integer)
+                .and_then(|depth| u16::try_from(depth).ok())
+                .unwrap_or(0)
+                .min(under);
             notes.push(Note {
                 id,
                 said,
@@ -265,9 +299,33 @@ impl Todo {
                     .and_then(toml::Value::as_bool)
                     .unwrap_or(false),
                 at,
+                depth,
             });
         }
         Self { notes, minted }
+    }
+
+    /// How many notes hang under the one at `at`.
+    ///
+    /// The run straight after it that is deeper than it is, which -- with
+    /// the order the file has and a depth on each note -- is the whole of
+    /// what "under" means here. Every key that has to treat a note and what
+    /// hangs under it as one thing asks this: moving one, taking one away,
+    /// putting a new one after one.
+    ///
+    /// Zero for a note with nothing under it, and for a position past the
+    /// end. A run is contiguous because a note deeper than this one cannot
+    /// belong to anything else: whatever ends the run is at this depth or
+    /// shallower, and is therefore the next thing at this level or above.
+    #[must_use]
+    pub fn under(&self, at: usize) -> usize {
+        let Some(note) = self.notes.get(at) else {
+            return 0;
+        };
+        self.notes[at + 1..]
+            .iter()
+            .take_while(|below| below.depth > note.depth)
+            .count()
     }
 
     /// Writes them back, making the directory if it is not there.
@@ -299,6 +357,7 @@ impl Todo {
             out.push_str(&format!("id = \"{}\"\n", note.id));
             out.push_str(&format!("said = {}\n", quoted(&note.said)));
             out.push_str(&format!("done = {}\n", note.done));
+            out.push_str(&format!("depth = {}\n", note.depth));
             if let Some(at) = &note.at {
                 out.push_str(&format!(
                     "at = {}\n",
@@ -402,6 +461,7 @@ mod tests {
             said: said.to_string(),
             done: false,
             at: None,
+            depth: 0,
         }
     }
 
@@ -428,6 +488,7 @@ mod tests {
                 said: "a title\nand a body\nof two lines".to_string(),
                 done: true,
                 at: None,
+                depth: 0,
             },
             Note {
                 id: NoteId::mint(),
@@ -438,6 +499,7 @@ mod tests {
                     line: LineNumber::new(411),
                     commit: None,
                 }),
+                depth: 1,
             },
         ]);
         let table = todo
@@ -460,6 +522,7 @@ mod tests {
                 line: LineNumber::new(411),
                 commit: None,
             }),
+            depth: 0,
         }]);
         assert!(todo.to_toml().contains("line = 412"), "{}", todo.to_toml());
     }
@@ -524,6 +587,78 @@ mod tests {
     }
 
     /// A row is the first line; folding it open is the rest.
+    /// A note hanging under one that is not there is read as one that is.
+    ///
+    /// Both shapes a hand-written file produces: a list that starts indented,
+    /// and one that skips a level on the way down. Neither describes anything
+    /// -- there is no note at the depth they claim to be under -- so the
+    /// nearest depth that does is what they mean.
+    #[test]
+    fn a_depth_with_nothing_over_it_is_read_as_the_nearest_one_that_has() {
+        let table = concat!(
+            "[[todo]]\nsaid = \"first\"\ndepth = 2\n\n",
+            "[[todo]]\nsaid = \"second\"\ndepth = 3\n\n",
+            "[[todo]]\nsaid = \"third\"\ndepth = 9\n",
+        )
+        .parse::<toml::Table>()
+        .expect("the table");
+        let depths: Vec<u16> = Todo::from_table(&table)
+            .notes
+            .iter()
+            .map(|note| note.depth)
+            .collect();
+        // The first can only be at the top; each after it can be one deeper
+        // than the one above, and no more.
+        assert_eq!(depths, vec![0, 1, 2]);
+    }
+
+    /// And a depth that is already under something is left where it is,
+    /// including one that comes back up several levels at once.
+    #[test]
+    fn a_depth_that_has_something_over_it_is_read_as_written() {
+        let table = concat!(
+            "[[todo]]\nsaid = \"a\"\n\n",
+            "[[todo]]\nsaid = \"b\"\ndepth = 1\n\n",
+            "[[todo]]\nsaid = \"c\"\ndepth = 2\n\n",
+            "[[todo]]\nsaid = \"d\"\n",
+        )
+        .parse::<toml::Table>()
+        .expect("the table");
+        let depths: Vec<u16> = Todo::from_table(&table)
+            .notes
+            .iter()
+            .map(|note| note.depth)
+            .collect();
+        assert_eq!(depths, vec![0, 1, 2, 0]);
+    }
+
+    /// What hangs under a note is the run after it that is deeper.
+    ///
+    /// Asked of every note in one list rather than of one in several: what
+    /// this has to get right is where a run *ends*, and a list with one
+    /// parent in it never exercises the end that matters -- the next note at
+    /// the same depth.
+    #[test]
+    fn what_hangs_under_a_note_is_the_run_below_it_that_is_deeper() {
+        let deep = |said: &str, depth: u16| Note {
+            depth,
+            ..note(said)
+        };
+        let todo = named(vec![
+            deep("a", 0),
+            deep("a.1", 1),
+            deep("a.1.i", 2),
+            deep("a.2", 1),
+            deep("b", 0),
+            deep("b.1", 1),
+        ]);
+        let under: Vec<usize> = (0..todo.notes.len()).map(|at| todo.under(at)).collect();
+        assert_eq!(under, vec![3, 1, 0, 0, 1, 0]);
+        // Past the end is nothing rather than a panic: the callers ask about
+        // a selection, and a selection can be stale.
+        assert_eq!(todo.under(todo.notes.len()), 0);
+    }
+
     #[test]
     fn a_row_is_the_first_line_and_the_fold_is_the_rest() {
         let plain = note("just this");
