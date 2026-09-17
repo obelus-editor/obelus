@@ -282,6 +282,13 @@ pub struct ChatView<'a> {
     /// would otherwise differ only in what was said in them. A label reading
     /// "chat" would answer a question nobody asked -- they pressed the key.
     about: Option<String>,
+    /// What obelus has to say, until the next key.
+    ///
+    /// A conversation has a status row of its own, so it has to carry this
+    /// too: without it every command that answers by saying something --
+    /// there is no history for this, there was nothing to close -- would
+    /// press its key and get silence back.
+    note: Option<&'a str>,
 }
 
 impl<'a> ChatView<'a> {
@@ -300,6 +307,7 @@ impl<'a> ChatView<'a> {
             root: app.working_directory(),
             phase: app.phase(),
             about: app.what_this_conversation_is_about(),
+            note: app.note(),
         })
     }
 
@@ -580,16 +588,27 @@ impl ChatView<'_> {
             .fg(self.theme.foreground);
         fill(cells, area, plain);
 
-        // How to walk the mode, on the right, and only where there is more
-        // than one way of working to walk to. Measured first, because the
-        // room the settings have is what is left of the row.
-        let hint =
-            self.mode()
-                .filter(|mode| mode.values.len() > 1)
-                .map(|_| match icons::enabled() {
-                    true => format!("{}{}  mode", icons::key::SHIFT, icons::key::TAB),
-                    false => "shift+tab  mode".to_string(),
-                });
+        // What a key does here, on the right. Two of them at most, and the
+        // way back comes first: a conversation about a note is reached from
+        // the notes page, and a way out that nothing says exists is the same
+        // gap one level up -- which is why the key was added at all.
+        //
+        // Measured first, because the room the settings have is what is left
+        // of the row.
+        let mut hints = Vec::new();
+        if self.about.is_some() {
+            hints.push(match icons::enabled() {
+                true => format!("{}t  the note", icons::key::ALT),
+                false => "alt+t  the note".to_string(),
+            });
+        }
+        if self.mode().is_some_and(|mode| mode.values.len() > 1) {
+            hints.push(match icons::enabled() {
+                true => format!("{}{}  mode", icons::key::SHIFT, icons::key::TAB),
+                false => "shift+tab  mode".to_string(),
+            });
+        }
+        let hint = (!hints.is_empty()).then(|| hints.join("   "));
         if let Some(hint) = &hint
             && let Ok(offset) =
                 u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
@@ -606,6 +625,20 @@ impl ChatView<'_> {
         let room = usize::from(area.width)
             .saturating_sub(hint.as_deref().map_or(0, |hint| text_width(hint) + 2))
             .saturating_sub(2);
+        // A note over the settings, for as long as it lasts. The settings
+        // are what the session is set to and are still true a moment later;
+        // a note is the answer to the key just pressed, and an answer that
+        // waits its turn is an answer nobody reads.
+        if let Some(note) = self.note {
+            write(
+                cells,
+                area.x + 1,
+                area.y,
+                &super::truncate_from_right(note, room),
+                plain,
+            );
+            return;
+        }
         self.settings(cells, area, room, plain);
     }
 

@@ -2,9 +2,9 @@
 //!
 //! Not a buffer. A buffer is a file with a cursor in it and a history behind
 //! it; this is a transcript, which grows at the end and is read from the
-//! bottom. Keeping it out of the buffer list is also what makes it survive
-//! being closed -- the view is hidden, the conversation is still here, and
-//! reopening shows what was there.
+//! bottom. It is in the list of what is open all the same -- as a
+//! [`crate::document::Document::Chat`], which is the shape that let it be
+//! listed without having to become one.
 //!
 //! It holds no client. What it has is what arrived, and every key it does
 //! not handle itself becomes an outcome for the application to act on --
@@ -296,6 +296,15 @@ impl Chat {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.said.is_empty()
+    }
+
+    /// Puts pasted text in the box, wherever the caret is.
+    ///
+    /// Into the box and nowhere else: a transcript is what was said, and the
+    /// one place in a conversation that takes text is the half of it the
+    /// reader is writing.
+    pub fn paste(&mut self, what: &str, width: u16) {
+        self.input.write_in(what, width);
     }
 
     /// What is being written, for the view to draw.
@@ -711,9 +720,10 @@ impl Chat {
     /// Handles a key.
     ///
     /// `thinking` decides what escape means: while the agent is working it
-    /// stops the agent, and otherwise it closes the view. One key, and the
-    /// thing it does is always "stop what is happening" -- which is what
-    /// escape means everywhere else in obelus.
+    /// stops the agent, and otherwise there is nothing here to stop and the
+    /// key is not this component's. Escape everywhere in obelus means "stop
+    /// what is happening", and once a conversation is a document rather than
+    /// something over one, leaving it is not stopping anything.
     pub fn handle_key(
         &mut self,
         key: &KeyEvent,

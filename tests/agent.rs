@@ -269,9 +269,14 @@ fn escape_on_the_question_tells_the_agent_it_was_not_answered() {
     );
 }
 
-/// Escape closes the view and the conversation is still there.
+/// Escape stops what is happening, and never closes the conversation.
+///
+/// Mid-turn it is the interrupt; with nothing in flight it does nothing at
+/// all, because a conversation is a document and escape leaves whatever is
+/// *over* the document being read. It used to close the view, which is what
+/// made it the one place in obelus where escape threw something away.
 #[test]
-fn closing_it_keeps_what_was_said() {
+fn escape_stops_the_turn_and_never_closes_the_conversation() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus::app::talking::Talking::Ready
@@ -2292,5 +2297,29 @@ fn a_transcript_with_more_than_fits_has_a_bar() {
         shades_down_the_bar(&scrolled).last().copied(),
         thumb,
         "the thumb stayed at the end while the reader went back:\n{scrolled}"
+    );
+}
+
+/// What obelus has to say reaches the reader in a conversation too.
+///
+/// The conversation draws its own status row, so a note has to be one of the
+/// things that row carries. Before it was, every command that answers by
+/// saying something answered a reader standing in a conversation with
+/// silence -- the key worked, and nothing on the screen said so.
+#[test]
+fn a_note_is_said_on_a_conversations_own_row() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    // A jump forward from a conversation nobody jumped back from: the whole
+    // of what it does is say so.
+    app.go_forward();
+    assert_eq!(app.note(), Some("nowhere further forward"));
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let last = rows(&dump).last().copied().unwrap_or_default().to_string();
+    assert!(
+        last.contains("nowhere further forward"),
+        "the note is not on the conversation's row:\n{dump}"
     );
 }

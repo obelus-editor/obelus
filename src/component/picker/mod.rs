@@ -45,8 +45,7 @@ pub enum PickerValue {
     File(PathBuf),
     /// Switch to something already open.
     Document(DocumentId),
-    /// Switch theme.
-    /// A theme, by the name it answers to.
+    /// Switch theme, by the name it answers to.
     ///
     /// The name rather than the colours: a row of a list should not be
     /// carrying thirty-nine of them, and which colours a name stands for is
@@ -373,9 +372,9 @@ pub struct Picker {
     question: Option<String>,
     /// What to say when there is nothing to list.
     ///
-    /// Per picker, because the reason differs: an empty file list and an
-    /// empty buffer list are different facts about the world. An empty
-    /// region says only that something is broken.
+    /// Per picker, because the reason differs: a file list with nothing in
+    /// it and a list of what is open with nothing in it are different facts
+    /// about the world. An empty region says only that something is broken.
     empty: String,
     /// A row to select as soon as the list contains it.
     ///
@@ -1401,9 +1400,8 @@ impl Picker {
         outcome
     }
 
-    /// Selects a row outright.
-    /// Puts the selection on a row, for a caller that has just replaced the
-    /// list under it.
+    /// Puts the selection on a row, for a caller that knows which one it
+    /// wants.
     ///
     /// Opening a commit's files puts rows below the row the key was pressed
     /// on; a selection that jumped to the top would leave the reader

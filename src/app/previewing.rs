@@ -172,13 +172,6 @@ impl App {
         }
     }
 
-    /// What the wheel turns.
-    ///
-    /// Whatever the reader is looking at: the list when one is open -- a list
-    /// under a wheel scrolls, and with the mouse reported the wheel no longer
-    /// arrives as arrow keys, so a picker that ignored it would have lost
-    /// something -- and otherwise the file, by rows, with the cursor left
-    /// where it was put.
     /// Gives one layer the notch, and says whether it took it.
     ///
     /// Every layer answers, including the ones with nothing to scroll: a
@@ -217,6 +210,13 @@ impl App {
         }
     }
 
+    /// What the wheel turns.
+    ///
+    /// Whatever the reader is looking at: the list when one is open -- a list
+    /// under a wheel scrolls, and with the mouse reported the wheel no longer
+    /// arrives as arrow keys, so a picker that ignored it would have lost
+    /// something -- and otherwise the file, by rows, with the cursor left
+    /// where it was put.
     pub(super) fn scroll(&mut self, rows: isize) {
         // What a server said about a place, while it is up: it is what the
         // reader is looking at, and the file behind it is not going
@@ -327,19 +327,26 @@ impl App {
             // part of it to show: choosing the row takes the reader back to
             // exactly this, so the list reads as something folded over the
             // file rather than as a way to somewhere new.
-            PickerValue::Document(id) => {
-                self.file(*id)
-                    .map(|buffer| {
-                        let subject = match buffer.content().at() {
-                            Some(id) => Subject::Commit {
-                                id,
-                                path: buffer.path().to_path_buf(),
-                            },
-                            None => Subject::File(buffer.path().to_path_buf()),
-                        };
-                        (subject, Marked::on(&buffer.cursor()))
-                    })
-            }
+            //
+            // A conversation has none of that -- no path, no cursor, and a
+            // transcript that only its own view can draw -- so the row falls
+            // back to what the row above the list falls back to: what the
+            // reader was reading. A blank half-screen would be the list
+            // saying a conversation is nothing rather than saying it has
+            // nothing to show here.
+            PickerValue::Document(id) => self
+                .file(*id)
+                .map(|buffer| {
+                    let subject = match buffer.content().at() {
+                        Some(id) => Subject::Commit {
+                            id,
+                            path: buffer.path().to_path_buf(),
+                        },
+                        None => Subject::File(buffer.path().to_path_buf()),
+                    };
+                    (subject, Marked::on(&buffer.cursor()))
+                })
+                .or_else(|| self.reading_now()),
             PickerValue::Place { path, line, .. } if lines => {
                 Some((Subject::File(path.clone()), matched(*line)))
             }

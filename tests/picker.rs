@@ -338,7 +338,7 @@ fn a_key_the_picker_does_not_want_goes_nowhere() {
 
 /// The one key the list of open files adds does not bring the others.
 #[test]
-fn the_buffer_list_takes_its_own_key_and_not_the_global_ones() {
+fn the_document_list_takes_its_own_key_and_not_the_global_ones() {
     let mut app = app();
     press_function(&mut app, 2);
     press_control(&mut app, 'q');
@@ -2806,11 +2806,12 @@ fn a_list_with_nothing_in_it_says_why() {
 }
 
 /// `ctrl+w` closes whatever the screen is about: the row under the selection
-/// while the buffer list is open, and the file being read otherwise. One key
+/// while the list of what is open is open, and the file being read
+/// otherwise. One key
 /// meaning "close this" everywhere beats a second key that works in one list
 /// only -- and the palette already says what this one is bound to.
 #[test]
-fn the_buffer_list_closes_the_selected_file_with_the_same_key() {
+fn the_document_list_closes_the_selected_file_with_the_same_key() {
     let mut app = App::new(vec![
         support::open_fixture("sample.rs"),
         support::open_fixture("long.rs"),
@@ -3012,7 +3013,8 @@ fn a_language_with_no_tags_says_so_rather_than_looking_empty() {
     );
 }
 
-/// The buffer list holds still: the files in the order they were opened,
+/// The list of what is open holds still: the documents in the order they
+/// were opened,
 /// whatever the reader has been doing with them.
 ///
 /// It used to be ordered by how often each had been come back to, so the
@@ -3022,7 +3024,7 @@ fn a_language_with_no_tags_says_so_rather_than_looking_empty() {
 /// have to hunt for is the one they are in, and that is the row the list
 /// opens on.
 #[test]
-fn the_buffer_list_keeps_the_order_the_files_were_opened_in() {
+fn the_document_list_keeps_the_order_the_files_were_opened_in() {
     let mut app = App::new(vec![
         support::open_fixture("sample.rs"),
         support::open_fixture("long.rs"),
@@ -3033,7 +3035,7 @@ fn the_buffer_list_keeps_the_order_the_files_were_opened_in() {
 
     let listed = |app: &App| -> Vec<String> {
         app.picker()
-            .expect("the buffer list")
+            .expect("the list of what is open")
             .matches()
             .map(|item| item.label.clone())
             .collect()
@@ -3268,7 +3270,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
         "opening a file that was already open recorded nothing"
     );
 
-    // The buffer list is the same kind of leap.
+    // The list of what is open is the same kind of leap.
     press_function(&mut app, 2);
     type_text(&mut app, "long");
     press(&mut app, KeyCode::Enter);
@@ -3282,7 +3284,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
     assert_eq!(
         app.current_buffer().expect("a buffer").path(),
         first,
-        "the buffer list recorded nothing"
+        "the list of what is open recorded nothing"
     );
 
     // Re-opening the file already being read records nothing, or the
@@ -3307,7 +3309,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
 /// as something folded over the open files rather than as a way to somewhere
 /// new -- and a file's own place in it is the thing a reader remembers it by.
 #[test]
-fn the_buffer_list_previews_each_file_where_it_was_left() {
+fn the_document_list_previews_each_file_where_it_was_left() {
     let mut app = App::new(vec![
         support::open_fixture("many_lines.rs"),
         support::open_fixture("sample.rs"),
@@ -3513,13 +3515,12 @@ fn a_key_opens_the_changed_files_directly() {
 
 /// The list of open files opens on the file being read.
 ///
-/// The rows are in most-visited order, so the file the reader is in is not
-/// necessarily the first of them: two files visited once each are listed in
-/// the order they were opened, whichever one is being read. A list that
-/// starts somewhere arbitrary makes the reader find their own file before
-/// they can leave it.
+/// The rows are in the order the documents were opened, so the one the
+/// reader is in is not necessarily the first of them. A list that starts
+/// somewhere arbitrary makes the reader find their own file before they can
+/// leave it.
 #[test]
-fn the_buffer_list_opens_on_the_current_file() {
+fn the_document_list_opens_on_the_current_file() {
     let mut app = App::new(vec![
         support::open_fixture("sample.rs"),
         support::open_fixture("many_lines.rs"),

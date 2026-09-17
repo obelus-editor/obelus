@@ -100,14 +100,19 @@ impl App {
         }
     }
 
-    /// Where the cursor is, for the history.
+    /// Where the reader is, for the history.
+    ///
+    /// Any document, not only a file. It asked for a file, so standing in a
+    /// conversation gave `None` -- and every caller starts with this, so
+    /// leaving a conversation for a file recorded nothing and `ctrl+o` was
+    /// a key that was offered and did not work.
     pub(super) fn here(&self) -> Option<Jump> {
         let id = self.current?;
-        let cursor = self.file(id)?.cursor();
         Some(Jump {
-            buffer: id,
-            line: cursor.line,
-            column: cursor.column,
+            document: id,
+            at: self
+                .file(id)
+                .map(|buffer| (buffer.cursor().line, buffer.cursor().column)),
         })
     }
 
@@ -129,13 +134,18 @@ impl App {
     }
 
     fn go(&mut self, to: Jump) {
-        if to.buffer.get() >= self.documents.len() {
+        if to.document.get() >= self.documents.len() {
             return;
         }
-        self.go_to_file(to.buffer);
+        // Whatever it names, because a conversation is somewhere the reader
+        // was: going back to one is going back to it, and the cursor part
+        // simply has nothing to say.
+        self.go_to_document(to.document);
         let area = self.text_area();
-        if let Some(buffer) = self.file_mut(to.buffer) {
-            buffer.place_cursor(to.line, to.column);
+        if let Some((line, column)) = to.at
+            && let Some(buffer) = self.file_mut(to.document)
+        {
+            buffer.place_cursor(line, column);
             // Arriving, like the jump that led here: the line the reader left
             // deserves its context as much as the definition did.
             buffer.center_on_cursor(area);
@@ -435,7 +445,23 @@ impl App {
             || self.notes.is_some()
             || self.settings.is_some()
             || self.picker.is_some()
-            || self.conversation().is_some()
+            || self.conversation_takes_text()
+    }
+
+    /// Whether the conversation being read has somewhere text can go.
+    ///
+    /// Not "is a conversation open": the box is the place, and the keys are
+    /// not always in it. A card covers the box, so while one is up the
+    /// question is whether the agent left room to answer in the reader's own
+    /// words; and the row of settings under the box takes the keys away from
+    /// it. Either way the answer is no, and a key offered on a no is a key
+    /// whose text goes somewhere nobody can see.
+    #[must_use]
+    pub(super) fn conversation_takes_text(&self) -> bool {
+        let Some(talk) = self.conversation() else {
+            return false;
+        };
+        talk.card.is_none() && talk.chat.focus() == crate::component::chat::Focus::Writing
     }
 
     pub(super) fn paste_text(&mut self, what: &str) {
@@ -479,6 +505,15 @@ impl App {
             // go here -- and does not fall through to the file behind them
             // for want of anywhere else.
             Some(Layer::Counts) => return,
+            // Nothing over the document, so it goes into the document -- and
+            // a conversation is one. This asked about the *layers* and a
+            // conversation was one of those, so when it stopped being one
+            // the text stopped arriving anywhere: not in the box the reader
+            // was typing in, and not in the file behind it either.
+            None if self.conversation().is_some() => {
+                self.paste_into_conversation(what);
+                return;
+            }
             None => {}
         }
         let Some(buffer) = self.current_buffer() else {

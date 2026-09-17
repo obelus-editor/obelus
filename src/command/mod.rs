@@ -214,6 +214,11 @@ pub enum Requires {
     ABracket,
     /// The project has to be a repository with something in it.
     AHistory,
+    /// That, and a file to ask it about.
+    ///
+    /// Two of the history commands are about *this file*, and a repository
+    /// is not enough to ask what happened to it.
+    AFileInHistory,
     /// The document has to have a change in it that can be put back.
     SomethingToUndo,
     /// And one that has been put back and can be made again.
@@ -694,9 +699,6 @@ impl Command {
             // A note is made *about* a line, so there has to be one.
             Self::TodoAdd => Requires::AFileOpen,
             Self::TodoOpen => Requires::Nothing,
-            // Everything that acts on the file being read. With nothing
-            // open, each of them is a key that reports why instead of doing
-            // something.
             // Save is offered whether or not there is anything to write.
             // A reader who presses it on a file they have not touched has
             // asked a reasonable question, and the answer is that it is
@@ -705,6 +707,11 @@ impl Command {
             // What is open, including nothing: the list says so itself, and
             // said it to nobody while the key insisted on a file.
             Self::DocumentList => Requires::Nothing,
+            // A server is per file, and the menu is about what is under the
+            // cursor. Both said `Nothing` and then said "no file open" into
+            // a note nobody was going to read, which is the thing `offers`
+            // exists to stop: a key that runs and reports why it did not.
+            Self::LspRestart | Self::SymbolMenu => Requires::AFileOpen,
             Self::DocumentClose => Requires::ADocumentOpen,
             // A file to reload, a line to go to. Neither means anything in
             // a conversation, and the key says so by doing nothing.
@@ -737,7 +744,13 @@ impl Command {
             // a row greyed until that walk lands is a row greyed for ever
             // for a reader who keeps the margin's names off, because then
             // nothing starts one. The command says what it found.
-            Self::HistoryFile | Self::HistoryProject | Self::HistoryLine => Requires::AHistory,
+            //
+            // And two of the three are about *this file*, so they want one:
+            // a repository is not enough to ask "what happened to this", and
+            // asked from a conversation they used to run and say "no file
+            // open" into a note nobody sees.
+            Self::HistoryProject => Requires::AHistory,
+            Self::HistoryFile | Self::HistoryLine => Requires::AFileInHistory,
             Self::Fold => Requires::AFoldHere,
             Self::FoldAll => Requires::AFoldableFile,
             Self::UnfoldAll => Requires::SomethingFolded,
@@ -789,13 +802,11 @@ impl Command {
             Self::FileOpen
             | Self::ThemeSelect
             | Self::CommandPalette
-            | Self::SymbolMenu
             | Self::AgentOpen
             | Self::ConfigOpen
             | Self::ConfigTree
             | Self::ConfigFile
             | Self::LogOpen
-            | Self::LspRestart
             // The tree is always there to be counted, and a tree with
             // nothing in it is an answer as well: what it says is that
             // there is nothing here.

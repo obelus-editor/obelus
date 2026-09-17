@@ -681,6 +681,8 @@ impl App {
         self.current.is_none_or(|id| self.document(id).is_none())
     }
 
+    /// Whether what is being read has somewhere pasted text can go.
+    ///
     /// The conversation being read, where that is what is being read.
     ///
     /// There is no flag for this any more. A conversation is showing when it
@@ -804,10 +806,14 @@ impl App {
         self.current
     }
 
-    /// How many buffers are open, for a test that wants to know whether a
+    /// How many *files* are open, for a test that wants to know whether a
     /// key that had nowhere to go left one behind anyway.
+    ///
+    /// Files rather than documents: what these tests ask about is a file
+    /// that was opened or not opened, and a conversation among them would be
+    /// a number that moves for a reason they are not about.
     #[must_use]
-    pub fn document_count_for_test(&self) -> usize {
+    pub fn file_count_for_test(&self) -> usize {
         self.documents
             .iter()
             .flatten()
@@ -942,11 +948,15 @@ impl App {
         self.completion.as_ref()
     }
 
-    /// The room a list is drawn in, which is not always the editor region.
+    /// The area a list is drawn in, which is not always the editor region.
     ///
     /// Over a conversation it is everything above the box: the list is a
     /// list of what is being typed there, and it may not cover it.
-    fn picker_room(&self) -> Rect {
+    ///
+    /// An area and not a [`layers::Room`]: a room is how much of the screen
+    /// a view declares it takes, and this is the rectangle that comes out of
+    /// laying one out.
+    fn picker_area(&self) -> Rect {
         match self.chat() {
             Some(chat) => ui::chat::above_writing(self.editor_area, chat),
             None => self.editor_area,
@@ -1147,19 +1157,19 @@ impl App {
             Layer::Settings => self.settings = None,
             Layer::Counts => self.counts = None,
             Layer::Prompt => self.prompt = None,
-            // Hidden rather than ended: what was said is still there, and
-            // the key that opens it brings back every word. A question the
-            // agent is still waiting on goes with it, for the same reason a
-            // list's does.
         }
     }
 
     /// Whether something is showing that the reader is *in*.
     ///
-    /// A list, the settings, or a conversation with an agent: each takes
-    /// the keys itself, each is left with escape, and none of them is a
-    /// file being read. Obelus's own commands do not run from inside one,
-    /// so the only way to a second one is to leave the first.
+    /// A list, the settings, or the counts: each takes the keys itself, each
+    /// is left with escape, and each is over whatever is being read rather
+    /// than being it. Obelus's own commands do not run from inside one, so
+    /// the only way to a second one is to leave the first.
+    ///
+    /// A conversation is not one of these, and stopped being one when it
+    /// became a document: it is *what* is being read, not something over it,
+    /// which is why obelus's own keys work inside one.
     ///
     /// The question on the status bar is not one of these. It is a row
     /// rather than a screen, what it is asking about is still visible
@@ -1294,7 +1304,7 @@ impl App {
         let rows = self
             .picker
             .as_ref()
-            .map(|picker| ui::picker::rows_drawn(picker, self.picker_room()));
+            .map(|picker| ui::picker::rows_drawn(picker, self.picker_area()));
         if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
             picker.refresh_indices(rows);
         }

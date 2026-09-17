@@ -933,3 +933,22 @@ fn a_conversation_says_which_note_it_is_about() {
         "the conversation does not say what it is about:\n{screen}"
     );
 }
+
+/// And says how to get back to it.
+///
+/// The key was added because the round trip had an outward leg and no
+/// return. A return leg nothing says exists is the same gap one level up:
+/// the notes page names `alt+a` in its own hints, so the conversation names
+/// the key that comes back.
+#[test]
+fn a_conversation_says_how_to_get_back_to_its_note() {
+    let scratch = tree("way-back", "[[todo]]\nsaid = \"wire the counts tree up\"\n");
+    let mut app = open(&scratch, 76, 24);
+    support::press_alt(&mut app, 'a');
+
+    let screen = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    assert!(
+        screen.contains("the note"),
+        "the conversation does not say how to get back:\n{screen}"
+    );
+}

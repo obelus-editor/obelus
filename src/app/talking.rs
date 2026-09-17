@@ -1,9 +1,10 @@
 //! Talking to the active agent.
 //!
-//! One agent at a time, started when the reader first opens the view and
-//! left running until they close obelus or choose another. The conversation
-//! itself lives in [`Chat`] and outlives the view: escape hides it, and what
-//! was said is still there when it comes back.
+//! One agent at a time, started when the reader first opens a conversation
+//! and left running until they close obelus or choose another. A
+//! conversation is a document in the list of what is open, so leaving one is
+//! going somewhere else rather than closing it: what was said is still there
+//! when the reader comes back to that row.
 //!
 //! What arrives from the agent is an [`Event::Acp`] like every other
 //! background source, so nothing here waits on anything.
@@ -49,10 +50,16 @@ impl App {
     pub fn open_agent(&mut self) {
         // Whatever the reader had over the file is not what they asked for.
         self.make_room(Room::Region);
-        let at = self
-            .documents
-            .iter()
-            .position(|document| document.as_ref().is_some_and(|open| open.chat().is_some()));
+        // The one about nothing in particular, which is what this key opens.
+        // Any conversation would do while there was one; with a conversation
+        // per note it would take the reader into whichever note's happened
+        // to be first in the list.
+        let at = self.documents.iter().position(|document| {
+            document
+                .as_ref()
+                .and_then(Document::chat)
+                .is_some_and(|talk| talk.topic == Topic::Loose)
+        });
         let at = at.unwrap_or_else(|| {
             self.documents
                 .push(Some(crate::conversation::Conversation::default().into()));
@@ -197,6 +204,25 @@ impl App {
             .into_iter()
             .find(|note| note.id == *id)
             .map(|note| note.title().to_string())
+    }
+
+    /// Puts pasted text into the box a message is written in.
+    ///
+    /// The whole of what a paste means here: a conversation has one place
+    /// text can go, and it is the box. What was said is what was said.
+    ///
+    /// Through [`App::conversation_takes_text`], which is half of what
+    /// `ctrl+v` is offered on, so the key and the terminal's own paste land
+    /// in the same place or in no place -- and a paste with nowhere to go is
+    /// dropped rather than put behind whatever is over the box.
+    pub(super) fn paste_into_conversation(&mut self, what: &str) {
+        if !self.conversation_takes_text() {
+            return;
+        }
+        let width = crate::ui::chat::writing_width(self.editor_area);
+        if let Some(talk) = self.conversation_mut() {
+            talk.chat.paste(what, width);
+        }
     }
 
     /// The conversation, while it is what the reader is looking at.
@@ -575,8 +601,6 @@ impl App {
                     // the command takes is typed next.
                     if let Some(talk) = self.conversation_mut() {
                         talk.chat.put(&format!("{name} "));
-                    }
-                    if let Some(talk) = self.conversation_mut() {
                         talk.slash = None;
                     }
                 }
@@ -600,10 +624,6 @@ impl App {
         self.conversation().and_then(|talk| talk.card.as_ref())
     }
 
-    /// Gives a key to the card.
-    ///
-    /// What it does not take falls through to the table, so `ctrl+q` quits
-    /// from a card the way it quits from a list.
     /// Offers a key to the conversation, and says whether it took it.
     ///
     /// Two things in one, because the reader sees one: the agent's own
@@ -689,6 +709,10 @@ impl App {
         }
     }
 
+    /// Gives a key to the card.
+    ///
+    /// What it does not take falls through to the table, so `ctrl+q` quits
+    /// from a card the way it quits from a list.
     pub(super) fn card_key(&mut self, key: &crossterm::event::KeyEvent) -> bool {
         let Some(card) = self.conversation().and_then(|talk| talk.card.as_ref()) else {
             return false;
@@ -726,13 +750,17 @@ impl App {
             .is_some_and(|talk| talk.asking.is_some())
     }
 
-    /// Brings the conversation back, because the agent is waiting on the
-    /// reader.
+    /// Makes room for a question the agent is waiting on an answer to.
     ///
-    /// A question is answered on a card inside the conversation, so one
-    /// asked after the reader escaped out of it would be a card nobody can
-    /// see -- taking their keys, and holding up an agent that is waiting
-    /// for an answer they were never shown.
+    /// It no longer brings the conversation to the front, and the name is
+    /// what is left of one that did: a conversation is a document now, so a
+    /// question asked in one the reader is not in waits on its row in the
+    /// list with a mark saying so, rather than pulling the screen away from
+    /// whatever they were reading.
+    ///
+    /// What is still here is the clearing: a card is drawn inside the
+    /// conversation, so anything of obelus's own over that region would be a
+    /// card the reader cannot see while the agent waits on it.
     fn show_the_question(&mut self) {
         // To the conversation, because the card is inside it: a question
         // asked while the reader is in a file would be a card nobody can

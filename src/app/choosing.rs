@@ -157,6 +157,7 @@ impl App {
             // Not `current_buffer`, which is the point of the distinction: a
             // conversation is something open and is not a file.
             Requires::ADocumentOpen => !self.reading_nothing(),
+            Requires::AFileInHistory => buffer.is_some() && self.has_history(),
             Requires::AKnownLanguage => buffer.and_then(Buffer::language).is_some(),
             // Either the file has a reading, or it is already showing one
             // -- which is the same question asked from the other side: the
@@ -300,7 +301,7 @@ impl App {
     /// the reader can see. Nothing above this needs to know that.
     pub(super) fn picker_key(&mut self, key: &KeyEvent) -> bool {
         let page = self.picker.as_ref().map_or(1, |picker| {
-            ui::picker::rows_drawn(picker, self.picker_room())
+            ui::picker::rows_drawn(picker, self.picker_area())
         });
         let Some(picker) = self.picker.as_mut() else {
             return false;

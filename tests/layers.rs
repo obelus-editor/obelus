@@ -402,8 +402,10 @@ fn a_conversation_can_be_switched_to_from_the_list() {
         "the conversation is not a row of the list: {rows:?}"
     );
 
-    // Down to it and choose it. The file is first, so one step down.
-    press(&mut app, KeyCode::Down);
+    // Narrowed to it by name rather than stepped to by a count of rows: the
+    // list opens on whatever is being read, so where the conversation is
+    // from there is a fact about how many files happen to be open.
+    support::type_text(&mut app, "conversation");
     press(&mut app, KeyCode::Enter);
     assert_eq!(
         app.current_document_for_test(),
@@ -411,4 +413,38 @@ fn a_conversation_can_be_switched_to_from_the_list() {
         "choosing the conversation's row went nowhere"
     );
     assert!(app.chat().is_some(), "it is not the conversation");
+}
+
+/// Whatever is over the conversation owns the status row.
+///
+/// The conversation draws its own while it is what the reader is looking
+/// at. The moment something is over it, that row belongs to the thing over
+/// it -- its query, its question, its filter -- and a row about the
+/// conversation underneath would be two things asking to be read at once.
+///
+/// It asked whether a *list* was over it, which was every case there was
+/// while the conversation was a layer and nothing could be over it but one.
+/// As a document, the notes and the settings open over it too.
+#[test]
+fn what_is_over_a_conversation_owns_the_status_row() {
+    let said = |app: &mut App| {
+        let dump = support::render(app, WIDTH, HEIGHT);
+        support::text_block(&dump)
+            .lines()
+            .last()
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    // The settings, because their filter is what the row says while they are
+    // open -- so whether the row is theirs is something a test can read.
+    let mut app = reading();
+    app.open_agent();
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::type_text(&mut app, "wrap");
+    let covered = said(&mut app);
+    assert!(
+        covered.contains("wrap"),
+        "the settings were over the conversation and the row was not theirs:\n{covered}"
+    );
 }

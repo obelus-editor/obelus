@@ -307,15 +307,20 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     }
 
     // The status row, last, and whose it is. A conversation puts its own
-    // there -- unless a list is open over it, in which case the row is that
-    // list's prompt: the keys are going there and so is the caret, and a
-    // row about the conversation under a list nobody is typing in is two
+    // there while it is what the reader is looking at -- and the moment
+    // anything is over it, the row belongs to that: its query, its question,
+    // its filter. A row about the conversation underneath would be two
     // things asking to be read at once.
+    //
+    // Anything, not a list. It asked about a list, which was every case
+    // there was while a conversation was itself a layer and only a list
+    // could be over one; as a document the notes and the settings open over
+    // it too, and each wants the row.
     if layers.taking_the_status_row() {
         return;
     }
     match chat::ChatView::new(app) {
-        Some(view) if !layers.has(Layer::Picker) => view.status(cells, regions.status),
+        Some(view) if !layers.any() => view.status(cells, regions.status),
         _ => status::StatusView::new(app).render(regions.status, cells),
     }
 }

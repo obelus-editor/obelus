@@ -4181,7 +4181,7 @@ fn the_commit_that_wrote_a_line_is_where_the_walk_stops() {
     // Onto "x", which the newest commit wrote.
     dispatch::dispatch(&mut app, Command::HistoryLine);
     settle(&mut app);
-    let opened = app.document_count_for_test();
+    let opened = app.file_count_for_test();
 
     // The version it opened is the one that wrote that line, so asking
     // again has nowhere to go. It says so, and it does not leave another
@@ -4195,7 +4195,7 @@ fn the_commit_that_wrote_a_line_is_where_the_walk_stops() {
         "pressing on says nothing about why nothing happened:\n{dump}"
     );
     assert_eq!(
-        app.document_count_for_test(),
+        app.file_count_for_test(),
         opened,
         "a buffer was opened for every press that had nowhere to go"
     );
@@ -4445,5 +4445,62 @@ fn the_committed_text_is_not_read_again_for_every_keystroke() {
     assert!(
         app.changes().is_some_and(|changes| !changes.is_empty()),
         "the committed text was read again rather than kept:\n{after}"
+    );
+}
+
+/// The list of what is open opens on the one being read, even where two rows
+/// say the same thing.
+///
+/// A file and that file as a commit had it wear one path, which is the label
+/// both rows carry. Asking the list for "the row that says this" then finds
+/// whichever of them is nearer the top, and the reader is handed a document
+/// they are not in -- so the list is pointed at the row itself.
+#[test]
+fn the_document_list_opens_on_this_version_and_not_the_other() {
+    use crossterm::event::KeyCode;
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("history-two-rows", "first\n");
+    repository.write("second\n");
+    repository.commit("the second");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    app.statuses_for_test(std::collections::HashMap::new());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 16);
+    // The project's history, a commit, and one of its files: a second
+    // document at the same path as the first.
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.current_buffer()
+            .is_some_and(|buffer| buffer.content().at().is_some()),
+        "not reading a commit's version"
+    );
+
+    support::press_function(&mut app, 2);
+    let picker = app.picker().expect("the list of what is open");
+    let labels: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
+    assert_eq!(
+        labels.len(),
+        2,
+        "not two documents at one path, so this proves nothing: {labels:?}"
+    );
+    assert_eq!(
+        labels[0], labels[1],
+        "the rows do not say the same thing, so this proves nothing: {labels:?}"
+    );
+    // Told apart by the short id, which is the one thing on the row that
+    // differs: a commit's version has one and the file on disk has none.
+    assert!(
+        picker
+            .selected_item()
+            .is_some_and(|item| item.trailing.is_some()),
+        "the list opened on the file rather than on the commit's version"
     );
 }

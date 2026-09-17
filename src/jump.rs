@@ -5,15 +5,18 @@ use crate::{
     coordinates::{CharColumn, LineNumber},
 };
 
-/// Somewhere the cursor was.
+/// Somewhere the reader has been.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Jump {
     /// Which open document.
-    pub buffer: DocumentId,
-    /// Where in it.
-    pub line: LineNumber,
-    /// And how far along the line.
-    pub column: CharColumn,
+    pub document: DocumentId,
+    /// Where in it, for a document that has a where.
+    ///
+    /// `None` for a conversation, which has no lines to be on. It is still
+    /// somewhere the reader was, and leaving it for a file is still a jump
+    /// they will want to come back from -- so it goes in the history with
+    /// nothing where the line would be, rather than not going in at all.
+    pub at: Option<(LineNumber, CharColumn)>,
 }
 
 /// The places jumped from, and where in that history the reader is.
@@ -100,22 +103,29 @@ impl JumpList {
     /// where the edit began.
     pub fn keep_across(
         &mut self,
-        buffer: DocumentId,
+        document: DocumentId,
         from: LineNumber,
         to: LineNumber,
         moved: isize,
     ) {
         for entry in &mut self.entries {
-            if entry.buffer != buffer || entry.line <= from {
+            let Some((line, _)) = entry.at else {
+                continue;
+            };
+            if entry.document != document || line <= from {
                 continue;
             }
-            if entry.line <= to {
-                entry.line = from;
+            if line <= to {
                 // The column belonged to a line that is gone.
-                entry.column = CharColumn::new(0);
+                entry.at = Some((from, CharColumn::new(0)));
                 continue;
             }
-            entry.line = LineNumber::new(entry.line.get().saturating_add_signed(moved));
+            entry.at = Some((
+                LineNumber::new(line.get().saturating_add_signed(moved)),
+                entry
+                    .at
+                    .map_or_else(|| CharColumn::new(0), |(_, column)| column),
+            ));
         }
     }
 }
@@ -126,9 +136,8 @@ mod tests {
 
     fn jump(line: usize) -> Jump {
         Jump {
-            buffer: DocumentId::new(0),
-            line: LineNumber::new(line),
-            column: CharColumn::new(0),
+            document: DocumentId::new(0),
+            at: Some((LineNumber::new(line), CharColumn::new(0))),
         }
     }
 

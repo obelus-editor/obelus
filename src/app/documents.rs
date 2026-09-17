@@ -1,8 +1,10 @@
-//! Opening, closing and re-reading files.
+//! Opening, closing and re-reading what the reader can be in.
 //!
 //! What a buffer *is* belongs to [`crate::buffer`]; what is here is which
-//! ones are open, which one is being read, and what happens when one of
-//! them changes on disk.
+//! documents are open, which one is being read, and what happens when the
+//! file behind one of them changes on disk. Not only files: a conversation
+//! is a document too, and the list, the closing and the switching are the
+//! same for both -- which is the whole of what [`crate::document`] bought.
 
 use super::*;
 use crate::buffer::Disk;
@@ -388,33 +390,35 @@ impl App {
         // and was not, for as long as the command asked for a file.
         picker.when_empty("nothing is open");
         picker.previews();
-        // Opened on the file being read, like the file list: the rows are in
-        // most-visited order, so the one the reader is *in* is not
-        // necessarily first, and a list that starts somewhere arbitrary
-        // makes them find their own file before they can leave it.
         // Opened on whatever is being read, conversation or file: a list
         // that started somewhere arbitrary would make the reader find where
-        // they are before they can leave it. By the row's own label, which
-        // is the only thing the list is keyed on -- and which a conversation
-        // has as much as a file does.
+        // they are before they can leave it.
+        //
+        // By the row itself rather than by its label, which is what `prefer`
+        // is keyed on: two conversations nobody has named yet are both
+        // called the same thing, and a list keyed on what a row *says* would
+        // open on the first of them. The file list has to prefer by label
+        // because its rows arrive in batches and the one worth starting on
+        // is usually not there yet; every row of this list is here already,
+        // so it can be pointed at outright.
         let here = self.current.and_then(|here| {
             picker
                 .matches()
-                .find(|item| matches!(item.value, PickerValue::Document(id) if id == here))
-                .map(|item| item.label.clone())
+                .position(|item| matches!(item.value, PickerValue::Document(id) if id == here))
         });
         if let Some(row) = here {
-            picker.prefer(row);
+            picker.select_row(row);
         }
         self.show_list(picker);
     }
 
-    /// Stops showing the current file.
+    /// Stops showing whatever is being read.
     ///
     /// The slot stays: [`DocumentId`] is an index, and the jump list holds
-    /// them. What goes is the file, the language server's copy of it, and
-    /// the watch on it -- and the reader is left on whichever file is
-    /// nearest, or on the welcome screen if that was the last one.
+    /// them. What goes is the document -- a file with the language server's
+    /// copy of it and the watch on it, or a conversation -- and the reader
+    /// is left on whatever is open nearest, or on the welcome screen if that
+    /// was the last one.
     pub fn close_current(&mut self) {
         // Asked about rather than done, for the reason leaving is asked
         // about: a closed buffer takes its undo with it.
@@ -428,7 +432,7 @@ impl App {
             self.ask_before_closing(id);
             return;
         }
-        // Whichever file the screen is about. With the buffer list open that
+        // Whichever file the screen is about. With the list of what is open that
         // is the row under the selection, not the file behind it: the list is
         // what the reader is pointing at, and one key that means "close this"
         // everywhere beats a second key that only works in one place.
@@ -487,7 +491,7 @@ impl App {
         }
     }
 
-    /// Stops showing one file, whichever the reader is on.
+    /// Stops showing one document, whichever the reader is on.
     pub(super) fn close(&mut self, id: DocumentId) {
         let Some(document) = self.documents.get_mut(id.get()).and_then(Option::take) else {
             return;
@@ -530,9 +534,9 @@ impl App {
         }
         drop(document);
 
-        // Whichever file is nearest, before the closed one for preference:
-        // closing the last of several usually means going back to the one
-        // before it.
+        // Whichever document is nearest, before the closed one for
+        // preference: closing the last of several usually means going back
+        // to the one before it.
         if self.current == Some(id) {
             self.current = self.nearest_open(id.get());
         }
@@ -777,15 +781,6 @@ impl App {
         }
     }
 
-    /// Re-reads whichever open buffers came from `path`.
-    ///
-    /// The watch is on a directory, so most of what arrives here is about
-    /// files obelus does not have open.
-    /// Opens a path the way choosing it from a list does.
-    ///
-    /// For a test: the lists that reach this are filled from a walk on
-    /// another thread, and a test that pumped the walk to press one key
-    /// would be a test of the walk.
     /// Puts a buffer somebody else made into the list, for a test.
     ///
     /// A commit's version is made from bytes git handed over rather than
@@ -801,10 +796,19 @@ impl App {
     /// For a test: the lists that reach this are filled from a walk on
     /// another thread, and a test that pumped the walk to press one key
     /// would be a test of the walk.
+    /// Opens a path the way choosing it from a list does.
+    ///
+    /// For a test: the lists that reach this are filled from a walk on
+    /// another thread, and a test that pumped the walk to press one key
+    /// would be a test of the walk.
     pub fn open_for_test(&mut self, path: &Path) {
         self.open(path);
     }
 
+    /// Re-reads whichever open buffers came from `path`.
+    ///
+    /// The watch is on a directory, so most of what arrives here is about
+    /// files obelus does not have open.
     pub(super) fn reload_path(&mut self, path: &Path) {
         for index in 0..self.documents.len() {
             let Some(buffer) = file_in_mut(&mut self.documents, DocumentId::new(index)) else {
@@ -996,12 +1000,12 @@ pub(super) struct Rendered {
     rows: Vec<reading::Row>,
 }
 
-/// Re-reads one buffer, reporting rather than propagating a failure.
-///
-/// A file that has been deleted or replaced by a directory leaves the buffer
-/// showing what it last held. Losing the contents would be worse than showing
-/// something a moment out of date.
 /// Re-reads one buffer, and says whether the text changed.
+///
+/// Reports rather than propagates a failure: a file that has been deleted or
+/// replaced by a directory leaves the buffer showing what it last held.
+/// Losing the contents would be worse than showing something a moment out of
+/// date.
 pub(super) fn reload(buffer: &mut Buffer) -> bool {
     match buffer.reload() {
         Ok(true) => {

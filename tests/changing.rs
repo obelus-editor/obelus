@@ -68,7 +68,7 @@ fn renaming(open: &std::path::Path, closed: &std::path::Path) -> serde_json::Val
 #[test]
 fn every_file_a_rename_touches_is_opened_and_left_unwritten() {
     let (_scratch, mut app, open, closed) = project("rename-both");
-    let before = app.document_count_for_test();
+    let before = app.file_count_for_test();
     app.rename_for_test(renaming(&open, &closed));
 
     assert_eq!(
@@ -77,7 +77,7 @@ fn every_file_a_rename_touches_is_opened_and_left_unwritten() {
         "the open file was not edited"
     );
     assert_eq!(
-        app.document_count_for_test(),
+        app.file_count_for_test(),
         before + 1,
         "the file that was not open did not become a document"
     );
