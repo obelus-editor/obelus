@@ -64,14 +64,14 @@ pub struct Said {
     /// rather than the two texts: the diff is worked out once, when it
     /// arrives.
     pub change: Vec<crate::git::change::Line>,
-    /// What a tool call said in words, in the order it said them.
+    /// What a tool call says, in the order it gave it.
     ///
-    /// Appended rather than replaced, which is where this differs from
-    /// [`Self::change`]: a call changes one file and the newest diff is the
-    /// whole of it, but a call *says* things one after another -- the plan
-    /// it wants leave for, and then what became of the asking. Replacing
-    /// would leave a reader who comes back to the row able to see that they
-    /// answered and not what they answered about.
+    /// Replaced by a later update rather than added to, which is what the
+    /// protocol says `content` means -- *replace the content collection* --
+    /// and the same thing [`Self::change`] beside it already does. A call
+    /// carries what it says now: a plan put to the reader is replaced by
+    /// what became of the asking, and which of the two a row shows is the
+    /// agent's account of its own call.
     pub words: Vec<String>,
     /// Whether the reader has opened or closed what this begins.
     ///
@@ -486,13 +486,14 @@ impl Chat {
         if call.change.is_some() {
             said.change = changed_rows(call);
         }
-        // Appended, and never the same thing twice in a row: a later update
-        // carries only what changed, but an agent that repeats itself would
-        // otherwise be drawn as having said it twice.
-        for words in &call.said {
-            if said.words.last() != Some(words) {
-                said.words.push(words.clone());
-            }
+        // Replaced, the way the change above it is, because that is what
+        // the protocol says a later `content` means: *replace the content
+        // collection*. What a call says is what it says now, not a log of
+        // what it has said -- a plan put to the reader is replaced by what
+        // became of the asking, and that is the agent's account of that
+        // call rather than something for obelus to overrule.
+        if !call.said.is_empty() {
+            said.words = call.said.clone();
         }
         if !status.is_empty() {
             said.state = Some(status.to_string());
@@ -1452,18 +1453,23 @@ mod tests {
         assert_eq!(chat.rows(ROOM.reading).len(), 4);
     }
 
-    /// The words a call carries are under it, and it says them in order.
+    /// The words a call carries are under it, and a later update replaces
+    /// them.
     ///
-    /// A call that asks the reader something says two things: what it wants
-    /// leave for, and -- once they have answered -- what came of asking.
-    /// Both belong to the one row, because both are that call. Replacing
-    /// the first with the second, which is what a diff does, would leave a
-    /// reader coming back able to see that they answered and not what about.
+    /// Which is what the protocol says a later `content` is -- *replace the
+    /// content collection* -- and what the diff beside them already did. A
+    /// plan put to the reader is replaced by what became of the asking, and
+    /// which of the two the row shows is the agent's account of its own
+    /// call rather than obelus's to keep both of.
     #[test]
-    fn a_call_keeps_every_word_it_said_under_its_own_row() {
+    fn a_call_shows_what_it_says_now_and_a_later_word_replaces_it() {
         let mut chat = Chat::new();
         chat.tool(&saying("c1", "Approve Plan", &["the plan itself"]), "pending");
-        let said: Vec<String> = chat.rows(ROOM.reading).iter().map(|row| row.text.clone()).collect();
+        let said: Vec<String> = chat
+            .rows(ROOM.reading)
+            .iter()
+            .map(|row| row.text.clone())
+            .collect();
         assert!(
             said.iter().any(|text| text == "Approve Plan"),
             "no row for the call: {said:?}"
@@ -1473,21 +1479,19 @@ mod tests {
             "the words are not under it: {said:?}"
         );
 
-        // Answered: the second thing it says joins the first rather than
-        // taking its place.
+        // Answered: what the call says now is what became of the asking.
         chat.tool(&saying("c1", "", &["and what came of asking"]), "completed");
-        let kept = &chat.said[0].words;
-        assert_eq!(kept, &["the plan itself", "and what came of asking"]);
+        assert_eq!(chat.said[0].words, ["and what came of asking"]);
 
         // An update that carries no words leaves them alone, the way an
-        // update that carries no title leaves the title alone.
+        // update that carries no title leaves the title alone. Silence is
+        // "the same as before", which is not the same as "nothing".
         chat.tool(&call("c1", "", "other", Vec::new()), "completed");
-        assert_eq!(chat.said[0].words.len(), 2, "silence wiped what was said");
-
-        // And the same words twice in a row are one thing said twice, not
-        // two: a later update repeats what has not changed.
-        chat.tool(&saying("c1", "", &["and what came of asking"]), "completed");
-        assert_eq!(chat.said[0].words.len(), 2, "it was drawn as said twice");
+        assert_eq!(
+            chat.said[0].words,
+            ["and what came of asking"],
+            "silence wiped what was said"
+        );
     }
 
     /// A call that is waiting on the reader shows what it is waiting about.
