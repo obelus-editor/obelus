@@ -24,10 +24,10 @@ pub enum Command {
     FileReload,
     /// Write the current file back to disk.
     FileSave,
-    /// Choose among the files already open.
-    BufferList,
-    /// Stop showing the current file.
-    BufferClose,
+    /// Choose among the documents already open.
+    DocumentList,
+    /// Stop showing the current document.
+    DocumentClose,
     /// Show this file as rendered markdown, or stop.
     PreviewToggle,
     /// Choose a theme.
@@ -199,6 +199,13 @@ pub enum Requires {
     /// opens on a list with no file behind it, and copying out of the box
     /// a reader is typing in has nothing to do with whether there is one.
     ACaret,
+    /// Something has to be open, whatever kind of thing it is.
+    ///
+    /// Which was the same question as a file being open while every document
+    /// was one, and stopped being it the moment a conversation could be one
+    /// instead: the key that closes what is being read went dim inside a
+    /// conversation, and so did the key that lists what is open.
+    ADocumentOpen,
     /// The open file has to be in a language obelus can parse.
     AKnownLanguage,
     /// The open file has to have a reading, or be showing one.
@@ -294,14 +301,14 @@ pub const ALL: &[CommandSpec] = &[
         title: "Re-read this file from disk",
     },
     CommandSpec {
-        command: Command::BufferList,
-        name: "switch-file",
-        title: "Switch to an open file",
+        command: Command::DocumentList,
+        name: "switch-document",
+        title: "Switch to something already open",
     },
     CommandSpec {
-        command: Command::BufferClose,
-        name: "close-file",
-        title: "Close this file",
+        command: Command::DocumentClose,
+        name: "close-document",
+        title: "Close what is being read",
     },
     CommandSpec {
         command: Command::PreviewToggle,
@@ -594,8 +601,8 @@ impl Command {
             | Self::FileChanged
             | Self::FileReload
             | Self::FileSave
-            | Self::BufferList
-            | Self::BufferClose
+            | Self::DocumentList
+            | Self::DocumentClose
             | Self::PreviewToggle
             // A question about the tree of files, asked before any of them
             // is open: which makes it one of the files rather than one of
@@ -695,7 +702,15 @@ impl Command {
             // asked a reasonable question, and the answer is that it is
             // already there rather than a key that does nothing.
             Self::FileSave => Requires::AFileOpen,
-            Self::FileReload | Self::BufferClose | Self::BufferList | Self::GoLine => {
+            // What is open, including nothing: the list says so itself, and
+            // said it to nobody while the key insisted on a file.
+            Self::DocumentList => Requires::Nothing,
+            Self::DocumentClose => Requires::ADocumentOpen,
+            // A file to reload, a line to go to. Neither means anything in
+            // a conversation, and the key says so by doing nothing.
+            // A file to reload, a line to go to. Neither means anything in
+            // a conversation, and the key says so by doing nothing.
+            Self::FileReload | Self::GoLine => {
                 Requires::AFileOpen
             }
             // An outline comes from the syntax tree when no server will
@@ -841,8 +856,8 @@ mod tests {
             Command::FileChanged,
             Command::FileReload,
             Command::FileSave,
-            Command::BufferList,
-            Command::BufferClose,
+            Command::DocumentList,
+            Command::DocumentClose,
             Command::PreviewToggle,
             Command::ThemeSelect,
             Command::CommandPalette,
@@ -889,7 +904,7 @@ mod tests {
         assert_eq!(Command::ThemeSelect.group(), Group::Obelus);
 
         // And the two that are reading.
-        assert_eq!(Command::BufferClose.group(), Group::Files);
+        assert_eq!(Command::DocumentClose.group(), Group::Files);
         assert_eq!(Command::SymbolOutline.group(), Group::Code);
         assert_eq!(Command::GoBack.group(), Group::Code);
 

@@ -248,8 +248,8 @@ pub fn for_command(command: crate::command::Command) -> char {
         // A floppy disk, which nobody has seen for twenty years and
         // everybody still reads as save.
         Command::FileSave => '\u{f0193}',
-        Command::BufferList => '\u{f0222}',
-        Command::BufferClose => '\u{f0b98}',
+        Command::DocumentList => '\u{f0222}',
+        Command::DocumentClose => '\u{f0b98}',
         Command::PreviewToggle => '\u{f0354}',
         Command::ThemeSelect => '\u{f03d8}',
         Command::CommandPalette => '\u{f018d}',

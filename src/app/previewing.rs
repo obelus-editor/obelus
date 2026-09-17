@@ -327,7 +327,7 @@ impl App {
             // part of it to show: choosing the row takes the reader back to
             // exactly this, so the list reads as something folded over the
             // file rather than as a way to somewhere new.
-            PickerValue::Buffer(id) => {
+            PickerValue::Document(id) => {
                 self.file(*id)
                     .map(|buffer| {
                         let subject = match buffer.content().at() {

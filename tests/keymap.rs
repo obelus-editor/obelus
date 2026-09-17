@@ -264,7 +264,7 @@ fn the_readers_own_bindings_go_over_the_defaults() {
     use obelus::keymap::Context;
 
     let moved: std::collections::BTreeMap<String, String> = [
-        ("close-file".to_string(), "alt+w".to_string()),
+        ("close-document".to_string(), "alt+w".to_string()),
         ("choose-theme".to_string(), "alt+y".to_string()),
         ("open-file".to_string(), String::new()),
         ("nonsense.command".to_string(), "ctrl+z".to_string()),
@@ -277,12 +277,12 @@ fn the_readers_own_bindings_go_over_the_defaults() {
     .collect();
     let keymap = Keymap::with(&moved);
 
-    // Both of `close-file`'s bindings moved: it is one command with one
+    // Both of `close-document`'s bindings moved: it is one command with one
     // key, bound in two contexts so that it reaches the list of open files.
     let closes: Vec<_> = keymap
         .bindings()
         .iter()
-        .filter(|binding| binding.command == Command::BufferClose)
+        .filter(|binding| binding.command == Command::DocumentClose)
         .map(|binding| (binding.context, binding.chord))
         .collect();
     assert_eq!(closes.len(), 2, "a context lost the command: {closes:?}");

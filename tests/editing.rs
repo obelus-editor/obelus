@@ -1213,7 +1213,7 @@ mod saying {
     fn the_buffer_list_marks_what_is_unwritten() {
         let (_scratch, mut app, _path) = reading("say-list", "fn main() {}\n");
         support::type_text(&mut app, "x");
-        dispatch::dispatch(&mut app, Command::BufferList);
+        dispatch::dispatch(&mut app, Command::DocumentList);
 
         let marked: Vec<bool> = app
             .picker()
@@ -1241,7 +1241,7 @@ mod saying {
         support::lay_out(&mut app, 60, 12);
         support::type_text(&mut app, "x");
 
-        dispatch::dispatch(&mut app, Command::BufferList);
+        dispatch::dispatch(&mut app, Command::DocumentList);
         let dump = support::render(&mut app, 60, 12);
 
         // The mark has a column of its own, kept on the rows that have
@@ -1579,7 +1579,7 @@ mod closing {
     fn the_question_is_read_before_its_answers() {
         let (_scratch, mut app, _path) = reading("close-order", "fn main() {}\n");
         support::type_text(&mut app, "x");
-        dispatch::dispatch(&mut app, Command::BufferClose);
+        dispatch::dispatch(&mut app, Command::DocumentClose);
 
         let dump = support::render(&mut app, 70, 12);
         let text = support::text_block(&dump);
@@ -1599,7 +1599,7 @@ mod closing {
         let (_scratch, mut app, _path) = reading("close-ask", "fn main() {}\n");
         support::type_text(&mut app, "x");
 
-        dispatch::dispatch(&mut app, Command::BufferClose);
+        dispatch::dispatch(&mut app, Command::DocumentClose);
         assert!(
             app.current_buffer().is_some(),
             "it closed an unwritten document without asking"
@@ -1617,7 +1617,7 @@ mod closing {
         let (_scratch, mut app, path) = reading("close-save", "fn main() {}\n");
         support::type_text(&mut app, "x");
 
-        dispatch::dispatch(&mut app, Command::BufferClose);
+        dispatch::dispatch(&mut app, Command::DocumentClose);
         support::answer(&mut app, "save and close it");
 
         assert_eq!(
@@ -1636,7 +1636,7 @@ mod closing {
         let (_scratch, mut app, path) = reading("close-discard", "fn main() {}\n");
         support::type_text(&mut app, "x");
 
-        dispatch::dispatch(&mut app, Command::BufferClose);
+        dispatch::dispatch(&mut app, Command::DocumentClose);
         support::answer(&mut app, "close it without saving");
 
         assert!(app.current_buffer().is_none(), "it did not close");
@@ -1663,7 +1663,7 @@ mod closing {
         support::type_text(&mut app, "x");
         std::fs::remove_dir_all(&gone).expect("taking the directory away");
 
-        dispatch::dispatch(&mut app, Command::BufferClose);
+        dispatch::dispatch(&mut app, Command::DocumentClose);
         support::answer(&mut app, "save and close it");
 
         assert!(
@@ -1677,7 +1677,7 @@ mod closing {
     #[test]
     fn closing_something_written_asks_nothing() {
         let (_scratch, mut app, _path) = reading("close-clean", "fn main() {}\n");
-        dispatch::dispatch(&mut app, Command::BufferClose);
+        dispatch::dispatch(&mut app, Command::DocumentClose);
         assert!(
             app.current_buffer().is_none(),
             "it asked about a document nobody changed"

@@ -43,7 +43,7 @@ fn open(app: &mut App, layer: Layer) {
         Layer::Counts => dispatch::dispatch(app, Command::CountLines),
         Layer::Notes => dispatch::dispatch(app, Command::TodoOpen),
         Layer::Settings => dispatch::dispatch(app, Command::ConfigOpen),
-        Layer::Picker => dispatch::dispatch(app, Command::BufferList),
+        Layer::Picker => dispatch::dispatch(app, Command::DocumentList),
         Layer::Prompt => dispatch::dispatch(app, Command::GoLine),
     }
 }
@@ -197,7 +197,7 @@ fn only_a_question_leaves_the_file_pointable() {
 fn a_key_goes_to_the_nearest_layer() {
     let mut app = reading();
     dispatch::dispatch(&mut app, Command::TodoOpen);
-    dispatch::dispatch(&mut app, Command::BufferList);
+    dispatch::dispatch(&mut app, Command::DocumentList);
     assert_eq!(
         app.layers().nearest(),
         Some(Layer::Picker),
@@ -239,7 +239,7 @@ fn the_caret_is_where_the_keys_are() {
     // its prompt rather than in the note behind it.
     let mut app = reading();
     dispatch::dispatch(&mut app, Command::TodoOpen);
-    dispatch::dispatch(&mut app, Command::BufferList);
+    dispatch::dispatch(&mut app, Command::DocumentList);
     let over = obelus::ui::cursor_position(area, &app).expect("a caret somewhere");
     assert_eq!(
         over.y,
@@ -324,7 +324,7 @@ fn two_pages_are_never_open_at_once() {
 fn a_list_opens_over_a_page_rather_than_instead_of_it() {
     let mut app = reading();
     dispatch::dispatch(&mut app, Command::TodoOpen);
-    dispatch::dispatch(&mut app, Command::BufferList);
+    dispatch::dispatch(&mut app, Command::DocumentList);
     assert_eq!(
         app.layers().furthest_first().collect::<Vec<_>>(),
         [Layer::Notes, Layer::Picker],
@@ -339,4 +339,76 @@ fn a_list_opens_over_a_page_rather_than_instead_of_it() {
     );
     press(&mut app, KeyCode::Esc);
     assert!(!app.layers().any(), "the page would not be left");
+}
+
+/// The keys about documents work in a conversation.
+///
+/// A conversation is a document, so the list of them and the key that closes
+/// one are about it as much as about a file. They asked for a *file* being
+/// open, which is the same question while every document was one and stopped
+/// being the same question the moment one was not: the key went dim and did
+/// nothing, and the only way to another document was to know another key.
+#[test]
+fn the_keys_about_documents_work_in_a_conversation() {
+    let mut app = reading();
+    app.open_agent();
+    assert!(app.chat().is_some(), "not in a conversation");
+
+    assert!(
+        app.offers(Command::DocumentList),
+        "the list of open documents is refused from inside one"
+    );
+    assert!(
+        app.offers(Command::DocumentClose),
+        "a conversation cannot be closed with the key that closes a document"
+    );
+    // And what is about a file is still refused, which is the other half:
+    // there is nothing here to save, reload, or go to a line of.
+    for command in [Command::FileSave, Command::FileReload, Command::GoLine] {
+        assert!(
+            !app.offers(command),
+            "{command:?} was offered in a conversation, which has no file"
+        );
+    }
+
+    dispatch::dispatch(&mut app, Command::DocumentList);
+    assert!(app.picker().is_some(), "the list would not open");
+}
+
+/// A conversation is a row of the list, and choosing it goes there.
+///
+/// It is in the list because it is a document. A row that did nothing when
+/// chosen would be a row that lies about being one -- and that is what it
+/// did, because what accepted a row only ever switched to a file.
+#[test]
+fn a_conversation_can_be_switched_to_from_the_list() {
+    let mut app = reading();
+    app.open_agent();
+    let conversation = app.current_document_for_test().expect("a document");
+
+    // Away to the file, and then back through the list.
+    app.open_for_test(std::path::Path::new("tests/fixtures/sample.rs"));
+    assert!(app.chat().is_none(), "still in the conversation");
+
+    dispatch::dispatch(&mut app, Command::DocumentList);
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the list")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert!(
+        rows.len() >= 2,
+        "the conversation is not a row of the list: {rows:?}"
+    );
+
+    // Down to it and choose it. The file is first, so one step down.
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.current_document_for_test(),
+        Some(conversation),
+        "choosing the conversation's row went nowhere"
+    );
+    assert!(app.chat().is_some(), "it is not the conversation");
 }

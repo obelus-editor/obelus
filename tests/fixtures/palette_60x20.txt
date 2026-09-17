@@ -12,8 +12,8 @@ screen 60x20  editor 60x18  status 60x1
  9| 󰣞 open-changed-file  Open a file that has changed       󱊭 █
 10| 󰆓 save-file  Write this file back to disk             󰘴 s █
 11| 󰑐 reload-file  Re-read this file from disk            󰘴 r █
-12| 󰈢 switch-file  Switch to an open file                   󱊬 █
-13| 󰮘 close-file  Close this file                         󰘴 w █
+12| 󰈢 switch-document  Switch to something already open     󱊬 █
+13| 󰮘 close-document  Close what is being read            󰘴 w █
 14| 󰍔 toggle-preview  Show this file rendered, or stop    󰘴 t █
 15| 󰏘 choose-theme  Change the colours                        █
 16| 󰆍 run-command  Run a command by name                  󰘴 p █
@@ -33,8 +33,8 @@ screen 60x20  editor 60x18  status 60x1
  9|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
 10|aaaaaaaaaaaaaaccccccccccccccccccccccccccccaaaaaaaaaaaaacccai
 11|aaaaaaaaaaaaaaaacccccccccccccccccccccccccccaaaaaaaaaaaacccai
-12|aaaaaaaaaaaaaaaaccccccccccccccccccccccaaaaaaaaaaaaaaaaaaacai
-13|aaaaaaaaaaaaaaacccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaacccai
+12|aaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccaaaaacai
+13|aaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccaaaaaaaaaaaacccai
 14|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
 15|aaaaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaai
 16|aaaaaaaaaaaaaaaacccccccccccccccccccccaaaaaaaaaaaaaaaaaacccai

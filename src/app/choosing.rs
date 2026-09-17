@@ -154,6 +154,9 @@ impl App {
             // what these keys need is that there is somewhere with a caret
             // in it, not which of them it is.
             Requires::ACaret => buffer.is_some() || self.somewhere_to_type(),
+            // Not `current_buffer`, which is the point of the distinction: a
+            // conversation is something open and is not a file.
+            Requires::ADocumentOpen => !self.reading_nothing(),
             Requires::AKnownLanguage => buffer.and_then(Buffer::language).is_some(),
             // Either the file has a reading, or it is already showing one
             // -- which is the same question asked from the other side: the
@@ -385,13 +388,16 @@ impl App {
             PickerValue::Action(at) => self.do_action(at),
             PickerValue::Answer(answer) => self.answered(answer),
             PickerValue::File(path) => self.open(&self.working_directory.join(path)),
-            PickerValue::Buffer(id) => {
+            PickerValue::Document(id) => {
                 if self.current != Some(id) {
                     let from = self.here();
                     self.record(from);
                 }
                 if id.get() < self.documents.len() {
-                    self.go_to_buffer(id);
+                    // Whatever the row names, not only a file: the list has
+                    // conversations in it, and a row that did nothing when
+                    // chosen would be a row that lies about being one.
+                    self.go_to_document(id);
                 }
             }
             PickerValue::Theme(name) => {

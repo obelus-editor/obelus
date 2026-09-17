@@ -43,8 +43,8 @@ pub enum PickerValue {
     Action(usize),
     /// Open a file.
     File(PathBuf),
-    /// Switch to an open buffer.
-    Buffer(DocumentId),
+    /// Switch to something already open.
+    Document(DocumentId),
     /// Switch theme.
     /// A theme, by the name it answers to.
     ///

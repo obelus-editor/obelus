@@ -807,7 +807,7 @@ impl App {
     /// How many buffers are open, for a test that wants to know whether a
     /// key that had nowhere to go left one behind anyway.
     #[must_use]
-    pub fn buffer_count_for_test(&self) -> usize {
+    pub fn document_count_for_test(&self) -> usize {
         self.documents
             .iter()
             .flatten()
@@ -970,7 +970,7 @@ impl App {
             // An agent at work in the conversation being read.
             || working
             // Or in one that is not, while the list that says so is open.
-            || (self.selected_buffer().is_some() && self.anything_working())
+            || (self.selected_document().is_some() && self.anything_working())
     }
 
     /// Whether an agent is at work in any conversation at all.
@@ -1047,8 +1047,8 @@ impl App {
     pub(super) fn context(&self) -> Context {
         // A list whose rows are open files is the list of open files, and
         // that one has a command of its own.
-        if self.selected_buffer().is_some() {
-            return Context::Buffers;
+        if self.selected_document().is_some() {
+            return Context::Documents;
         }
         if self.is_showing_dialog() {
             return Context::Dialog;

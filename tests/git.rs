@@ -4181,7 +4181,7 @@ fn the_commit_that_wrote_a_line_is_where_the_walk_stops() {
     // Onto "x", which the newest commit wrote.
     dispatch::dispatch(&mut app, Command::HistoryLine);
     settle(&mut app);
-    let opened = app.buffer_count_for_test();
+    let opened = app.document_count_for_test();
 
     // The version it opened is the one that wrote that line, so asking
     // again has nowhere to go. It says so, and it does not leave another
@@ -4195,7 +4195,7 @@ fn the_commit_that_wrote_a_line_is_where_the_walk_stops() {
         "pressing on says nothing about why nothing happened:\n{dump}"
     );
     assert_eq!(
-        app.buffer_count_for_test(),
+        app.document_count_for_test(),
         opened,
         "a buffer was opened for every press that had nowhere to go"
     );

@@ -234,9 +234,9 @@ pub enum Context {
     Always,
     /// Reading a file, with nothing over it.
     Normal,
-    /// The list of open files: the one dialog with a command of its own,
-    /// which is the command that closes a file.
-    Buffers,
+    /// The list of what is open: the one dialog with a command of its own,
+    /// which is the command that closes what a row names.
+    Documents,
     /// Reading a conversation with an agent, with nothing over it.
     ///
     /// A document, so obelus's own keys reach it -- but not quite the same
@@ -332,7 +332,7 @@ impl Keymap {
                     chord: function(1),
                 },
                 Binding {
-                    command: Command::BufferList,
+                    command: Command::DocumentList,
                     context: Context::Normal,
                     chord: function(2),
                 },
@@ -433,7 +433,7 @@ impl Keymap {
                     chord: control('p'),
                 },
                 Binding {
-                    command: Command::BufferClose,
+                    command: Command::DocumentClose,
                     context: Context::Normal,
                     chord: control('w'),
                 },
@@ -443,8 +443,8 @@ impl Keymap {
                 // place -- and the list is a dialog, so it has to be bound
                 // in it to reach it.
                 Binding {
-                    command: Command::BufferClose,
-                    context: Context::Buffers,
+                    command: Command::DocumentClose,
+                    context: Context::Documents,
                     chord: control('w'),
                 },
                 Binding {
@@ -707,7 +707,7 @@ impl Keymap {
         }
         // The list of open files is a dialog with one command of its own,
         // so what every dialog answers it answers too.
-        if context == Context::Buffers
+        if context == Context::Documents
             && let Some(command) = self.find(chord, Context::Dialog)
         {
             return Some(command);

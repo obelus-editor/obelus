@@ -132,7 +132,7 @@ impl App {
         if to.buffer.get() >= self.documents.len() {
             return;
         }
-        self.go_to_buffer(to.buffer);
+        self.go_to_file(to.buffer);
         let area = self.text_area();
         if let Some(buffer) = self.file_mut(to.buffer) {
             buffer.place_cursor(to.line, to.column);

@@ -46,7 +46,7 @@ impl App {
             // reader who has seen one has read the other.
             trailing: buffer.content().short(),
             changed: None,
-            value: PickerValue::Buffer(DocumentId::new(index)),
+            value: PickerValue::Document(DocumentId::new(index)),
             enabled: true,
             colours: None,
             status: statuses.get(buffer.path()).copied(),
@@ -111,7 +111,7 @@ impl App {
             // answering are two rows a reader cannot otherwise tell apart.
             trailing: talker.map(|talker| talker.id().to_string()),
             changed: None,
-            value: PickerValue::Buffer(DocumentId::new(index)),
+            value: PickerValue::Document(DocumentId::new(index)),
             enabled: true,
             colours: None,
             status: None,
@@ -349,8 +349,13 @@ impl App {
         }
     }
 
-    /// Offers the files already open.
-    pub fn open_buffer_picker(&mut self) {
+    /// Offers whatever is already open.
+    ///
+    /// Files and conversations in one list, because they are one list: what
+    /// the reader can switch between. A second list for the conversations
+    /// would be a second key, a second thing to learn, and two answers to
+    /// "where was I".
+    pub fn open_document_picker(&mut self) {
         // Before the buffers are borrowed to build the rows.
         self.gather_statuses();
         // In the order they were opened, which is the order the slots are
@@ -379,15 +384,27 @@ impl App {
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::FullArea);
-        // Reachable with nothing open at all, which is how obelus starts.
-        picker.when_empty("no file is open");
+        // Reachable with nothing open at all, which is how obelus starts --
+        // and was not, for as long as the command asked for a file.
+        picker.when_empty("nothing is open");
         picker.previews();
         // Opened on the file being read, like the file list: the rows are in
         // most-visited order, so the one the reader is *in* is not
         // necessarily first, and a list that starts somewhere arbitrary
         // makes them find their own file before they can leave it.
-        if let Some(buffer) = self.current_buffer() {
-            picker.prefer(relative(buffer.path(), &self.working_directory));
+        // Opened on whatever is being read, conversation or file: a list
+        // that started somewhere arbitrary would make the reader find where
+        // they are before they can leave it. By the row's own label, which
+        // is the only thing the list is keyed on -- and which a conversation
+        // has as much as a file does.
+        let here = self.current.and_then(|here| {
+            picker
+                .matches()
+                .find(|item| matches!(item.value, PickerValue::Document(id) if id == here))
+                .map(|item| item.label.clone())
+        });
+        if let Some(row) = here {
+            picker.prefer(row);
         }
         self.show_list(picker);
     }
@@ -401,7 +418,7 @@ impl App {
     pub fn close_current(&mut self) {
         // Asked about rather than done, for the reason leaving is asked
         // about: a closed buffer takes its undo with it.
-        let which = self.selected_buffer().or(self.current);
+        let which = self.selected_document().or(self.current);
         let unsaved = which
             .and_then(|id| self.file(id))
             .is_some_and(Buffer::is_dirty);
@@ -415,7 +432,7 @@ impl App {
         // is the row under the selection, not the file behind it: the list is
         // what the reader is pointing at, and one key that means "close this"
         // everywhere beats a second key that only works in one place.
-        if let Some(id) = self.selected_buffer() {
+        if let Some(id) = self.selected_document() {
             self.close(id);
             // Rebuilt rather than patched, keeping whatever was typed: a
             // patched list would have to agree with the buffers about which
@@ -425,7 +442,7 @@ impl App {
                 .as_ref()
                 .map(|picker| picker.query().to_string())
                 .unwrap_or_default();
-            self.open_buffer_picker();
+            self.open_document_picker();
             if let Some(picker) = self.picker.as_mut() {
                 picker.set_query(&query);
             }
@@ -439,8 +456,13 @@ impl App {
         self.close(id);
     }
 
-    /// Moves to a buffer.
-    pub(super) fn go_to_buffer(&mut self, id: DocumentId) {
+    /// Moves to a file, and to nothing else.
+    ///
+    /// What the jump list and the history go through: both land on a line,
+    /// and a conversation has none. Choosing a row of the list of what is
+    /// open goes through [`App::go_to_document`] instead, because that list
+    /// has conversations in it.
+    pub(super) fn go_to_file(&mut self, id: DocumentId) {
         if self.file(id).is_some() {
             self.current = Some(id);
         }
@@ -457,10 +479,10 @@ impl App {
         }
     }
 
-    /// The buffer the open picker's selection names, if that is what it is.
-    pub(super) fn selected_buffer(&self) -> Option<DocumentId> {
+    /// What the open list's selection names, if that is what the list is.
+    pub(super) fn selected_document(&self) -> Option<DocumentId> {
         match self.picker.as_ref()?.selected_item()?.value {
-            PickerValue::Buffer(id) => Some(id),
+            PickerValue::Document(id) => Some(id),
             _ => None,
         }
     }
@@ -470,42 +492,42 @@ impl App {
         let Some(document) = self.documents.get_mut(id.get()).and_then(Option::take) else {
             return;
         };
-        // Everything below is what shutting a *file* means -- a server to
-        // tell, a watch to drop, the tokens it was told about. The slot is
-        // already empty either way, which is what closing is.
-        let Some(buffer) = document.file() else {
-            return;
-        };
-
-        // Tell the server before dropping it: the message needs the path, and
-        // a server left believing a file is open answers questions about a
-        // version that no longer exists anywhere.
-        //
-        // Not for a commit's version, which was never opened to it -- the
-        // three notifications that go the other way all refuse one, and a
-        // close for a document nobody announced tells a server to forget
-        // the *file* at that path, which is open.
-        if buffer.content().is_file()
-            && let Some(language) = buffer.language()
-            && let Some(client) = self.servers.get_mut(&language)
-            && let Ok(uri) = lsp::client::uri_for(buffer.path())
-        {
-            let _ = client.notify(
-                "textDocument/didClose",
-                &serde_json::json!({ "textDocument": { "uri": uri } }),
-            );
+        // What shutting a *file* means -- a server to tell, a watch to drop,
+        // the tokens it was told about. A conversation has none of those and
+        // is shut by the slot being empty, which has already happened: the
+        // early return this used to take left `current` naming a slot with
+        // nothing in it.
+        if let Some(buffer) = document.file() {
+            // Tell the server before dropping it: the message needs the path, and
+            // a server left believing a file is open answers questions about a
+            // version that no longer exists anywhere.
+            //
+            // Not for a commit's version, which was never opened to it -- the
+            // three notifications that go the other way all refuse one, and a
+            // close for a document nobody announced tells a server to forget
+            // the *file* at that path, which is open.
+            if buffer.content().is_file()
+                && let Some(language) = buffer.language()
+                && let Some(client) = self.servers.get_mut(&language)
+                && let Ok(uri) = lsp::client::uri_for(buffer.path())
+            {
+                let _ = client.notify(
+                    "textDocument/didClose",
+                    &serde_json::json!({ "textDocument": { "uri": uri } }),
+                );
+            }
+            if let Some(watcher) = self.watcher.as_mut() {
+                watcher.unwatch(buffer.path());
+            }
+            // What the server said this file's tokens were goes with it. The
+            // entry would answer correctly for as long as the file stayed shut,
+            // and then be one version behind whoever opened it next.
+            self.tokens.remove(buffer.path());
+            self.note = Some(format!(
+                "closed {}",
+                relative(buffer.path(), &self.working_directory)
+            ));
         }
-        if let Some(watcher) = self.watcher.as_mut() {
-            watcher.unwatch(buffer.path());
-        }
-        // What the server said this file's tokens were goes with it. The
-        // entry would answer correctly for as long as the file stayed shut,
-        // and then be one version behind whoever opened it next.
-        self.tokens.remove(buffer.path());
-        self.note = Some(format!(
-            "closed {}",
-            relative(buffer.path(), &self.working_directory)
-        ));
         drop(document);
 
         // Whichever file is nearest, before the closed one for preference:
@@ -516,7 +538,7 @@ impl App {
         }
     }
 
-    /// The open buffer nearest to a slot, looking back first.
+    /// Whatever is open nearest to a slot, looking back first.
     fn nearest_open(&self, from: usize) -> Option<DocumentId> {
         (0..from)
             .rev()
@@ -632,7 +654,7 @@ impl App {
             if self.current != Some(id) {
                 self.record(from);
             }
-            self.go_to_buffer(id);
+            self.go_to_file(id);
             return;
         }
         match Buffer::open(path) {
@@ -650,7 +672,7 @@ impl App {
                 // is a place `go-back` would take them for no reason.
                 self.record(from);
                 let id = DocumentId::new(index);
-                self.go_to_buffer(id);
+                self.go_to_file(id);
                 self.serve(index);
             }
             // A path from the walk can have gone away, or be a file this user
@@ -771,7 +793,7 @@ impl App {
     pub fn open_buffer_for_test(&mut self, buffer: Buffer) {
         self.documents.push(Some(Document::from(buffer)));
         let index = self.documents.len() - 1;
-        self.go_to_buffer(DocumentId::new(index));
+        self.go_to_file(DocumentId::new(index));
     }
 
     /// Opens a path the way choosing it from a list does.

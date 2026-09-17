@@ -30,7 +30,7 @@ use crate::{
 ///
 /// Ways *in*, which is what this screen is for: a file, a file that has
 /// changed, a search of the tree, the agent, everything by name, and the way
-/// out. Not `switch-file` -- there is nothing open to switch to on the one
+/// out. Not `switch-document` -- there is nothing open to switch to on the one
 /// screen where this is showing.
 ///
 /// The words are this screen's own, not [`crate::command::CommandSpec`]'s.

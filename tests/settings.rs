@@ -1731,11 +1731,11 @@ fn delete_takes_a_key_away() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Tab);
-    support::type_text(&mut app, "close-file");
+    support::type_text(&mut app, "close-document");
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Delete);
 
-    assert_eq!(app.keymap().chord_for(Command::BufferClose), None);
+    assert_eq!(app.keymap().chord_for(Command::DocumentClose), None);
     // Both of its bindings: the same command in the list of open files
     // closes the file on the row, and a reader who took its key away meant
     // both.
@@ -1743,12 +1743,12 @@ fn delete_takes_a_key_away() {
         !app.keymap()
             .bindings()
             .iter()
-            .any(|binding| binding.command == Command::BufferClose),
+            .any(|binding| binding.command == Command::DocumentClose),
         "one of the command's keys survived"
     );
     let written = std::fs::read_to_string(&file).expect("the file");
     assert!(
-        written.contains("close-file"),
+        written.contains("close-document"),
         "the key taken away is not in the file:\n{written}"
     );
 }

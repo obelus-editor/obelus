@@ -1571,8 +1571,8 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
     for name in [
         "open-file",
         "reload-file",
-        "switch-file",
-        "close-file",
+        "switch-document",
+        "close-document",
         "choose-theme",
         "ask-about-symbol",
         "show-outline",
@@ -1677,19 +1677,16 @@ fn a_key_does_nothing_where_its_command_is_dim() {
     empty.statuses_for_test(std::collections::HashMap::new());
     support::lay_out(&mut empty, 60, 12);
 
-    for (key, command) in [(2u8, Command::BufferList), (3, Command::FileChanged)] {
-        assert!(
-            !empty.offers(command),
-            "{} can run here, so this tests nothing",
-            command.name()
-        );
-        press_function(&mut empty, key);
-        assert!(
-            empty.picker().is_none(),
-            "f{key} opened a list its command was too dim to open"
-        );
-        assert_eq!(empty.note(), None, "f{key} said something instead");
-    }
+    assert!(
+        !empty.offers(Command::FileChanged),
+        "f3 can run here, so this tests nothing"
+    );
+    press_function(&mut empty, 3);
+    assert!(
+        empty.picker().is_none(),
+        "f3 opened a list its command was too dim to open"
+    );
+    assert_eq!(empty.note(), None, "f3 said something instead");
 
     // And the keys whose commands *can* run still work, or the rule would
     // have turned the table off.
@@ -1697,11 +1694,24 @@ fn a_key_does_nothing_where_its_command_is_dim() {
     assert!(empty.picker().is_some(), "f1 stopped opening the file list");
     press(&mut empty, KeyCode::Esc);
 
-    // With a file open, the list of open files is offered again -- and its
-    // key works again with it.
+    // The list of what is open is one of those, and it is worth saying why:
+    // it asked for a file to be open, which meant the message it carries for
+    // an empty list -- "no file is open" -- was one nobody could ever reach.
+    // A list of nothing is an answer, and the one obelus starts with.
+    assert!(
+        empty.offers(Command::DocumentList),
+        "the list of what is open refuses to say that nothing is"
+    );
+    press_function(&mut empty, 2);
+    assert!(
+        empty.picker().is_some(),
+        "f2 did nothing with nothing to list"
+    );
+    press(&mut empty, KeyCode::Esc);
+
     let mut reading = app();
     support::lay_out(&mut reading, 60, 12);
-    assert!(reading.offers(Command::BufferList));
+    assert!(reading.offers(Command::DocumentList));
     press_function(&mut reading, 2);
     assert!(
         reading.picker().is_some(),
@@ -2849,7 +2859,7 @@ fn closing_the_last_file_goes_back_to_the_welcome_screen() {
 
     let mut app = app();
     support::lay_out(&mut app, 64, 20);
-    obelus::command::dispatch::dispatch(&mut app, Command::BufferClose);
+    obelus::command::dispatch::dispatch(&mut app, Command::DocumentClose);
 
     let dump = support::render(&mut app, 64, 20);
     assert!(

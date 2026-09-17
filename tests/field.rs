@@ -355,7 +355,7 @@ mod in_place {
 
         use_provider_for_test(Provider::Osc52);
         let (_scratch, mut app) = open("field-keys-buffers");
-        dispatch::dispatch(&mut app, Command::BufferList);
+        dispatch::dispatch(&mut app, Command::DocumentList);
         // A row of it still on, which is what puts the keys in that
         // list's own context: a query that matched nothing would leave it
         // in every other dialog's, and prove nothing.
