@@ -202,6 +202,7 @@ mod tests {
     use super::*;
 
     /// Every server obelus knows how to start, and the arguments it needs.
+    ///
     /// A server told to speak the protocol on stdio and not given the flag
     /// that makes it do so sits there saying nothing, which looks exactly
     /// like a server that is still indexing.

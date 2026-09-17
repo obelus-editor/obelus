@@ -38,9 +38,9 @@ pub enum Topic {
 
 /// A conversation with an agent, whether or not it is on screen.
 ///
-/// Kept rather than opened: the view is a region the reader shows and hides,
-/// and a conversation that started again every time it was closed would be a
-/// conversation nobody could leave for a minute.
+/// Kept rather than opened: a reader moves between what is open all day, and
+/// a conversation that started again every time they went to a file would be
+/// a conversation nobody could leave for a minute.
 #[derive(Debug, Default)]
 pub struct Conversation {
     /// What it is about.

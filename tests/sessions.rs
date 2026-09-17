@@ -1,9 +1,10 @@
 //! Several conversations on one agent, and keeping them apart.
 //!
 //! Driven through [`obelus::acp::Talk`] rather than through the application,
-//! because the application still shows one conversation at a time: what is
-//! being tested is the half underneath, which is where two of them first
-//! become possible and first become able to spoil each other.
+//! because the half underneath is where two conversations first become
+//! possible and first become able to spoil each other -- a session routed to
+//! the wrong one is wrong before anything has been drawn. What the
+//! application does with them is [`tests/layers.rs`] and [`tests/agent.rs`].
 //!
 //! The agent is `tests/fixtures/fake-agent.sh`, a real process on the other
 //! end of a real pipe. It mints `s-1`, `s-2`, … and answers about whichever

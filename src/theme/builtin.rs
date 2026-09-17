@@ -118,8 +118,8 @@ pub const LIGHT: Theme = Theme {
     },
 };
 
-/// Every theme, in the order the picker lists them.
-/// Every theme compiled in, by the name it answers to.
+/// Every theme compiled in, by the name it answers to, in the order the
+/// picker lists them.
 ///
 /// The name is here rather than on [`Theme`] because a theme is a set of
 /// colours and a name is not one of them: the module's own rule is that

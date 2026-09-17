@@ -136,7 +136,6 @@ impl App {
         self.ask_tokens(index);
     }
 
-    /// Tells the server a document changed.
     /// Tells a server the document has been written to disk.
     ///
     /// Some of them do work only then -- a linter that runs on save, a
@@ -167,6 +166,7 @@ impl App {
         self.ask_tokens(index);
     }
 
+    /// Tells the server a document changed.
     pub(super) fn change_document(&mut self, index: usize) {
         let Some(buffer) = file_in(&self.documents, DocumentId::new(index)) else {
             return;
@@ -1010,7 +1010,6 @@ impl App {
             })
     }
 
-    /// Sends `workspace/symbol`, and says whether the question got out.
     /// Asks how the file should be laid out, so it can be written that way.
     ///
     /// Says whether anybody was asked. A save that nobody could format goes
@@ -1093,6 +1092,7 @@ impl App {
         self.write_now(id.get());
     }
 
+    /// Sends `workspace/symbol`, and says whether the question got out.
     pub(super) fn ask_workspace_symbols(&mut self, language: LanguageId, query: &str) -> bool {
         let Some(id) = self.current else { return false };
         let version = self.file(id).map(Buffer::version).unwrap_or_default();

@@ -548,11 +548,6 @@ mod command_tests {
         }
     }
 
-    /// Every command obelus has gets a glyph of its own, so the palette is a
-    /// column of pictures that mean something rather than one picture
-    /// repeated. There is no fallback to find a hole in: the match is over
-    /// the commands themselves, so a new one that nobody has drawn a picture
-    /// for does not compile.
     /// A row that names something is read by its picture first, so two
     /// kinds that mean different things cannot wear the same one -- and
     /// none of them may wear the one that means "no idea what this is".
@@ -588,6 +583,11 @@ mod command_tests {
         }
     }
 
+    /// Every command obelus has gets a glyph of its own, so the palette is a
+    /// column of pictures that mean something rather than one picture
+    /// repeated. There is no fallback to find a hole in: the match is over
+    /// the commands themselves, so a new one that nobody has drawn a picture
+    /// for does not compile.
     #[test]
     fn every_command_has_its_own_glyph() {
         let mut seen = std::collections::HashMap::new();

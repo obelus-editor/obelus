@@ -392,7 +392,6 @@ fn width_of(row: &str) -> u16 {
     u16::try_from(row.width()).unwrap_or(u16::MAX)
 }
 
-/// A colour `along` of the way from one to another.
 /// The colour of one step of the wordmark at one moment.
 ///
 /// The ramp runs from `from` to `to` and back again over [`CYCLE`] steps, and

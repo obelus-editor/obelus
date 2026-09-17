@@ -29,7 +29,7 @@ impl App {
     /// it: there is no other way back to what was in it.
     pub(super) fn ask_before_closing(&mut self, id: DocumentId) {
         self.stop_to_ask(
-            Question::new(format!("{} is unsaved", self.buffer_path(id)))
+            Question::new(format!("{} is unsaved", self.file_path(id)))
                 .way("save and close it", Answer::Closing(id, Closing::Save))
                 .way(
                     "close it without saving",
@@ -46,7 +46,7 @@ impl App {
             // saying less than it knows -- and the reader is about to
             // decide whether to write it.
             1 => match self.first_unsaved() {
-                Some(id) => format!("{} is unsaved", self.buffer_path(id)),
+                Some(id) => format!("{} is unsaved", self.file_path(id)),
                 None => "1 file is unsaved".to_string(),
             },
             many => format!("{many} files are unsaved"),
@@ -69,7 +69,7 @@ impl App {
     /// "no".
     pub(super) fn ask_before_saving(&mut self, id: DocumentId) {
         self.stop_to_ask(
-            Question::new(format!("{} changed on disk", self.buffer_path(id)))
+            Question::new(format!("{} changed on disk", self.file_path(id)))
                 .way("save mine over it", Answer::Saving(id, Saving::Mine))
                 .saying("loses what was written there")
                 .way("take what is on disk", Answer::Saving(id, Saving::Theirs))
@@ -86,7 +86,7 @@ impl App {
     /// instead, and nothing there to write over.
     pub(super) fn ask_before_writing_back(&mut self, id: DocumentId) {
         self.stop_to_ask(
-            Question::new(format!("{} was deleted", self.buffer_path(id)))
+            Question::new(format!("{} was deleted", self.file_path(id)))
                 .way("write it back", Answer::Writing(id, Writing::Back))
                 .way(
                     "close it and let it go",
@@ -143,7 +143,7 @@ impl App {
     /// the block above the ways out: a block that said the path while the
     /// prompt said the name would be one fact drawn twice, taking two rows
     /// and a rule to do it.
-    fn buffer_path(&self, id: DocumentId) -> String {
+    fn file_path(&self, id: DocumentId) -> String {
         self.file(id).map_or_else(String::new, |buffer| {
             relative(buffer.path(), &self.working_directory)
         })

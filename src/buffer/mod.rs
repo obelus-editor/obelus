@@ -36,7 +36,7 @@ pub use crate::editing::{Cursor, Editing, Motion, Typing};
 /// A *document* rather than a buffer, because a buffer is one kind: a file,
 /// with text and a syntax tree and a cursor in it. What this names is a
 /// place in the list of what the reader can switch between, and that list
-/// is about to hold something else as well.
+/// holds conversations as well -- see [`crate::document::Document`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DocumentId(usize);
 
@@ -61,11 +61,14 @@ impl DocumentId {
 /// and conflating them is how a program ends up with a clock that has a
 /// syntax tree: a buffer over a file has text, a version and a language
 /// server; a buffer over a clock or a calendar has none of those and still
-/// wants a name, a place in the buffer list, and a way to be shown.
+/// wants a name, a place in the list, and a way to be shown.
 ///
-/// Deliberately not built out yet. A second variant means the text, the
-/// syntax and the reload path move inside this one, which is a change worth
-/// making when there is something to put beside them and not before.
+/// A conversation is *not* the second variant, and this is where it was
+/// weighed: it has no text at all, so the line this draws -- text, with or
+/// without a file behind it -- is not the line it falls on.
+/// [`crate::document::Document`] is the line above, and the one a
+/// conversation is on the other side of. What this was drafted for, a clock
+/// or a calendar, is still what it is for.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Content {
     /// A file on disk.

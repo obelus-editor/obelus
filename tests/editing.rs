@@ -1210,7 +1210,7 @@ mod saying {
     }
 
     #[test]
-    fn the_buffer_list_marks_what_is_unwritten() {
+    fn the_document_list_marks_what_is_unwritten() {
         let (_scratch, mut app, _path) = reading("say-list", "fn main() {}\n");
         support::type_text(&mut app, "x");
         dispatch::dispatch(&mut app, Command::DocumentList);

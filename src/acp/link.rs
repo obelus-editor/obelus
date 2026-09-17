@@ -6,10 +6,12 @@
 //! checks. What it is built around is `async`, and obelus's main loop is a
 //! thread blocked on a channel -- so this is the join between them.
 //!
-//! One thread runs the connection. It holds the whole conversation: the
-//! handshake, the session, and a loop over the [`Ask`]s obelus sends it. In
-//! the other direction everything becomes an [`Event`] on the loop's own
-//! channel, like the keyboard, the file walk and the language servers.
+//! One thread runs the connection. It holds the whole of obelus's side of
+//! it: the handshake, every conversation opened on it, and a loop over the
+//! [`Ask`]s obelus sends it. In the other direction everything becomes an
+//! [`Event`] on the loop's own channel, like the keyboard, the file walk and
+//! the language servers. Every message in both directions names which
+//! conversation it is about, because one agent holds several.
 //!
 //! The two directions are not symmetrical, and that is the interesting
 //! part. What obelus *asks* is fire-and-forget: a prompt is spawned as a
@@ -544,9 +546,6 @@ pub fn start(
     asks
 }
 
-/// The whole conversation, from the handshake to the end of the stream.
-///
-/// Returns why it ended, or `None` because it ended tidily.
 /// Opens one conversation on a connection that is already up.
 ///
 /// Both the first and every one after it: the first is opened without being
@@ -592,6 +591,9 @@ async fn open_session(
     Ok(session)
 }
 
+/// The whole connection, from the handshake to the end of the stream.
+///
+/// Returns why it ended, or `None` because it ended tidily.
 async fn talk(
     config: AcpAgentConfig,
     root: PathBuf,
@@ -1066,7 +1068,6 @@ fn refusal(why: &str) -> agent_client_protocol::Error {
     agent_client_protocol::Error::method_not_found().data(serde_json::json!(why))
 }
 
-/// What a permission request is about.
 /// What the agent is actually about to do, for the reader deciding whether
 /// to let it.
 ///

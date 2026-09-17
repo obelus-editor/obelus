@@ -224,10 +224,14 @@ impl KeyChord {
 /// Which set of bindings applies.
 ///
 /// The reader is either reading a file or inside something -- a list, the
-/// settings, a conversation -- and those are different worlds as far as the
-/// keys go. What is bound everywhere applies to the first and not to the
-/// second: a dialog takes the keys it is given here and nothing else, so
-/// obelus's own commands cannot put a second dialog over the first.
+/// settings, the counts -- and those are different worlds as far as the keys
+/// go. What is bound everywhere applies to the first and not to the second:
+/// a dialog takes the keys it is given here and nothing else, so obelus's
+/// own commands cannot put a second dialog over the first.
+///
+/// A conversation is on the first side of that line, not the second: it is
+/// one of the things the reader can be reading, so the keys that work over a
+/// file work in it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Context {
     /// Applies whatever obelus is showing -- as long as that is a file.
@@ -437,7 +441,7 @@ impl Keymap {
                     context: Context::Normal,
                     chord: control('w'),
                 },
-                // And the same key in the list of open files, where it
+                // And the same key in the list of what is open, where it
                 // closes the one on the row. One key that means "close
                 // this" everywhere beats a second key that works in one
                 // place -- and the list is a dialog, so it has to be bound

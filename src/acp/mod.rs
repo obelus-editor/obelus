@@ -274,7 +274,10 @@ impl Talk {
         });
     }
 
-    /// Whether the conversation has ended.
+    /// Whether the agent's process has ended.
+    ///
+    /// The process, not a conversation: one agent holds as many
+    /// conversations as the reader has opened, and they end when it does.
     #[must_use]
     pub const fn has_exited(&self) -> bool {
         self.gone.is_some()
@@ -420,7 +423,7 @@ impl Talk {
         self.set(session, &id, chosen);
     }
 
-    /// Stops talking, which ends the conversation and the process with it.
+    /// Stops talking, which ends every conversation and the process with it.
     ///
     /// Dropping the asks is the whole of it: the thread's loop over them
     /// ends, the connection closes, and the agent -- reading a pipe that
@@ -430,11 +433,11 @@ impl Talk {
         self.sessions.clear();
     }
 
-    /// Whether the conversation is still going, for the frame that checks.
+    /// Whether the agent is still there, for the frame that checks.
     ///
-    /// A conversation ends by saying so -- the thread sends `Gone` -- so
-    /// there is nothing to ask an operating system here. It is a reader of
-    /// what has already arrived, which is why the view can call it.
+    /// It ends by saying so -- the thread sends `Gone` -- so there is
+    /// nothing to ask an operating system here. It is a reader of what has
+    /// already arrived, which is why the view can call it.
     pub const fn is_alive(&self) -> bool {
         self.gone.is_none()
     }

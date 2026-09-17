@@ -13,10 +13,11 @@
 //! place, and the fact that escape from anything over them comes back
 //! *here*.
 //!
-//! One variant so far, which is on purpose: the list, the id and the
-//! switching move to this shape first, and what goes in beside a file
-//! arrives afterwards. If moving them churns a test, the shape was wrong
-//! and better to know before there is a second kind of thing riding on it.
+//! It arrived with one variant on purpose: the list, the id and the
+//! switching moved to this shape before anything went in beside a file, so
+//! that a churned test would have said the shape was wrong while there was
+//! still nothing riding on it. Nothing churned, and the conversation went
+//! in.
 
 use crate::{buffer::Buffer, conversation::Conversation};
 

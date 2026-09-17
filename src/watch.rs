@@ -38,9 +38,9 @@ pub struct Watcher {
     inner: RecommendedWatcher,
     /// The directories being watched.
     ///
-    /// A set rather than a reference count because nothing can stop watching
-    /// yet: M0 has no way to close a buffer. When it has one, this becomes a
-    /// count and the last buffer out of a directory takes the watch with it.
+    /// Counted, so that the last file out of a directory takes the watch
+    /// with it: several open files share one directory, and a watch dropped
+    /// when the first of them closes would leave the rest not reloading.
     directories: HashMap<PathBuf, usize>,
 }
 

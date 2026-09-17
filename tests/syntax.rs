@@ -127,15 +127,6 @@ fn an_unchanged_file_yields_no_edit() {
     assert!(parse::edit_between(&text, &Text::from_string(SOURCE)).is_none());
 }
 
-/// The trimmed region must not cut a multi-byte character in half:
-/// tree-sitter is handed byte offsets and would be told to reparse from the
-/// middle of a glyph.
-///
-/// Both cases need two *different* characters that share a byte, or the
-/// byte-wise scan stops on a boundary by luck and the rounding is never
-/// exercised at all. U+597D and U+5988 share their first byte, so the prefix
-/// scan overshoots; U+00E9 and U+03A9 share their last, so the suffix scan
-/// does.
 /// Whether a byte offset is the start of a character.
 ///
 /// `Rope::try_byte_to_char` will not answer this: it errors only when the
@@ -146,6 +137,15 @@ fn on_boundary(text: &Text, byte: usize) -> bool {
     byte <= rope.len_bytes() && rope.char_to_byte(rope.byte_to_char(byte)) == byte
 }
 
+/// The trimmed region must not cut a multi-byte character in half:
+/// tree-sitter is handed byte offsets and would be told to reparse from the
+/// middle of a glyph.
+///
+/// Both cases need two *different* characters that share a byte, or the
+/// byte-wise scan stops on a boundary by luck and the rounding is never
+/// exercised at all. U+597D and U+5988 share their first byte, so the prefix
+/// scan overshoots; U+00E9 and U+03A9 share their last, so the suffix scan
+/// does.
 #[test]
 fn the_trimmed_region_starts_and_ends_on_character_boundaries() {
     let cases: &[(&str, &str, &str)] = &[

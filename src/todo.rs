@@ -315,12 +315,6 @@ impl Todo {
     }
 }
 
-/// A string as TOML writes one.
-///
-/// The multi-line form where there is a newline in it, because a note is
-/// allowed to be a paragraph and `"a\nb"` is a paragraph nobody can read in
-/// the file. Escaped either way: a note may quote code, and code has quotes
-/// and backslashes in it.
 /// What a note says, with the blank line off the end.
 ///
 /// A text that ends in a newline has an empty last line, and that line is a
@@ -333,6 +327,12 @@ pub fn trimmed(text: &str) -> String {
     text.trim_end_matches('\n').to_string()
 }
 
+/// A string as TOML writes one.
+///
+/// The multi-line form where there is a newline in it, because a note is
+/// allowed to be a paragraph and `"a\nb"` is a paragraph nobody can read in
+/// the file. Escaped either way: a note may quote code, and code has quotes
+/// and backslashes in it.
 fn quoted(text: &str) -> String {
     let escaped: String = text
         .chars()
