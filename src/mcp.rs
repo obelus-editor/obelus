@@ -71,11 +71,16 @@ impl Obelus {
     /// A server on this tree, answering to this main loop.
     #[must_use]
     pub fn new(root: &std::path::Path, events: Sender<Event>) -> Self {
-        // One line per agent that connects, which is the thing that could
-        // not be found out before: obelus offering tools and an agent
+        // One line per connection to the tools, which is the thing that
+        // could not be found out before: obelus offering them and an agent
         // taking them up looked exactly alike from outside, and both looked
         // like nothing at all.
-        tracing::info!(root = %root.display(), "an agent has reached the tools");
+        //
+        // Per connection and not per agent, which is what it says: the
+        // transport builds one of these for each, and one agent opens
+        // several over a turn. Counting them is not the point -- the point
+        // is that there were any.
+        tracing::info!(root = %root.display(), "something has connected to the tools");
         Self {
             root: root.to_path_buf(),
             events,
@@ -89,7 +94,21 @@ impl Obelus {
     /// hang under another: a flat list would have an agent asking to finish
     /// a note without knowing what else was under it, and the tools take a
     /// note at a time.
-    #[tool(description = "\
+    ///
+    /// Said to be read-only, which it is: it reads a file of the reader's
+    /// own and changes nothing. Agents ask their reader before running a
+    /// tool and many of them stop asking for the ones that say this, which
+    /// spares a question about a tool whose whole act is to look something
+    /// up. A hint and not a promise -- the protocol says so, and says a
+    /// client should not trust one from a server it does not know -- but
+    /// obelus is the one making the claim about itself here, and it is
+    /// true.
+    ///
+    /// The other two say nothing of the sort, because it would not be true:
+    /// they write the reader's notes. What spares the question there is not
+    /// something obelus can say about a tool -- see the module's own note on
+    /// asking being the asking.
+    #[tool(annotations(read_only_hint = true), description = "\
         Every note this project keeps: what it says, whether it is done, and \
         the file and line it is about where it is about one. A note indented \
         under another hangs under it, and finishing or dropping the one \

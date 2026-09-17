@@ -78,6 +78,28 @@ fn an_agent_is_told_what_obelus_can_do() {
         listed.contains("\"note\""),
         "the schema did not carry the argument's name:\n{listed}"
     );
+
+    // The one that only looks says so, which is what spares the reader a
+    // question about a tool whose whole act is to look something up. The
+    // two that write the notes say nothing of the sort, and a `readOnlyHint`
+    // on either of them would be obelus telling an agent something untrue
+    // about itself to buy a quieter turn.
+    // Cut at the names rather than at the word, because a tool's
+    // description may name another tool -- `todo_finish` names `todo_list`
+    // in its own, which is where looking for the word found it.
+    let reading = listed
+        .split("\"name\":\"")
+        .find(|tool| tool.starts_with("todo_list\""))
+        .unwrap_or_default();
+    assert!(
+        reading.contains("\"readOnlyHint\":true"),
+        "the tool that only reads did not say so:\n{listed}"
+    );
+    assert_eq!(
+        listed.matches("\"readOnlyHint\":true").count(),
+        1,
+        "a tool that writes the notes says it only reads:\n{listed}"
+    );
 }
 
 /// The notes, as an agent reads them.
