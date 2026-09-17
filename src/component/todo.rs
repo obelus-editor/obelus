@@ -647,7 +647,17 @@ impl TodoView {
                 false => note.depth.saturating_sub(1),
             };
         }
-        self.enter_note(at, false);
+        // Rebuilt and followed rather than entered again: the reader is
+        // still in the note they were in, and what [`Self::enter_note`] does
+        // on the way into another is put away the one being left -- which
+        // for a note nobody has typed into yet is to take it away. A reader
+        // who starts a note and steps it in before saying anything is doing
+        // the ordinary thing, and it took the note from under them.
+        //
+        // The rows change all the same: the column narrows when the list
+        // gets deeper than it was, so what was one row may now be two.
+        self.rebuild();
+        self.follow_caret();
         true
     }
 
@@ -733,14 +743,12 @@ impl TodoView {
             // note already as far in as the one above it -- which is on the
             // screen, one row up.
             KeyCode::Tab if bare => {
-                self.keep();
                 match self.shift_subtree(1) {
                     true => TodoOutcome::Changed,
                     false => TodoOutcome::Consumed,
                 }
             }
             KeyCode::BackTab => {
-                self.keep();
                 match self.shift_subtree(-1) {
                     true => TodoOutcome::Changed,
                     false => TodoOutcome::Consumed,

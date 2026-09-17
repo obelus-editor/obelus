@@ -1337,3 +1337,40 @@ fn a_deep_notes_words_are_wrapped_to_fit_where_they_are_drawn() {
         "the notes wrapped in different columns: {widths:?}\n{dump}"
     );
 }
+
+/// A note started and not yet typed into can still be put under the one
+/// above it.
+///
+/// Starting one and stepping it in is the order a reader does it in: they
+/// press enter, see where it landed, and move it. The step went through the
+/// door that switches to another note, and that door puts away whatever was
+/// being written -- which for a note nobody has typed into yet means taking
+/// it away, because a note that says nothing is not a note. So the key
+/// looked as though it did nothing, and had in fact dropped the note.
+#[test]
+fn a_new_note_can_be_stepped_in_before_it_says_anything() {
+    let scratch = tree("new-then-tab", NESTED);
+    let mut app = open(&scratch, 76, 20);
+
+    // Onto "the settings page", the last note, and start another under it.
+    for _ in 0..4 {
+        press(&mut app, KeyCode::Down);
+    }
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Tab);
+    support::type_text(&mut app, "and its keys");
+    press(&mut app, KeyCode::Esc);
+
+    assert_eq!(
+        titles(&scratch),
+        vec![
+            "the counts tree",
+            "walk it once",
+            "and cache the walk",
+            "then draw it",
+            "the settings page",
+            "and its keys",
+        ]
+    );
+    assert_eq!(depths(&scratch), vec![0, 1, 2, 1, 0, 1]);
+}
