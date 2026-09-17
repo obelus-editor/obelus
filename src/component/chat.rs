@@ -35,6 +35,15 @@ pub enum Speaker {
     /// the foot of the transcript where the next thing will appear. It is
     /// there while it is true and gone when it is not.
     Doing,
+    /// One step of the list the agent is working through.
+    ///
+    /// Its own voice rather than a [`Self::Doing`] row that happens not to
+    /// be the first: what a row is has to be something it says, not
+    /// something read off two other fields. While it was inferred it
+    /// inherited what belongs to the row above it -- the way to stop the
+    /// turn, on every step, and a status drawn both in front of the words
+    /// and behind them.
+    Step,
 }
 
 /// One thing that was said.
@@ -572,7 +581,7 @@ impl Chat {
                         .into_iter()
                         .enumerate()
                         .map(|(line, text)| Row {
-                            speaker: Speaker::Doing,
+                            speaker: Speaker::Step,
                             text,
                             first: false,
                             // On the first row of a step only, so a step
@@ -668,15 +677,33 @@ impl Chat {
         let room = width.saturating_sub(u16::from(depth) * DEEPER);
         let inside = room.saturating_sub(DEEPER);
 
-        // A change is not prose. It is drawn as the lines it is, under the
-        // call's own row -- which is what folds them, because a diff is the
-        // one thing an agent sends that is longer than the screen.
-        if !said.change.is_empty() {
+        // What a call carries, under the call's own row -- which is what
+        // folds it, because a diff is the one thing an agent sends that is
+        // longer than the screen and a plan is the other. Neither is prose:
+        // the row says what the call is and this is what it is about.
+        //
+        // One shape for the words and the lines, and both of them where a
+        // call has both. They were two arms once, the change first and
+        // returning, so a call that said why it was changing something had
+        // the why dropped -- and the protocol puts them in one list.
+        //
+        // The words first: they are the account of the change, and an
+        // account after the thing it accounts for is a footnote.
+        if !said.words.is_empty() || !said.change.is_empty() {
             let mut rows = vec![Row {
-                changed: Some(crate::git::change::counted(&said.change)),
+                changed: (!said.change.is_empty())
+                    .then(|| crate::git::change::counted(&said.change)),
                 ..self.opening(said, said.text.clone(), depth, Some(at))
             }];
             if self.is_open(at) {
+                rows.extend(said.words.iter().flat_map(|words| {
+                    crate::text::wrapped(words, inside)
+                        .into_iter()
+                        .map(|text| Self::under(said, text, depth + 1))
+                }));
+                // A diff's own markers, which words do not get: "it is
+                // changing this" and "it is saying this" are different
+                // news, and the markers are where a reader takes that in.
                 rows.extend(said.change.iter().flat_map(|line| {
                     crate::text::wrapped(&line.text, inside)
                         .into_iter()
@@ -684,24 +711,6 @@ impl Chat {
                             marker: line.marker,
                             ..Self::under(said, text, depth + 1)
                         })
-                }));
-            }
-            return rows;
-        }
-
-        // And words a call carried, under its own row the same way. Not
-        // prose either: the call's row says what it is and the words are
-        // what it is about, which is the shape a change already has. What
-        // they do not get is a diff's markers -- "it is changing this" and
-        // "it is saying this" are different news, and the markers are where
-        // a reader takes that in.
-        if !said.words.is_empty() {
-            let mut rows = vec![self.opening(said, said.text.clone(), depth, Some(at))];
-            if self.is_open(at) {
-                rows.extend(said.words.iter().flat_map(|words| {
-                    crate::text::wrapped(words, inside)
-                        .into_iter()
-                        .map(|text| Self::under(said, text, depth + 1))
                 }));
             }
             return rows;
@@ -1327,6 +1336,22 @@ mod tests {
         }
     }
 
+    /// A call that both changes a file and says why.
+    ///
+    /// Which the protocol allows -- the content of a call is a list, and a
+    /// diff and some words are two of the things that go in it.
+    fn saying_and_changing(id: &str, said: &str) -> crate::acp::Call {
+        crate::acp::Call {
+            said: vec![said.to_string()],
+            change: Some(crate::acp::Change {
+                path: std::path::PathBuf::from("a.rs"),
+                before: None,
+                after: "a line\n".to_string(),
+            }),
+            ..call(id, "Write a.rs", "edit", Vec::new())
+        }
+    }
+
     /// The same, carrying words.
     fn saying(id: &str, title: &str, said: &[&str]) -> crate::acp::Call {
         crate::acp::Call {
@@ -1491,6 +1516,36 @@ mod tests {
             chat.said[0].words,
             ["and what came of asking"],
             "silence wiped what was said"
+        );
+    }
+
+    /// A call that changes a file and says why shows both.
+    ///
+    /// The protocol puts them in one list, so a reader gets both or the
+    /// arm that ran first decided for them: the words went when the change
+    /// was read on its own and returned.
+    #[test]
+    fn a_call_that_changes_something_and_says_why_shows_both() {
+        let mut chat = Chat::new();
+        chat.tool(&saying_and_changing("c1", "because the cache is wrong"), "pending");
+        let said: Vec<String> = chat
+            .rows(ROOM.reading)
+            .iter()
+            .map(|row| row.text.clone())
+            .collect();
+        assert!(
+            said.iter().any(|text| text == "because the cache is wrong"),
+            "the words went with the change: {said:?}"
+        );
+        assert!(
+            said.iter().any(|text| text == "a line"),
+            "the change went with the words: {said:?}"
+        );
+        // The account before the thing it accounts for.
+        assert!(
+            said.iter().position(|text| text == "because the cache is wrong")
+                < said.iter().position(|text| text == "a line"),
+            "the why is a footnote to the what: {said:?}"
         );
     }
 

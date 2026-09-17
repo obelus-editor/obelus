@@ -2721,14 +2721,16 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
     // about the words can see it.
     support::check("plan_76x24", &dump);
 
-    // And none of it is in the transcript: it is state, so it goes when it
-    // stops being true rather than staying as a record of itself.
+    // And none of it was written into the transcript: every row carrying a
+    // step is one the row that says what is happening owns -- itself, or a
+    // step under it. It is state, so it goes when it stops being true
+    // rather than staying as a record of itself.
+    use obelus::component::chat::Speaker;
     let said = app.chat().expect("a conversation").rows(WIDTH);
     assert!(
-        !said
-            .iter()
-            .any(|row| row.speaker != obelus::component::chat::Speaker::Doing
-                && row.text.contains("write the test")),
-        "the list was written into the transcript"
+        said.iter()
+            .filter(|row| row.text.contains("write the test"))
+            .all(|row| matches!(row.speaker, Speaker::Doing | Speaker::Step)),
+        "the list was written into the transcript as something said"
     );
 }
