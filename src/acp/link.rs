@@ -577,6 +577,46 @@ pub fn start(
 /// asked for, because opening the view *is* the request, and the rest come
 /// from `Ask::Open`. One path for both, so that what a new conversation
 /// arrives with cannot depend on which it is.
+/// How much of a permission request is written down.
+///
+/// Enough to tell which call it is about and nothing like enough to be a
+/// copy of the work: a request to write a file carries the whole of what
+/// the file would say, and a log that kept those would be a log of the
+/// reader's source with their notes buried in it.
+const SAID_ABOUT: usize = 1200;
+
+/// Writes down what an agent asked permission for.
+///
+/// The protocol carries more about a call than obelus keeps -- the tool's
+/// own arguments, and whatever the agent puts in `_meta` -- and what obelus
+/// keeps is what it can draw. This is the rest of it, which is the only
+/// place to find out how an agent names a call: obelus's own tools raise a
+/// card of their own and being asked about them first is being asked twice,
+/// but telling one of those apart from an agent's own tool means knowing
+/// what a request about one looks like.
+fn said_about(request: &RequestPermissionRequest) {
+    let said = serde_json::to_string(&request.tool_call)
+        .unwrap_or_else(|error| format!("unreadable: {error}"));
+    tracing::info!(
+        session = %request.session_id.0,
+        asked = cut_to(&said, SAID_ABOUT),
+        whole = said.len(),
+        "an agent is asking permission"
+    );
+}
+
+/// The first `most` characters of it.
+///
+/// Characters rather than bytes, because a cut between the two halves of
+/// one is not a string at all -- and what an agent puts in a tool call is
+/// whatever the reader's files and the reader's language have in them.
+fn cut_to(said: &str, most: usize) -> &str {
+    match said.char_indices().nth(most) {
+        Some((at, _)) => &said[..at],
+        None => said,
+    }
+}
+
 /// Which way obelus can hand an agent its tools, if any.
 ///
 /// The agent says in the handshake which transports it can connect to, and
@@ -686,6 +726,7 @@ async fn talk(
         )
         .on_receive_request(
             async move |request: RequestPermissionRequest, responder, _connection| {
+                said_about(&request);
                 // The reader's to answer, so the question goes to the main
                 // loop and this waits for the keystroke. An answer that
                 // never comes -- the view closed, obelus quit -- is the
@@ -1656,6 +1697,24 @@ fn words(content: &ContentBlock) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What is written down about a call is cut by characters.
+    ///
+    /// Broken deliberately by cutting by bytes: a tool call naming a file
+    /// with anything but ASCII in it landed the cut inside a character, and
+    /// writing the log panicked in the middle of answering the agent.
+    #[test]
+    fn what_is_said_about_a_call_is_cut_where_a_character_ends() {
+        assert_eq!(cut_to("abcdef", 3), "abc");
+        // Shorter than the cut is the whole of it, not a panic.
+        assert_eq!(cut_to("ab", 8), "ab");
+        assert_eq!(cut_to("", 8), "");
+        // Three bytes each, so every one of these cuts would be inside a
+        // character if it were counting bytes.
+        assert_eq!(cut_to("笔记本", 2), "笔记");
+        assert_eq!(cut_to("笔记本", 3), "笔记本");
+        assert_eq!(cut_to("笔记本", 9), "笔记本");
+    }
 
     /// The transport is the agent's to choose, and obelus asks.
     ///
