@@ -219,9 +219,26 @@ impl App {
         if !self.conversation_takes_text() {
             return;
         }
-        let width = crate::ui::chat::writing_width(self.editor_area);
-        if let Some(talk) = self.conversation_mut() {
-            talk.chat.paste(what, width);
+        // Each against the width its own rows are drawn at, which is what
+        // the wrapping is worked out from: a card's rows are inset inside
+        // the band the box would have had.
+        let area = self.editor_area;
+        let card_width = self
+            .conversation()
+            .and_then(|talk| talk.card.as_ref())
+            .map(|card| crate::ui::card::width_of(crate::ui::chat::bands_for(area, card).writing));
+        let width = crate::ui::chat::writing_width(area);
+        let Some(talk) = self.conversation_mut() else {
+            return;
+        };
+        // Into the card while one is up: it is what covers the box, so the
+        // half of it that takes words is the only place on screen the reader
+        // could be writing.
+        match (talk.card.as_mut(), card_width) {
+            (Some(card), Some(room)) => {
+                card.paste(what, room);
+            }
+            _ => talk.chat.paste(what, width),
         }
     }
 

@@ -1132,6 +1132,26 @@ fn a_permission_question_says_what_it_will_do() {
         "the card took the status row:\n{dump}"
     );
 
+    // Allow or refuse, and nothing to say in your own words: so there is
+    // nowhere on this card for text to go, and the key that would paste it
+    // is not offered rather than putting it in the box behind.
+    assert!(
+        !app.offers(obelus::command::Command::Paste),
+        "paste was offered on a card with nothing to write in"
+    );
+    app.handle(Event::Paste("nowhere for this".to_string()));
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !rows(&dump)
+            .iter()
+            .any(|row| row.contains("nowhere for this")),
+        "the paste landed somewhere on a card that takes no words:\n{dump}"
+    );
+    assert!(
+        app.chat().is_some_and(|chat| chat.writing().is_blank()),
+        "the paste went into the message box under the card"
+    );
+
     // And the answers are still answers: the list walks and chooses.
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
@@ -2321,5 +2341,41 @@ fn a_note_is_said_on_a_conversations_own_row() {
     assert!(
         last.contains("nowhere further forward"),
         "the note is not on the conversation's row:\n{dump}"
+    );
+}
+
+/// A paste reaches the card the agent is waiting on an answer from.
+///
+/// The card covers the box a message is written in, so the box behind it is
+/// not where a paste can go: text put there is text nobody can see until the
+/// question has been answered. What is in front of the reader is the card,
+/// and the half of it that takes words is the half they are writing.
+#[test]
+fn a_paste_goes_into_the_card_and_not_behind_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/pick");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+
+    // Pasted while the reader is on the first of the named answers, which
+    // is where the card opens: it goes in the box the same way typing does.
+    app.handle(Event::Paste("what the clipboard had".to_string()));
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump)
+            .iter()
+            .any(|row| row.contains("what the clipboard had")),
+        "the paste is not on the card:\n{dump}"
+    );
+    // And not in the box behind it, which is what it would have reached if
+    // the card were not asked first.
+    assert!(
+        app.chat().is_some_and(|chat| chat.writing().is_blank()),
+        "the paste went into the message box under the card"
     );
 }

@@ -681,8 +681,6 @@ impl App {
         self.current.is_none_or(|id| self.document(id).is_none())
     }
 
-    /// Whether what is being read has somewhere pasted text can go.
-    ///
     /// The conversation being read, where that is what is being read.
     ///
     /// There is no flag for this any more. A conversation is showing when it

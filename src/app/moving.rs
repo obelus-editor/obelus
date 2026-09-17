@@ -461,7 +461,10 @@ impl App {
         let Some(talk) = self.conversation() else {
             return false;
         };
-        talk.card.is_none() && talk.chat.focus() == crate::component::chat::Focus::Writing
+        match talk.card.as_ref() {
+            Some(card) => card.takes_words(),
+            None => talk.chat.focus() == crate::component::chat::Focus::Writing,
+        }
     }
 
     pub(super) fn paste_text(&mut self, what: &str) {

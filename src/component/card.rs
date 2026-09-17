@@ -250,6 +250,17 @@ impl Card {
         self.several && self.words.is_some()
     }
 
+    /// Whether the agent left room to answer in the reader's own words.
+    ///
+    /// Not [`Self::writing_wanted`], which is whether they have said they
+    /// are going to: this is whether there is anywhere for them to. A card
+    /// of named answers and nothing else has nowhere text can go, which is
+    /// what the application has to know before it offers a paste.
+    #[must_use]
+    pub const fn takes_words(&self) -> bool {
+        self.words.is_some()
+    }
+
     /// Whether the reader has said they are writing one.
     #[must_use]
     pub fn writing_wanted(&self) -> bool {
@@ -592,6 +603,27 @@ impl Card {
     }
 
     /// Does something to what is being written.
+    /// Puts pasted text in the box, and says whether there was one.
+    ///
+    /// The same rule the key for a new line follows, three lines above the
+    /// key table and for the same reason: taken from wherever the reader is
+    /// on the card, and it ticks the box on where the box has a tick,
+    /// because pasting into a card is meaning to write in it. A card the
+    /// agent left no room to write on says so rather than swallowing it --
+    /// the box under this one is covered, and text put there is text nobody
+    /// can see.
+    pub fn paste(&mut self, what: &str, width: u16) -> bool {
+        if self.words.is_none() {
+            return false;
+        }
+        if !self.writing_wanted() {
+            self.tick_words();
+        }
+        self.focus(On::Words);
+        self.write(|composer| composer.write_in(what, width));
+        true
+    }
+
     fn write(&mut self, edit: impl FnOnce(&mut Composer)) {
         if let Some(words) = self.words.as_mut() {
             edit(&mut words.composer);
