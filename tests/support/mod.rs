@@ -518,6 +518,16 @@ pub fn said(dump: &str) -> String {
 /// whole process, so two tests reading it at once each see what the other
 /// put there. Held for as long as the returned guard lives, which is the
 /// body of the test that took it.
+///
+/// Every test that *writes* the clipboard has to take it, not only the ones
+/// that read one back: `use_provider_for_test` empties what is kept, so a
+/// test merely asking for a provider wipes the copy another had just made.
+/// And the asking is sticky -- a test that does not ask gets whichever
+/// provider the last one asked for, which makes what it does depend on the
+/// order the threads happened to run in.
+///
+/// One mutex per test binary, because the state is per process: a file whose
+/// tests all take it is safe from the others whatever they do.
 pub fn clipboard_turn() -> std::sync::MutexGuard<'static, ()> {
     static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
     // A test that failed while holding it poisoned nothing: there is no

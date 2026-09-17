@@ -240,6 +240,12 @@ mod in_place {
     /// away where nobody could see it go.
     #[test]
     fn a_copy_comes_out_of_what_is_being_typed_into() {
+        // The turn, and a provider of obelus's own: a copy is kept in one
+        // place for the whole process, so a test that takes neither reaches
+        // into the machine's real clipboard and empties whatever another
+        // test had just put there.
+        let _turn = support::clipboard_turn();
+        obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
         let (_scratch, mut app) = open("field-copy");
         let before = "fn main() {}\n";
         dispatch::dispatch(&mut app, Command::CommandPalette);
@@ -286,6 +292,11 @@ mod in_place {
     fn copy_and_paste_work_through_the_keys_inside_a_list() {
         use obelus::clipboard::{Provider, use_provider_for_test};
 
+        // The turn first: what obelus keeps when a provider cannot hold a
+        // copy is one thing for the whole process, and asking for a
+        // provider clears it. Two of these running at once is one test
+        // emptying the clipboard another had just copied into.
+        let _turn = support::clipboard_turn();
         use_provider_for_test(Provider::Osc52);
         let (_scratch, mut app) = open("field-roundtrip");
         dispatch::dispatch(&mut app, Command::SearchFile);
@@ -326,6 +337,11 @@ mod in_place {
     fn the_same_keys_reach_the_settings_filter() {
         use obelus::clipboard::{Provider, use_provider_for_test};
 
+        // The turn first: what obelus keeps when a provider cannot hold a
+        // copy is one thing for the whole process, and asking for a
+        // provider clears it. Two of these running at once is one test
+        // emptying the clipboard another had just copied into.
+        let _turn = support::clipboard_turn();
         use_provider_for_test(Provider::Osc52);
         let (_scratch, mut app) = open("field-keys-settings");
         dispatch::dispatch(&mut app, Command::ConfigOpen);
@@ -353,6 +369,11 @@ mod in_place {
     fn the_same_keys_reach_the_list_of_open_files() {
         use obelus::clipboard::{Provider, use_provider_for_test};
 
+        // The turn first: what obelus keeps when a provider cannot hold a
+        // copy is one thing for the whole process, and asking for a
+        // provider clears it. Two of these running at once is one test
+        // emptying the clipboard another had just copied into.
+        let _turn = support::clipboard_turn();
         use_provider_for_test(Provider::Osc52);
         let (_scratch, mut app) = open("field-keys-buffers");
         dispatch::dispatch(&mut app, Command::DocumentList);
@@ -393,6 +414,11 @@ mod in_place {
     fn the_keys_reach_a_box_with_no_file_behind_it() {
         use obelus::clipboard::{Provider, use_provider_for_test};
 
+        // The turn first: what obelus keeps when a provider cannot hold a
+        // copy is one thing for the whole process, and asking for a
+        // provider clears it. Two of these running at once is one test
+        // emptying the clipboard another had just copied into.
+        let _turn = support::clipboard_turn();
         use_provider_for_test(Provider::Osc52);
         let scratch = support::Scratch::new("field-no-file");
         std::fs::write(scratch.path().join("one.rs"), "fn main() {}\n").expect("writing it");
@@ -430,6 +456,12 @@ mod in_place {
     /// the places a reader types.
     #[test]
     fn a_cut_comes_out_of_the_message_being_written() {
+        // The turn, and a provider of obelus's own: a copy is kept in one
+        // place for the whole process, so a test that takes neither reaches
+        // into the machine's real clipboard and empties whatever another
+        // test had just put there.
+        let _turn = support::clipboard_turn();
+        obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
         let (scratch, mut app) = open("field-chat-cut");
         let before = "fn main() {}\n";
         dispatch::dispatch(&mut app, Command::AgentOpen);
