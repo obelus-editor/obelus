@@ -110,10 +110,9 @@ impl Obelus {
     /// asking being the asking.
     #[tool(annotations(read_only_hint = true), description = "\
         Every note this project keeps: what it says, whether it is done, and \
-        the file and line it is about where it is about one. A note indented \
-        under another hangs under it, and finishing or dropping the one \
-        above is about the whole of it. Each carries a name -- that is what \
-        the other tools take.")]
+        where it points. A note indented under another hangs under it, and \
+        finishing the one above is about the whole of it. Each carries the \
+        name the other tools take.")]
     fn todo_list(&self) -> Result<CallToolResult, ErrorData> {
         tracing::info!("an agent asked for the notes");
         let todo = todo::Todo::read(&self.root);
@@ -136,9 +135,9 @@ impl Obelus {
 
     /// The reader is asked what to do about a note the agent thinks is done.
     #[tool(description = "\
-        Say that a note's goal looks met. The reader is asked what to do \
-        about it and this returns what they chose, which may be nothing. \
-        Call it when the work a note describes is finished, not to check in.")]
+        Say a note's goal looks met. The reader is asked what to do and this \
+        returns their choice, which may be nothing. For work that is \
+        finished, not to check in.")]
     async fn todo_finish(
         &self,
         Parameters(About { note }): Parameters<About>,
@@ -188,11 +187,10 @@ impl Obelus {
 
     /// Follow-up notes, of which the reader keeps the ones they want.
     #[tool(description = "\
-        Offer notes to add to this project. The reader is shown all of them \
-        and keeps the ones they want; this returns which were kept. Offer \
-        what somebody would want to come back to, not a summary of what you \
-        just did. From any conversation, whether or not it is about a note: \
-        the thing worth writing down usually turns up somewhere else.")]
+        Offer notes to add. The reader keeps the ones they want and this \
+        returns which. Offer what somebody would want to come back to, not \
+        a summary of what you just did. From any conversation -- what is \
+        worth writing down usually turns up while doing something else.")]
     async fn todo_add(
         &self,
         Parameters(Proposed { notes }): Parameters<Proposed>,
@@ -289,20 +287,13 @@ impl ServerHandler for Obelus {
         let mut info = InitializeResult::default();
         info.instructions = Some(
             "obelus, the reader this conversation is happening inside. It \
-             keeps the notes this project means to come back to.\n\n\
-             When the work a note describes is done, say so with \
-             `todo_finish`. When something worth coming back to turns up, \
-             offer it with `todo_add`. Both put the question to the reader \
-             and wait; neither changes anything until they have answered, so \
-             asking is not something to hold back on -- but ask about work \
-             that is finished, not to check in, and offer notes somebody \
-             would want to return to, not a summary of what you just did.\n\n\
-             In any conversation, whatever it was opened on. Something worth \
-             writing down is worth offering wherever it comes up, and most \
-             conversations are not about a note at all.\n\n\
-             A conversation that *is* about one says so in its first \
-             message, and gives the note's name. Otherwise `todo_list` has \
-             them."
+             keeps this project's notes.\n\n\
+             `todo_finish` says a note's work is done; `todo_add` offers \
+             work worth returning to. Both ask the reader and change nothing \
+             until they answer, so asking is cheap -- but about finished \
+             work, not progress, and notes worth keeping, not summaries.\n\n\
+             From any conversation. One about a note says so in its first \
+             message; otherwise `todo_list`."
                 .to_string(),
         );
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
