@@ -287,7 +287,10 @@ pub enum Incoming {
 }
 
 /// One thing the agent said, in the form the view shows it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Not `Eq`: what a turn has cost is a number of money, which the protocol
+/// carries as a float, and two of those are never exactly the same thing.
+#[derive(Clone, Debug, PartialEq)]
 pub enum Update {
     /// A piece of the answer.
     Said(String),
@@ -323,6 +326,35 @@ pub enum Update {
     /// The settings it lets the reader change, sent when the session opens
     /// and again after every change -- by obelus or by the agent itself.
     Settings(Vec<Setting>),
+    /// How much of what the agent can hold this conversation is using, and
+    /// what it has cost. Sent several times a turn.
+    Used(Usage),
+}
+
+/// How full the agent's memory of this conversation is, and what it has
+/// cost so far.
+///
+/// The agent sends this as it works, so it is a fact about the session
+/// rather than a thing said: it never goes in the transcript.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Usage {
+    /// What the conversation is taking up now, in the agent's own tokens.
+    pub used: u64,
+    /// How much it can take before the agent starts forgetting.
+    pub room: u64,
+    /// What it has cost so far, where the agent says -- not every one does.
+    pub cost: Option<Cost>,
+}
+
+/// What a session has cost, as the agent counts it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Cost {
+    /// The amount, in whatever the currency is.
+    pub amount: f64,
+    /// Which currency, as an ISO 4217 code. Passed through rather than
+    /// turned into a sign: obelus does not know every currency's, and one
+    /// it guessed wrong would be a number about the wrong money.
+    pub currency: String,
 }
 
 /// One thing about the session the agent lets the reader change.
@@ -1371,6 +1403,17 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
         // value: absent means unchanged, null means cleared, and only a
         // string is a new name -- so the two that are not a string are
         // nothing to do, not a name of nothing.
+        // How full it is, and what it has cost. Several of these arrive in
+        // one turn -- the numbers only go up within a turn -- so this is
+        // kept and shown rather than said.
+        SessionUpdate::UsageUpdate(used) => vec![Update::Used(Usage {
+            used: used.used,
+            room: used.size,
+            cost: used.cost.map(|cost| Cost {
+                amount: cost.amount,
+                currency: cost.currency,
+            }),
+        })],
         SessionUpdate::SessionInfoUpdate(info) => match info.title {
             agent_client_protocol::schema::MaybeUndefined::Value(title) => {
                 vec![Update::Titled(title)]

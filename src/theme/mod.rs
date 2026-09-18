@@ -263,7 +263,14 @@ pub struct Theme {
     pub control_background: Color,
     /// The status line's text.
     pub status_foreground: Color,
-    /// The status line's marker for a file that can no longer be read.
+    /// What the status row says in when a reader has to do something about
+    /// it: a file that can no longer be read, a language server that has
+    /// gone, a buffer with unsaved work in the list, an agent nearly out of
+    /// room to remember this conversation in.
+    ///
+    /// The row's other three tones are shades of the page's own grey and
+    /// say which of several things is in force. This one is not a shade --
+    /// it is there to be found on a row nobody is reading.
     pub status_stale: Color,
     /// Behind the row the keys are on.
     ///

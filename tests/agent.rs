@@ -2767,3 +2767,125 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
         "the list was written into the transcript as something said"
     );
 }
+
+/// How full the agent is goes on the row the session's own facts go on.
+///
+/// A proportion and the cost, beside the keys rather than beside the
+/// settings: the settings scroll along that row to keep the focused one on
+/// screen, and a number that slid about with them is a number to find again
+/// every time the reader steps one. And it is never said in the transcript
+/// -- the agent sends several of these a turn, and a transcript with them
+/// in it is a log.
+///
+/// Broken deliberately by leaving `SessionUpdate::UsageUpdate` in the arm
+/// that drops what obelus does not show: the row says nothing and this goes
+/// red.
+#[test]
+fn how_full_the_agent_is_goes_on_the_status_row() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/used");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it has used", |app| {
+        app.agent_usage().is_some_and(|used| used.used == 188_000)
+    });
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    let status = screen.last().expect("the status row");
+    assert!(
+        status.contains("94%"),
+        "the row does not say how full it is:\n{dump}"
+    );
+    assert!(
+        status.contains("1.13 USD"),
+        "the row does not say what it has cost:\n{dump}"
+    );
+    // The code, not a sign obelus guessed.
+    assert!(
+        !status.contains('$'),
+        "obelus made up a currency sign:\n{dump}"
+    );
+    // Not a thing said.
+    assert!(
+        !screen[..screen.len() - 1]
+            .iter()
+            .any(|row| row.contains("94%")),
+        "how full it is was written into the transcript:\n{dump}"
+    );
+
+    // And over the mark it stops being furniture: the row says three things
+    // in three greys already, so this one is not a grey.
+    assert_eq!(
+        colour_of(&dump, "94%"),
+        support::spelled(app.theme().status_stale),
+        "an agent nearly out of room says so in the colour of the row's \
+         other greys:\n{dump}"
+    );
+}
+
+/// The colour the first row carrying this text is written in.
+///
+/// Counted in cells rather than in bytes: a row of this screen has glyphs
+/// several bytes wide in it, and the style grid has one letter per cell.
+fn colour_of(dump: &str, needle: &str) -> String {
+    let cells = |block: &str| -> Vec<Vec<char>> {
+        block
+            .lines()
+            .filter_map(|row| row.split_once('|'))
+            .map(|(_, row)| row.chars().collect())
+            .collect()
+    };
+    let words = cells(support::text_block(dump));
+    let styles = cells(support::style_block(dump));
+    for (said, style) in words.iter().zip(&styles) {
+        let row: String = said.iter().collect();
+        let Some(byte) = row.find(needle) else {
+            continue;
+        };
+        let at = row[..byte].chars().count();
+        let letter = *style.get(at).expect("a style for the cell");
+        return support::legend_of(dump, letter)
+            .split_whitespace()
+            .find_map(|part| part.strip_prefix("fg=").map(str::to_string))
+            .expect("a foreground");
+    }
+    panic!("no {needle:?} on the page:\n{dump}")
+}
+
+/// Under the mark it is furniture, and an agent that counts no cost leaves
+/// no gap where one would have been.
+///
+/// Broken deliberately by colouring it `status_stale` whatever the number,
+/// or by writing the cost as an empty string rather than leaving it out.
+#[test]
+fn an_agent_with_room_left_says_so_quietly() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/room");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it has used", |app| {
+        app.agent_usage().is_some_and(|used| used.used == 62_000)
+    });
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let status = rows(&dump).last().expect("the status row").to_string();
+    assert!(
+        status.contains("31%"),
+        "the row does not say how full it is:\n{dump}"
+    );
+    assert_eq!(
+        colour_of(&dump, "31%"),
+        support::spelled(app.theme().gutter),
+        "a number nobody has to act on is not furniture:\n{dump}"
+    );
+    // Nothing at all where a cost would have been, not an empty one.
+    assert!(
+        !status.contains(" \u{b7} ") || status.matches('\u{b7}').count() < 3,
+        "a cost the agent never gave left something behind:\n{status}"
+    );
+}

@@ -53,8 +53,8 @@ use std::path::Path;
 pub use agent_client_protocol::schema::v1::SessionId;
 use futures::channel::mpsc;
 pub use link::{
-    Answer, Ask, Call, Category, Change, Choice, Chosen, Field, Incoming, Kind, Order, Place,
-    Reply, Setting, Step, Takes, Update, Value,
+    Answer, Ask, Call, Category, Change, Choice, Chosen, Cost, Field, Incoming, Kind, Order, Place,
+    Reply, Setting, Step, Takes, Update, Usage, Value,
 };
 
 /// One running agent: how to ask it things, and what it has said about
@@ -105,6 +105,10 @@ pub struct Session {
     thinking: bool,
     /// The commands it says it takes.
     orders: Vec<Order>,
+    /// How full the agent's memory of this conversation is, once it has
+    /// said. Kept rather than shown as it arrives: several of these land in
+    /// one turn, and the row that shows it is drawn every frame anyway.
+    usage: Option<Usage>,
     /// The settings it lets the reader change, as the agent's own list of
     /// config options.
     options: Vec<Setting>,
@@ -325,6 +329,12 @@ impl Talk {
         self.session(session).map_or(&[], |open| &open.orders)
     }
 
+    /// How full it is, and what it has cost, where the agent has said.
+    #[must_use]
+    pub fn usage(&self, session: Option<&SessionId>) -> Option<&Usage> {
+        self.session(session)?.usage.as_ref()
+    }
+
     /// The settings it lets the reader change.
     #[must_use]
     pub fn settings(&self, session: Option<&SessionId>) -> &[Setting] {
@@ -533,6 +543,13 @@ impl Talk {
                 update: Update::Orders(orders),
             } => {
                 self.sessions.entry(session).or_default().orders = orders;
+                None
+            }
+            Incoming::Update {
+                session,
+                update: Update::Used(usage),
+            } => {
+                self.sessions.entry(session).or_default().usage = Some(usage);
                 None
             }
             Incoming::Update {

@@ -233,6 +233,21 @@ while IFS= read -r line; do
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             ;;
+        *'"method":"session/prompt"'*'/used'*)
+            # How full it is, sent as an agent sends it: several times in a
+            # turn, the numbers only going up. The last one is what the row
+            # shows, and it is over the mark where that stops being dim.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"usage_update","used":12000,"size":200000}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"usage_update","used":188000,"size":200000,"cost":{"amount":1.13,"currency":"USD"}}}}\n' "$session"
+            ;;
+        *'"method":"session/prompt"'*'/room'*)
+            # The same, well under the mark, and with no cost: not every
+            # agent counts one, and the row must not leave a gap where a
+            # number would have been.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"usage_update","used":62000,"size":200000}}}\n' "$session"
+            ;;
         *'"method":"session/prompt"'*'/steps'*)
             # A list of what it means to do about this turn, sent whole
             # every time the way the protocol says: three entries, and then

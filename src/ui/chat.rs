@@ -243,6 +243,39 @@ fn said_place(place: &acp::Place, root: &Path, more: usize) -> String {
     }
 }
 
+/// How full the agent's memory is, and whether that is worth saying
+/// loudly.
+///
+/// A proportion rather than the tokens themselves: what a reader does with
+/// this is decide whether to start again, and "94%" answers that where
+/// "187432 of 200000" is two numbers to divide first. The cost goes with it
+/// when the agent counts one -- not every agent does, and one that does not
+/// should not leave a gap where a number was.
+///
+/// Nothing at all until the agent has said how much room there is. A
+/// proportion of nothing is not a number, and a bare token count is the
+/// thing this deliberately does not show.
+fn used_up(usage: &acp::Usage) -> Option<(String, bool)> {
+    if usage.room == 0 {
+        return None;
+    }
+    // Rounded down, so it says 99% until it really is full: a conversation
+    // reported as 100% that still has room would send a reader to start
+    // another one for nothing.
+    let part = usage.used.saturating_mul(100) / usage.room;
+    let mut said = format!("{part}%");
+    if let Some(cost) = &usage.cost {
+        // The code rather than a sign, and after the amount: obelus knows
+        // no currency's sign, and a guessed one is a number about the wrong
+        // money.
+        said.push_str(&format!("{SEPARATOR}{:.2} {}", cost.amount, cost.currency));
+    }
+    Some((said, part >= NEARLY_FULL))
+}
+
+/// The proportion at which how full the agent is stops being furniture.
+const NEARLY_FULL: u64 = 90;
+
 /// What goes between two things the status row says.
 const SEPARATOR: &str = " \u{b7} ";
 
@@ -311,6 +344,9 @@ pub struct ChatView<'a> {
     /// there is no history for this, there was nothing to close -- would
     /// press its key and get silence back.
     note: Option<&'a str>,
+    /// How full the agent's memory of this conversation is, once it has
+    /// said.
+    usage: Option<&'a acp::Usage>,
 }
 
 impl<'a> ChatView<'a> {
@@ -330,6 +366,7 @@ impl<'a> ChatView<'a> {
             phase: app.phase(),
             about: app.what_this_conversation_is_about(),
             note: app.note(),
+            usage: app.agent_usage(),
         })
     }
 
@@ -696,8 +733,39 @@ impl ChatView<'_> {
             );
         }
 
+        // How full the agent's memory is, beside the hints rather than
+        // beside the settings. The settings scroll along this row to keep
+        // the focused one on screen, and a number that slid about with
+        // them would be a number the reader has to find again every time
+        // they step one. This end does not move.
+        let used = self.usage.and_then(used_up);
+        let taken = hint.as_deref().map_or(0, |hint| text_width(hint) + 2);
+        if let Some((said, full)) = &used
+            && let Ok(offset) = u16::try_from(
+                usize::from(area.width)
+                    .saturating_sub(taken + text_width(said) + 1),
+            )
+        {
+            // Dim like the hints for as long as it is only a number. Once
+            // the agent is nearly out of room it is the one thing on this
+            // row a reader has to act on -- a conversation to start again,
+            // a note to write down before it is forgotten -- so it stops
+            // being furniture.
+            //
+            // A colour rather than a brighter grey: this row already says
+            // three things in three greys -- the value a setting is on, the
+            // ones it is not, the keys -- and a fourth would be one more
+            // shade to tell apart rather than a thing that stands out.
+            let ink = match full {
+                true => self.theme.status_stale,
+                false => self.theme.gutter,
+            };
+            write(cells, area.x + offset, area.y, said, plain.fg(ink));
+        }
+
         let room = usize::from(area.width)
-            .saturating_sub(hint.as_deref().map_or(0, |hint| text_width(hint) + 2))
+            .saturating_sub(taken)
+            .saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + 3))
             .saturating_sub(2);
         // A note over the settings, for as long as it lasts. The settings
         // are what the session is set to and are still true a moment later;

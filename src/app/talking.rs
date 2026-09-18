@@ -350,6 +350,13 @@ impl App {
         talker.step_mode(session.as_ref());
     }
 
+    /// How full the agent's memory of this conversation is, once it has
+    /// said -- and what it has cost, where it counts that too.
+    #[must_use]
+    pub fn agent_usage(&self) -> Option<&acp::Usage> {
+        self.talker.as_ref()?.usage(self.session_now().as_ref())
+    }
+
     /// The settings it lets the reader change.
     #[must_use]
     pub fn agent_settings(&self) -> &[acp::Setting] {
@@ -1280,7 +1287,10 @@ impl App {
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
                 // said, and a transcript with them in it is a log.
-                acp::Update::Mode(_) | acp::Update::Orders(_) | acp::Update::Settings(_) => {}
+                acp::Update::Mode(_)
+                | acp::Update::Orders(_)
+                | acp::Update::Settings(_)
+                | acp::Update::Used(_) => {}
             },
             acp::Incoming::Ended { why: reason, .. } => {
                 // Only the ends that are not the ordinary one: a turn that
