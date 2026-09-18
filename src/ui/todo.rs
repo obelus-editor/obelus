@@ -181,6 +181,14 @@ pub fn place_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(u16, u16)>
     })
 }
 
+/// The mark beside the row the keys are on.
+///
+/// Against the left of its cell, the way the change map's mark is: a thin
+/// stroke at the edge of the page, clear of the box and of the words at
+/// every depth. The same glyph, because it is the same claim about a cell
+/// -- a mark beside a row, not a surface the row sits on.
+const HERE: char = '\u{258c}';
+
 /// Which column a note's own text starts in: a blank, the box, and the blank
 /// after it.
 ///
@@ -230,6 +238,11 @@ impl Widget for TodoUi<'_> {
         }
 
         let window = self.notes.window();
+        // Which note the keys are on, rather than which row: a note is one
+        // thing on this page -- its lines, and the place it points at --
+        // and a mark beside one row of it would say the reader was holding
+        // a line, which is not something this list has.
+        let on = self.notes.rows().get(window.focus()).map(|row| row.note);
         for (at, row) in self
             .notes
             .rows()
@@ -249,7 +262,7 @@ impl Widget for TodoUi<'_> {
                     ..list
                 },
                 row,
-                at == window.focus(),
+                Some(row.note) == on,
             );
         }
 
@@ -284,11 +297,7 @@ impl TodoUi<'_> {
 
     /// One row: the mark, the box, what it says, and where it points.
     fn row(&self, cells: &mut CellBuffer, area: Rect, row: &Row, selected: bool) {
-        // One mark for "the keys are here", and it says nothing else.
-        let background = match selected {
-            true => self.theme.selected_row_background,
-            false => self.theme.background,
-        };
+        let background = self.theme.background;
         fill(
             cells,
             Rect {
@@ -297,6 +306,26 @@ impl TodoUi<'_> {
             },
             Style::new().bg(background),
         );
+        // "The keys are here", said with a mark down the edge of the whole
+        // note rather than with the background every other list in obelus
+        // says it with.
+        //
+        // This is the one list whose rows the reader also selects text
+        // *inside*, and a run of selection lying on a selected row's
+        // background is two colours arguing over the same cells: the
+        // reader cannot see where what they are holding begins or ends,
+        // which is the only thing a selection has to say. The mark is
+        // outside the text entirely, in the column nothing else uses at
+        // any depth, so the one coloured ground on this page is theirs.
+        if selected {
+            put(
+                cells,
+                area.x,
+                area.y,
+                HERE,
+                Style::new().fg(self.theme.gutter_current).bg(background),
+            );
+        }
         // A note that is done is said in the ink, never by taking it away: a
         // list of what is done is how a reader tells "I decided against it"
         // from "I never got to it".

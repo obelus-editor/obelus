@@ -1250,10 +1250,13 @@ fn a_nested_note_is_drawn_further_in_than_the_one_it_hangs_under() {
             .find(|row| row.contains(needle))
             .unwrap_or_else(|| panic!("no {needle:?}:\n{dump}"))
     };
-    // Where the words start, counted from the row's own left edge.
+    // Where the words start, counted from the row's own left edge. The
+    // mark beside the row the keys are on is not indentation -- it sits in
+    // the column outside the list at every depth -- so it counts as blank.
     let starts = |needle: &str| {
         let row = at(needle);
         let (_, said) = row.split_once('|').expect("the row number");
+        let said = said.replace('\u{258c}', " ");
         said.len() - said.trim_start().len()
     };
 
@@ -1680,5 +1683,68 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
         rows.get(1).copied(),
         Some("mine"),
         "reading the file again moved the note being started: {rows:?}"
+    );
+}
+
+/// The note the keys are on is marked down its edge, not by its ground.
+///
+/// Every other list in obelus says "the keys are here" with a background,
+/// and this is the one list whose rows the reader also selects text
+/// *inside*. Two grounds on the same cells is the reader unable to see
+/// where what they are holding begins or ends, which is the only thing a
+/// selection has to say. So the mark is a stroke in the column outside the
+/// words, beside every row of the note -- a note is one thing on this page,
+/// and a mark on one row of it would claim the reader was holding a line.
+///
+/// Broken deliberately by filling the row with `selected_row_background`
+/// again, or by marking only `at == window.focus()`: the first leaves a
+/// ground for the selection to argue with, the second leaves the note's
+/// other lines unmarked.
+#[test]
+fn the_note_the_keys_are_on_is_marked_down_its_edge() {
+    let _turn = support::clipboard_turn();
+    obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
+
+    let scratch = tree("edge", THREE);
+    let mut app = open(&scratch, 60, 14);
+    // Onto the note of several lines, with a run of it held: both marks
+    // are on the page at once, which is where they used to collide.
+    press(&mut app, KeyCode::Down);
+    support::press_control_key(&mut app, KeyCode::Char('a'));
+    let dump = support::render(&mut app, 60, 14);
+
+    // Nothing on the page wears the ground a selected row wears, so the
+    // one coloured ground in the list is what the reader is holding.
+    let ground = support::spelled(app.theme().selected_row_background);
+    assert!(
+        !support::legend_block(&dump).contains(&format!("bg={ground}")),
+        "the list is drawing a ground the selection has to argue with:\n{dump}"
+    );
+    assert!(
+        support::legend_block(&dump)
+            .contains(&format!("bg={}", support::spelled(app.theme().selection_background))),
+        "nothing on the page is marked as held:\n{dump}"
+    );
+
+    // And the mark runs beside every row of the note -- its three lines
+    // and the place it points at -- and beside no row of any other.
+    let marked: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('\u{258c}'))
+        .collect();
+    let beside = |what: &str| {
+        marked.iter().any(|row| row.contains(what))
+    };
+    assert!(
+        beside("this cache does not notice a theme")
+            && beside("rows caches")
+            && beside("changes the colours")
+            && beside("sample.rs:2"),
+        "the mark is not beside the whole of the note the keys are on:\n{dump}"
+    );
+    assert_eq!(
+        marked.len(),
+        4,
+        "the mark is beside rows that are not the note the keys are on:\n{dump}"
     );
 }
