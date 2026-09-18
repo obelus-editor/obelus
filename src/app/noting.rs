@@ -166,7 +166,16 @@ impl App {
     ///
     /// The door both pastes come through: the key, and the sequence a
     /// terminal sends when the reader uses its own paste. One change to the
-    /// note either way, and the notes are written down after it.
+    /// note either way.
+    ///
+    /// Not written down here, because a paste is typing: it goes into the
+    /// box, and what is in the box reaches the note when the reader leaves
+    /// it, which is the moment a typed paragraph is written down too. This
+    /// did save, and saved the note *without* what had just been pasted
+    /// into it -- the box is not the note until `keep` takes it -- so the
+    /// file gained a note with nothing in it, and obelus, which hears about
+    /// its own writes while the page is open, read that back over the words
+    /// the reader was looking at.
     pub(super) fn paste_into_notes(&mut self, what: &str) {
         let laid = self.notes_laid_out();
         let Some(notes) = self.notes.as_mut() else {
@@ -174,8 +183,6 @@ impl App {
         };
         notes.lay_out(laid.0, laid.1);
         notes.paste(what);
-        let todo = notes.todo().clone();
-        self.save_notes(&todo);
     }
 
     /// Writes the notes down, and says so if it cannot.

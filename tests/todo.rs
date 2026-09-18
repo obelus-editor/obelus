@@ -1465,3 +1465,75 @@ fn the_notes_are_wrapped_to_the_width_of_the_frame_being_drawn() {
         "the first frame at the new width used the old one: {wide} rows wide, {narrow} narrow\n{dump}"
     );
 }
+
+/// What was pasted stays on the page when the file is read again.
+///
+/// The notes file is watched while the page is open, so anything that
+/// writes it -- another obelus, the reader's own editor, obelus itself --
+/// comes back as a reread. A reread keeps the box the reader is typing in,
+/// and a note the caret is in is laid out from that box; rebuilding the
+/// rows before the box was put back laid it out from the file instead, and
+/// the pasted words went off the page until the next thing rebuilt it.
+///
+/// Broken deliberately by putting `self.writing = writing` after the
+/// `rebuild` in `TodoView::reread` again: the row goes back to the file's
+/// words and this goes red.
+#[test]
+fn what_was_pasted_stays_on_the_page_when_the_file_is_read_again() {
+    let scratch = tree("pasted-stays", "[[todo]]\nsaid = \"first note\"\ndone = false\n");
+    let mut app = open(&scratch, 76, 18);
+    press(&mut app, KeyCode::Enter);
+    app.handle(Event::Paste("the words the reader pasted".to_string()));
+
+    // Somebody else writes the file, and obelus takes it again.
+    let path = scratch.path().join(".obelus").join("todo.toml");
+    let written = std::fs::read_to_string(&path).expect("the notes");
+    std::fs::write(&path, format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"))
+        .expect("the notes");
+    app.handle(Event::FileChanged { path });
+
+    let dump = support::render(&mut app, 76, 18);
+    assert!(
+        support::text_block(&dump).contains("the words the reader pasted"),
+        "reading the file again took what was pasted off the page:\n{dump}"
+    );
+}
+
+/// A paste does not write the notes file over somebody else's change.
+///
+/// obelus writes the file whole, from what it holds, so every save is a
+/// save over whatever else has been written since -- which is why the page
+/// hears about the file while it is open. A paste that saved wrote the
+/// whole file on a keystroke, before the reader could have heard anything,
+/// and wrote a note that did not even have the paste in it yet: the box is
+/// not the note until the reader leaves it.
+///
+/// Broken deliberately by saving in `paste_into_notes` again: the other
+/// writer's note goes and this goes red.
+#[test]
+fn a_paste_does_not_write_the_notes_file_over_somebody_elses_change() {
+    let scratch = tree("half-made", "[[todo]]\nsaid = \"first note\"\ndone = false\n");
+    let mut app = open(&scratch, 76, 18);
+    let path = scratch.path().join(".obelus").join("todo.toml");
+    press(&mut app, KeyCode::Enter);
+
+    // Another writer, and obelus has not heard about it yet.
+    let written = std::fs::read_to_string(&path).expect("the notes");
+    std::fs::write(&path, format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"))
+        .expect("the notes");
+
+    app.handle(Event::Paste("the words the reader pasted".to_string()));
+    let written = std::fs::read_to_string(&path).expect("the notes");
+    assert!(
+        written.contains("theirs"),
+        "the paste wrote the file over the other writer's note: {written}"
+    );
+
+    // And leaving does write the paste down.
+    press(&mut app, KeyCode::Esc);
+    let written = std::fs::read_to_string(&path).expect("the notes");
+    assert!(
+        written.contains("the words the reader pasted"),
+        "leaving did not write the pasted words down: {written}"
+    );
+}

@@ -200,6 +200,13 @@ impl TodoView {
             });
             (at, composer)
         });
+        // The box back before the rows are built, not after: a note the
+        // caret is in is laid out from what is in the box, and rebuilding
+        // without it laid that note out from the file instead. The words
+        // the reader had just put there were gone from the page until the
+        // next thing rebuilt it -- which was them typing into the note
+        // again, so the words came back and nothing said why.
+        self.writing = writing;
         self.rebuild();
 
         // The caret back where it was, by name. A note that has gone leaves
@@ -208,7 +215,6 @@ impl TodoView {
         if let Some(id) = focused {
             self.focus(&id);
         }
-        self.writing = writing;
         self.follow_caret();
     }
 
