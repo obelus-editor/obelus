@@ -122,15 +122,27 @@ impl Composer {
 
     /// Up or down one row, answering `false` at the ends -- which is what
     /// lets a caller with rows above and below step out of the box.
+    ///
+    /// With something held, that is the second press. The first lets go of
+    /// it and answers `true`, because letting go is what the reader asked
+    /// the key for and is a thing that happened: a press that both dropped
+    /// the selection and left the box did two things at once, and the one
+    /// the reader could see was the wrong one.
     pub fn up(&mut self, width: u16) -> bool {
-        self.writing
-            .move_to(crate::editing::Motion::Up, &(), width.max(1))
+        self.moved(crate::editing::Motion::Up, width)
     }
 
     /// The same, downwards.
     pub fn down(&mut self, width: u16) -> bool {
-        self.writing
-            .move_to(crate::editing::Motion::Down, &(), width.max(1))
+        self.moved(crate::editing::Motion::Down, width)
+    }
+
+    /// One step, answering for what it did rather than only for whether the
+    /// caret moved. The same answer [`crate::editing::Holding::handle_key`]
+    /// gives, because it is the same question.
+    fn moved(&mut self, motion: crate::editing::Motion, width: u16) -> bool {
+        let held = self.writing.has_selection();
+        self.writing.move_to(motion, &(), width.max(1)) || held
     }
 
     /// Takes out what is behind the caret.

@@ -835,6 +835,11 @@ impl TodoView {
                         false => composer.up(room),
                     });
                 if inside {
+                    // Built again, not only followed: a row carries what
+                    // of it the reader is holding, and this key is one of
+                    // the ways they let go. Following alone left the run
+                    // coloured on a note the box had already dropped.
+                    self.rebuild();
                     self.follow_caret();
                     return TodoOutcome::Consumed;
                 }

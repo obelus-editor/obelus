@@ -1817,3 +1817,44 @@ fn an_arrow_with_nowhere_to_go_still_lets_go_of_what_is_held() {
         support::render(&mut app, 60, 14)
     );
 }
+
+/// Up and down let go before they leave the note.
+///
+/// They are how a reader walks the list, so a press made with something
+/// held used to do two things at once -- drop the selection and land on
+/// another note -- and only the second was visible. Letting go is what the
+/// key was asked for; leaving is what the next press is for.
+///
+/// Broken deliberately by answering `move_to` alone in `Composer::up` and
+/// `Composer::down`, or by following the caret without rebuilding: the
+/// first press lands on the next note, or leaves the run coloured.
+#[test]
+fn down_lets_go_of_what_is_held_before_it_leaves_the_note() {
+    let scratch = tree("let-go-down", THREE);
+    let mut app = open(&scratch, 60, 14);
+    let held = |app: &App| {
+        app.notes()
+            .expect("the view")
+            .rows()
+            .iter()
+            .any(|row| row.held.is_some())
+    };
+    let on = |app: &App| app.notes().expect("the view").window().focus();
+
+    support::press_shift(&mut app, KeyCode::Right);
+    support::press_shift(&mut app, KeyCode::Right);
+    assert!(held(&app), "shift+right took hold of nothing");
+
+    // The first press lets go, and stays.
+    press(&mut app, KeyCode::Down);
+    assert!(
+        !held(&app),
+        "the run is still coloured on a note the box has let go of:\n{}",
+        support::render(&mut app, 60, 14)
+    );
+    assert_eq!(on(&app), 0, "the first press left the note as well");
+
+    // The second walks the list, the way it always has.
+    press(&mut app, KeyCode::Down);
+    assert_eq!(on(&app), 1, "the second press did not step to the next note");
+}
