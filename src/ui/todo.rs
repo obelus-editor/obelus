@@ -181,14 +181,6 @@ pub fn place_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(u16, u16)>
     })
 }
 
-/// The mark beside the row the keys are on.
-///
-/// Against the left of its cell, the way the change map's mark is: a thin
-/// stroke at the edge of the page, clear of the box and of the words at
-/// every depth. The same glyph, because it is the same claim about a cell
-/// -- a mark beside a row, not a surface the row sits on.
-const HERE: char = '\u{258c}';
-
 /// Which column a note's own text starts in: a blank, the box, and the blank
 /// after it.
 ///
@@ -306,24 +298,36 @@ impl TodoUi<'_> {
             },
             Style::new().bg(background),
         );
-        // "The keys are here", said with a mark down the edge of the whole
-        // note rather than with the background every other list in obelus
-        // says it with.
+        // "The keys are here", said down the edge of the whole note rather
+        // than under it, which is how every other list in obelus says it.
         //
         // This is the one list whose rows the reader also selects text
         // *inside*, and a run of selection lying on a selected row's
-        // background is two colours arguing over the same cells: the
-        // reader cannot see where what they are holding begins or ends,
-        // which is the only thing a selection has to say. The mark is
-        // outside the text entirely, in the column nothing else uses at
-        // any depth, so the one coloured ground on this page is theirs.
+        // background was two grounds arguing over the same cells: the
+        // reader could not see where what they were holding began or
+        // ended, which is the only thing a selection has to say. The mark
+        // is outside the text entirely now, in the column nothing else
+        // uses at any depth, so no cell carries two claims at once.
+        //
+        // In the selection's own colour, because the page has one idea of
+        // what is picked out and should say it once. A third colour here
+        // would be a third thing to learn, and the obvious alternative --
+        // the colour the editor's gutter marks the current line in -- is
+        // exactly that. A filled cell rather than a `\u{258c}` stroke in
+        // that colour, which is what this first was: a ground carries the
+        // selection's colour everywhere else because there are bright
+        // words on it, and the same colour drawn as a lone stroke on the
+        // page's own background is 1.4:1 against it -- a mark a reader has
+        // to go looking for.
         if selected {
-            put(
+            fill(
                 cells,
-                area.x,
-                area.y,
-                HERE,
-                Style::new().fg(self.theme.gutter_current).bg(background),
+                Rect {
+                    x: area.x,
+                    width: 1,
+                    ..area
+                },
+                Style::new().bg(self.theme.selection_background),
             );
         }
         // A note that is done is said in the ink, never by taking it away: a

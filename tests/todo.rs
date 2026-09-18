@@ -1696,6 +1696,11 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
 /// words, beside every row of the note -- a note is one thing on this page,
 /// and a mark on one row of it would claim the reader was holding a line.
 ///
+/// In the selection's own colour, because the page has one idea of what is
+/// picked out: a mark beside the words and a ground under them cannot be
+/// taken for each other, and a third colour would be a third thing to
+/// learn.
+///
 /// Broken deliberately by filling the row with `selected_row_background`
 /// again, or by marking only `at == window.focus()`: the first leaves a
 /// ground for the selection to argue with, the second leaves the note's
@@ -1720,27 +1725,37 @@ fn the_note_the_keys_are_on_is_marked_down_its_edge() {
         !support::legend_block(&dump).contains(&format!("bg={ground}")),
         "the list is drawing a ground the selection has to argue with:\n{dump}"
     );
+    let held = support::spelled(app.theme().selection_background);
     assert!(
-        support::legend_block(&dump)
-            .contains(&format!("bg={}", support::spelled(app.theme().selection_background))),
+        support::legend_block(&dump).contains(&format!("bg={held}")),
         "nothing on the page is marked as held:\n{dump}"
     );
 
-    // And the mark runs beside every row of the note -- its three lines
-    // and the place it points at -- and beside no row of any other.
-    let marked: Vec<&str> = support::text_block(&dump)
-        .lines()
-        .filter(|row| row.contains('\u{258c}'))
+    // And the mark runs down the edge of the whole note -- its three lines
+    // and the place it points at -- and beside no row of any other. Read
+    // off the edge column of every row, against the text beside it.
+    let words: Vec<&str> = support::text_block(&dump).lines().collect();
+    let edges: Vec<&str> = support::style_block(&dump).lines().collect();
+    let marked: Vec<&str> = edges
+        .iter()
+        .zip(&words)
+        .filter(|(style, _)| {
+            style
+                .split_once('|')
+                .and_then(|(_, cells)| cells.chars().next())
+                .is_some_and(|letter| {
+                    support::legend_of(&dump, letter).contains(&format!("bg={held}"))
+                })
+        })
+        .map(|(_, row)| *row)
         .collect();
-    let beside = |what: &str| {
-        marked.iter().any(|row| row.contains(what))
-    };
+    let beside = |what: &str| marked.iter().any(|row| row.contains(what));
     assert!(
         beside("this cache does not notice a theme")
             && beside("rows caches")
             && beside("changes the colours")
             && beside("sample.rs:2"),
-        "the mark is not beside the whole of the note the keys are on:\n{dump}"
+        "the mark is not down the edge of the whole note the keys are on:\n{dump}"
     );
     assert_eq!(
         marked.len(),
