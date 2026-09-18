@@ -76,6 +76,7 @@ fn mark(speaker: Speaker) -> &'static str {
         Speaker::Thought => "~",
         Speaker::Tool => "+",
         Speaker::Note => "!",
+        Speaker::Away => "^",
         Speaker::Doing => "\u{2026}",
         // Nothing: a step wears how far along it is instead, in the column
         // a speaker's mark would have been.
@@ -962,6 +963,10 @@ impl ChatView<'_> {
             // reader scanning a turn takes that in.
             Speaker::Tool => (icons::for_tool(&row.kind), dim),
             Speaker::Note => (icons::ui::NOTE, dim),
+            // Somewhere the reader was sent. Dim like a tool call, because
+            // it is the same kind of row: a thing under way, with a mark on
+            // the end saying whether it still is.
+            Speaker::Away => (icons::ui::AWAY, dim),
             // The glyph a tool call carries while it is running, for the
             // same reason: this is the row that says something is under
             // way.

@@ -58,7 +58,8 @@ use agent_client_protocol::{
             ClientCapabilities, ClientSessionCapabilities, CloseSessionRequest, ContentBlock,
             CreateElicitationRequest, CreateElicitationResponse, DeleteSessionRequest,
             ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
-            ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
+            CompleteElicitationNotification, ElicitationContentValue,
+            ElicitationFormCapabilities, ElicitationMode,
             ElicitationUrlCapabilities,
             ElicitationPropertySchema, ElicitationSchema, FileSystemCapabilities, Implementation,
             InitializeRequest, LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp,
@@ -851,6 +852,7 @@ async fn talk(
     let updates = events.clone();
     let asking = events.clone();
     let elicited = events.clone();
+    let completed = events.clone();
     let reading = events.clone();
     let writing = events.clone();
 
@@ -867,6 +869,18 @@ async fn talk(
                         update,
                     }));
                 }
+                Ok(())
+            },
+            agent_client_protocol::on_receive_notification!(),
+        )
+        .on_receive_notification(
+            async move |notification: CompleteElicitationNotification, _connection| {
+                // The agent watched the far end of a question it sent the
+                // reader away to answer, and saw it happen. Nothing is
+                // owed back -- this is it saying the waiting is over.
+                let _ = completed.send(Event::Acp(Incoming::Finished {
+                    id: notification.elicitation_id.0.to_string(),
+                }));
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),

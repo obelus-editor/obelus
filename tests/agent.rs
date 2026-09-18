@@ -2991,3 +2991,74 @@ fn a_url_obelus_will_not_open_never_reaches_the_reader() {
         "the url reached the page:\n{dump}"
     );
 }
+
+/// Once the reader has been sent, the card gives way to a row.
+///
+/// The agent is not waiting on obelus any more -- it was told they went --
+/// so the box has to come back, and what is left is a thing under way,
+/// which the transcript already has a shape for. It says it is still under
+/// way until the agent says the far end happened; pressing the key on it
+/// sends the reader again, for the tab they closed.
+///
+/// Broken deliberately by leaving the card up instead, or by making
+/// `Chat::arrived` do nothing: the row never settles and this goes red.
+#[test]
+fn where_the_reader_was_sent_stays_on_the_page_until_it_is_done() {
+    let _turn = support::clipboard_turn();
+    obelus::links::use_opener_for_test(obelus::links::Opener::Kept);
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/signin");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the card", |app| app.card().is_some());
+    support::press(&mut app, KeyCode::Enter);
+
+    // The card is gone and the row is there, saying it is under way.
+    assert!(app.card().is_none(), "the card stayed after it was answered");
+    let waiting = |app: &App| {
+        app.chat().and_then(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .find(|row| row.text.contains("sign in to continue"))
+                .map(|row| row.state.clone())
+        })
+    };
+    assert_eq!(
+        waiting(&app),
+        Some(Some("in_progress".to_string())),
+        "the row does not say it is still under way"
+    );
+
+    // And the agent, having watched the far end, says the waiting is over.
+    pump(&mut app, &events, "the far end", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH).iter().any(|row| {
+                row.text.contains("sign in to continue")
+                    && row.state.as_deref() == Some("completed")
+            })
+        })
+    });
+
+    // And the key on the row sends them again, for the tab they closed.
+    obelus::links::use_opener_for_test(obelus::links::Opener::Kept);
+    assert_eq!(obelus::links::opened(), None, "the test did not start clean");
+    let at = app
+        .chat()
+        .expect("the conversation")
+        .rows(WIDTH)
+        .iter()
+        .position(|row| row.away.is_some())
+        .expect("the row that points somewhere");
+    let last = app.chat().expect("the conversation").rows(WIDTH).len() - 1;
+    for _ in 0..=(last - at) {
+        support::press(&mut app, KeyCode::Up);
+    }
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        obelus::links::opened().is_some_and(|url| url.contains("console.example.com")),
+        "the row would not send them again"
+    );
+}

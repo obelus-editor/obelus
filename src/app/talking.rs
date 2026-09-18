@@ -762,6 +762,19 @@ impl App {
             // this one -- so the conversation stays exactly where it was
             // and `ctrl+o` comes back to it. It used to have to be hidden,
             // because hiding it was the only way to show a file.
+            // Somewhere the reader was sent, sent again: the browser tab
+            // is closed, the sign-in was not finished. The agent is not
+            // asked anything -- it was told they went the first time, and
+            // it is watching the far end rather than obelus.
+            ChatOutcome::Away(url) => {
+                if let Err(error) = crate::links::open(&url) {
+                    tracing::warn!(%error, "the link was not opened");
+                    if let Some(talk) = self.conversation_mut() {
+                        talk.chat.note("nothing here opens links");
+                    }
+                }
+                true
+            }
             ChatOutcome::GoTo(place) => {
                 // The protocol counts a file's lines from one and the rest
                 // of obelus counts them from zero, which is what `go_to`
@@ -971,13 +984,22 @@ impl App {
         }
         if let Some(talk) = self.conversation_mut() {
             talk.card = None;
+            // A row rather than the card kept open: the agent is no longer
+            // waiting on obelus -- it was told they went -- so the box has
+            // to come back. What is left is a thing under way, which is
+            // what the transcript already has a shape for.
+            talk.chat.away(&going.id, &going.message, &going.url);
         }
         let _ = going.answer.send(true);
     }
 
     /// The agent says the far end happened, so there is nothing left to
     /// wait for.
-    fn went_through(&mut self, _id: &str) {}
+    fn went_through(&mut self, id: &str) {
+        if let Some(talk) = self.conversation_mut() {
+            talk.chat.arrived(id);
+        }
+    }
 
     /// Puts the next field, or answers the form when there is none left.
     fn put_the_question(&mut self) {

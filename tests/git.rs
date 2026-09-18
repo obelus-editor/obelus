@@ -1562,7 +1562,11 @@ fn a_run_of_changes_is_where_git_draws_it() {
                 "--",
                 name,
             ]));
-            assert_eq!(ours, theirs, "{} {name}", &id[..8]);
+            assert!(
+                same_runs(&ours, &theirs, &after),
+                "{} {name}\n  obelus {ours:?}\n  git    {theirs:?}",
+                &id[..8]
+            );
             checked += 1;
         }
     }
@@ -1570,6 +1574,55 @@ fn a_run_of_changes_is_where_git_draws_it() {
         checked > 20,
         "only {checked} diffs were compared, which is not enough of them"
     );
+}
+
+/// Whether two accounts of the same change describe the same change.
+///
+/// The same runs, or runs that differ only in where an insertion among
+/// identical lines was anchored. A block put into a list of like blocks --
+/// a package added to a lockfile, an arm added to a match -- can be drawn
+/// starting at any line of the run it slides through, and every one of
+/// those reconstructs the same file. git slides one way and obelus the
+/// other; neither is wrong, and a test that insisted would be asserting a
+/// thing neither tool promises.
+///
+/// Everything else is compared exactly, which is the whole point: where a
+/// change *is* has no such freedom.
+fn same_runs(ours: &[String], theirs: &[String], after: &str) -> bool {
+    if ours == theirs {
+        return true;
+    }
+    if ours.len() != theirs.len() {
+        return false;
+    }
+    let lines: Vec<&str> = after.lines().collect();
+    ours.iter().zip(theirs).all(|(ours, theirs)| {
+        if ours == theirs {
+            return true;
+        }
+        let read = |run: &str| -> Option<(usize, usize, usize)> {
+            let (at, rest) = run.split_once('+')?;
+            let (added, removed) = rest.split_once('-')?;
+            Some((at.parse().ok()?, added.parse().ok()?, removed.parse().ok()?))
+        };
+        let (Some((ours, added, removed)), Some((theirs, theirs_added, theirs_removed))) =
+            (read(ours), read(theirs))
+        else {
+            return false;
+        };
+        // Only a pure insertion of the same lines can have slid.
+        if (added, removed) != (theirs_added, theirs_removed) || removed != 0 {
+            return false;
+        }
+        // And it slid only if every line it passed over is the same as the
+        // one that took its place: that is what makes both drawings of it
+        // produce the same file.
+        let (from, to) = (ours.min(theirs), ours.max(theirs));
+        (from..to).all(|at| {
+            // The runs count from one.
+            lines.get(at - 1) == lines.get(at - 1 + added)
+        })
+    })
 }
 
 /// Each file is counted against its own committed version./// Each file is

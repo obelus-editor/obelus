@@ -253,7 +253,13 @@ while IFS= read -r line; do
             # What the reader said about going. Said back into the
             # transcript so a test can read it off the page.
             case "$line" in
-                *'"action":"accept"'*) said='you went' ;;
+                *'"action":"accept"'*)
+                    said='you went'
+                    # And later, having watched the far end, the agent says
+                    # the waiting is over. A notification: nothing is owed
+                    # back, because obelus answered when it sent them.
+                    printf '{"jsonrpc":"2.0","method":"elicitation/complete","params":{"elicitationId":"e1"}}\n'
+                    ;;
                 *'"action":"decline"'*) said='you would not go' ;;
                 *) said='the question went away' ;;
             esac

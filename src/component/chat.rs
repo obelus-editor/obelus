@@ -80,6 +80,14 @@ pub enum Speaker {
     Tool,
     /// obelus itself: what went wrong, what was allowed, what stopped.
     Note,
+    /// Somewhere on the web the agent sent the reader, and whether what
+    /// was to happen there has happened.
+    ///
+    /// Its own voice rather than a tool call that happens to point at a
+    /// URL: what a call does is the agent's, and this is a thing the
+    /// reader did -- and what ends it comes from the agent watching the far
+    /// end rather than from the call finishing.
+    Away,
     /// What is happening now.
     ///
     /// Not a thing that was said: the state of the one saying things, at
@@ -160,6 +168,13 @@ pub struct Row {
     /// The first place a tool call named, on its first row, and how many
     /// more it named.
     pub place: Option<(crate::acp::Place, usize)>,
+    /// The web address it points at, where it points at one.
+    ///
+    /// Beside `place` and not folded into it: a file obelus opens itself
+    /// and a URL it hands to the machine are two different things to do,
+    /// and a row that said only "somewhere" would make whoever pressed the
+    /// key work out which.
+    pub away: Option<String>,
     /// What this row opens and closes, by where what it begins is in the
     /// transcript.
     ///
@@ -225,13 +240,18 @@ impl Row {
     /// Whether the cursor can stand on this row.
     ///
     /// Only rows that do something when they are chosen: a tool call names
-    /// a file, and pressing enter on it opens that file. Prose is stepped
-    /// over rather than landed on -- the same rule a list follows for a row
-    /// that cannot be chosen -- so a reader walking the transcript never
-    /// reaches a row where enter does nothing.
+    /// a file and enter opens it, a heading opens what is under it, a row
+    /// the reader was sent away by sends them again. Prose is stepped over
+    /// rather than landed on -- the same rule a list follows for a row that
+    /// cannot be chosen -- so a reader walking the transcript never reaches
+    /// a row where enter does nothing.
+    ///
+    /// The list is the one the key's own `match` answers, and the two have
+    /// to say the same thing: a row this lets the cursor stand on and that
+    /// does nothing is a key that appears not to work.
     #[must_use]
     pub const fn acts(&self) -> bool {
-        self.place.is_some() || self.folds.is_some()
+        self.place.is_some() || self.folds.is_some() || self.away.is_some()
     }
 }
 
@@ -266,6 +286,8 @@ pub enum ChatOutcome {
     StepMode,
     /// Open what a row of the transcript names.
     GoTo(crate::acp::Place),
+    /// Send the reader to this web address again.
+    Away(String),
     /// Open the values of one of the agent's settings, by its id.
     Choose(String),
     /// Flip one of its switches, by its id.
@@ -509,6 +531,45 @@ impl Chat {
         }
     }
 
+    /// Says the reader was sent somewhere, and that what was to happen
+    /// there has not happened yet.
+    ///
+    /// Tagged with the agent's own name for the question, which is how
+    /// [`Chat::arrived`] finds it again: the agent watches the far end and
+    /// names this when it sees it.
+    pub fn away(&mut self, id: &str, message: &str, url: &str) {
+        self.said.push(Said {
+            speaker: Speaker::Away,
+            text: message.to_string(),
+            tag: Some(id.to_string()),
+            state: Some("in_progress".to_string()),
+            kind: String::new(),
+            places: Vec::new(),
+            change: Vec::new(),
+            // Kept rather than shown: the row says what it was for, and
+            // the address is what pressing the key on it does.
+            words: vec![url.to_string()],
+            opened: None,
+        });
+    }
+
+    /// Says what was to happen where the reader was sent has happened.
+    ///
+    /// Nothing at all for a name nothing is waiting on: an agent may say a
+    /// question is over that this obelus never asked -- a second one is
+    /// listening to the same session -- and a row invented to mark it done
+    /// would be a row about something the reader never did.
+    pub fn arrived(&mut self, id: &str) {
+        if let Some(said) = self
+            .said
+            .iter_mut()
+            .rev()
+            .find(|said| said.speaker == Speaker::Away && said.tag.as_deref() == Some(id))
+        {
+            said.state = Some("completed".to_string());
+        }
+    }
+
     /// Takes news of a tool call: a new one, or the same one further along.
     pub fn tool(&mut self, call: &crate::acp::Call, status: &str) {
         let existing = self
@@ -616,6 +677,7 @@ impl Chat {
                 state: None,
                 kind: String::new(),
                 place: None,
+                away: None,
                 // Anchored one past the end of what was said, which is the
                 // one index that can never name a [`Said`]: a plan is not a
                 // thing that was said, and giving it an index into the
@@ -639,6 +701,7 @@ impl Chat {
                             // that wraps is one step with one mark.
                             state: (line == 0).then(|| step.state.clone()),
                             kind: String::new(),
+                            away: None,
                             place: None,
                             folds: None,
                             open: false,
@@ -706,6 +769,7 @@ impl Chat {
             state: state.map(str::to_string),
             kind: said.kind.clone(),
             place: None,
+            away: None,
             folds: Some(run.start),
             open,
             marker: None,
@@ -740,7 +804,7 @@ impl Chat {
         //
         // The words first: they are the account of the change, and an
         // account after the thing it accounts for is a footnote.
-        if !said.words.is_empty() || !said.change.is_empty() {
+        if said.speaker == Speaker::Tool && (!said.words.is_empty() || !said.change.is_empty()) {
             let mut rows = vec![Row {
                 changed: (!said.change.is_empty())
                     .then(|| crate::git::change::counted(&said.change)),
@@ -811,6 +875,13 @@ impl Chat {
                 .places
                 .first()
                 .map(|place| (place.clone(), said.places.len() - 1)),
+            // Where it points on the web, which only one voice has: a row
+            // the reader was sent away by keeps the address it sent them
+            // to, so pressing the key on it sends them again.
+            away: match said.speaker {
+                Speaker::Away => said.words.first().cloned(),
+                _ => None,
+            },
             folds,
             open: folds.is_some_and(|at| self.is_open(at)),
             marker: None,
@@ -828,6 +899,7 @@ impl Chat {
             state: None,
             kind: said.kind.clone(),
             place: None,
+            away: None,
             folds: None,
             open: false,
             marker: None,
@@ -845,6 +917,7 @@ impl Chat {
             state: None,
             kind: String::new(),
             place: None,
+            away: None,
             folds: None,
             open: false,
             marker: None,
@@ -1298,16 +1371,19 @@ impl Chat {
             KeyCode::Enter if bare => {
                 let row = self.rows(room.reading).get(at).cloned();
                 match row {
-                    Some(row) => match (row.folds, row.place) {
-                        (Some(begins), _) => {
+                    Some(row) => match (row.folds, row.place, row.away) {
+                        (Some(begins), _, _) => {
                             self.fold(begins);
                             // The heading stays under the reader: what
                             // moved is what is below it.
                             self.show_row(at, room);
                             Some(ChatOutcome::Consumed)
                         }
-                        (None, Some((place, _))) => Some(ChatOutcome::GoTo(place)),
-                        (None, None) => Some(ChatOutcome::Consumed),
+                        (None, Some((place, _)), _) => Some(ChatOutcome::GoTo(place)),
+                        // And a row that points at a web address goes
+                        // there, which is the same rule about the same key.
+                        (None, None, Some(url)) => Some(ChatOutcome::Away(url)),
+                        (None, None, None) => Some(ChatOutcome::Consumed),
                     },
                     None => Some(ChatOutcome::Consumed),
                 }
