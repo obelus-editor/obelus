@@ -12,6 +12,24 @@
 //! collection, because every one of them is missing for ordinary reasons: a
 //! file outside a repository, a repository with no commits yet, a file git
 //! has never seen.
+//!
+//! The diff base is the blob as a checkout would write it, and reading it must
+//! not run anything. git stores `\n` and a project with `eol=crlf` checks the
+//! file out as `\r\n`, so comparing the stored blob against the reader's buffer
+//! marked every line of every file as changed. `git::head_text` runs the blob
+//! through gix's worktree conversion, which fixes that -- and also executes any
+//! `filter.*` driver the repository's own config names. `gix::discover` derives
+//! trust from who owns `.git`, so a clone the reader happens to own is fully
+//! trusted and the program runs: a code reader that executes a stranger's code
+//! because it was pointed at their checkout is not a reader. So `head_text`
+//! opens through `git::without_running_anything`, which forces
+//! `Trust::Reduced`. `core.autocrlf` and `.gitattributes` both survive that
+//! level and the drivers do not -- measured, both ways. It is not the level
+//! everything opens at, because reduced trust also stops gix resolving a
+//! remote, and that is how the history knows which commits are pushed: the
+//! reduction goes where the risk is and nowhere else. `git::statuses` still
+//! opens fully, and `core.fsmonitor` is the same kind of hole; nobody has
+//! closed it.
 
 pub mod blame;
 pub mod change;
@@ -50,6 +68,53 @@ fn repository(path: &Path) -> Option<gix::Repository> {
     // file three levels above the working directory still wants to know
     // what git says about it.
     gix::discover(from).ok()
+}
+
+/// The same, opened so that the repository cannot ask for a program to run.
+///
+/// Discovery derives trust from who owns `.git`, so a checkout the reader
+/// happens to own is fully trusted -- and a fully trusted repository's own
+/// config may name a program: `filter.*` drivers are run while a blob is
+/// converted the way a checkout would convert it, which is a thing obelus
+/// does to draw an honest margin. A code reader that executes a stranger's
+/// code because it was pointed at their clone is not a reader.
+///
+/// Its own function rather than the level everything opens at, because
+/// reduced trust costs something: gix will not resolve a remote whose url
+/// comes from an untrusted config, and that is how the history knows which
+/// commits have been pushed. So the reduction is applied where the risk is
+/// -- the one place obelus runs anything -- and nowhere else.
+///
+/// What survives it is what the conversion actually needs: `core.autocrlf`
+/// and `.gitattributes` are both read at this level. Measured, both of
+/// them.
+fn without_running_anything(path: &Path) -> Option<gix::Repository> {
+    let from = if path.is_dir() { path } else { path.parent()? };
+    let trust = gix::sec::Trust::Reduced;
+    let found = gix::discover::upwards(from).ok()?.0;
+    let (git_dir, _) = found.into_repository_and_work_tree_directories();
+    let options = gix::open::Options::default()
+        // Every config file obelus would have read anyway. The level is
+        // about what a repository may *do*, and its own default turns these
+        // off as well.
+        .permissions(gix::open::Permissions {
+            config: gix::open::permissions::Config {
+                system: true,
+                git: true,
+                user: true,
+                env: true,
+                includes: true,
+                // A lookup that costs a subprocess, and only tells gix where
+                // a Windows git installation put its bundled config.
+                git_binary: cfg!(windows),
+            },
+            ..<gix::open::Permissions as gix::sec::trust::DefaultForLevel>::default_for_level(trust)
+        })
+        // What discovery handed back is the `.git` directory itself, and
+        // opening expects a worktree unless told otherwise.
+        .open_path_as_is(true)
+        .with(trust);
+    gix::open_opts(git_dir, options).ok()
 }
 
 /// The files a repository changes when its *state* changes, for whoever is
@@ -325,10 +390,42 @@ pub fn counted_against_head(paths: &[PathBuf]) -> HashMap<PathBuf, (usize, usize
 /// content is not text.
 #[must_use]
 pub fn head_text(path: &Path) -> Option<String> {
-    let repository = repository(path)?;
+    let repository = without_running_anything(path)?;
     let relative = in_repository(&repository, path)?;
     let mut tree = repository.head_tree().ok()?;
-    let entry = tree.peel_to_entry_by_path(relative).ok()??;
+    let entry = tree.peel_to_entry_by_path(&relative).ok()??;
     let object = entry.object().ok()?;
-    String::from_utf8(object.data.clone()).ok()
+    Some(as_checked_out(&repository, &object.data, &relative))
+}
+
+/// A stored blob as it would be on disk.
+///
+/// The one place this matters is here, and it is why: everywhere else that
+/// obelus reads an old version of a file, it compares it against *another*
+/// stored version, and two blobs converted the same way or not at all give
+/// the same answer. The margin compares a stored version against the
+/// reader's own buffer, which came off the disk -- so a project whose
+/// `.gitattributes` says `eol=crlf` had every line of every file marked as
+/// changed, because git stores `\n` and the file on disk holds `\r\n`.
+///
+/// The bytes unchanged where there is nothing to convert or the conversion
+/// fails, which is what the diff had before and is never worse than it.
+fn as_checked_out(repository: &gix::Repository, data: &[u8], relative: &Path) -> String {
+    let text = || String::from_utf8_lossy(data).into_owned();
+    // The name the attributes are matched against, which is a repository
+    // path with forward slashes whatever this platform writes.
+    let name: gix::bstr::BString =
+        gix::path::to_unix_separators_on_windows(gix::path::into_bstr(relative)).into_owned();
+    let Ok((mut pipeline, _index)) = repository.filter_pipeline(None) else {
+        return text();
+    };
+    let Ok(converted) = pipeline.convert_to_worktree(data, name.as_ref(), Default::default())
+    else {
+        return text();
+    };
+    let mut out = Vec::with_capacity(data.len());
+    match std::io::Read::read_to_end(&mut { converted }, &mut out) {
+        Ok(_) => String::from_utf8_lossy(&out).into_owned(),
+        Err(_) => text(),
+    }
 }

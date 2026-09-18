@@ -4504,3 +4504,85 @@ fn the_document_list_opens_on_this_version_and_not_the_other() {
         "the list opened on the file rather than on the commit's version"
     );
 }
+
+/// A project that asks for CRLF has a margin that says nothing changed.
+///
+/// git stores `\n` and checks the file out as `\r\n`, so the buffer the
+/// reader has and the blob the margin compares it against differ on every
+/// single line. Before the diff base was converted the way a checkout
+/// converts it, every line of every file in such a project was marked as
+/// changed -- a margin that is wrong about everything, which is the same as
+/// having no margin.
+#[test]
+fn a_project_that_asks_for_crlf_has_an_honest_margin() {
+    let repository = Repository::new("crlf", "one\r\ntwo\r\n");
+    std::fs::write(
+        repository.directory().join(".gitattributes"),
+        "* text eol=crlf\n",
+    )
+    .expect("the attributes");
+    repository.run(&["rm", "--cached", "--quiet", "file.rs"]);
+    std::fs::write(repository.path(), "one\r\ntwo\r\n").expect("the file");
+    repository.commit_all("with attributes");
+
+    // git really did store it with `\n`, or this test is about nothing.
+    let stored = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repository.directory())
+        .args(["show", "HEAD:file.rs"])
+        .output()
+        .expect("git show");
+    assert_eq!(
+        String::from_utf8_lossy(&stored.stdout),
+        "one\ntwo\n",
+        "git did not normalise the file, so there is nothing to convert"
+    );
+
+    let base = obelus::git::head_text(&repository.path()).expect("a diff base");
+    assert_eq!(
+        base, "one\r\ntwo\r\n",
+        "the diff base is not what a checkout would put on disk"
+    );
+    let changes = obelus::git::Changes::between(
+        &base,
+        &std::fs::read_to_string(repository.path()).expect("the file"),
+    );
+    assert!(
+        changes.is_empty(),
+        "a file nobody has touched is marked as changed: {changes:?}"
+    );
+}
+
+/// And a repository does not get to run a program because obelus looked at
+/// it.
+///
+/// Converting a blob the way a checkout would is what makes the margin
+/// honest, and it is also what runs a `filter.*` driver -- a program named
+/// by the repository's own config. `gix::discover` would call a checkout
+/// the reader happens to own fully trusted and run it. A code reader that
+/// executes a stranger's code because it was pointed at their clone is not
+/// a reader, so the trust level is obelus's decision: reduced, which keeps
+/// the conversion and refuses the program.
+#[test]
+fn a_repository_does_not_get_to_run_a_program_because_obelus_read_it() {
+    let repository = Repository::new("driver", "hello\n");
+    let marker = repository.directory().join("THE-DRIVER-RAN");
+    std::fs::write(
+        repository.directory().join(".gitattributes"),
+        "* filter=evil\n",
+    )
+    .expect("the attributes");
+    repository.commit_all("with a driver");
+    repository.run(&[
+        "config",
+        "filter.evil.smudge",
+        &format!("sh -c 'touch {} ; cat'", marker.display()),
+    ]);
+
+    let base = obelus::git::head_text(&repository.path()).expect("a diff base");
+    assert_eq!(base, "hello\n", "the content did not survive the refusal");
+    assert!(
+        !marker.exists(),
+        "obelus ran a program the repository named, just by reading the file"
+    );
+}

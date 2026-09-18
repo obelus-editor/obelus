@@ -147,7 +147,7 @@ toml = "1"
 # has neither, and is written whole. Already in the tree by way of another
 # dependency, so this costs a line rather than a build.
 toml_edit = "0.22"
-gix = { version = "0.87.1", default-features = false, features = ["blame", "status", "revision", "max-performance-safe", "sha1"] }
+gix = { version = "0.87.1", default-features = false, features = ["attributes", "blame", "status", "revision", "max-performance-safe", "sha1"] }
 # The agent registry, and the archives it points at. Blocking, because the
 # thread that fetches one has nothing else to do -- and small: a once-a-session
 # GET of a 56 KB list needs no connection pool, no middleware and no HTTP/2,
