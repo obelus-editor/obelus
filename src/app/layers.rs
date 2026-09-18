@@ -47,10 +47,10 @@ pub enum Layer {
 /// Drawing walks this forwards and keys walk it backwards, and nothing else
 /// may hold an order. Public so that anything which has to answer for all of
 /// them -- a test, most of all -- reads the list from here rather than
-/// keeping a second copy that can fall behind. The three pages -- the counts, the notes and the
-/// settings -- cannot be open together, so their order among themselves is
-/// never observed; it is declared anyway, because an order nobody wrote down
-/// is an order every reader of the code guesses at.
+/// keeping a second copy that can fall behind. The three pages -- the counts,
+/// the notes and the settings -- cannot be open together, so their order among
+/// themselves is never observed; it is declared anyway, because an order nobody
+/// wrote down is an order every reader of the code guesses at.
 pub const STACK: [Layer; 5] = [
     Layer::Counts,
     Layer::Notes,

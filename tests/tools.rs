@@ -269,7 +269,10 @@ fn a_note_of_several_lines_is_one_entry() {
         .unwrap_or_else(|| panic!("no answer in:\n{listed}"));
     let lines: Vec<&str> = said.lines().collect();
     assert_eq!(
-        lines.iter().filter(|line| line.contains("ABCDEFGH")).count(),
+        lines
+            .iter()
+            .filter(|line| line.contains("ABCDEFGH"))
+            .count(),
         1,
         "the name is not on one line of it:\n{said}"
     );
@@ -310,8 +313,11 @@ fn a_depth_nothing_could_hang_at_is_brought_up_before_it_is_written() {
     let scratch = support::Scratch::new("tools-too-deep");
     std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
     let file = scratch.path().join(".obelus").join("todo.toml");
-    std::fs::write(&file, "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one\"\ndone = false\n")
-        .expect("the notes");
+    std::fs::write(
+        &file,
+        "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one\"\ndone = false\n",
+    )
+    .expect("the notes");
 
     let (sender, events) = channel();
     let url = obelus::mcp::serve(scratch.path(), sender).expect("a socket");
@@ -325,7 +331,11 @@ fn a_depth_nothing_could_hang_at_is_brought_up_before_it_is_written() {
             r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
         );
         let session = session.expect("a session of its own");
-        ask(&url, Some(&session), r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_add","arguments":{"notes":[{"said":"far too deep","depth":9}]}}}"#);
+        ask(
+            &url,
+            Some(&session),
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_add","arguments":{"notes":[{"said":"far too deep","depth":9}]}}}"#,
+        );
     });
     let event = events
         .recv_timeout(std::time::Duration::from_secs(10))

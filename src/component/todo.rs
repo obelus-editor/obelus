@@ -189,10 +189,7 @@ impl TodoView {
                 // the moment anything else wrote the file.
                 if note.said.trim().is_empty() {
                     let at = was.min(self.todo.notes.len());
-                    note.depth = note
-                        .depth
-                        .min(self.room_at(at))
-                        .min(crate::todo::DEEPEST);
+                    note.depth = note.depth.min(self.room_at(at)).min(crate::todo::DEEPEST);
                     self.todo.notes.insert(at, note);
                     self.where_now.insert(at, None);
                     return at;

@@ -1451,7 +1451,10 @@ fn a_note_that_outlives_its_parent_is_written_at_a_depth_it_reads_back_at() {
 #[test]
 fn the_notes_are_wrapped_to_the_width_of_the_frame_being_drawn() {
     let long = "a note long enough that where it wraps says which width it was laid out at";
-    let scratch = tree("width-now", &format!("[[todo]]\nsaid = \"{long}\"\ndone = false\n"));
+    let scratch = tree(
+        "width-now",
+        &format!("[[todo]]\nsaid = \"{long}\"\ndone = false\n"),
+    );
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(
         obelus::config::Config {
@@ -1490,7 +1493,10 @@ fn the_notes_are_wrapped_to_the_width_of_the_frame_being_drawn() {
 /// words and this goes red.
 #[test]
 fn what_was_pasted_stays_on_the_page_when_the_file_is_read_again() {
-    let scratch = tree("pasted-stays", "[[todo]]\nsaid = \"first note\"\ndone = false\n");
+    let scratch = tree(
+        "pasted-stays",
+        "[[todo]]\nsaid = \"first note\"\ndone = false\n",
+    );
     let mut app = open(&scratch, 76, 18);
     press(&mut app, KeyCode::Enter);
     app.handle(Event::Paste("the words the reader pasted".to_string()));
@@ -1498,8 +1504,11 @@ fn what_was_pasted_stays_on_the_page_when_the_file_is_read_again() {
     // Somebody else writes the file, and obelus takes it again.
     let path = scratch.path().join(".obelus").join("todo.toml");
     let written = std::fs::read_to_string(&path).expect("the notes");
-    std::fs::write(&path, format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"))
-        .expect("the notes");
+    std::fs::write(
+        &path,
+        format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"),
+    )
+    .expect("the notes");
     app.handle(Event::FileChanged { path });
 
     let dump = support::render(&mut app, 76, 18);
@@ -1522,15 +1531,21 @@ fn what_was_pasted_stays_on_the_page_when_the_file_is_read_again() {
 /// writer's note goes and this goes red.
 #[test]
 fn a_paste_does_not_write_the_notes_file_over_somebody_elses_change() {
-    let scratch = tree("half-made", "[[todo]]\nsaid = \"first note\"\ndone = false\n");
+    let scratch = tree(
+        "half-made",
+        "[[todo]]\nsaid = \"first note\"\ndone = false\n",
+    );
     let mut app = open(&scratch, 76, 18);
     let path = scratch.path().join(".obelus").join("todo.toml");
     press(&mut app, KeyCode::Enter);
 
     // Another writer, and obelus has not heard about it yet.
     let written = std::fs::read_to_string(&path).expect("the notes");
-    std::fs::write(&path, format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"))
-        .expect("the notes");
+    std::fs::write(
+        &path,
+        format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"),
+    )
+    .expect("the notes");
 
     app.handle(Event::Paste("the words the reader pasted".to_string()));
     let written = std::fs::read_to_string(&path).expect("the notes");
@@ -1596,7 +1611,10 @@ fn starting_a_note_does_not_put_a_blank_one_in_the_file() {
 /// this goes red.
 #[test]
 fn what_is_written_down_is_what_the_reader_has_on_the_page() {
-    let scratch = tree("as-written", "[[todo]]\nsaid = \"first note\"\ndone = false\n");
+    let scratch = tree(
+        "as-written",
+        "[[todo]]\nsaid = \"first note\"\ndone = false\n",
+    );
     let mut app = open(&scratch, 76, 18);
     let path = scratch.path().join(".obelus").join("todo.toml");
 
@@ -1631,7 +1649,10 @@ fn a_note_that_says_nothing_is_not_written_down() {
     let _turn = support::clipboard_turn();
     obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
 
-    let scratch = tree("says-nothing", "[[todo]]\nsaid = \"first note\"\ndone = false\n");
+    let scratch = tree(
+        "says-nothing",
+        "[[todo]]\nsaid = \"first note\"\ndone = false\n",
+    );
     let mut app = open(&scratch, 76, 18);
     let path = scratch.path().join(".obelus").join("todo.toml");
 
@@ -1668,8 +1689,11 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
     press(&mut app, KeyCode::Enter);
     // Somebody else writes the file, and obelus takes it again.
     let written = std::fs::read_to_string(&path).expect("the notes");
-    std::fs::write(&path, format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"))
-        .expect("the notes");
+    std::fs::write(
+        &path,
+        format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"),
+    )
+    .expect("the notes");
     app.handle(Event::FileChanged { path });
 
     for letter in "mine".chars() {
@@ -1856,7 +1880,11 @@ fn down_lets_go_of_what_is_held_before_it_leaves_the_note() {
 
     // The second walks the list, the way it always has.
     press(&mut app, KeyCode::Down);
-    assert_eq!(on(&app), 1, "the second press did not step to the next note");
+    assert_eq!(
+        on(&app),
+        1,
+        "the second press did not step to the next note"
+    );
 }
 
 /// The caret is put away while the list of every key is up.

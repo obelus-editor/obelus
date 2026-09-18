@@ -401,7 +401,11 @@ impl Todo {
         // file: an agent asking for the list would be handed a blank
         // entry, and a reader coming back would find a note that says
         // nothing about anything. The page keeps it; leaving drops it.
-        for note in self.notes.iter().filter(|note| !note.said.trim().is_empty()) {
+        for note in self
+            .notes
+            .iter()
+            .filter(|note| !note.said.trim().is_empty())
+        {
             out.push_str("[[todo]]\n");
             out.push_str(&format!("id = \"{}\"\n", note.id));
             out.push_str(&format!("said = {}\n", quoted(&note.said)));

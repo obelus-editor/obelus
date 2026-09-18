@@ -12,13 +12,13 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::*;
-use crate::conversation::{Asking, Topic};
 use crate::{
     acp,
     component::{
         card::{Card, CardOutcome, Choice},
         chat::{Chat, Speaker},
     },
+    conversation::{Asking, Topic},
 };
 
 /// What obelus is doing about an agent, for the view to say so.

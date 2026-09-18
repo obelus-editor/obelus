@@ -57,8 +57,9 @@ impl App {
             // on disk instead would be a change with no undo in it and no
             // way to look at before it happens -- and a rename the reader
             // regrets is exactly the change they will want to take back.
-            // The cost is a list of open documents with the files a rename touched in
-            // it, which is the honest shape of what just happened.
+            // The cost is a list of open documents with the files a rename
+            // touched in it, which is the honest shape of what just
+            // happened.
             let was_open = self
                 .documents
                 .iter()
