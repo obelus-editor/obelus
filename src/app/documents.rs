@@ -211,7 +211,72 @@ impl App {
         picker.says_its_keys();
         self.show_list(picker);
         self.listing = listings;
+        // Open on the file being read, which in a tree means opening every
+        // directory above it: a list that opened at the root would make the
+        // reader walk down to where they already are.
+        self.reveal_current();
+        // Started once, when the list opens, rather than when the reader
+        // first types: the tree is what is on screen until they do, and the
+        // walk running behind it is what makes the first keystroke land on
+        // a list rather than on an empty one.
+        self.start_walk();
         self.refresh_listing();
+    }
+
+    /// Opens every directory above the file being read.
+    ///
+    /// What "open on the file being read" means in a tree. The row itself
+    /// is selected by name once the rows exist, which is the picker's own
+    /// [`Picker::prefer`].
+    fn reveal_current(&mut self) {
+        let Some(path) = self
+            .current_buffer()
+            .map(|buffer| buffer.path().to_path_buf())
+        else {
+            return;
+        };
+        let Ok(relative) = path.strip_prefix(&self.working_directory) else {
+            return;
+        };
+        let mut above = relative.parent();
+        while let Some(directory) = above {
+            if directory.as_os_str().is_empty() {
+                break;
+            }
+            self.opened.insert(directory.to_path_buf());
+            above = directory.parent();
+        }
+    }
+
+    /// Whether the flat listing of everything is what the list is showing.
+    ///
+    /// Which is the tab those rows are about, with something typed: the
+    /// same list is a tree while nothing is, and the other tab is git's
+    /// answer rather than a walk's.
+    pub(super) fn showing_found(&self) -> bool {
+        let Some(picker) = self.picker.as_ref() else {
+            return false;
+        };
+        !picker.query().is_empty() && self.listing.get(picker.tab()).copied() == Some(Listing::All)
+    }
+
+    /// Starts the walk whose paths the flat listing is made of.
+    ///
+    /// Bumping the generation first is what tells the walk before it --
+    /// another opening, another answer about which files to offer -- that
+    /// nobody is waiting for it any more.
+    fn start_walk(&mut self) {
+        self.walk_generation += 1;
+        self.found.clear();
+        let Some(sender) = self.events.clone() else {
+            return;
+        };
+        files::spawn_walk(
+            &self.working_directory,
+            self.walk_generation,
+            self.config().ignored_files,
+            sender,
+        );
     }
 
     /// Whatever a key means to a file list, beyond moving about in it.
@@ -242,8 +307,122 @@ impl App {
         }
         let showing = !self.config().ignored_files;
         self.change_setting("ignored_files", &crate::config::Value::Switch(showing));
+        // A different answer to "which files", so a different walk.
+        self.start_walk();
         self.refresh_listing();
         true
+    }
+
+    /// The rows of the flat listing, from what the walk has found.
+    fn found_rows(&self) -> Vec<PickerItem> {
+        self.found
+            .iter()
+            .map(|(path, ignored)| PickerItem {
+                prose: false,
+                marker: None,
+                icon: icons::enabled().then(|| icons::for_path(path)),
+                label: path.display().to_string(),
+                detail: None,
+                trailing: None,
+                changed: None,
+                value: PickerValue::File(path.clone()),
+                enabled: true,
+                colours: None,
+                // Only there because the reader asked for it, which is the
+                // one thing to say about such a row.
+                status: match ignored {
+                    true => Some(crate::git::FileStatus::Ignored),
+                    false => self
+                        .statuses
+                        .get(&self.working_directory.join(path))
+                        .copied(),
+                },
+                depth: 0,
+                kind: None,
+                tab: None,
+            })
+            .collect()
+    }
+
+    /// The rows of the tree a file list shows while nothing is typed.
+    ///
+    /// Walked from the root through whichever directories are open, which
+    /// is what makes it a tree rather than a listing: a directory nobody
+    /// opened is one row, and the rows under it do not exist.
+    fn tree_rows(&self) -> Vec<PickerItem> {
+        let ignored = self.config().ignored_files;
+        let mut rows = Vec::new();
+        self.tree_rows_under(&self.working_directory, 0, ignored, &mut rows);
+        rows
+    }
+
+    /// The same, for one directory and everything open under it.
+    fn tree_rows_under(
+        &self,
+        directory: &Path,
+        depth: u16,
+        ignored: bool,
+        rows: &mut Vec<PickerItem>,
+    ) {
+        for entry in files::inside(&self.working_directory, directory, ignored) {
+            let open = self.opened.contains(&entry.path);
+            let full = self.working_directory.join(&entry.path);
+            let name = entry.path.file_name().map_or_else(
+                || entry.path.display().to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            );
+            rows.push(PickerItem {
+                prose: false,
+                icon: icons::enabled().then(|| match entry.directory {
+                    true => icons::ui::DIRECTORY,
+                    false => icons::for_path(&entry.path),
+                }),
+                // Only where opening it would show something. The mark is
+                // the only thing a row says about itself before it is
+                // pressed, and one that offers to open an empty directory
+                // is one nobody presses twice.
+                marker: (entry.directory && entry.holds)
+                    .then(|| (Marking::Aside, crate::ui::opens(open).to_string())),
+                label: name,
+                detail: None,
+                trailing: None,
+                changed: None,
+                value: match entry.directory {
+                    true => PickerValue::Directory(entry.path.clone()),
+                    false => PickerValue::File(entry.path.clone()),
+                },
+                depth,
+                // What git says about it, or that the tree was told to
+                // keep it out: the second is the only thing to say about a
+                // row that is only there because the reader asked for it.
+                status: match entry.ignored {
+                    true => Some(crate::git::FileStatus::Ignored),
+                    false => self.statuses.get(&full).copied(),
+                },
+                enabled: true,
+                colours: None,
+                kind: None,
+                tab: None,
+            });
+            if entry.directory && open {
+                self.tree_rows_under(&full, depth.saturating_add(1), ignored, rows);
+            }
+        }
+    }
+
+    /// Opens a directory of the tree, or closes it again.
+    pub(super) fn open_directory(&mut self, path: &Path) {
+        if !self.opened.remove(path) {
+            self.opened.insert(path.to_path_buf());
+        }
+        let row = self.picker.as_ref().map(Picker::selected);
+        self.refresh_listing();
+        // Back onto the row the key was pressed on: the rows below it have
+        // moved, and a selection that jumped to the top would leave the
+        // reader somewhere they did not ask to be.
+        if let (Some(picker), Some(row)) = (self.picker.as_mut(), row) {
+            picker.select_row(row);
+        }
     }
 
     /// Fills a file list with the rows of whichever listing is showing.
@@ -254,24 +433,55 @@ impl App {
             .and_then(|picker| self.listing.get(picker.tab()).copied())
             .unwrap_or(Listing::All);
         match showing {
+            // Nothing typed: the tree of the project, read rather than
+            // searched. Typing is how a reader says they know what they are
+            // looking for, and until they do the shape of the tree is what
+            // there is to go on.
+            Listing::All if self.picker.as_ref().is_some_and(|it| it.query().is_empty()) => {
+                let rows = self.tree_rows();
+                let ignored = self.config().ignored_files;
+                let prefer = self
+                    .current_buffer()
+                    .and_then(|buffer| buffer.path().file_name())
+                    .map(|name| name.to_string_lossy().into_owned());
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.offering_ignored(Some(ignored));
+                    // The same: the row a query's answer was on says
+                    // nothing about where it is in the tree. What puts the
+                    // reader back is the name.
+                    picker.replace(rows);
+                    picker.when_empty("no files under this directory");
+                    if let Some(prefer) = prefer {
+                        picker.prefer(prefer);
+                    }
+                }
+            }
+            // Something typed: the flat list of everything, which is what a
+            // query is asked against.
+            Listing::All if !self.found.is_empty() => {
+                let rows = self.found_rows();
+                let ignored = self.config().ignored_files;
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.offering_ignored(Some(ignored));
+                    // Replaced rather than relisted: these are not the tree
+                    // with more in it, they are a different question's
+                    // answer, and the row the reader was on in the tree is
+                    // a number that means nothing here. The top is where a
+                    // query's answer starts.
+                    picker.replace(rows);
+                }
+            }
+            // Something typed, and the walk has not reached anything yet.
+            // Said about the search rather than about the result, because
+            // this is also what a tree with nothing in it looks like.
             Listing::All => {
-                // A fresh walk rather than a remembered one: the walk
-                // streams and is over in a moment, and keeping a second copy
-                // of every path in the tree to switch back to costs more
-                // than walking it again.
-                self.walk_generation += 1;
+                let ignored = self.config().ignored_files;
                 let prefer = self
                     .current_buffer()
                     .map(|buffer| relative(buffer.path(), &self.working_directory));
-                let ignored = self.config().ignored_files;
                 if let Some(picker) = self.picker.as_mut() {
-                    // What the walk about to run was told, so the foot says
-                    // which way the key is set rather than guessing.
                     picker.offering_ignored(Some(ignored));
-                    picker.replace(Vec::new());
-                    // Shown for the moment before the first batch arrives as
-                    // well as for a tree with nothing in it, which is why it
-                    // is about the search rather than about the result.
+                    picker.relist(Vec::new());
                     picker.when_empty("no files under this directory");
                     // Open on the file being read. The walk decides where in
                     // the list it is, and it may be in the last batch, so the
@@ -281,19 +491,13 @@ impl App {
                         picker.prefer(prefer);
                     }
                 }
-                if let Some(sender) = self.events.clone() {
-                    files::spawn_walk(
-                        &self.working_directory,
-                        self.walk_generation,
-                        self.config().ignored_files,
-                        sender,
-                    );
-                }
             }
             Listing::Changed => {
-                // The walk in flight is answering the other tab's question.
-                self.walk_generation += 1;
-                // And what a tree ignores is not a question about this tab:
+                // The walk behind the other tab keeps going: what it finds
+                // is put away rather than drawn, and the reader walking
+                // back to that tab should not have to wait for it twice.
+                //
+                // What a tree ignores is not a question about this tab:
                 // these rows are git's answer about what has changed, and
                 // git does not report a file it was told to ignore.
                 if let Some(picker) = self.picker.as_mut() {

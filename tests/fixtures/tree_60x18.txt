@@ -1,0 +1,48 @@
+screen 60x18  editor 60x16  status 60x1
+-- text --
+ 0|    empty                                                  
+ 1| ▾  src                                                    
+ 2|   ▸  app                                                  
+ 3|   ▾  lsp                                                  
+ 4|        colour.rs                                          
+ 5|        hint.rs                                            
+ 6|      main.rs                                              
+ 7| ▸  tests                                                  
+ 8|    Cargo.toml                                             
+ 9|                                                            
+10|                                                            
+11|                                                            
+12|                                                            
+13|                                                            
+14|────────────────────────────────────────────────────────────
+15|  󰘵 i ignored files ■■                              󱊫 keys  
+16|────────────────────────────────────────────────────────────
+17| 󰍉                                                          
+-- style --
+ 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|abbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaabbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 3|aaabbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccca
+ 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|abbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+14|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+15|aadddabbbbbbbbbbbbbaeeccaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbaa
+16|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+17|ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#52525b bg=#18181b
+c fg=#e4e4e7 bg=#27272a
+d fg=#a1a1aa bg=#18181b
+e fg=#52525b bg=#27272a
+f fg=#d4d4d8 bg=#18181b
+-- cursor --
+4,17

@@ -378,6 +378,21 @@ pub struct App {
     /// The changed listing has a tab only when something has changed, so
     /// which tab is which listing is not fixed.
     listing: Vec<Listing>,
+    /// Every path the walk behind the open file list has found, and
+    /// whether the tree said to ignore it.
+    ///
+    /// Put away so the flat listing can be shown again without walking
+    /// again: the reader types, the tree is put down and these are picked
+    /// up, and clearing the query puts them back down. With the flag,
+    /// because it is the walk that knows which files are only there
+    /// because the reader asked for them.
+    found: Vec<(PathBuf, bool)>,
+    /// Which directories of the file tree are open, relative to the root.
+    ///
+    /// Beside the list rather than in it, the way a history's opened commit
+    /// and a tree of calls are: the list is rows, and which of them exist
+    /// is worked out from this.
+    opened: std::collections::HashSet<PathBuf>,
     /// The commits an open history view is showing, and what is open in it.
     history: history_view::Showing,
     /// The tree of calls an open list of them is showing.
@@ -555,6 +570,8 @@ impl App {
             screen_area: Rect::ZERO,
             given_statuses: None,
             listing: Vec::new(),
+            found: Vec::new(),
+            opened: std::collections::HashSet::new(),
             history: history_view::Showing::default(),
             calls: None,
             searching: Vec::new(),
@@ -1664,6 +1681,22 @@ impl App {
                 // A batch from a walk whose picker is gone, or from one
                 // superseded by a later open.
                 if generation != self.walk_generation {
+                    return;
+                }
+                // Kept as well as shown. A file list is a tree while
+                // nothing is typed and these rows the moment something is,
+                // and a reader who types, clears and types again would
+                // otherwise wait for a fresh walk each time -- which is a
+                // walk per first keystroke rather than one per opening.
+                self.found
+                    .extend(paths.iter().map(|path| (path.clone(), ignored)));
+                // Drawn only where the flat listing is what is showing: on
+                // the tab these rows are about, with something typed. A
+                // batch arriving while the tree is up would mix a walk of
+                // the whole project into the branch the reader has open,
+                // and one arriving on the changed tab is the other tab's
+                // answer.
+                if !self.showing_found() {
                     return;
                 }
                 if let Some(picker) = self.picker.as_mut() {

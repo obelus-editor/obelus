@@ -43,6 +43,12 @@ pub enum PickerValue {
     Action(usize),
     /// Open a file.
     File(PathBuf),
+    /// Open a directory of the tree under it, or close it again.
+    ///
+    /// A directory is not somewhere to go: what it has is what is in it,
+    /// and that goes under it in place rather than in a second list with
+    /// its own escape. The same as a commit and its files.
+    Directory(PathBuf),
     /// Switch to something already open.
     Document(DocumentId),
     /// Switch theme, by the name it answers to.

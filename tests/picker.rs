@@ -395,6 +395,8 @@ fn paths_from_the_current_walk_are_listed() {
         paths: vec!["src/somewhere.rs".into()],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against.
+    type_text(&mut app, "somewhere");
 
     let dump = support::render(&mut app, 60, 12);
     assert!(
@@ -617,6 +619,9 @@ fn the_list_moves_only_when_the_cursor_reaches_an_edge() {
             .collect(),
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "file");
 
     // How many rows this screen shows, asked of the screen rather than
     // assumed: the rule is about the last row, whichever row that is.
@@ -850,6 +855,10 @@ fn a_file_the_tree_ignores_is_drawn_dim() {
     while let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(500)) {
         app.handle(event);
     }
+    // The flat listing, which is where a walk's rows are: the tree shows
+    // the same files a branch at a time, and this is about the ink on a
+    // row rather than about where it sits.
+    type_text(&mut app, "r");
 
     let dump = support::render(&mut app, 72, 20);
     let text = support::text_block(&dump);
@@ -909,6 +918,9 @@ fn paging_scrolls_the_window() {
             .collect(),
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "file");
 
     let first = support::render(&mut app, 60, 12);
     assert!(support::text_block(&first).contains("file-000.rs"));
@@ -976,6 +988,9 @@ fn the_file_picker_shows_a_glyph_for_each_file() {
         ],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "r");
 
     let dump = support::render(&mut app, 40, 8);
     let text = support::text_block(&dump);
@@ -1112,6 +1127,9 @@ fn a_long_path_keeps_its_end_and_marks_the_cut() {
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says they know what they want.
+    type_text(&mut app, "e");
 
     let dump = support::render(&mut app, 30, 6);
     let text = support::text_block(&dump);
@@ -1140,6 +1158,9 @@ fn a_truncated_row_keeps_the_padding_on_its_right() {
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says they know what they want.
+    type_text(&mut app, "e");
 
     // ASCII throughout, so one character in the dump is one cell.
     for width in 12..40u16 {
@@ -1183,6 +1204,9 @@ fn truncation_does_not_move_the_matched_characters() {
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says they know what they want.
+    type_text(&mut app, "e");
 
     // A query that matches only in the tail, which is the part still on screen.
     type_text(&mut app, "thefile");
@@ -1858,6 +1882,9 @@ fn the_file_picker_previews_the_selected_file() {
         ],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "fixtures");
 
     support::check("preview_60x22", &support::render(&mut app, 60, 22));
 }
@@ -1876,6 +1903,9 @@ fn the_preview_follows_the_selection() {
         ],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "fixtures");
 
     let first = support::text_block(&support::render(&mut app, 60, 22)).to_string();
     assert!(first.contains("fn main()"), "{first}");
@@ -1977,6 +2007,9 @@ fn a_file_is_previewed_from_its_first_line() {
         ],
         ignored: false,
     });
+    // The flat listing rather than the tree, which is what a query asks
+    // for. Both of these match it, in the order they were given.
+    type_text(&mut app, "fixtures");
 
     let dump = support::render(&mut app, 60, 22);
     let text = support::text_block(&dump);
@@ -2076,18 +2109,26 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
 /// filtered by typing; the preview is not.
 #[test]
 fn a_taller_screen_gives_the_extra_rows_to_the_preview() {
-    let mut app = app();
-    press_function(&mut app, 1);
     // More names than either list has room for, and the first of them is a
     // file with more lines than either preview has room for: both counts
     // are then the room rather than what there is to show.
-    let mut paths: Vec<std::path::PathBuf> = vec!["tests/fixtures/many_lines.rs".into()];
-    paths.extend((1..=30).map(|number| format!("src/other{number:02}.rs").into()));
-    app.handle(Event::FilesFound {
-        generation: 1,
-        paths,
-        ignored: false,
-    });
+    //
+    // A directory of its own rather than a fed walk, because the list
+    // opens on the tree and the tree reads the disk: what is on screen is
+    // then the thing this is about, in the order a tree puts it in.
+    let scratch = support::Scratch::new("picker-tall-tree");
+    scratch.write(
+        "aaa_many.rs",
+        &(1..=40)
+            .map(|line| format!("pub const LINE_{line}: u32 = {line};\n"))
+            .collect::<String>(),
+    );
+    for number in 1..=30 {
+        scratch.write(&format!("other{number:02}.rs"), "fn other() {}\n");
+    }
+    let mut app = app();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    press_function(&mut app, 1);
 
     let shown = |dump: &str| {
         support::text_block(dump)
@@ -2144,6 +2185,9 @@ fn a_list_with_tabs_still_walks_ten_rows() {
         paths,
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "rs");
 
     let names = |dump: &str| {
         support::text_block(dump)
@@ -2213,6 +2257,9 @@ fn paging_scrolls_the_preview_and_not_the_list() {
         paths: vec!["tests/fixtures/many_lines.rs".into()],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "many");
 
     let at_rest = support::render(&mut app, 60, 22);
     assert!(
@@ -2286,6 +2333,9 @@ fn the_preview_stops_at_the_top_of_the_file() {
         paths: vec!["tests/fixtures/many_lines.rs".into()],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "many");
 
     let at_rest = support::text_block(&support::render(&mut app, 60, 22)).to_string();
     for _ in 0..5 {
@@ -2523,26 +2573,25 @@ fn every_compact_list_has_an_edge_above_it() {
     }
 }
 
-/// The file picker opens on the file being read, even when the walk finds it
-/// in a later batch. A list of every file in a project, opened at the top,
-/// starts by pointing at something arbitrary.
+/// The list opens on the file being read, which in a tree means opening
+/// every directory above it.
+///
+/// A list that opened at the root would make the reader walk down to where
+/// they already are, and the deeper the file the longer the walk.
 #[test]
 fn the_file_picker_opens_on_the_file_being_read() {
-    let mut app = app();
-    press_function(&mut app, 1);
+    let scratch = support::Scratch::new("picker-reveal");
+    scratch.write("src/lsp/hint.rs", "fn hint() {}\n");
+    scratch.write("src/main.rs", "fn main() {}\n");
+    scratch.write("README.md", "# it\n");
 
-    // The walk arrives in batches and the current file is in the second of
-    // them, which is the case a picker that only looked once would miss.
-    app.handle(Event::FilesFound {
-        generation: 1,
-        paths: vec!["src/one.rs".into(), "src/two.rs".into()],
-        ignored: false,
-    });
-    app.handle(Event::FilesFound {
-        generation: 1,
-        paths: vec!["tests/fixtures/sample.rs".into(), "src/three.rs".into()],
-        ignored: false,
-    });
+    let mut app = App::new(vec![
+        obelus::buffer::Buffer::open(&scratch.join("src/lsp/hint.rs")).expect("opening it"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 60, 22);
+    press_function(&mut app, 1);
 
     let picker = app.picker().expect("the picker is open");
     assert_eq!(
@@ -2550,20 +2599,25 @@ fn the_file_picker_opens_on_the_file_being_read() {
             .matches()
             .nth(picker.selected())
             .map(|item| item.label.as_str()),
-        Some("tests/fixtures/sample.rs"),
-        "the picker did not open on the file being read"
+        Some("hint.rs"),
+        "the list did not open on the file being read"
     );
 
-    // And the window puts it in the middle, which is what makes the rows
-    // around it the ones worth looking at.
+    // And the way down to it is open, which is what makes the row exist at
+    // all: a tree with `src` shut has no row for anything under it.
     let dump = support::render(&mut app, 60, 22);
-    let rows: Vec<&str> = support::text_block(&dump)
+    let names: Vec<String> = support::text_block(&dump)
         .lines()
-        .filter(|row| !row.is_empty())
+        .filter(|row| !row.trim().is_empty())
+        .map(|row| row.trim().to_string())
         .collect();
     assert!(
-        rows[2].contains("sample.rs"),
-        "the selected row is not where the window centres:\n{dump}"
+        names.iter().any(|row| row.ends_with("src")),
+        "the directory above it is not on screen: {names:?}"
+    );
+    assert!(
+        names.iter().any(|row| row.ends_with("lsp")),
+        "the directory above it is not open: {names:?}"
     );
 }
 
@@ -2578,6 +2632,9 @@ fn a_late_batch_does_not_move_a_selection_the_reader_has_touched() {
         paths: vec!["src/one.rs".into(), "src/two.rs".into()],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "rs");
 
     press(&mut app, KeyCode::Down);
     let chosen = app
@@ -2780,10 +2837,12 @@ fn the_palette_groups_its_commands_into_tabs() {
 /// into a blank region would read as the arrow key having broken something.
 #[test]
 fn a_list_with_nothing_in_it_says_why() {
-    // A tree with nothing in it to offer, which is the walk having
-    // finished with nothing rather than not having started: no batch of
-    // paths ever arrives here.
+    // A tree with nothing in it to offer. A directory of its own, because
+    // the tree is read from the disk rather than waited for: the list
+    // shows what is under the working directory the moment it opens.
+    let scratch = support::Scratch::new("picker-empty-tree");
     let mut empty = app();
+    empty.working_directory_for_test(scratch.path().to_path_buf());
     support::lay_out(&mut empty, 50, 8);
     press_function(&mut empty, 1);
     let dump = support::render(&mut empty, 50, 8);
@@ -3232,6 +3291,9 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
         paths: vec!["tests/fixtures/long.rs".into()],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "long");
     press(&mut app, KeyCode::Enter);
     assert!(
         app.current_buffer()
@@ -3255,6 +3317,9 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
         paths: vec!["tests/fixtures/long.rs".into()],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "long");
     press(&mut app, KeyCode::Enter);
     assert!(
         app.current_buffer()
@@ -3429,15 +3494,17 @@ fn the_file_list_has_a_tab_for_what_has_changed() {
         "not the changed files"
     );
 
-    // And back to everything: the rows are gone and a walk is running for
-    // them again.
+    // And back to everything: what git said is gone, and what is there
+    // instead is the tree -- which is what this list is while nothing is
+    // typed, whichever tab the reader came from.
     press(&mut dirty, KeyCode::BackTab);
     let picker = dirty.picker().expect("the file list");
     assert_eq!(picker.tab(), 0);
-    assert_eq!(picker.match_count(), 0, "the changed rows stayed");
-    assert_eq!(
-        picker.nothing_to_show(),
-        Some("no files under this directory")
+    assert!(
+        !picker
+            .matches()
+            .any(|item| item.label.ends_with("late.rs") || item.label.ends_with("early.rs")),
+        "the changed rows stayed"
     );
 }
 
@@ -3464,6 +3531,9 @@ fn a_walk_in_flight_does_not_land_in_the_changed_listing() {
         paths: vec!["src/walked.rs".into()],
         ignored: false,
     });
+    // The flat listing, which is what a query is asked against: a file
+    // list is a tree until the reader says what they are after.
+    type_text(&mut app, "rs");
     assert_eq!(app.picker().expect("the file list").match_count(), 1);
 
     press(&mut app, KeyCode::Tab);

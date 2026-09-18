@@ -21,40 +21,41 @@ screen 60x22  editor 60x20  status 60x1
 18|────────────────────────────────────────────────────────────
 19|  󰘵 i ignored files ■■                              󱊫 keys  
 20|────────────────────────────────────────────────────────────
-21| 󰍉                                                          
+21| 󰍉  many                                                    
 -- style --
- 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
- 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 2|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 5|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 6|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 7|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 9|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-11|bbbbcbdddbdddddbeeeeeeefbeeebbbgfbbbbbbbbbbbbbbbbbbbbbbbbbbh
-12|bbbbcbdddbdddddbeeeeeeefbeeebbbgfbbbbbbbbbbbbbbbbbbbbbbbbbbh
-13|bbbbcbdddbdddddbeeeeeeefbeeebbbgfbbbbbbbbbbbbbbbbbbbbbbbbbbf
-14|bbbccbdddbdddddbeeeeeeefbeeebbbgfbbbbbbbbbbbbbbbbbbbbbbbbbbh
-15|bbbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbh
-16|bbbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbh
-17|bbbccbdddbdddddbeeeeeeefbeeebbbggfbbbbbbbbbbbbbbbbbbbbbbbbbh
-18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-19|bbfffbcccccccccccccbiiaabbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccbb
-20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-21|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
+ 0|aaaaaaaaaaaaaaaaaabbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac
+ 1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 2|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 4|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+10|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+11|ccccdceeeceeeeecfffffffgcfffccchgcccccccccccccccccccccccccci
+12|ccccdceeeceeeeecfffffffgcfffccchgcccccccccccccccccccccccccci
+13|ccccdceeeceeeeecfffffffgcfffccchgccccccccccccccccccccccccccg
+14|cccddceeeceeeeecfffffffgcfffccchgcccccccccccccccccccccccccci
+15|cccddceeeceeeeecfffffffgcfffccchhgccccccccccccccccccccccccci
+16|cccddceeeceeeeecfffffffgcfffccchhgccccccccccccccccccccccccci
+17|cccddceeeceeeeecfffffffgcfffccchhgccccccccccccccccccccccccci
+18|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+19|ccgggcdddddddddddddcjjaaccccccccccccccccccccccccccccddddddcc
+20|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+21|kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
 -- legend --
 a fg=#e4e4e7 bg=#27272a
-b fg=#e4e4e7 bg=#18181b
-c fg=#52525b bg=#18181b
-d fg=#c084fc bg=#18181b
-e fg=#fbbf24 bg=#18181b
-f fg=#a1a1aa bg=#18181b
-g fg=#f472b6 bg=#18181b
-h fg=#404047 bg=#18181b
-i fg=#52525b bg=#27272a
-j fg=#d4d4d8 bg=#18181b
+b fg=#e4e4e7 bg=#38577f
+c fg=#e4e4e7 bg=#18181b
+d fg=#52525b bg=#18181b
+e fg=#c084fc bg=#18181b
+f fg=#fbbf24 bg=#18181b
+g fg=#a1a1aa bg=#18181b
+h fg=#f472b6 bg=#18181b
+i fg=#404047 bg=#18181b
+j fg=#52525b bg=#27272a
+k fg=#d4d4d8 bg=#18181b
 -- cursor --
-4,21
+8,21

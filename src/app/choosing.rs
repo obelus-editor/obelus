@@ -328,7 +328,11 @@ impl App {
                 if searching && after != before {
                     self.refresh_search();
                 }
-                if listing && after.0 != before.0 {
+                // The tab, or the query going empty or stopping being
+                // empty: a file list is a tree while nothing is typed and
+                // the flat filtered list the moment something is, and those
+                // are two sets of rows rather than two ways of drawing one.
+                if listing && (after.0 != before.0 || after.1.is_empty() != before.1.is_empty()) {
                     self.refresh_listing();
                 }
                 if historic && after.0 != before.0 {
@@ -365,6 +369,13 @@ impl App {
         // choose between, and opens *the* file where the list is already
         // about one: a row in a file's own history names that file and that
         // commit, which is a document, and nothing else needs choosing.
+        // A directory is not somewhere to go: it opens under itself, in
+        // place, and the list stays open around it. Asked before the list
+        // is torn down, because the list is what it happens to.
+        if let PickerValue::Directory(path) = &value {
+            self.open_directory(&path.clone());
+            return;
+        }
         if let PickerValue::Commit(id) = value {
             if self.expand_commit(id) {
                 return;
@@ -404,6 +415,9 @@ impl App {
             PickerValue::Action(at) => self.do_action(at),
             PickerValue::Answer(answer) => self.answered(answer),
             PickerValue::File(path) => self.open(&self.working_directory.join(path)),
+            // Dealt with before the list is closed, the same as a commit:
+            // a directory opens under itself rather than going anywhere.
+            PickerValue::Directory(_) => {}
             PickerValue::Document(id) => {
                 if self.current != Some(id) {
                     let from = self.here();

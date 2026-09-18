@@ -365,7 +365,10 @@ impl App {
                     end_character: *end_character,
                 },
             )),
-            PickerValue::Command(_)
+            // A directory has nothing to show: what it holds goes under it
+            // in the list itself.
+            PickerValue::Directory(_)
+            | PickerValue::Command(_)
             // A thing the server offers to do has nowhere to show: what it
             // would change is not worked out until it is chosen.
             | PickerValue::Action(_)
