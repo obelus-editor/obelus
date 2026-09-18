@@ -1572,3 +1572,113 @@ fn starting_a_note_does_not_put_a_blank_one_in_the_file() {
         "leaving did not write both notes down: {written}"
     );
 }
+
+/// What obelus writes down is what the reader has on the page.
+///
+/// The words are in the box until the reader leaves the note, so every
+/// save that asked the view for its notes wrote the note as it *stood* --
+/// without them. Anything that saves while a note is open therefore wrote
+/// the file a keystroke behind the page, and another obelus or an agent
+/// reading it at that moment was handed the older words.
+///
+/// Broken deliberately by asking for `todo().clone()` instead of
+/// `as_written()` in the `Changed` arm: the words are not in the file and
+/// this goes red.
+#[test]
+fn what_is_written_down_is_what_the_reader_has_on_the_page() {
+    let scratch = tree("as-written", "[[todo]]\nsaid = \"first note\"\ndone = false\n");
+    let mut app = open(&scratch, 76, 18);
+    let path = scratch.path().join(".obelus").join("todo.toml");
+
+    // A second note, typed into, and then a key that saves: tab, which
+    // puts it one level in under the first.
+    press(&mut app, KeyCode::Enter);
+    for letter in "under it".chars() {
+        press(&mut app, KeyCode::Char(letter));
+    }
+    press(&mut app, KeyCode::Tab);
+
+    let written = std::fs::read_to_string(&path).expect("the notes");
+    assert!(
+        written.contains("under it"),
+        "the save wrote the note without what was being typed into it: {written}"
+    );
+}
+
+/// A note that says nothing is not written down.
+///
+/// The page has to have somewhere to type before there is anything to
+/// type, so a note with no words in it is a real row -- the one just
+/// started, and the one whose words the reader has just taken away. It is
+/// nothing at all in a file: an agent asking for the list would be handed
+/// a blank entry, and a reader coming back would find a note that says
+/// nothing about anything.
+///
+/// Broken deliberately by writing every note in `Todo::to_toml` again: the
+/// blank one reaches the file and this goes red.
+#[test]
+fn a_note_that_says_nothing_is_not_written_down() {
+    let _turn = support::clipboard_turn();
+    obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
+
+    let scratch = tree("says-nothing", "[[todo]]\nsaid = \"first note\"\ndone = false\n");
+    let mut app = open(&scratch, 76, 18);
+    let path = scratch.path().join(".obelus").join("todo.toml");
+
+    // All of it out of the note, which leaves the row with nothing in it
+    // and saves -- a cut is a change to the page.
+    support::press_control_key(&mut app, KeyCode::Char('a'));
+    support::press_control_key(&mut app, KeyCode::Char('x'));
+
+    let written = std::fs::read_to_string(&path).expect("the notes");
+    assert!(
+        !written.contains("said = \"\""),
+        "a note with nothing in it was written down: {written}"
+    );
+}
+
+/// A note being typed into stays where the reader has it when the file is
+/// read again.
+///
+/// A note that says nothing is not in anybody's file, because obelus does
+/// not write one -- so its absence from a reread is not somebody having
+/// taken it away. Treated as a deletion it was put back at the end, and a
+/// note just started walked to the bottom of the list the moment anything
+/// else wrote the file.
+///
+/// Broken deliberately by taking the empty-note arm out of
+/// `TodoView::reread`: the note lands last and this goes red.
+#[test]
+fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
+    let scratch = tree("stays-put", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let path = scratch.path().join(".obelus").join("todo.toml");
+
+    // Started on the first of three, so it is the second row.
+    press(&mut app, KeyCode::Enter);
+    // Somebody else writes the file, and obelus takes it again.
+    let written = std::fs::read_to_string(&path).expect("the notes");
+    std::fs::write(&path, format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"))
+        .expect("the notes");
+    app.handle(Event::FileChanged { path });
+
+    for letter in "mine".chars() {
+        press(&mut app, KeyCode::Char(letter));
+    }
+    let rows: Vec<&str> = app
+        .notes()
+        .expect("the view")
+        .rows()
+        .iter()
+        .map(|row| row.said.as_str())
+        .collect();
+    assert_eq!(
+        rows.first().copied(),
+        Some("wire the counts tree up to the search")
+    );
+    assert_eq!(
+        rows.get(1).copied(),
+        Some("mine"),
+        "reading the file again moved the note being started: {rows:?}"
+    );
+}

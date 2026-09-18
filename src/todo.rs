@@ -130,7 +130,13 @@ impl std::fmt::Display for NoteId {
 pub struct Note {
     /// What names it, for as long as it exists.
     pub id: NoteId,
-    /// What it says. Never empty, and its first line is the row.
+    /// What it says. Its first line is the row.
+    ///
+    /// Never empty in the file: a note that says nothing is not written
+    /// down. It can be empty here, and briefly is -- the note the reader
+    /// has just started, and the one whose words they have cleared on the
+    /// way to throwing it away -- because the page has to have somewhere
+    /// for them to type before there is anything to type.
     pub said: String,
     /// Whether it is done.
     ///
@@ -389,7 +395,13 @@ impl Todo {
     #[must_use]
     pub fn to_toml(&self) -> String {
         let mut out = String::new();
-        for note in &self.notes {
+        // A note that says nothing is not written down. It is a real thing
+        // on the page -- the one the reader has just started, or the one
+        // whose words they have cleared -- and it is nothing at all in a
+        // file: an agent asking for the list would be handed a blank
+        // entry, and a reader coming back would find a note that says
+        // nothing about anything. The page keeps it; leaving drops it.
+        for note in self.notes.iter().filter(|note| !note.said.trim().is_empty()) {
             out.push_str("[[todo]]\n");
             out.push_str(&format!("id = \"{}\"\n", note.id));
             out.push_str(&format!("said = {}\n", quoted(&note.said)));

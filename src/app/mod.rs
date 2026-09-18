@@ -1224,7 +1224,7 @@ impl App {
             // only place a note survives.
             Layer::Notes => {
                 if let Some(notes) = self.notes.as_ref() {
-                    let todo = notes.todo().clone();
+                    let todo = notes.as_written();
                     self.save_notes(&todo);
                 }
                 self.notes = None;
@@ -1582,7 +1582,13 @@ impl App {
                     self.reread_theme();
                 } else if self.is_the_notes_file(&path) {
                     // What the tree means to come back to, written by
-                    // somebody who is not this obelus.
+                    // another obelus, the reader's own editor -- or by this
+                    // obelus, which hears its own writes like anybody
+                    // else's. Not told apart, because there is nothing to
+                    // gain by it: a reread keeps the box the reader is
+                    // typing in and puts the caret back by name, so reading
+                    // back what obelus itself just wrote changes nothing on
+                    // the page.
                     self.reread_notes();
                 } else if crate::git::state_moved(&path) {
                     self.forget_what_git_said();

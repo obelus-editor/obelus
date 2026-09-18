@@ -338,7 +338,7 @@ impl App {
             }
             // A cut did change the page, so it is written down as well.
             TodoOutcome::Cut { text, what } => {
-                let todo = notes.todo().clone();
+                let todo = notes.as_written();
                 self.cut_away(&text, what);
                 self.save_notes(&todo);
                 true
@@ -351,7 +351,7 @@ impl App {
                 true
             }
             TodoOutcome::Changed => {
-                let todo = notes.todo().clone();
+                let todo = notes.as_written();
                 self.save_notes(&todo);
                 true
             }
@@ -361,7 +361,7 @@ impl App {
             // Talk about one. The notes are written down first, because
             // leaving them *is* finishing them and this leaves them.
             TodoOutcome::Talk(note) => {
-                let todo = notes.todo().clone();
+                let todo = notes.as_written();
                 self.save_notes(&todo);
                 self.talk_about(&note);
                 true
@@ -371,7 +371,7 @@ impl App {
                 true
             }
             TodoOutcome::Go(path, line) => {
-                let todo = notes.todo().clone();
+                let todo = notes.as_written();
                 self.save_notes(&todo);
                 self.notes = None;
                 self.go_to_note(&path, line);

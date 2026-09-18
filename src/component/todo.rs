@@ -172,28 +172,39 @@ impl TodoView {
         let writing = self
             .writing
             .take()
-            .and_then(|(at, composer)| Some((self.todo.notes.get(at)?.clone(), composer)));
+            .and_then(|(at, composer)| Some((at, self.todo.notes.get(at)?.clone(), composer)));
         let focused = self.selected_note().map(|note| note.id.clone());
 
         self.todo = todo;
         self.where_now = where_now;
 
-        let writing = writing.map(|(mut note, composer)| {
+        let writing = writing.map(|(was, mut note, composer)| {
             let at = self.todo.notes.iter().position(|other| other.id == note.id);
             let at = at.unwrap_or_else(|| {
+                // A note that says nothing has never been in anybody's
+                // file: obelus does not write one down, so its not being
+                // there is not somebody having taken it away. It goes back
+                // where the reader had it -- put at the end instead, a
+                // note just started would walk to the bottom of the list
+                // the moment anything else wrote the file.
+                if note.said.trim().is_empty() {
+                    let at = was.min(self.todo.notes.len());
+                    note.depth = note
+                        .depth
+                        .min(self.room_at(at))
+                        .min(crate::todo::DEEPEST);
+                    self.todo.notes.insert(at, note);
+                    self.where_now.insert(at, None);
+                    return at;
+                }
                 // At the end, so under whatever is last there rather than
                 // under the note it used to hang under -- that note is in
                 // somebody else's file now, and may not be in it at all. A
                 // depth deeper than the end can carry would be written to
                 // disk illegal and read back a level shallower, which is the
                 // note moving on its own between one open and the next.
-                let room = self
-                    .todo
-                    .notes
-                    .last()
-                    .map_or(0, |last| last.depth + 1)
-                    .min(crate::todo::DEEPEST);
-                note.depth = note.depth.min(room);
+                let room = self.room_at(self.todo.notes.len());
+                note.depth = note.depth.min(room).min(crate::todo::DEEPEST);
                 self.todo.notes.push(note);
                 self.where_now.push(None);
                 self.todo.notes.len() - 1
@@ -216,6 +227,19 @@ impl TodoView {
             self.focus(&id);
         }
         self.follow_caret();
+    }
+
+    /// How deep a note put at this place may be.
+    ///
+    /// One deeper than what is above it, which is the whole rule: a note
+    /// deeper than that is a child of nothing, and writing one would be
+    /// writing a file that reads back a level shallower -- the note moving
+    /// on its own between one open and the next.
+    fn room_at(&self, at: usize) -> u16 {
+        self.todo
+            .notes
+            .get(at.wrapping_sub(1))
+            .map_or(0, |above| above.depth + 1)
     }
 
     /// Puts the selection on the note with this name, if it is still there.
@@ -276,10 +300,28 @@ impl TodoView {
         self.laid
     }
 
-    /// The notes, for whoever writes them down.
+    /// The notes as they stand.
     #[must_use]
     pub const fn todo(&self) -> &Todo {
         &self.todo
+    }
+
+    /// The notes as the reader has them, for whoever writes them down.
+    ///
+    /// The words in the box are the note's: the box is where the reader
+    /// put them, and `keep` only moves them into the note when they leave
+    /// it. Every save used to ask for `todo` and so wrote the note as it
+    /// *stood* -- without whatever the reader could see in it -- and the
+    /// file was a keystroke behind the page for as long as a note was open.
+    #[must_use]
+    pub fn as_written(&self) -> Todo {
+        let mut todo = self.todo.clone();
+        if let Some((at, composer)) = self.writing.as_ref()
+            && let Some(note) = todo.notes.get_mut(*at)
+        {
+            note.said = crate::todo::trimmed(&composer.text());
+        }
+        todo
     }
 
     /// The rows as they stand.
