@@ -270,7 +270,23 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
         use gix::status::{Item, index_worktree};
         let (path, status) = match item {
             // Tracked and different from the index.
-            Item::IndexWorktree(index_worktree::Item::Modification { rela_path, .. }) => {
+            Item::IndexWorktree(index_worktree::Item::Modification {
+                entry, rela_path, ..
+            }) => {
+                // Except another repository. git records a submodule as a
+                // commit at a path, and reports the path as changed the
+                // moment that commit moves -- so `vendor` arrives here
+                // looking exactly like a file, and it is a directory. The
+                // walk one arm down has refused those since it was
+                // written; this is the same rule, for the entries git
+                // tracks rather than the ones it has never seen.
+                //
+                // Asked of git's own mode rather than of the disk: a
+                // submodule whose directory is missing is still a
+                // submodule, and `is_dir` would call it a file.
+                if entry.mode.is_submodule() {
+                    continue;
+                }
                 (rela_path, FileStatus::Changed)
             }
             // Found by the directory walk, which is how a file git has never
@@ -296,6 +312,11 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
             // that is not in the last commit at all, which is what `New`
             // means; everything else is a change to a file that is.
             Item::TreeIndex(change) => {
+                // The same, for a submodule whose new commit has been
+                // staged.
+                if change.entry_mode().is_submodule() {
+                    continue;
+                }
                 let new = matches!(change, gix::diff::index::Change::Addition { .. });
                 let path = change.location().to_owned();
                 (

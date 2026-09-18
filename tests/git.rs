@@ -4586,3 +4586,101 @@ fn a_repository_does_not_get_to_run_a_program_because_obelus_read_it() {
         "obelus ran a program the repository named, just by reading the file"
     );
 }
+
+/// A submodule is another repository, and the list of what changed is a
+/// list of files to open.
+///
+/// git records a submodule as a commit at a path, and reports that path as
+/// changed the moment the commit moves -- so `vendor` arrives looking
+/// exactly like a modified file and is a directory. It was drawn as a row
+/// nobody could open. The walk that finds untracked files has refused
+/// directories since it was written; this is the same rule for the entries
+/// git tracks.
+#[test]
+fn a_submodule_is_not_a_file_that_changed() {
+    let outer = Repository::new("submodule-outer", "main\n");
+    let inner = Repository::new("submodule-inner", "one\n");
+
+    outer.run(&[
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "--quiet",
+        inner.directory().to_str().expect("a path"),
+        "vendor",
+    ]);
+    outer.commit_all("with a submodule");
+    assert!(
+        outer.directory().join("vendor").is_dir(),
+        "the submodule is not there, so this test is about nothing"
+    );
+
+    // The ordinary case: the submodule's own HEAD moves.
+    let within = outer.directory().join("vendor");
+    std::fs::write(within.join("file.rs"), "two\n").expect("the file");
+    for arguments in [
+        &["add", "-A"][..],
+        &["commit", "--quiet", "-m", "moved on"][..],
+    ] {
+        let outcome = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&within)
+            .args(arguments)
+            .env("GIT_AUTHOR_NAME", "obelus")
+            .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+            .env("GIT_COMMITTER_NAME", "obelus")
+            .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+            .output()
+            .expect("running git");
+        assert!(outcome.status.success(), "git {arguments:?} failed");
+    }
+    // And an ordinary file changed beside it, so this cannot pass by
+    // reporting nothing at all.
+    outer.write("main\nand more\n");
+
+    let unstaged = obelus::git::statuses(&outer.directory());
+    assert!(
+        !unstaged.contains_key(&outer.directory().join("vendor")),
+        "the submodule's directory is offered as a file to open: {unstaged:?}"
+    );
+    assert!(
+        unstaged.contains_key(&outer.path()),
+        "the file that really did change is missing: {unstaged:?}"
+    );
+
+    // The same once it is staged, which arrives down a different arm.
+    outer.run(&["add", "vendor"]);
+    let staged = obelus::git::statuses(&outer.directory());
+    assert!(
+        !staged.contains_key(&outer.directory().join("vendor")),
+        "a staged submodule is offered as a file to open: {staged:?}"
+    );
+
+    // And with the directory gone, which is what makes the question one
+    // for git's own mode rather than for the disk: a submodule nobody has
+    // checked out is still a submodule, and asking whether the path is a
+    // directory would call it a file.
+    std::fs::remove_dir_all(outer.directory().join("vendor")).expect("removing it");
+    let missing = obelus::git::statuses(&outer.directory());
+    assert!(
+        !missing.contains_key(&outer.directory().join("vendor")),
+        "a submodule that is not checked out is offered as a file: {missing:?}"
+    );
+}
+
+/// And a file that was deleted still is one: the list is what the reader
+/// changed, and deleting a file is a change they made.
+///
+/// Here because the obvious way to refuse a submodule -- ask the disk
+/// whether the path is a directory -- refuses this as well, and quietly.
+#[test]
+fn a_deleted_file_is_still_something_that_changed() {
+    let repository = Repository::new("deleted", "one\n");
+    std::fs::remove_file(repository.path()).expect("removing it");
+    let statuses = obelus::git::statuses(&repository.directory());
+    assert!(
+        statuses.contains_key(&repository.path()),
+        "a file the reader deleted is not in what changed: {statuses:?}"
+    );
+}
