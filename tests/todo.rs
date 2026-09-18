@@ -1537,3 +1537,38 @@ fn a_paste_does_not_write_the_notes_file_over_somebody_elses_change() {
         "leaving did not write the pasted words down: {written}"
     );
 }
+
+/// Starting a note does not put a blank one in the file.
+///
+/// Enter keeps the note being typed and starts an empty one. The keep is
+/// typing, written down when the reader leaves; the empty note is not a
+/// note at all, and it was reaching the file on the keystroke -- where an
+/// agent asking for the list found a blank entry. `alt+t` starts one the
+/// same way and has never saved.
+///
+/// Broken deliberately by saying `TodoOutcome::Changed` for bare enter
+/// again: the blank note reaches the file and this goes red.
+#[test]
+fn starting_a_note_does_not_put_a_blank_one_in_the_file() {
+    let scratch = tree("blank", "[[todo]]\nsaid = \"first note\"\ndone = false\n");
+    let mut app = open(&scratch, 76, 18);
+    let path = scratch.path().join(".obelus").join("todo.toml");
+    press(&mut app, KeyCode::Enter);
+
+    let written = std::fs::read_to_string(&path).expect("the notes");
+    assert!(
+        !written.contains("said = \"\""),
+        "a note with nothing in it was written down: {written}"
+    );
+
+    // And what was being typed is not lost by not saving here: it reaches
+    // the file when the reader leaves, along with the note they went on to.
+    press(&mut app, KeyCode::Char('a'));
+    press(&mut app, KeyCode::Char('b'));
+    press(&mut app, KeyCode::Esc);
+    let written = std::fs::read_to_string(&path).expect("the notes");
+    assert!(
+        written.contains("first note") && written.contains("ab"),
+        "leaving did not write both notes down: {written}"
+    );
+}

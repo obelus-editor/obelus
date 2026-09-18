@@ -769,7 +769,15 @@ impl TodoView {
                 );
                 self.where_now.insert(after, None);
                 self.enter_note(after, true);
-                TodoOutcome::Changed
+                // Typing, not a change: what was kept is what was being
+                // typed, and the note started is empty. Saying `Changed`
+                // wrote the whole file on the keystroke, and what it wrote
+                // was a note with nothing in it -- which is not a note, and
+                // an agent reading the file found a blank entry in the list.
+                // `write_new` is the same thing said from the other key and
+                // has never saved. Both reach the file the moment the reader
+                // leaves the note, and an empty one is dropped on the way.
+                TodoOutcome::Consumed
             }
 
             // Up and down walk the note's own lines first, and step to the
