@@ -1858,3 +1858,35 @@ fn down_lets_go_of_what_is_held_before_it_leaves_the_note() {
     press(&mut app, KeyCode::Down);
     assert_eq!(on(&app), 1, "the second press did not step to the next note");
 }
+
+/// The caret is put away while the list of every key is up.
+///
+/// The card is drawn in the middle of the list, which is where a note's
+/// caret lives, so it blinked on the card -- claiming a box on a page that
+/// has none.
+///
+/// Broken deliberately by taking the `showing_keys` arm out of
+/// `todo::caret`: the caret comes back on the card and this goes red.
+#[test]
+fn the_caret_is_put_away_while_every_key_is_showing() {
+    let scratch = tree("keys-card", THREE);
+    let mut app = open(&scratch, 60, 16);
+    let dump = support::render(&mut app, 60, 16);
+    assert_ne!(
+        support::cursor_line(&dump),
+        "none",
+        "the note being written had no caret to begin with:\n{dump}"
+    );
+
+    support::press_function(&mut app, 1);
+    let dump = support::render(&mut app, 60, 16);
+    assert!(
+        support::text_block(&dump).contains("done"),
+        "the list of every key is not showing:\n{dump}"
+    );
+    assert_eq!(
+        support::cursor_line(&dump),
+        "none",
+        "the caret is still on the page the card covers:\n{dump}"
+    );
+}

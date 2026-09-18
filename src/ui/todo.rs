@@ -128,8 +128,17 @@ pub fn text_width_in(area: Rect) -> u16 {
 /// Worked out from the same rows the drawing lays out, so the caret is in
 /// the row the reader can see their typing in rather than a row the view
 /// happens to agree about.
+///
+/// Nowhere while the list of every key is up. That card is drawn in the
+/// middle of the list, which is where this caret lives, so it sat blinking
+/// on the card -- claiming a box on a page that has none. The picker and
+/// the settings keep theirs through their own card because theirs is on
+/// the status row, which no card covers.
 #[must_use]
 pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
+    if notes.showing_keys() {
+        return None;
+    }
     let composer = notes.writing()?;
     let at = notes.writing_at()?;
     let hints = hints(notes);
