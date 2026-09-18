@@ -1250,13 +1250,21 @@ fn a_nested_note_is_drawn_further_in_than_the_one_it_hangs_under() {
             .find(|row| row.contains(needle))
             .unwrap_or_else(|| panic!("no {needle:?}:\n{dump}"))
     };
-    // Where the words start, counted from the row's own left edge. The
-    // mark beside the row the keys are on is not indentation -- it sits in
-    // the column outside the list at every depth -- so it counts as blank.
-    let starts = |needle: &str| {
+    // The row, less its first cell -- which is the mark beside the note
+    // the keys are on. That column is outside the list at every depth and
+    // is not indentation, whatever it happens to be drawn with.
+    let listed = |needle: &str| {
         let row = at(needle);
         let (_, said) = row.split_once('|').expect("the row number");
-        let said = said.replace('\u{258c}', " ");
+        let after_the_mark = said
+            .char_indices()
+            .nth(1)
+            .map_or(said.len(), |(index, _)| index);
+        &said[after_the_mark..]
+    };
+    // Where the words start, counted from the row's own left edge.
+    let starts = |needle: &str| {
+        let said = listed(needle);
         said.len() - said.trim_start().len()
     };
 
@@ -1273,8 +1281,7 @@ fn a_nested_note_is_drawn_further_in_than_the_one_it_hangs_under() {
     // And the box with them: the mark is the note's own, not a column down
     // the edge.
     let boxes = |needle: &str| {
-        let row = at(needle);
-        let (_, said) = row.split_once('|').expect("the row number");
+        let said = listed(needle);
         said.find(['\u{f0130}', '\u{f0131}', '[', ' '])
             .map(|_| said.len() - said.trim_start().len())
     };
@@ -1699,7 +1706,9 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
 /// In the selection's own colour, because the page has one idea of what is
 /// picked out: a mark beside the words and a ground under them cannot be
 /// taken for each other, and a third colour would be a third thing to
-/// learn.
+/// learn. Read off the cell's ground rather than its glyph -- the mark is
+/// half a cell of that ground with the other half masked, so the glyph
+/// says nothing about whether the mark is there.
 ///
 /// Broken deliberately by filling the row with `selected_row_background`
 /// again, or by marking only `at == window.focus()`: the first leaves a

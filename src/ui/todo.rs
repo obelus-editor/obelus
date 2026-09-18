@@ -181,6 +181,19 @@ pub fn place_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(u16, u16)>
     })
 }
 
+/// The glyph that leaves half a cell of ground showing.
+///
+/// The colour is the cell's *background* and this is drawn over the half
+/// of it that should not show, in the page's own colour. Drawn the other
+/// way round -- a half block inked in the selection's colour -- the mark
+/// is 1.4:1 against the page and a reader has to look for it: a ground
+/// carries that colour everywhere else because there are bright words on
+/// it, and a lone stroke has nothing to help it.
+///
+/// The right half is masked, so what shows is against the edge of the
+/// page rather than against the box beside it.
+const HALF: char = '\u{2590}';
+
 /// Which column a note's own text starts in: a blank, the box, and the blank
 /// after it.
 ///
@@ -319,15 +332,20 @@ impl TodoUi<'_> {
         // words on it, and the same colour drawn as a lone stroke on the
         // page's own background is 1.4:1 against it -- a mark a reader has
         // to go looking for.
+        //
+        // Half a cell of it, and the half at the edge: a whole column of
+        // colour is heavier than the claim, and against the edge it does
+        // not touch the box beside it -- two marks with no gap read as one
+        // wide one.
         if selected {
-            fill(
+            put(
                 cells,
-                Rect {
-                    x: area.x,
-                    width: 1,
-                    ..area
-                },
-                Style::new().bg(self.theme.selection_background),
+                area.x,
+                area.y,
+                HALF,
+                Style::new()
+                    .fg(background)
+                    .bg(self.theme.selection_background),
             );
         }
         // A note that is done is said in the ink, never by taking it away: a
