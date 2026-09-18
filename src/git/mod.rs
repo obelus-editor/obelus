@@ -270,23 +270,7 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
         use gix::status::{Item, index_worktree};
         let (path, status) = match item {
             // Tracked and different from the index.
-            Item::IndexWorktree(index_worktree::Item::Modification {
-                entry, rela_path, ..
-            }) => {
-                // Except another repository. git records a submodule as a
-                // commit at a path, and reports the path as changed the
-                // moment that commit moves -- so `vendor` arrives here
-                // looking exactly like a file, and it is a directory. The
-                // walk one arm down has refused those since it was
-                // written; this is the same rule, for the entries git
-                // tracks rather than the ones it has never seen.
-                //
-                // Asked of git's own mode rather than of the disk: a
-                // submodule whose directory is missing is still a
-                // submodule, and `is_dir` would call it a file.
-                if entry.mode.is_submodule() {
-                    continue;
-                }
+            Item::IndexWorktree(index_worktree::Item::Modification { rela_path, .. }) => {
                 (rela_path, FileStatus::Changed)
             }
             // Found by the directory walk, which is how a file git has never
@@ -312,11 +296,6 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
             // that is not in the last commit at all, which is what `New`
             // means; everything else is a change to a file that is.
             Item::TreeIndex(change) => {
-                // The same, for a submodule whose new commit has been
-                // staged.
-                if change.entry_mode().is_submodule() {
-                    continue;
-                }
                 let new = matches!(change, gix::diff::index::Change::Addition { .. });
                 let path = change.location().to_owned();
                 (
@@ -332,10 +311,32 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
         let Ok(path) = gix::path::try_from_bstring(path) else {
             continue;
         };
+        let full = work_dir.join(path);
+        // Only what is on the disk now. What this feeds is a list of files
+        // to *open*, and git reports two kinds of change that are not one:
+        // a file the reader deleted, and a submodule -- which git records
+        // as a commit at a path and reports as changed the moment that
+        // commit moves, so `vendor` arrives looking exactly like a
+        // modified file and is a directory.
+        //
+        // Neither is a row obelus can do anything with. A reader who wants
+        // to know what they deleted has the history, which is the view
+        // built for what a file used to say; a submodule is another
+        // repository, and obelus has no notion of one. The alternative was
+        // rows that cannot be pressed, each needing a word to say why it
+        // cannot -- attention spent to say "nothing here".
+        //
+        // Asked of the disk rather than of git's own mode, because that is
+        // the question: not "is this a submodule" but "is there a file to
+        // open". One predicate covers both, and the walk one arm up has
+        // refused directories on the same grounds since it was written.
+        if !full.is_file() {
+            continue;
+        }
         // The first answer wins: a file can be reported twice -- staged and
         // then modified again -- and "new" is the more surprising of the two
         // to lose.
-        statuses.entry(work_dir.join(path)).or_insert(status);
+        statuses.entry(full).or_insert(status);
     }
     statuses
 }
