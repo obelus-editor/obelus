@@ -9,18 +9,21 @@ description = "A terminal code reader. It doesn't want you to type."
 name = "ob"
 path = "src/main.rs"
 
-# What a release build is for: obelus draws the whole screen on every
-# keystroke, and the work that takes is spread over a dozen small crates --
-# the rope, the matcher, the diff, the grammars -- so the calls that matter
-# most cross crate boundaries, which is what a link-time pass can see
-# through and a per-crate one cannot.
+# Nothing but cargo's own defaults.
 #
-# `fat` rather than `thin`, and one codegen unit with it: this is a program
-# built once and run for weeks, so the minute it adds is paid by whoever
-# cuts a release rather than by anybody reading code.
-[profile.release]
-lto = "fat"
-codegen-units = 1
+# Link-time optimisation and a single codegen unit were here, for a real
+# reason: obelus draws the whole screen on every keystroke, and the work
+# that takes is spread over a dozen small crates -- the rope, the matcher,
+# the diff, the grammars -- so the calls that matter most cross crate
+# boundaries, which is what a link-time pass can see through and a
+# per-crate one cannot.
+#
+# What that argument left out is who waits. One reoptimises the whole
+# program after every crate is compiled and nothing about it is
+# incremental; the other gives up the parallelism of the codegen it would
+# otherwise be doing meanwhile. Between them they are minutes on the way to
+# running the thing, every time, and the few per cent they buy is not
+# something a reader of a file has ever noticed.
 
 [dependencies]
 # 0.30 split the backends into separate crates (ratatui-crossterm and friends).
