@@ -29,6 +29,16 @@
 //! the agent has stopped, and what it is waiting for is a keystroke. It is
 //! also why [`Event`] is not `Clone`.
 //!
+//! What waiting costs is the whole connection, not that one request. The
+//! crate hands each message to a handler and does not read the next until
+//! the handler returns, so while a card is up nothing else from that agent
+//! is read -- no answer, no tool call, no count of what it has used. That
+//! is right for a question it has stopped on, and it is why a question
+//! that only *sends* the reader somewhere is answered the moment they are
+//! sent rather than when they come back: the second would hold the agent
+//! shut for as long as a sign-in takes. It also means one agent cannot
+//! have two questions up at once, whatever the protocol allows.
+//!
 //! One thing the crate does not promise: that a notification sent after a
 //! request leaves after it. A cancellation typed in the same instant as a
 //! prompt can reach the agent first. So an interruption does both halves --
@@ -37,15 +47,27 @@
 //!
 //! An agent that wants to ask something uses `elicitation/create`. That is
 //! the one way it can put UI on a client's screen, and it is gated on a
-//! capability: no `elicitation.form` in the handshake and an agent either falls
-//! back or gives up. What it may ask for is a flat form of primitives: one of a
-//! list, several of a list, a switch, words, a number. The whole form goes back
-//! as one answer, keyed by the agent's own names; escape declines it, and the
-//! view going away cancels it, because an agent that hears nothing waits for
-//! ever. `elicitation.url` is *not* declared: obelus is not a browser, and a
-//! mode it cannot put is a mode it should not be sent. A property type it has
-//! never heard of is declined with the reason in the transcript rather than
-//! half-filled in.
+//! capability: a mode not named in the handshake and an agent either falls
+//! back or gives up. obelus names both.
+//!
+//! A *form* is a flat set of primitives: one of a list, several of a list, a
+//! switch, words, a number. The whole form goes back as one answer, keyed by
+//! the agent's own names; escape declines it, and the view going away cancels
+//! it, because an agent that hears nothing waits for ever. A property type
+//! obelus has never heard of is declined with the reason in the transcript
+//! rather than half-filled in.
+//!
+//! A *url* is somewhere the reader has to go: to sign in, to authorise
+//! something. obelus is not a browser, which was once the reason not to
+//! declare this at all -- but it does not have to be one. It shows the
+//! address whole and hands it to whatever the machine opens links with,
+//! which is the same thing it does with a file it cannot display. Only
+//! `http` and `https`, and with a host: what happens to one of these is
+//! that the machine runs whatever is registered for the scheme, and the
+//! string came from the agent. Answered when the reader is sent, not when
+//! they return -- see the paragraph above on what waiting costs -- and the
+//! agent says the far end happened with `elicitation/complete`, which is a
+//! notification because nothing is owed back.
 
 use std::{path::PathBuf, sync::mpsc::Sender};
 

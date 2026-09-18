@@ -531,7 +531,8 @@ src/
                   joins it to the loop
                   · why the runtime is current-thread, why the two
                     directions are not symmetrical, the one ordering the
-                    protocol does not promise, and what an agent asking
+                    protocol does not promise, what waiting on the reader
+                    costs the whole connection, and what an agent asking
                     something may ask for (link); an agent that stopped is
                     started again by talking to it (mod)
   ui/             editor, status bar, picker, settings, chat, welcome,
