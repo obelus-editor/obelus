@@ -815,12 +815,24 @@ impl Editing {
     /// either would be deciding something it knows nothing about.
     ///
     /// Up and down answer `false` at the ends, so a caller with rows above
-    /// and below can step out rather than have the key swallowed.
+    /// and below can step out rather than have the key swallowed. With
+    /// something held that is the second press: the first lets go of it,
+    /// which is what the reader asked the key for and is a thing that
+    /// happened.
     pub fn handle_key(&mut self, key: &KeyEvent, hides: &dyn Hides, width: u16) -> bool {
         if let Some((motion, extend)) = motion_for(key) {
             return match extend {
                 true => self.extend_to(motion, hides, width),
-                false => self.move_to(motion, hides, width),
+                // Letting go counts, even where the caret had nowhere to
+                // go. `move_to` drops the anchor before it moves, so a key
+                // answered `false` here had already changed what the reader
+                // could see -- and a caller that reads `false` as "not
+                // mine" does not redraw, leaving a selection on the page
+                // that the text is no longer holding.
+                false => {
+                    let held = self.has_selection();
+                    self.move_to(motion, hides, width) || held
+                }
             };
         }
         match typing_for(key) {

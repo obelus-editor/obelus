@@ -1772,3 +1772,48 @@ fn the_note_the_keys_are_on_is_marked_down_its_edge() {
         "the mark is beside rows that are not the note the keys are on:\n{dump}"
     );
 }
+
+/// An arrow with nowhere to go still lets go of what was held.
+///
+/// A motion drops the anchor before it moves, so a key that could not move
+/// the caret -- left at the start of a note, right at its end -- has
+/// already let go by the time it answers "nothing happened". The view read
+/// that answer as "not my key" and did not draw itself again, so the run
+/// stayed coloured on a note that was no longer holding it, until the next
+/// thing rebuilt the page.
+///
+/// Broken deliberately by answering `self.move_to(..)` alone in
+/// `Holding::handle_key`: the run stays on the page and this goes red.
+#[test]
+fn an_arrow_with_nowhere_to_go_still_lets_go_of_what_is_held() {
+    let scratch = tree("let-go", THREE);
+    let mut app = open(&scratch, 60, 14);
+    let holding = |app: &App| {
+        app.notes()
+            .expect("the view")
+            .rows()
+            .iter()
+            .any(|row| row.held.is_some())
+    };
+
+    // Held back to the very start of the note, and then left again.
+    press(&mut app, KeyCode::Right);
+    support::press_shift(&mut app, KeyCode::Left);
+    assert!(holding(&app), "shift+left took hold of nothing");
+    press(&mut app, KeyCode::Left);
+    assert!(
+        !holding(&app),
+        "left at the start of a note left the run coloured:\n{}",
+        support::render(&mut app, 60, 14)
+    );
+
+    // And the whole of it held, caret at its end, and then right again.
+    support::press_control_key(&mut app, KeyCode::Char('a'));
+    assert!(holding(&app), "the whole note was not taken hold of");
+    press(&mut app, KeyCode::Right);
+    assert!(
+        !holding(&app),
+        "right at the end of a note left the run coloured:\n{}",
+        support::render(&mut app, 60, 14)
+    );
+}
