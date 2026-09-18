@@ -132,7 +132,13 @@ pub struct Said {
     /// rather than the two texts: the diff is worked out once, when it
     /// arrives.
     pub change: Vec<crate::git::change::Line>,
-    /// What a tool call says, in the order it gave it.
+    /// What a tool call says, in the order it gave it -- and, for a row
+    /// the reader was sent away by, the one address it sent them to.
+    ///
+    /// Two uses of one field, told apart by [`Self::speaker`] and nowhere
+    /// else: what is here is read back only where that says what it is,
+    /// which is why the voice and not the shape decides. A field of its
+    /// own would be a field that is `None` on every row but one kind.
     ///
     /// Replaced by a later update rather than added to, which is what the
     /// protocol says `content` means -- *replace the content collection* --

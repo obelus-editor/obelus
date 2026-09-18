@@ -3062,3 +3062,53 @@ fn where_the_reader_was_sent_stays_on_the_page_until_it_is_done() {
         "the row would not send them again"
     );
 }
+
+/// On a row too narrow for all three, the number is the one that goes.
+///
+/// The settings say what the session is set to and the keys say what they
+/// do; how full the agent is is a number. A row that kept it had the
+/// settings cut to a letter and the keys pushed off the end, which is two
+/// things lost to keep one.
+///
+/// Broken deliberately by taking the `filter` off the usage in
+/// `ChatView::status`: the keys go and this goes red.
+#[test]
+fn a_narrow_row_keeps_the_settings_and_the_keys() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/used");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it has used", |app| {
+        app.agent_usage().is_some_and(|used| used.used == 188_000)
+    });
+
+    let row = |app: &mut App, width: u16| {
+        let dump = support::render(app, width, 14);
+        rows(&dump)
+            .last()
+            .and_then(|row| row.split_once('|'))
+            .map(|(_, said)| said.to_string())
+            .expect("the status row")
+    };
+
+    // Where it fits, all three are there.
+    let wide = row(&mut app, WIDTH);
+    assert!(wide.contains("94%") && wide.contains("mode") && wide.contains("ask first"));
+
+    // Where it does not, the number goes and the other two stay whole.
+    let narrow = row(&mut app, 30);
+    assert!(
+        !narrow.contains("94%"),
+        "the number stayed on a row that could not hold it: {narrow:?}"
+    );
+    assert!(
+        narrow.contains("mode"),
+        "the keys were pushed off the end: {narrow:?}"
+    );
+    assert!(
+        narrow.contains("ask first"),
+        "the settings were cut down to nothing: {narrow:?}"
+    );
+}

@@ -277,6 +277,14 @@ fn used_up(usage: &acp::Usage) -> Option<(String, bool)> {
 /// The proportion at which how full the agent is stops being furniture.
 const NEARLY_FULL: u64 = 90;
 
+/// How much room is left between what the settings say and what comes
+/// after it on the row.
+const GAP: usize = 3;
+
+/// The least the settings are worth showing in: a word and the mark that
+/// says it was cut.
+const LEAST_SETTINGS: usize = 4;
+
 /// What goes between two things the status row says.
 const SEPARATOR: &str = " \u{b7} ";
 
@@ -739,8 +747,17 @@ impl ChatView<'_> {
         // the focused one on screen, and a number that slid about with
         // them would be a number the reader has to find again every time
         // they step one. This end does not move.
-        let used = self.usage.and_then(used_up);
         let taken = hint.as_deref().map_or(0, |hint| text_width(hint) + 2);
+        // And only where all three fit. The settings say what the session
+        // is set to and the keys say what they do; this is a number, and a
+        // row narrow enough to have to choose has not lost much by losing
+        // it -- where a row that kept it had the settings cut to a letter
+        // and the keys pushed off the end.
+        let over = usize::from(area.width).saturating_sub(taken + 2);
+        let used = self
+            .usage
+            .and_then(used_up)
+            .filter(|(said, _)| over > text_width(said) + GAP + LEAST_SETTINGS);
         if let Some((said, full)) = &used
             && let Ok(offset) = u16::try_from(
                 usize::from(area.width)
@@ -764,10 +781,7 @@ impl ChatView<'_> {
             write(cells, area.x + offset, area.y, said, plain.fg(ink));
         }
 
-        let room = usize::from(area.width)
-            .saturating_sub(taken)
-            .saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + 3))
-            .saturating_sub(2);
+        let room = over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP));
         // A note over the settings, for as long as it lasts. The settings
         // are what the session is set to and are still true a moment later;
         // a note is the answer to the key just pressed, and an answer that

@@ -757,11 +757,6 @@ impl App {
                 self.interrupt_agent();
                 true
             }
-            // Where a row of the transcript says the agent was. Going
-            // there is switching to that file, which is a document like
-            // this one -- so the conversation stays exactly where it was
-            // and `ctrl+o` comes back to it. It used to have to be hidden,
-            // because hiding it was the only way to show a file.
             // Somewhere the reader was sent, sent again: the browser tab
             // is closed, the sign-in was not finished. The agent is not
             // asked anything -- it was told they went the first time, and
@@ -775,6 +770,11 @@ impl App {
                 }
                 true
             }
+            // Where a row of the transcript says the agent was. Going
+            // there is switching to that file, which is a document like
+            // this one -- so the conversation stays exactly where it was
+            // and `ctrl+o` comes back to it. It used to have to be hidden,
+            // because hiding it was the only way to show a file.
             ChatOutcome::GoTo(place) => {
                 // The protocol counts a file's lines from one and the rest
                 // of obelus counts them from zero, which is what `go_to`
@@ -852,6 +852,22 @@ impl App {
     /// What is still here is the clearing: a card is drawn inside the
     /// conversation, so anything of obelus's own over that region would be a
     /// card the reader cannot see while the agent waits on it.
+    ///
+    /// And whatever question was already up, which is the same clearing
+    /// for the same reason. There is one card, so a second question takes
+    /// the first one's place; letting the first stay would leave the agent
+    /// waiting for ever on a question nothing on screen is asking, and --
+    /// where the two were of different kinds -- would send the answer to
+    /// the card on screen back to the wrong one of them.
+    ///
+    /// One agent cannot do this: the protocol's dispatch loop hands a
+    /// message to one handler at a time and waits for it, and obelus's
+    /// elicitation handler waits for the reader -- so a second question
+    /// from the same connection is not read until the first is answered.
+    /// Two agents are two connections and two loops, and both of their
+    /// questions land on whichever conversation the reader is in, which is
+    /// the same "one of them, for now" this file says elsewhere. That is
+    /// why this is here and why no test drives it.
     fn show_the_question(&mut self) {
         // To the conversation, because the card is inside it: a question
         // asked while the reader is in a file would be a card nobody can
@@ -864,6 +880,11 @@ impl App {
         // question, about words the keys are no longer going to.
         if let Some(talk) = self.conversation_mut() {
             talk.slash = None;
+            // Dropped rather than answered: a channel that goes away is
+            // what the agent hears as a cancellation, which is the truth
+            // about a question nobody was ever shown.
+            talk.asking = None;
+            talk.going = None;
         }
     }
 
