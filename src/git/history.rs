@@ -8,6 +8,19 @@
 //! removed, and inferring is a different answer to a different question.
 //! The list says where it stopped rather than pretending it is the whole
 //! of the history.
+//!
+//! What the remote has not seen is marked, in the colour a new file wears.
+//! The few commits a reader has not pushed are the ones still theirs to change,
+//! and they are what someone scanning a history is usually looking for -- the
+//! same argument the file list makes for colouring what git has not seen.
+//! Nothing is marked where the question does not arise: a branch that tracks
+//! nothing, or a repository with no remote at all, has every commit equally
+//! unpushed, and marking all of them says no more than marking none. It is
+//! walked from the tracking branch and stopped as soon as every commit on
+//! screen is accounted for, so the ordinary case -- a remote at or near `HEAD`
+//! -- costs about what the list itself did; a commit the walk did not reach
+//! before its budget ran out is left alone, because telling a reader their work
+//! is not on the remote when it is would be the worse lie.
 
 use std::{
     collections::HashSet,

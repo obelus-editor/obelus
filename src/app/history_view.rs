@@ -8,6 +8,32 @@
 //! What it has is the list of files it changed, and that list goes *under*
 //! it, in place, the way a run of tool calls opens in the transcript: one
 //! list, one selection, one Escape.
+//!
+//! A history is one view at two radii. A file's commits and a project's
+//! differ only in which commits are listed, so they are two tabs of one list
+//! and `f9` and `f10` land on the tab they name -- the shape the finding keys
+//! have, for the same reason: a reader who does not find it in this file looks
+//! in the project without pressing a second key to get there.
+//!
+//! A commit in the project's tab is not a file, so there is nothing for
+//! choosing it to open. What it has is the list of files it changed, and that
+//! goes *under* it, in place, the way a run of tool calls opens in the
+//! transcript: one list, one selection, one Escape. In the file's own tab a
+//! commit *is* a document -- that file as that commit had it -- so choosing one
+//! opens it, and there is nothing to put underneath: a list of the files it
+//! changed would be a list with the tab's own name in it. The mark says so --
+//! the same `▸`/`▾` the transcript and the fold column use, because a reader
+//! who has learned it in one place has learned it. The file's own tab has no
+//! marks at all: a commit there is already about one file, and offering to show
+//! which would be a row repeating the tab's name.
+//!
+//! A subject is a sentence, so a row too narrow for it loses its *end*. The
+//! rest of a picker's rows are names -- a path, a symbol -- where the end is
+//! what is being looked for and the head is already known; `…the block the
+//! cursor is in` has lost the half that says which commit this is. The time
+//! and the short id go on the right, where the width is taken out of the
+//! subject's before it is truncated: what must survive the cut is how to find
+//! this commit again.
 
 use super::*;
 use crate::git::history::Commit;

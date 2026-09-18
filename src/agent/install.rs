@@ -6,6 +6,26 @@
 //! An archive is a download of a known length, so the page can say how far
 //! through it is and how much longer it will take -- and it says so because
 //! it is true, not because a progress bar is nice to look at.
+//!
+//! An agent is installed when the install says so, in writing. The last
+//! thing `install::spawn` does is write `agents/<id>/installed.json` -- the
+//! command, its arguments, and the version -- and every later question reads
+//! that one file: is it installed, which version, how is it started. Nothing
+//! infers an install from the files a package manager left, because that cannot
+//! be done: `npm` writes a package's manifest before it links the executable,
+//! so a run killed halfway leaves a directory shaped exactly like a finished
+//! one. It did read them once, and the cost was a reader whose obelus was shut
+//! mid-install and who then had a card reading "active" over an agent nothing
+//! could start, with no button on it but the one that turned it off.
+//! Working out what to run happens *inside* the install, where the registry's
+//! entry is in hand: an install that cannot say how to start what it installed
+//! has failed. So an interrupted install is simply not an install, `activate`
+//! refuses an agent with no record, and a card says "active" only for one that
+//! is really there.
+//!
+//! `agent::home` is the one place an id from the registry becomes a path, so it
+//! is the one place that checks the name, and it returns `None` for one it will
+//! not make a directory of.
 
 use std::{
     io::Read,

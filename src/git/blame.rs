@@ -3,6 +3,29 @@
 //! A walk of history, which is why it happens on a thread and why the answer
 //! is about the *committed* file: blame is a question about commits, and the
 //! lines a reader has changed since are not in any of them.
+//!
+//! The margin knew which commit and threw it away. A blame walk finds the
+//! commit behind every line and `Blamed` kept only the name and the date, so
+//! "why is this line here" -- the question a code reader asks most -- had no
+//! answer in obelus at all. It also knows where the line sat in that commit,
+//! which is not where it sits now: keep both, per line, because the run a line
+//! belongs to started somewhere else in that file.
+//!
+//! That walk stops at the commit that wrote the line, and says so rather than
+//! opening the same version again. Going further back is a different question
+//! -- what was here *before* this commit touched it -- and the line it would
+//! land on is one this commit removed, so it has no number in the file on
+//! screen. `committed_line` returns `None` for exactly those lines, which is
+//! the same fact from the other side.
+//!
+//! A blame is about a version, not about a path. It was a walk from `HEAD`
+//! keyed by path, so a commit's version of a file could only be given no blame
+//! at all -- the names would have been of whoever last touched those line
+//! numbers today. `blame_file` takes the commit to look back from, so ask it
+//! for the version on screen and key the answer on both. The line mapping goes
+//! with it: a working file has moved on from the commit it was blamed at and
+//! its lines must be carried back through the changes, while a commit's
+//! version *is* what was blamed and its lines line up.
 
 use std::{collections::HashMap, path::Path, sync::mpsc::Sender, time::SystemTime};
 

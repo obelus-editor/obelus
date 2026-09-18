@@ -5,6 +5,89 @@
 //! occupy two cells, and a glyph straddling either edge of a horizontally
 //! scrolled viewport has to render as blanks. None of that survives going
 //! through a widget that takes styled spans.
+//!
+//! What the bar measures is what is shown. The scrollbar and the change map
+//! are pictures of the document at the height of the screen, and a closed run
+//! makes the document shorter: drawn from the file's own line numbers they say
+//! the reader is at the top of something long while the whole of it is in front
+//! of them. Both count in lines that are shown, which is why `Folds` can say
+//! how many are hidden above a line and how many altogether. An opened hunk
+//! closes when a fold hides the line it hangs above, for the same reason
+//! `refresh_changes` closes it when the diff is replaced: its rows belong to
+//! something that is no longer on screen, and a caret in them is a caret nobody
+//! can see.
+//!
+//! The caret can be in the block; the cursor never is. `Buffer::block_above`
+//! is an opened hunk's lines *as a `Text`*, and `in_block` is a `Cursor` in one
+//! of them.
+//! A text, so those lines get everything the file's get from the same code:
+//! they wrap at the same width, their tabs reach the same stops, a wide glyph
+//! takes two cells, the caret moves by visual rows, a selection in them is a
+//! `Span`, copying is `text_in`, and the rows are drawn by the writer every
+//! other row goes through. The alternative was a second, smaller set of all of
+//! that -- which is a second set of bugs, and was one: a line wider than the
+//! screen was cut with the caret walking off the edge of it.
+//!
+//! The *cursor* stays on the line the block is anchored to, so everything that
+//! asks the file about "here" -- a language server, a jump, the next change,
+//! the margin -- goes on being answered from a line the file has. The status
+//! row says `-4:7` while the caret is in there, because that place has no line
+//! number in this file and a number without the minus would name one it is
+//! nowhere near. The anchor of a selection belongs to whichever of the two the
+//! caret is in, and `clear_selection` reaches both. A page that lands on one of
+//! those rows puts the caret there, which is how the paging keys walk a block
+//! of any size; anything that puts the cursor somewhere outright
+//! (`place_cursor`) brings it back, as does closing the hunk -- which the key
+//! that opened it does from wherever the reader has walked to, because "the
+//! hunk at the cursor" is not the hunk in front of them once they have walked
+//! into it.
+//!
+//! A bar is a block, so no rule has to meet it. The track is a block a
+//! shade off the page and the thumb the same block brighter: a surface with
+//! something sliding on it, which is what a scrollbar is. Drawn as a *line* --
+//! a column of ┃ with the thumb picked out -- it was one more line on a screen
+//! of lines, and every rule that crossed it then had to decide whether to join.
+//!
+//! That decision cost more than it was worth. `rule` and `scrollbar` made it by
+//! reading the grid back: a cell holding ┃ or █ beside a rule meant a bar, and
+//! the rule turned into a corner. But a cell is a cell. A file's own text
+//! answers that question exactly as a control does, and this repository is full
+//! of files that do -- every golden grid under `tests/fixtures` is drawn in box
+//! characters. The note that used to be here called that a cosmetic slip in one
+//! cell; what it looked like on screen was a row of ┬ across the whole width,
+//! under a list previewing a file of grids, and the reader who found it was
+//! looking at an obelus previewing obelus's own fixtures. A markdown table has
+//! the same glyphs and would have done the same thing.
+//!
+//! So the shape of the thing says what it is, and nothing reads the grid back.
+//! A rule runs its whole width in one glyph; a block column meets it and needs
+//! nothing from it. The one row of the block that the rule takes is the
+//! boundary between two bars -- a list's and its preview's -- which are two
+//! controls over two different things, and reading as two is right.
+//!
+//! A column a file might need is reserved for the whole file, not for the
+//! lines that need it. The change margin is there whenever git can answer
+//! about the file, empty rows included; the fold column is there whenever the
+//! file has anything to fold, whether or not anything is folded. A column that
+//! arrived when the reader pressed a key would rewrap the text under them as it
+//! came. What goes *in* the column is every run, open or folded: a reader
+//! cannot press a key on a line that never said it had anything behind it, so
+//! the mark is how folding is discovered at all. The one turned down is the
+//! quieter of the two, which is the right way round -- most runs are open most
+//! of the time, and the eye should be caught by the lines that are hiding
+//! something. The column is decided when the file is read and stays decided,
+//! so nothing a reader does to a fold ever moves the text sideways under them.
+//!
+//! A folded run also says so on the row it folded into: the view's mark after
+//! the line's own text, and then whatever is left of the run's last line. That
+//! is the whole rule -- no test for what a closing mark looks like, no table
+//! per language -- because the run was *built* to stop before the bracket. A
+//! run that closes with nothing leaves the mark on its own.
+//!
+//! Two colours, because they are two different things. The mark is obelus's own
+//! and is drawn the way its notes are; the closing text *is* the file's and
+//! keeps the colour the highlighting gives it where it really lives. A brace
+//! that changed colour on its way up the screen would read as something else.
 
 use ratatui::{
     buffer::Buffer as CellBuffer,

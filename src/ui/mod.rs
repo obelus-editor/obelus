@@ -4,6 +4,21 @@
 //! path runs inside `Terminal::draw`, which blocks the main loop on a write to
 //! stdout; adding slow work to it is the mistake that actually happens, rather
 //! than the write itself being slow.
+//!
+//! Everything that scrolls says so, in the last column of the region it is
+//! in. A file, a preview, a list, a page of settings, a conversation -- the
+//! last of those had no bar at all, which left a reader paging through it with
+//! nothing on screen answering "how much of this is there, and which part am I
+//! looking at". The editor's used to
+//! sit one short of it, because the map of where a file has changed had the
+//! edge: a list opened over a file made the bar jump sideways, and inside one
+//! screen a list with a preview under it had its bar in two columns with a rule
+//! between them.
+//!
+//! The map is *inside* the bar now rather than outside it. They are the same
+//! picture at the same scale -- the whole file squeezed into the height of the
+//! screen -- so they belong side by side, and the reader reads across them:
+//! here is where you are, and here is what has changed.
 
 /// What a colour a server found written down is drawn as.
 ///

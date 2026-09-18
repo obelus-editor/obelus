@@ -4,6 +4,47 @@
 //! how tall they are, and in nothing else. Later they are joined by symbols,
 //! references and commits, which is why this is a component rather than four
 //! screens.
+//!
+//! Whether a query ranks depends on what the rows are, so it is settled per
+//! tab. A log is a timeline and reads newest first whatever is typed at it; a
+//! list of names is read by the names, and a reader typing `v0.1` wants the tag
+//! of that name, not whichever branch containing those letters was pushed most
+//! recently. One view holds both, so the flag moves when the tab does.
+//!
+//! A query is about the rows the list is a list of. A commit's files hang
+//! under the commit, and "which commits mention folding" is not a question
+//! about filenames -- scoring them too pulls a file out from under a commit
+//! that did not match, and empties a commit that did of the files it was
+//! opened to show, so opening it looks like it does nothing. Indentation is
+//! not the test: an outline's nested symbols *are* what the reader is looking
+//! for. The list says which it is (`nests`).
+//!
+//! A list that is still arriving must sit still. `replace` is for a
+//! different list and starts at the top; `relist` is for the same list with
+//! more in it and keeps the row under the reader. And the history filters
+//! without ranking (`keeps_order`), which is right on its own -- a log is a
+//! timeline, and `git log --grep` keeps it -- and which also means arrivals are
+//! older commits that land at the bottom, where they move nothing. Measured
+//! first: nucleo ties far more often than expected on short subjects, and ties
+//! already break by arrival order, so ranking reorders a log less often than it
+//! looks. Less often is not never, and a guarantee beats a tendency.
+//!
+//! Say "still reading" where it does not move the rows. A note above the
+//! list that appears and later goes away slides every row twice. The tab row
+//! has room that is already there. And the note carries a count, because a
+//! file's history can find nothing for a second and a half and still be
+//! working: without a number moving, "not found yet" and "not there" look the
+//! same.
+//!
+//! Which tabs a view has must be a cheap question. The search settles its
+//! scopes when it opens and the history settles its radii, and both settle them
+//! on facts they can have for nothing: is a file open, does the project have a
+//! commit. "Does *this file* have a commit" is not such a fact -- every commit
+//! has to be asked whether it touched that path, and the walk that asks is
+//! bounded -- so gating the tab on it made the tab vanish for files nobody had
+//! edited lately, which are exactly the ones whose history a reader goes
+//! looking for. An empty list saying "no commit has touched this file" is an
+//! answer; a missing tab is a key that does nothing.
 
 pub mod files;
 

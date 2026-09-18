@@ -19,6 +19,25 @@
 //! A line no format claims is kept as it is. That is what makes the reading
 //! safe to try on anything: an unknown file reads as it did before, and the
 //! columns appear only where something knew what the line was.
+//!
+//! A log's format is decided by its lines, not its name. `syslog`,
+//! `access.log`, `obelus.2026-09-11.log` -- the extension says nothing, so
+//! `log::format_of` offers the first twenty lines to each format and takes the
+//! one that claims a majority. Only lines starting at the left edge count: an
+//! indented line is how every log writes what ran on -- a panic's second line,
+//! a stack trace -- and counting those against a format is how a real log fails
+//! to be recognised as one. A line no format claims is kept as it was written,
+//! which is what makes the reading safe to try on anything: the worst it can do
+//! is show the file.
+//!
+//! Three of the four formats are written out in `log.rs` -- obelus's own
+//! `tracing` layout and syslog's two -- because each is a fixed run of fields
+//! with fixed separators, which is less code than reading somebody else's
+//! parser. The fourth is `access_log_parser`, which earns the dependency: an
+//! access log's fields are typed and its status code is the level. `rsyslog`
+//! was measured and left out -- it parses RFC 5424 and fails on the RFC 3164
+//! line that is actually in `/var/log/syslog`, which is the file a reader
+//! opens.
 
 use crate::reading::{Ink, Row, Span};
 

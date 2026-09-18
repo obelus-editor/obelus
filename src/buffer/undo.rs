@@ -10,6 +10,9 @@
 //! a decision, and a test of one cannot be written that does not sleep -- but
 //! what the reader was doing: a run of typing is a group, a run of deleting
 //! is another, and anything else is a group of its own.
+//!
+//! Undo groups by what the reader was doing, not by when. A pause is not a
+//! decision, and a test of one cannot be written without sleeping in it.
 
 use crate::coordinates::CharOffset;
 

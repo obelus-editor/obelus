@@ -3,6 +3,73 @@
 //! The view is [`crate::component::settings`] and the file is
 //! [`crate::config`]; what is here is applying a setting to the running
 //! program and writing it back.
+//!
+//! A tree may carry settings, and a tree is not the reader.
+//! `.obelus/config.toml` in the working directory, laid *over* the reader's own
+//! file key by key: the tree says what this project needs -- wrapped lines, a
+//! theme -- and says nothing about everything else, which stays theirs. Read
+//! into a fresh config instead of over theirs and a tree with one line in it
+//! would turn off a reader's wrapping, which is what every "project settings"
+//! feature that replaces rather than layers actually does.
+//!
+//! A directory rather than a dotfile, because settings are not the only thing a
+//! tree will keep for obelus -- a theme of its own, whatever comes after it --
+//! and one directory is one thing to find, to copy between machines and to name
+//! in a `.gitignore`, where a dotfile per kind of thing is a row of them at the
+//! top of every listing. Only the working directory itself, never walking up:
+//! obelus has one answer to which tree it is on -- the file list walks it, the
+//! counts count it, git is read from it.
+//!
+//! The tree's settings have a page of their own, `open-project-settings`, a
+//! command rather than a fifth tab: the tabs there are *groups* of settings and
+//! a scope among them would be one list holding two kinds of thing. The same
+//! page otherwise -- same tabs, same rows, same keys -- because they are the
+//! same settings; what differs is the file a change is written to, which is on
+//! the tab row and stays there.
+//!
+//! On the reader's page a setting the tree has is not theirs to change, and the
+//! row says so rather than doing nothing when pressed: the file's name where
+//! they would have reached, a lock against the control, the whole row in the
+//! dim ink that means unusable everywhere else. Sublime's project settings win
+//! silently, and "I changed it and nothing happened" is the bug that follows.
+//!
+//! On the tree's page the ink goes the *other* way, because dim means "not
+//! yours to use here" and there a row the tree has not got is the one thing a
+//! reader can do something to: pressing it is how a setting becomes the
+//! project's. So the row is ordinary, and the word saying which layer the value
+//! comes from -- `project`, `global`, `default` -- is dim except on the rows
+//! the project itself has, with the control it belongs to. `global` is what
+//! `git config` has taught everybody who works in a repository, and is less
+//! slippery than "yours" on a page where everything is in some sense theirs;
+//! all three have a word, because a column where one of them is blank asks a
+//! reader to read an absence. Drawn like the reader's page, a fresh project was
+//! a page of grey with nothing on it to look at, which is a rule applied past
+//! the point where it still meant anything. `delete` takes it out again, which
+//! is what that key means on the keys page too. The two tabs a tree may not
+//! have say so instead of showing controls that would all refuse.
+//!
+//! That file is *edited*, not rewritten. Obelus's own it writes whole, because
+//! obelus wrote all of it; a tree's is written by hand and committed, so it has
+//! comments in it, an order somebody chose, and possibly keys this version has
+//! never heard of -- `toml_edit` keeps all three where a round trip through a
+//! `toml::Table` would throw them away on the first switch a reader flipped.
+//! What is written above a key goes with it when it goes, except for whatever
+//! is above the last blank line: a comment touching a key is about that key,
+//! and a heading an empty line away is the file's own.
+//!
+//! What is watched is the file the tree *would* have, not the one it has. The
+//! ordinary project has no settings of its own until somebody gives it some --
+//! the window next door writing the first one, or a pull bringing it -- and
+//! watching only what was there at startup is the "read once at startup"
+//! mistake with a longer fuse, because it looks right until the file is
+//! created. The same path answers the change when it arrives.
+//!
+//! The reader's settings are the layer the tree's is laid over, and obelus
+//! keeps both. `readers_config` is what their file says; `config` is that
+//! with the tree's over it, rebuilt from the bottom every time either changes.
+//! Laid over what is already there instead, a setting the tree has *stopped*
+//! naming would stay in force -- deleting a line from the tree's file would do
+//! nothing until obelus was started again.
 
 use super::*;
 

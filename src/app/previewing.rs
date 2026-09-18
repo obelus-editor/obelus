@@ -3,6 +3,25 @@
 //! Its own buffer, its own highlighting and its own scroll: a preview is a
 //! second document on screen, and the one being read is not to be disturbed
 //! by looking at it.
+//!
+//! A preview is of a subject, not of a path. A row does not always name a
+//! file on disk: a commit names what it said, and one of a commit's files names
+//! that file as the commit had it -- a different document from the one at the
+//! same path in the working tree. `Subject` is what a row resolves to, and the
+//! preview is built from it the way the editor would build it, message block
+//! and all, because a preview that showed something other than what choosing
+//! the row gives is a promise obelus does not keep. A commit's message previews
+//! as a block over an empty buffer, which is how it gets no line numbers: a
+//! message has no lines of its own to go to.
+//!
+//! A file that is open is previewed where it is being read. Whichever list
+//! names it -- the open files, or the whole tree -- because it is one question
+//! with one answer: a file's own place in it is the thing a reader remembers it
+//! by, and choosing the row takes them back to exactly that, so the list reads
+//! as something folded over the file rather than as a way somewhere new. A file
+//! nothing has opened has no such place and starts at the top. `App::read_at`
+//! is the one answer; a list that had its own would be a list where choosing a
+//! row moved the screen under the reader.
 
 use super::*;
 

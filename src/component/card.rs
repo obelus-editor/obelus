@@ -1,18 +1,43 @@
 //! The card an agent's question is answered on.
 //!
 //! Not a picker. A picker is for finding one thing among many by typing at
-//! it; this is a question somebody else asked, with a handful of named
-//! answers and sometimes room to write your own. Nothing is filtered, and
-//! what the reader types is an answer rather than a search.
+//! it: a query, a fuzzy match, tabs, rows arriving from a walk. A question
+//! is somebody else asking, with a handful of named answers and sometimes
+//! room to write your own -- nothing is filtered, and what the reader types
+//! is an answer rather than a search.
+//!
+//! Strip the filtering from a picker and nothing is left but the row
+//! drawing, and what a card needs on top of that is a row that *grows*,
+//! which the list machinery cannot have: every picker in obelus counts one
+//! row per screen row, and a file list of thousands must not pay for a box
+//! one caller wants. So this composes the two halves obelus already has --
+//! the rows, and the [`Composer`] a message is written in, which is what a
+//! message to an agent is written in everywhere else -- and `ui/card.rs`
+//! draws them.
 //!
 //! It sits where the message box sits, because while an agent is waiting on
 //! an answer the box has nothing to send: the question is what the
-//! conversation is doing. What was said stays above it.
+//! conversation is doing. What was said stays above it, shrunk by however
+//! much the card needs. The conversation keeps the status row: a card is
+//! part of it rather than a list opened over it.
 //!
-//! The box is borrowed rather than rebuilt: [`Composer`] is what a message
-//! to an agent is written in everywhere else in obelus, and a card's own
-//! half is the same thing asked a different question. What is here is how
-//! the named answers and the box are walked as one thing.
+//! The form on it is asked in the agent's order. `elicitation/create`'s
+//! schema arrives as a *map* of fields -- JSON objects have no order to keep
+//! -- so the order the agent wrote them in is gone before obelus sees it,
+//! and asking in the alphabet's order put an "Other, if none of these suit"
+//! in front of the list it was an alternative to. What is left to go on is
+//! `required`: those first, in the order the agent listed them, and the rest
+//! after.
+//!
+//! A named-answer field and a words field next to it go on the *one* card,
+//! because that pair is one question -- "these, or say what you want
+//! instead" -- however many fields it takes to write down. Everything else
+//! is a card of its own, in turn.
+//!
+//! What the agent does not need, a reader must be able to say nothing to:
+//! they send the card with the box empty, and the field is left out of the
+//! answer. Escape is not that answer -- escape gives up on the whole form,
+//! which is the one thing a reader walking past an aside does not mean.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 

@@ -8,6 +8,71 @@
 //! Nothing here knows about screens. A fold hides lines, and every question
 //! the views ask -- how tall is this line, which line is above that one --
 //! goes on being answered by the same arithmetic with one term set to zero.
+//!
+//! A folded line is a line with no rows. Folding hides lines; an opened
+//! hunk adds rows the file does not have. Both are the same arithmetic --
+//! `screen_rows_of` and `step_rows` are where a view asks how tall a line is --
+//! so folding is that one term going to zero rather than a second set of counts
+//! beside the first. Everything falls out of it: the caret lands on the row the
+//! line is drawn on, paging moves by what is on screen, the view walks past
+//! what is hidden. What does *not* fall out is where the cursor may rest, which
+//! is why folding over the reader walks them back to the line the run starts on
+//! -- the one line of it still there -- and why arriving somewhere
+//! (`place_cursor`) opens whatever hid it. Walking is the other thing: a step
+//! goes around a fold, because the reader asked for the next line they can see.
+//!
+//! What folds comes from the indentation, and where it ends comes from the
+//! bracket. Two other sources were built and thrown away, and the reason both
+//! failed is the same half of the question. Deriving *which* lines fold from
+//! tree-sitter's node shapes works; deriving what the folded row should then
+//! *show* does not, because that needs to know a Rust block closes with `}` and
+//! a Python one closes with nothing -- a table per language, wrong the day a
+//! grammar changes, and every rule that guessed it from the text was wrong
+//! somewhere (a "closing mark is at most four characters" test reads the `def`
+//! at the end of a Python function as one). Asking a language server answers
+//! both, but only for files a server will answer about, and its ranges are its
+//! own: rust-analyzer ends a block one character *past* the `}`, so taking the
+//! range at its word drops the brace, and it sends two runs for an `if` -- one
+//! from the keyword, one from the brace.
+//!
+//! Indentation gives both halves at once, and it is what Zed settled on too. A
+//! run opens on a line whose next non-blank line is deeper, and closes on the
+//! first line that is no deeper. It starts at the *end* of the line that opens
+//! it, so that line stays whole, `{` and all. It ends just before the closing
+//! bracket when the line it closes on begins with one -- so the bracket comes
+//! up beside the mark and the row reads as `if ready { … }` -- and at the last
+//! line with anything on it when there is none, which is how `def ready(): …`
+//! comes out of the same rule without a word about Python in it. Blank lines
+//! are walked past inside a run and left outside it at the end: they belong to
+//! whatever comes next.
+//!
+//! The price is that a file with nothing indented folds nowhere. A TOML file is
+//! a list of tables at column zero, and so is most markdown and so is a
+//! paragraph of `///` comments: there is no block for a reader to close, and a
+//! mark offering to hide "the rest of the file from here" is a different offer.
+//!
+//! `syntax::brackets` knows the three pairs already, for the key that matches
+//! them. What folding needs of it is narrower still -- a line that *begins*
+//! with one of `)`, `]` or `}` closes something -- and that is true without
+//! knowing what was opened or where.
+//!
+//! A hunk opens where it is, and so does the next one. `Buffer::blocks` is a
+//! list by the line each hangs above, not one slot: a reader comparing two
+//! changes wants both on screen, and the two they most want side by side are
+//! the two they are deciding between. Which one a key acts on is then a
+//! question the key has to answer, and the answer is not simply "the one above
+//! this line": the caret's own block comes first, then the one belonging to the
+//! hunk the reader is standing in -- which hangs above that hunk's *first* line
+//! however far down it they have walked -- and then one hanging just below
+//! them, which is where a reader who walked out of the top of one is left. A
+//! selection is drawn in the block it was made in and nowhere else, because a
+//! span is a pair of offsets into one text and against another it marks
+//! whichever characters happen to sit there.
+//!
+//! A fold across an edit is not a fold across a re-read. `offer` throws away
+//! everything the reader folded, which is right when the lines were replaced
+//! and unusable per keystroke -- it means a file that unfolds itself as it is
+//! typed into. `keep_across` moves them instead.
 
 use crate::{
     coordinates::{CharColumn, LineNumber},

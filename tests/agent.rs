@@ -5,6 +5,17 @@
 //! in pieces, reads a file back through obelus, uses a tool, and asks
 //! permission before finishing. Everything below drives obelus by keys and
 //! reads the screen, so what is asserted is what a reader would see.
+//!
+//! It is `sh` on purpose. A fake agent written in python, node, or a second
+//! Rust binary is a test that stops running on somebody else's machine.
+//!
+//! It is also what holds obelus to its promises, because the protocol's
+//! crate cannot: the fixture checks the handshake it was given and answers
+//! to the name "Wrong Client" if the client offered to write files, and it
+//! asks for a write during the turn and reports back whether it was
+//! refused. Both land in `a_whole_turn_of_conversation`. It does the same
+//! for the settings -- the boolean one is only offered to a client that
+//! said in the handshake that it can draw a switch.
 
 mod support;
 

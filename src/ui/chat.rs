@@ -15,6 +15,25 @@
 //! The transcript reads from the bottom, like every other transcript: new
 //! rows arrive at the end and the view follows them unless the reader has
 //! scrolled up to read something.
+//!
+//! A header says what a thing *is*; the foot of the transcript says what is
+//! happening. The conversation's header carried five states, and they were
+//! the wrong five: two said what the screen already said better ("nobody is
+//! chosen", beside a header already reading "no agent" and over a transcript
+//! already saying where to fix it), one said "not started yet" about an agent
+//! that had *failed* to start, and the two that were real -- starting, thinking
+//! -- belong where the next thing will appear, because that is where the reader
+//! is looking. So the header is the name, and nothing else.
+//!
+//! What is happening is one row at the foot of the transcript, worked out from
+//! the state every frame rather than written into the transcript. A state has
+//! no history: the next one replaces it and Ready removes it, and what is not
+//! stored cannot be left on screen saying something that has stopped being
+//! true. What *went wrong* is the opposite and stays a line in the transcript
+//! where it went wrong -- an agent that died, and why, is the thing a reader
+//! needs next, and a row that overwrote it would take away the only record.
+//! `esc stops it` rides on the row that says something is going, beside the
+//! thing it would stop.
 
 use std::path::Path;
 

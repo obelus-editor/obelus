@@ -1,5 +1,19 @@
 //! An open document: its text, where the cursor is, and what part of it is on
 //! screen.
+//!
+//! An edit knows where it happened; do not work it out again afterwards.
+//! `edit_between` recovers a change by trimming two whole documents, which is
+//! right for a file that was replaced under obelus and wasteful for a
+//! keystroke. The three places an edit needs -- where it began, where what it
+//! replaced ended, where what it put there ends -- have to be taken *as it
+//! happens*, because two of them stop existing: the old end is gone once the
+//! edit has happened, and the new end was not there before. A newline is where
+//! that bites.
+//!
+//! Do not read over an edit. The watcher reloads by itself because an agent
+//! rewriting a file while it is open is the ordinary case; over a document
+//! somebody has edited that is losing their work. Mark it and stop at the save,
+//! which is where the two versions meet.
 
 pub mod folds;
 mod moving;

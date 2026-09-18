@@ -13,6 +13,23 @@
 //! is a row with a name, a group, a kind of control and a way to read and
 //! write it. The settings view is built from that table and knows nothing
 //! about any particular setting.
+//!
+//! What a tree may set is a property of the setting, `Reach`, not a list of
+//! exceptions somewhere: the next setting a stranger should not be trusted with
+//! will be found by asking that question while writing the setting down.
+//! `agent` is `ReaderOnly` because it says which agent obelus *starts*, and a
+//! program starting because a file in a downloaded tree said so is a decision
+//! that belongs to the person at the keyboard; `keys` is `ReaderOnly` because a
+//! tree that could rebind them could put `quit` where a reader would find it by
+//! accident. VS Code learned this one the same way and calls it `machine`
+//! scope.
+//!
+//! The configuration file holds preferences, not state. `config.rs` is the
+//! whole of it — one table, `dirs` for where it lives, written the moment
+//! anything changes. Rebindable keys are still guaranteed by the key table
+//! being *data* rather than by the file. What is not a preference does not go
+//! in it: how to start an installed agent is written beside the install, not
+//! here.
 
 use std::path::{Path, PathBuf};
 

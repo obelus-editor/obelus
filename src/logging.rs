@@ -3,6 +3,26 @@
 //! stdout is the drawing surface. A stray line written to it lands in the
 //! middle of the rendered frame and stays there, so the subscriber writes to a
 //! file and failing to open that file is not allowed to stop obelus starting.
+//!
+//! Two logs, split by module. `obelus.log` is what obelus says about itself
+//! and `lsp.log` is what the language servers say -- a handshake, every
+//! request, and whatever they write to their stderr, at a volume that would
+//! bury the dozen lines obelus has of its own. `logging::is_server` decides by
+//! the event's target, which `tracing` takes from the module it came from, so a
+//! call site needs to know nothing and a module moved into `lsp` takes its
+//! lines with it. `open-log` and `open-server-log` open them; both are ordinary
+//! buffers, like anything else obelus opens.
+//!
+//! The default filter names `ob` as well as `obelus`: the binary is its own
+//! crate, so everything `main` logged -- what started, and that it left -- was
+//! filtered out of its own log until it was added.
+//!
+//! A panic goes in the log (`logging::catch_panics`, chained like every
+//! other hook). It is the one thing a log has to have and the one thing it had
+//! none of: the message goes to stderr, which is behind the alternate screen,
+//! so the log simply stopped mid-session with no reason in it. It earned its
+//! keep immediately -- two real crashes on absurd terminal sizes, both fixed in
+//! the same slice as the line that found them.
 
 use std::path::{Path, PathBuf};
 

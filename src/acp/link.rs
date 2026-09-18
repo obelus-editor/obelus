@@ -13,6 +13,12 @@
 //! the language servers. Every message in both directions names which
 //! conversation it is about, because one agent holds several.
 //!
+//! One agent, one connection, so the runtime is a current-thread one: a
+//! work-stealing pool here would be threads nobody asked for. The channels
+//! stay `futures`' rather than tokio's -- that is what the protocol's crate
+//! speaks, and a channel is runtime-agnostic anyway; tokio is here to drive
+//! them and for nothing else.
+//!
 //! The two directions are not symmetrical, and that is the interesting
 //! part. What obelus *asks* is fire-and-forget: a prompt is spawned as a
 //! task on the connection, so a cancellation typed while the agent is
@@ -20,7 +26,26 @@
 //! permission, the text of a file -- is a question obelus cannot answer
 //! without the reader, so the handler sends the question to the main loop
 //! with a [`oneshot`] to answer through, and waits. Waiting is right there:
-//! the agent has stopped, and what it is waiting for is a keystroke.
+//! the agent has stopped, and what it is waiting for is a keystroke. It is
+//! also why [`Event`] is not `Clone`.
+//!
+//! One thing the crate does not promise: that a notification sent after a
+//! request leaves after it. A cancellation typed in the same instant as a
+//! prompt can reach the agent first. So an interruption does both halves --
+//! it tells the agent *and* ends the turn on obelus's side -- and a late
+//! answer to a turn the reader stopped is dropped rather than shown.
+//!
+//! An agent that wants to ask something uses `elicitation/create`. That is
+//! the one way it can put UI on a client's screen, and it is gated on a
+//! capability: no `elicitation.form` in the handshake and an agent either falls
+//! back or gives up. What it may ask for is a flat form of primitives: one of a
+//! list, several of a list, a switch, words, a number. The whole form goes back
+//! as one answer, keyed by the agent's own names; escape declines it, and the
+//! view going away cancels it, because an agent that hears nothing waits for
+//! ever. `elicitation.url` is *not* declared: obelus is not a browser, and a
+//! mode it cannot put is a mode it should not be sent. A property type it has
+//! never heard of is declined with the reason in the transcript rather than
+//! half-filled in.
 
 use std::{path::PathBuf, sync::mpsc::Sender};
 

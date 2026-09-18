@@ -1,4 +1,16 @@
 //! Gathering the files the picker can offer.
+//!
+//! A list obelus offers is a list of the reader's own tree. A language
+//! server answers `workspace/symbol` with everything it has indexed, which for
+//! rust-analyzer is every dependency of the project: a search for `new` in a
+//! repository of a dozen files comes back with hundreds of rows from the
+//! registry, and the one the reader meant is somewhere among them. So
+//! `outline::found_in` takes the root and drops everything outside it -- an
+//! argument rather than a filter at the call site, because a rule a caller can
+//! forget is a rule that comes back. The file list has always worked this way,
+//! and it is why a path can be shown relative to the root at all. Going *to* a
+//! definition in a dependency is a different thing and still goes there: that
+//! is a jump the reader asked for by name, not a list to choose from.
 
 use std::{
     collections::HashSet,

@@ -9,6 +9,38 @@
 //! writing to the config: this is a view, and what a change means -- apply
 //! it, save the file, say why it could not be saved -- belongs to the
 //! application.
+//!
+//! A setting is two rows: a name, and what it does under it. The name on
+//! its own row with its control at the right, what it does on the rows under
+//! that -- indented, in the dim colour, *wrapped* -- and a blank before the
+//! next one, which is what makes an entry an entry rather than three rows of a
+//! table. The same reason the agents' cards have one.
+//!
+//! Beside the name, the two competed for one row and the description lost: cut
+//! off with an ellipsis on exactly the rows that had most to explain, and cut
+//! further still on a row a tree had pinned, where the file's name takes the
+//! space as well. Under it, the sentence has the width of the page and can say
+//! what it means -- `wrap` can say that lines break between words, `icons` can
+//! say what a terminal without the font will draw.
+//!
+//! So the entries are not all one row tall, and the window is settled by
+//! *height*, the way the page of cards already was. `Settings::setting_rows` is
+//! the one answer to how tall one is, asked by the page laying them out and by
+//! the window deciding which are on screen: two answers there is a reader
+//! walking onto an entry nobody drew.
+//!
+//! A setting is a name and a gloss, not a sentence. `Colour theme`, `Nerd Font
+//! glyphs`, `Wrap long lines`, `Blame in the margin` -- a noun phrase naming
+//! the thing, not a clause about it. These were whole sentences ("Who last
+//! changed the line the cursor is on") on the grounds that a name and a
+//! description side by side read as a heading and a footnote. True when the
+//! footnote says what the heading already had; what it produced was a page of
+//! prose, where a reader looking for one row had to read every row to find it.
+//! A column of names is *scanned*.
+//!
+//! The keys page, whose rows are one row each, starts what a command does in
+//! one column two past the longest name rather than two past its own: four
+//! beginnings to find is four, and one is one.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

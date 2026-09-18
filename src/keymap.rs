@@ -3,6 +3,56 @@
 //! The table is data on [`App`](crate::app::App), not a `static`. That is the
 //! whole mechanism behind "the user can rebind keys": loading a table from a
 //! file later replaces a constructor, not the lookup path.
+//!
+//! `keymap::why_not` is the one judgement of what may be bound, and the
+//! three families are the whole of it. It is asked by the page that binds keys,
+//! by the table read out of the config file, and by the test that holds the
+//! shipped table to the same rule -- so obelus cannot give itself a key it
+//! refuses the reader, and a reason is written once. What it refuses, and why
+//! each of them would be a binding that silently never fires:
+//!
+//! * the arrows, `home`, `end` and the paging keys, bare or with `ctrl` or
+//!   `shift` -- the editor takes those before the table is reached, and the
+//!   ones it does not take it has said it wants (`ctrl` and an arrow is a word
+//!   motion, `ctrl` and a paging key is the previous and next buffer). `alt`
+//!   and an arrow is the exception, which is how changes and history are
+//!   walked;
+//! * `ctrl` plus `i`, `m`, `j`, `h`, `[`, space or `2`, which *are* tab, enter,
+//!   newline, backspace, escape and NUL on the wire, whatever the reader
+//!   pressed;
+//! * a bare character, `enter`, `tab`, `backspace`, `delete` -- typing, and the
+//!   keys every list and box takes itself;
+//! * `escape`, which obelus keeps: give up on the nearest thing is not
+//!   negotiable, and it is the one default a reader cannot move;
+//! * anything with two modifiers, and `ctrl` with a capital letter -- a control
+//!   byte cannot say which case the letter was, so `ctrl+shift+p` works only on
+//!   a terminal speaking the keyboard protocol. `alt+P` is fine, because alt is
+//!   the escape prefix and really does carry the shifted letter;
+//! * a function key with anything held, for the same reason.
+//!
+//! `ctrl+b` belongs to tmux, so obelus does not ship it -- a reader outside
+//! tmux may still have it. `ctrl+a` is screen's prefix and is shipped anyway,
+//! because "all of it" is what that key means in every program with a
+//! selection.
+//!
+//! Keys are rebound on the keys page, and the file holds the changes. The
+//! table is data on `App`, so a rebinding is `Keymap::rebind` plus a line in
+//! the config's `[keys]` -- command *name* to chord spelled out (`ctrl+p`),
+//! because an enum's spelling and a keycode are obelus's business rather than
+//! the reader's. What is in the file is a list of changes over the defaults, so
+//! a reader who moved one key still gets the new default for everything else,
+//! and a name or a chord obelus cannot read is skipped with a word in the log.
+//! Rebinding moves *every* binding of the command -- `close-file` is bound in
+//! `Normal` and in `Buffers` and is still one command with one key -- and a
+//! command that had none gets one in `Normal`, which is where a key a reader
+//! presses belongs. A chord already spoken for is refused on the row that asked
+//! for it, with what has it: the row is where the reader is looking, the status
+//! row there is the page's own filter, and a passing note would be cleared by
+//! the very next keystroke.
+//!
+//! Modifiers are judged exactly, in one place. `keymap::modifiers_of` is the
+//! only judge; `SUPER`/`HYPER`/`META` disqualify a key rather than being masked
+//! away. Masking meant `ctrl+super+q` quit.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 

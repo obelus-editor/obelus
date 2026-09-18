@@ -2,6 +2,15 @@
 //!
 //! The reading is [`crate::git`]; what is here is when to ask it, what to
 //! keep, and how the answers reach the views.
+//!
+//! A commit's message hangs above the first line of its file. Rows on
+//! screen that the file does not have, with no line numbers, that the caret can
+//! walk into and copy from: obelus has one shape for that already, and this is
+//! it. The reader lands *in* it, because they opened this to find out why the
+//! file says what it says and the file itself is a page away. `Held` is what
+//! keeps it apart from a hunk's removed lines -- a deletion is gone and reads
+//! red, a message is a note and reads raised -- and it is why replacing the
+//! diff closes the hunks and leaves the message where it is.
 
 use super::*;
 
