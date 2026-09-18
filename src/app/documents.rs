@@ -919,9 +919,28 @@ impl App {
                 self.go_to_file(id);
                 self.serve(index);
             }
-            // A path from the walk can have gone away, or be a file this user
-            // cannot read. Neither is a reason to stop.
-            Err(error) => tracing::warn!(%error, "could not open"),
+            // A path from the walk can have gone away, or be a file this
+            // user cannot read. Neither is a reason to stop -- but silence
+            // is: a list closes on the way here, so a reader who pressed
+            // enter watched it vanish and put them back where they already
+            // were with nothing said. A key that does nothing and a broken
+            // key look the same.
+            //
+            // In the reader's own words rather than the error's. The two
+            // that happen are a path that is gone and a path that is a
+            // directory, and both read better as the fact than as an
+            // `io::Error` about a path the reader can see on the row above.
+            Err(error) => {
+                tracing::warn!(%error, "could not open");
+                let name = relative(path, &self.working_directory);
+                self.note = Some(if !path.exists() {
+                    format!("{name} is not there any more")
+                } else if path.is_dir() {
+                    format!("{name} is a directory")
+                } else {
+                    format!("could not open {name}: {error}")
+                });
+            }
         }
     }
 

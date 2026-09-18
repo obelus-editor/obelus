@@ -469,6 +469,13 @@ impl PickerView<'_> {
         // The matched characters still win over this -- why a row is in the
         // list beats what the row is.
         let label_style = match (item.status, item.kind) {
+            // Nothing wins over a row that cannot be chosen: a dim row with
+            // a bright name in it reads as available, which is the one
+            // thing the dim is there to deny. Nothing in obelus currently
+            // makes a row that is both disabled and carries a status, so
+            // there is no test under this -- it is here because the rule
+            // written above it was not true.
+            _ if !item.enabled => style,
             // What git says wins over what the syntax layer says: a list of
             // a project's files is mostly files nobody has touched, and the
             // few that have been are what a reader is looking for.

@@ -4665,3 +4665,43 @@ fn only_what_is_on_disk_is_something_that_changed() {
         "a staged deletion is offered as a file to open: {staged:?}"
     );
 }
+
+/// And a path that goes away *after* the list was built still says so.
+///
+/// The row was fine when the list was drawn, so nothing dimmed it, and by
+/// the time the reader presses enter the file is gone. The list closes on
+/// the way to trying, which is what makes the status row free to say it --
+/// and without this, obelus closed the list, opened nothing and said
+/// nothing at all.
+#[test]
+fn a_path_that_went_away_after_the_list_was_built_says_so() {
+    use obelus::{app::App, buffer::Buffer};
+
+    let repository = Repository::new("open-vanished", "one\n");
+    let gone = repository.directory().join("gone.rs");
+    std::fs::write(&gone, "gone\n").expect("the file");
+    repository.commit_all("two files");
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    // Not the file being read: one already open is switched to rather than
+    // opened, and this is about the path that cannot be read at all.
+    std::fs::remove_file(&gone).expect("removing it");
+
+    app.open_for_test(&gone);
+    assert_eq!(
+        app.note(),
+        Some("gone.rs is not there any more"),
+        "opening nothing said nothing"
+    );
+
+    // And a directory, which is the other way a path in a list names
+    // something that is not a file.
+    app.open_for_test(&repository.directory().join("src"));
+    std::fs::create_dir_all(repository.directory().join("src")).expect("the directory");
+    app.open_for_test(&repository.directory().join("src"));
+    assert_eq!(
+        app.note(),
+        Some("src is a directory"),
+        "opening a directory said something else"
+    );
+}
