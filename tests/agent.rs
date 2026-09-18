@@ -2889,3 +2889,105 @@ fn an_agent_with_room_left_says_so_quietly() {
         "a cost the agent never gave left something behind:\n{status}"
     );
 }
+
+/// Somewhere to go is put on a card, and going is what answers it.
+///
+/// The other kind of elicitation: nothing to fill in, a URL to visit. The
+/// URL is shown whole -- folded across as many rows as it takes -- because
+/// one cut short is one nobody can use, and on a machine with no browser it
+/// is the only way the reader will get it. Answered the moment they are
+/// sent, not when they come back: the agent watches the far end itself.
+///
+/// Broken deliberately by leaving `ElicitationMode::Url` in the arm that
+/// declines a mode obelus cannot put: no card, and this goes red.
+#[test]
+fn somewhere_to_go_is_put_on_a_card_and_opened() {
+    let _turn = support::clipboard_turn();
+    obelus::links::use_opener_for_test(obelus::links::Opener::Kept);
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/signin");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the card", |app| app.card().is_some());
+
+    // What it is for, then where -- whole, across as many rows as it takes.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    assert!(
+        screen.iter().any(|row| row.contains("sign in to continue")),
+        "the card does not say what it is for:\n{dump}"
+    );
+    // The rows run together, less their own numbers and the blanks that
+    // pad them: a url folded across two rows is one url again.
+    let shown: String = screen
+        .iter()
+        .filter_map(|row| row.split_once('|'))
+        .flat_map(|(_, said)| said.chars())
+        .filter(|letter| !letter.is_whitespace())
+        .collect();
+    assert!(
+        shown.contains("https://console.example.com/oauth/authorize?client_id=9d1c4a"),
+        "the url was cut short:\n{dump}"
+    );
+    assert!(
+        shown.contains("state=7f2b"),
+        "the end of the url is not on the page:\n{dump}"
+    );
+    assert!(
+        screen.iter().any(|row| row.contains("open it")),
+        "there is no way to go:\n{dump}"
+    );
+
+    // Going opens it, and the agent hears that they went.
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        obelus::links::opened().as_deref(),
+        Some("https://console.example.com/oauth/authorize?client_id=9d1c4a&scope=user%3Ainference&code=1&state=7f2b"),
+        "the link was not opened"
+    );
+    pump(&mut app, &events, "what the agent made of it", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text.contains("you went"))
+        })
+    });
+}
+
+/// A URL obelus will not hand to the machine is refused, not declined.
+///
+/// What happens to one of these is that obelus asks the machine to open it
+/// with whatever is registered for the scheme, and the string came from the
+/// agent: `file:` reaches the disk, and a program that registers a scheme of
+/// its own turns a link into a way to start it. So only `http` and `https`,
+/// with a host -- and the agent hears that its request was wrong rather than
+/// that the reader said no, because the reader was never asked.
+///
+/// Broken deliberately by returning the URL from `somewhere_to_go` whatever
+/// its scheme: a card goes up and this goes red.
+#[test]
+fn a_url_obelus_will_not_open_never_reaches_the_reader() {
+    let _turn = support::clipboard_turn();
+    obelus::links::use_opener_for_test(obelus::links::Opener::Kept);
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/nowhere");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+
+    assert!(app.card().is_none(), "obelus put a file: url to the reader");
+    assert_eq!(obelus::links::opened(), None, "obelus opened a file: url");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !rows(&dump).iter().any(|row| row.contains("vscode://")),
+        "the url reached the page:\n{dump}"
+    );
+}

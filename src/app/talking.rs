@@ -873,6 +873,112 @@ impl App {
         self.put_the_question();
     }
 
+    /// Puts somewhere the agent wants the reader to go to the reader.
+    ///
+    /// On a card, like everything else it asks -- but a card with nothing
+    /// to fill in: what it takes is whether the reader will go, and the URL
+    /// itself is what the card is about. Shown whole, folded across as many
+    /// rows as it takes, because a URL cut short is a URL nobody can use
+    /// and this is the one thing on screen a reader may have to read out.
+    fn send_the_reader(
+        &mut self,
+        message: &str,
+        url: &str,
+        id: &str,
+        answer: acp::Answer<bool>,
+    ) {
+        self.show_the_question();
+        if let Some(talk) = self.conversation_mut() {
+            talk.going = Some(crate::conversation::Going {
+                message: message.to_string(),
+                url: url.to_string(),
+                id: id.to_string(),
+                answer,
+            });
+        }
+        self.put_the_place();
+    }
+
+    /// The card for it.
+    fn put_the_place(&mut self) {
+        let Some(going) = self.conversation().and_then(|talk| talk.going.as_ref()) else {
+            return;
+        };
+        // The agent's words, then the URL under them. One text rather than
+        // two fields, because the card lays out what it is about as one
+        // wrapped block -- and a blank line between them is what makes the
+        // second read as a thing rather than as more of the sentence.
+        let about = match going.message.trim().is_empty() {
+            true => going.url.clone(),
+            false => format!("{}\n\n{}", going.message, going.url),
+        };
+        let icons = crate::icons::enabled();
+        let mut card = Card::new(
+            vec![
+                Choice {
+                    id: "open".to_string(),
+                    name: "open it".to_string(),
+                    about: Some("obelus opens it in your browser".to_string()),
+                    icon: icons.then_some(crate::icons::ui::AWAY),
+                    chosen: false,
+                },
+                Choice {
+                    id: "no".to_string(),
+                    name: "no".to_string(),
+                    about: None,
+                    icon: icons.then_some(crate::icons::ui::STAYING),
+                    chosen: false,
+                },
+            ],
+            false,
+        );
+        card.about(&about);
+        if let Some(talk) = self.conversation_mut() {
+            talk.card = Some(card);
+        }
+    }
+
+    /// Sends the reader there, or tells the agent they will not go.
+    ///
+    /// Answered the moment they are sent, not when they come back: what the
+    /// agent asked for is that the reader be directed somewhere, and it
+    /// watches the far end itself. Holding the answer until a sign-in
+    /// finished would hold a turn open for as long as somebody takes to
+    /// find their password.
+    fn answer_going(&mut self, chosen: Option<&str>) {
+        let Some(going) = self.conversation_mut().and_then(|talk| talk.going.take()) else {
+            return;
+        };
+        if chosen != Some("open") {
+            if let Some(talk) = self.conversation_mut() {
+                talk.card = None;
+                talk.chat.note("not opened");
+            }
+            let _ = going.answer.send(false);
+            return;
+        }
+        if let Err(error) = crate::links::open(&going.url) {
+            tracing::warn!(%error, "the link was not opened");
+            // Not an answer: nothing was opened, so the reader has not been
+            // sent anywhere. The card stays, with the URL still on it --
+            // which on a machine with no browser is the only way they will
+            // get it.
+            if let Some(talk) = self.conversation_mut() {
+                talk.chat.note("nothing here opens links");
+                talk.going = Some(going);
+            }
+            return;
+        }
+        if let Some(talk) = self.conversation_mut() {
+            talk.card = None;
+        }
+        let _ = going.answer.send(true);
+    }
+
+    /// The agent says the far end happened, so there is nothing left to
+    /// wait for.
+    fn went_through(&mut self, _id: &str) {}
+
     /// Puts the next field, or answers the form when there is none left.
     fn put_the_question(&mut self) {
         let Some(asking) = self.conversation().and_then(|talk| talk.asking.as_ref()) else {
@@ -953,6 +1059,16 @@ impl App {
 
     /// Takes what the reader put on the card.
     pub(super) fn answer_card(&mut self, chosen: &[String], words: Option<&str>) {
+        // Somewhere to go is neither a form nor a permission: nothing was
+        // filled in, and what the answer decides is whether obelus opens
+        // something.
+        if self
+            .conversation()
+            .is_some_and(|talk| talk.going.is_some())
+        {
+            self.answer_going(chosen.first().map(String::as_str));
+            return;
+        }
         // A permission request is named answers and nothing else, so the
         // one they chose is the answer.
         if self.is_asking_permission() {
@@ -1106,6 +1222,15 @@ impl App {
         if let Some(talk) = self.conversation_mut() {
             talk.card = None;
         }
+        // Somewhere to go, given up on: the channel going away without an
+        // answer is what the agent hears as a cancellation, so there is
+        // nothing to send.
+        if let Some(talk) = self.conversation_mut()
+            && talk.going.take().is_some()
+        {
+            talk.chat.note("not opened");
+            return;
+        }
         let Some(asking) = self.conversation_mut().and_then(|talk| talk.asking.take()) else {
             return;
         };
@@ -1171,6 +1296,8 @@ impl App {
             | acp::Incoming::Failed(..)
             | acp::Incoming::Gone(_)
             | acp::Incoming::Ask { .. }
+            | acp::Incoming::Open { .. }
+            | acp::Incoming::Finished { .. }
             | acp::Incoming::Read { .. }
             | acp::Incoming::Write { .. } => None,
         };
@@ -1326,6 +1453,13 @@ impl App {
                 fields,
                 answer,
             } => self.ask_reader(&message, fields, answer),
+            acp::Incoming::Open {
+                message,
+                url,
+                id,
+                answer,
+            } => self.send_the_reader(&message, &url, &id, answer),
+            acp::Incoming::Finished { id } => self.went_through(&id),
             acp::Incoming::Read {
                 path,
                 line,

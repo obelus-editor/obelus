@@ -213,6 +213,21 @@ rmcp = { version = "3.4", features = ["transport-streamable-http-server"] }
 # way of rmcp; declared here because obelus derives on its own types.
 schemars = "1"
 
+# Handing a URL to whatever the reader opens URLs with, for an agent that
+# needs them to sign in somewhere. Three crates, none of them large.
+#
+# Not three lines of `Command::new("xdg-open")`, for reasons that are
+# obelus's own rather than general: it silences the child's stdin, stdout
+# and stderr, and obelus lives in the alternate screen where a launcher
+# that prints one line has torn the page up. It tries `gio`, `gnome-open`
+# and `kde-open` where `xdg-open` is not installed. And it knows WSL, where
+# a terminal program wanting the Windows browser is exactly the case a
+# hand-rolled `xdg-open` gets wrong.
+#
+# Not `webbrowser`, which pulls `url` and with it `idna` and the whole ICU
+# normaliser -- a dozen crates to open a link.
+open = "5"
+
 
 [dev-dependencies]
 serde_json = "1"

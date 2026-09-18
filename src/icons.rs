@@ -177,6 +177,10 @@ pub mod ui {
     pub const DONE: char = '\u{f012c}';
     /// One that did not.
     pub const BROKEN: char = '\u{f0159}';
+    /// Somewhere on the web the agent wants the reader to go.
+    pub const AWAY: char = '\u{f03cc}';
+    /// Not going there.
+    pub const STAYING: char = '\u{f0156}';
 }
 
 /// The glyph for one answer to a permission request.

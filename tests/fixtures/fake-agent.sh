@@ -233,6 +233,33 @@ while IFS= read -r line; do
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             ;;
+        *'"method":"session/prompt"'*'/signin'*)
+            # Somewhere to go rather than something to fill in: the other
+            # kind of elicitation. Long enough that it folds across rows,
+            # which is the whole point of not cutting it short.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":909,"method":"elicitation/create","params":{"mode":"url","sessionId":"%s","message":"sign in to continue","elicitationId":"e1","url":"https://console.example.com/oauth/authorize?client_id=9d1c4a&scope=user%%3Ainference&code=1&state=7f2b"}}\n' "$session"
+            ;;
+        *'"method":"session/prompt"'*'/nowhere'*)
+            # A URL obelus will not hand to the machine's own launcher: a
+            # scheme some program on this machine has registered, which is
+            # the shape that turns a link into a way to start it. It must
+            # come back as an error rather than as a refusal -- this is not
+            # the reader saying no.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":910,"method":"elicitation/create","params":{"mode":"url","sessionId":"%s","message":"open this","elicitationId":"e2","url":"vscode://file/etc/passwd"}}\n' "$session"
+            ;;
+        *'"id":909'*|*'"id":910'*)
+            # What the reader said about going. Said back into the
+            # transcript so a test can read it off the page.
+            case "$line" in
+                *'"action":"accept"'*) said='you went' ;;
+                *'"action":"decline"'*) said='you would not go' ;;
+                *) said='the question went away' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$session" "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'/used'*)
             # How full it is, sent as an agent sends it: several times in a
             # turn, the numbers only going up. The last one is what the row

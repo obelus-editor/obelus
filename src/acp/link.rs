@@ -59,6 +59,7 @@ use agent_client_protocol::{
             CreateElicitationRequest, CreateElicitationResponse, DeleteSessionRequest,
             ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
             ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
+            ElicitationUrlCapabilities,
             ElicitationPropertySchema, ElicitationSchema, FileSystemCapabilities, Implementation,
             InitializeRequest, LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp,
             McpServerSse, MultiSelectItems, NewSessionRequest, PermissionOptionId, PromptRequest,
@@ -256,6 +257,34 @@ pub enum Incoming {
         options: Vec<Choice>,
         /// Which option, or nothing for "not answered".
         answer: Answer<Option<String>>,
+    },
+    /// It wants the reader to go and do something on the web: sign in
+    /// somewhere, authorise something.
+    ///
+    /// With no conversation on it, for the reason [`Incoming::Ask`] gives:
+    /// the protocol does not put one on an elicitation.
+    ///
+    /// Answered by going, not by finishing: the agent watches for the far
+    /// end itself and says when it is done. See [`Incoming::Finished`].
+    Open {
+        /// What it says this is for, in its own words.
+        message: String,
+        /// Where to send them. Checked before it gets here: `http` or
+        /// `https`, and a host.
+        url: String,
+        /// The agent's name for this question, which is how it later says
+        /// the question is answered.
+        id: String,
+        /// `true` once the reader has been sent there, `false` if they will
+        /// not go. Dropped without an answer means the question went away,
+        /// which the agent hears as a cancellation.
+        answer: Answer<bool>,
+    },
+    /// A question the agent has stopped needing an answer to, because it
+    /// watched the far end and saw it happen.
+    Finished {
+        /// Which question, by the name it was asked under.
+        id: String,
     },
     /// The agent is asking the reader for something.
     ///
@@ -914,13 +943,54 @@ async fn talk(
                 // answer is one of a few, the box where it is words. One
                 // field at a time, because a terminal reader has one thing
                 // on screen and one caret in it.
+                // A URL takes a different road: nothing is filled in, the
+                // reader is sent somewhere, and the agent hears that they
+                // went rather than what they said.
+                if let ElicitationMode::Url(mode) = &request.mode {
+                    let Some(url) = somewhere_to_go(&mode.url) else {
+                        // An error rather than a decline, because this is
+                        // not the reader refusing: the agent sent something
+                        // obelus will not hand to the machine's own
+                        // launcher, and it should hear which of those it
+                        // was. `file:` and the schemes an editor or a
+                        // chat program registers can start a program, and
+                        // this URL came from the agent.
+                        return responder.respond_with_error(
+                            agent_client_protocol::Error::invalid_params()
+                                .data("an elicitation URL must be http or https, with a host"),
+                        );
+                    };
+                    let (answer, answered) = oneshot::channel();
+                    let question = Incoming::Open {
+                        message: request.message.clone(),
+                        url,
+                        id: mode.elicitation_id.0.to_string(),
+                        answer,
+                    };
+                    if elicited.send(Event::Acp(question)).is_err() {
+                        return responder
+                            .respond(CreateElicitationResponse::new(ElicitationAction::Cancel));
+                    }
+                    // Accepted the moment the reader is sent there, not
+                    // when they come back: what the agent asked for is that
+                    // they be directed to the URL, and it watches the far
+                    // end itself. Waiting here would hold a turn open
+                    // across a sign-in nobody can time.
+                    let action = match answered.await {
+                        Ok(true) => ElicitationAction::Accept(ElicitationAcceptAction::new()),
+                        Ok(false) => ElicitationAction::Decline,
+                        // The question going away without an answer, which
+                        // is what the card being taken down means.
+                        Err(_) => ElicitationAction::Cancel,
+                    };
+                    return responder.respond(CreateElicitationResponse::new(action));
+                }
                 let asked = match &request.mode {
                     ElicitationMode::Form(form) => fields_of(&form.requested_schema),
-                    // A mode obelus never offered to show -- a URL to open,
-                    // which a reader is not in a browser to follow.
-                    // Declined rather than errored: the agent asked a fair
-                    // question of a client that cannot put it, and it has
-                    // to be able to carry on.
+                    // A mode obelus never offered to show. Declined rather
+                    // than errored: the agent asked a fair question of a
+                    // client that cannot put it, and it has to be able to
+                    // carry on.
                     other => Err(format!("{other:?}")),
                 };
                 let fields = match asked {
@@ -1275,8 +1345,15 @@ fn handshake() -> InitializeRequest {
                     .read_text_file(true)
                     .write_text_file(true))
                 .terminal(false)
+                // Both kinds of question: a form, which goes on a card,
+                // and a URL, which obelus hands to whatever the reader
+                // opens links with. Saying only `form` left an agent that
+                // needed the reader to sign in somewhere with no way to
+                // say so.
                 .elicitation(
-                    ElicitationCapabilities::new().form(ElicitationFormCapabilities::new()),
+                    ElicitationCapabilities::new()
+                        .form(ElicitationFormCapabilities::new())
+                        .url(ElicitationUrlCapabilities::new()),
                 )
                 // A switch is two rows of a list here, which is what the
                 // capability is about: an agent may only offer boolean
@@ -1426,6 +1503,39 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
             Vec::new()
         }
     }
+}
+
+/// A URL obelus is willing to hand to the machine, or nothing.
+///
+/// `http` and `https` only, and it must name a host. Everything else is
+/// refused, because what happens next is that obelus asks the machine to
+/// open this with whatever is registered for it: `file:` reaches the disk,
+/// and an editor or a chat program registering a scheme of its own turns a
+/// link into a way to start a program. The string came from the agent.
+///
+/// Parsed by hand rather than with a URL crate. What is being asked is
+/// which scheme it is and whether anything follows -- not what the host
+/// normalises to -- and a crate that answers the second brings a Unicode
+/// database to do it.
+fn somewhere_to_go(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
+        return None;
+    }
+    // A host is whatever comes before the path, and it has to be
+    // something: `https:///whatever` names no machine.
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if host.is_empty() {
+        return None;
+    }
+    // And nothing a shell or a launcher would read as more than one
+    // argument. Every one of these is legal in a URL only when it is
+    // written `%20`, `%0a` and so on, so refusing them refuses nothing a
+    // well-formed URL needed.
+    if url.chars().any(char::is_whitespace) || url.contains('\0') {
+        return None;
+    }
+    Some(url.to_string())
 }
 
 /// The fields of a form, in the order obelus will put them.
@@ -1858,6 +1968,55 @@ fn words(content: &ContentBlock) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    /// Every shape obelus refuses to hand to the machine's own launcher.
+    ///
+    /// The end-to-end test drives one of these through a real agent; this
+    /// is the rest of them, because a predicate with five arms wants five
+    /// cases and not five conversations.
+    ///
+    /// Broken deliberately by returning the string whatever it says.
+    #[test]
+    fn only_a_web_address_is_somewhere_to_go() {
+        for said in [
+            // A scheme some program on this machine has registered, which
+            // is the shape that turns a link into a way to start it.
+            "vscode://file/etc/passwd",
+            "ms-msdt:/id",
+            // The disk, by either spelling.
+            "file:///etc/passwd",
+            "file://localhost/etc/passwd",
+            // No machine named.
+            "https:///nowhere",
+            "http://?query",
+            // Not a URL at all.
+            "console.example.com",
+            "javascript:alert(1)",
+            // Whitespace, which is only ever `%20` in a well-formed URL and
+            // is how a string becomes two arguments.
+            "https://example.com/ --a-flag",
+            "https://example.com/\nhttps://elsewhere.com",
+        ] {
+            assert_eq!(
+                super::somewhere_to_go(said),
+                None,
+                "obelus would have opened {said:?}"
+            );
+        }
+
+        for said in [
+            "https://console.example.com/oauth/authorize?code=1&state=2",
+            "http://localhost:8080/callback",
+            // The scheme as the agent happens to spell it.
+            "HTTPS://example.com/",
+        ] {
+            assert_eq!(
+                super::somewhere_to_go(said).as_deref(),
+                Some(said),
+                "obelus would not have opened {said:?}"
+            );
+        }
+    }
+
     use super::*;
 
     /// What is written down about a call is cut by characters.

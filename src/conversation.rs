@@ -92,6 +92,32 @@ pub struct Conversation {
     /// The permission request waiting on the reader: the channel its answer
     /// goes back through.
     pub permission: Option<acp::Answer<Option<String>>>,
+    /// Somewhere the agent wants the reader to go, while they have not
+    /// said whether they will.
+    pub going: Option<Going>,
+}
+
+/// A place on the web the agent wants the reader to go: to sign in
+/// somewhere, to authorise something.
+///
+/// Not a form, and not a question in the sense the card usually puts:
+/// there is nothing to fill in, and the answer is "I went" or "I will
+/// not". Held apart from [`Asking`] for that reason -- one field would be
+/// two different things with a `match` on which, and every reader of it
+/// would have to do the matching.
+#[derive(Debug)]
+pub struct Going {
+    /// What the agent said it is for, in its own words.
+    pub message: String,
+    /// Where. Checked before it reached here: `http` or `https`, with a
+    /// host, and nothing a launcher would read as two arguments.
+    pub url: String,
+    /// The agent's own name for the question, which is how it later says
+    /// the far end happened.
+    pub id: String,
+    /// Where the answer goes. `true` once the reader has been sent, which
+    /// is what the agent asked for -- it watches the far end itself.
+    pub answer: acp::Answer<bool>,
 }
 
 /// A form an agent asked the reader to fill in.

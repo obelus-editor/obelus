@@ -26,6 +26,7 @@ pub mod git;
 pub mod icons;
 pub mod jump;
 pub mod keymap;
+pub mod links;
 pub mod logging;
 pub mod lsp;
 pub mod mcp;
