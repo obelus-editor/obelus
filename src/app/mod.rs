@@ -388,6 +388,14 @@ pub struct App {
     /// because it is the walk that knows which files are only there
     /// because the reader asked for them.
     found: Vec<(PathBuf, bool)>,
+    /// The row the tree was on when the reader started typing.
+    ///
+    /// Typing turns the file list from a tree into the flat list of
+    /// everything, and clearing the query turns it back. The tree either
+    /// side of that is the same tree, so this is what puts the reader back
+    /// on the row they were reading rather than on the file they happen to
+    /// have open.
+    stood_on: Option<PathBuf>,
     /// A rename of a file, from the question to the act.
     ///
     /// The gap between the two is a round trip: a server that knows the
@@ -579,6 +587,7 @@ impl App {
             given_statuses: None,
             listing: Vec::new(),
             found: Vec::new(),
+            stood_on: None,
             renaming: None,
             opened: std::collections::HashSet::new(),
             history: history_view::Showing::default(),

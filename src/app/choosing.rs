@@ -322,6 +322,18 @@ impl App {
         // answers, not two views of one.
         let historic = !self.history.radii.is_empty();
         let before = (picker.tab(), picker.query().to_string());
+        // Where the tree is standing, read before the key can move it: a
+        // typed letter filters the rows the list already has, so by the
+        // time the query has changed the row the reader was on is not
+        // among them any more.
+        let tree = listing
+            && before.1.is_empty()
+            && self.listing.get(before.0).copied() == Some(crate::component::picker::Listing::All);
+        let standing = tree
+            .then(|| picker.selected_item())
+            .flatten()
+            .and_then(super::documents::path_of_row)
+            .map(Path::to_path_buf);
         let outcome = picker.handle_key(key, page);
         let after = (picker.tab(), picker.query().to_string());
         match outcome {
@@ -334,6 +346,12 @@ impl App {
                 // the flat filtered list the moment something is, and those
                 // are two sets of rows rather than two ways of drawing one.
                 if listing && (after.0 != before.0 || after.1.is_empty() != before.1.is_empty()) {
+                    // Kept only where there was a tree to put down, which
+                    // is what makes clearing the query put the reader back
+                    // rather than move them somewhere new.
+                    if tree {
+                        self.stood_on = standing;
+                    }
                     self.refresh_listing();
                 }
                 if historic && after.0 != before.0 {

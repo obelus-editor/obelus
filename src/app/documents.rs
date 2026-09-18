@@ -214,6 +214,12 @@ impl App {
         // Open on the file being read, which in a tree means opening every
         // directory above it: a list that opened at the root would make the
         // reader walk down to where they already are.
+        //
+        // And on the file being read rather than on wherever the list was
+        // left: a row kept from the last time it was open is about a query
+        // the reader has finished with, and the file they are reading is
+        // the thing they have in front of them now.
+        self.stood_on = None;
         self.reveal_current();
         // Started once, when the list opens, rather than when the reader
         // first types: the tree is what is on screen until they do, and the
@@ -453,6 +459,16 @@ impl App {
                     .current_buffer()
                     .and_then(|buffer| buffer.path().file_name())
                     .map(|name| name.to_string_lossy().into_owned());
+                // Where the reader was before they typed, if that row is
+                // still in the tree. By its path rather than by its name,
+                // which is what the tree draws: half the rows in a project
+                // are called `mod.rs`.
+                let back = self.stood_on.take().and_then(|path| {
+                    rows.iter().position(|row| match &row.value {
+                        PickerValue::File(at) | PickerValue::Directory(at) => *at == path,
+                        _ => false,
+                    })
+                });
                 if let Some(picker) = self.picker.as_mut() {
                     picker.offering_ignored(Some(ignored));
                     // The same: the row a query's answer was on says
@@ -460,8 +476,17 @@ impl App {
                     // reader back is the name.
                     picker.replace(rows);
                     picker.when_empty("no files under this directory");
-                    if let Some(prefer) = prefer {
-                        picker.prefer(prefer);
+                    match back {
+                        // A query that came and went is not a reason to
+                        // move, so the row the reader left wins over the
+                        // file they have open -- which is only ever a guess
+                        // about where they would like to start.
+                        Some(row) => picker.select_row(row),
+                        None => {
+                            if let Some(prefer) = prefer {
+                                picker.prefer(prefer);
+                            }
+                        }
                     }
                 }
             }
