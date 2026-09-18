@@ -475,6 +475,29 @@ impl Chat {
         self.push(Speaker::Reader, text, None);
     }
 
+    /// Takes the reader's own words back from the agent.
+    ///
+    /// What this is for is a conversation taken up again: the agent replays
+    /// it to a client that may be a fresh process, and the reader's half of
+    /// it comes back only this way.
+    ///
+    /// Some agents also send these during a live turn, echoing back the
+    /// prompt they were just given -- which obelus put on the page itself
+    /// the moment it was sent. So a chunk the last thing said already says
+    /// is dropped: what makes that safe is that the only rows obelus writes
+    /// in this voice are the ones it was handed by the reader, so a repeat
+    /// of what is already there is the agent's copy of it and not a second
+    /// thing they said.
+    pub fn heard(&mut self, text: &str) {
+        let echoed = self
+            .said
+            .last()
+            .is_some_and(|last| last.speaker == Speaker::Reader && last.text.contains(text));
+        if !echoed {
+            self.chunk(Speaker::Reader, text);
+        }
+    }
+
     /// Adds one of obelus's own remarks.
     pub fn note(&mut self, text: &str) {
         self.push(Speaker::Note, text, None);

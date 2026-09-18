@@ -1442,6 +1442,11 @@ impl App {
                 acp::Update::Thought(text) => {
                     self.in_transcript(|chat| chat.chunk(Speaker::Thought, &text))
                 }
+                // The reader's own words, as the agent has them. What this
+                // is for is a conversation taken up again after obelus was
+                // shut: the transcript is the agent's, and this is the half
+                // of it obelus cannot write itself.
+                acp::Update::Heard(text) => self.in_transcript(|chat| chat.heard(&text)),
                 acp::Update::Tool { call, status } => {
                     self.in_transcript(|chat| chat.tool(&call, &status))
                 }

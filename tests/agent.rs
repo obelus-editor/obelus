@@ -3112,3 +3112,87 @@ fn a_narrow_row_keeps_the_settings_and_the_keys() {
         "the settings were cut down to nothing: {narrow:?}"
     );
 }
+
+/// The reader's own half of a conversation comes back from the agent.
+///
+/// `user_message_chunk` was one of the updates obelus dropped. In a live
+/// turn it is news obelus already has -- it put those words there itself --
+/// but the turn it is for is the one nobody was here for: `session/load`
+/// replays a conversation to a client that may be a fresh process, and the
+/// reader's half of it comes back only this way. Dropped, a conversation
+/// taken up again is a run of answers with no questions above them.
+///
+/// Broken deliberately by leaving `SessionUpdate::UserMessageChunk` in the
+/// arm that drops what obelus does not show: the words never arrive and
+/// this goes red.
+#[test]
+fn the_readers_own_words_come_back_from_the_agent() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/relay");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+
+    // In the reader's voice, because that is whose words they are.
+    let said = app
+        .chat()
+        .expect("the conversation")
+        .rows(WIDTH)
+        .iter()
+        .find(|row| row.text.contains("what did we settle on"))
+        .map(|row| row.speaker);
+    assert_eq!(
+        said,
+        Some(obelus::component::chat::Speaker::Reader),
+        "the words the agent had of the reader are not on the page:\n{}",
+        support::render(&mut app, WIDTH, HEIGHT)
+    );
+}
+
+/// An agent that echoes the prompt back does not put it on the page twice.
+///
+/// obelus writes the reader's words when they press send, and some agents
+/// send the same words back over the session. What makes dropping the
+/// repeat safe is that the only rows obelus writes in that voice are the
+/// ones it was handed by the reader: a repeat of what is already there is
+/// the agent's copy of it, not a second thing they said.
+///
+/// Broken deliberately by taking the `echoed` check out of `Chat::heard`:
+/// the prompt is on the page twice and this goes red.
+#[test]
+fn an_agent_that_echoes_the_prompt_does_not_say_it_twice() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text.contains("heard you"))
+        })
+    });
+
+    // Counted in the words, not in the rows: an echo merges into the row
+    // that is already there, so twice over is one row saying it twice.
+    let said: String = app
+        .chat()
+        .expect("the conversation")
+        .rows(WIDTH)
+        .iter()
+        .filter(|row| row.speaker == obelus::component::chat::Speaker::Reader)
+        .map(|row| row.text.clone())
+        .collect();
+    assert_eq!(
+        said.matches("/echo").count(),
+        1,
+        "the prompt is on the page more than once: {said:?}\n{}",
+        support::render(&mut app, WIDTH, HEIGHT)
+    );
+}

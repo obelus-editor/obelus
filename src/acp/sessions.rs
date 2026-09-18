@@ -1,9 +1,12 @@
 //! Which conversation belongs to which note, across sittings.
 //!
 //! An agent keeps what was said -- `session/load` replays it -- so obelus
-//! does not have to keep a word of it. What obelus has to keep is the one
-//! thing the agent cannot: which of its conversations is about which of this
-//! tree's notes. Nothing on the agent's side knows that a note exists.
+//! does not have to keep a word of it. Both halves come back: the agent's
+//! own, and the reader's as `user_message_chunk`, which is the only way a
+//! client that was not running when they were typed can have them. What
+//! obelus has to keep is the one thing the agent cannot: which of its
+//! conversations is about which of this tree's notes. Nothing on the
+//! agent's side knows that a note exists.
 //!
 //! Beside the notes rather than in them, and in obelus's own state directory
 //! rather than the tree's `.obelus`: a session id is a name one agent on one

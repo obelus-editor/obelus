@@ -266,6 +266,23 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$session" "$said"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
+        *'"method":"session/prompt"'*'/echo'*)
+            # An agent that sends the prompt it was just given straight
+            # back. Some do. obelus put those words on the page when the
+            # reader pressed send, and they must not land twice.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"/echo"}}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"heard you"}}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'/relay'*)
+            # Words in the reader's voice that obelus never put there --
+            # which is what a replayed conversation is made of, and what
+            # another client on the same session sends.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"what did we settle on"}}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'/used'*)
             # How full it is, sent as an agent sends it: several times in a
             # turn, the numbers only going up. The last one is what the row
@@ -503,6 +520,11 @@ while IFS= read -r line; do
             # the client named rather than minting a new one, because that
             # is the whole of what the client has to get right.
             printf '{"jsonrpc":"2.0","id":%s,"result":{"modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
+            # Both halves, in the order they were said. The reader's own
+            # comes back as `user_message_chunk` -- a client that dropped
+            # those would take up a conversation of answers with no
+            # questions above them.
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"what did we settle on"}}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"where we were"}}}}\n'
             ;;
         *'"method":"session/delete"'*)

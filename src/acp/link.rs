@@ -338,7 +338,11 @@ pub enum Incoming {
     Gone(Option<String>),
 }
 
-/// One thing the agent said, in the form the view shows it.
+/// One thing the agent has to say, in the form the view shows it.
+///
+/// Not all of it is speech: what it is working through, how full it is,
+/// what it lets the reader change. What they have in common is that they
+/// arrive on the same notification and are about one conversation.
 ///
 /// Not `Eq`: what a turn has cost is a number of money, which the protocol
 /// carries as a float, and two of those are never exactly the same thing.
@@ -349,6 +353,15 @@ pub enum Update {
     /// A piece of its thinking, which agents send separately so that it can
     /// be shown as what it is.
     Thought(String),
+    /// A piece of what the *reader* said, as the agent has it.
+    ///
+    /// Which sounds like news obelus already has, and in a live turn it is
+    /// -- it put those words there itself. The turn this is for is the one
+    /// nobody was here for: `session/load` replays a conversation to a
+    /// client that may be a fresh process, and the reader's own half comes
+    /// back only this way. Without it a conversation taken up again is a
+    /// run of answers with no questions above them.
+    Heard(String),
     /// It is using a tool, and this is where it has got to.
     Tool {
         /// The call itself.
@@ -1462,6 +1475,10 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => words(&chunk.content)
             .map(Update::Said)
+            .into_iter()
+            .collect(),
+        SessionUpdate::UserMessageChunk(chunk) => words(&chunk.content)
+            .map(Update::Heard)
             .into_iter()
             .collect(),
         SessionUpdate::AgentThoughtChunk(chunk) => words(&chunk.content)
