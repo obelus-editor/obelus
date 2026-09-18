@@ -613,6 +613,16 @@ impl App {
                 }
                 self.ask_rename(name);
             }
+            // What a file should be called instead. Empty is the reader
+            // having cleared the line and pressed enter, which is a change
+            // of mind rather than a rename to nothing.
+            PromptKind::Path => {
+                let path = text.trim();
+                if path.is_empty() {
+                    return;
+                }
+                self.rename_file_to(std::path::Path::new(path));
+            }
             PromptKind::Line => {
                 let Ok(line) = text.trim().parse::<usize>() else {
                     self.note = Some(format!("{text:?} is not a line number"));

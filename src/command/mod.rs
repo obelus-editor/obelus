@@ -28,6 +28,8 @@ pub enum Command {
     DocumentList,
     /// Stop showing the current document.
     DocumentClose,
+    /// Call the file being read something else, or put it somewhere else.
+    FileRename,
     /// Show this file as rendered markdown, or stop.
     PreviewToggle,
     /// Choose a theme.
@@ -197,6 +199,12 @@ impl Group {
 pub enum Requires {
     /// Always available.
     Nothing,
+    /// A file that is on disk has to be open.
+    ///
+    /// Not the same as a file being open: a conversation is a document and
+    /// a commit's version of a file is one, and neither of them is a thing
+    /// at a path that can be moved or written over.
+    AFileOnDisk,
     /// Some file has to be open.
     AFileOpen,
     /// There has to be somewhere with a caret in it.
@@ -323,6 +331,11 @@ pub const ALL: &[CommandSpec] = &[
         command: Command::DocumentClose,
         name: "close-document",
         title: "Close what is being read",
+    },
+    CommandSpec {
+        command: Command::FileRename,
+        name: "rename-file",
+        title: "Call this file something else, or move it",
     },
     CommandSpec {
         command: Command::PreviewToggle,
@@ -622,6 +635,7 @@ impl Command {
             | Self::FileSave
             | Self::DocumentList
             | Self::DocumentClose
+            | Self::FileRename
             | Self::PreviewToggle
             // A question about the tree of files, asked before any of them
             // is open: which makes it one of the files rather than one of
@@ -720,6 +734,10 @@ impl Command {
             // asked a reasonable question, and the answer is that it is
             // already there rather than a key that does nothing.
             Self::FileSave => Requires::AFileOpen,
+            // A file on disk, which a conversation is not and a commit's
+            // version of a file is not either: what a move moves is what
+            // is at the path, and neither of those is.
+            Self::FileRename => Requires::AFileOnDisk,
             // What is open, including nothing: the list says so itself, and
             // said it to nobody while the key insisted on a file.
             Self::DocumentList => Requires::Nothing,
@@ -885,6 +903,7 @@ mod tests {
             Command::FileSave,
             Command::DocumentList,
             Command::DocumentClose,
+            Command::FileRename,
             Command::PreviewToggle,
             Command::ThemeSelect,
             Command::CommandPalette,

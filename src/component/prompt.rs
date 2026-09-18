@@ -29,6 +29,9 @@ pub enum PromptKind {
     Line,
     /// A new name for the symbol under the cursor.
     Name,
+    /// Where a file should be instead: a path rather than a name, so that
+    /// the one question moves a file as well as renames it.
+    Path,
 }
 
 impl PromptKind {
@@ -41,6 +44,11 @@ impl PromptKind {
         match self {
             Self::Line => "line: ",
             Self::Name => "rename to: ",
+            // Not "rename to: ", which is what a symbol's prompt says:
+            // two prompts with the same words on the same row are one
+            // prompt as far as a reader glancing at it is concerned, and
+            // these two change very different things.
+            Self::Path => "call it: ",
         }
     }
 
@@ -63,6 +71,10 @@ impl PromptKind {
             // a newline is the key that answers, and a blank is the reader
             // having typed nothing.
             Self::Name => !character.is_whitespace(),
+            // A path may hold anything a file name may, blanks included:
+            // `My Notes.md` is a file, and a reader typing one is not
+            // making a mistake. Only the key that answers is refused.
+            Self::Path => character != '\n' && character != '\r',
         }
     }
 
@@ -75,6 +87,7 @@ impl PromptKind {
         match self {
             Self::Line => |character| character.is_ascii_digit(),
             Self::Name => |character| !character.is_whitespace(),
+            Self::Path => |character| character != '\n' && character != '\r',
         }
     }
 }

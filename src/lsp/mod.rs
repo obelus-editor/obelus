@@ -11,6 +11,7 @@ pub mod hint;
 pub mod hover;
 pub mod outline;
 pub mod position;
+pub mod renaming;
 pub mod signature;
 pub mod snippet;
 pub mod tokens;

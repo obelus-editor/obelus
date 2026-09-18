@@ -1388,11 +1388,12 @@ fn the_keys_line_up_in_a_column() {
     let file = ends_at("open-file", Command::FileOpen);
     assert_eq!(
         file,
-        ends_at("run-command", Command::CommandPalette),
+        ends_at("close-document", Command::DocumentClose),
         "a function key and a chord do not end in the same column:\n{dump}"
     );
-    // Rows within the compact list's ten. There are more commands than that
-    // now, and the ones past it are reached by typing rather than scrolling.
+    // Rows within the compact list's ten, which is what the two above are
+    // chosen from: there are more commands than that now, and the ones past
+    // it are reached by typing rather than scrolling.
     assert_eq!(file, ends_at("reload-file", Command::FileReload), "{dump}");
 }
 

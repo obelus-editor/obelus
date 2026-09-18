@@ -1017,3 +1017,174 @@ fn a_real_server_works_out_what_the_file_does_not_say() {
     );
     client.shutdown();
 }
+
+/// A probe: what a real server asks to have changed when a file moves.
+#[test]
+#[ignore = "a measurement"]
+fn probe_what_a_move_changes() {
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+    let capabilities = client.capabilities().expect("ready");
+    eprintln!(
+        "MEASURE declares {}",
+        serde_json::to_string(&capabilities.workspace).unwrap_or_default()
+    );
+
+    let from = root().join("src/lsp/hint.rs");
+    let to = root().join("src/lsp/hints.rs");
+    let deadline = Instant::now() + INDEXED;
+    loop {
+        assert!(Instant::now() < deadline, "nothing came back");
+        let id = client
+            .request(
+                "workspace/willRenameFiles",
+                &serde_json::json!({
+                    "files": [{
+                        "oldUri": obelus::lsp::client::uri_for(&from).expect("a uri"),
+                        "newUri": obelus::lsp::client::uri_for(&to).expect("a uri"),
+                    }]
+                }),
+            )
+            .expect("asking");
+        let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+            reply.is_some_and(|reply| reply.id == id)
+        })
+        .expect("an answer");
+        match &reply.result {
+            Ok(value) if !value.is_null() => {
+                eprintln!(
+                    "MEASURE answer {}",
+                    serde_json::to_string(value)
+                        .unwrap_or_default()
+                        .chars()
+                        .take(600)
+                        .collect::<String>()
+                );
+                let wanted = obelus::lsp::edits::wanted_in(value);
+                eprintln!(
+                    "MEASURE {} changes, refused {:?}",
+                    wanted.changes.len(),
+                    wanted.refused
+                );
+                break;
+            }
+            other => {
+                eprintln!("MEASURE not yet: {other:?}");
+                std::thread::sleep(Duration::from_millis(500));
+            }
+        }
+    }
+    client.shutdown();
+}
+
+/// A file that moves takes its meaning with it, and the server says which
+/// paths it wants to hear about before that happens.
+///
+/// Two filters, and obelus reads both: `**/*.rs` for files and `**` for
+/// folders. A server that stopped declaring them would leave every move
+/// silently breaking the references to it, and the only sign would be the
+/// next build.
+#[test]
+fn a_real_server_says_which_files_it_wants_told_about_before_they_move() {
+    use obelus::lsp::renaming;
+
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+
+    let capabilities = client.capabilities().expect("ready means capabilities");
+    assert!(
+        renaming::asked_before(capabilities, &root().join("src/lsp/hint.rs"), false),
+        "rust-analyzer no longer wants asking about a Rust file that moves"
+    );
+    assert!(
+        renaming::asked_before(capabilities, &root().join("src/lsp"), true),
+        "rust-analyzer no longer wants asking about a directory that moves"
+    );
+    // And the filters are read rather than assumed: it registered `*.rs`
+    // for files, so a file that is not one is nobody's business.
+    assert!(
+        !renaming::asked_before(capabilities, &root().join("README.md"), false),
+        "obelus is asking about files the server did not register for"
+    );
+    client.shutdown();
+}
+
+/// The whole way through: ask what moving a module would change, and get
+/// back the `mod` line in another file that names it.
+///
+/// Ignored for the reason its siblings are -- a server answers `null`
+/// until it has read the project, which is the state obelus reports as
+/// "not ready" rather than as "nothing to change". Nothing is moved: the
+/// question is asked about a move that does not happen, which is exactly
+/// what the protocol is for.
+#[test]
+#[ignore = "waits for the project to be indexed"]
+fn a_real_server_works_out_what_moving_a_file_would_change() {
+    use obelus::lsp::{edits, renaming};
+
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+
+    let from = root().join("src/lsp/hint.rs");
+    let to = root().join("src/lsp/hints.rs");
+    let params = renaming::params(&from, &to).expect("two uris");
+
+    let deadline = Instant::now() + INDEXED;
+    let wanted = loop {
+        assert!(
+            Instant::now() < deadline,
+            "the server never worked out what the move changes"
+        );
+        let id = client
+            .request("workspace/willRenameFiles", &params)
+            .expect("asking");
+        let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+            reply.is_some_and(|reply| reply.id == id)
+        })
+        .expect("an answer");
+        let Ok(result) = reply.result else {
+            std::thread::sleep(Duration::from_millis(300));
+            continue;
+        };
+        // `null` while it is still reading the project, which is the
+        // answer obelus distinguishes from an empty edit.
+        let wanted = edits::wanted_in(&result);
+        if wanted.is_empty() {
+            std::thread::sleep(Duration::from_millis(300));
+            continue;
+        }
+        break wanted;
+    };
+
+    // The module list that names it. Whatever else the server finds, this
+    // is the line that would stop compiling.
+    assert!(
+        wanted
+            .changes
+            .iter()
+            .any(|change| change.path.ends_with("src/lsp/mod.rs") && change.text == "hints"),
+        "the `mod hint;` line was not among the changes: {:?}",
+        wanted.changes
+    );
+    // And no file operations: rust-analyzer leaves the move itself to
+    // obelus and only says what the text has to become. If that ever
+    // changed, obelus would be refusing an operation it had asked for.
+    assert!(
+        wanted.refused.is_empty(),
+        "the server asked obelus to move files itself: {:?}",
+        wanted.refused
+    );
+    client.shutdown();
+}

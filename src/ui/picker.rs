@@ -112,6 +112,11 @@ pub fn hints(picker: &Picker) -> Vec<Hint> {
             .saying("offer the files the tree ignores, or leave them out")
             .set(offering.unwrap_or(false))
             .when(offering.is_some()),
+        // Not a switch: what it does depends on the row the reader is on,
+        // which is why it draws no setting.
+        Hint::common(alt('n'), "rename")
+            .saying("put this file or directory somewhere else, or call it something else")
+            .when(offering.is_some()),
     ]
 }
 

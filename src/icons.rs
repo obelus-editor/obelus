@@ -248,6 +248,10 @@ pub fn for_command(command: crate::command::Command) -> char {
         // A floppy disk, which nobody has seen for twenty years and
         // everybody still reads as save.
         Command::FileSave => '\u{f0193}',
+        // A folder with an arrow off it: what this does to a file is put
+        // it somewhere, and calling it something else is putting it
+        // somewhere with a different name.
+        Command::FileRename => '\u{f0770}',
         Command::DocumentList => '\u{f0222}',
         Command::DocumentClose => '\u{f0b98}',
         Command::PreviewToggle => '\u{f0354}',

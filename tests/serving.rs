@@ -259,6 +259,22 @@ fn what_obelus_says_it_can_do() {
         workspace.did_change_watched_files.is_some(),
         "obelus tells servers about files that changed on disk"
     );
+    // `app::moving_files`. A server that has not been told this never
+    // registers a filter, and every file obelus moves quietly leaves the
+    // project naming a module that is no longer there.
+    let operations = workspace
+        .file_operations
+        .expect("nothing about files that move");
+    assert_eq!(
+        operations.will_rename,
+        Some(true),
+        "obelus asks what a move changes and would never be answered"
+    );
+    assert_eq!(
+        operations.did_rename,
+        Some(true),
+        "a server that only wants telling afterwards would never be told"
+    );
 
     // Progress, which is the only thing that tells a server still
     // indexing from one that has answered with nothing.

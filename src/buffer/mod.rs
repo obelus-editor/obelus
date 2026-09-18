@@ -1052,6 +1052,17 @@ impl Buffer {
         &self.path
     }
 
+    /// Says the document is somewhere else now.
+    ///
+    /// The same document, moved: the text, what has been undone and not
+    /// redone, where the caret is and what is selected all stay, because
+    /// none of them is about where the file sits. Closing it and opening
+    /// the new path would throw every one of those away to change a
+    /// string.
+    pub fn moved_to(&mut self, path: PathBuf) {
+        self.path = path;
+    }
+
     /// The document's text.
     #[must_use]
     pub const fn text(&self) -> &Text {

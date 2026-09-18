@@ -265,7 +265,7 @@ impl App {
     /// Bumping the generation first is what tells the walk before it --
     /// another opening, another answer about which files to offer -- that
     /// nobody is waiting for it any more.
-    fn start_walk(&mut self) {
+    pub(super) fn start_walk(&mut self) {
         self.walk_generation += 1;
         self.found.clear();
         let Some(sender) = self.events.clone() else {
@@ -286,7 +286,16 @@ impl App {
     /// and a query, and this is about where the rows come from -- and
     /// because a setting is the application's to keep.
     pub(super) fn listing_key(&mut self, key: &KeyEvent) -> bool {
-        if key.modifiers != KeyModifiers::ALT || key.code != KeyCode::Char('i') {
+        if key.modifiers != KeyModifiers::ALT {
+            return false;
+        }
+        // Where the row is, which is a question about the row rather than
+        // about the list: it is the one key here that acts on what the
+        // reader is standing on.
+        if key.code == KeyCode::Char('n') {
+            return self.rename_selected();
+        }
+        if key.code != KeyCode::Char('i') {
             return false;
         }
         // Only where the key means something: on the changed tab these rows
@@ -1226,5 +1235,18 @@ pub(super) fn reload(buffer: &mut Buffer) -> bool {
             tracing::warn!(%error, path = %buffer.path().display(), "reload failed");
             false
         }
+    }
+}
+
+/// The path a row of a file list stands for, relative to the tree's root.
+///
+/// `None` for a row that is not a place on disk. Both shapes of the list
+/// put the same value in a row -- the flat listing's label is the whole
+/// path and the tree's is only the last part of it -- so this is what tells
+/// two rows apart when their labels cannot.
+pub(super) fn path_of_row(item: &PickerItem) -> Option<&Path> {
+    match &item.value {
+        PickerValue::File(path) | PickerValue::Directory(path) => Some(path),
+        _ => None,
     }
 }

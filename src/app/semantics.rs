@@ -1068,6 +1068,10 @@ impl App {
                 self.on_rename(question.buffer, question.version, reply);
                 return;
             }
+            Asked::WillRename => {
+                self.on_will_rename(language, reply);
+                return;
+            }
             Asked::Prepared => {
                 self.on_prepared(question.buffer, language, reply);
                 return;
@@ -1860,6 +1864,11 @@ pub(super) enum Asked {
     /// Everywhere a symbol would have to change to be called something
     /// else.
     Rename,
+    /// What has to change because a file is about to be somewhere else.
+    ///
+    /// The one question whose answer is not about a document: it is about
+    /// a path, and the file it names may not be open at all.
+    WillRename,
     /// The item a tree of calls will be rooted at.
     ///
     /// Apart from [`Asked::Symbol`] although it is asked from the same

@@ -34,6 +34,7 @@ mod naming;
 mod preferences;
 mod previewing;
 mod renaming;
+mod renaming_files;
 mod searching;
 mod semantics;
 pub mod talking;
@@ -387,6 +388,13 @@ pub struct App {
     /// because it is the walk that knows which files are only there
     /// because the reader asked for them.
     found: Vec<(PathBuf, bool)>,
+    /// A rename of a file, from the question to the act.
+    ///
+    /// The gap between the two is a round trip: a server that knows the
+    /// language knows which other files name this one by where it is, and
+    /// obelus asks before renaming it rather than leaving the reader to
+    /// find out from the next build.
+    renaming: Option<renaming_files::Renaming>,
     /// Which directories of the file tree are open, relative to the root.
     ///
     /// Beside the list rather than in it, the way a history's opened commit
@@ -571,6 +579,7 @@ impl App {
             given_statuses: None,
             listing: Vec::new(),
             found: Vec::new(),
+            renaming: None,
             opened: std::collections::HashSet::new(),
             history: history_view::Showing::default(),
             calls: None,
@@ -1357,7 +1366,11 @@ impl App {
             self.wants_animating(doing.is_some())
                 || self.anything_behind()
                 || self.is_resting()
-                || self.settling.is_some(),
+                || self.settling.is_some()
+                // And a rename waiting on a server: the clock is what ends
+                // that wait, so a clock that is asleep would leave the
+                // reader's file where it was for ever.
+                || self.renaming_is_waiting(),
         );
 
         // Which rows the list will draw is what decides which rows need
@@ -1629,6 +1642,11 @@ impl App {
                 // is one parse for a burst of typing rather than one per
                 // key.
                 self.settle_syntax();
+                // And the end of the wait for a server that was asked what
+                // a rename changes. A file the reader asked to be called
+                // something else is not held up by a subprocess that
+                // stopped talking.
+                self.rename_without_them();
             }
             Event::Matches {
                 generation,

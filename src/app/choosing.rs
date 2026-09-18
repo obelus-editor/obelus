@@ -149,6 +149,7 @@ impl App {
         match command.requires() {
             Requires::Nothing => true,
             Requires::AFileOpen => buffer.is_some(),
+            Requires::AFileOnDisk => buffer.is_some_and(|buffer| buffer.content().is_file()),
             // A file, or a box a reader is typing into. The same places a
             // paste goes into, asked as one question rather than in order:
             // what these keys need is that there is somewhere with a caret

@@ -29,8 +29,8 @@ use lsp_types::{
     SemanticTokensFullOptions, ServerCapabilities, SignatureHelpClientCapabilities,
     SignatureInformationSettings, TextDocumentClientCapabilities,
     TextDocumentSyncClientCapabilities, TokenFormat, Uri, WindowClientCapabilities,
-    WorkspaceClientCapabilities, WorkspaceEditClientCapabilities, WorkspaceFolder,
-    WorkspaceSymbolClientCapabilities,
+    WorkspaceClientCapabilities, WorkspaceEditClientCapabilities,
+    WorkspaceFileOperationsClientCapabilities, WorkspaceFolder, WorkspaceSymbolClientCapabilities,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -970,6 +970,19 @@ pub fn client_capabilities() -> ClientCapabilities {
             symbol: Some(WorkspaceSymbolClientCapabilities::default()),
             execute_command: Some(ExecuteCommandClientCapabilities::default()),
             did_change_watched_files: Some(DidChangeWatchedFilesClientCapabilities::default()),
+            // A file that moves takes its meaning with it, and the server
+            // is the only thing that knows which other files said that
+            // meaning out loud. Asked for both: `willRename` is the
+            // question whose answer is an edit, and `didRename` is how a
+            // server that registered only the second still learns the
+            // file is gone from where it was.
+            //
+            // Not `willCreate` or `willDelete`: obelus does neither.
+            file_operations: Some(WorkspaceFileOperationsClientCapabilities {
+                will_rename: Some(true),
+                did_rename: Some(true),
+                ..Default::default()
+            }),
             // Not `configuration`: obelus keeps no per-server settings,
             // so a server that asked would be asked to wait for an answer
             // of nulls. It is answered when it comes anyway, because the

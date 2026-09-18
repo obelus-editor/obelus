@@ -53,6 +53,12 @@ nucleo-matcher = "0.3"
 # Walking the tree for the file picker, respecting .gitignore.
 ignore = "0.4"
 
+# The globs a language server declares for the files it wants to hear about
+# before they move. Already in the tree under `ignore`; named here because
+# this crate matches patterns of its own against paths, which is a thing to
+# say out loud rather than to reach through another crate for.
+globset = "0.4"
+
 # The search's patterns. Already in the tree by way of `ignore` and `tokei`,
 # so this states a dependency obelus was compiling anyway rather than adding
 # one. `default-features = false` with `std`, `perf` and `unicode` kept: what

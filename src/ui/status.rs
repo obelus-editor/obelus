@@ -10,7 +10,7 @@ use ratatui::{
 };
 
 use crate::{
-    app::App,
+    app::{App, layers::Layer},
     buffer::Buffer,
     component::picker::Picker,
     icons,
@@ -42,6 +42,13 @@ pub struct StatusView<'a> {
     settings: Option<&'a crate::component::settings::Settings>,
     /// And when a question is being asked, the row is the question.
     prompt: Option<&'a crate::component::prompt::Prompt>,
+    /// Which of them is nearest the reader, and so whose row this is.
+    ///
+    /// The same question the caret asks. Three of these can be on screen
+    /// at once and only one of them is taking the keys: a question asked
+    /// on the status row opens *over* a list rather than closing it, so
+    /// the list is not always the nearest thing any more.
+    nearest: Option<Layer>,
     theme: &'a Theme,
     troubles: &'a [crate::lsp::trouble::Trouble],
     working_directory: &'a Path,
@@ -60,6 +67,7 @@ impl<'a> StatusView<'a> {
             picker: app.picker(),
             settings: app.settings(),
             prompt: app.prompt(),
+            nearest: app.layers().nearest(),
             theme: app.theme(),
             working_directory: app.working_directory(),
         }
@@ -84,43 +92,43 @@ impl Widget for StatusView<'_> {
         // what made the difference visible.
         fill(cells, area, style);
 
-        // A list first, whatever it is over. It is the thing taking the
-        // keys and the thing the caret is in, and a row belonging to what
-        // is behind it would be a prompt with somebody else's words in it.
-        if let Some(picker) = self.picker {
-            self.render_prompt(picker, area, cells, style);
-        } else if let Some(prompt) = self.prompt {
-            // The whole row is the question. Nothing else on it: a file name
-            // beside a half-typed line number is two things asking to be
-            // read at once.
-            write(cells, area.x + 1, area.y, &prompt.line(), style);
-        } else if let Some(settings) = self.settings {
+        // Whose row this is: whatever is nearest the reader, which is the
+        // thing taking the keys and the thing the caret is in. One match
+        // on one value, the way the caret asks it, rather than a chain
+        // whose order stands for an assumption -- the chain used to put
+        // the list first because nothing could open over it, and a
+        // question on the status row can.
+        match self.nearest {
+            // The whole row is the question. Nothing else on it: a file
+            // name beside a half-typed line number is two things asking to
+            // be read at once.
+            Some(Layer::Prompt) => {
+                if let Some(prompt) = self.prompt {
+                    write(cells, area.x + 1, area.y, &prompt.line(), style);
+                }
+            }
+            Some(Layer::Picker) => {
+                if let Some(picker) = self.picker {
+                    self.render_prompt(picker, area, cells, style);
+                }
+            }
             // The same shape a picker's prompt has, because it is the same
             // thing: what has been typed narrows what is above it. And
             // nothing else on the row -- what narrowing did is on the
             // screen above it, in the rows themselves.
-            let said = settings.query();
-            let marked = match settings.query_held() {
-                Some(held) => {
-                    let ahead = typed(None, "").chars().count();
-                    Marked::run(
-                        held.start + ahead..held.end + ahead,
-                        self.theme.selection_background,
-                    )
+            Some(Layer::Settings) => {
+                if let Some(settings) = self.settings {
+                    self.render_filter(settings, area, cells, style);
                 }
-                None => Marked::plain(),
-            };
-            write_marked(
-                cells,
-                area,
-                area.x + 1,
-                area.y,
-                &typed(None, &said),
-                style,
-                &marked,
-            );
-        } else if let Some(buffer) = self.buffer {
-            self.render_file(buffer, area, cells, style);
+            }
+            // Nothing over the file, or something that has no use for this
+            // row: the notes and the counts are read in the region above
+            // it, and what the row says is what is being read.
+            _ => {
+                if let Some(buffer) = self.buffer {
+                    self.render_file(buffer, area, cells, style);
+                }
+            }
         }
     }
 }
@@ -466,6 +474,36 @@ impl StatusView<'_> {
     /// rows above: a reader can see whether the list is long, and a number
     /// on the row they are typing into is a number in the corner of their
     /// eye.
+    /// What has been typed to narrow the settings.
+    fn render_filter(
+        &self,
+        settings: &crate::component::settings::Settings,
+        area: Rect,
+        cells: &mut CellBuffer,
+        style: Style,
+    ) {
+        let said = settings.query();
+        let marked = match settings.query_held() {
+            Some(held) => {
+                let ahead = typed(None, "").chars().count();
+                Marked::run(
+                    held.start + ahead..held.end + ahead,
+                    self.theme.selection_background,
+                )
+            }
+            None => Marked::plain(),
+        };
+        write_marked(
+            cells,
+            area,
+            area.x + 1,
+            area.y,
+            &typed(None, &said),
+            style,
+            &marked,
+        );
+    }
+
     fn render_prompt(&self, picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style) {
         let said = picker.query();
         let line = typed(picker.question(), &said);
