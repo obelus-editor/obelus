@@ -1347,6 +1347,15 @@ impl App {
     /// Private: it has to run before the frame is drawn, and the only thing
     /// that knows that is [`App::draw_into`], which is the one caller.
     fn prepare(&mut self, editor_area: Rect) {
+        // What this frame has, before anything is laid out against it.
+        // Everything below asks for the room through `editor_area`, so
+        // setting it afterwards laid the notes out at the width the *last*
+        // frame had -- right on a screen that is not changing, and wrong on
+        // every frame that changed it: the view opening, a terminal
+        // resized, a region growing as something over it closes. The next
+        // redraw put it right, so what a reader saw was their words go and
+        // come back.
+        self.editor_area = editor_area;
         // The notes are laid out against the room they have: a terminal is
         // resized and a setting is changed while they are open, and the rows
         // they are made of depend on both.
@@ -1354,7 +1363,6 @@ impl App {
         if let Some(notes) = self.notes.as_mut() {
             notes.lay_out(laid.0, laid.1);
         }
-        self.editor_area = editor_area;
         self.check_servers();
         // What the conversation says is happening, read off the state
         // rather than remembered: a row that is worked out every frame

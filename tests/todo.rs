@@ -1429,3 +1429,39 @@ fn a_note_that_outlives_its_parent_is_written_at_a_depth_it_reads_back_at() {
     );
     assert_eq!(written, vec![0, 1]);
 }
+
+/// The notes are laid out against the room they have now.
+///
+/// Read off the frame being drawn rather than the one before it. The width
+/// was taken from what the last frame had and only then replaced, so every
+/// frame that changed the geometry -- the view opening, a terminal resized,
+/// a region growing as something over it closes -- laid the notes out at a
+/// width they no longer had, and the next redraw put it right. A reader saw
+/// their words go and come back.
+#[test]
+fn the_notes_are_wrapped_to_the_width_of_the_frame_being_drawn() {
+    let long = "a note long enough that where it wraps says which width it was laid out at";
+    let scratch = tree("width-now", &format!("[[todo]]\nsaid = \"{long}\"\ndone = false\n"));
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(
+        obelus::config::Config {
+            wrap: true,
+            ..obelus::config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 100, 18);
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+    support::lay_out(&mut app, 100, 18);
+    let wide = app.notes().expect("the view").rows().len();
+
+    // Narrower, and the very first frame at the new width: the same note
+    // takes more rows, and taking the old width's number is the bug.
+    let dump = support::render(&mut app, 40, 18);
+    let narrow = app.notes().expect("the view").rows().len();
+    assert!(
+        narrow > wide,
+        "the first frame at the new width used the old one: {wide} rows wide, {narrow} narrow\n{dump}"
+    );
+}
