@@ -477,27 +477,79 @@ project is three rust-analyzers.
 src/
   app/            state, the loop's handler, and every picker's item source,
                   by aspect: documents, moving, searching, choosing, agents
+                  · a commit's message hangs above its file (history); a
+                    history is one view at two radii (history_view); a
+                    preview is of a subject, not of a path (previewing); a
+                    tree may carry settings, and a tree is not the reader,
+                    and the reader's is the layer it is laid over
+                    (preferences)
   text.rs         the Rope wrapper: the only place coordinates convert
   buffer/         one open file: text, syntax, cursor, viewport
+                  · an edit knows where it happened; do not read over an
+                    edit (mod); a folded line has no rows, what folds comes
+                    from the indentation, a hunk opens where it is, a fold
+                    across an edit is not one across a re-read (folds);
+                    undo groups by what the reader was doing (undo)
   keymap.rs       chords, contexts, the default table, modifiers_of
+                  · `why_not` is the one judgement of what may be bound;
+                    keys are rebound on the keys page; modifiers are judged
+                    exactly, in one place
   icons.rs        the Nerd Font switch and every glyph behind it
   config.rs       the settings, their file, and what each one is
+                  · what a tree may set is a property of the setting; the
+                    file holds preferences, not state
+  logging.rs      two logs split by module, and where a panic goes
   command/        the Command enum, its table, groups, and dispatch
   component/      picker (one component, several instantiations), settings,
                   the conversation, the box a message is written in, and the
                   window every list shares
+                  · a query is about the rows the list is of, whether it
+                    ranks is settled per tab, a list still arriving sits
+                    still, say "still reading" where it moves nothing,
+                    which tabs a view has must be cheap (picker); a list
+                    obelus offers is the reader's own tree (picker/files);
+                    a question is a card, not a picker (card); a tool call
+                    is somewhere to go, the transcript's cursor stands only
+                    on rows that do something, a run of tool calls is one
+                    row, thinking is not folded away (chat); a setting is
+                    two rows, and a name and a gloss (settings)
   counts.rs       how much code is here: tokei's walk, in the two orderings
                   the view reads it in
+  reading/        what a file is when it is not code: markdown, a log
+                  · a log's format is decided by its lines, not its name
   syntax/         language registry (14 languages), parsing, highlights, tags
   lsp/            transport, client, actions, positions, outline
   git/            gix, reading only: head text, statuses, hunks, blame, history
+                  · the diff base is the blob a checkout would write, and
+                    reading it must not run anything (mod); a blame is about
+                    a version, and the margin knew which commit (blame);
+                    what the remote has not seen is marked (history)
   agent/          the ACP registry, installing an agent, its marks
+                  · an agent is installed when the install says so, in
+                    writing (install)
   acp/            the protocol, through its own crate, and the thread that
                   joins it to the loop
+                  · why the runtime is current-thread, why the two
+                    directions are not symmetrical, the one ordering the
+                    protocol does not promise, and what an agent asking
+                    something may ask for (link); an agent that stopped is
+                    started again by talking to it (mod)
   ui/             editor, status bar, picker, settings, chat, welcome,
                   images, shared cell writers
+                  · what the bar measures is what is shown, the caret can be
+                    in the block, a bar is a block, a column a file might
+                    need is reserved for the whole file (editor); everything
+                    that scrolls says so (mod); a header says what a thing
+                    is, the foot says what is happening (chat)
 tests/            integration tests plus tests/fixtures/*.txt golden grids
+                  · why the fake agent is `sh`, and what it checks back
+                    (agent)
 ```
+
+A `·` line is the rules that live in that module's own doc rather than here,
+by the sentence they open with. They are there because they are read at the
+moment they matter -- and listed here because a rule you only meet by opening
+the file is a rule you break while deciding not to open it.
 
 Two rules the views share and neither enforces: **leave a blank column after
 a Nerd Font glyph** (the non-`Mono` variants draw two cells wide while the
