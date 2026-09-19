@@ -161,7 +161,7 @@ pub struct App {
     ///
     /// Bumped every time a file picker opens, so batches from a walk whose
     /// picker has already closed are recognizable and dropped.
-    walk_generation: u64,
+    walk_generation: crate::cancel::Latest,
     /// A line whose commit was asked for before anything knew who wrote it.
     ///
     /// The walk that names lines is only started for a reader who wants
@@ -183,7 +183,7 @@ pub struct App {
     /// to find out that nobody is waiting for it any more: a whole history
     /// is a walk of the whole project, and there is nothing else to stop it
     /// with.
-    history_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    history_generation: crate::cancel::Latest,
     /// Sender for the background walk, once the loop has started.
     events: Option<std::sync::mpsc::Sender<Event>>,
     /// One language server per language, started when a file of that language
@@ -485,7 +485,7 @@ pub struct App {
     /// batches for the query before it are recognizable as stale. Shared
     /// with the scanning threads, which read it to find out that they are
     /// answering a question nobody is asking any more.
-    search_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    search_generation: crate::cancel::Latest,
     /// Something to tell the reader, until the next key.
     ///
     /// Half of what a language server does is answer with nothing, and
@@ -614,13 +614,13 @@ impl App {
             searched: None,
             looking: search::Looking::default(),
             outside: false,
-            search_generation: std::sync::Arc::default(),
-            history_generation: std::sync::Arc::default(),
+            search_generation: crate::cancel::Latest::default(),
+            history_generation: crate::cancel::Latest::default(),
             asked_line: None,
             rendered: None,
             theme_before: None,
             note: None,
-            walk_generation: 0,
+            walk_generation: crate::cancel::Latest::default(),
             events: None,
             watcher: None,
             theme_watched: Vec::new(),
@@ -881,8 +881,7 @@ impl App {
     /// test that waited for one would be a test that sometimes did not.
     #[must_use]
     pub fn history_walk_for_test(&self) -> u64 {
-        self.history_generation
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.history_generation.now()
     }
 
     /// Which document is being read, for a test that wants to know whether
@@ -1722,11 +1721,7 @@ impl App {
             } => {
                 // A batch from a walk whose list is gone, or from one
                 // superseded by another tab, another file, another key.
-                if generation
-                    == self
-                        .history_generation
-                        .load(std::sync::atomic::Ordering::Relaxed)
-                {
+                if self.history_generation.is_current(generation) {
                     self.on_logged(commits, walked, done);
                 }
             }
@@ -1737,7 +1732,7 @@ impl App {
             } => {
                 // A batch from a walk whose picker is gone, or from one
                 // superseded by a later open.
-                if generation != self.walk_generation {
+                if !self.walk_generation.is_current(generation) {
                     return;
                 }
                 // Kept as well as shown. A file list is a tree while

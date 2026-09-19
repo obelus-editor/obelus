@@ -25,11 +25,7 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-        mpsc::Sender,
-    },
+    sync::mpsc::Sender,
     time::{Duration, Instant},
 };
 
@@ -103,71 +99,63 @@ pub fn of(within: &Path, only: Option<&Path>, limit: usize) -> Vec<Commit> {
 pub fn spawn_log(
     within: &Path,
     only: Option<&Path>,
-    generation: u64,
-    current: &Arc<AtomicU64>,
+    wanted: crate::cancel::Wanted,
     sender: Sender<Event>,
 ) {
     let within = within.to_path_buf();
     let only = only.map(Path::to_path_buf);
-    let current = Arc::clone(current);
-    let outcome = std::thread::Builder::new()
-        .name("obelus-history".to_string())
-        .spawn(move || {
-            let mut batch = Vec::new();
-            let mut walked = 0usize;
-            let mut sent = Instant::now();
-            let mut stopped = false;
+    crate::runtime::handle().spawn_blocking(move || {
+        let mut batch = Vec::new();
+        let mut walked = 0usize;
+        let mut sent = Instant::now();
+        let mut stopped = false;
 
-            walk(&within, only.as_deref(), |commit| {
-                walked += 1;
-                if let Some(commit) = commit {
-                    batch.push(commit);
-                }
-                // On a clock rather than on a count. A project's walk finds a
-                // commit every step and a file's finds one every thousand,
-                // and both want the same thing from the reader's side: rows
-                // often enough to read, seldom enough not to redraw the
-                // screen raw.
-                if sent.elapsed() < TICK {
-                    return true;
-                }
-                sent = Instant::now();
-                if current.load(Ordering::Relaxed) != generation {
-                    stopped = true;
-                    return false;
-                }
-                let commits = std::mem::take(&mut batch);
-                if sender
-                    .send(Event::Logged {
-                        generation,
-                        commits,
-                        walked,
-                        done: false,
-                    })
-                    .is_err()
-                {
-                    stopped = true;
-                    return false;
-                }
-                true
-            });
-
-            // Nobody is waiting for the end of a walk they have already
-            // moved off: saying it is done would be answering a question
-            // that was withdrawn.
-            if !stopped {
-                let _ = sender.send(Event::Logged {
-                    generation,
-                    commits: batch,
-                    walked,
-                    done: true,
-                });
+        walk(&within, only.as_deref(), |commit| {
+            walked += 1;
+            if let Some(commit) = commit {
+                batch.push(commit);
             }
+            // On a clock rather than on a count. A project's walk finds a
+            // commit every step and a file's finds one every thousand,
+            // and both want the same thing from the reader's side: rows
+            // often enough to read, seldom enough not to redraw the
+            // screen raw.
+            if sent.elapsed() < TICK {
+                return true;
+            }
+            sent = Instant::now();
+            if !wanted.still() {
+                stopped = true;
+                return false;
+            }
+            let commits = std::mem::take(&mut batch);
+            if sender
+                .send(Event::Logged {
+                    generation: wanted.generation(),
+                    commits,
+                    walked,
+                    done: false,
+                })
+                .is_err()
+            {
+                stopped = true;
+                return false;
+            }
+            true
         });
 
-    if let Err(error) = outcome {
-        tracing::warn!(%error, "not reading the history");
-    }
+        // Nobody is waiting for the end of a walk they have already
+        // moved off: saying it is done would be answering a question
+        // that was withdrawn.
+        if !stopped {
+            let _ = sender.send(Event::Logged {
+                generation: wanted.generation(),
+                commits: batch,
+                walked,
+                done: true,
+            });
+        }
+    });
 }
 
 /// How often a walk in progress hands over what it has found.

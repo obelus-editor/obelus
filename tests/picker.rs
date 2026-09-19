@@ -891,7 +891,16 @@ fn the_walk_offers_the_ignored_files_only_when_asked() {
 
     let found = |ignored: bool, generation: u64| -> Vec<String> {
         let (sender, events) = std::sync::mpsc::channel();
-        obelus::component::picker::files::spawn_walk(scratch.path(), generation, ignored, sender);
+        let latest = obelus::cancel::Latest::default();
+        for _ in 0..generation {
+            latest.next();
+        }
+        obelus::component::picker::files::spawn_walk(
+            scratch.path(),
+            latest.claim(generation),
+            ignored,
+            sender,
+        );
         let mut names = Vec::new();
         while let Ok(Event::FilesFound { paths, .. }) = events.recv() {
             names.extend(paths.into_iter().map(|path| path.display().to_string()));
@@ -3779,4 +3788,42 @@ fn a_rule_is_a_rule_over_whatever_is_under_it() {
             "a rule grew a junction: {rule:?}\n{dump}"
         );
     }
+}
+
+/// A walk nobody is waiting for stops, rather than reading the whole tree
+/// to be thrown away.
+///
+/// The picker can be opened and closed, or the ignored-files switch
+/// flipped, faster than a tree can be walked. Every attempt used to run to
+/// the end on a thread of its own, and its batches were recognised as stale
+/// and dropped -- a number on the answer, not a way to stop the question.
+/// The search and the history walk had both been asking whether anybody
+/// still wanted them for a long time; this one had not.
+#[test]
+fn a_walk_nobody_wants_stops() {
+    use obelus::{cancel::Latest, component::picker::files, event::Event};
+
+    let scratch = support::Scratch::new("walk-cancelled");
+    // Enough files that the walk sends several batches, so there is a
+    // second one for it to give up before.
+    for n in 0..4000 {
+        scratch.write(&format!("src/f{n}.rs"), "fn f() {}\n");
+    }
+
+    let latest = Latest::default();
+    let mine = latest.next();
+    let (sender, events) = std::sync::mpsc::channel();
+    files::spawn_walk(scratch.path(), latest.claim(mine), false, sender);
+
+    // The reader asks for something else before the walk has finished.
+    latest.next();
+
+    let mut found = 0;
+    while let Ok(Event::FilesFound { paths, .. }) = events.recv() {
+        found += paths.len();
+    }
+    assert!(
+        found < 4000,
+        "the walk read the whole tree for nobody: {found} paths"
+    );
 }

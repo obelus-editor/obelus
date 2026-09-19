@@ -272,14 +272,14 @@ impl App {
     /// another opening, another answer about which files to offer -- that
     /// nobody is waiting for it any more.
     pub(super) fn start_walk(&mut self) {
-        self.walk_generation += 1;
+        let mine = self.walk_generation.next();
         self.found.clear();
         let Some(sender) = self.events.clone() else {
             return;
         };
         files::spawn_walk(
             &self.working_directory,
-            self.walk_generation,
+            self.walk_generation.claim(mine),
             self.config().ignored_files,
             sender,
         );

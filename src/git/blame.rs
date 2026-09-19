@@ -87,15 +87,10 @@ pub fn line_of(
 /// what it is about, because the reader may be somewhere else by then.
 pub fn spawn_blame(path: &Path, at: Option<gix::ObjectId>, sender: Sender<Event>) {
     let path = path.to_path_buf();
-    let outcome = std::thread::Builder::new()
-        .name("obelus-blame".to_string())
-        .spawn(move || {
-            let lines = lines_of(&path, at).unwrap_or_default();
-            let _ = sender.send(Event::Blamed { path, at, lines });
-        });
-    if let Err(error) = outcome {
-        tracing::warn!(%error, "not blaming");
-    }
+    crate::runtime::handle().spawn_blocking(move || {
+        let lines = lines_of(&path, at).unwrap_or_default();
+        let _ = sender.send(Event::Blamed { path, at, lines });
+    });
 }
 
 /// Who changed each line of a version of a file.

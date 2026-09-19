@@ -12,6 +12,7 @@ pub mod acp;
 pub mod agent;
 pub mod app;
 pub mod buffer;
+pub mod cancel;
 pub mod clipboard;
 pub mod command;
 pub mod component;

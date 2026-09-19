@@ -42,29 +42,28 @@ const BATCH: usize = 512;
 ///
 /// A thread because `WalkBuilder` is a blocking API, and the walk of a large
 /// tree is long enough that the picker has to be usable while it runs.
-pub fn spawn_walk(root: &Path, generation: u64, ignored: bool, sender: Sender<Event>) {
+pub fn spawn_walk(
+    root: &Path,
+    wanted: crate::cancel::Wanted,
+    ignored: bool,
+    sender: Sender<Event>,
+) {
     let root = root.to_path_buf();
-    let outcome = std::thread::Builder::new()
-        .name("obelus-walk".to_string())
-        .spawn(move || {
-            // The files the tree keeps, first and on their own: they are what
-            // a reader is usually after, and this is the quick walk -- it is
-            // the one that does not descend into `target`.
-            let mut sent = HashSet::new();
-            if !walk(&root, true, generation, &sender, &mut sent) || !ignored {
-                return;
-            }
-            // And then the ones it does not keep, which are whatever the
-            // first walk did not send. Asking a second matcher whether a path
-            // is ignored would be asking the same question twice and leaving
-            // the two answers free to differ; this way "ignored" means
-            // exactly "the walk that obeys the rules did not offer it".
-            walk(&root, false, generation, &sender, &mut sent);
-        });
-
-    if let Err(error) = outcome {
-        tracing::warn!(%error, "not walking the tree");
-    }
+    crate::runtime::handle().spawn_blocking(move || {
+        // The files the tree keeps, first and on their own: they are what
+        // a reader is usually after, and this is the quick walk -- it is
+        // the one that does not descend into `target`.
+        let mut sent = HashSet::new();
+        if !walk(&root, true, &wanted, &sender, &mut sent) || !ignored {
+            return;
+        }
+        // And then the ones it does not keep, which are whatever the
+        // first walk did not send. Asking a second matcher whether a path
+        // is ignored would be asking the same question twice and leaving
+        // the two answers free to differ; this way "ignored" means
+        // exactly "the walk that obeys the rules did not offer it".
+        walk(&root, false, &wanted, &sender, &mut sent);
+    });
 }
 
 /// One walk over the tree, sending what it finds in batches.
@@ -78,7 +77,7 @@ pub fn spawn_walk(root: &Path, generation: u64, ignored: bool, sender: Sender<Ev
 fn walk(
     root: &Path,
     obeying: bool,
-    generation: u64,
+    wanted: &crate::cancel::Wanted,
     sender: &Sender<Event>,
     sent: &mut HashSet<PathBuf>,
 ) -> bool {
@@ -119,11 +118,18 @@ fn walk(
         batch.push(path);
 
         if batch.len() >= BATCH {
+            // Asked where the walk is already pausing to send. A list
+            // opened and closed twice used to leave two walks reading the
+            // whole tree for nobody; now the second batch of each is the
+            // last thing it does.
+            if !wanted.still() {
+                return false;
+            }
             let paths = std::mem::replace(&mut batch, Vec::with_capacity(BATCH));
             // The receiver is gone, so the loop has ended.
             if sender
                 .send(Event::FilesFound {
-                    generation,
+                    generation: wanted.generation(),
                     paths,
                     ignored: !obeying,
                 })
@@ -134,9 +140,9 @@ fn walk(
         }
     }
 
-    if !batch.is_empty() {
+    if !batch.is_empty() && wanted.still() {
         let _ = sender.send(Event::FilesFound {
-            generation,
+            generation: wanted.generation(),
             paths: batch,
             ignored: !obeying,
         });

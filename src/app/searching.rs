@@ -111,17 +111,14 @@ impl App {
     /// tests, which have to say which search they are answering.
     #[must_use]
     pub fn search_generation(&self) -> u64 {
-        self.search_generation
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.search_generation.now()
     }
 
     /// Says that what is being asked has changed, and returns the generation
     /// the answers must now carry. Every earlier scan learns from this that
     /// it can stop.
     fn ask_again(&mut self) -> u64 {
-        self.search_generation
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            + 1
+        self.search_generation.next()
     }
 
     /// Works out what the characters of the rows on screen *are*.
@@ -464,9 +461,8 @@ impl App {
             search::spawn_scan(
                 &self.working_directory,
                 &needle,
-                generation,
+                self.search_generation.claim(generation),
                 self.config().ignored_files,
-                &self.search_generation,
                 sender,
             );
         }
@@ -474,7 +470,7 @@ impl App {
 
     /// Puts a batch of matching lines into the list waiting for them.
     pub(super) fn on_matches(&mut self, generation: u64, hits: Vec<search::Hit>, done: bool) {
-        if generation != self.search_generation() {
+        if !self.search_generation.is_current(generation) {
             tracing::debug!(
                 generation,
                 "dropping matches for a query already typed past"

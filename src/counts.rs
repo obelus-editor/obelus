@@ -241,28 +241,23 @@ fn extension_of(kind: tokei::LanguageType) -> Option<&'static str> {
 /// late answer here does.
 pub fn spawn_count(root: &Path, sender: Sender<Event>) {
     let root = root.to_path_buf();
-    let started = std::thread::Builder::new()
-        .name("obelus-count".to_string())
-        .spawn(move || {
-            let mut languages = tokei::Languages::new();
-            // No excluded paths of its own: what to leave out is
-            // `.gitignore`'s answer, which the walk already obeys, and a
-            // second list here would be obelus disagreeing with the file
-            // list about what is in the project.
-            languages.get_statistics(&[&root], &[], &tokei::Config::default());
-            let counted = Counted::from_tokei(&languages, &root);
-            tracing::debug!(
-                files = counted.files.len(),
-                languages = counted.languages.len(),
-                code = counted.total.code,
-                "counted the tree"
-            );
-            // The receiver is gone, which means the loop has ended.
-            let _ = sender.send(Event::Counted(Box::new(counted)));
-        });
-    if let Err(error) = started {
-        tracing::error!(%error, "spawning the counting thread");
-    }
+    crate::runtime::handle().spawn_blocking(move || {
+        let mut languages = tokei::Languages::new();
+        // No excluded paths of its own: what to leave out is
+        // `.gitignore`'s answer, which the walk already obeys, and a
+        // second list here would be obelus disagreeing with the file
+        // list about what is in the project.
+        languages.get_statistics(&[&root], &[], &tokei::Config::default());
+        let counted = Counted::from_tokei(&languages, &root);
+        tracing::debug!(
+            files = counted.files.len(),
+            languages = counted.languages.len(),
+            code = counted.total.code,
+            "counted the tree"
+        );
+        // The receiver is gone, which means the loop has ended.
+        let _ = sender.send(Event::Counted(Box::new(counted)));
+    });
 }
 
 #[cfg(test)]

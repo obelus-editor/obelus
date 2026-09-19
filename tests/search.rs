@@ -315,13 +315,15 @@ fn the_search_reaches_what_the_file_list_offers() {
 
     let found = |ignored: bool, generation: u64| -> Vec<String> {
         let (sender, events) = std::sync::mpsc::channel();
-        let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(generation));
+        let latest = obelus::cancel::Latest::default();
+        for _ in 0..generation {
+            latest.next();
+        }
         search::spawn_scan(
             scratch.path(),
             &search::Needle::new("needle", search::Looking::default()),
-            generation,
+            latest.claim(generation),
             ignored,
-            &current,
             sender,
         );
         let mut names = Vec::new();
@@ -632,14 +634,16 @@ fn a_scan_that_has_been_typed_past_stops() {
     // Stale before it starts, which is the same state a scan reaches when
     // the reader types another letter: the first file it looks at is enough
     // to find that out.
-    let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(9));
+    let latest = obelus::cancel::Latest::default();
+    for _ in 0..9 {
+        latest.next();
+    }
     let (sender, events) = obelus::event::channel();
     search::spawn_scan(
         scratch.path(),
         &search::Needle::new("needle", search::Looking::default()),
-        4,
+        latest.claim(4),
         false,
-        &current,
         sender,
     );
 
@@ -653,14 +657,16 @@ fn a_scan_that_has_been_typed_past_stops() {
     }
 
     // While the generation it was started under does run to the end.
-    let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(4));
+    let latest = obelus::cancel::Latest::default();
+    for _ in 0..4 {
+        latest.next();
+    }
     let (sender, events) = obelus::event::channel();
     search::spawn_scan(
         scratch.path(),
         &search::Needle::new("needle", search::Looking::default()),
-        4,
+        latest.claim(4),
         false,
-        &current,
         sender,
     );
     let mut found = 0;
@@ -955,14 +961,16 @@ fn the_scan_trims_what_a_row_cannot_show() {
 
 /// Runs a scan to completion and returns everything it found.
 fn scan(root: &std::path::Path, query: &str) -> Vec<Hit> {
-    let current = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(7));
+    let latest = obelus::cancel::Latest::default();
+    for _ in 0..7 {
+        latest.next();
+    }
     let (sender, events) = obelus::event::channel();
     search::spawn_scan(
         root,
         &search::Needle::new(query, search::Looking::default()),
-        7,
+        latest.claim(7),
         false,
-        &current,
         sender,
     );
     let mut hits = Vec::new();

@@ -327,8 +327,7 @@ impl App {
         crate::git::history::spawn_log(
             &self.working_directory,
             only,
-            generation,
-            &self.history_generation,
+            self.history_generation.claim(generation),
             sender,
         );
     }
@@ -339,9 +338,7 @@ impl App {
     /// ways that need no walk: a list of refs left the previous tab's walk
     /// running, and its batches would arrive into a list they are not about.
     fn next_history_walk(&mut self) -> u64 {
-        self.history_generation
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            + 1
+        self.history_generation.next()
     }
 
     /// Puts a batch of commits into the list waiting for them.

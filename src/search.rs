@@ -8,11 +8,7 @@
 use std::{
     ops::Range,
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-        mpsc::Sender,
-    },
+    sync::mpsc::Sender,
 };
 
 use ignore::WalkBuilder;
@@ -269,12 +265,13 @@ const BIGGEST_FILE: u64 = 2 * 1024 * 1024;
 /// "searching" into "no match" -- with a query typed and nothing found,
 /// those two are different facts and only the scan knows which is true.
 ///
-/// `current` is the generation the reader is actually waiting for, and the
-/// walk reads it before every file: typing a ten-letter word starts ten
+/// `wanted` is asked before every file: typing a ten-letter word starts ten
 /// scans, and nine of them would otherwise go on reading the whole tree to
 /// answer a question nobody is asking any more. There is nothing else to
 /// stop a thread with -- a walk in `ignore` cannot be interrupted from
-/// outside -- so the thread has to ask.
+/// outside -- so the thread has to ask. [`crate::cancel`] is where that
+/// asking lives now; this file, the history walk and the file walk each had
+/// their own copy of it.
 ///
 /// `ignored` searches the files the tree has said to ignore as well, which
 /// is the reader's `ignored_files` and not a question of this walk's own: a
@@ -283,94 +280,87 @@ const BIGGEST_FILE: u64 = 2 * 1024 * 1024;
 pub fn spawn_scan(
     root: &Path,
     needle: &Needle,
-    generation: u64,
+    wanted: crate::cancel::Wanted,
     ignored: bool,
-    current: &Arc<AtomicU64>,
     sender: Sender<Event>,
 ) {
     let root = root.to_path_buf();
     let needle = needle.clone();
-    let current = Arc::clone(current);
-    let outcome = std::thread::Builder::new()
-        .name("obelus-search".to_string())
-        .spawn(move || {
-            let mut batch: Vec<Hit> = Vec::with_capacity(BATCH);
-            let mut found = 0usize;
+    crate::runtime::handle().spawn_blocking(move || {
+        let mut batch: Vec<Hit> = Vec::with_capacity(BATCH);
+        let mut found = 0usize;
 
-            let mut walk = WalkBuilder::new(&root);
-            walk.git_ignore(!ignored)
-                .git_global(!ignored)
-                .git_exclude(!ignored)
-                .ignore(!ignored)
-                .parents(!ignored);
-            for entry in walk.build() {
-                // Per file rather than per line: a file is the unit of work
-                // here, and reading the flag for every line of a large file
-                // would be a cost of its own.
-                if current.load(Ordering::Relaxed) != generation {
-                    tracing::debug!(generation, "a scan the reader has typed past, stopping");
-                    return;
-                }
-                let Ok(entry) = entry else { continue };
-                if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+        let mut walk = WalkBuilder::new(&root);
+        walk.git_ignore(!ignored)
+            .git_global(!ignored)
+            .git_exclude(!ignored)
+            .ignore(!ignored)
+            .parents(!ignored);
+        for entry in walk.build() {
+            // Per file rather than per line: a file is the unit of work
+            // here, and reading the flag for every line of a large file
+            // would be a cost of its own.
+            if !wanted.still() {
+                let generation = wanted.generation();
+                tracing::debug!(generation, "a scan the reader has typed past, stopping");
+                return;
+            }
+            let Ok(entry) = entry else { continue };
+            if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+                continue;
+            }
+            if entry.metadata().is_ok_and(|data| data.len() > BIGGEST_FILE) {
+                continue;
+            }
+            // Not UTF-8 is not an error here: it is a binary file, and a
+            // reader searching for a word is not searching those.
+            let Ok(contents) = std::fs::read_to_string(entry.path()) else {
+                continue;
+            };
+            let path = entry
+                .path()
+                .strip_prefix(&root)
+                .unwrap_or_else(|_| entry.path())
+                .to_path_buf();
+
+            for (number, line) in contents.lines().enumerate() {
+                if needle.found_in(line).is_none() {
                     continue;
                 }
-                if entry.metadata().is_ok_and(|data| data.len() > BIGGEST_FILE) {
-                    continue;
-                }
-                // Not UTF-8 is not an error here: it is a binary file, and a
-                // reader searching for a word is not searching those.
-                let Ok(contents) = std::fs::read_to_string(entry.path()) else {
-                    continue;
+                let trimmed = line.trim();
+                let text = match trimmed.char_indices().nth(WIDEST_LINE) {
+                    Some((at, _)) => trimmed[..at].to_string(),
+                    None => trimmed.to_string(),
                 };
-                let path = entry
-                    .path()
-                    .strip_prefix(&root)
-                    .unwrap_or_else(|_| entry.path())
-                    .to_path_buf();
+                batch.push(Hit {
+                    path: path.clone(),
+                    line: number,
+                    text,
+                });
+                found += 1;
 
-                for (number, line) in contents.lines().enumerate() {
-                    if needle.found_in(line).is_none() {
-                        continue;
-                    }
-                    let trimmed = line.trim();
-                    let text = match trimmed.char_indices().nth(WIDEST_LINE) {
-                        Some((at, _)) => trimmed[..at].to_string(),
-                        None => trimmed.to_string(),
-                    };
-                    batch.push(Hit {
-                        path: path.clone(),
-                        line: number,
-                        text,
-                    });
-                    found += 1;
-
-                    if batch.len() >= BATCH || found >= MOST {
-                        let hits = std::mem::replace(&mut batch, Vec::with_capacity(BATCH));
-                        let done = found >= MOST;
-                        if sender
-                            .send(Event::Matches {
-                                generation,
-                                hits,
-                                done,
-                            })
-                            .is_err()
-                            || done
-                        {
-                            return;
-                        }
+                if batch.len() >= BATCH || found >= MOST {
+                    let hits = std::mem::replace(&mut batch, Vec::with_capacity(BATCH));
+                    let done = found >= MOST;
+                    if sender
+                        .send(Event::Matches {
+                            generation: wanted.generation(),
+                            hits,
+                            done,
+                        })
+                        .is_err()
+                        || done
+                    {
+                        return;
                     }
                 }
             }
+        }
 
-            let _ = sender.send(Event::Matches {
-                generation,
-                hits: batch,
-                done: true,
-            });
+        let _ = sender.send(Event::Matches {
+            generation: wanted.generation(),
+            hits: batch,
+            done: true,
         });
-
-    if let Err(error) = outcome {
-        tracing::warn!(%error, "not searching the tree");
-    }
+    });
 }
