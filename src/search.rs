@@ -59,9 +59,9 @@ impl Scope {
     /// The tab's name.
     pub const fn label(self) -> &'static str {
         match self {
-            Self::File => "file",
-            Self::Project => "project",
-            Self::Symbols => "symbols",
+            Self::File => "File",
+            Self::Project => "Project",
+            Self::Symbols => "Symbols",
         }
     }
 }

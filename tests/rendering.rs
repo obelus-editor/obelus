@@ -364,7 +364,7 @@ fn copying_without_a_selection_copies_the_line() {
     obelus::clipboard::use_provider_for_test(obelus::clipboard::Provider::Kept);
     let mut app = app_on_screen(WIDTH, HEIGHT);
     support::press_control(&mut app, 'c');
-    assert_eq!(app.note(), Some("copied line"));
+    assert_eq!(app.note(), Some("Copied line"));
     assert_eq!(
         obelus::clipboard::paste().as_deref(),
         Some("fn main() {\n"),
@@ -766,8 +766,8 @@ fn the_welcome_screen_lines_up_keys_of_different_widths() {
     };
 
     assert_eq!(
-        column_of("open a file"),
-        column_of("leave obelus"),
+        column_of("Open a file"),
+        column_of("Leave obelus"),
         "the words in one column do not start together:\n{dump}"
     );
     // The wider chord's key starts further left inside its cap, which is
@@ -1344,7 +1344,7 @@ fn only_a_markdown_file_can_be_rendered() {
     support::lay_out(&mut app, 60, 14);
     obelus::command::dispatch::dispatch(&mut app, Command::PreviewToggle);
 
-    assert_eq!(app.note(), Some("nothing to preview in this file"));
+    assert_eq!(app.note(), Some("Nothing to preview in this file"));
 
     // And the extension is read without regard to case: `README.MD` is one.
     let shouting = std::env::temp_dir().join(format!("obelus-{}-README.MD", std::process::id()));
@@ -2147,7 +2147,7 @@ fn a_file_with_no_reading_opens_as_itself() {
     );
     // And the command says so rather than doing something.
     obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::PreviewToggle);
-    assert_eq!(app.note(), Some("nothing to preview in this file"));
+    assert_eq!(app.note(), Some("Nothing to preview in this file"));
 
     let _ = std::fs::remove_file(&path);
 }

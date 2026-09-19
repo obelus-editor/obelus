@@ -72,10 +72,10 @@ pub fn hints(picker: &Picker) -> Vec<Hint> {
     if picker.rows_open() {
         let enter = |modifiers| crate::keymap::KeyChord::new(KeyCode::Enter, modifiers);
         return vec![
-            Hint::common(enter(KeyModifiers::NONE), "open")
-                .saying("show what this row reaches, or hide it again"),
-            Hint::common(enter(KeyModifiers::ALT), "go there")
-                .saying("leave the list and read the line this row names"),
+            Hint::common(enter(KeyModifiers::NONE), "Open")
+                .saying("Show what this row reaches, or hide it again"),
+            Hint::common(enter(KeyModifiers::ALT), "Go there")
+                .saying("Leave the list and read the line this row names"),
         ];
     }
     let alt = |letter| crate::keymap::KeyChord::new(KeyCode::Char(letter), KeyModifiers::ALT);
@@ -86,36 +86,36 @@ pub fn hints(picker: &Picker) -> Vec<Hint> {
         // the foot does not change height as the reader walks the tabs.
         let here = how.is_some();
         return vec![
-            Hint::common(alt('r'), "regex")
-                .saying("read the query as a pattern rather than as the text")
+            Hint::common(alt('r'), "Regex")
+                .saying("Read the query as a pattern rather than as the text")
                 .set(asked.regex)
                 .when(here),
-            Hint::common(alt('w'), "word")
-                .saying("only where it stands as a word of its own")
+            Hint::common(alt('w'), "Word")
+                .saying("Only where it stands as a word of its own")
                 .set(asked.word)
                 .when(here),
-            Hint::common(alt('c'), "case")
-                .saying("the capitals as typed, rather than as the query implies")
+            Hint::common(alt('c'), "Case")
+                .saying("The capitals as typed, rather than as the query implies")
                 .set(asked.sensitive)
                 .when(here),
             // The other way round from the three above: this one is the
             // symbols tab's, and they are the two that read a text.
-            Hint::common(alt('o'), "outside")
-                .saying("names from outside the project, where a server knows any")
+            Hint::common(alt('o'), "Outside")
+                .saying("Names from outside the project, where a server knows any")
                 .set(picker.reaches_outside().unwrap_or(false))
                 .when(picker.reaches_outside().is_some()),
         ];
     }
     let offering = picker.offers_ignored();
     vec![
-        Hint::common(alt('i'), "ignored files")
-            .saying("offer the files the tree ignores, or leave them out")
+        Hint::common(alt('i'), "Ignored files")
+            .saying("Offer the files the tree ignores, or leave them out")
             .set(offering.unwrap_or(false))
             .when(offering.is_some()),
         // Not a switch: what it does depends on the row the reader is on,
         // which is why it draws no setting.
-        Hint::common(alt('n'), "rename")
-            .saying("put this file or directory somewhere else, or call it something else")
+        Hint::common(alt('n'), "Rename")
+            .saying("Put this file or directory somewhere else, or call it something else")
             .when(offering.is_some()),
     ]
 }

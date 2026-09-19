@@ -25,7 +25,7 @@ fn each_key_opens_the_same_view_at_its_own_tab() {
     let picker = app.picker().expect("the search");
     assert_eq!(
         picker.tabs(),
-        ["file", "project"],
+        ["File", "Project"],
         "not the scopes that can answer"
     );
     assert_eq!(picker.tab(), 0, "ctrl+f did not open the file's own tab");
@@ -49,7 +49,7 @@ fn a_scope_with_nothing_to_say_has_no_tab() {
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 6);
     let picker = app.picker().expect("the search");
-    assert_eq!(picker.tabs(), ["project"], "not just the project");
+    assert_eq!(picker.tabs(), ["Project"], "not just the project");
     assert_eq!(picker.tab(), 0);
 
     // And the arrows have nowhere to go, which is what one tab means.
@@ -63,7 +63,7 @@ fn a_scope_with_nothing_to_say_has_no_tab() {
     support::press_function(&mut app, 5);
     assert_eq!(
         app.picker().expect("the search").tabs(),
-        ["file", "project"]
+        ["File", "Project"]
     );
 }
 
@@ -91,7 +91,7 @@ fn an_empty_search_previews_the_file_being_read() {
     let searching = support::render(&mut app, 60, 30);
     let text = support::text_block(&searching);
     assert!(
-        text.contains("type to search this file"),
+        text.contains("Type to search this file"),
         "not the empty search:\n{searching}"
     );
     assert!(
@@ -132,7 +132,7 @@ fn the_file_scope_finds_the_query_and_not_something_like_it() {
     // already, and a list of every line of it says nothing they cannot see.
     let picker = app.picker().expect("the search");
     assert_eq!(picker.match_count(), 0, "the file was listed unasked");
-    assert_eq!(picker.nothing_to_show(), Some("type to search this file"));
+    assert_eq!(picker.nothing_to_show(), Some("Type to search this file"));
 
     // The lines that have it, and only those.
     support::type_text(&mut app, "abc");
@@ -154,7 +154,7 @@ fn the_file_scope_finds_the_query_and_not_something_like_it() {
         0,
         "`ac` found a line that only resembles it"
     );
-    assert_eq!(picker.nothing_to_show(), Some("no match in this file"));
+    assert_eq!(picker.nothing_to_show(), Some("No match in this file"));
 
     // Emptied again, the rows go away rather than becoming the file.
     for _ in 0.."ac".len() {
@@ -162,7 +162,7 @@ fn the_file_scope_finds_the_query_and_not_something_like_it() {
     }
     let picker = app.picker().expect("the search");
     assert_eq!(picker.row_count(), 0, "the file came back as a list");
-    assert_eq!(picker.nothing_to_show(), Some("type to search this file"));
+    assert_eq!(picker.nothing_to_show(), Some("Type to search this file"));
 }
 
 /// The search's three switches: a pattern, a whole word, the capitals as
@@ -203,7 +203,7 @@ fn the_three_switches_change_what_the_search_finds() {
     let dump = support::render(&mut app, 74, 16);
     let foot = support::text_block(&dump)
         .lines()
-        .find(|row| row.contains("regex"))
+        .find(|row| row.contains("Regex"))
         .expect("the foot")
         .to_string();
     // How far the knob sits from its word: a switch that is on has slid to
@@ -214,12 +214,12 @@ fn the_three_switches_change_what_the_search_finds() {
         foot[after..].find('\u{25a0}').expect("the switch")
     };
     assert!(
-        gap("regex") > gap("word"),
+        gap("Regex") > gap("Word"),
         "the pattern switch is not slid across: {foot:?}"
     );
     assert_eq!(
-        gap("word"),
-        gap("case"),
+        gap("Word"),
+        gap("Case"),
         "two switches nobody touched are set differently: {foot:?}"
     );
 
@@ -228,14 +228,14 @@ fn the_three_switches_change_what_the_search_finds() {
     support::type_text(&mut app, "(");
     let picker = app.picker().expect("the search");
     assert_eq!(picker.match_count(), 0);
-    assert_eq!(picker.nothing_to_show(), Some("that is not a pattern"));
+    assert_eq!(picker.nothing_to_show(), Some("That is not a pattern"));
 }
 
 /// Which switches mean anything depends on the tab: three of them read a
 /// text, and the fourth is about how far an index reaches.
 ///
 /// A tab only offers what it can answer. The file and project tabs are
-/// inside this tree by construction, so there is nothing for "outside" to
+/// inside this tree by construction, so there is nothing for "Outside" to
 /// do; the symbols tab's rows come from a server that did its own matching
 /// and has never heard of our pattern.
 #[test]
@@ -257,12 +257,12 @@ fn a_tab_offers_only_the_switches_it_can_answer() {
     let dump = support::render(&mut app, 84, 16);
     let foot = support::text_block(&dump)
         .lines()
-        .find(|row| row.contains("regex"))
+        .find(|row| row.contains("Regex"))
         .expect("the foot")
         .to_string();
-    assert!(foot.contains("word") && foot.contains("case"), "{foot:?}");
+    assert!(foot.contains("Word") && foot.contains("Case"), "{foot:?}");
     assert!(
-        !foot.contains("outside"),
+        !foot.contains("Outside"),
         "the foot offers a key that would do nothing: {foot:?}"
     );
 }
@@ -571,7 +571,7 @@ fn the_query_walks_between_the_tabs() {
     // Nothing has come back yet, so the list says what it is doing rather
     // than "no match" -- with a query typed and nothing found, "still
     // looking" and "not there" are different facts.
-    assert_eq!(picker.nothing_to_show(), Some("searching\u{2026}"));
+    assert_eq!(picker.nothing_to_show(), Some("Searching\u{2026}"));
 
     // And back again, onto the file's own lines, still narrowed.
     support::press(&mut app, KeyCode::BackTab);
@@ -597,14 +597,14 @@ fn one_letter_is_a_search_and_nothing_is_not() {
 
     assert_eq!(
         app.picker().expect("the search").nothing_to_show(),
-        Some("type to search every file"),
+        Some("Type to search every file"),
         "an empty query started a search"
     );
 
     support::type_text(&mut app, "g");
     assert_eq!(
         app.picker().expect("the search").nothing_to_show(),
-        Some("searching\u{2026}"),
+        Some("Searching\u{2026}"),
         "one letter did not start a search"
     );
 
@@ -613,7 +613,7 @@ fn one_letter_is_a_search_and_nothing_is_not() {
     support::press(&mut app, KeyCode::Backspace);
     let picker = app.picker().expect("the search");
     assert_eq!(picker.match_count(), 0);
-    assert_eq!(picker.nothing_to_show(), Some("type to search every file"));
+    assert_eq!(picker.nothing_to_show(), Some("Type to search every file"));
 }
 
 /// A scan the reader has typed past stops instead of reading the rest of the
@@ -787,7 +787,7 @@ fn matches_do_not_land_in_a_list_that_did_not_ask() {
     );
 }
 
-/// With the walk finished and nothing found, "no match" is finally a true
+/// With the walk finished and nothing found, "No match" is finally a true
 /// thing to say, and the reason that was standing in for it goes away.
 #[test]
 fn a_finished_walk_that_found_nothing_says_so() {
@@ -803,7 +803,7 @@ fn a_finished_walk_that_found_nothing_says_so() {
     });
     assert_eq!(
         app.picker().expect("the search").nothing_to_show(),
-        Some("no match in the project")
+        Some("No match in the project")
     );
 }
 
@@ -859,7 +859,7 @@ fn searching_a_file_needs_a_file() {
         app.picker().is_none(),
         "a search opened with nothing to search"
     );
-    assert_eq!(app.note(), Some("no file open"));
+    assert_eq!(app.note(), Some("No file open"));
 }
 
 /// The scan itself, against a real tree: what it finds, what it skips, and

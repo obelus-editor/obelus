@@ -652,7 +652,7 @@ impl ChatView<'_> {
             // thing escape does here that a reader could not guess, and it
             // belongs beside the thing it would stop.
             if row.speaker == Speaker::Doing && self.state == Talking::Thinking {
-                let hint = "esc stops it";
+                let hint = "Esc stops it";
                 if let Ok(offset) =
                     u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
                     && area.x + offset > ended + 1
@@ -823,7 +823,7 @@ impl ChatView<'_> {
                     cells,
                     area.x + 1,
                     area.y,
-                    "nothing to change",
+                    "Nothing to change",
                     plain.fg(self.theme.gutter),
                 );
             }
@@ -927,7 +927,7 @@ impl ChatView<'_> {
             put(cells, column, area.y, icons::ui::AGENT, dim);
             column += INDENT;
         }
-        let name = self.name.unwrap_or("no agent");
+        let name = self.name.unwrap_or("No agent");
         column = write(
             cells,
             column,
@@ -992,10 +992,10 @@ impl ChatView<'_> {
     /// How far a tool call has got.
     fn state_of(&self, cells: &mut CellBuffer, x: u16, y: u16, state: &str, dim: Style) {
         let (glyph, word, colour) = match state {
-            "pending" => (icons::ui::WAITING, "waiting", self.theme.gutter),
-            "in_progress" => (icons::ui::RUNNING, "running", self.theme.gutter_current),
-            "completed" => (icons::ui::DONE, "done", self.theme.gutter),
-            "failed" => (icons::ui::BROKEN, "failed", self.theme.syntax.constant),
+            "pending" => (icons::ui::WAITING, "Waiting", self.theme.gutter),
+            "in_progress" => (icons::ui::RUNNING, "Running", self.theme.gutter_current),
+            "completed" => (icons::ui::DONE, "Done", self.theme.gutter),
+            "failed" => (icons::ui::BROKEN, "Failed", self.theme.syntax.constant),
             other => (icons::ui::WAITING, other, self.theme.gutter),
         };
         let style = dim.fg(colour);
@@ -1014,9 +1014,9 @@ impl ChatView<'_> {
     fn nothing_said(&self) -> &'static str {
         match self.state {
             Talking::Nobody => "no agent is active \u{2014} open the settings and choose one",
-            Talking::Gone => "it stopped. ask something to start it again",
+            Talking::Gone => "It stopped. Ask something to start it again",
             Talking::Starting | Talking::Idle => "starting\u{2026}",
-            Talking::Ready | Talking::Thinking => "ask it something",
+            Talking::Ready | Talking::Thinking => "Ask it something",
         }
     }
 }

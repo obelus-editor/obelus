@@ -575,11 +575,11 @@ impl App {
     /// asked for.
     pub(super) fn on_prepared(&mut self, buffer: DocumentId, language: LanguageId, reply: Reply) {
         let Some(item) = crate::lsp::hierarchy::prepared(&reply.result) else {
-            self.note = Some("nothing here to follow".to_string());
+            self.note = Some("Nothing here to follow".to_string());
             return;
         };
         let Some(root) = crate::lsp::hierarchy::root_of(&item) else {
-            self.note = Some("nothing here to follow".to_string());
+            self.note = Some("Nothing here to follow".to_string());
             return;
         };
         // Whatever the tree being replaced still had out. Without this a
@@ -719,7 +719,7 @@ impl App {
         let Ok(request) = client.request(direction.method(), &serde_json::json!({ "item": item }))
         else {
             if wanted {
-                self.note = Some("the language server is not listening".to_string());
+                self.note = Some("The language server is not listening".to_string());
             }
             return;
         };

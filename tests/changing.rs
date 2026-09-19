@@ -698,7 +698,7 @@ fn nothing_offered_is_said_rather_than_listed() {
     app.actions_for_test(json!([]));
     assert!(app.picker().is_none(), "an empty list was opened");
     assert!(
-        app.note().unwrap_or_default().contains("nothing to do"),
+        app.note().unwrap_or_default().contains("Nothing to do"),
         "the reader was not told"
     );
 }

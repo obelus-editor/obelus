@@ -316,7 +316,7 @@ fn a_real_server_offers_what_could_be_typed() {
         let reply = pump(&mut client, &events, INDEXED, |_, reply| {
             reply.is_some_and(|reply| reply.id == id)
         })
-        .expect("an answer");
+        .expect("An answer");
 
         let offer = obelus::lsp::complete::offer_in(&reply.result, &text, &encoding);
         if offer.candidates.is_empty() {
@@ -369,7 +369,7 @@ fn a_real_server_offers_what_could_be_typed() {
         let reply = pump(&mut client, &events, INDEXED, |_, reply| {
             reply.is_some_and(|reply| reply.id == id)
         })
-        .expect("an answer");
+        .expect("An answer");
         obelus::lsp::complete::resolved_into(&mut candidate, &reply.result, &text, &encoding);
         assert!(
             candidate.documentation.is_some() || candidate.detail.is_some(),
@@ -433,7 +433,7 @@ fn a_real_server_finds_a_definition() {
         let reply = pump(&mut client, &events, INDEXED, |_, reply| {
             reply.is_some_and(|reply| reply.id == id)
         })
-        .expect("an answer");
+        .expect("An answer");
 
         let indexing = client.working_on().is_some();
         match action::outcome_of(reply.result, 1, Some(1), indexing) {
@@ -618,7 +618,7 @@ fn a_real_server_outlines_a_file_by_name_and_by_nesting() {
     let reply = pump(&mut client, &events, INDEXED, |_, reply| {
         reply.is_some_and(|reply| reply.id == asked)
     })
-    .expect("an answer");
+    .expect("An answer");
     client.shutdown();
 
     let symbols = outline::symbols_in(reply.result);
@@ -665,7 +665,7 @@ fn a_real_server_outlines_a_file_by_name_and_by_nesting() {
 /// to every `textDocument/codeAction` from a client that has not said it
 /// understands the literal shape -- whatever the file, wherever the
 /// range, mistake on the line or not. Nothing about that is visible from
-/// this side: it is a well-formed answer meaning "nothing to do here",
+/// this side: it is a well-formed answer meaning "Nothing to do here",
 /// which is also what a line with genuinely nothing to do says.
 ///
 /// So the line this asks about is chosen to have nothing wrong with it.
@@ -714,7 +714,7 @@ fn a_real_server_offers_something_to_do_on_ordinary_code() {
     let reply = pump(&mut client, &events, INDEXED, |_, reply| {
         reply.is_some_and(|reply| reply.id == asked)
     })
-    .expect("an answer");
+    .expect("An answer");
     client.shutdown();
 
     let offered = actions::offered_in(&reply.result);
@@ -806,7 +806,7 @@ fn a_loaded_server_does_not_outlive_its_client() {
         let reply = pump(&mut client, &events, INDEXED, |_, reply| {
             reply.is_some_and(|reply| reply.id == id)
         })
-        .expect("an answer");
+        .expect("An answer");
         let found = reply
             .result
             .ok()
@@ -884,7 +884,7 @@ fn a_real_server_says_who_calls_something() {
         let reply = pump(&mut client, &events, INDEXED, |_, reply| {
             reply.is_some_and(|reply| reply.id == id)
         })
-        .expect("an answer");
+        .expect("An answer");
         if let Some(item) = hierarchy::prepared(&reply.result) {
             break item;
         }
@@ -907,7 +907,7 @@ fn a_real_server_says_who_calls_something() {
     let reply = pump(&mut client, &events, INDEXED, |_, reply| {
         reply.is_some_and(|reply| reply.id == id)
     })
-    .expect("an answer");
+    .expect("An answer");
 
     let callers = hierarchy::called_in(&reply.result, Direction::Callers);
     assert!(
@@ -986,7 +986,7 @@ fn a_real_server_works_out_what_the_file_does_not_say() {
         let reply = pump(&mut client, &events, INDEXED, |_, reply| {
             reply.is_some_and(|reply| reply.id == id)
         })
-        .expect("an answer");
+        .expect("An answer");
         let found = hint::in_reply(
             &reply.result,
             &obelus::text::Text::from_string(&text),
@@ -1053,7 +1053,7 @@ fn probe_what_a_move_changes() {
         let reply = pump(&mut client, &events, INDEXED, |_, reply| {
             reply.is_some_and(|reply| reply.id == id)
         })
-        .expect("an answer");
+        .expect("An answer");
         match &reply.result {
             Ok(value) if !value.is_null() => {
                 eprintln!(
@@ -1122,7 +1122,7 @@ fn a_real_server_says_which_files_it_wants_told_about_before_they_move() {
 ///
 /// Ignored for the reason its siblings are -- a server answers `null`
 /// until it has read the project, which is the state obelus reports as
-/// "not ready" rather than as "nothing to change". Nothing is moved: the
+/// "not ready" rather than as "Nothing to change". Nothing is moved: the
 /// question is asked about a move that does not happen, which is exactly
 /// what the protocol is for.
 #[test]
@@ -1153,7 +1153,7 @@ fn a_real_server_works_out_what_moving_a_file_would_change() {
         let reply = pump(&mut client, &events, INDEXED, |_, reply| {
             reply.is_some_and(|reply| reply.id == id)
         })
-        .expect("an answer");
+        .expect("An answer");
         let Ok(result) = reply.result else {
             std::thread::sleep(Duration::from_millis(300));
             continue;

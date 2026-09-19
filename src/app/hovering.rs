@@ -34,7 +34,7 @@ impl App {
             let cursor = buffer.cursor();
             (cursor.line, cursor.column)
         }) else {
-            self.note = Some("no file open".to_string());
+            self.note = Some("No file open".to_string());
             return;
         };
         self.ask_hover_at(at, false);
@@ -61,7 +61,7 @@ impl App {
         }
         let Some(language) = buffer.language() else {
             if !pointed {
-                self.note = Some("no language server for this file".to_string());
+                self.note = Some("No language server for this file".to_string());
             }
             return;
         };

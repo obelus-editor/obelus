@@ -103,10 +103,10 @@ pub fn hints(settings: &Settings) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let bare = |code| crate::keymap::KeyChord::new(code, KeyModifiers::NONE);
     vec![
-        Hint::common(bare(KeyCode::Enter), "change")
+        Hint::common(bare(KeyCode::Enter), "Change")
             .saying(match settings.on_keys() {
-                true => "put this command on another key",
-                false => "change it, or open what it can be",
+                true => "Put this command on another key",
+                false => "Change it, or open what it can be",
             })
             // Asked of whichever page is showing rather than of the
             // settings: the keys page has rows too, and enter does the same
@@ -116,11 +116,11 @@ pub fn hints(settings: &Settings) -> Vec<Hint> {
         // filtered by typing at it looks exactly like one that is not.
         Hint::common(bare(KeyCode::Char('a')), "to filter")
             .written("type")
-            .saying("type to narrow the list"),
-        Hint::common(bare(KeyCode::Delete), "unset")
-            .saying("take this setting out of the tree's file")
+            .saying("Type to narrow the list"),
+        Hint::common(bare(KeyCode::Delete), "Unset")
+            .saying("Take this setting out of the tree's file")
             .when(settings.on_tree() && !settings.on_keys() && !settings.on_agents()),
-        Hint::common(bare(KeyCode::Esc), "leave").saying("leave the settings"),
+        Hint::common(bare(KeyCode::Esc), "Leave").saying("Leave the settings"),
     ]
 }
 
@@ -227,8 +227,8 @@ impl Widget for SettingsView<'_> {
                     ..region
                 },
                 match self.settings.on_keys() {
-                    true => "a tree may not move the keys",
-                    false => "a tree may not choose the agent",
+                    true => "A tree may not move the keys",
+                    false => "A tree may not choose the agent",
                 },
                 self.theme,
             );
@@ -251,7 +251,7 @@ impl Widget for SettingsView<'_> {
                     scope: None,
                 })
                 .collect();
-            self.column(cells, region, &rows, "no command by that name");
+            self.column(cells, region, &rows, "No command by that name");
             self.keys_card(cells, area, &hints);
             return;
         }
@@ -292,7 +292,7 @@ impl Widget for SettingsView<'_> {
                 scope: self.settings.on_tree().then(|| self.scope(shown.setting)),
             })
             .collect();
-        self.column(cells, region, &rows, "no setting by that name");
+        self.column(cells, region, &rows, "No setting by that name");
         self.keys_card(cells, area, &hints);
     }
 }
@@ -347,9 +347,9 @@ impl Scope {
     /// The word for it.
     const fn word(self) -> &'static str {
         match self {
-            Self::Project => "project",
-            Self::Global => "global",
-            Self::Default => "default",
+            Self::Project => "Project",
+            Self::Global => "Global",
+            Self::Default => "Default",
         }
     }
 }
@@ -695,7 +695,7 @@ impl SettingsView<'_> {
                 self.theme.change_removed,
             )),
             None => Some((
-                "press a key, or delete to unbind".to_string(),
+                "Press a key, or delete to unbind".to_string(),
                 self.theme.change_modified,
             )),
         }
@@ -722,7 +722,7 @@ impl SettingsView<'_> {
                 // differs: wait, or look at their network.
                 (true, Some(why)) => format!("could not fetch the list of agents: {why}"),
                 (true, None) => "fetching the list of agents\u{2026}".to_string(),
-                (false, _) => "no agent by that name".to_string(),
+                (false, _) => "No agent by that name".to_string(),
             };
             write(
                 cells,
@@ -925,7 +925,7 @@ impl SettingsView<'_> {
             Status::Installed if agent.active => {
                 ("\u{25cf} active".to_string(), self.theme.change_added)
             }
-            Status::Installed => ("installed".to_string(), self.theme.gutter),
+            Status::Installed => ("Installed".to_string(), self.theme.gutter),
             Status::Outdated { .. } => ("update \u{25b8}".to_string(), self.theme.change_modified),
             Status::Missing | Status::Failed(_) => {
                 ("install \u{25b8}".to_string(), self.theme.foreground)

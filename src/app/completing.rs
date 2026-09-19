@@ -66,7 +66,7 @@ impl App {
     /// finds nothing to offer says nothing at all.
     pub fn ask_completion(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            self.note = Some("no language server for this file".to_string());
+            self.note = Some("No language server for this file".to_string());
             return;
         };
         if let Some(why) = self.why_not_asking(language) {

@@ -91,6 +91,26 @@ prefix off a string and guessing. The names are also what the config file's
 `[keys]` table is written in, so renaming one leaves an old file's line
 unbound with a word in the log.
 
+**Copy starts with a capital; a name keeps its own spelling.** Everything
+obelus says to the reader begins with a capital -- a key's word at the foot
+(`Read it`, `Leave`), a note on the status row, an empty list's line, a card,
+a tab, a setting's name and its gloss. What is *not* copy is a name, and a
+name is written the way it is written everywhere else: a command (`open-file`
+-- also the word in the config file's `[keys]` table), a theme (`dark`), a
+language as it is counted (`Rust`, `TOML`, `Plain Text`), a file's path, and
+obelus itself, which spells itself lowercase. Where a sentence would have to
+start with one of those, reword it rather than misspell the name --
+`Not a language obelus knows`, not `Obelus does not know this language`.
+
+Three things are not obelus's to capitalise, and are left exactly as they
+arrive: what an agent sends (its modes, its tool titles, its questions),
+what a language server sends, and a protocol's own words -- a tool call's
+`state` is `"failed"` because that is what the wire says, even though the
+row drawn from it reads `Failed`. Nor is a fragment that lands mid-sentence:
+`Copied {what}` takes `selection`, and `Starting again, because {why}` takes
+a reason, both lowercase where they join. Log lines and `anyhow` contexts are
+not copy either -- they keep the lowercase Rust writes them in.
+
 **A buffer's path is where it is *called*, not always where its bytes came
 from.** `Content` is what says which, and everything that assumed the two
 were the same had to be asked: the watcher must not re-read the file over a

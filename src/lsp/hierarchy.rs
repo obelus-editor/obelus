@@ -42,8 +42,8 @@ impl Direction {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Callers => "callers",
-            Self::Calls => "calls",
+            Self::Callers => "Callers",
+            Self::Calls => "Calls",
         }
     }
 
@@ -51,8 +51,8 @@ impl Direction {
     #[must_use]
     pub const fn nothing(self) -> &'static str {
         match self {
-            Self::Callers => "nothing calls that",
-            Self::Calls => "that calls nothing",
+            Self::Callers => "Nothing calls that",
+            Self::Calls => "That calls nothing",
         }
     }
 

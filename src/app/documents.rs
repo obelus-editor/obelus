@@ -103,7 +103,7 @@ impl App {
             label: titled
                 .map(str::to_string)
                 .or_else(|| about.clone())
-                .unwrap_or_else(|| "a conversation".to_string()),
+                .unwrap_or_else(|| "A conversation".to_string()),
             // The note it is about, under the name the agent gave it. Two
             // facts that are both worth having: what the reader meant to do,
             // and what came of it.
@@ -140,7 +140,7 @@ impl App {
             prose: false,
             marker: None,
             icon: icons::enabled().then(|| icons::for_command(crate::command::Command::TodoOpen)),
-            label: "todo".to_string(),
+            label: "Todo".to_string(),
             // How many are still to come back to, where a changed file puts
             // how much it moved: it is the one number about this row that
             // says whether it is worth opening.
@@ -225,7 +225,7 @@ impl App {
             .filter(|shown| *shown == Listing::All || !self.statuses.is_empty())
             .collect();
         let Some(tab) = listings.iter().position(|shown| *shown == listing) else {
-            self.note = Some("nothing has changed".to_string());
+            self.note = Some("Nothing has changed".to_string());
             return;
         };
 
@@ -509,7 +509,7 @@ impl App {
                     // nothing about where it is in the tree. What puts the
                     // reader back is the name.
                     picker.replace(rows);
-                    picker.when_empty("no files under this directory");
+                    picker.when_empty("No files under this directory");
                     match back {
                         // A query that came and went is not a reason to
                         // move, so the row the reader left wins over the
@@ -550,7 +550,7 @@ impl App {
                 if let Some(picker) = self.picker.as_mut() {
                     picker.offering_ignored(Some(ignored));
                     picker.relist(Vec::new());
-                    picker.when_empty("no files under this directory");
+                    picker.when_empty("No files under this directory");
                     // Open on the file being read. The walk decides where in
                     // the list it is, and it may be in the last batch, so the
                     // picker holds on to the name and selects the row when it
@@ -617,7 +617,7 @@ impl App {
                     .collect();
                 if let Some(picker) = self.picker.as_mut() {
                     picker.replace(items);
-                    picker.when_empty("nothing has changed");
+                    picker.when_empty("Nothing has changed");
                 }
             }
         }
@@ -661,7 +661,7 @@ impl App {
         let mut picker = Picker::new(items, PickerLayout::FullArea);
         // Reachable with nothing open at all, which is how obelus starts --
         // and was not, for as long as the command asked for a file.
-        picker.when_empty("nothing is open");
+        picker.when_empty("Nothing is open");
         picker.previews();
         // Opened on whatever is being read, conversation or file: a list
         // that started somewhere arbitrary would make the reader find where
@@ -728,7 +728,7 @@ impl App {
         }
 
         let Some(id) = self.current else {
-            self.note = Some("no file to close".to_string());
+            self.note = Some("No file to close".to_string());
             return;
         };
         self.close(id);
@@ -864,8 +864,8 @@ impl App {
         }
         if self.reading_of_current().is_none() {
             self.note = Some(match self.current_buffer() {
-                Some(_) => "nothing to preview in this file".to_string(),
-                None => "no file to preview".to_string(),
+                Some(_) => "Nothing to preview in this file".to_string(),
+                None => "No file to preview".to_string(),
             });
             return;
         }
@@ -1169,7 +1169,7 @@ impl App {
     /// Writes the file being read back to disk.
     pub fn save_current(&mut self) {
         let Some(index) = self.current.map(DocumentId::get) else {
-            self.note = Some("no file open".to_string());
+            self.note = Some("No file open".to_string());
             return;
         };
         let Some(buffer) = self.file_mut(DocumentId::new(index)) else {
@@ -1178,11 +1178,11 @@ impl App {
         // A commit's version is not a file anybody can write back, and the
         // path it wears belongs to a different document.
         if !buffer.content().is_file() {
-            self.note = Some("this is a commit's version, not the file".to_string());
+            self.note = Some("This is a commit's version, not the file".to_string());
             return;
         }
         if !buffer.is_dirty() {
-            self.note = Some("nothing to save".to_string());
+            self.note = Some("Nothing to save".to_string());
             return;
         }
         // The file moved under the reader while they were editing it.
@@ -1226,7 +1226,7 @@ impl App {
     /// arrives here, having settled the one thing it stopped for.
     pub(super) fn format_then_write(&mut self, index: usize) {
         if self.settled.config.format_on_save && self.ask_formatting(index) {
-            self.note = Some("laying it out\u{2026}".to_string());
+            self.note = Some("Laying it out\u{2026}".to_string());
             return;
         }
         self.write_now(index);
@@ -1247,11 +1247,11 @@ impl App {
                     self.change_document(index);
                     self.ask_standing_questions(index);
                 }
-                self.note = Some("took what is on disk -- undo brings yours back".to_string());
+                self.note = Some("Took what is on disk -- undo brings yours back".to_string());
             }
             Err(error) => {
                 tracing::warn!(%error, "taking what is on disk failed");
-                self.note = Some("could not read it".to_string());
+                self.note = Some("Could not read it".to_string());
             }
         }
     }
@@ -1269,7 +1269,7 @@ impl App {
         };
         match buffer.save() {
             Ok(()) => {
-                self.note = Some("saved".to_string());
+                self.note = Some("Saved".to_string());
                 self.saved_document(index);
                 true
             }
@@ -1280,11 +1280,13 @@ impl App {
                 // row has and so would be dropped whole -- and a reader
                 // leaving with four files open needs the name most. The
                 // whole of it is in the log.
-                let name = buffer
-                    .path()
-                    .file_name()
-                    .map_or_else(String::new, |name| format!("{}: ", name.to_string_lossy()));
-                self.note = Some(format!("{name}not saved"));
+                // Two shapes rather than one with a blank in it: after a
+                // name it reads as a label and its reason, and with no name
+                // it is a sentence of its own and starts like one.
+                self.note = Some(match buffer.path().file_name() {
+                    Some(name) => format!("{}: not saved", name.to_string_lossy()),
+                    None => "Not saved".to_string(),
+                });
                 false
             }
         }

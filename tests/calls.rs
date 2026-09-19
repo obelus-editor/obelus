@@ -297,12 +297,12 @@ fn the_tabs_are_the_two_directions() {
     app.declared_for_test(LanguageId::Rust, json!({ "callHierarchyProvider": true }));
     let path = scratch.join("one.rs");
     app.prepared_for_test(json!([item(&path, "run", 0)]));
-    assert_eq!(app.calls_direction_for_test(), Some("callers"));
+    assert_eq!(app.calls_direction_for_test(), Some("Callers"));
 
     support::press(&mut app, KeyCode::Tab);
     assert_eq!(
         app.calls_direction_for_test(),
-        Some("calls"),
+        Some("Calls"),
         "the tab did not turn the question round"
     );
     let asked = support::heard_requests(&heard, "callHierarchy/outgoingCalls", 1);
@@ -363,7 +363,7 @@ fn a_server_that_refuses_says_so_rather_than_saying_nothing() {
     let path = scratch.join("one.rs");
     app.prepared_for_test(json!([item(&path, "run", 0)]));
     app.called_for_test(0, json!([]));
-    assert_eq!(app.note(), Some("nothing calls that"));
+    assert_eq!(app.note(), Some("Nothing calls that"));
 }
 
 /// The rows that arrive are asked about without anybody pressing
@@ -588,7 +588,7 @@ fn a_row_with_nothing_behind_it_stops_offering_to_open() {
 
     // And pressing it again says why rather than putting the mark back.
     support::press(&mut app, KeyCode::Enter);
-    assert_eq!(app.note(), Some("nothing calls that"));
+    assert_eq!(app.note(), Some("Nothing calls that"));
     let dump = support::render(&mut app, 80, 24);
     let row = support::text_block(&dump)
         .lines()

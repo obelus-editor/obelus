@@ -199,5 +199,5 @@ fn the_shapes_a_notification_arrives_in() {
         Severity::Error < Severity::Warning,
         "the order is the point"
     );
-    assert_eq!(Severity::Error.title(), "error");
+    assert_eq!(Severity::Error.title(), "Error");
 }

@@ -95,17 +95,17 @@ pub fn hints(counts: &Counts) -> Vec<Hint> {
         Hint::common(
             bare(KeyCode::Enter),
             match folds {
-                Some(true) => "close",
-                Some(false) => "open",
-                None => "read it",
+                Some(true) => "Close",
+                Some(false) => "Open",
+                None => "Read it",
             },
         )
         .saying(match folds {
-            Some(_) => "show what is in it, or stop",
-            None => "read the file this row names",
+            Some(_) => "Show what is in it, or stop",
+            None => "Read the file this row names",
         })
         .when(on.is_some_and(|row| row.go.is_some())),
-        Hint::common(bare(KeyCode::Esc), "leave").saying("leave, or drop the language first"),
+        Hint::common(bare(KeyCode::Esc), "Leave").saying("Leave, or drop the language first"),
     ]
 }
 
@@ -197,17 +197,17 @@ impl Layout {
     fn headings(self) -> Vec<(&'static str, u16)> {
         let mut headings = Vec::with_capacity(5);
         if self.columns.files {
-            headings.push(("files", FILES_WIDTH));
+            headings.push(("Files", FILES_WIDTH));
         }
-        headings.push(("lines", NUMBER_WIDTH));
+        headings.push(("Lines", NUMBER_WIDTH));
         if self.columns.code {
-            headings.push(("code", NUMBER_WIDTH));
+            headings.push(("Code", NUMBER_WIDTH));
         }
         if self.columns.comments {
-            headings.push(("comments", NUMBER_WIDTH));
+            headings.push(("Comments", NUMBER_WIDTH));
         }
         if self.columns.blanks {
-            headings.push(("blank", NUMBER_WIDTH));
+            headings.push(("Blank", NUMBER_WIDTH));
         }
         headings
     }
@@ -282,9 +282,9 @@ impl Widget for CountsView<'_> {
                 cells,
                 body,
                 if self.counts.is_counting() {
-                    "counting…"
+                    "Counting…"
                 } else {
-                    "nothing here to count"
+                    "Nothing here to count"
                 },
                 self.theme,
             );

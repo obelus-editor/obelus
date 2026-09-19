@@ -338,7 +338,7 @@ impl App {
     pub(super) fn save_notes(&mut self, todo: &Todo) {
         if let Err(error) = todo.write(&self.working_directory) {
             tracing::warn!(%error, "the notes were not written");
-            self.note = Some("the notes could not be written".to_string());
+            self.note = Some("The notes could not be written".to_string());
         }
         self.let_go_of_notes_that_are_gone(todo);
     }
@@ -430,7 +430,7 @@ impl App {
             TodoOutcome::Paste => {
                 match crate::clipboard::paste() {
                     Some(what) => self.paste_into_notes(&what),
-                    None => self.note = Some("nothing to paste".to_string()),
+                    None => self.note = Some("Nothing to paste".to_string()),
                 }
                 true
             }

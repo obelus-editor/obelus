@@ -19,7 +19,7 @@ screen 60x22  editor 60x20  status 60x1
 16|                                                            
 17|                                                            
 18|────────────────────────────────────────────────────────────
-19|  󰘵 i ignored files ■■     󰘵 n rename               󱊫 keys  
+19|  󰘵 i Ignored files ■■     󰘵 n Rename               󱊫 Keys  
 20|────────────────────────────────────────────────────────────
 21| 󰍉  fixtures                                                
 -- style --

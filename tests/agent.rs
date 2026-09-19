@@ -294,7 +294,7 @@ fn escape_stops_the_turn_and_never_closes_the_conversation() {
     });
     support::type_text(&mut app, "remember this");
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "an answer", |app| {
+    pump(&mut app, &events, "An answer", |app| {
         app.chat()
             .is_some_and(|chat| !chat.rows(60).is_empty() && app.is_asking_permission())
     });
@@ -345,7 +345,7 @@ fn escape_stops_an_agent_that_is_working() {
     });
     let text = screen(&mut app);
     assert!(
-        text.contains("stopped"),
+        text.contains("Stopped"),
         "it did not say it stopped:\n{text}"
     );
 }
@@ -851,7 +851,7 @@ fn an_agent_with_nothing_to_change_says_so() {
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
     assert!(
-        screen[screen.len() - 1].contains("nothing to change"),
+        screen[screen.len() - 1].contains("Nothing to change"),
         "the row says nothing at all:\n{dump}"
     );
 }
@@ -956,7 +956,7 @@ fn a_mode_the_agent_refuses_goes_back() {
     });
     let text = screen(&mut app);
     assert!(
-        text.contains("changing the mode"),
+        text.contains("Changing the mode"),
         "nothing said why it went back:\n{text}"
     );
 }
@@ -1346,7 +1346,7 @@ fn writing_your_own_answer_goes_with_the_one_you_choose() {
     assert!(app.is_asking(), "the form went back without what it needs");
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        rows(&dump).iter().any(|row| row.contains("choose one")),
+        rows(&dump).iter().any(|row| row.contains("Choose one")),
         "nothing says why it did not go:\n{dump}"
     );
 
@@ -1954,7 +1954,7 @@ fn a_run_of_tool_calls_folds_into_one_row() {
     // Four reads, one row -- and the one that is not a read is its own row,
     // because a run is a run of one kind.
     let text = screen(&mut app);
-    assert!(text.contains("4 files"), "the run is not folded:\n{text}");
+    assert!(text.contains("4 Files"), "the run is not folded:\n{text}");
     assert!(
         !text.contains("Read src/app"),
         "a folded run is showing its members:\n{text}"
@@ -1974,7 +1974,7 @@ fn a_run_of_tool_calls_folds_into_one_row() {
     let opened = rows(&dump);
     let heading = opened
         .iter()
-        .position(|row| row.contains("4 files"))
+        .position(|row| row.contains("4 Files"))
         .expect("the heading");
     assert!(
         opened[heading + 1].contains("Read src/app"),
@@ -2023,7 +2023,7 @@ fn what_is_happening_is_in_the_transcript_and_not_in_the_header() {
         .position(|row| row.contains("thinking\u{2026}"))
         .unwrap_or_else(|| panic!("nothing says it is working:\n{dump}"));
     assert!(
-        shown[doing].contains("esc stops it"),
+        shown[doing].contains("Esc stops it"),
         "how to stop it is not beside the thing it stops:\n{dump}"
     );
 
@@ -2352,11 +2352,11 @@ fn a_note_is_said_on_a_conversations_own_row() {
     // A jump forward from a conversation nobody jumped back from: the whole
     // of what it does is say so.
     app.go_forward();
-    assert_eq!(app.note(), Some("nowhere further forward"));
+    assert_eq!(app.note(), Some("Nowhere further forward"));
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let last = rows(&dump).last().copied().unwrap_or_default().to_string();
     assert!(
-        last.contains("nowhere further forward"),
+        last.contains("Nowhere further forward"),
         "the note is not on the conversation's row:\n{dump}"
     );
 }
@@ -2451,7 +2451,7 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
     );
     // And the reader can see that obelus said it.
     assert!(
-        text.contains("told the agent what this conversation is about"),
+        text.contains("Told the agent what this conversation is about"),
         "obelus spoke in the reader's name without saying so:\n{text}"
     );
 
@@ -2542,7 +2542,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
     // reader happens to be looking at.
     let text = screen(&mut app);
     assert!(
-        text.contains("starting again"),
+        text.contains("Starting again"),
         "nothing says the old conversation was not there:\n{text}"
     );
 
@@ -2702,7 +2702,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("step 2 of 3"))
+                .any(|row| row.text.contains("Step 2 of 3"))
         })
     });
 
@@ -2712,7 +2712,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
     assert!(
         screen
             .iter()
-            .any(|row| row.contains("step 2 of 3") && row.contains("wire it to the search")),
+            .any(|row| row.contains("Step 2 of 3") && row.contains("wire it to the search")),
         "the row does not say which step it is on:\n{dump}"
     );
     assert!(
@@ -2743,7 +2743,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
     assert_eq!(
         screen
             .iter()
-            .filter(|row| row.contains("esc stops it"))
+            .filter(|row| row.contains("Esc stops it"))
             .count(),
         1,
         "the hint is on more than the row it is about:\n{dump}"
@@ -2759,7 +2759,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
     // step under it. It is state, so it goes when it stops being true
     // rather than staying as a record of itself.
     use obelus::component::chat::Speaker;
-    let said = app.chat().expect("a conversation").rows(WIDTH);
+    let said = app.chat().expect("A conversation").rows(WIDTH);
     assert!(
         said.iter()
             .filter(|row| row.text.contains("write the test"))
@@ -2937,7 +2937,7 @@ fn somewhere_to_go_is_put_on_a_card_and_opened() {
         "the end of the url is not on the page:\n{dump}"
     );
     assert!(
-        screen.iter().any(|row| row.contains("open it")),
+        screen.iter().any(|row| row.contains("Open it")),
         "there is no way to go:\n{dump}"
     );
 
@@ -3296,7 +3296,7 @@ fn an_agent_that_can_only_resume_is_asked_to_resume() {
     );
     // Taken up, not started again: the agent still has the context.
     assert!(
-        !text.contains("starting again"),
+        !text.contains("Starting again"),
         "the conversation was thrown away rather than taken up:\n{text}"
     );
     // And it was resume that was asked for, not load: what the fake agent
@@ -3332,7 +3332,7 @@ fn an_agent_that_can_do_neither_is_not_asked() {
     // anyway refuses in its own words, and those would be here instead.
     let text = screen(&mut app);
     assert!(
-        text.contains("starting again"),
+        text.contains("Starting again"),
         "nothing says the old conversation was not there:\n{text}"
     );
     assert!(

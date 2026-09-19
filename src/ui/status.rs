@@ -324,10 +324,10 @@ impl StatusView<'_> {
         }
         let away = match buffer.on_disk() {
             crate::buffer::Disk::Unchanged => None,
-            crate::buffer::Disk::Written => Some("moved"),
+            crate::buffer::Disk::Written => Some("Moved"),
             // Said in its own word. A reader who is told their file
             // "moved" when it is gone will go looking for it.
-            crate::buffer::Disk::Deleted => Some("deleted"),
+            crate::buffer::Disk::Deleted => Some("Deleted"),
         };
         if let Some(away) = away {
             marker.push_str(&match icons::enabled() {
@@ -528,10 +528,10 @@ impl StatusView<'_> {
     ) {
         let name = match icons::enabled() {
             true => format!(
-                "{}  todo",
+                "{}  Todo",
                 icons::for_command(crate::command::Command::TodoOpen)
             ),
-            false => "todo".to_string(),
+            false => "Todo".to_string(),
         };
         write(cells, area.x + 1, area.y, &name, style);
 

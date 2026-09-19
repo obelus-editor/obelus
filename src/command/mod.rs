@@ -177,8 +177,8 @@ impl Group {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
-            Self::Files => "files",
-            Self::Code => "code",
+            Self::Files => "Files",
+            Self::Code => "Code",
             Self::Obelus => "obelus",
         }
     }

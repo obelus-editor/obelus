@@ -1089,7 +1089,7 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
     // The one at the end first, because it is the one that must not be given
     // up: a foot that ran out of room and dropped the way to the rest of the
     // keys would be a foot that hides the thing it exists to point at.
-    let all = format!("{} keys", keys_chord().label());
+    let all = format!("{} Keys", keys_chord().label());
     let width = u16::try_from(text_width(&all)).unwrap_or(0);
     let edge = match area.width.checked_sub(width + 2).filter(|_| card) {
         Some(offset) => {
@@ -1221,7 +1221,7 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
         cells,
         card.x + 2,
         card.y + 1,
-        "the keys here",
+        "The keys here",
         Style::new()
             .fg(theme.status_foreground)
             .bg(theme.raised_background),

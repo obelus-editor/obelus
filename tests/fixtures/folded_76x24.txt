@@ -4,7 +4,7 @@ screen 76x24  editor 76x22  status 76x1
  1|────────────────────────────────────────────────────────────────────────────
  2| 󰀓  /many                                                                   
  3|                                                                            
- 4| 󰈙  4 files  ▾ 󰄬                                                            
+ 4| 󰈙  4 Files  ▾ 󰄬                                                            
  5|   󰈙  Read src/app  tests/fixtures/many_lines.rs:4 󰄬                        
  6|   󰈙  Read src/acp  tests/fixtures/many_lines.rs:4 󰄬                        
  7|   󰈙  Read src/buffer  tests/fixtures/many_lines.rs:4 󰄬                     

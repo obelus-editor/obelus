@@ -1052,7 +1052,7 @@ fn a_deletion_taller_than_the_screen_can_be_read() {
 /// lines while the cursor was somewhere else entirely: five steps down
 /// walked out of a five-line hunk while the caret still looked as though it
 /// were on the first line of it, and the key that closes the hunk answered
-/// "nothing changed here".
+/// "Nothing changed here".
 #[test]
 fn the_caret_walks_the_lines_of_an_opened_hunk() {
     use obelus::{app::App, buffer::Buffer, command::Command};
@@ -2361,7 +2361,7 @@ fn the_history_opens_at_the_radius_its_key_names() {
     // inside one errand: its own history, and the places it can be seen
     // from. The project is the one view that stops being about this file,
     // and it has a key rather than a tab.
-    assert_eq!(picker.tabs(), ["this file", "the refs"]);
+    assert_eq!(picker.tabs(), ["This file", "The refs"]);
     assert_eq!(picker.tab(), 0, "f9 did not open the file's own tab");
     let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
     assert_eq!(
@@ -2400,7 +2400,7 @@ fn the_history_opens_at_the_radius_its_key_names() {
     support::press_function(&mut app, 10);
     support::read_history(&mut app, &events);
     let picker = app.picker().expect("the history");
-    assert_eq!(picker.tabs(), ["the project"]);
+    assert_eq!(picker.tabs(), ["The project"]);
     assert!(
         picker.matches().any(|item| item.marker.is_some()),
         "the project's rows do not say they open"
@@ -4244,7 +4244,7 @@ fn the_commit_that_wrote_a_line_is_where_the_walk_stops() {
     }
     let dump = support::render(&mut app, 70, 14);
     assert!(
-        support::text_block(&dump).contains("this commit wrote this line"),
+        support::text_block(&dump).contains("This commit wrote this line"),
         "pressing on says nothing about why nothing happened:\n{dump}"
     );
     assert_eq!(

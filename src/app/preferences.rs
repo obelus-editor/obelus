@@ -265,7 +265,7 @@ impl App {
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.when_empty("this setting has no choices");
+        picker.when_empty("This setting has no choices");
         // Opened on the one in force, so the list starts by saying which
         // that is.
         picker.prefer(word.to_string());
@@ -453,12 +453,12 @@ impl App {
             // Said when it was found to be unreadable, and again here,
             // because this is the moment the reader finds out their change
             // is not being kept.
-            self.note = Some("not saved: the settings will not read".to_string());
+            self.note = Some("Not saved: the settings will not read".to_string());
             return;
         }
         if let Err(error) = crate::config::save_to(&path, &self.settled.readers) {
             tracing::warn!(%error, "not saving the configuration");
-            self.note = Some(format!("not saved: {error}"));
+            self.note = Some(format!("Not saved: {error}"));
         }
     }
 
@@ -484,7 +484,7 @@ impl App {
         let path = crate::config::tree_path_for(&self.working_directory);
         if let Err(error) = crate::config::write_tree(&path, key, value) {
             tracing::warn!(%error, path = %path.display(), "not writing the tree's settings");
-            self.note = Some(format!("not saved: {error}"));
+            self.note = Some(format!("Not saved: {error}"));
             return;
         }
         // Read back the way any other change to that file arrives, so the
@@ -508,14 +508,14 @@ impl App {
     /// made in it by hand is picked up the next time obelus starts.
     pub fn open_config_file(&mut self) {
         let Some(path) = self.settled.path.clone() else {
-            self.note = Some("this system has nowhere for a settings file".to_string());
+            self.note = Some("This system has nowhere for a settings file".to_string());
             return;
         };
         if !path.exists()
             && let Err(error) = crate::config::save_to(&path, &self.settled.config)
         {
             tracing::warn!(%error, "not writing the configuration");
-            self.note = Some(format!("no settings file, and none written: {error}"));
+            self.note = Some(format!("No settings file, and none written: {error}"));
             return;
         }
         self.open(&path);
@@ -541,7 +541,7 @@ impl App {
         };
         if let Err(error) = crate::config::save_to(&path, &self.settled.config) {
             tracing::warn!(%error, "not saving the configuration");
-            self.note = Some(format!("not saved: {error}"));
+            self.note = Some(format!("Not saved: {error}"));
         }
     }
 
@@ -724,7 +724,7 @@ impl App {
         // Short, because the status row is one row and shares it with the
         // file and the position: which file and what went wrong are in the
         // log, where there is room for them.
-        self.note = Some("the settings will not read, so none are saved".to_string());
+        self.note = Some("The settings will not read, so none are saved".to_string());
     }
 
     /// Uses a configuration without reading a file.

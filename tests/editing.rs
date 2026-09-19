@@ -887,11 +887,11 @@ mod saving {
 
         // Each way out says what it loses, because neither is the safe one.
         assert!(
-            support::text_block(&dump).contains("loses what was written there"),
+            support::text_block(&dump).contains("Loses what was written there"),
             "the ways out do not say what they lose:\n{dump}"
         );
 
-        support::answer(&mut app, "save mine over it");
+        support::answer(&mut app, "Save mine over it");
         assert_eq!(
             std::fs::read_to_string(&path).expect("reading it"),
             "xmine\n",
@@ -960,7 +960,7 @@ mod saving {
             "it offered to take what is on a disk with nothing on it: {ways:?}"
         );
 
-        support::answer(&mut app, "write it back");
+        support::answer(&mut app, "Write it back");
         assert_eq!(
             std::fs::read_to_string(&path).expect("reading it"),
             "xmine\n",
@@ -976,7 +976,7 @@ mod saving {
         std::fs::remove_file(&path).expect("deleting it");
 
         dispatch::dispatch(&mut app, Command::FileSave);
-        support::answer(&mut app, "close it and let it go");
+        support::answer(&mut app, "Close it and let it go");
 
         assert!(app.current_buffer().is_none(), "it kept the document");
         assert!(
@@ -1031,7 +1031,7 @@ mod saving {
         app.handle(obelus::event::Event::FileChanged { path: path.clone() });
 
         dispatch::dispatch(&mut app, Command::FileSave);
-        support::answer(&mut app, "take what is on disk");
+        support::answer(&mut app, "Take what is on disk");
 
         let buffer = app.current_buffer().expect("a buffer");
         assert_eq!(
@@ -1057,7 +1057,7 @@ mod saving {
         app.handle(obelus::event::Event::FileChanged { path: path.clone() });
 
         dispatch::dispatch(&mut app, Command::FileSave);
-        support::answer(&mut app, "take what is on disk");
+        support::answer(&mut app, "Take what is on disk");
         assert!(
             !app.current_buffer().expect("a buffer").is_dirty(),
             "what came off disk was called unwritten"
@@ -1101,7 +1101,7 @@ mod saving {
         assert!(
             support::ways(&app)
                 .iter()
-                .any(|way| way == "save mine over it"),
+                .any(|way| way == "Save mine over it"),
             "the second save went through without asking"
         );
     }
@@ -1140,7 +1140,7 @@ mod saving {
             "mine\n",
             "a commit's version was written over the file"
         );
-        // And told why, rather than "nothing to save". A commit's version
+        // And told why, rather than "Nothing to save". A commit's version
         // can never be dirty -- editing it is refused a layer down -- so
         // without this it would be turned away for the wrong reason, and a
         // reader would go looking for the change they thought they lost.
@@ -1204,7 +1204,7 @@ mod saying {
 
         let dump = support::render(&mut app, 70, 12);
         assert!(
-            support::text_block(&dump).contains("moved"),
+            support::text_block(&dump).contains("Moved"),
             "nothing says the file moved under the edit:\n{dump}"
         );
     }
@@ -1281,7 +1281,7 @@ mod saying {
             "it did not say which file leaving would lose:\n{dump}"
         );
 
-        support::answer(&mut app, "leave without saving");
+        support::answer(&mut app, "Leave without saving");
         assert!(app.should_quit(), "answering did not leave");
     }
 
@@ -1316,7 +1316,7 @@ mod saying {
             "it named the files instead of counting them:\n{dump}"
         );
 
-        support::answer(&mut app, "save everything and leave");
+        support::answer(&mut app, "Save everything and leave");
 
         assert!(app.should_quit(), "it wrote everything and then stayed");
         assert_eq!(
@@ -1346,7 +1346,7 @@ mod saying {
         std::fs::remove_dir_all(&gone).expect("taking the directory away");
 
         dispatch::dispatch(&mut app, Command::Quit);
-        support::answer(&mut app, "save everything and leave");
+        support::answer(&mut app, "Save everything and leave");
 
         assert!(
             !app.should_quit(),
@@ -1374,7 +1374,7 @@ mod saying {
         assert!(
             support::ways(&app)
                 .iter()
-                .any(|way| way == "leave without saving"),
+                .any(|way| way == "Leave without saving"),
             "the second attempt left without asking"
         );
     }
@@ -1589,7 +1589,7 @@ mod closing {
                 .unwrap_or_else(|| panic!("no row saying {what:?} in:\n{dump}"))
         };
         assert!(
-            row("is unsaved") < row("save and close it"),
+            row("is unsaved") < row("Save and close it"),
             "the question is drawn under the answers to it:\n{dump}"
         );
     }
@@ -1618,7 +1618,7 @@ mod closing {
         support::type_text(&mut app, "x");
 
         dispatch::dispatch(&mut app, Command::DocumentClose);
-        support::answer(&mut app, "save and close it");
+        support::answer(&mut app, "Save and close it");
 
         assert_eq!(
             std::fs::read_to_string(&path).expect("reading it"),
@@ -1637,7 +1637,7 @@ mod closing {
         support::type_text(&mut app, "x");
 
         dispatch::dispatch(&mut app, Command::DocumentClose);
-        support::answer(&mut app, "close it without saving");
+        support::answer(&mut app, "Close it without saving");
 
         assert!(app.current_buffer().is_none(), "it did not close");
         assert_eq!(
@@ -1664,7 +1664,7 @@ mod closing {
         std::fs::remove_dir_all(&gone).expect("taking the directory away");
 
         dispatch::dispatch(&mut app, Command::DocumentClose);
-        support::answer(&mut app, "save and close it");
+        support::answer(&mut app, "Save and close it");
 
         assert!(
             app.current_buffer().is_some(),
@@ -2149,7 +2149,7 @@ mod agents {
 mod formatting {
     use obelus::lsp::action;
 
-    /// A server saying "nothing to change" is not a server failing, and a
+    /// A server saying "Nothing to change" is not a server failing, and a
     /// layout obelus cannot read is not half a layout to apply.
     #[test]
     fn only_a_layout_that_can_be_followed_is_followed() {

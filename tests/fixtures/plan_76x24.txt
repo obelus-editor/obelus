@@ -4,7 +4,7 @@ screen 76x24  editor 76x22  status 76x1
  1|────────────────────────────────────────────────────────────────────────────
  2| 󰀓  /steps                                                                  
  3|                                                                            
- 4| ⠋  step 2 of 3 — wire it to the search  ▾                     esc stops it 
+ 4| ⠋  Step 2 of 3 — wire it to the search  ▾                     Esc stops it 
  5|   󰄬  read the counts tree                                                  
  6|   󰝲  wire it to the search                                                 
  7|   󰇘  write the test                                                        

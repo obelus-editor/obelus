@@ -1,8 +1,8 @@
 screen 76x14  editor 76x12  status 76x1
 -- text --
- 0|  languages  files                                                      ⇤ ⇥ 
+ 0|  Languages  Files                                                      ⇤ ⇥ 
  1|────────────────────────────────────────────────────────────────────────────
- 2|                                     files   lines    code comments  blank  
+ 2|                                     Files   Lines    Code Comments  Blank  
  3| ▾ src                                 40   10180    8980     800     400 █
  4| ╰ ▾ module                            40   10180    8980     800     400 █
  5|   ├   file00.rs                              430     400      20      10 █
@@ -13,7 +13,7 @@ screen 76x14  editor 76x12  status 76x1
 10|   ├   file05.rs                              385     355      20      10 █
 11|   ├   file06.rs                              376     346      20      10 █
 12|────────────────────────────────────────────────────────────────────────────
-13|  󰌑 close   󱊷 leave                                                 󱊫 keys  
+13|  󰌑 Close   󱊷 Leave                                                 󱊫 Keys  
 -- style --
  0|aaaaaaaaaaaabbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

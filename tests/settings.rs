@@ -136,7 +136,7 @@ fn a_choice_opens_the_list_every_other_choice_uses() {
     assert!(app.settings().is_some(), "the view went away");
     let dump = support::render(&mut app, 66, 12);
     assert!(
-        support::text_block(&dump).contains("appearance"),
+        support::text_block(&dump).contains("Appearance"),
         "the settings are not behind the list:\n{dump}"
     );
 
@@ -315,7 +315,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
         .iter()
         .map(|shown| shown.opens.map(obelus::config::Group::label))
         .collect();
-    assert_eq!(opens[0], Some("appearance"));
+    assert_eq!(opens[0], Some("Appearance"));
     assert_eq!(opens[1], None, "a second heading inside one group");
     assert_eq!(
         opens.iter().filter(|opens| opens.is_some()).count(),
@@ -326,7 +326,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
     // And the tabs are the pages: the settings, the keys, the agents.
     assert_eq!(
         obelus::component::settings::Settings::tabs(),
-        ["settings", "keys", "agents"]
+        ["Settings", "Keys", "Agents"]
     );
     support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_keys());
@@ -413,7 +413,7 @@ fn typing_narrows_the_settings() {
     support::type_text(&mut app, "zzz");
     let dump = support::render(&mut app, 66, 12);
     assert!(
-        support::text_block(&dump).contains("no setting by that name"),
+        support::text_block(&dump).contains("No setting by that name"),
         "an empty screen with no reason:\n{dump}"
     );
 
@@ -750,7 +750,7 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let root = tree(
-        "unset",
+        "Unset",
         "# what this project needs\n\nwrap = true\nblame_margin = true\n",
     );
 
@@ -836,8 +836,8 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     // The theme is the reader's; the glyphs are nobody's.
     let dump = support::render(&mut app, 76, 32);
     let text = support::text_block(&dump);
-    assert!(text.contains("global"), "{dump}");
-    assert!(text.contains("default"), "{dump}");
+    assert!(text.contains("Global"), "{dump}");
+    assert!(text.contains("Default"), "{dump}");
     // And the file it would be writing is named on the tab row.
     assert!(text.contains(".obelus/config.toml"), "{dump}");
 
@@ -850,7 +850,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         .find(|row| row.contains("Wrap long lines"))
         .expect("the row");
     assert!(
-        wrap.contains("project"),
+        wrap.contains("Project"),
         "a setting the tree has does not say so: {wrap:?}"
     );
     // And beside it, one the reader wrote down and the tree says nothing
@@ -864,7 +864,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         .expect("the row")
         .to_string();
     assert!(
-        blame.contains("global"),
+        blame.contains("Global"),
         "a setting written down at its default is not the reader's: {blame:?}"
     );
 
@@ -961,7 +961,7 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
     let dump = support::render(&mut app, 76, 16);
     assert_ne!(
         letter(&dump, "Blame in the margin", "margin"),
-        letter(&dump, "Blame in the margin", "default"),
+        letter(&dump, "Blame in the margin", "Default"),
         "the name is as dim as the word saying the value is not the tree's:\n{dump}"
     );
 
@@ -999,7 +999,7 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
     support::lay_out(&mut app, 76, 10);
     dispatch::dispatch(&mut app, Command::ConfigTree);
 
-    // The first row, which is the tabs': "appearance" is a heading down the
+    // The first row, which is the tabs': "Appearance" is a heading down the
     // page now and would find that instead.
     let tabs = |app: &mut App, width: u16| -> String {
         let dump = support::render(app, width, 10);
@@ -1014,7 +1014,7 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
     let wide = tabs(&mut app, 76);
     assert!(wide.contains(".obelus/config.toml"), "{wide:?}");
     assert!(
-        wide.find("agents") < wide.find(".obelus"),
+        wide.find("Agents") < wide.find(".obelus"),
         "the name is not after the tabs: {wide:?}"
     );
 
@@ -1023,7 +1023,7 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
     // the corner this is about.
     let narrow = tabs(&mut app, 40);
     assert!(
-        narrow.contains("settings") && narrow.contains("agents"),
+        narrow.contains("Settings") && narrow.contains("Agents"),
         "the tabs were written over: {narrow:?}"
     );
     assert!(
@@ -1426,7 +1426,7 @@ fn the_first_agent_installed_is_the_one_in_use() {
     );
 
     // An install that failed activates nothing. There is nothing to talk
-    // to, and a card that says both "failed" and "active" says nothing.
+    // to, and a card that says both "Failed" and "active" says nothing.
     app.handle(Event::Installed {
         id: "agent-0".to_string(),
         failure: Some("npm is not on the path".to_string()),
@@ -1585,7 +1585,7 @@ fn a_command_can_be_put_on_another_key() {
     support::press(&mut app, KeyCode::Enter);
     let asking = support::render(&mut app, 66, 12);
     assert!(
-        support::text_block(&asking).contains("press a key"),
+        support::text_block(&asking).contains("Press a key"),
         "the row does not say what it is waiting for:\n{asking}"
     );
 
@@ -1850,7 +1850,7 @@ fn a_settings_file_that_will_not_read_is_not_written_over() {
     );
     let dump = support::render(&mut app, 66, 12);
     assert!(
-        support::text_block(&dump).contains("not saved"),
+        support::text_block(&dump).contains("Not saved"),
         "nothing said the change was not kept:\n{dump}"
     );
 
@@ -1926,7 +1926,7 @@ fn the_settings_say_what_their_keys_do() {
     dispatch::dispatch(&mut app, Command::ConfigTree);
 
     let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
-    for word in ["change", "type to filter", "unset", "leave", "keys"] {
+    for word in ["Change", "type to filter", "Unset", "Leave", "Keys"] {
         assert!(word_on(&text, word), "{word:?} is not at the foot:\n{text}");
     }
 
@@ -1934,9 +1934,9 @@ fn the_settings_say_what_their_keys_do() {
     support::press(&mut app, KeyCode::F(1));
     let dump = support::render(&mut app, 76, 16);
     let text = support::text_block(&dump);
-    assert!(text.contains("the keys here"), "no card:\n{dump}");
+    assert!(text.contains("The keys here"), "no card:\n{dump}");
     assert!(
-        text.contains("take this setting out of the tree's file"),
+        text.contains("Take this setting out of the tree's file"),
         "the card only has the foot's word for it:\n{dump}"
     );
 
@@ -1946,7 +1946,7 @@ fn the_settings_say_what_their_keys_do() {
 }
 
 /// `unset` is on the tree's page and nowhere else, because the reader's own
-/// settings have no "unset" -- one they have not changed is the default.
+/// settings have no "Unset" -- one they have not changed is the default.
 #[test]
 fn the_foot_offers_unset_only_where_it_means_something() {
     let _turn = SETTINGS
@@ -1957,7 +1957,7 @@ fn the_foot_offers_unset_only_where_it_means_something() {
     dispatch::dispatch(&mut app, Command::ConfigOpen);
     let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
     assert!(
-        !word_on(&text, "unset"),
+        !word_on(&text, "Unset"),
         "the reader's own page offered to unset something:\n{text}"
     );
 }

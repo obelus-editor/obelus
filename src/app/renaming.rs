@@ -19,15 +19,15 @@ impl App {
     /// usually edits rather than replaces.
     pub fn rename_symbol(&mut self) {
         let Some(buffer) = self.current_buffer() else {
-            self.note = Some("no file open".to_string());
+            self.note = Some("No file open".to_string());
             return;
         };
         if !buffer.content().is_file() || buffer.mode() != crate::buffer::Mode::Edit {
-            self.note = Some("this is not a file to change".to_string());
+            self.note = Some("This is not a file to change".to_string());
             return;
         }
         let Some(language) = buffer.language() else {
-            self.note = Some("no language server for this file".to_string());
+            self.note = Some("No language server for this file".to_string());
             return;
         };
         if let Some(why) = self.why_not_asking(language) {
@@ -47,7 +47,7 @@ impl App {
         // rename asked for on a comma is a question the server will refuse,
         // and the refusal arrives a round trip later.
         let Some(word) = self.word_at_cursor() else {
-            self.note = Some("the cursor is not on a name".to_string());
+            self.note = Some("The cursor is not on a name".to_string());
             return;
         };
         self.ask_on_the_status_row(crate::component::prompt::Prompt::about(
@@ -116,11 +116,11 @@ impl App {
                         version,
                     },
                 );
-                self.note = Some(format!("renaming to {name}\u{2026}"));
+                self.note = Some(format!("Renaming to {name}\u{2026}"));
             }
             Err(error) => {
                 tracing::warn!(%error, "could not ask for a rename");
-                self.note = Some("the language server is not listening".to_string());
+                self.note = Some("The language server is not listening".to_string());
             }
         }
     }
@@ -133,7 +133,7 @@ impl App {
     /// one whose rename lands two characters out has a mess to find.
     pub(super) fn on_rename(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
-            self.note = Some("the file changed while renaming".to_string());
+            self.note = Some("The file changed while renaming".to_string());
             return;
         }
         let result = match reply.result {
@@ -145,7 +145,7 @@ impl App {
         };
         let wanted = edits::wanted_in(&result);
         if wanted.is_empty() && wanted.refused.is_empty() {
-            self.note = Some("the server renamed nothing".to_string());
+            self.note = Some("The server renamed nothing".to_string());
             return;
         }
         self.note = Some(self.apply_wanted(&wanted));

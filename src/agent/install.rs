@@ -165,7 +165,7 @@ async fn install(
     }
 
     let Some((command, arguments)) = super::command_for(agent, root) else {
-        return Err("it installed, but obelus cannot tell what to run".to_string());
+        return Err("Installed, but there is no telling what to run".to_string());
     };
     super::remember(&agent.id, &command, &arguments, &agent.version, root)
 }
@@ -202,7 +202,7 @@ fn node_now(package: &str, home: &Path) -> Result<(), String> {
         .map_err(|error| match error.kind() {
             // The ordinary way this fails, and the one worth naming: node
             // is not installed.
-            std::io::ErrorKind::NotFound => "npm is not on the path".to_string(),
+            std::io::ErrorKind::NotFound => "There is no npm on the path".to_string(),
             _ => error.to_string(),
         })?;
     if outcome.status.success() {
@@ -214,7 +214,7 @@ fn node_now(package: &str, home: &Path) -> Result<(), String> {
         .lines()
         .rev()
         .find(|line| !line.trim().is_empty())
-        .unwrap_or("npm would not say why")
+        .unwrap_or("No reason from npm")
         .trim()
         .to_string())
 }
@@ -306,7 +306,7 @@ fn settle(
         let digest = Sha256::digest(bytes);
         let got: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
         if !got.eq_ignore_ascii_case(expected) {
-            return Err("it is not the file the registry describes".to_string());
+            return Err("It is not the file the registry describes".to_string());
         }
     } else {
         // Half the registry's entries have no checksum. Not a reason to

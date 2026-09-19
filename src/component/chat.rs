@@ -536,7 +536,7 @@ impl Chat {
             .position(|step| step.state == "in_progress");
         let total = self.plan.len();
         match at.and_then(|at| Some((at, self.plan.get(at)?))) {
-            Some((at, step)) => format!("step {} of {total} \u{2014} {}", at + 1, step.said),
+            Some((at, step)) => format!("Step {} of {total} \u{2014} {}", at + 1, step.said),
             None => format!("{total} steps"),
         }
     }
@@ -836,8 +836,8 @@ impl Chat {
         // What they have in common, where they have it: a run of reads is a
         // run of files, and a run of commands is a run of calls.
         let what = match members.iter().all(|said| !said.places.is_empty()) {
-            true => "files",
-            false => "calls",
+            true => "Files",
+            false => "Calls",
         };
         // The state of the run is the state of the worst of it: one that
         // failed is the news, and one still running is why the row moves.
@@ -1689,7 +1689,7 @@ mod tests {
         read(&mut chat, "t3", "completed");
         let rows = chat.rows(ROOM.reading);
         assert_eq!(rows.len(), 1, "a run of three is not one row: {rows:?}");
-        assert_eq!(rows[0].text, "3 files");
+        assert_eq!(rows[0].text, "3 Files");
         assert!(rows[0].folds.is_some() && !rows[0].open);
 
         // One of them failed, so it is open without anybody asking.

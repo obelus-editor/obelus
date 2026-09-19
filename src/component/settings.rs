@@ -163,9 +163,9 @@ impl Page {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Settings => "settings",
-            Self::Keys => "keys",
-            Self::Agents => "agents",
+            Self::Settings => "Settings",
+            Self::Keys => "Keys",
+            Self::Agents => "Agents",
         }
     }
 }

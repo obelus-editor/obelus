@@ -2,12 +2,12 @@ screen 34x10  editor 34x8  status 34x1
 -- text --
  0|       obelus        v0.1.0       
  1|                                  
- 2|        󱊫  󰈞 open a file          
- 3|        󱊭  󰣞 changed files        
- 4|        󱊰  󰉓 search files         
- 5|        󱊮  󰚩 ask the agent        
- 6|       󰘴 p 󰆍 run a command        
- 7|       󰘴 q 󰈆 leave obelus         
+ 2|        󱊫  󰈞 Open a file          
+ 3|        󱊭  󰣞 Changed files        
+ 4|        󱊰  󰉓 Search files         
+ 5|        󱊮  󰚩 Ask the agent        
+ 6|       󰘴 p 󰆍 Run a command        
+ 7|       󰘴 q 󰈆 Leave obelus         
  8|──────────────────────────────────
  9|                                  
 -- style --

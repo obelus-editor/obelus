@@ -313,15 +313,17 @@ impl Counts {
     /// The words on the tabs.
     ///
     /// The second says the language while the page is showing only that
-    /// language's files: a tab reading "files" over a fraction of them would
-    /// be the one thing on screen that is not true.
+    /// language's files: a tab reading "Files" over a fraction of them would
+    /// be the one thing on screen that is not true. The language keeps the
+    /// name it is counted under -- `Rust`, `TOML`, `Plain Text` -- which is
+    /// also how it is spelled in the column this tab came from.
     #[must_use]
     pub fn tabs(&self) -> Vec<String> {
         vec![
-            "languages".to_string(),
+            "Languages".to_string(),
             match self.only {
-                Some(language) => language.to_lowercase(),
-                None => "files".to_string(),
+                Some(language) => language.to_string(),
+                None => "Files".to_string(),
             },
         ]
     }
@@ -751,7 +753,7 @@ mod tests {
         assert_eq!(counts.rows().len(), 2, "not the top of the tree");
         assert_eq!(counts.rows()[0].name, "src");
         assert_eq!(counts.rows()[0].files, Some(2), "the directory miscounts");
-        assert_eq!(counts.tabs()[1], "files", "the tab claims a language");
+        assert_eq!(counts.tabs()[1], "Files", "the tab claims a language");
     }
 
     /// Choosing a language shows its files, and the tab says which.
@@ -778,7 +780,7 @@ mod tests {
         assert_eq!(counts.rows()[0].files, Some(2));
         assert_eq!(
             counts.tabs()[1],
-            "rust",
+            "Rust",
             "the tab did not say what it is showing"
         );
 
@@ -787,7 +789,7 @@ mod tests {
         counts.handle_key(&press(KeyCode::Tab), 10);
         // `Cargo.toml` is back beside `src`, so the narrowing is gone.
         assert_eq!(counts.rows().len(), 2, "walking kept the narrowing");
-        assert_eq!(counts.tabs()[1], "files");
+        assert_eq!(counts.tabs()[1], "Files");
 
         // Escape gives up on the language first, not on the whole view.
         counts.handle_key(&press(KeyCode::BackTab), 10);

@@ -490,13 +490,13 @@ fn the_foot_drops_a_key_that_would_do_nothing() {
 
     // The first note is about the project, so there is nowhere to go.
     let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
-    assert!(!text.contains("go there"), "{text}");
-    assert!(text.contains("another"), "{text}");
+    assert!(!text.contains("Go there"), "{text}");
+    assert!(text.contains("Another"), "{text}");
 
     press(&mut app, KeyCode::Down);
     let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
     assert!(
-        text.contains("go there"),
+        text.contains("Go there"),
         "the key that works is missing:\n{text}"
     );
 }
@@ -517,10 +517,10 @@ fn the_foot_of_the_notes_points_at_no_card() {
     let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
     let foot = text
         .lines()
-        .find(|row| row.contains("another"))
+        .find(|row| row.contains("Another"))
         .unwrap_or_else(|| panic!("no foot at all:\n{text}"));
     assert!(
-        !foot.contains("keys"),
+        !foot.contains("Keys"),
         "the foot still points at a card:\n{foot}"
     );
 }
@@ -550,7 +550,7 @@ fn f1_over_the_notes_opens_a_file() {
     // And nothing that reads like a card of keys went up in its place.
     let dump = support::render(&mut app, 76, 18);
     assert!(
-        !support::text_block(&dump).contains("the keys here"),
+        !support::text_block(&dump).contains("The keys here"),
         "the card is still there:\n{dump}"
     );
 }
@@ -596,7 +596,7 @@ fn a_tree_with_no_notes_says_so() {
 
     let dump = support::render(&mut app, 76, 18);
     assert!(
-        support::text_block(&dump).contains("nothing to come back to"),
+        support::text_block(&dump).contains("Nothing to come back to"),
         "{dump}"
     );
     // And enter starts the first one.
@@ -656,7 +656,7 @@ fn dropping_a_note_is_at_the_foot() {
     let scratch = tree("drop-foot", THREE);
     let mut app = open(&scratch, 76, 14);
     let text = support::text_block(&support::render(&mut app, 76, 14)).to_string();
-    assert!(text.contains("drop"), "the foot does not say how:\n{text}");
+    assert!(text.contains("Drop"), "the foot does not say how:\n{text}");
 }
 
 /// A note too long for the row wraps, where the reader asked for wrapping.
@@ -2014,7 +2014,7 @@ fn the_status_row_says_it_is_the_notes_and_what_is_left() {
     let status = rows.lines().last().unwrap_or_default();
 
     assert!(
-        status.contains("todo"),
+        status.contains("Todo"),
         "the row does not say which document this is:\n{dump}"
     );
     assert!(

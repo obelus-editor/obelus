@@ -35,7 +35,7 @@ fn a_question_from_the_server_is_answered() {
         "method": "workspace/configuration",
         "params": { "items": [{ "section": "rust-analyzer" }, { "section": "other" }] }
     }))
-    .expect("an answer");
+    .expect("An answer");
     assert_eq!(sent["id"], json!(7), "the answer is to another question");
     assert_eq!(
         sent["result"],
@@ -47,7 +47,7 @@ fn a_question_from_the_server_is_answered() {
     let sent = Client::answered_for_test(&json!({
         "jsonrpc": "2.0", "id": 8, "method": "window/showDocument", "params": {}
     }))
-    .expect("an answer");
+    .expect("An answer");
     assert_eq!(sent["error"]["code"], json!(-32601), "not method-not-found");
 
     // A notification -- no id -- is not answered: an answer to one is a

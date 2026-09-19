@@ -30,9 +30,9 @@ impl App {
     pub(super) fn ask_before_closing(&mut self, id: DocumentId) {
         self.stop_to_ask(
             Question::new(format!("{} is unsaved", self.file_path(id)))
-                .way("save and close it", Answer::Closing(id, Closing::Save))
+                .way("Save and close it", Answer::Closing(id, Closing::Save))
                 .way(
-                    "close it without saving",
+                    "Close it without saving",
                     Answer::Closing(id, Closing::Discard),
                 ),
         );
@@ -54,10 +54,10 @@ impl App {
         self.stop_to_ask(
             Question::new(what)
                 .way(
-                    "save everything and leave",
+                    "Save everything and leave",
                     Answer::Leaving(Leaving::SaveAll),
                 )
-                .way("leave without saving", Answer::Leaving(Leaving::Discard)),
+                .way("Leave without saving", Answer::Leaving(Leaving::Discard)),
         );
     }
 
@@ -70,12 +70,12 @@ impl App {
     pub(super) fn ask_before_saving(&mut self, id: DocumentId) {
         self.stop_to_ask(
             Question::new(format!("{} changed on disk", self.file_path(id)))
-                .way("save mine over it", Answer::Saving(id, Saving::Mine))
-                .saying("loses what was written there")
-                .way("take what is on disk", Answer::Saving(id, Saving::Theirs))
+                .way("Save mine over it", Answer::Saving(id, Saving::Mine))
+                .saying("Loses what was written there")
+                .way("Take what is on disk", Answer::Saving(id, Saving::Theirs))
                 // Not lost for good, which is the whole difference between
                 // this way out and the one above it.
-                .saying("undo brings yours back"),
+                .saying("Undo brings yours back"),
         );
     }
 
@@ -87,12 +87,12 @@ impl App {
     pub(super) fn ask_before_writing_back(&mut self, id: DocumentId) {
         self.stop_to_ask(
             Question::new(format!("{} was deleted", self.file_path(id)))
-                .way("write it back", Answer::Writing(id, Writing::Back))
+                .way("Write it back", Answer::Writing(id, Writing::Back))
                 .way(
-                    "close it and let it go",
+                    "Close it and let it go",
                     Answer::Writing(id, Writing::LetGo),
                 )
-                .saying("loses your changes"),
+                .saying("Loses your changes"),
         );
     }
 

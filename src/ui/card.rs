@@ -21,7 +21,7 @@ use crate::{
 const MARGIN: u16 = 1;
 
 /// The row that sends the card.
-const SUBMIT: &str = "submit";
+const SUBMIT: &str = "Submit";
 
 /// The cells a row of the card has to write in.
 ///

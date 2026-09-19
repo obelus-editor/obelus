@@ -284,10 +284,10 @@ impl App {
     pub(super) fn symbol_actions(&self) -> Result<Vec<SymbolAction>, String> {
         let buffer = self
             .current_buffer()
-            .ok_or_else(|| "no file open".to_string())?;
+            .ok_or_else(|| "No file open".to_string())?;
         let language = buffer
             .language()
-            .ok_or_else(|| "obelus does not know this language".to_string())?;
+            .ok_or_else(|| "Not a language obelus knows".to_string())?;
 
         // On a name, before anything about servers. Every question in the
         // menu is about the thing under the cursor, and on a bracket or a
@@ -296,7 +296,7 @@ impl App {
         // act on -- move the cursor -- where the others are about the
         // machine.
         if !self.name_at(buffer) {
-            return Err("no symbol here".to_string());
+            return Err("No symbol here".to_string());
         }
 
         if let Some(why) = self.why_not_asking(language) {
@@ -311,7 +311,7 @@ impl App {
             .filter(|action| action.supported(capabilities))
             .collect();
         if actions.is_empty() {
-            return Err("the language server answers none of these".to_string());
+            return Err("The language server answers none of these".to_string());
         }
         Ok(actions)
     }
@@ -825,7 +825,7 @@ impl App {
             }
             Err(error) => {
                 tracing::warn!(%error, "could not ask");
-                self.note = Some("the language server is not listening".to_string());
+                self.note = Some("The language server is not listening".to_string());
             }
         }
     }
@@ -1109,12 +1109,12 @@ impl App {
                     now = ?now,
                     "dropping an answer about a version that has been replaced"
                 );
-                self.note = Some("the file changed while asking".to_string());
+                self.note = Some("The file changed while asking".to_string());
             }
             Outcome::Failed(message) => self.note = Some(message),
-            Outcome::NotYet => self.note = Some("still indexing".to_string()),
+            Outcome::NotYet => self.note = Some("Still indexing".to_string()),
             Outcome::Nothing => {
-                self.note = Some(format!("nothing for {}", action.title()));
+                self.note = Some(format!("Nothing for {}", action.title()));
             }
             Outcome::Places(mut places) if places.len() == 1 => {
                 let place = places.remove(0);
@@ -1140,7 +1140,7 @@ impl App {
     /// is offered whether or not there is one.
     pub fn restart_server(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            self.note = Some("no file to restart a server for".to_string());
+            self.note = Some("No file to restart a server for".to_string());
             return;
         };
 
@@ -1181,7 +1181,7 @@ impl App {
     /// file of that language would start it again.
     pub fn stop_server(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            self.note = Some("no file to stop a server for".to_string());
+            self.note = Some("No file to stop a server for".to_string());
             return;
         };
         let was_running = self.stop(language);
@@ -1207,12 +1207,12 @@ impl App {
     /// root.
     pub fn open_outline(&mut self) {
         let Some(buffer) = self.current_buffer() else {
-            self.note = Some("no file to outline".to_string());
+            self.note = Some("No file to outline".to_string());
             return;
         };
         let path = buffer.path().to_path_buf();
         let Some(language) = buffer.syntax().map(SyntaxState::language) else {
-            self.note = Some("obelus does not know this language".to_string());
+            self.note = Some("Not a language obelus knows".to_string());
             return;
         };
 
@@ -1227,7 +1227,7 @@ impl App {
         // it is a few milliseconds once the project is indexed.
         if self.servers.contains_key(&language) && self.ask_outline(&path, language) {
             let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
-            picker.when_empty("asking the language server\u{2026}");
+            picker.when_empty("Asking the language server\u{2026}");
             picker.is_outline_of(path);
             picker.previews();
             self.show_list(picker);
@@ -1289,12 +1289,12 @@ impl App {
 
         let mut picker = Picker::new(items, PickerLayout::FullArea);
         picker.when_empty(if tags::has_tags(language) {
-            "this file defines nothing"
+            "This file defines nothing"
         } else {
             // Not the same fact, and the difference is the reader's next
             // move: one means look elsewhere, the other means do not bother
             // pressing this key for this language.
-            "no outline for this language"
+            "No outline for this language"
         });
         // On the symbol the cursor is in, or the nearest one above it, which
         // is the answer to "where am I" that an outline is usually opened to
@@ -1402,7 +1402,7 @@ impl App {
             .map(|symbol| symbol.name.clone());
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(items);
-            picker.when_empty("this file defines nothing");
+            picker.when_empty("This file defines nothing");
             if let Some(here) = here {
                 picker.prefer(here);
             }
@@ -1474,7 +1474,7 @@ impl App {
     fn on_formatting(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
             tracing::debug!("the file changed while it was being laid out");
-            self.note = Some("the file changed while formatting".to_string());
+            self.note = Some("The file changed while formatting".to_string());
         } else if let Some(edits) = action::edits_in(reply.result.ok()) {
             let encoding = self.file(id).and_then(Buffer::language).map_or_else(
                 || lsp_types::PositionEncodingKind::UTF16,
@@ -1585,7 +1585,7 @@ impl App {
             })
             .collect();
         picker.replace(items);
-        picker.while_empty("the server knows no such name");
+        picker.while_empty("The server knows no such name");
     }
 }
 
@@ -1644,9 +1644,9 @@ impl App {
         let troubles = self.troubles().to_vec();
         if troubles.is_empty() {
             self.note = Some(match self.server_state() {
-                Some((_, lsp::ServerState::Ready)) => "nothing wrong with this file".to_string(),
+                Some((_, lsp::ServerState::Ready)) => "Nothing wrong with this file".to_string(),
                 Some((command, _)) => format!("{command} is not answering"),
-                None => "no language server for this file".to_string(),
+                None => "No language server for this file".to_string(),
             });
             return;
         }

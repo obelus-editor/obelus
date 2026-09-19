@@ -983,7 +983,7 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
     // (`ctrl+alt`) or something only a terminal speaking the keyboard
     // protocol can report (`ctrl+shift`).
     if !alone && !control && !alt {
-        return Some("shift extends, and two modifiers is the desktop's");
+        return Some("Shift extends, and two modifiers is the desktop's");
     }
 
     match chord.code {
@@ -1002,36 +1002,36 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
         | KeyCode::PageDown
             if !alt =>
         {
-            Some("the editor's own, for moving about a file")
+            Some("The editor's own, for moving about a file")
         }
         KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => None,
         // A function key, which is the one family that wants nothing held.
         KeyCode::F(_) if alone => None,
-        KeyCode::F(_) => Some("a function key is bare, or it is two keys on the next terminal"),
+        KeyCode::F(_) => Some("A function key is bare, or it is two keys on the next terminal"),
         // Enter under alt is the only one of these that is a chord: the
         // rest are what a dialog takes and what typing will mean.
         KeyCode::Enter if alt => None,
         KeyCode::Enter | KeyCode::Tab | KeyCode::BackTab | KeyCode::Backspace | KeyCode::Delete => {
-            Some("every list and box takes this one itself")
+            Some("Every list and box takes this one itself")
         }
         // Escape has one meaning everywhere: give up on the nearest thing.
-        KeyCode::Esc => Some("escape always backs out of the nearest thing"),
-        KeyCode::Char(_) if alone => Some("typing, not a command"),
+        KeyCode::Esc => Some("Escape always backs out of the nearest thing"),
+        KeyCode::Char(_) if alone => Some("Typing, not a command"),
         // `ctrl+shift+p` folds onto `ctrl+P`, and a control byte cannot
         // carry a letter's case: only a terminal speaking the keyboard
         // protocol tells the two apart, so the binding would work on this
         // machine and not the next. Alt is different -- it is the escape
         // prefix, so `alt+P` really is the shifted letter.
         KeyCode::Char(character) if control && character.is_ascii_uppercase() => {
-            Some("a control byte cannot say which case the letter was")
+            Some("A control byte cannot say which case the letter was")
         }
         // The six the wire cannot tell from tab, enter, newline, backspace,
         // escape and NUL, whatever the reader pressed.
         KeyCode::Char(character) if control && "imjh[ 2".contains(character) => {
-            Some("the terminal sends another key for this")
+            Some("The terminal sends another key for this")
         }
         KeyCode::Char(_) => None,
-        _ => Some("not a key obelus can be given"),
+        _ => Some("Not a key obelus can be given"),
     }
 }
 

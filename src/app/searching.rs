@@ -20,9 +20,9 @@ impl App {
         let scopes = self.searchable();
         let Some(tab) = scopes.iter().position(|shown| *shown == scope) else {
             self.note = Some(match scope {
-                Scope::File => "no file open".to_string(),
-                Scope::Symbols => "no language server to ask".to_string(),
-                Scope::Project => "nowhere to search".to_string(),
+                Scope::File => "No file open".to_string(),
+                Scope::Symbols => "No language server to ask".to_string(),
+                Scope::Project => "Nowhere to search".to_string(),
             });
             return;
         };
@@ -276,8 +276,8 @@ impl App {
                     // all the reason is that, which is a fact about the
                     // world rather than an invitation to type.
                     let reason = match self.current_buffer().is_some() {
-                        true => "type to search this file",
-                        false => "no file open",
+                        true => "Type to search this file",
+                        false => "No file open",
                     };
                     self.searched = None;
                     if let Some(picker) = self.picker.as_mut() {
@@ -350,14 +350,14 @@ impl App {
         if needle.is_broken() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
-                picker.while_empty("that is not a pattern");
+                picker.while_empty("That is not a pattern");
             }
             return;
         }
         let Some(buffer) = self.current_buffer() else {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
-                picker.when_empty("no file open");
+                picker.when_empty("No file open");
             }
             return;
         };
@@ -415,7 +415,7 @@ impl App {
         self.searched = Some((path, version));
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(items);
-            picker.while_empty("no match in this file");
+            picker.while_empty("No match in this file");
         }
     }
 
@@ -440,20 +440,20 @@ impl App {
         if query.is_empty() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
-                picker.while_empty("type to search every file");
+                picker.while_empty("Type to search every file");
             }
             return;
         }
 
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(Vec::new());
-            picker.while_empty("searching\u{2026}");
+            picker.while_empty("Searching\u{2026}");
         }
         let needle = self.needle();
         if needle.is_broken() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
-                picker.while_empty("that is not a pattern");
+                picker.while_empty("That is not a pattern");
             }
             return;
         }
@@ -515,7 +515,7 @@ impl App {
             // it about the *project* rather than about the list: the picker's
             // own "no match" is about a query against rows it was given, and
             // here the rows never existed.
-            picker.while_empty("no match in the project");
+            picker.while_empty("No match in the project");
         }
     }
 
@@ -534,7 +534,7 @@ impl App {
                 // The server is per language, and the language comes from
                 // the file being read: with nothing open there is nobody to
                 // ask, which is a different thing from an empty answer.
-                picker.while_empty("no language server to ask");
+                picker.while_empty("No language server to ask");
             }
             return;
         };
@@ -543,7 +543,7 @@ impl App {
         if query.is_empty() {
             if let Some(picker) = self.picker.as_mut() {
                 picker.replace(Vec::new());
-                picker.while_empty("type to search the project's symbols");
+                picker.while_empty("Type to search the project's symbols");
             }
             return;
         }

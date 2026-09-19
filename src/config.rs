@@ -195,9 +195,9 @@ impl Group {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Appearance => "appearance",
-            Self::Reading => "reading",
-            Self::Files => "files",
+            Self::Appearance => "Appearance",
+            Self::Reading => "Reading",
+            Self::Files => "Files",
         }
     }
 }
@@ -297,7 +297,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "theme",
         name: "Colour theme",
-        about: "the colours obelus draws in",
+        about: "The colours obelus draws in",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Choice(THEMES),
@@ -313,7 +313,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "wrap",
         name: "Wrap long lines",
-        about: "a line too long for the screen carries onto the next row, broken between words",
+        about: "A line too long for the screen carries onto the next row, broken between words",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -321,7 +321,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "blame_margin",
         name: "Blame in the margin",
-        about: "who last changed the line the cursor is on",
+        about: "Who last changed the line the cursor is on",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -329,7 +329,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "tab_width",
         name: "Tab width",
-        about: "how wide a tab is drawn, and how many spaces one puts in",
+        about: "How wide a tab is drawn, and how many spaces one puts in",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Count(WIDTHS),
@@ -345,7 +345,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "format_on_save",
         name: "Format when saving",
-        about: "ask the language server to lay the file out before writing it",
+        about: "Ask the language server to lay the file out before writing it",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,

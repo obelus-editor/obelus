@@ -117,7 +117,7 @@ fn an_answer_comes_back_in_the_conversation_it_was_asked_in() {
     talk.say(Some(&second), "/help", None);
 
     let mut whose = None;
-    pump(&mut talk, &events, "an answer", |_, incoming| {
+    pump(&mut talk, &events, "An answer", |_, incoming| {
         if let Incoming::Update {
             session,
             update: Update::Said(_),

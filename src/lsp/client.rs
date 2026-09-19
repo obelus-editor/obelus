@@ -356,7 +356,7 @@ impl Client {
             Some(error) => Err(error
                 .get("message")
                 .and_then(Value::as_str)
-                .unwrap_or("the server reported an error with no message")
+                .unwrap_or("The server reported an error with no message")
                 .to_string()),
             None => Ok(message.get("result").cloned().unwrap_or(Value::Null)),
         };

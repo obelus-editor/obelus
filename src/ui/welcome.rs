@@ -41,12 +41,12 @@ use crate::{
 /// and the verb is the key. Thirteen columns is what two of them and their
 /// caps fit into, which is the other half of why they are short.
 const OFFERED: &[(Command, &str)] = &[
-    (Command::FileOpen, "open a file"),
-    (Command::FileChanged, "changed files"),
-    (Command::SearchProject, "search files"),
-    (Command::AgentOpen, "ask the agent"),
-    (Command::CommandPalette, "run a command"),
-    (Command::Quit, "leave obelus"),
+    (Command::FileOpen, "Open a file"),
+    (Command::FileChanged, "Changed files"),
+    (Command::SearchProject, "Search files"),
+    (Command::AgentOpen, "Ask the agent"),
+    (Command::CommandPalette, "Run a command"),
+    (Command::Quit, "Leave obelus"),
 ];
 
 /// How many columns of keys the plate carries under it.

@@ -192,7 +192,7 @@ fn highlighting_still_works_after_a_reload() {
 /// only way the reader learns about it is the status bar.
 ///
 /// Unreadable rather than deleted: a file that is gone is a fact obelus can
-/// state, and it says "deleted". `stale` is for the case it cannot -- here,
+/// state, and it says "Deleted". `stale` is for the case it cannot -- here,
 /// bytes that are not text.
 #[test]
 fn a_failed_reload_marks_the_buffer_stale() {
@@ -245,7 +245,7 @@ fn a_deleted_file_says_it_was_deleted() {
     let mut app = obelus::app::App::new(vec![buffer]);
     let dump = support::render(&mut app, 60, 5);
     assert!(
-        support::text_block(&dump).contains("deleted"),
+        support::text_block(&dump).contains("Deleted"),
         "the status row does not say the file was deleted:\n{dump}"
     );
 }

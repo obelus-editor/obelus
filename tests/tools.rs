@@ -37,7 +37,7 @@ fn ask(url: &str, session: Option<&str>, body: &str) -> (String, Option<String>)
     if let Some(session) = session {
         request = request.header("mcp-session-id", session);
     }
-    let mut answer = request.send(body).expect("an answer");
+    let mut answer = request.send(body).expect("An answer");
     let named = answer
         .headers()
         .get("mcp-session-id")

@@ -64,10 +64,10 @@ impl Severity {
     #[must_use]
     pub const fn title(self) -> &'static str {
         match self {
-            Self::Error => "error",
-            Self::Warning => "warning",
-            Self::Information => "information",
-            Self::Hint => "hint",
+            Self::Error => "Error",
+            Self::Warning => "Warning",
+            Self::Information => "Information",
+            Self::Hint => "Hint",
         }
     }
 

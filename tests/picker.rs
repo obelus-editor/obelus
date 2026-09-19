@@ -712,14 +712,14 @@ fn the_file_list_says_what_its_own_key_does() {
     press_function(&mut app, 1);
     let dump = support::render(&mut app, 72, 24);
     assert!(
-        support::text_block(&dump).contains("ignored files"),
+        support::text_block(&dump).contains("Ignored files"),
         "the file list has no foot:\n{dump}"
     );
 
     press_function(&mut app, 1);
     let card = support::render(&mut app, 72, 24);
     assert!(
-        support::text_block(&card).contains("offer the files the tree ignores"),
+        support::text_block(&card).contains("Offer the files the tree ignores"),
         "f1 said nothing:\n{card}"
     );
 }
@@ -731,7 +731,7 @@ fn a_list_with_nothing_of_its_own_to_say_says_nothing() {
     press_control(&mut app, 'p');
     let dump = support::render(&mut app, 72, 24);
     assert!(
-        !support::text_block(&dump).contains("ignored files"),
+        !support::text_block(&dump).contains("Ignored files"),
         "the palette grew a foot:\n{dump}"
     );
 }
@@ -767,7 +767,7 @@ fn alt_i_turns_the_ignored_files_on_and_off() {
 /// find out.
 ///
 /// Broken deliberately by drawing the key and its word and nothing else:
-/// "ignored files" says what `alt+i` is about and not one thing about
+/// "Ignored files" says what `alt+i` is about and not one thing about
 /// whether they are being offered, and a switch a reader has to flip to
 /// read is not a switch.
 #[test]
@@ -782,7 +782,7 @@ fn the_foot_says_which_way_the_key_is_set() {
         let dump = support::render(app, 72, 24);
         let row = support::text_block(&dump)
             .lines()
-            .find(|row| row.contains("ignored files"))
+            .find(|row| row.contains("Ignored files"))
             .unwrap_or_else(|| panic!("no foot:\n{dump}"))
             .to_string();
         support::column_of(&row, "\u{25a0}")
@@ -817,14 +817,14 @@ fn the_key_is_not_offered_where_it_would_do_nothing() {
     press_function(&mut app, 1);
     let all = support::render(&mut app, 72, 24);
     assert!(
-        support::text_block(&all).contains("ignored files"),
+        support::text_block(&all).contains("Ignored files"),
         "the key is not offered on the tab it works on:\n{all}"
     );
 
     press(&mut app, KeyCode::Tab);
     let changed = support::render(&mut app, 72, 24);
     assert!(
-        !support::text_block(&changed).contains("ignored files"),
+        !support::text_block(&changed).contains("Ignored files"),
         "the foot offers a key that would do nothing:\n{changed}"
     );
 }
@@ -1699,7 +1699,7 @@ fn the_selection_walks_past_what_cannot_be_chosen() {
 /// The palette draws such a row dim and refuses enter on it; a key is the
 /// same row reached another way, and one judgement has to answer for both.
 /// Before this, `f2` on a screen with no file open drew an empty list of
-/// open files, and `f3` on a clean tree wrote "nothing has changed" across
+/// open files, and `f3` on a clean tree wrote "Nothing has changed" across
 /// the status row -- two answers to a question the palette had already said
 /// could not be asked.
 #[test]
@@ -1836,7 +1836,7 @@ fn nothing_to_ask_means_a_note_and_no_menu() {
     let dump = support::render(&mut app, 60, 12);
     let text = support::text_block(&dump);
     assert!(
-        text.contains("no symbol here")
+        text.contains("No symbol here")
             || text.contains("not installed")
             || text.contains("no server running")
             || text.contains("still starting")
@@ -1861,7 +1861,7 @@ fn the_menu_refuses_a_cursor_that_is_not_on_a_name() {
     assert!(brace.picker().is_none());
     assert_eq!(
         brace.note(),
-        Some("no symbol here"),
+        Some("No symbol here"),
         "the reason was not the one about the cursor"
     );
 
@@ -1875,7 +1875,7 @@ fn the_menu_refuses_a_cursor_that_is_not_on_a_name() {
     }
     press_alt_key(&mut blank, KeyCode::Enter);
     assert!(blank.picker().is_none());
-    assert_eq!(blank.note(), Some("no symbol here"), "on a blank line");
+    assert_eq!(blank.note(), Some("No symbol here"), "on a blank line");
 }
 
 /// The file picker shows what the selection names, below the list, drawn by
@@ -1957,7 +1957,7 @@ fn the_palette_has_an_edge_above_it_and_no_preview_below() {
 
     let rule = rules[0];
     assert!(
-        rows[rule + 1].contains("all"),
+        rows[rule + 1].contains("All"),
         "the tabs are not directly under the block's edge:\n{dump}"
     );
     assert_eq!(
@@ -2207,7 +2207,7 @@ fn a_list_with_tabs_still_walks_ten_rows() {
     };
     let dump = support::render(&mut app, 60, 34);
     assert!(
-        dump.contains("changed"),
+        dump.contains("Changed"),
         "this list has no tabs, so it tests nothing:\n{dump}"
     );
     assert_eq!(names(&dump), 10, "the list is not ten rows:\n{dump}");
@@ -2677,9 +2677,9 @@ fn stopping_and_restarting_say_what_happened() {
     let mut empty = App::new(vec![]);
     support::lay_out(&mut empty, 60, 12);
     obelus::command::dispatch::dispatch(&mut empty, Command::LspStop);
-    assert_eq!(empty.note(), Some("no file to stop a server for"));
+    assert_eq!(empty.note(), Some("No file to stop a server for"));
     obelus::command::dispatch::dispatch(&mut empty, Command::LspRestart);
-    assert_eq!(empty.note(), Some("no file to restart a server for"));
+    assert_eq!(empty.note(), Some("No file to restart a server for"));
 
     // A language obelus highlights but has no server for. The reason is the
     // useful part: "nothing happened" is not.
@@ -2790,7 +2790,7 @@ fn the_palette_groups_its_commands_into_tabs() {
         .iter()
         .map(ToString::to_string)
         .collect();
-    assert_eq!(names[0], "all", "the first tab is not everything");
+    assert_eq!(names[0], "All", "the first tab is not everything");
 
     let listed = |app: &App| -> Vec<String> {
         app.picker()
@@ -2815,10 +2815,10 @@ fn the_palette_groups_its_commands_into_tabs() {
     let dump = support::render(&mut app, 62, 14);
     let row = support::text_block(&dump)
         .lines()
-        .find(|row| row.contains("files") && row.contains("code"))
+        .find(|row| row.contains("Files") && row.contains("Code"))
         .unwrap_or_else(|| panic!("no tabs on screen:\n{dump}"))
         .to_string();
-    assert!(row.contains("all"), "{dump}");
+    assert!(row.contains("All"), "{dump}");
 
     // Left from the first group wraps to the last, so walking the tabs never
     // dead-ends.
@@ -2834,7 +2834,7 @@ fn the_palette_groups_its_commands_into_tabs() {
         support::text_block(dump)
             .lines()
             .filter(|row| !row.is_empty())
-            .position(|row| row.contains("all") && row.contains("code"))
+            .position(|row| row.contains("All") && row.contains("Code"))
             .unwrap_or_else(|| panic!("no tabs on screen:\n{dump}"))
     };
     let one = row_of_tabs(&support::render(&mut app, 62, 20));
@@ -2857,7 +2857,7 @@ fn a_list_with_nothing_in_it_says_why() {
     press_function(&mut empty, 1);
     let dump = support::render(&mut empty, 50, 8);
     assert!(
-        support::text_block(&dump).contains("no files under this directory"),
+        support::text_block(&dump).contains("No files under this directory"),
         "an empty file list said nothing:\n{dump}"
     );
 
@@ -2869,7 +2869,7 @@ fn a_list_with_nothing_in_it_says_why() {
     type_text(&mut app, "zzzz");
     let dump = support::render(&mut app, 50, 8);
     assert!(
-        support::text_block(&dump).contains("no match"),
+        support::text_block(&dump).contains("No match"),
         "a query that matched nothing said nothing:\n{dump}"
     );
 }
@@ -3077,7 +3077,7 @@ fn a_language_with_no_tags_says_so_rather_than_looking_empty() {
 
     let dump = support::render(&mut app, 60, 12);
     assert!(
-        support::text_block(&dump).contains("no outline for this language"),
+        support::text_block(&dump).contains("No outline for this language"),
         "an empty outline said nothing:\n{dump}"
     );
 }
@@ -3168,7 +3168,7 @@ fn a_line_number_is_typed_on_the_status_bar() {
 
     // The question is the status row, and it says what it wants.
     assert!(
-        rows.last().is_some_and(|status| status.contains("line: ")),
+        rows.last().is_some_and(|status| status.contains("Line: ")),
         "the question is not on the status bar:\n{asking}"
     );
     // And nothing else moved: no list, no rule, no region over the code.
@@ -3192,7 +3192,7 @@ fn a_line_number_is_typed_on_the_status_bar() {
     assert_eq!(y.parse::<u16>().expect("a row"), 11, "{asking}");
     assert_eq!(
         x.parse::<usize>().expect("a column"),
-        1 + "line: ".len(),
+        1 + "Line: ".len(),
         "the caret is not after the label:\n{asking}"
     );
 
@@ -3201,7 +3201,7 @@ fn a_line_number_is_typed_on_the_status_bar() {
     assert!(
         support::text_block(&typed)
             .lines()
-            .any(|row| row.contains("line: 30")),
+            .any(|row| row.contains("Line: 30")),
         "what was typed is not shown:\n{typed}"
     );
 
@@ -3465,7 +3465,7 @@ fn the_file_list_has_a_tab_for_what_has_changed() {
     press(&mut clean, KeyCode::Esc);
     dispatch::dispatch(&mut clean, Command::FileChanged);
     assert!(clean.picker().is_none(), "an empty listing opened");
-    assert_eq!(clean.note(), Some("nothing has changed"));
+    assert_eq!(clean.note(), Some("Nothing has changed"));
 
     // A tree with changes in it: two tabs, and the changed one lists what
     // git said, by name, in the colours the status gives them.
@@ -3482,7 +3482,7 @@ fn the_file_list_has_a_tab_for_what_has_changed() {
     support::lay_out(&mut dirty, 60, 12);
     press_function(&mut dirty, 1);
     let picker = dirty.picker().expect("the file list");
-    assert_eq!(picker.tabs(), ["all", "changed"], "not the two listings");
+    assert_eq!(picker.tabs(), ["All", "Changed"], "not the two listings");
     assert_eq!(picker.tab(), 0, "ctrl+o did not open the whole tree");
 
     // The right arrow moves to it, and its rows are the changed files --
@@ -3582,7 +3582,7 @@ fn a_key_opens_the_changed_files_directly() {
     press_function(&mut app, 3);
 
     let picker = app.picker().expect("the file list");
-    assert_eq!(picker.tabs(), ["all", "changed"]);
+    assert_eq!(picker.tabs(), ["All", "Changed"]);
     assert_eq!(picker.tab(), 1, "ctrl+d did not open the changed listing");
     assert_eq!(
         picker

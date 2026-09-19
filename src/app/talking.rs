@@ -409,7 +409,7 @@ impl App {
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.ask(&question);
-        picker.when_empty("this one has nothing to choose from");
+        picker.when_empty("This one has nothing to choose from");
         // Opened on what it is already on, so the list starts by saying
         // where the reader is rather than at whatever happens to be first.
         if let Some(current) = current {
@@ -473,7 +473,7 @@ impl App {
             talk.chat.plan_forgotten();
             if opening.is_some() {
                 talk.chat
-                    .note("told the agent what this conversation is about");
+                    .note("Told the agent what this conversation is about");
             }
             talk.chat.asked(text);
         }
@@ -783,7 +783,7 @@ impl App {
                 if let Err(error) = crate::links::open(&url) {
                     tracing::warn!(%error, "the link was not opened");
                     if let Some(talk) = self.conversation_mut() {
-                        talk.chat.note("nothing here opens links");
+                        talk.chat.note("Nothing here opens links");
                     }
                 }
                 true
@@ -963,8 +963,8 @@ impl App {
             vec![
                 Choice {
                     id: "open".to_string(),
-                    name: "open it".to_string(),
-                    about: Some("obelus opens it in your browser".to_string()),
+                    name: "Open it".to_string(),
+                    about: Some("Opens it in your browser".to_string()),
                     icon: icons.then_some(crate::icons::ui::AWAY),
                     chosen: false,
                 },
@@ -998,7 +998,7 @@ impl App {
         if chosen != Some("open") {
             if let Some(talk) = self.conversation_mut() {
                 talk.card = None;
-                talk.chat.note("not opened");
+                talk.chat.note("Not opened");
             }
             let _ = going.answer.send(false);
             return;
@@ -1010,7 +1010,7 @@ impl App {
             // which on a machine with no browser is the only way they will
             // get it.
             if let Some(talk) = self.conversation_mut() {
-                talk.chat.note("nothing here opens links");
+                talk.chat.note("Nothing here opens links");
                 talk.going = Some(going);
             }
             return;
@@ -1246,7 +1246,7 @@ impl App {
         };
         if least.is_some_and(|least| number < least) || most.is_some_and(|most| number > most) {
             let asked = question(field);
-            self.in_transcript(|chat| chat.note(&format!("that is outside {asked}")));
+            self.in_transcript(|chat| chat.note(&format!("That is outside {asked}")));
             return None;
         }
         Some(match whole {
@@ -1265,7 +1265,7 @@ impl App {
             return;
         };
         if asking.answer.send(Some(asking.given)).is_err() {
-            self.in_transcript(|chat| chat.note("it stopped waiting for an answer"));
+            self.in_transcript(|chat| chat.note("It stopped waiting for an answer"));
         }
     }
 
@@ -1280,14 +1280,14 @@ impl App {
         if let Some(talk) = self.conversation_mut()
             && talk.going.take().is_some()
         {
-            talk.chat.note("not opened");
+            talk.chat.note("Not opened");
             return;
         }
         let Some(asking) = self.conversation_mut().and_then(|talk| talk.asking.take()) else {
             return;
         };
         if let Some(talk) = self.conversation_mut() {
-            talk.chat.note("not answered");
+            talk.chat.note("Not answered");
         }
         let _ = asking.answer.send(None);
     }
@@ -1494,7 +1494,7 @@ impl App {
             {
                 talk.asked_for = None;
                 talk.opening = opening;
-                talk.chat.note(&format!("starting again, because {why}"));
+                talk.chat.note(&format!("Starting again, because {why}"));
             }
             return;
         }
@@ -1586,10 +1586,10 @@ impl App {
                 // every answer is noise.
                 match reason.as_str() {
                     "end_turn" => {}
-                    "cancelled" => self.in_transcript(|chat| chat.note("stopped")),
-                    "refusal" => self.in_transcript(|chat| chat.note("it declined to answer")),
+                    "cancelled" => self.in_transcript(|chat| chat.note("Stopped")),
+                    "refusal" => self.in_transcript(|chat| chat.note("It declined to answer")),
                     "max_tokens" => {
-                        self.in_transcript(|chat| chat.note("it ran out of room to answer in"));
+                        self.in_transcript(|chat| chat.note("It ran out of room to answer in"));
                     }
                     other => self.in_transcript(|chat| chat.note(other)),
                 }
@@ -1610,7 +1610,7 @@ impl App {
             acp::Incoming::Remembered { .. } => {
                 self.in_transcript(|chat| {
                     chat.note(
-                        "taken up where you left it; this agent cannot send back what was said",
+                        "Taken up where you left it; this agent cannot send back what was said",
                     );
                 });
             }
@@ -1701,9 +1701,9 @@ impl App {
                 self.forget_the_question();
                 match why {
                     Some(why) => {
-                        self.in_transcript(|chat| chat.note(&format!("the agent stopped: {why}")))
+                        self.in_transcript(|chat| chat.note(&format!("The agent stopped: {why}")))
                     }
-                    None => self.in_transcript(|chat| chat.note("the agent stopped")),
+                    None => self.in_transcript(|chat| chat.note("The agent stopped")),
                 }
             }
             // Folded into the handle above, or -- for a conversation
@@ -1755,7 +1755,7 @@ impl App {
         };
         let Some(root) = self.agents_root() else {
             self.in_transcript(|chat| {
-                chat.note("this system has nowhere for obelus to keep an agent")
+                chat.note("This system has nowhere for obelus to keep an agent")
             });
             return;
         };
@@ -1766,7 +1766,7 @@ impl App {
         let Some(installed) = crate::agent::installation(&id, &root) else {
             tracing::warn!(
                 id,
-                "no agent to talk to: nothing is installed under that name"
+                "No agent to talk to: nothing is installed under that name"
             );
             if let Some(talk) = self.conversation_mut() {
                 talk.chat.note(&format!(
@@ -1855,7 +1855,7 @@ impl App {
             return;
         };
         if answer.send(Some(option.to_string())).is_err() {
-            self.in_transcript(|chat| chat.note("it stopped waiting for an answer"));
+            self.in_transcript(|chat| chat.note("It stopped waiting for an answer"));
         }
     }
 
@@ -1876,7 +1876,7 @@ impl App {
         };
         let _ = answer.send(None);
         if let Some(talk) = self.conversation_mut() {
-            talk.chat.note("not answered");
+            talk.chat.note("Not answered");
         }
     }
 
@@ -1965,7 +1965,7 @@ impl App {
                 });
                 if changed {
                     self.change_document(index);
-                    self.note = Some("the agent changed this file".to_string());
+                    self.note = Some("The agent changed this file".to_string());
                 }
                 // A write of what is already there changed nothing and is
                 // not a failure: the agent asked for a state, and that is

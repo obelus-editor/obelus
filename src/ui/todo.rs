@@ -81,35 +81,35 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     // because "can I paste in here?" is a question a dialog has to answer.
     // Here they are what they are everywhere else.
     vec![
-        Hint::common(bare(KeyCode::Enter), "another").saying("start another note"),
-        Hint::common(alt(KeyCode::Char(' ')), "done")
-            .saying("done, or not")
+        Hint::common(bare(KeyCode::Enter), "Another").saying("Start another note"),
+        Hint::common(alt(KeyCode::Char(' ')), "Done")
+            .saying("Done, or not")
             .when(on.is_some()),
-        Hint::common(alt(KeyCode::Enter), "go there")
-            .saying("go to what it is about")
+        Hint::common(alt(KeyCode::Enter), "Go there")
+            .saying("Go to what it is about")
             .when(notes.can_go()),
-        Hint::common(alt(KeyCode::Char('a')), "talk")
-            .saying("talk to an agent about this one")
+        Hint::common(alt(KeyCode::Char('a')), "Talk")
+            .saying("Talk to an agent about this one")
             .when(on.is_some()),
         // Taking a whole note away is the one thing here a reader will go
         // looking for and not find, because backspace on its own is a
         // letter.
-        Hint::common(alt(KeyCode::Backspace), "drop")
-            .saying("take the whole note away")
+        Hint::common(alt(KeyCode::Backspace), "Drop")
+            .saying("Take the whole note away")
             .when(on.is_some()),
-        Hint::common(alt(KeyCode::Up), "move")
-            .saying("move it up or down")
+        Hint::common(alt(KeyCode::Up), "Move")
+            .saying("Move it up or down")
             .or(alt(KeyCode::Down))
             .when(notes.rows().len() > 1),
         // One key each, because they are offered separately: a note at the
         // top can only go in, and one as deep as it may go can only come
         // out. A single row for both would be on whenever either was, and
         // would be saying a key works when it does not.
-        Hint::common(bare(KeyCode::Tab), "under")
-            .saying("put it under the one above")
+        Hint::common(bare(KeyCode::Tab), "Under")
+            .saying("Put it under the one above")
             .when(notes.can_shift(false)),
-        Hint::common(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "out")
-            .saying("bring it back out a level")
+        Hint::common(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "Out")
+            .saying("Bring it back out a level")
             .when(notes.can_shift(true)),
     ]
 }
@@ -243,7 +243,7 @@ impl Widget for TodoUi<'_> {
             return;
         }
         if self.notes.rows().is_empty() {
-            crate::ui::nothing(cells, list, "nothing to come back to", self.theme);
+            crate::ui::nothing(cells, list, "Nothing to come back to", self.theme);
             return;
         }
 

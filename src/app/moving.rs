@@ -46,7 +46,7 @@ impl App {
             .current_buffer()
             .is_none_or(|buffer| buffer.path() != path)
         {
-            self.note = Some(format!("could not open {}", path.display()));
+            self.note = Some(format!("Could not open {}", path.display()));
             return;
         }
 
@@ -121,7 +121,7 @@ impl App {
         let Some(here) = self.here() else { return };
         match self.jumps.back(here) {
             Some(there) => self.go(there),
-            None => self.note = Some("nowhere further back".to_string()),
+            None => self.note = Some("Nowhere further back".to_string()),
         }
     }
 
@@ -129,7 +129,7 @@ impl App {
     pub fn go_forward(&mut self) {
         match self.jumps.forward() {
             Some(there) => self.go(there),
-            None => self.note = Some("nowhere further forward".to_string()),
+            None => self.note = Some("Nowhere further forward".to_string()),
         }
     }
 
@@ -166,11 +166,11 @@ impl App {
     /// get back to where you were reading.
     pub fn go_to_bracket(&mut self) {
         let Some(buffer) = self.current_buffer() else {
-            self.note = Some("no file open".to_string());
+            self.note = Some("No file open".to_string());
             return;
         };
         let Some(state) = buffer.syntax() else {
-            self.note = Some("obelus does not know this language".to_string());
+            self.note = Some("Not a language obelus knows".to_string());
             return;
         };
         let text = buffer.text();
@@ -181,7 +181,7 @@ impl App {
         let mut highlights = Highlights::default();
         highlights.refresh(state, text, whole.clone());
         let Some((open, close)) = brackets::pair_at(text, &highlights, at, whole) else {
-            self.note = Some("no bracket here".to_string());
+            self.note = Some("No bracket here".to_string());
             return;
         };
 
@@ -207,7 +207,7 @@ impl App {
     /// answer, which is the shape searching a file will want too.
     pub fn open_line_prompt(&mut self) {
         if self.current_buffer().is_none() {
-            self.note = Some("no file to go into".to_string());
+            self.note = Some("No file to go into".to_string());
             return;
         }
         self.ask_on_the_status_row(Prompt::new(PromptKind::Line));
@@ -231,7 +231,7 @@ impl App {
     /// what the reader has just taken all of ends there.
     pub fn select_all(&mut self) {
         let Some(buffer) = self.current_buffer_mut() else {
-            self.note = Some("no file open".to_string());
+            self.note = Some("No file open".to_string());
             return;
         };
         buffer.select_all();
@@ -250,11 +250,11 @@ impl App {
         // answer.
         self.settle_syntax();
         let Some(buffer) = self.current_buffer_mut() else {
-            self.note = Some("no file open".to_string());
+            self.note = Some("No file open".to_string());
             return;
         };
         if !buffer.widen_selection() {
-            self.note = Some("nothing wider to select".to_string());
+            self.note = Some("Nothing wider to select".to_string());
         }
     }
 
@@ -319,10 +319,10 @@ impl App {
     /// that one of them is lying.
     pub(super) fn copied(&mut self, text: &str, what: &str) {
         match crate::clipboard::copy(text) {
-            Ok(()) => self.note = Some(format!("copied {what}")),
+            Ok(()) => self.note = Some(format!("Copied {what}")),
             Err(error) => {
                 tracing::warn!(%error, what, "copying failed");
-                self.note = Some(format!("could not copy {what}"));
+                self.note = Some(format!("Could not copy {what}"));
             }
         }
     }
@@ -335,10 +335,10 @@ impl App {
     /// for it where it no longer is.
     pub(super) fn cut_away(&mut self, text: &str, what: &str) {
         match crate::clipboard::copy(text) {
-            Ok(()) => self.note = Some(format!("cut {what}")),
+            Ok(()) => self.note = Some(format!("Cut {what}")),
             Err(error) => {
                 tracing::warn!(%error, what, "copying the cut failed");
-                self.note = Some(format!("cut {what}, but could not copy it"));
+                self.note = Some(format!("Cut {what}, but could not copy it"));
             }
         }
     }
@@ -423,7 +423,7 @@ impl App {
     /// because a reader who selected something and pasted meant to.
     pub fn paste(&mut self) {
         let Some(what) = crate::clipboard::paste() else {
-            self.note = Some("nothing to paste".to_string());
+            self.note = Some("Nothing to paste".to_string());
             return;
         };
         self.paste_text(&what);
@@ -545,7 +545,7 @@ impl App {
             .is_some_and(Buffer::undo);
         match went_back {
             true => self.change_document(index),
-            false => self.note = Some("nothing to undo".to_string()),
+            false => self.note = Some("Nothing to undo".to_string()),
         }
     }
 
@@ -559,7 +559,7 @@ impl App {
             .is_some_and(Buffer::redo);
         match went_forward {
             true => self.change_document(index),
-            false => self.note = Some("nothing to redo".to_string()),
+            false => self.note = Some("Nothing to redo".to_string()),
         }
     }
 

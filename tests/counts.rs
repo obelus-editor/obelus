@@ -230,7 +230,7 @@ fn the_counts_take_the_whole_screen() {
     // there belongs to this view or there is nothing there at all.
     let foot = text.lines().last().unwrap_or_default();
     assert!(
-        foot.contains("leave"),
+        foot.contains("Leave"),
         "the foot is not this view's:\n{dump}"
     );
 }
@@ -238,7 +238,7 @@ fn the_counts_take_the_whole_screen() {
 /// A walk that has not answered yet says so, rather than showing an empty
 /// table that reads as a project with nothing in it.
 ///
-/// Broken deliberately by having the view say "nothing here to count"
+/// Broken deliberately by having the view say "Nothing here to count"
 /// whatever the state: the two facts became one, and this failed.
 #[test]
 fn a_tree_still_being_walked_says_it_is_counting() {
@@ -247,7 +247,7 @@ fn a_tree_still_being_walked_says_it_is_counting() {
     dispatch::dispatch(&mut app, Command::CountLines);
     let dump = support::render(&mut app, 76, 24);
     assert!(
-        support::text_block(&dump).contains("counting"),
+        support::text_block(&dump).contains("Counting"),
         "an unanswered walk did not say it was counting:\n{dump}"
     );
 }
@@ -256,7 +256,7 @@ fn a_tree_still_being_walked_says_it_is_counting() {
 /// which language they are.
 ///
 /// Broken deliberately by leaving the narrowing unset when a language is
-/// chosen: every file came back and the tab went on reading "files".
+/// chosen: every file came back and the tab went on reading "Files".
 #[test]
 fn choosing_a_language_leaves_its_own_files() {
     let mut app = open(76, 24);
@@ -266,7 +266,7 @@ fn choosing_a_language_leaves_its_own_files() {
     let dump = support::render(&mut app, 76, 24);
     let text = support::text_block(&dump);
 
-    assert!(text.contains("rust"), "the tab did not say rust:\n{dump}");
+    assert!(text.contains("Rust"), "the tab did not say rust:\n{dump}");
     assert!(
         !text.contains("Cargo.toml"),
         "a file of another language stayed:\n{dump}"
@@ -429,7 +429,7 @@ fn the_counts_say_what_their_keys_do() {
     let mut app = open(76, 18);
     press(&mut app, KeyCode::Tab);
     let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
-    for word in ["open", "leave", "keys"] {
+    for word in ["Open", "Leave", "Keys"] {
         assert!(text.contains(word), "{word:?} is not at the foot:\n{text}");
     }
 
@@ -440,14 +440,14 @@ fn the_counts_say_what_their_keys_do() {
     press(&mut app, KeyCode::Down);
     let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
     assert!(
-        text.contains("read it"),
+        text.contains("Read it"),
         "enter does not say what it does:\n{text}"
     );
     // And `f1` says all of them, at length.
     press(&mut app, KeyCode::F(1));
     let dump = support::render(&mut app, 76, 18);
     assert!(
-        support::text_block(&dump).contains("read the file this row names"),
+        support::text_block(&dump).contains("Read the file this row names"),
         "no card:\n{dump}"
     );
     press(&mut app, KeyCode::Esc);

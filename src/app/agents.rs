@@ -95,7 +95,7 @@ impl App {
                 } else if agent.distribution.installable() {
                     Status::Missing
                 } else {
-                    Status::Unavailable("nothing for this machine")
+                    Status::Unavailable("Nothing for this machine")
                 };
                 Listed {
                     // In use *and* here. An agent the settings name and the
@@ -347,7 +347,7 @@ impl App {
             return;
         }
         let Some(root) = self.agents_root() else {
-            self.note = Some("this system has nowhere to install to".to_string());
+            self.note = Some("This system has nowhere to install to".to_string());
             return;
         };
         // Nothing to report yet -- a download says how far through it is

@@ -260,7 +260,7 @@ mod in_place {
         dispatch::dispatch(&mut app, Command::SelectionCopy);
         assert_eq!(
             app.note().unwrap_or_default(),
-            "copied selection",
+            "Copied selection",
             "the copy came out of the file behind the list"
         );
 
@@ -314,7 +314,7 @@ mod in_place {
         )));
         assert_eq!(
             app.note().unwrap_or_default(),
-            "copied selection",
+            "Copied selection",
             "ctrl+c did nothing inside a list"
         );
 
@@ -356,7 +356,7 @@ mod in_place {
         )));
         assert_eq!(
             app.note().unwrap_or_default(),
-            "copied selection",
+            "Copied selection",
             "ctrl+c did nothing inside the settings"
         );
     }
@@ -398,7 +398,7 @@ mod in_place {
         )));
         assert_eq!(
             app.note().unwrap_or_default(),
-            "copied selection",
+            "Copied selection",
             "ctrl+c did nothing inside the list of open files"
         );
     }
@@ -442,7 +442,7 @@ mod in_place {
             KeyCode::Char('c'),
             KeyModifiers::CONTROL,
         )));
-        assert_eq!(app.note().unwrap_or_default(), "copied selection");
+        assert_eq!(app.note().unwrap_or_default(), "Copied selection");
 
         app.handle(Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)));
         app.handle(Event::Key(KeyEvent::new(

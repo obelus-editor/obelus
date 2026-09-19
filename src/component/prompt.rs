@@ -42,13 +42,13 @@ impl PromptKind {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Line => "line: ",
-            Self::Name => "rename to: ",
-            // Not "rename to: ", which is what a symbol's prompt says:
+            Self::Line => "Line: ",
+            Self::Name => "Rename to: ",
+            // Not "Rename to: ", which is what a symbol's prompt says:
             // two prompts with the same words on the same row are one
             // prompt as far as a reader glancing at it is concerned, and
             // these two change very different things.
-            Self::Path => "call it: ",
+            Self::Path => "Call it: ",
         }
     }
 

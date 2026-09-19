@@ -364,7 +364,7 @@ fn the_question_is_on_the_row_the_caret_is_in() {
     let rows = support::text_block(&dump);
     let last = rows.lines().last().unwrap_or_default();
     assert!(
-        last.contains("call it: src/hint.rs"),
+        last.contains("Call it: src/hint.rs"),
         "the status row is not the question:\n{dump}"
     );
 

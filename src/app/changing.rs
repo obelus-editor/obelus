@@ -28,8 +28,11 @@ impl App {
     pub(super) fn apply_wanted(&mut self, wanted: &Wanted) -> String {
         if wanted.is_empty() {
             return match wanted.refused.is_empty() {
-                true => "nothing to change".to_string(),
-                false => format!("obelus will not do that: {}", wanted.refused.join(", ")),
+                true => "Nothing to change".to_string(),
+                false => format!(
+                    "Not something obelus will do: {}",
+                    wanted.refused.join(", ")
+                ),
             };
         }
 

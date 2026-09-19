@@ -1525,7 +1525,7 @@ async fn talk(
                                             why: said_as(&answer.stop_reason),
                                         },
                                         Err(error) => {
-                                            Incoming::Failed("the agent", error.to_string())
+                                            Incoming::Failed("The agent", error.to_string())
                                         }
                                     }));
                                     std::future::ready(Ok(()))
@@ -1588,7 +1588,7 @@ async fn talk(
                                             ),
                                         },
                                         Err(error) => Incoming::Failed(
-                                            "changing a setting",
+                                            "Changing a setting",
                                             error.to_string(),
                                         ),
                                     }));
@@ -1605,7 +1605,7 @@ async fn talk(
                                 .on_receiving_result(move |asked| {
                                     if let Err(error) = asked {
                                         let _ = told.send(Event::Acp(Incoming::Failed(
-                                            "changing the mode",
+                                            "Changing the mode",
                                             error.to_string(),
                                         )));
                                     }

@@ -45,7 +45,7 @@ impl App {
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.when_empty("no theme is built in");
+        picker.when_empty("No theme is built in");
         // Open on the one that is on, so the list starts by saying which
         // theme this is rather than making the reader work it out.
         picker.prefer(self.theme_name().to_string());
@@ -90,7 +90,7 @@ impl App {
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         // It holds every command, so it is only ever empty for a query that
         // matches none of them -- which the picker says itself.
-        picker.when_empty("no command by that name");
+        picker.when_empty("No command by that name");
         // Tabs over one long list. Fourteen commands is already more than a
         // compact list shows at once, and the groups are what a reader is
         // choosing between when they do not already know the name.
@@ -114,7 +114,7 @@ impl App {
     /// shows is a server's own words -- its stderr, its handshake, and the
     /// requests obelus sent it.
     pub fn open_log(&mut self) {
-        self.open_log_file(crate::logging::OBELUS, "no log file");
+        self.open_log_file(crate::logging::OBELUS, "No log file");
     }
 
     /// And the language servers' own, which is the other half of the same
@@ -122,7 +122,7 @@ impl App {
     /// file of its own because it is somebody else's program talking at a
     /// volume that would bury the dozen lines obelus has to say.
     pub fn open_server_log(&mut self) {
-        self.open_log_file(crate::logging::SERVERS, "no server log file");
+        self.open_log_file(crate::logging::SERVERS, "No server log file");
     }
 
     /// Opens whichever log, or says there is none.

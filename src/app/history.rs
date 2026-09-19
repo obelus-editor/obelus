@@ -41,7 +41,7 @@ impl App {
     /// it obvious they are not part of the file.
     pub fn toggle_hunk(&mut self) {
         let Some(line) = self.current_buffer().map(|buffer| buffer.cursor().line) else {
-            self.note = Some("no file open".to_string());
+            self.note = Some("No file open".to_string());
             return;
         };
         // Which block is in front of the reader, and it is not always the
@@ -83,12 +83,12 @@ impl App {
                 // for. Said rather than done quietly: the margin says this
                 // line changed, so a key that asks what it changed *from*
                 // and appears to do nothing is a key that looks broken.
-                self.note = Some("the commit's message hangs where this hunk would".to_string());
+                self.note = Some("The commit's message hangs where this hunk would".to_string());
                 return;
             }
         }
         let Some(hunk) = hunk.as_ref() else {
-            self.note = Some("nothing changed here".to_string());
+            self.note = Some("Nothing changed here".to_string());
             return;
         };
         // Every hunk opens, including one that replaced nothing: opening it
@@ -325,7 +325,7 @@ impl App {
             // question with no other answer on screen.
             tracing::debug!(
                 path = %asked_path.display(),
-                "nothing committed to compare with, so no changes"
+                "Nothing committed to compare with, so no changes"
             );
         }
         self.changes = changes;

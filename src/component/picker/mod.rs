@@ -174,8 +174,8 @@ impl Listing {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::All => "all",
-            Self::Changed => "changed",
+            Self::All => "All",
+            Self::Changed => "Changed",
         }
     }
 }
@@ -419,7 +419,7 @@ pub struct Picker {
     /// hunted for.
     marked: bool,
     /// Whether the empty reason is about the world rather than about there
-    /// being nothing to list, and so wins over "no match".
+    /// being nothing to list, and so wins over "No match".
     explains: bool,
     /// A question this list is the answer to, shown in front of the prompt.
     question: Option<String>,
@@ -567,7 +567,7 @@ impl Picker {
             explains: false,
             marked: false,
             question: None,
-            empty: "nothing to choose from".to_string(),
+            empty: "Nothing to choose from".to_string(),
             prefer: None,
             nests: false,
             opens: false,
@@ -648,7 +648,7 @@ impl Picker {
     /// adds itself, so every row is reachable by walking them and so is a row
     /// belonging to no group.
     pub fn with_tabs(&mut self, names: &[&str]) {
-        self.tabs = std::iter::once("all".to_string())
+        self.tabs = std::iter::once("All".to_string())
             .chain(names.iter().map(|name| (*name).to_string()))
             .collect();
         self.refilter();
@@ -1005,7 +1005,7 @@ impl Picker {
     /// Sets what the list says when it is empty, whether or not something
     /// has been typed.
     ///
-    /// For a search: with a query in the prompt and no rows, "no match" is
+    /// For a search: with a query in the prompt and no rows, "No match" is
     /// only true once something has looked. While nothing has been asked
     /// yet, while a walk is still running, or when there is no server to
     /// ask, the fact about the world is the true answer and the query is
@@ -1026,7 +1026,7 @@ impl Picker {
         Some(if self.query.is_empty() || self.explains {
             &self.empty
         } else {
-            "no match"
+            "No match"
         })
     }
 

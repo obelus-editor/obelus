@@ -85,7 +85,7 @@ impl App {
             .current_buffer()
             .map(|buffer| buffer.path().to_path_buf())
         else {
-            self.note = Some("no file to rename".to_string());
+            self.note = Some("No file to rename".to_string());
             return;
         };
         self.ask_what_to_call_it(&path);
@@ -154,7 +154,7 @@ impl App {
         if let Some(parent) = to.parent()
             && let Err(error) = std::fs::create_dir_all(parent)
         {
-            self.note = Some(format!("could not make {}: {error}", parent.display()));
+            self.note = Some(format!("Could not make {}: {error}", parent.display()));
             return;
         }
         let waiting = self.ask_what_the_rename_changes(&from, &to);
@@ -289,7 +289,7 @@ impl App {
             Some(Renaming::Waiting(waiting)) if waiting.asked.elapsed() > ANSWERS_WITHIN
         );
         if overdue {
-            self.finish_the_rename(Some("the language server did not answer"));
+            self.finish_the_rename(Some("The language server did not answer"));
         }
     }
 
@@ -309,7 +309,7 @@ impl App {
             // server that had nothing to change says so with an empty
             // edit, and a reader who renamed a file with no references to
             // it should not be told anything went wrong.
-            None if waiting.unready => Some("the language server was not ready to update anything"),
+            None if waiting.unready => Some("The language server was not ready to update anything"),
             None => None,
         };
         self.make_the_rename(&waiting.from, &waiting.to, &waiting.wanted, aside);
@@ -330,7 +330,7 @@ impl App {
             false => Some(self.apply_wanted(wanted)),
         };
         if let Err(error) = std::fs::rename(from, to) {
-            self.note = Some(format!("could not rename it: {error}"));
+            self.note = Some(format!("Could not rename it: {error}"));
             return;
         }
         self.followed(from, to);

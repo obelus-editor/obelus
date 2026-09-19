@@ -355,14 +355,14 @@ impl Card {
             return Some(format!("at most {most}"));
         }
         if self.needed && chosen == 0 {
-            return Some("choose one".to_string());
+            return Some("Choose one".to_string());
         }
         if self
             .words
             .as_ref()
             .is_some_and(|words| words.required && words.composer.is_blank())
         {
-            let name = self.placeholder().unwrap_or("an answer");
+            let name = self.placeholder().unwrap_or("An answer");
             return Some(format!("{name} first"));
         }
         None
