@@ -3215,7 +3215,12 @@ fn an_agent_that_echoes_the_prompt_does_not_say_it_twice() {
 /// The name must be one the fake agent never mints for itself -- it numbers
 /// its own `s-1`, `s-2` -- or the session it opens on the way up is taken
 /// for the one that was asked for.
-fn remembering(name: &str, note: &str, session: &str, how: &[&str]) -> (support::Scratch, App, Receiver<Event>) {
+fn remembering(
+    name: &str,
+    note: &str,
+    session: &str,
+    how: &[&str],
+) -> (support::Scratch, App, Receiver<Event>) {
     let scratch = support::Scratch::new(name);
     std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
     std::fs::write(
@@ -3277,7 +3282,12 @@ fn an_agent_that_can_only_resume_is_asked_to_resume() {
     // Until obelus has something to say about the old conversation --
     // `Talking::Ready` is true as soon as the agent has spoken at all,
     // which is before it has answered about this one.
-    pump(&mut app, &events, "what became of the old conversation", settled);
+    pump(
+        &mut app,
+        &events,
+        "what became of the old conversation",
+        settled,
+    );
 
     let text = screen(&mut app);
     assert!(
@@ -3310,7 +3320,12 @@ fn an_agent_that_can_only_resume_is_asked_to_resume() {
 fn an_agent_that_can_do_neither_is_not_asked() {
     let (_scratch, mut app, events) =
         remembering("agent-forgets", "0123456M", "s-old", &["forgets"]);
-    pump(&mut app, &events, "what became of the old conversation", settled);
+    pump(
+        &mut app,
+        &events,
+        "what became of the old conversation",
+        settled,
+    );
 
     // The note carries why, and the why is obelus's own reading of the
     // handshake -- not an error the agent sent back. An agent asked

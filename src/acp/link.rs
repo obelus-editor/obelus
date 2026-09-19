@@ -79,24 +79,25 @@ use agent_client_protocol::{
             AvailableCommand, BooleanConfigOptionCapabilities, CancelNotification,
             ClientCapabilities, ClientSessionCapabilities, CloseSessionRequest,
             CompleteElicitationNotification, ContentBlock, CreateElicitationRequest,
-            CreateElicitationResponse, DeleteSessionRequest, ElicitationAcceptAction,
-            ElicitationAction, ElicitationCapabilities, ElicitationContentValue,
-            ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema,
-            ElicitationSchema, ElicitationUrlCapabilities, FileSystemCapabilities, Implementation, ResumeSessionRequest,
-            CreateTerminalRequest, CreateTerminalResponse, KillTerminalRequest,
-            KillTerminalResponse, ReleaseTerminalRequest, ReleaseTerminalResponse,
-            TerminalExitStatus, TerminalId, TerminalOutputRequest, TerminalOutputResponse,
-            WaitForTerminalExitRequest, WaitForTerminalExitResponse,
-            InitializeRequest, LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp,
-            McpServerSse, MultiSelectItems, NewSessionRequest, PermissionOptionId, PromptRequest,
-            ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
-            RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-            SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
-            SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionConfigSelectOption,
+            CreateElicitationResponse, CreateTerminalRequest, CreateTerminalResponse,
+            DeleteSessionRequest, ElicitationAcceptAction, ElicitationAction,
+            ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities,
+            ElicitationMode, ElicitationPropertySchema, ElicitationSchema,
+            ElicitationUrlCapabilities, FileSystemCapabilities, Implementation, InitializeRequest,
+            KillTerminalRequest, KillTerminalResponse, LoadSessionRequest, McpCapabilities,
+            McpServer, McpServerHttp, McpServerSse, MultiSelectItems, NewSessionRequest,
+            PermissionOptionId, PromptRequest, ReadTextFileRequest, ReadTextFileResponse,
+            ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionOutcome,
+            RequestPermissionRequest, RequestPermissionResponse, ResumeSessionRequest,
+            SelectedPermissionOutcome, SessionConfigId, SessionConfigKind, SessionConfigOption,
+            SessionConfigOptionCategory, SessionConfigOptionValue,
+            SessionConfigOptionsCapabilities, SessionConfigSelectOption,
             SessionConfigSelectOptions, SessionId, SessionModeState, SessionNotification,
-            SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest, TextContent,
-            ToolCallContent, ToolCallId, ToolCallLocation, ToolCallUpdateFields,
-            WriteTextFileRequest, WriteTextFileResponse,
+            SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest,
+            TerminalExitStatus, TerminalId, TerminalOutputRequest, TerminalOutputResponse,
+            TextContent, ToolCallContent, ToolCallId, ToolCallLocation, ToolCallUpdateFields,
+            WaitForTerminalExitRequest, WaitForTerminalExitResponse, WriteTextFileRequest,
+            WriteTextFileResponse,
         },
     },
 };
@@ -1217,7 +1218,9 @@ async fn talk(
                         .map(|set| (set.name.clone(), set.value.clone()))
                         .collect(),
                     cwd: request.cwd.clone(),
-                    limit: request.output_byte_limit.and_then(|it| usize::try_from(it).ok()),
+                    limit: request
+                        .output_byte_limit
+                        .and_then(|it| usize::try_from(it).ok()),
                     answer,
                 };
                 if running.send(Event::Acp(question)).is_err() {
@@ -1271,8 +1274,9 @@ async fn talk(
                     return responder.respond_with_error(refusal("obelus is not listening"));
                 }
                 match answered.await {
-                    Ok(Some(ended)) => responder
-                        .respond(WaitForTerminalExitResponse::new(exit_status(ended))),
+                    Ok(Some(ended)) => {
+                        responder.respond(WaitForTerminalExitResponse::new(exit_status(ended)))
+                    }
                     Ok(None) | Err(_) => {
                         responder.respond_with_error(refusal("obelus is not running that"))
                     }
@@ -2229,10 +2233,7 @@ fn call_of(id: &ToolCallId, fields: &ToolCallUpdateFields) -> Call {
             .content
             .clone()
             .and_then(|content| change_of(&content)),
-        ran: fields
-            .content
-            .clone()
-            .and_then(|content| ran_in(&content)),
+        ran: fields.content.clone().and_then(|content| ran_in(&content)),
         said: fields.content.as_deref().map(words_of).unwrap_or_default(),
     }
 }

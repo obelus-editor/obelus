@@ -536,10 +536,7 @@ mod tests {
         .expect("the shell");
         drop(runs);
         std::thread::sleep(std::time::Duration::from_millis(900));
-        assert!(
-            !mark.exists(),
-            "a command outlived the runs it belonged to"
-        );
+        assert!(!mark.exists(), "a command outlived the runs it belonged to");
     }
 
     /// Stopping one says how it stopped.

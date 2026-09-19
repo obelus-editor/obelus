@@ -1609,7 +1609,9 @@ impl App {
             // all again to something that already knows.
             acp::Incoming::Remembered { .. } => {
                 self.in_transcript(|chat| {
-                    chat.note("taken up where you left it; this agent cannot send back what was said");
+                    chat.note(
+                        "taken up where you left it; this agent cannot send back what was said",
+                    );
                 });
             }
             acp::Incoming::Permission {
