@@ -2945,7 +2945,9 @@ fn somewhere_to_go_is_put_on_a_card_and_opened() {
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
         obelus::links::opened().as_deref(),
-        Some("https://console.example.com/oauth/authorize?client_id=9d1c4a&scope=user%3Ainference&code=1&state=7f2b"),
+        Some(
+            "https://console.example.com/oauth/authorize?client_id=9d1c4a&scope=user%3Ainference&code=1&state=7f2b"
+        ),
         "the link was not opened"
     );
     pump(&mut app, &events, "what the agent made of it", |app| {
@@ -3017,7 +3019,10 @@ fn where_the_reader_was_sent_stays_on_the_page_until_it_is_done() {
     support::press(&mut app, KeyCode::Enter);
 
     // The card is gone and the row is there, saying it is under way.
-    assert!(app.card().is_none(), "the card stayed after it was answered");
+    assert!(
+        app.card().is_none(),
+        "the card stayed after it was answered"
+    );
     let waiting = |app: &App| {
         app.chat().and_then(|chat| {
             chat.rows(WIDTH)
@@ -3044,7 +3049,11 @@ fn where_the_reader_was_sent_stays_on_the_page_until_it_is_done() {
 
     // And the key on the row sends them again, for the tab they closed.
     obelus::links::use_opener_for_test(obelus::links::Opener::Kept);
-    assert_eq!(obelus::links::opened(), None, "the test did not start clean");
+    assert_eq!(
+        obelus::links::opened(),
+        None,
+        "the test did not start clean"
+    );
     let at = app
         .chat()
         .expect("the conversation")

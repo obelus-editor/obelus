@@ -2335,6 +2335,26 @@ fn absolute(path: &Path) -> PathBuf {
 
 /// Runs until the application asks to quit or input ends.
 ///
+/// It blocks on the channel, and the terminal is read by a thread that
+/// sends into the same channel. Which way round that goes is the whole
+/// design, and it is not obvious from here, so: a loop has to block on
+/// exactly one thing or spin, and obelus has two sides to wait on -- the
+/// terminal, and everything else. Everything else is fourteen of the
+/// nineteen [`Event`](crate::event::Event) variants, and every one of them
+/// arrives with the reader's hands still: a walk finding files, a language
+/// server answering, an agent saying the next word, the watcher, the clock.
+/// The terminal is one source.
+///
+/// So the loop parks on the side with the fourteen. Parking on the terminal
+/// instead and draining the channel with `try_recv` reads like the same
+/// thing and is not: `try_recv` returns "nothing yet" at once and the loop
+/// goes back to waiting for a *key*, so the list stays empty until you
+/// type, the agent's answer appears a keystroke late, and a file that
+/// changed on disk is not re-read until you press something. Parking on
+/// neither means spinning, or drawing on a clock at sixty frames a second
+/// -- and obelus draws when something happened, which is what lets it be a
+/// process that is genuinely asleep when nothing is.
+///
 /// `terminal.draw` is synchronous and blocks the loop on a write to stdout.
 /// Into a local tty that is tens of microseconds; over ssh or inside tmux,
 /// stdout is a pipe and a slow reader really does stall the write. Accepted

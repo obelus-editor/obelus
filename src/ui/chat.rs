@@ -759,10 +759,8 @@ impl ChatView<'_> {
             .and_then(used_up)
             .filter(|(said, _)| over > text_width(said) + GAP + LEAST_SETTINGS);
         if let Some((said, full)) = &used
-            && let Ok(offset) = u16::try_from(
-                usize::from(area.width)
-                    .saturating_sub(taken + text_width(said) + 1),
-            )
+            && let Ok(offset) =
+                u16::try_from(usize::from(area.width).saturating_sub(taken + text_width(said) + 1))
         {
             // Dim like the hints for as long as it is only a number. Once
             // the agent is nearly out of room it is the one thing on this

@@ -297,6 +297,11 @@ pub fn channel() -> (Sender<Event>, Receiver<Event>) {
 
 /// Starts the thread that reads the terminal.
 ///
+/// A thread because the loop is already blocked on the channel, and the
+/// terminal is the one source that cannot send into it by itself. Which
+/// side is blocked on and which gets the thread is argued where the loop
+/// is, in [`crate::app::run`].
+///
 /// The thread outlives the loop, still blocked in `read`. Nothing waits for
 /// it: there is no way to interrupt that call, and the process is on its way
 /// out by then.

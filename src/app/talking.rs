@@ -914,13 +914,7 @@ impl App {
     /// itself is what the card is about. Shown whole, folded across as many
     /// rows as it takes, because a URL cut short is a URL nobody can use
     /// and this is the one thing on screen a reader may have to read out.
-    fn send_the_reader(
-        &mut self,
-        message: &str,
-        url: &str,
-        id: &str,
-        answer: acp::Answer<bool>,
-    ) {
+    fn send_the_reader(&mut self, message: &str, url: &str, id: &str, answer: acp::Answer<bool>) {
         self.show_the_question();
         if let Some(talk) = self.conversation_mut() {
             talk.going = Some(crate::conversation::Going {
@@ -1105,10 +1099,7 @@ impl App {
         // Somewhere to go is neither a form nor a permission: nothing was
         // filled in, and what the answer decides is whether obelus opens
         // something.
-        if self
-            .conversation()
-            .is_some_and(|talk| talk.going.is_some())
-        {
+        if self.conversation().is_some_and(|talk| talk.going.is_some()) {
             self.answer_going(chosen.first().map(String::as_str));
             return;
         }
