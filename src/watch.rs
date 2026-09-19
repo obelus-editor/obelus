@@ -15,9 +15,9 @@
 //! saving, in [`crate::buffer::Buffer::conflicted`].
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::mpsc::{self, RecvTimeoutError, Sender},
+    sync::mpsc::Sender,
     time::{Duration, Instant},
 };
 
@@ -58,7 +58,7 @@ impl std::fmt::Debug for Watcher {
 impl Watcher {
     /// Starts watching, reporting changes on `sender`.
     pub fn new(sender: Sender<Event>) -> Result<Self> {
-        let (raw_sender, raw_receiver) = mpsc::channel::<PathBuf>();
+        let (raw_sender, raw_receiver) = tokio::sync::mpsc::unbounded_channel::<PathBuf>();
 
         let inner = RecommendedWatcher::new(
             move |result: notify::Result<notify::Event>| match result {
@@ -69,7 +69,7 @@ impl Watcher {
                         return;
                     }
                     for path in event.paths {
-                        // The receiver is gone, so the debounce thread has
+                        // The receiver is gone, so the debouncing has
                         // ended and there is nothing left to tell.
                         if raw_sender.send(path).is_err() {
                             return;
@@ -174,35 +174,44 @@ fn directory_of(path: &Path) -> Option<PathBuf> {
 /// The deadline is set by the *first* change in a burst, not refreshed by each
 /// one: a file being written continuously would otherwise never be reported at
 /// all.
-fn spawn_debouncer(raw: mpsc::Receiver<PathBuf>, sender: Sender<Event>) {
-    std::thread::Builder::new()
-        .name("obelus-watch".to_string())
-        .spawn(move || {
-            let mut pending: HashMap<PathBuf, ()> = HashMap::new();
-            let mut deadline: Option<Instant> = None;
+fn spawn_debouncer(mut raw: tokio::sync::mpsc::UnboundedReceiver<PathBuf>, sender: Sender<Event>) {
+    crate::runtime::handle().spawn(async move {
+        let mut pending: HashSet<PathBuf> = HashSet::new();
+        let mut deadline: Option<Instant> = None;
 
-            loop {
-                let received = match deadline {
-                    None => raw.recv().map_err(|_| RecvTimeoutError::Disconnected),
-                    Some(at) => raw.recv_timeout(at.saturating_duration_since(Instant::now())),
-                };
-
-                match received {
-                    Ok(path) => {
-                        pending.insert(path, ());
-                        deadline.get_or_insert_with(|| Instant::now() + DEBOUNCE);
-                    }
-                    Err(RecvTimeoutError::Timeout) => {
-                        deadline = None;
-                        for (path, ()) in pending.drain() {
-                            if sender.send(Event::FileChanged { path }).is_err() {
-                                return;
+        loop {
+            // The window runs from the *first* change, and is not put back
+            // by the ones after it. A window that slid would never close
+            // while a file was being written continuously -- a build
+            // writing a log, an agent rewriting a file -- and the reader
+            // would be told about it only once the writing stopped.
+            let next = match deadline {
+                None => raw.recv().await,
+                Some(at) => {
+                    match tokio::time::timeout(
+                        at.saturating_duration_since(Instant::now()),
+                        raw.recv(),
+                    )
+                    .await
+                    {
+                        Ok(path) => path,
+                        // Quiet for long enough, or the window ran out.
+                        Err(_) => {
+                            deadline = None;
+                            for path in pending.drain() {
+                                if sender.send(Event::FileChanged { path }).is_err() {
+                                    return;
+                                }
                             }
+                            continue;
                         }
                     }
-                    Err(RecvTimeoutError::Disconnected) => return,
                 }
-            }
-        })
-        .expect("spawning the watch thread");
+            };
+            // Every sender is gone, which is the watcher itself going.
+            let Some(path) = next else { return };
+            pending.insert(path);
+            deadline.get_or_insert_with(|| Instant::now() + DEBOUNCE);
+        }
+    });
 }
