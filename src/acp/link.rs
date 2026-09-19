@@ -82,7 +82,7 @@ use agent_client_protocol::{
             CreateElicitationResponse, DeleteSessionRequest, ElicitationAcceptAction,
             ElicitationAction, ElicitationCapabilities, ElicitationContentValue,
             ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema,
-            ElicitationSchema, ElicitationUrlCapabilities, FileSystemCapabilities, Implementation,
+            ElicitationSchema, ElicitationUrlCapabilities, FileSystemCapabilities, Implementation, ResumeSessionRequest,
             InitializeRequest, LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp,
             McpServerSse, MultiSelectItems, NewSessionRequest, PermissionOptionId, PromptRequest,
             ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
@@ -302,6 +302,17 @@ pub enum Incoming {
         /// which the agent hears as a cancellation.
         answer: Answer<bool>,
     },
+    /// A conversation taken up again by an agent that keeps its context and
+    /// cannot send back what was said.
+    ///
+    /// After [`Incoming::Started`], and only where it is true. The page is
+    /// empty and the agent is not, which somebody has to say: a reader
+    /// looking at an empty page explains the whole thing again to an agent
+    /// that already knows it.
+    Remembered {
+        /// Which conversation.
+        session: SessionId,
+    },
     /// A question the agent has stopped needing an answer to, because it
     /// watched the far end and saw it happen.
     Finished {
@@ -335,6 +346,39 @@ pub enum Incoming {
     },
     /// The conversation is over: the agent exited, or the protocol did.
     Gone(Option<String>),
+}
+
+/// How a conversation from a previous sitting is taken up again.
+///
+/// Decided from what the agent said at the handshake rather than by trying
+/// the fullest way and reading the error: an agent that cannot replay says
+/// so, and sending it `session/load` to find out costs a round trip, an
+/// error in the log, and -- the part that matters -- a conversation put
+/// back as lost when the agent still had every word of its context.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Again {
+    /// `session/load`: the agent sends the whole conversation back, and the
+    /// reader sees what they said three days ago.
+    Replayed,
+    /// `session/resume`: the agent picks the conversation up with its
+    /// context intact and sends none of it. The page starts empty and the
+    /// agent still knows what was decided -- which has to be said, or a
+    /// reader looking at an empty page starts explaining it all again.
+    Remembered,
+    /// Neither. A conversation from before cannot be had again, so a new
+    /// one is opened and the reader is told.
+    Not,
+}
+
+/// Which of the three this agent offers, most to least.
+fn taking_up(agent: &agent_client_protocol::schema::v1::AgentCapabilities) -> Again {
+    if agent.load_session {
+        return Again::Replayed;
+    }
+    if agent.session_capabilities.resume.is_some() {
+        return Again::Remembered;
+    }
+    Again::Not
 }
 
 /// One thing the agent has to say, in the form the view shows it.
@@ -1118,6 +1162,9 @@ async fn talk(
                 // runs, and asking twice would be two answers to keep alike.
                 let offered =
                     offering(tools.as_deref(), &ready.agent_capabilities.mcp_capabilities);
+                // And how a conversation from a previous sitting is taken
+                // up, decided once for the same reason.
+                let again = taking_up(&ready.agent_capabilities);
 
                 // Whether each conversation's turn in flight has been
                 // given up on.
@@ -1181,22 +1228,54 @@ async fn talk(
                         // told what happened rather than left looking at an
                         // empty screen that used to have something in it.
                         Ask::Reopen { session } => {
-                            let taken = connection
-                                .send_request(LoadSessionRequest::new(
-                                    session.clone(),
-                                    root.clone(),
-                                ))
-                                .block_task()
-                                .await;
+                            // The fullest way this agent offers, and only
+                            // that one: the two answers carry the same two
+                            // things, and which was asked is the difference
+                            // between a page with the conversation on it
+                            // and a page with none.
+                            let taken = match again {
+                                Again::Replayed => Some(
+                                    connection
+                                        .send_request(LoadSessionRequest::new(
+                                            session.clone(),
+                                            root.clone(),
+                                        ))
+                                        .block_task()
+                                        .await
+                                        .map(|it| (it.modes, it.config_options)),
+                                ),
+                                Again::Remembered => Some(
+                                    connection
+                                        .send_request(ResumeSessionRequest::new(
+                                            session.clone(),
+                                            root.clone(),
+                                        ))
+                                        .block_task()
+                                        .await
+                                        .map(|it| (it.modes, it.config_options)),
+                                ),
+                                // Not asked at all. The agent said at the
+                                // handshake that it cannot, and a request
+                                // sent to be told that again is a round
+                                // trip spent learning nothing.
+                                Again::Not => None,
+                            };
                             match taken {
-                                Ok(loaded) => {
+                                Some(Ok((modes, options))) => {
                                     stopped.entry(session.clone()).or_default();
-                                    let mode = loaded.modes.as_ref().map(mode_setting);
+                                    let mode = modes.as_ref().map(mode_setting);
                                     let _ = events.send(Event::Acp(Incoming::Started {
                                         session: session.clone(),
                                         mode,
                                     }));
-                                    if let Some(options) = loaded.config_options.as_ref() {
+                                    // And, where the words did not come
+                                    // with it, that they did not.
+                                    if again == Again::Remembered {
+                                        let _ = events.send(Event::Acp(Incoming::Remembered {
+                                            session: session.clone(),
+                                        }));
+                                    }
+                                    if let Some(options) = options.as_ref() {
                                         let settings =
                                             options.iter().filter_map(setting_of).collect();
                                         let _ = events.send(Event::Acp(Incoming::Update {
@@ -1205,10 +1284,15 @@ async fn talk(
                                         }));
                                     }
                                 }
-                                Err(error) => {
+                                answer => {
+                                    let why = match answer {
+                                        Some(Err(error)) => error.to_string(),
+                                        _ => "this agent cannot take a conversation up again"
+                                            .to_string(),
+                                    };
                                     let _ = events.send(Event::Acp(Incoming::Lost {
                                         session: session.clone(),
-                                        why: error.to_string(),
+                                        why,
                                     }));
                                     open_session(
                                         &connection,

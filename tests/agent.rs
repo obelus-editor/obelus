@@ -3205,3 +3205,127 @@ fn an_agent_that_echoes_the_prompt_does_not_say_it_twice() {
         support::render(&mut app, WIDTH, HEIGHT)
     );
 }
+
+/// A tree with a note, and a conversation remembered against it.
+///
+/// The shape `a_conversation_the_agent_has_forgotten_is_started_again` sets
+/// up, which is the only way to reach a reopen: obelus asks for one it had
+/// before when the note it is about has a name written down beside it.
+///
+/// The name must be one the fake agent never mints for itself -- it numbers
+/// its own `s-1`, `s-2` -- or the session it opens on the way up is taken
+/// for the one that was asked for.
+fn remembering(name: &str, note: &str, session: &str, how: &[&str]) -> (support::Scratch, App, Receiver<Event>) {
+    let scratch = support::Scratch::new(name);
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
+    )
+    .expect("the notes");
+    let id = obelus::todo::NoteId::read(note).expect("a name");
+    obelus::acp::sessions::change(scratch.path(), std::slice::from_ref(&id), |remembered| {
+        remembered.put(
+            &id,
+            "fake",
+            obelus::acp::sessions::Kept {
+                session: session.to_string(),
+                title: None,
+            },
+        );
+    });
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let mut arguments = vec!["tests/fixtures/fake-agent.sh".to_string()];
+    arguments.extend(how.iter().map(|word| (*word).to_string()));
+    app.talk_to("fake", Path::new("sh"), &arguments);
+    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    (scratch, app, events)
+}
+
+/// Whether obelus has said anything about the conversation it asked for.
+///
+/// `Talking::Ready` is not that: it is true as soon as the agent has
+/// spoken at all, which is before it has answered about this conversation.
+fn settled(app: &App) -> bool {
+    app.chat().is_some_and(|chat| {
+        chat.rows(WIDTH)
+            .iter()
+            .any(|row| row.speaker == obelus::component::chat::Speaker::Note)
+    })
+}
+
+/// An agent that keeps a conversation but cannot replay it is asked for the
+/// one it can do, and the reader is told why the page is empty.
+///
+/// `session/resume` takes a conversation up with its context intact and
+/// sends none of it back. Which of the two to ask is read off the handshake
+/// rather than found out by asking the fullest and reading the error: an
+/// agent that says it cannot replay, sent `session/load`, costs a round
+/// trip and gets its conversation thrown away as lost -- while it still
+/// held every word of the context.
+///
+/// Broken deliberately by asking `LoadSessionRequest` whatever the agent
+/// said: the fake agent has no answer for it, the conversation is put back
+/// as lost, and this goes red.
+#[test]
+fn an_agent_that_can_only_resume_is_asked_to_resume() {
+    let (_scratch, mut app, events) =
+        remembering("agent-resumes", "0123456K", "s-old", &["only-resumes"]);
+    // Until obelus has something to say about the old conversation --
+    // `Talking::Ready` is true as soon as the agent has spoken at all,
+    // which is before it has answered about this one.
+    pump(&mut app, &events, "what became of the old conversation", settled);
+
+    let text = screen(&mut app);
+    assert!(
+        text.contains("cannot send back what was said"),
+        "nothing says why the page is empty:\n{text}"
+    );
+    // Taken up, not started again: the agent still has the context.
+    assert!(
+        !text.contains("starting again"),
+        "the conversation was thrown away rather than taken up:\n{text}"
+    );
+    // And it was resume that was asked for, not load: what the fake agent
+    // replays to a load is on the page for anyone who sent one.
+    assert!(
+        !text.contains("where we were"),
+        "obelus asked to replay a conversation this agent cannot replay:\n{text}"
+    );
+}
+
+/// An agent that can do neither is not asked at all.
+///
+/// It said so at the handshake. A request sent to be told that again is a
+/// round trip spent learning nothing, and until the answer comes back the
+/// reader is looking at a conversation that may or may not be there.
+///
+/// Broken deliberately by asking `LoadSessionRequest` whatever the agent
+/// said: the fake agent answers it and replays, so the words come back and
+/// this goes red.
+#[test]
+fn an_agent_that_can_do_neither_is_not_asked() {
+    let (_scratch, mut app, events) =
+        remembering("agent-forgets", "0123456M", "s-old", &["forgets"]);
+    pump(&mut app, &events, "what became of the old conversation", settled);
+
+    // The note carries why, and the why is obelus's own reading of the
+    // handshake -- not an error the agent sent back. An agent asked
+    // anyway refuses in its own words, and those would be here instead.
+    let text = screen(&mut app);
+    assert!(
+        text.contains("starting again"),
+        "nothing says the old conversation was not there:\n{text}"
+    );
+    assert!(
+        text.contains("take a conversation up again"),
+        "the reason is not obelus's own:\n{text}"
+    );
+    assert!(
+        !text.contains("cannot replay"),
+        "obelus asked for a conversation the agent said it could not give:\n{text}"
+    );
+}

@@ -93,12 +93,18 @@ bare=''
 # it is here for is that the reader may have walked away from the
 # conversation by then.
 at_once=''
+# How it can take a conversation up again, which it says at the handshake.
+# A client reads this and asks the one way that works, rather than asking
+# the fullest and reading the error.
+again='load'
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
         refuse-mode) refuses='yes' ;;
         nothing-to-change) bare='yes' ;;
         asks-at-once) at_once='yes' ;;
+        only-resumes) again='resume' ;;
+        forgets) again='none' ;;
     esac
 done
 
@@ -161,7 +167,12 @@ while IFS= read -r line; do
                 *'"form":{}'*) forms='yes' ;;
                 *) forms='' ;;
             esac
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentInfo":{"name":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$me"
+            case "$again" in
+                load) able='"loadSession":true' ;;
+                resume) able='"sessionCapabilities":{"resume":{}}' ;;
+                *) able='' ;;
+            esac
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{%s},"agentInfo":{"name":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$able" "$me"
             ;;
         *'"method":"session/new"'*)
             opened=$((opened + 1))
@@ -515,6 +526,14 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":"no such session"}}\n' "$(id_of "$line")"
             ;;
         *'"method":"session/load"'*)
+            # Asked of an agent that said at the handshake it cannot. A
+            # client reading what was declared never sends this, and one
+            # that sends it anyway has to be told -- which is how a test
+            # tells the two apart.
+            if [ "$again" != load ]; then
+                printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"this agent cannot replay a conversation"}}\n' "$(id_of "$line")"
+                continue
+            fi
             # A conversation taken up again. A real agent replays what was
             # said; what matters here is that it answers about the session
             # the client named rather than minting a new one, because that
@@ -526,6 +545,12 @@ while IFS= read -r line; do
             # questions above them.
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"what did we settle on"}}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"where we were"}}}}\n'
+            ;;
+        *'"method":"session/resume"'*)
+            # Taken up with its context and not a word of it sent back,
+            # which is the whole difference from `session/load`. It says so
+            # in the answer only; the page stays empty.
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             ;;
         *'"method":"session/delete"'*)
             set_turn "$session" ''

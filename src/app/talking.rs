@@ -1323,6 +1323,7 @@ impl App {
         let whose = match incoming {
             acp::Incoming::Update { session, .. }
             | acp::Incoming::Ended { session, .. }
+            | acp::Incoming::Remembered { session }
             | acp::Incoming::Permission { session, .. } => Some(session),
             acp::Incoming::Started { .. }
             | acp::Incoming::Lost { .. }
@@ -1480,6 +1481,16 @@ impl App {
             }
             // Answered above, before the session it is about can arrive.
             acp::Incoming::Lost { .. } => {}
+            // Taken up where the reader left it, by an agent that cannot
+            // send back what was said. The page is empty and the agent is
+            // not: without this the reader is looking at a conversation
+            // that appears to have nothing in it, and starts explaining it
+            // all again to something that already knows.
+            acp::Incoming::Remembered { .. } => {
+                self.in_transcript(|chat| {
+                    chat.note("taken up where you left it; this agent cannot send back what was said");
+                });
+            }
             acp::Incoming::Permission {
                 call,
                 reason,
