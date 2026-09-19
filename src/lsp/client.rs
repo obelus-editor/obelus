@@ -5,13 +5,7 @@
 //! that is the caller's, because the answer arrives after the world has moved
 //! on and only the caller can say whether it still means anything.
 
-use std::{
-    collections::HashMap,
-    io::{BufReader, BufWriter},
-    path::Path,
-    process::{Child, Command, Stdio},
-    sync::mpsc::{self, Sender},
-};
+use std::{collections::HashMap, path::Path, process::Stdio, sync::mpsc::Sender};
 
 use anyhow::{Context as _, Result};
 use lsp_types::{
@@ -69,10 +63,10 @@ pub struct AskedEdit {
 /// A running language server.
 pub struct Client {
     language: LanguageId,
-    process: Child,
+    process: tokio::process::Child,
     /// Whether the process has been found to have stopped.
     exited: bool,
-    outgoing: Sender<String>,
+    outgoing: tokio::sync::mpsc::UnboundedSender<String>,
     next_id: i64,
     /// Messages held until the handshake finishes.
     ///
@@ -141,7 +135,9 @@ impl Client {
         sender: Sender<Event>,
     ) -> Result<Self> {
         let command = server.command;
-        let mut process = Command::new(command)
+        // Inside the runtime, because a child's pipes register with it.
+        let _inside = crate::runtime::handle().enter();
+        let mut process = tokio::process::Command::new(command)
             .args(server.arguments)
             .current_dir(root)
             .stdin(Stdio::piped())
@@ -371,7 +367,7 @@ impl Client {
     /// about it.
     #[must_use]
     pub fn pid(&self) -> Option<u32> {
-        Some(self.process.id())
+        self.process.id()
     }
 
     /// How long a server gets to go on its own before it is killed.
@@ -426,8 +422,8 @@ impl Client {
         let _ = self.request("shutdown", &Value::Null);
         let _ = self.notify("exit", &Value::Null);
         // Dropping the sender closes the writer's channel, which ends that
-        // thread once it has written what it has.
-        let (dead, _) = mpsc::channel();
+        // task once it has written what it has.
+        let (dead, _) = tokio::sync::mpsc::unbounded_channel();
         self.outgoing = dead;
 
         let until = std::time::Instant::now() + Self::PATIENCE;
@@ -438,8 +434,7 @@ impl Client {
                 Err(_) => break,
             }
         }
-        let _ = self.process.kill();
-        let _ = self.process.wait();
+        let _ = self.process.start_kill();
     }
 
     fn send(&mut self, message: &Value) -> Result<()> {
@@ -601,62 +596,88 @@ pub fn path_of(uri: &str) -> Option<std::path::PathBuf> {
 }
 
 /// Reads messages and puts them on the one channel the loop reads.
-fn spawn_reader(language: LanguageId, stdout: std::process::ChildStdout, sender: Sender<Event>) {
-    let _ = std::thread::Builder::new()
-        .name(format!("obelus-lsp-{}", language.name()))
-        .spawn(move || {
-            let mut reader = BufReader::new(stdout);
-            loop {
-                match transport::read_message(&mut reader) {
-                    Ok(Some(message)) => {
-                        if sender.send(Event::Lsp { language, message }).is_err() {
-                            return;
-                        }
-                    }
-                    Ok(None) => {
-                        tracing::info!(language = language.name(), "the server closed its output");
-                        return;
-                    }
-                    Err(error) => {
-                        tracing::warn!(%error, language = language.name(), "reading from the server");
-                        return;
-                    }
-                }
-            }
-        });
-}
-
-/// Writes messages, on its own thread.
 ///
-/// Its own thread because writing blocks: a server busy indexing stops
-/// draining its stdin, and a write from the main loop would hold the whole
-/// interface until it started again.
-fn spawn_writer(command: String, stdin: std::process::ChildStdin) -> Sender<String> {
-    let (sender, receiver) = mpsc::channel::<String>();
-    let _ = std::thread::Builder::new()
-        .name("obelus-lsp-write".to_string())
-        .spawn(move || {
-            let mut writer = BufWriter::new(stdin);
-            while let Ok(body) = receiver.recv() {
-                if let Err(error) = transport::write_message(&mut writer, &body) {
-                    tracing::warn!(%error, %command, "writing to the server");
+/// Two halves on purpose. The framing is only waiting on a pipe, so it is a
+/// task and costs no thread. The parsing is work -- semantic tokens for a
+/// two-thousand-line file is 473 KiB of JSON and about twenty milliseconds
+/// -- and doing it on the runtime would stall the agent's connection, the
+/// clock behind an animation and every other server behind it, which is
+/// exactly what separate threads never did.
+fn spawn_reader(language: LanguageId, stdout: tokio::process::ChildStdout, sender: Sender<Event>) {
+    crate::runtime::handle().spawn(async move {
+        let mut reader = tokio::io::BufReader::new(stdout);
+        loop {
+            let body = match transport::read_body(&mut reader).await {
+                Ok(Some(body)) => body,
+                Ok(None) => {
+                    tracing::info!(language = language.name(), "the server closed its output");
                     return;
                 }
+                Err(error) => {
+                    tracing::warn!(%error, language = language.name(), "reading from the server");
+                    return;
+                }
+            };
+            let parsed = crate::runtime::handle()
+                .spawn_blocking(move || serde_json::from_slice::<serde_json::Value>(&body))
+                .await;
+            let message = match parsed {
+                Ok(Ok(message)) => message,
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, language = language.name(), "a message obelus could not read");
+                    continue;
+                }
+                Err(error) => {
+                    tracing::warn!(%error, language = language.name(), "parsing gave up");
+                    return;
+                }
+            };
+            if sender.send(Event::Lsp { language, message }).is_err() {
+                return;
             }
-        });
+        }
+    });
+}
+
+/// Writes messages, on a task of its own.
+///
+/// Its own task because writing blocks: a server busy indexing stops
+/// draining its stdin, and a write from the main loop would hold the whole
+/// interface until it started again. An unbounded channel in front of it,
+/// so the loop's side of a send never waits.
+fn spawn_writer(
+    command: String,
+    stdin: tokio::process::ChildStdin,
+) -> tokio::sync::mpsc::UnboundedSender<String> {
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<String>();
+    crate::runtime::handle().spawn(async move {
+        use tokio::io::AsyncWriteExt as _;
+
+        let mut writer = tokio::io::BufWriter::new(stdin);
+        while let Some(body) = receiver.recv().await {
+            if let Err(error) = writer.write_all(transport::framed(&body).as_bytes()).await {
+                tracing::warn!(%error, %command, "writing to the server");
+                return;
+            }
+            if let Err(error) = writer.flush().await {
+                tracing::warn!(%error, %command, "writing to the server");
+                return;
+            }
+        }
+    });
     sender
 }
 
 /// Sends whatever the server writes to its stderr to the log.
-fn spawn_logger(command: String, stderr: std::process::ChildStderr) {
-    let _ = std::thread::Builder::new()
-        .name("obelus-lsp-stderr".to_string())
-        .spawn(move || {
-            use std::io::BufRead as _;
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                tracing::debug!(%command, "{line}");
-            }
-        });
+fn spawn_logger(command: String, stderr: tokio::process::ChildStderr) {
+    crate::runtime::handle().spawn(async move {
+        use tokio::io::AsyncBufReadExt as _;
+
+        let mut lines = tokio::io::BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            tracing::debug!(%command, "{line}");
+        }
+    });
 }
 
 impl Drop for Client {

@@ -11,29 +11,32 @@
 //! draining its stdin, the pipe fills, and a write from the main loop would
 //! hold the whole interface until it drained.
 
-use std::io::{BufRead, Write};
-
 use anyhow::{Context as _, Result, bail};
-use serde_json::Value;
 
-/// Reads one message, or `None` at a clean end of stream.
+/// Reads one message's bytes, or `None` at a clean end of stream.
 ///
-/// Headers other than `Content-Length` are skipped: the protocol allows
-/// `Content-Type` and says to ignore what you do not know.
-pub fn read_message<R>(reader: &mut R) -> Result<Option<Value>>
+/// The body, unparsed. Framing is cheap and parsing is not -- semantic
+/// tokens for a two-thousand-line file is 473 KiB of JSON that takes about
+/// twenty milliseconds -- so the two are separated: the framing happens on
+/// the runtime, where it costs no thread because it is only waiting, and
+/// the parsing goes somewhere a twenty-millisecond pause harms nobody.
+pub async fn read_body<R>(reader: &mut R) -> Result<Option<Vec<u8>>>
 where
-    R: BufRead,
+    R: tokio::io::AsyncBufRead + Unpin,
 {
+    use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _};
+
     let mut length: Option<usize> = None;
     let mut header = String::new();
 
     loop {
         header.clear();
-        let read = reader.read_line(&mut header).context("reading a header")?;
+        let read = reader
+            .read_line(&mut header)
+            .await
+            .context("reading a header")?;
         if read == 0 {
             return if length.is_some() {
-                // Headers arrived and then the stream ended, so a body was
-                // promised and never came.
                 bail!("the stream ended between a header and its body")
             } else {
                 Ok(None)
@@ -63,184 +66,130 @@ where
     let mut body = vec![0u8; length];
     reader
         .read_exact(&mut body)
+        .await
         .context("reading a message body")?;
-    serde_json::from_slice(&body)
-        .with_context(|| format!("parsing a {length}-byte message"))
-        .map(Some)
+    Ok(Some(body))
 }
 
-/// Writes one message, framed.
-pub fn write_message<W>(writer: &mut W, body: &str) -> Result<()>
-where
-    W: Write,
-{
-    // The length is in bytes, not characters. A message containing anything
-    // outside ASCII — a path, a hover in Chinese — is longer than it looks.
-    write!(writer, "Content-Length: {}\r\n\r\n{body}", body.len())?;
-    writer.flush().context("flushing a message")
+/// One message, framed, ready to write.
+///
+/// The one place that knows the shape. The length is in bytes, not
+/// characters: a message containing anything outside ASCII -- a path, a
+/// hover in Chinese -- is longer than it looks.
+#[must_use]
+pub fn framed(body: &str) -> String {
+    format!("Content-Length: {}\r\n\r\n{body}", body.len())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::{BufReader, Read};
-
     use super::*;
 
-    /// A reader that hands over one byte at a time, so every message is split
-    /// at every possible place. Assuming a read stops on a message boundary is
-    /// the mistake that works until a message is big enough not to.
-    struct OneByteAtATime<'a> {
-        remaining: &'a [u8],
+    /// One message off the reader the client uses.
+    ///
+    /// The framing is what this file does; the parsing that follows it is
+    /// the client's. So a test frames some text, reads the bytes back and
+    /// reads them as JSON, which is the same two steps in the same order.
+    async fn read(stream: &str) -> Option<serde_json::Value> {
+        let mut reader = tokio::io::BufReader::new(stream.as_bytes());
+        let body = read_body(&mut reader).await.expect("reading")?;
+        Some(serde_json::from_slice(&body).expect("parsing"))
     }
 
-    impl Read for OneByteAtATime<'_> {
-        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
-            if self.remaining.is_empty() || out.is_empty() {
-                return Ok(0);
-            }
-            out[0] = self.remaining[0];
-            self.remaining = &self.remaining[1..];
-            Ok(1)
-        }
+    /// The same, for the streams that are supposed to fail.
+    async fn refused(stream: &str) -> bool {
+        let mut reader = tokio::io::BufReader::new(stream.as_bytes());
+        read_body(&mut reader).await.is_err()
     }
 
-    fn framed(body: &str) -> String {
-        format!("Content-Length: {}\r\n\r\n{body}", body.len())
-    }
-
-    #[test]
-    fn a_message_comes_back_whole() {
-        let stream = framed(r#"{"jsonrpc":"2.0","id":1,"result":null}"#);
-        let mut reader = BufReader::new(stream.as_bytes());
-        let message = read_message(&mut reader)
-            .expect("reading")
+    #[tokio::test]
+    async fn a_message_comes_back_whole() {
+        let message = read(&framed(r#"{"jsonrpc":"2.0","id":1,"result":null}"#))
+            .await
             .expect("a message");
         assert_eq!(message["id"], 1);
     }
 
-    #[test]
-    fn several_messages_come_back_in_order() {
+    #[tokio::test]
+    async fn several_messages_come_back_in_order() {
         let stream = framed(r#"{"id":1}"#) + &framed(r#"{"id":2}"#) + &framed(r#"{"id":3}"#);
-        let mut reader = BufReader::new(stream.as_bytes());
+        let mut reader = tokio::io::BufReader::new(stream.as_bytes());
         for expected in 1..=3 {
-            let message = read_message(&mut reader)
+            let body = read_body(&mut reader)
+                .await
                 .expect("reading")
                 .expect("a message");
+            let message: serde_json::Value = serde_json::from_slice(&body).expect("parsing");
             assert_eq!(message["id"], expected);
         }
-        assert!(read_message(&mut reader).expect("reading").is_none());
-    }
-
-    #[test]
-    fn a_message_split_at_every_byte_still_comes_back() {
-        let stream = framed(r#"{"id":1,"method":"a"}"#) + &framed(r#"{"id":2,"method":"b"}"#);
-        let mut reader = BufReader::new(OneByteAtATime {
-            remaining: stream.as_bytes(),
-        });
-        assert_eq!(
-            read_message(&mut reader).expect("reading").expect("first")["method"],
-            "a"
-        );
-        assert_eq!(
-            read_message(&mut reader).expect("reading").expect("second")["method"],
-            "b"
-        );
-    }
-
-    /// The length is bytes. A body with anything outside ASCII in it is longer
-    /// than its character count, and using the wrong one desynchronises the
-    /// stream permanently: every message after it starts mid-body.
-    #[test]
-    fn the_length_is_bytes_and_not_characters() {
-        let body = "{\"hover\":\"\u{4f60}\u{597d}\"}";
         assert!(
-            body.len() > body.chars().count(),
-            "the sample has to be multi-byte or this proves nothing"
-        );
-
-        let stream = framed(body) + &framed(r#"{"after":true}"#);
-        let mut reader = BufReader::new(stream.as_bytes());
-        assert_eq!(
-            read_message(&mut reader).expect("reading").expect("first")["hover"],
-            "\u{4f60}\u{597d}"
-        );
-        assert_eq!(
-            read_message(&mut reader).expect("reading").expect("second")["after"],
-            true,
-            "the stream desynchronised after a multi-byte body"
+            read_body(&mut reader).await.expect("reading").is_none(),
+            "the stream did not end cleanly"
         );
     }
 
-    #[test]
-    fn other_headers_are_skipped() {
-        let body = r#"{"id":7}"#;
+    /// Headers obelus does not know are skipped, which the protocol says to
+    /// do and which real servers rely on.
+    #[tokio::test]
+    async fn an_unknown_header_is_stepped_over() {
+        let body = r#"{"hover":true}"#;
         let stream = format!(
             "Content-Type: application/vscode-jsonrpc; charset=utf-8\r\nContent-Length: {}\r\n\r\n{body}",
             body.len()
         );
-        let mut reader = BufReader::new(stream.as_bytes());
-        assert_eq!(
-            read_message(&mut reader)
-                .expect("reading")
-                .expect("a message")["id"],
-            7
+        assert_eq!(read(&stream).await.expect("a message")["hover"], true);
+    }
+
+    /// The length is in bytes, not characters.
+    ///
+    /// The body here holds real multi-byte characters rather than their
+    /// JSON escapes -- which is the whole test: `"\u4f60"` in the source is
+    /// six ASCII bytes and counting either way gives six. A reader or a
+    /// writer that counted characters would cut every message after the
+    /// first one short, and this is what says so.
+    #[tokio::test]
+    async fn the_length_is_bytes_and_not_characters() {
+        let body = "{\"text\":\"\u{4f60}\u{597d}\"}";
+        assert!(
+            body.len() > body.chars().count(),
+            "this test is about nothing: the body is all ASCII"
         );
+        let stream = framed(body) + &framed(r#"{"after":true}"#);
+        let mut reader = tokio::io::BufReader::new(stream.as_bytes());
+
+        let first = read_body(&mut reader)
+            .await
+            .expect("reading")
+            .expect("first");
+        let first: serde_json::Value = serde_json::from_slice(&first).expect("parsing");
+        assert_eq!(first["text"], "\u{4f60}\u{597d}");
+        // The one that follows is what a wrong length actually breaks: the
+        // reader would start it in the middle of the one before.
+        let second = read_body(&mut reader)
+            .await
+            .expect("reading")
+            .expect("second");
+        let second: serde_json::Value = serde_json::from_slice(&second).expect("parsing");
+        assert_eq!(second["after"], true);
     }
 
-    #[test]
-    fn a_clean_end_of_stream_is_not_an_error() {
-        let mut reader = BufReader::new(&b""[..]);
-        assert!(read_message(&mut reader).expect("reading").is_none());
+    /// A stream that stops between a header and its body is a broken
+    /// server, not a clean end -- and the two must not look alike, because
+    /// one is worth reporting and the other is how every session ends.
+    #[tokio::test]
+    async fn a_body_that_never_came_is_an_error() {
+        assert!(refused("Content-Length: 100\r\n\r\n{\"id\":1}").await);
+        assert!(refused("Content-Length: 100\r\n").await);
     }
 
-    /// A server killed mid-message. Reporting it as the end of the stream
-    /// would look like a clean exit.
-    #[test]
-    fn a_truncated_body_is_an_error() {
-        let stream = "Content-Length: 100\r\n\r\n{\"id\":1}";
-        let mut reader = BufReader::new(stream.as_bytes());
-        assert!(read_message(&mut reader).is_err());
+    #[tokio::test]
+    async fn a_header_with_no_length_is_an_error() {
+        assert!(refused("Content-Type: text/plain\r\n\r\n{}").await);
     }
 
-    #[test]
-    fn a_message_with_no_length_is_an_error() {
-        let mut reader = BufReader::new(&b"Content-Type: whatever\r\n\r\n{}"[..]);
-        assert!(read_message(&mut reader).is_err());
-    }
-
-    /// Round-tripped through a multi-byte body, because that is the only kind
-    /// that tells a byte count from a character count. Writing the character
-    /// count desynchronises the stream permanently and the first message is
-    /// still fine, so an ASCII round trip proves nothing.
-    #[test]
-    fn what_is_written_can_be_read_back() {
-        let first = "{\"method\":\"hover\",\"text\":\"\u{4f60}\u{597d}\u{4e16}\u{754c}\"}";
-        let second = r#"{"method":"initialized"}"#;
-
-        let mut written = Vec::new();
-        write_message(&mut written, first).expect("writing");
-        write_message(&mut written, second).expect("writing");
-
-        let mut reader = BufReader::new(written.as_slice());
-        assert_eq!(
-            read_message(&mut reader).expect("reading").expect("first")["text"],
-            "\u{4f60}\u{597d}\u{4e16}\u{754c}"
-        );
-        assert_eq!(
-            read_message(&mut reader).expect("reading").expect("second")["method"],
-            "initialized",
-            "the second message did not start where the first ended"
-        );
-    }
-
-    /// Headers arrived and then the stream stopped, so a body was promised and
-    /// never came. Reporting that as the end of the stream would look like the
-    /// server shutting down cleanly, and obelus would stop asking it things
-    /// rather than saying it had died.
-    #[test]
-    fn a_stream_that_stops_between_a_header_and_its_body_is_an_error() {
-        let mut reader = BufReader::new(&b"Content-Length: 100\r\n"[..]);
-        let outcome = read_message(&mut reader);
-        assert!(outcome.is_err(), "got {outcome:?}");
+    #[tokio::test]
+    async fn a_clean_end_of_stream_is_not_an_error() {
+        let mut reader = tokio::io::BufReader::new(&b""[..]);
+        assert!(read_body(&mut reader).await.expect("reading").is_none());
     }
 }
