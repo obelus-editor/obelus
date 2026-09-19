@@ -413,12 +413,18 @@ to compile until it is handled. Same idea in `theme`: only fields with readers.
 **Nothing writes to stdout.** stdout is the drawing surface; `tracing` goes to
 a file. A stray `println!` lands in the middle of a frame and stays there.
 
-**No async runtime.** One `std::sync::mpsc` channel, one producer thread per
-event source (keyboard, file walk, watcher, each server's stdout), the main
-loop blocking on `recv()` and draining with `try_recv()`. Writing to a server's
-stdin needs its own thread, because a busy server stops draining the pipe. An
-answer that arrives after the world has moved on is the normal case, which is
-why requests record the version they asked against.
+**The main loop is threads and one channel, not a runtime.** One
+`std::sync::mpsc` channel, one producer thread per event source (keyboard, file
+walk, watcher, each server's stdout), the main loop blocking on `recv()` and
+draining with `try_recv()`. Not a rule against `async` or against tokio --
+tokio is in the tree and `acp::link` runs a current-thread runtime on a thread
+of its own, because the protocol's crate is built around it. What the rule is
+about is the loop: one owner of `&mut App`, and no `.await` between a key
+arriving and the screen it produced.
+
+Writing to a server's stdin needs its own thread, because a busy server stops
+draining the pipe. An answer that arrives after the world has moved on is the
+normal case, which is why requests record the version they asked against.
 
 **obelus does not split its window, so several obelus processes is the
 normal case.** A terminal already splits, tiles and tabs better than an
