@@ -20,11 +20,7 @@
 
 use std::{
     path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, Sender},
-    },
+    sync::mpsc::{self, Receiver, Sender},
     time::Duration,
 };
 
@@ -366,16 +362,22 @@ fn remote_by(mut lookup: impl FnMut(&str) -> Option<std::ffi::OsString>) -> bool
         .any(|name| lookup(name).is_some_and(|value| !value.is_empty()))
 }
 
-/// A thread sending [`Event::Tick`] until it is told to stop.
+/// A timer sending [`Event::Tick`] until it is dropped.
 ///
-/// The handle is what stops it: dropping it, or calling
-/// [`Ticker::stop`], lets the thread notice on its next wake and exit. Held
-/// by whatever wanted the animation, so the animation cannot outlive its
-/// reason -- a ticker still running behind an open file would redraw the
-/// screen twelve times a second for nothing.
+/// The handle is what stops it: dropping it, or calling [`Ticker::stop`],
+/// ends it. Held by whatever wanted the animation, so the animation cannot
+/// outlive its reason -- a ticker still running behind an open file would
+/// redraw the screen twelve times a second for nothing.
+///
+/// A timer on [`crate::runtime`] rather than a thread. It was a thread
+/// whose whole body was sleep-and-send, with an `AtomicBool` beside it to
+/// stop it -- and stopping cost up to a whole tick, because the flag was
+/// read *after* the sleep, so a ticker told to stop could still send one
+/// last redraw. The comment on that loop said as much and could only
+/// narrow the window. An abort has no window.
 #[derive(Debug)]
 pub struct Ticker {
-    wanted: Arc<AtomicBool>,
+    beating: tokio::task::JoinHandle<()>,
 }
 
 impl Ticker {
@@ -390,28 +392,24 @@ impl Ticker {
             tracing::info!("a remote session, so no animation");
             return None;
         }
-        let wanted = Arc::new(AtomicBool::new(true));
-        let mine = Arc::clone(&wanted);
-        std::thread::Builder::new()
-            .name("obelus-tick".to_string())
-            .spawn(move || {
-                while mine.load(Ordering::Relaxed) {
-                    std::thread::sleep(TICK);
-                    // Checked again after the sleep: the reason for ticking
-                    // can have gone while this thread was asleep, and one
-                    // tick too many is one redraw too many.
-                    if !mine.load(Ordering::Relaxed) || sender.send(Event::Tick).is_err() {
-                        break;
-                    }
+        let beating = crate::runtime::handle().spawn(async move {
+            let mut beat = tokio::time::interval(TICK);
+            // The first one is immediate, and a frame drawn the instant the
+            // animation starts is the frame that was just drawn.
+            beat.tick().await;
+            loop {
+                beat.tick().await;
+                if sender.send(Event::Tick).is_err() {
+                    break;
                 }
-            })
-            .expect("spawning the tick thread");
-        Some(Self { wanted })
+            }
+        });
+        Some(Self { beating })
     }
 
     /// Stops ticking.
     pub fn stop(&self) {
-        self.wanted.store(false, Ordering::Relaxed);
+        self.beating.abort();
     }
 }
 

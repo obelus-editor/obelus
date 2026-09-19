@@ -182,13 +182,14 @@ agent-client-protocol = "2.1.0"
 # The channels and streams the protocol's own crate speaks. Runtime-agnostic,
 # which is why they stay here with tokio driving them.
 futures = "0.3.34"
-# The runtime two threads of obelus run on. The agent's connection needs
-# only `rt` -- its transport brings its own IO -- but the tools obelus offers
-# an agent are an HTTP server of its own, and that needs a socket and a timer.
-# Still one thread each and no work-stealing pool: obelus talks to one agent
-# and that agent talks back to one obelus.
+# The runtime obelus's waiting is done on -- one of them, in `src/runtime.rs`,
+# for the agent's connection, the tools obelus offers it, a language server's
+# pipe and the clock behind an animation. Work-stealing because a language
+# server's answer is parsed where it is read and a big one takes twenty
+# milliseconds, which on one thread would stall everything else waiting here.
 tokio = { version = "1.53.1", default-features = false, features = [
     "rt",
+    "rt-multi-thread",
     "net",
     "time",
     "macros",

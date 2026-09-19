@@ -33,6 +33,7 @@ pub mod mcp;
 pub mod question;
 pub mod reading;
 pub mod running;
+pub mod runtime;
 pub mod search;
 pub mod syntax;
 pub mod text;

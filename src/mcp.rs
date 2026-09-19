@@ -322,36 +322,21 @@ pub fn serve(root: &std::path::Path, events: Sender<Event>) -> std::io::Result<S
     );
     let router = axum::Router::new().route_service("/mcp", service);
 
-    // Its own runtime and its own thread. The agent's connection has one of
-    // each already and sharing would tie two lifetimes together for no
-    // reason: this one lives as long as obelus, and that one lives as long
-    // as the agent does.
-    std::thread::Builder::new()
-        .name("obelus-mcp".to_string())
-        .spawn(move || {
-            let runtime = match tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            {
-                Ok(runtime) => runtime,
-                Err(error) => {
-                    tracing::warn!(%error, "no runtime for the tools obelus offers");
-                    return;
-                }
-            };
-            runtime.block_on(async move {
-                let listener = match tokio::net::TcpListener::from_std(listener) {
-                    Ok(listener) => listener,
-                    Err(error) => {
-                        tracing::warn!(%error, "the tools obelus offers are not listening");
-                        return;
-                    }
-                };
-                if let Err(error) = axum::serve(listener, router).await {
-                    tracing::warn!(%error, "the tools obelus offers stopped");
-                }
-            });
-        })?;
+    // A task on the one runtime, which is what it was already: a thread
+    // whose whole job was to own a runtime of its own, because there was
+    // none to put this on.
+    crate::runtime::handle().spawn(async move {
+        let listener = match tokio::net::TcpListener::from_std(listener) {
+            Ok(listener) => listener,
+            Err(error) => {
+                tracing::warn!(%error, "the tools obelus offers are not listening");
+                return;
+            }
+        };
+        if let Err(error) = axum::serve(listener, router).await {
+            tracing::warn!(%error, "the tools obelus offers stopped");
+        }
+    });
 
     Ok(format!("http://{address}/mcp"))
 }

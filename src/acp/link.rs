@@ -848,29 +848,17 @@ pub fn start(
     let config = AcpAgentConfig::new(command).args(arguments.iter().cloned());
     let root = root.to_path_buf();
     let told = events.clone();
-    let outcome = std::thread::Builder::new()
-        .name("obelus-acp".to_string())
-        .spawn(move || {
-            // A runtime of its own, on this thread: the conversation is one
-            // connection with a handful of tasks in it, so a current-thread
-            // runtime is the whole of what it needs -- a work-stealing pool
-            // for one agent would be threads nobody asked for. Everything
-            // obelus does outside this thread is still a thread blocked on
-            // a channel.
-            //
-            // The channels stay `futures`': that is what the protocol's own
-            // crate speaks, and a channel is runtime-agnostic anyway. What
-            // tokio is here for is driving them.
-            let reason = match tokio::runtime::Builder::new_current_thread().build() {
-                Ok(runtime) => runtime.block_on(talk(config, root, tools, told.clone(), taken)),
-                Err(error) => Some(error.to_string()),
-            };
-            let _ = told.send(Event::Acp(Incoming::Gone(reason)));
-        });
-    if let Err(error) = outcome {
-        tracing::warn!(%error, "no thread for the agent");
-        let _ = events.send(Event::Acp(Incoming::Gone(Some(error.to_string()))));
-    }
+    // A task on the one runtime, which is what it was already: a thread
+    // that built a runtime on itself, because the loop had none to offer.
+    // The conversation is one connection with a handful of tasks in it
+    // either way.
+    //
+    // The channels stay `futures`': that is what the protocol's own crate
+    // speaks, and a channel is runtime-agnostic anyway.
+    crate::runtime::handle().spawn(async move {
+        let reason = talk(config, root, tools, told.clone(), taken).await;
+        let _ = told.send(Event::Acp(Incoming::Gone(reason)));
+    });
     asks
 }
 
