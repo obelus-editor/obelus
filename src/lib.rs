@@ -31,6 +31,7 @@ pub mod logging;
 pub mod lsp;
 pub mod mcp;
 pub mod question;
+pub mod running;
 pub mod reading;
 pub mod search;
 pub mod syntax;
