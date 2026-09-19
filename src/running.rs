@@ -7,6 +7,10 @@
 //! kept, not a terminal -- obelus has no terminal to offer and does not
 //! need one.
 //!
+//! Its pipes are read on [`crate::runtime`], not on threads of their own:
+//! reading a pipe is waiting, which is what that runtime is for, and a
+//! reader may have several commands going at once.
+//!
 //! obelus does not ask the reader before running one. The agent asks --
 //! that is what `session/request_permission` is for, and a client asking
 //! again is a second question about one thing. What obelus owes instead is
@@ -16,10 +20,14 @@
 
 use std::{
     collections::HashMap,
-    io::Read as _,
     path::Path,
-    process::{Child, Command, Stdio},
+    process::Stdio,
     sync::{Arc, Mutex},
+};
+
+use tokio::{
+    io::AsyncReadExt as _,
+    process::{Child, ChildStderr, ChildStdout, Command},
 };
 
 /// What the agent calls one of these.
@@ -134,6 +142,9 @@ impl Runs {
             true => command.to_string(),
             false => format!("{command} {}", args.join(" ")),
         };
+        // Inside the runtime, because a child's pipes register with it --
+        // the same reason a language server is started this way.
+        let _inside = crate::runtime::handle().enter();
         let mut process = Command::new(shell());
         process
             .arg("-c")
@@ -222,23 +233,32 @@ impl Runs {
     }
 
     /// Stops one, whether the reader asked or the agent did.
+    ///
+    /// Two halves, because they answer to different things. The signal is
+    /// sent *here*, synchronously: obelus may be on its way out, and a
+    /// kill queued behind a runtime nobody polls again is a process that
+    /// outlives the reader. The reaping is a task, because waiting for a
+    /// process to die is waiting -- and a killed child nobody waits for is
+    /// a zombie.
+    ///
+    /// How it ended is written down rather than read back. obelus killed
+    /// it, so `KILL` is the truth whatever the wait would later say, and
+    /// the answer is owed to whoever asked now rather than a frame later.
     pub fn stop(&mut self, id: &str) {
         let Some(run) = self.running.get_mut(id) else {
             return;
         };
-        let Some(child) = run.child.as_mut() else {
+        let Some(mut child) = run.child.take() else {
             return;
         };
-        let _ = child.kill();
-        let status = child.wait().ok();
-        run.child = None;
-        run.ended = Some(status.as_ref().map_or(
-            Ended {
-                code: None,
-                signal: Some("KILL"),
-            },
-            ended_as,
-        ));
+        let _ = child.start_kill();
+        run.ended = Some(Ended {
+            code: None,
+            signal: Some("KILL"),
+        });
+        crate::runtime::handle().spawn(async move {
+            let _ = child.wait().await;
+        });
     }
 
     /// Lets go of one: it is stopped if it is still going, and forgotten.
@@ -277,25 +297,26 @@ impl Drop for Runs {
     }
 }
 
-/// Which end of a process a reader thread is on.
+/// Which end of a process a reader is on.
 enum Stream {
-    Out(std::process::ChildStdout),
-    Err(std::process::ChildStderr),
+    Out(ChildStdout),
+    Err(ChildStderr),
 }
 
 /// Reads one of a process's streams into the output it shares.
 ///
-/// A thread each, like the language servers' own: the read blocks, and the
-/// loop obelus draws from must not.
+/// A task on the one runtime, not a thread: reading a pipe is waiting, and
+/// waiting is what that runtime is for. Two of these per command, and a
+/// command is a thing a reader can start several of.
 fn read_into(stream: Stream, into: Arc<Mutex<Output>>) {
-    std::thread::spawn(move || {
-        let mut reader: Box<dyn std::io::Read + Send> = match stream {
+    crate::runtime::handle().spawn(async move {
+        let mut reader: Box<dyn tokio::io::AsyncRead + Send + Unpin> = match stream {
             Stream::Out(out) => Box::new(out),
             Stream::Err(err) => Box::new(err),
         };
         let mut buffer = [0u8; 4096];
         loop {
-            let read = match reader.read(&mut buffer) {
+            let read = match reader.read(&mut buffer).await {
                 Ok(0) | Err(_) => return,
                 Ok(read) => read,
             };
@@ -539,17 +560,36 @@ mod tests {
         assert!(!mark.exists(), "a command outlived the runs it belonged to");
     }
 
-    /// Stopping one says how it stopped.
+    /// Stopping one stops it, and says how it stopped.
+    ///
+    /// Asked of the machine and not only of the books: obelus writes down
+    /// `KILL` the moment it sends the signal rather than waiting to be
+    /// told, so a version that wrote it down and sent nothing would say
+    /// the same thing while the command carried on.
+    ///
+    /// Broken deliberately by taking the `start_kill` out of `stop`: the
+    /// command reaches its own end and leaves its mark.
     #[test]
     fn a_command_that_is_stopped_says_so() {
         let mut runs = Runs::default();
+        let mark = std::env::temp_dir().join(format!("obelus-stop-{}", std::process::id()));
+        let _ = std::fs::remove_file(&mark);
         let id = runs
-            .start("sleep 30", &[], &[], None, std::path::Path::new("."), None)
+            .start(
+                &format!("sleep 0.4; : > {}", mark.display()),
+                &[],
+                &[],
+                None,
+                std::path::Path::new("."),
+                None,
+            )
             .expect("the shell");
         assert!(runs.anything_running());
         runs.stop(&id);
         assert_eq!(runs.ended(&id).and_then(|it| it.signal), Some("KILL"));
         assert!(!runs.anything_running());
+        std::thread::sleep(std::time::Duration::from_millis(900));
+        assert!(!mark.exists(), "a command that was stopped ran on");
 
         // And letting go of it forgets it, which is what the agent's
         // `terminal/release` means.

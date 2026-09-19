@@ -688,8 +688,10 @@ impl Drop for Client {
     /// usual thing to want -- it is what every daemon ever started from a
     /// shell depends on. It is not the thing to want here, and every other
     /// editor says so in its own words: helix spawns with tokio's
-    /// `kill_on_drop`, zed with `async-process`'s. obelus spawns with the
-    /// standard library, which has neither, so it says it here.
+    /// `kill_on_drop`, zed with `async-process`'s. obelus now spawns with
+    /// tokio too and could ask for the same flag; it says it here instead,
+    /// because a server is not killed on the way out -- it is told to shut
+    /// down, and that is a conversation rather than a signal.
     ///
     /// Here rather than only where a server is stopped on purpose, because
     /// "on purpose" was never the leak: it is every other way a client goes
