@@ -148,11 +148,19 @@ toml = "1"
 # dependency, so this costs a line rather than a build.
 toml_edit = "0.22"
 gix = { version = "0.87.1", default-features = false, features = ["attributes", "blame", "status", "revision", "max-performance-safe", "sha1"] }
-# The agent registry, and the archives it points at. Blocking, because the
-# thread that fetches one has nothing else to do -- and small: a once-a-session
-# GET of a 56 KB list needs no connection pool, no middleware and no HTTP/2,
-# which is most of what a bigger client is.
-ureq = "3.4.1"
+# What fetches the agent registry, an agent's mark and an agent's archive.
+# Async, and on `crate::runtime`, for the one thing blocking HTTP cannot do:
+# a reader who presses escape during a download has asked for it to stop,
+# and a `JoinHandle::abort` is the only thing that stops it.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "stream",
+    # Forty agent marks come off one host, which is what multiplexing is
+    # for: one connection instead of a queue. `h2` is five CPU-seconds in a
+    # build of four hundred and forty, compiled in parallel with everything
+    # else -- it costs no wall time and buys the one fetch that is a batch.
+    "http2",
+] }
 # Checking an archive against the checksum the registry gave for it. Half the
 # registry's entries carry one; those get verified before anything is unpacked.
 sha2 = "0.11.0"
@@ -234,4 +242,8 @@ open = "5"
 
 [dev-dependencies]
 serde_json = "1"
+# A blocking HTTP client, for the tests that talk to the server obelus runs
+# for an agent. obelus itself fetches with `reqwest` on its own runtime;
+# a test is a synchronous function and wants neither.
+ureq = "3.4.1"
 

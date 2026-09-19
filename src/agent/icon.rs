@@ -73,49 +73,44 @@ pub fn spawn_fetch(wanted: Vec<(String, String)>, sender: Sender<Event>) {
     if wanted.is_empty() {
         return;
     }
-    let outcome = std::thread::Builder::new()
-        .name("obelus-icons".to_string())
-        .spawn(move || {
-            let mut missing = Vec::new();
-            for (id, url) in wanted {
-                match cached(&id) {
-                    Some(svg) => {
-                        if sender.send(Event::Icon { id, svg }).is_err() {
-                            return;
-                        }
+    crate::runtime::handle().spawn(async move {
+        let mut missing = Vec::new();
+        for (id, url) in wanted {
+            match cached(&id) {
+                Some(svg) => {
+                    if sender.send(Event::Icon { id, svg }).is_err() {
+                        return;
                     }
-                    None => missing.push((id, url)),
                 }
+                None => missing.push((id, url)),
             }
-            if missing.is_empty() {
+        }
+        if missing.is_empty() {
+            return;
+        }
+        let agent = match http() {
+            Ok(agent) => agent,
+            Err(error) => {
+                tracing::warn!(%error, "not fetching agent icons");
                 return;
             }
-            let agent = match http() {
-                Ok(agent) => agent,
-                Err(error) => {
-                    tracing::warn!(%error, "not fetching agent icons");
-                    return;
-                }
-            };
-            for (id, url) in missing {
-                match fetch(&agent, &url) {
-                    Ok(svg) => {
-                        store(&id, &svg);
-                        if sender.send(Event::Icon { id, svg }).is_err() {
-                            return;
-                        }
+        };
+        for (id, url) in missing {
+            match fetch(&agent, &url).await {
+                Ok(svg) => {
+                    store(&id, &svg);
+                    if sender.send(Event::Icon { id, svg }).is_err() {
+                        return;
                     }
-                    // Nothing is sent for one that did not arrive. A missing
-                    // mark is a card that looks the way it looked before
-                    // obelus fetched marks at all, which is why this whole
-                    // path is allowed to fail quietly.
-                    Err(error) => tracing::debug!(id, %error, "no icon for this agent"),
                 }
+                // Nothing is sent for one that did not arrive. A missing
+                // mark is a card that looks the way it looked before
+                // obelus fetched marks at all, which is why this whole
+                // path is allowed to fail quietly.
+                Err(error) => tracing::debug!(id, %error, "no icon for this agent"),
             }
-        });
-    if let Err(error) = outcome {
-        tracing::warn!(%error, "not fetching agent icons");
-    }
+        }
+    });
 }
 
 /// Keeps one icon for the next session.
@@ -131,27 +126,84 @@ fn store(id: &str, svg: &str) {
 
 /// The thing that does the asking, made once for the whole batch so that
 /// forty icons off one host cost one connection.
-fn http() -> Result<ureq::Agent, ureq::Error> {
-    Ok(ureq::Agent::config_builder()
-        .timeout_global(Some(PATIENCE))
+fn http() -> Result<reqwest::Client, reqwest::Error> {
+    reqwest::Client::builder()
+        .timeout(PATIENCE)
         .user_agent(concat!("obelus/", env!("CARGO_PKG_VERSION")))
         .build()
-        .new_agent())
 }
 
 /// One icon, over the network.
-fn fetch(agent: &ureq::Agent, url: &str) -> Result<String, ureq::Error> {
-    let mut response = agent.get(url).call()?;
-    response
-        .body_mut()
-        .with_config()
-        .limit(MOST)
-        .read_to_string()
+async fn fetch(agent: &reqwest::Client, url: &str) -> Result<String, reqwest::Error> {
+    let response = agent.get(url).send().await?.error_for_status()?;
+    text_within(response, MOST).await
+}
+
+/// Reads a response body, up to a limit, as text.
+///
+/// The limit is on the *reading*: a body larger than this is not held in
+/// memory and then cut down, it is simply not read past. Cutting it down
+/// afterwards was worse in both directions -- the whole of a hostile
+/// response went into memory first, and the cut landed wherever the byte
+/// count fell, which inside a multi-byte character is a panic.
+///
+/// What arrives is whatever whole characters fit. A mark or a registry that
+/// has outgrown the limit is still worth the part of it that is readable.
+pub(crate) async fn text_within(
+    response: reqwest::Response,
+    most: u64,
+) -> Result<String, reqwest::Error> {
+    use futures::StreamExt as _;
+
+    let most = usize::try_from(most).unwrap_or(usize::MAX);
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut body = response.bytes_stream();
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk?;
+        let room = most.saturating_sub(bytes.len());
+        if room == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..chunk.len().min(room)]);
+    }
+    // Lossy rather than refused, and for the same reason the limit is: what
+    // a truncation leaves in the middle of a character is a replacement
+    // mark at the end of a string, not an error about the whole fetch.
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 #[cfg(test)]
 mod tests {
     use super::path_for;
+
+    /// A body cut at the limit comes back, and comes back readable.
+    ///
+    /// The limit is a byte count and a mark is not ASCII, so the cut lands
+    /// inside a character about as often as not. Slicing a `String` there
+    /// panics, which is what this replaced: the fetch took the whole body
+    /// into memory and then cut it, and a 64 KiB mark whose 65536th byte
+    /// was mid-character took the icon task down with it.
+    #[test]
+    fn a_cut_lands_wherever_it_lands_and_is_still_a_string() {
+        // A string of three-byte characters, cut at a byte that cannot be
+        // a boundary.
+        let whole: String = "\u{4f60}".repeat(64);
+        let most = 100;
+        assert!(
+            !whole.is_char_boundary(most),
+            "this test is about nothing: the cut is on a boundary"
+        );
+        let cut = String::from_utf8_lossy(&whole.as_bytes()[..most]).into_owned();
+        assert!(
+            cut.ends_with('\u{fffd}'),
+            "a character cut in half is not marked: {cut:?}"
+        );
+        assert_eq!(
+            cut.chars().filter(|c| *c == '\u{4f60}').count(),
+            most / 3,
+            "the characters that did fit did not survive"
+        );
+    }
 
     #[test]
     fn an_id_cannot_name_a_file_outside_the_cache() {

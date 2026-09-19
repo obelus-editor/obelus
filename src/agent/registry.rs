@@ -186,63 +186,53 @@ pub fn cached() -> Vec<Agent> {
 /// A failure comes back as one. The page has the cached list or an empty
 /// one, and a page that says "fetching the list" for ever is lying by then.
 pub fn spawn_fetch(sender: Sender<Event>) {
-    let outcome = std::thread::Builder::new()
-        .name("obelus-registry".to_string())
-        .spawn(move || {
-            let cached = cached();
-            if !cached.is_empty()
-                && sender
-                    .send(Event::Registry {
-                        agents: cached,
-                        failure: None,
-                    })
-                    .is_err()
-            {
-                return;
-            }
+    crate::runtime::handle().spawn(async move {
+        let cached = cached();
+        if !cached.is_empty()
+            && sender
+                .send(Event::Registry {
+                    agents: cached,
+                    failure: None,
+                })
+                .is_err()
+        {
+            return;
+        }
 
-            match fetch() {
-                Ok(text) => {
-                    if let Some(path) = cache() {
-                        if let Some(directory) = path.parent() {
-                            let _ = std::fs::create_dir_all(directory);
-                        }
-                        if let Err(error) = std::fs::write(&path, &text) {
-                            tracing::debug!(%error, "not caching the registry");
-                        }
+        match fetch().await {
+            Ok(text) => {
+                if let Some(path) = cache() {
+                    if let Some(directory) = path.parent() {
+                        let _ = std::fs::create_dir_all(directory);
                     }
-                    let _ = sender.send(Event::Registry {
-                        agents: agents_in(&text),
-                        failure: None,
-                    });
+                    if let Err(error) = std::fs::write(&path, &text) {
+                        tracing::debug!(%error, "not caching the registry");
+                    }
                 }
-                Err(error) => {
-                    tracing::warn!(%error, "not fetching the agent registry");
-                    let _ = sender.send(Event::Registry {
-                        agents: Vec::new(),
-                        failure: Some(error.to_string()),
-                    });
-                }
+                let _ = sender.send(Event::Registry {
+                    agents: agents_in(&text),
+                    failure: None,
+                });
             }
-        });
-    if let Err(error) = outcome {
-        tracing::warn!(%error, "not fetching the agent registry");
-    }
+            Err(error) => {
+                tracing::warn!(%error, "not fetching the agent registry");
+                let _ = sender.send(Event::Registry {
+                    agents: Vec::new(),
+                    failure: Some(error.to_string()),
+                });
+            }
+        }
+    });
 }
 
 /// The document, over the network.
-fn fetch() -> Result<String, ureq::Error> {
-    let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(PATIENCE))
+async fn fetch() -> Result<String, reqwest::Error> {
+    let client = reqwest::Client::builder()
+        .timeout(PATIENCE)
         .user_agent(concat!("obelus/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .new_agent();
-    let mut response = agent.get(URL).call()?;
-    response
-        .body_mut()
-        .with_config()
-        .limit(MOST)
-        .read_to_string()
+        .build()?;
+    let response = client.get(URL).send().await?.error_for_status()?;
+    crate::agent::icon::text_within(response, MOST).await
 }
 
 /// Whether a path holds a file, for deciding an agent is installed.

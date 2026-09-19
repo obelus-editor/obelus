@@ -28,7 +28,6 @@
 //! not make a directory of.
 
 use std::{
-    io::Read,
     path::{Path, PathBuf},
     sync::mpsc::Sender,
     time::{Duration, Instant},
@@ -38,13 +37,6 @@ use sha2::{Digest, Sha256};
 
 use super::{Agent, Distribution};
 use crate::event::Event;
-
-/// How much of a download to read at a time.
-///
-/// Big enough that the read is not the cost, small enough that the progress
-/// moves: at a megabyte a chunk, a ten-megabyte agent would report five
-/// times and look stuck in between.
-const CHUNK: usize = 64 * 1024;
 
 /// How often to report progress.
 ///
@@ -108,27 +100,29 @@ impl Progress {
 pub fn spawn(agent: &Agent, root: &Path, sender: Sender<Event>) {
     let agent = agent.clone();
     let root = root.to_path_buf();
-    let outcome = std::thread::Builder::new()
-        .name(format!("obelus-install-{}", agent.id))
-        .spawn(move || {
-            let started = Instant::now();
-            let outcome = install(&agent, &root, started, &sender);
-            match &outcome {
-                Ok(()) => tracing::info!(id = agent.id, "installed an agent"),
-                Err(why) => tracing::warn!(id = agent.id, why, "an agent did not install"),
-            }
-            let _ = sender.send(Event::Installed {
-                id: agent.id,
-                failure: outcome.err(),
-            });
+    crate::runtime::handle().spawn(async move {
+        let started = Instant::now();
+        let outcome = install(&agent, &root, started, &sender).await;
+        match &outcome {
+            Ok(()) => tracing::info!(id = agent.id, "installed an agent"),
+            Err(why) => tracing::warn!(id = agent.id, why, "an agent did not install"),
+        }
+        let _ = sender.send(Event::Installed {
+            id: agent.id,
+            failure: outcome.err(),
         });
-    if let Err(error) = outcome {
-        tracing::warn!(%error, "not installing");
-    }
+    });
 }
 
-/// The whole job, on the thread: fetch it, then write down what there is.
-fn install(
+/// The whole job: fetch it, then write down what there is.
+///
+/// A task rather than a thread, and the two halves of it go where they
+/// belong: the download only waits, so it is awaited here; `npm`, the
+/// unpacking and the hashing are work, so each is a blocking job. There is
+/// no `block_on` anywhere in it, which an earlier shape needed -- and that
+/// shape could not be a job of its own, because `block_on` from inside a
+/// worker panics.
+async fn install(
     agent: &Agent,
     root: &Path,
     started: Instant,
@@ -146,7 +140,7 @@ fn install(
         ));
     };
     match &agent.distribution {
-        Distribution::Node { package, .. } => node(package, &home)?,
+        Distribution::Node { package, .. } => node(package, &home).await?,
         // `uvx` fetches the pinned version the first time it runs and
         // caches it for itself, so there is nothing to fetch here -- only
         // the record to write, which is the reader having asked for it.
@@ -156,15 +150,18 @@ fn install(
             sha256,
             command,
             ..
-        } => download(
-            archive,
-            sha256.as_deref(),
-            command,
-            &home,
-            started,
-            &agent.id,
-            sender,
-        )?,
+        } => {
+            download(
+                archive,
+                sha256.as_deref(),
+                command,
+                &home,
+                started,
+                &agent.id,
+                sender,
+            )
+            .await?;
+        }
     }
 
     let Some((command, arguments)) = super::command_for(agent, root) else {
@@ -180,7 +177,19 @@ fn install(
 /// And a prefix per agent, because the prefix is where npm keeps the
 /// manifest -- one shared between agents would be rewritten by whichever
 /// was installed last.
-fn node(package: &str, home: &Path) -> Result<(), String> {
+async fn node(package: &str, home: &Path) -> Result<(), String> {
+    let (package, home) = (package.to_string(), home.to_path_buf());
+    // A blocking job: `npm install` is a subprocess that reads the network
+    // and writes a tree, and none of that is waiting obelus can do
+    // anything else during.
+    crate::runtime::handle()
+        .spawn_blocking(move || node_now(&package, &home))
+        .await
+        .unwrap_or_else(|error| Err(error.to_string()))
+}
+
+/// The same, where it is allowed to block.
+fn node_now(package: &str, home: &Path) -> Result<(), String> {
     std::fs::create_dir_all(home).map_err(|error| format!("{home:?}: {error}"))?;
     let outcome = std::process::Command::new("npm")
         .arg("install")
@@ -211,7 +220,7 @@ fn node(package: &str, home: &Path) -> Result<(), String> {
 }
 
 /// Fetches an archive, checks it, and unpacks it.
-fn download(
+async fn download(
     archive: &str,
     sha256: Option<&str>,
     command: &str,
@@ -220,47 +229,81 @@ fn download(
     id: &str,
     sender: &Sender<Event>,
 ) -> Result<(), String> {
-    let http = ureq::Agent::config_builder()
-        .user_agent(concat!("obelus/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .new_agent();
-    let mut response = http
-        .get(archive)
-        .call()
-        .map_err(|error| format!("fetching it: {error}"))?;
-    let total = response
-        .headers()
-        .get("content-length")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok());
+    // The one part of an install that only waits, so it is the one part
+    // that is awaited: the bytes arrive in chunks, and a chunk is a chance
+    // to say how far along it is.
+    let bytes = {
+        use futures::StreamExt as _;
 
-    let mut body = response.body_mut().as_reader();
-    let mut bytes: Vec<u8> = Vec::with_capacity(total.unwrap_or(0) as usize);
-    let mut buffer = vec![0u8; CHUNK];
-    let mut said = Instant::now();
-    loop {
-        let read = body
-            .read(&mut buffer)
-            .map_err(|error| format!("reading it: {error}"))?;
-        if read == 0 {
-            break;
-        }
-        bytes.extend_from_slice(&buffer[..read]);
-        if said.elapsed() >= REPORT {
-            said = Instant::now();
-            let _ = sender.send(Event::Installing {
-                id: id.to_string(),
-                progress: Progress {
-                    done: bytes.len() as u64,
-                    total,
-                    elapsed: started.elapsed(),
-                },
-            });
-        }
-    }
+        let http = reqwest::Client::builder()
+            .user_agent(concat!("obelus/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .map_err(|error| format!("fetching it: {error}"))?;
+        let response = http
+            .get(archive)
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|error| format!("fetching it: {error}"))?;
+        let total = response.content_length();
 
+        let mut bytes: Vec<u8> = Vec::with_capacity(total.unwrap_or(0) as usize);
+        let mut body = response.bytes_stream();
+        let mut said = Instant::now();
+        while let Some(chunk) = body.next().await {
+            let chunk = chunk.map_err(|error| format!("reading it: {error}"))?;
+            bytes.extend_from_slice(&chunk);
+            if said.elapsed() >= REPORT {
+                said = Instant::now();
+                let _ = sender.send(Event::Installing {
+                    id: id.to_string(),
+                    progress: Progress {
+                        done: bytes.len() as u64,
+                        total,
+                        elapsed: started.elapsed(),
+                    },
+                });
+            }
+        }
+        bytes
+    };
+
+    // Hashing a download and unpacking it are work, not waiting, so they
+    // go where work goes. Together, because they are one step: the check
+    // is what says the bytes may be unpacked at all.
+    let (archive, command, into) = (archive.to_string(), command.to_string(), into.to_path_buf());
+    let expected = sha256.map(str::to_string);
+    let said = id.to_string();
+    crate::runtime::handle()
+        .spawn_blocking(move || {
+            settle(
+                &bytes,
+                &archive,
+                expected.as_deref(),
+                &command,
+                &into,
+                &said,
+            )
+        })
+        .await
+        .unwrap_or_else(|error| Err(error.to_string()))
+}
+
+/// Checks a download and puts it where it goes.
+///
+/// Its own function because it is the blocking half of an install, and the
+/// half that has to be told apart from the waiting half: everything here
+/// hashes, deletes, writes or unpacks.
+fn settle(
+    bytes: &[u8],
+    archive: &str,
+    sha256: Option<&str>,
+    command: &str,
+    into: &Path,
+    id: &str,
+) -> Result<(), String> {
     if let Some(expected) = sha256 {
-        let digest = Sha256::digest(&bytes);
+        let digest = Sha256::digest(bytes);
         let got: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
         if !got.eq_ignore_ascii_case(expected) {
             return Err("it is not the file the registry describes".to_string());
@@ -276,7 +319,7 @@ fn download(
     // one leaves both, and the older one's files are not this version.
     let _ = std::fs::remove_dir_all(into);
     std::fs::create_dir_all(into).map_err(|error| format!("{into:?}: {error}"))?;
-    unpack(&bytes, archive, into)?;
+    unpack(bytes, archive, into)?;
 
     // Unpacked, and the thing to run has to be there and be runnable: an
     // archive that unpacked to something else is a failure now rather than
@@ -340,8 +383,8 @@ mod tests {
     /// it is written nothing is installed. A python one, because `uvx`
     /// fetches when it runs: there is nothing to download here, so what the
     /// test is left with is exactly the bookkeeping.
-    #[test]
-    fn an_install_finishes_by_writing_down_what_it_installed() {
+    #[tokio::test]
+    async fn an_install_finishes_by_writing_down_what_it_installed() {
         let root = std::env::temp_dir().join(format!("obelus-install-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let agent = Agent {
@@ -389,8 +432,8 @@ mod tests {
     /// and the mixed tree they leave says nothing about which half is
     /// which. A python one again, because what is being tested is the
     /// claim rather than the fetching.
-    #[test]
-    fn an_install_another_obelus_is_already_doing_does_not_run() {
+    #[tokio::test]
+    async fn an_install_another_obelus_is_already_doing_does_not_run() {
         let root = std::env::temp_dir().join(format!("obelus-twice-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let agent = Agent {
@@ -412,7 +455,7 @@ mod tests {
         let theirs = crate::agent::claim(&agent.id, &root).expect("their claim");
 
         let (sender, _events) = std::sync::mpsc::channel();
-        let outcome = super::install(&agent, &root, std::time::Instant::now(), &sender);
+        let outcome = super::install(&agent, &root, std::time::Instant::now(), &sender).await;
         assert!(
             outcome.is_err_and(|why| why.contains("another obelus")),
             "it installed over an install that was already running"
@@ -425,7 +468,9 @@ mod tests {
 
         // And once they are finished, it installs.
         drop(theirs);
-        super::install(&agent, &root, std::time::Instant::now(), &sender).expect("installing");
+        super::install(&agent, &root, std::time::Instant::now(), &sender)
+            .await
+            .expect("installing");
         assert!(
             crate::agent::installation(&agent.id, &root).is_some(),
             "it would not install after the other one finished"
@@ -435,8 +480,8 @@ mod tests {
 
     /// A name obelus would not make a directory of is an install that fails
     /// rather than one that writes somewhere else.
-    #[test]
-    fn an_install_under_an_impossible_name_fails() {
+    #[tokio::test]
+    async fn an_install_under_an_impossible_name_fails() {
         let root = std::env::temp_dir().join(format!("obelus-escape-{}", std::process::id()));
         let agent = Agent {
             id: "../escape".to_string(),
@@ -473,8 +518,8 @@ mod tests {
     /// How much longer, from the rate so far -- and nothing at all when
     /// there is no length to divide by, which is exactly when a package
     /// manager is doing the work.
-    #[test]
-    fn what_is_left_comes_from_the_rate_so_far() {
+    #[tokio::test]
+    async fn what_is_left_comes_from_the_rate_so_far() {
         // Half of ten megabytes in five seconds: five more to go.
         let half = Progress {
             done: 5 * 1024 * 1024,
