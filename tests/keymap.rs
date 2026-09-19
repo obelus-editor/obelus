@@ -27,9 +27,11 @@ fn a_global_binding_is_found_from_a_specific_context() {
 #[test]
 fn an_unbound_key_resolves_to_nothing() {
     let keymap = Keymap::new();
-    // `f12`, which is the last of git's bank and not yet earned. It was
-    // `ctrl+z` until that became undo.
-    let event = press(KeyCode::F(12), KeyModifiers::NONE);
+    // A chord nothing wants, which is all this needs. It was `f12` until
+    // that became the jump to a definition, and `ctrl+z` before that until
+    // it became undo -- a test that borrows an interesting key keeps having
+    // to be rewritten when the key is earned.
+    let event = press(KeyCode::Char('z'), KeyModifiers::ALT);
     assert_eq!(keymap.lookup(&event, Context::Normal), None);
 }
 

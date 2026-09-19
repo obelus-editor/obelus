@@ -384,6 +384,15 @@ impl Keymap {
             bindings: vec![
                 // F1-F4: what to read. The three ways into a file, and the
                 // agent, which is the fourth thing a reader turns to.
+                //
+                // `f1` is also the key that opens the list of what the keys
+                // are, in every view that has one -- see
+                // [`crate::ui::keys_chord`]. Two meanings, and deliberately:
+                // a view is a [`Context::Dialog`], which binds nothing, so
+                // the two can never both be reachable. Deliberately this way
+                // round, too: the file is what a reader wants from the page
+                // they spend their time on, and help is what they want from
+                // a page they have just opened and do not know yet.
                 Binding {
                     command: Command::FileOpen,
                     context: Context::Normal,
@@ -451,16 +460,39 @@ impl Keymap {
                     context: Context::Normal,
                     chord: function(11),
                 },
+                // And `f12`, which is not one of those three: it is the one
+                // jump this whole program is for. "Join the semantic graph
+                // to the git timeline -- jump to a definition from inside a
+                // diff" is the first paragraph obelus was written under, and
+                // the jump had no key at all while every editor a reader
+                // arrives from puts it here.
+                //
+                // Held for git's fourth question once, and nothing ever
+                // came: the three widths above are what a history has, and a
+                // fourth would be a fourth width of the same question rather
+                // than a new one. So git's row is three keys and says so.
+                //
+                // The one exception to "the symbol questions live in the
+                // menu" -- see the note over them in `command`. Its
+                // neighbours in every other editor cannot follow it here:
+                // `shift+f12` and `ctrl+f12` are refused by `why_not`,
+                // because a function key with something held is two keys on
+                // the next terminal. A reader who learns this one and
+                // reaches for those finds the menu, which is where they
+                // were all along.
+                Binding {
+                    command: Command::SymbolDefinition,
+                    context: Context::Normal,
+                    chord: function(12),
+                },
                 // `alt+t` for todo, on the letter of the word like the rest
                 // of the alt family, and asking the question alt asks: a
                 // note is about the line under the cursor.
                 //
                 // Writing one down has a key and reading them back does
-                // not. The banks are full and `f12` is the fourth of git's,
-                // held for git; squatting it would put a thing that is not
-                // git's in the row a reader reads as git's. `todo` is in
-                // the palette, and the keys page is where a reader who
-                // opens it often puts it on a key of their own.
+                // not: the banks are full. `todo` is in the palette, and
+                // the keys page is where a reader who opens it often puts
+                // it on a key of their own.
                 Binding {
                     command: Command::TodoAdd,
                     context: Context::Normal,
@@ -1144,14 +1176,14 @@ mod tests {
         }
     }
 
-    /// The function keys are two banks of four with nothing missing.
+    /// The function keys are three banks of four with nothing missing.
     ///
     /// A gap would be a key that does nothing in the middle of a row of
     /// keys that do, and the banks are how the twelve are remembered.
     #[test]
     fn the_function_keys_are_a_bank_at_a_time() {
         let keymap = Keymap::new();
-        for number in 1..=8 {
+        for number in 1..=12 {
             assert!(
                 keymap
                     .command_on(KeyChord::new(KeyCode::F(number), KeyModifiers::NONE))
@@ -1163,9 +1195,8 @@ mod tests {
             keymap.command_on(super::control('t')),
             Some(crate::command::Command::PreviewToggle)
         );
-        // The third bank is git's, and three of the four are earned: the
-        // same subject at three widths -- this line, this file, the
-        // project.
+        // The third bank is git's for three of its four: the same subject
+        // at three widths -- this file, the project, this line.
         assert_eq!(
             keymap.command_on(KeyChord::new(KeyCode::F(9), KeyModifiers::NONE)),
             Some(crate::command::Command::HistoryFile)
@@ -1178,25 +1209,32 @@ mod tests {
             keymap.command_on(KeyChord::new(KeyCode::F(11), KeyModifiers::NONE)),
             Some(crate::command::Command::HistoryLine)
         );
-        assert!(
-            keymap
-                .command_on(KeyChord::new(KeyCode::F(12), KeyModifiers::NONE))
-                .is_none(),
-            "f12 is bound, and that key is being kept for the view that will earn it"
+        // And the fourth is not git's. It was held for a fourth question
+        // about a history and none came -- three widths is what a history
+        // has -- so it went to the jump this program was written for, which
+        // is also where every editor a reader arrives from puts it.
+        assert_eq!(
+            keymap.command_on(KeyChord::new(KeyCode::F(12), KeyModifiers::NONE)),
+            Some(crate::command::Command::SymbolDefinition)
         );
     }
 
     /// The context every command with no default binding would land in.
     #[test]
     fn a_command_with_no_key_is_bound_where_the_reader_is_reading() {
+        // Any chord the table has not spoken for. `alt+z` is one because
+        // nothing wants it, which is the whole requirement -- this is about
+        // where a new binding lands, not about which key it is.
+        let free = KeyChord::new(KeyCode::Char('z'), KeyModifiers::ALT);
         let mut keymap = Keymap::new();
-        keymap.rebind(
-            crate::command::Command::ThemeSelect,
-            Some(KeyChord::new(KeyCode::F(12), KeyModifiers::NONE)),
+        assert!(
+            keymap.command_on(free).is_none(),
+            "the key this test borrows is bound, and it borrows a free one"
         );
+        keymap.rebind(crate::command::Command::ThemeSelect, Some(free));
         assert_eq!(
             keymap.lookup(
-                &crossterm::event::KeyEvent::new(KeyCode::F(12), KeyModifiers::NONE),
+                &crossterm::event::KeyEvent::new(KeyCode::Char('z'), KeyModifiers::ALT),
                 Context::Normal
             ),
             Some(crate::command::Command::ThemeSelect)

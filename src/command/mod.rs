@@ -357,10 +357,24 @@ pub const ALL: &[CommandSpec] = &[
         name: "ask-about-symbol",
         title: "Ask about the symbol under the cursor",
     },
-    // No default keys. The menu is the way in, and giving each of these a
-    // chord would rebuild the one-key-per-question arrangement the menu
-    // exists to replace. Binding one later needs no code: the menu and the
-    // palette both read the key table.
+    // No default keys, with one exception. The menu is the way in, and
+    // giving each of these a chord would rebuild the one-key-per-question
+    // arrangement the menu exists to replace. Binding one later needs no
+    // code: the menu and the palette both read the key table, so a key
+    // given to one of these shows up on its own row in the menu -- which
+    // is how a reader learns the exception exists.
+    //
+    // The exception is `go-to-definition` on `f12`. What that rule is
+    // against is an *arrangement*, and one key is not one: the harm starts
+    // at the second. And this is not one question among several -- it is
+    // the jump this program was written for, and the key every editor a
+    // reader arrives from puts it on. Its neighbours there cannot follow
+    // it: `shift+f12` and `ctrl+f12` are refused by `keymap::why_not`,
+    // because a function key with something held is two keys on the next
+    // terminal. So a reader who reaches for those finds the menu, which is
+    // where all of these live.
+    //
+    // A second exception wants a better reason than this one had.
     // Not usually reached by name: typing a letter asks by itself. This is
     // the way back for a reader who dismissed the panel and wants it again,
     // which is the one moment no letter is about to be typed.

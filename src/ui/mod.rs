@@ -963,6 +963,12 @@ impl Hint {
 /// command from inside a view -- [`crate::keymap::Context::Dialog`] binds
 /// nothing, and that is the point -- and it is not a character, so it works
 /// even in a view that takes every character the reader types.
+///
+/// The same key opens a file from the page being read, which is the one
+/// place in obelus where a chord means two things. It can only ever mean
+/// one of them at a time, and each is what the reader wants from the page
+/// it belongs to. `?` would have been the other candidate and cannot be:
+/// the notes, the settings and every picker take each character typed.
 #[must_use]
 pub fn keys_chord() -> crate::keymap::KeyChord {
     crate::keymap::KeyChord::new(

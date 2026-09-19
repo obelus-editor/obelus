@@ -384,7 +384,7 @@ impl App {
     ///
     /// The same door a search result and a symbol go through, which is what
     /// makes the place a note points at behave like every other place obelus
-    /// sends a reader: the file opens, the jump is recorded so `ctrl+o`
+    /// sends a reader: the file opens, the jump is recorded so `alt+left`
     /// comes back, and a file that will not open leaves them where they
     /// were and says so.
     fn go_to_note(&mut self, path: &PathBuf, line: LineNumber) {

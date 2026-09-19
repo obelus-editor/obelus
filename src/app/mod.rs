@@ -1140,7 +1140,7 @@ impl App {
     ///
     /// What the reader is in, rather than what they are doing: a dialog
     /// takes the keys bound in it and no others, so obelus's own commands
-    /// cannot open a second dialog over the first -- `ctrl+o` in a
+    /// cannot open a second dialog over the first -- `f1` in a
     /// conversation used to put a file list on top of it, which then took
     /// two escapes to leave and gave no way to tell which of the two a key
     /// would reach.

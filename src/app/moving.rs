@@ -104,7 +104,7 @@ impl App {
     ///
     /// Any document, not only a file. It asked for a file, so standing in a
     /// conversation gave `None` -- and every caller starts with this, so
-    /// leaving a conversation for a file recorded nothing and `ctrl+o` was
+    /// leaving a conversation for a file recorded nothing and `alt+left` was
     /// a key that was offered and did not work.
     pub(super) fn here(&self) -> Option<Jump> {
         let id = self.current?;

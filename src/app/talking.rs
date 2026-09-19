@@ -791,7 +791,7 @@ impl App {
             // Where a row of the transcript says the agent was. Going
             // there is switching to that file, which is a document like
             // this one -- so the conversation stays exactly where it was
-            // and `ctrl+o` comes back to it. It used to have to be hidden,
+            // and `alt+left` comes back to it. It used to have to be hidden,
             // because hiding it was the only way to show a file.
             ChatOutcome::GoTo(place) => {
                 // The protocol counts a file's lines from one and the rest
