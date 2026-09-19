@@ -1334,9 +1334,50 @@ impl App {
             | acp::Incoming::Open { .. }
             | acp::Incoming::Finished { .. }
             | acp::Incoming::Read { .. }
-            | acp::Incoming::Write { .. } => None,
+            | acp::Incoming::Write { .. }
+            // A command names no conversation: `CreateTerminalRequest` has
+            // a session on it, but the four that follow have only the
+            // command's own name, and obelus runs them for whoever asked.
+            | acp::Incoming::Run { .. }
+            | acp::Incoming::Wrote { .. }
+            | acp::Incoming::Waited { .. }
+            | acp::Incoming::Stop { .. }
+            | acp::Incoming::Forget { .. } => None,
         };
         whose.is_none_or(|session| self.session_now().as_ref() == Some(session))
+    }
+
+    /// Answers whoever is waiting on a command that has ended.
+    ///
+    /// Once a frame, like the language servers' own check: a command ends
+    /// when it ends, and nothing tells obelus but asking.
+    pub(super) fn check_runs(&mut self) {
+        if self.waiting_on.is_empty() {
+            return;
+        }
+        let waited: Vec<String> = self.waiting_on.iter().map(|(id, _)| id.clone()).collect();
+        for id in waited {
+            if self.runs.ended(&id).is_some() {
+                self.tell_whoever_waited(&id);
+            }
+        }
+    }
+
+    /// Tells everyone waiting on this command how it ended.
+    ///
+    /// Told rather than dropped. A channel that goes away is an error to
+    /// whoever was listening, and "it ended" is not an error -- an agent
+    /// given one for a command that finished would have to guess whether
+    /// it ran at all.
+    fn tell_whoever_waited(&mut self, id: &str) {
+        let ended = self.runs.ended(id);
+        let (theirs, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.waiting_on)
+            .into_iter()
+            .partition(|(waited, _)| waited == id);
+        self.waiting_on = rest;
+        for (_, answer) in theirs {
+            let _ = answer.send(ended);
+        }
     }
 
     /// Takes one message from the agent.
@@ -1510,6 +1551,58 @@ impl App {
                 answer,
             } => self.send_the_reader(&message, &url, &id, answer),
             acp::Incoming::Finished { id } => self.went_through(&id),
+            // A command the agent asked for. Run without asking the
+            // reader -- the agent asks, which is the rule obelus's own
+            // tools follow too -- and put on the page while it runs.
+            acp::Incoming::Run {
+                command,
+                args,
+                env,
+                cwd,
+                limit,
+                answer,
+            } => {
+                let root = self.working_directory.clone();
+                let started = self
+                    .runs
+                    .start(&command, &args, &env, cwd.as_deref(), &root, limit);
+                let id = match started {
+                    Ok(id) => Some(id),
+                    Err(error) => {
+                        tracing::warn!(%error, %command, "a command would not start");
+                        None
+                    }
+                };
+                let _ = answer.send(id);
+            }
+            acp::Incoming::Wrote { id, answer } => {
+                let _ = answer.send(self.runs.output(&id));
+            }
+            // Kept rather than answered: the command has not ended, and
+            // the loop that draws cannot wait for one that takes minutes.
+            // `check_runs` answers it when it does.
+            acp::Incoming::Waited { id, answer } => match self.runs.ended(&id) {
+                Some(ended) => {
+                    let _ = answer.send(Some(ended));
+                }
+                None if self.runs.said(&id).is_some() => self.waiting_on.push((id, answer)),
+                None => {
+                    let _ = answer.send(None);
+                }
+            },
+            acp::Incoming::Stop { id, answer } => {
+                self.runs.stop(&id);
+                self.tell_whoever_waited(&id);
+                let _ = answer.send(());
+            }
+            acp::Incoming::Forget { id, answer } => {
+                self.runs.stop(&id);
+                // Told before it is forgotten, or a waiter is left holding
+                // a channel about a command nothing knows any more.
+                self.tell_whoever_waited(&id);
+                self.runs.release(&id);
+                let _ = answer.send(());
+            }
             acp::Incoming::Read {
                 path,
                 line,

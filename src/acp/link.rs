@@ -83,6 +83,10 @@ use agent_client_protocol::{
             ElicitationAction, ElicitationCapabilities, ElicitationContentValue,
             ElicitationFormCapabilities, ElicitationMode, ElicitationPropertySchema,
             ElicitationSchema, ElicitationUrlCapabilities, FileSystemCapabilities, Implementation, ResumeSessionRequest,
+            CreateTerminalRequest, CreateTerminalResponse, KillTerminalRequest,
+            KillTerminalResponse, ReleaseTerminalRequest, ReleaseTerminalResponse,
+            TerminalExitStatus, TerminalId, TerminalOutputRequest, TerminalOutputResponse,
+            WaitForTerminalExitRequest, WaitForTerminalExitResponse,
             InitializeRequest, LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp,
             McpServerSse, MultiSelectItems, NewSessionRequest, PermissionOptionId, PromptRequest,
             ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
@@ -343,6 +347,62 @@ pub enum Incoming {
         limit: Option<u32>,
         /// The text, or nothing for "obelus will not read that".
         answer: Answer<Option<String>>,
+    },
+    /// It wants a command run.
+    ///
+    /// Not a question for the reader. The agent asks before it does
+    /// anything it thinks is worth asking about -- that is what
+    /// `session/request_permission` is -- and a client that asked again
+    /// would be a second question about one thing. What obelus owes is
+    /// that the command is on the page in the words it was run in, and
+    /// that a key stops it: what cannot be undone has to be visible while
+    /// it happens.
+    Run {
+        /// The command line, as the agent wrote it.
+        command: String,
+        /// Its arguments, where the agent kept them apart.
+        args: Vec<String>,
+        /// What to set in its environment, beside obelus's own.
+        env: Vec<(String, String)>,
+        /// Where to run it, or the tree when the agent did not say.
+        cwd: Option<PathBuf>,
+        /// How much of its output to keep.
+        limit: Option<usize>,
+        /// What obelus calls it, or nothing where it would not start.
+        answer: Answer<Option<String>>,
+    },
+    /// What a command has written so far.
+    Wrote {
+        /// Which command.
+        id: String,
+        /// Its output, whether it was cut, and how it ended if it has.
+        answer: Answer<Option<(String, bool, Option<crate::running::Ended>)>>,
+    },
+    /// Wait for a command to end.
+    ///
+    /// Answered when it does, which may be minutes. The dispatch loop is
+    /// held for the whole of it -- see this module's own account of what
+    /// waiting costs -- and that is right here: the agent asked to wait.
+    Waited {
+        /// Which command.
+        id: String,
+        /// How it ended, or nothing for a command obelus has no record of.
+        answer: Answer<Option<crate::running::Ended>>,
+    },
+    /// Stop one.
+    Stop {
+        /// Which command.
+        id: String,
+        /// Said once it has stopped, so the output asked for next is the
+        /// output of something that is no longer writing.
+        answer: Answer<()>,
+    },
+    /// Let go of one: stopped if it is still going, and forgotten.
+    Forget {
+        /// Which command.
+        id: String,
+        /// Said once it is gone.
+        answer: Answer<()>,
     },
     /// The conversation is over: the agent exited, or the protocol did.
     Gone(Option<String>),
@@ -931,6 +991,11 @@ async fn talk(
     let asking = events.clone();
     let elicited = events.clone();
     let completed = events.clone();
+    let running = events.clone();
+    let reading_output = events.clone();
+    let waiting = events.clone();
+    let stopping = events.clone();
+    let forgetting = events.clone();
     let reading = events.clone();
     let writing = events.clone();
 
@@ -1118,6 +1183,113 @@ async fn talk(
                     Err(_) => ElicitationAction::Cancel,
                 };
                 responder.respond(CreateElicitationResponse::new(action))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: CreateTerminalRequest, responder, _connection| {
+                let (answer, answered) = oneshot::channel();
+                let question = Incoming::Run {
+                    command: request.command.clone(),
+                    args: request.args.clone(),
+                    env: request
+                        .env
+                        .iter()
+                        .map(|set| (set.name.clone(), set.value.clone()))
+                        .collect(),
+                    cwd: request.cwd.clone(),
+                    limit: request.output_byte_limit.and_then(|it| usize::try_from(it).ok()),
+                    answer,
+                };
+                if running.send(Event::Acp(question)).is_err() {
+                    return responder.respond_with_error(refusal("obelus is not listening"));
+                }
+                match answered.await {
+                    Ok(Some(id)) => {
+                        responder.respond(CreateTerminalResponse::new(TerminalId::new(id)))
+                    }
+                    Ok(None) | Err(_) => {
+                        responder.respond_with_error(refusal("obelus could not run that"))
+                    }
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: TerminalOutputRequest, responder, _connection| {
+                let (answer, answered) = oneshot::channel();
+                let question = Incoming::Wrote {
+                    id: request.terminal_id.0.to_string(),
+                    answer,
+                };
+                if reading_output.send(Event::Acp(question)).is_err() {
+                    return responder.respond_with_error(refusal("obelus is not listening"));
+                }
+                match answered.await {
+                    Ok(Some((output, truncated, ended))) => responder.respond(
+                        TerminalOutputResponse::new(output, truncated)
+                            .exit_status(ended.map(exit_status)),
+                    ),
+                    Ok(None) | Err(_) => {
+                        responder.respond_with_error(refusal("obelus is not running that"))
+                    }
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: WaitForTerminalExitRequest, responder, _connection| {
+                // Answered when the command ends, which may be minutes.
+                // The whole connection waits with it -- what this module
+                // says about waiting -- and that is what the agent asked
+                // for by calling this rather than reading the output.
+                let (answer, answered) = oneshot::channel();
+                let question = Incoming::Waited {
+                    id: request.terminal_id.0.to_string(),
+                    answer,
+                };
+                if waiting.send(Event::Acp(question)).is_err() {
+                    return responder.respond_with_error(refusal("obelus is not listening"));
+                }
+                match answered.await {
+                    Ok(Some(ended)) => responder
+                        .respond(WaitForTerminalExitResponse::new(exit_status(ended))),
+                    Ok(None) | Err(_) => {
+                        responder.respond_with_error(refusal("obelus is not running that"))
+                    }
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: KillTerminalRequest, responder, _connection| {
+                let (answer, answered) = oneshot::channel();
+                let question = Incoming::Stop {
+                    id: request.terminal_id.0.to_string(),
+                    answer,
+                };
+                if stopping.send(Event::Acp(question)).is_err() {
+                    return responder.respond_with_error(refusal("obelus is not listening"));
+                }
+                // Waited for, so that the output asked for next is the
+                // output of something no longer writing.
+                let _ = answered.await;
+                responder.respond(KillTerminalResponse::new())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: ReleaseTerminalRequest, responder, _connection| {
+                let (answer, answered) = oneshot::channel();
+                let question = Incoming::Forget {
+                    id: request.terminal_id.0.to_string(),
+                    answer,
+                };
+                if forgetting.send(Event::Acp(question)).is_err() {
+                    return responder.respond_with_error(refusal("obelus is not listening"));
+                }
+                let _ = answered.await;
+                responder.respond(ReleaseTerminalResponse::new())
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -1467,8 +1639,9 @@ fn ended_because(error: &agent_client_protocol::schema::v1::Error) -> String {
 /// What obelus tells an agent about itself.
 ///
 /// It reads files out and writes them back inside the tree it was opened
-/// on, and it has no terminal to offer. Declaring the truth here is what
-/// keeps a well-behaved agent from asking for the rest.
+/// on, runs the commands it is given, and puts both of the questions an
+/// agent can ask. Declaring the truth here is what keeps a well-behaved
+/// agent from asking for the rest.
 fn handshake() -> InitializeRequest {
     InitializeRequest::new(ProtocolVersion::V1)
         .client_capabilities(
@@ -1476,7 +1649,11 @@ fn handshake() -> InitializeRequest {
                 .fs(FileSystemCapabilities::new()
                     .read_text_file(true)
                     .write_text_file(true))
-                .terminal(false)
+                // Commands, which obelus runs and shows rather than
+                // asking about: see [`Incoming::Run`]. There is no
+                // terminal behind this and none is needed -- the five
+                // `terminal/*` methods want a process, not a screen.
+                .terminal(true)
                 // Both kinds of question: a form, which goes on a card,
                 // and a URL, which obelus hands to whatever the reader
                 // opens links with. Saying only `form` left an agent that
@@ -1498,6 +1675,13 @@ fn handshake() -> InitializeRequest {
                 ),
         )
         .client_info(Implementation::new("obelus", env!("CARGO_PKG_VERSION")))
+}
+
+/// How a command ended, as the protocol says it.
+fn exit_status(ended: crate::running::Ended) -> TerminalExitStatus {
+    TerminalExitStatus::new()
+        .exit_code(ended.code)
+        .signal(ended.signal.map(str::to_string))
 }
 
 /// What obelus says when it will not do something.

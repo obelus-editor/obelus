@@ -167,6 +167,14 @@ while IFS= read -r line; do
                 *'"form":{}'*) forms='yes' ;;
                 *) forms='' ;;
             esac
+            # And whether it may run anything at all. A client that does
+            # not offer `terminal` cannot be sent one, so what obelus
+            # promised is what decides between running and saying it
+            # cannot.
+            case "$line" in
+                *'"terminal":true'*) terminals='yes' ;;
+                *) terminals='' ;;
+            esac
             case "$again" in
                 load) able='"loadSession":true' ;;
                 resume) able='"sessionCapabilities":{"resume":{}}' ;;
@@ -275,6 +283,36 @@ while IFS= read -r line; do
                 *) said='the question went away' ;;
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$session" "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'/run'*)
+            # A command, the way an agent runs one: create, wait, read the
+            # output, let go. obelus runs it and shows it -- it does not
+            # ask, because asking is what this agent's own permission
+            # request is for.
+            set_turn "$session" "$(id_of "$line")"
+            if [ -z "$terminals" ]; then
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"this client runs nothing"}}}}\n' "$session"
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+                continue
+            fi
+            # Long enough that the wait is a wait: a command that has
+            # already finished when the agent asks never reaches the half
+            # of the client that holds the question open.
+            printf '{"jsonrpc":"2.0","id":920,"method":"terminal/create","params":{"sessionId":"%s","command":"sleep 0.3; printf %%s obelus-ran-this; exit 3","args":[]}}\n' "$session"
+            ;;
+        *'"id":920'*)
+            term=$(printf '%s' "$line" | sed 's/.*"terminalId":"//; s/".*//')
+            printf '{"jsonrpc":"2.0","id":921,"method":"terminal/wait_for_exit","params":{"sessionId":"%s","terminalId":"%s"}}\n' "$session" "$term"
+            ;;
+        *'"id":921'*)
+            code=$(printf '%s' "$line" | sed 's/.*"exitCode"://; s/[^0-9].*//')
+            printf '{"jsonrpc":"2.0","id":922,"method":"terminal/output","params":{"sessionId":"%s","terminalId":"%s"}}\n' "$session" "$term"
+            ;;
+        *'"id":922'*)
+            out=$(printf '%s' "$line" | sed 's/.*"output":"//; s/".*//')
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"it said %s and ended %s"}}}}\n' "$session" "$out" "$code"
+            printf '{"jsonrpc":"2.0","id":923,"method":"terminal/release","params":{"sessionId":"%s","terminalId":"%s"}}\n' "$session" "$term"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'/echo'*)

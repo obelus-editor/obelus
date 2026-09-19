@@ -355,6 +355,18 @@ pub struct App {
     tools_url: Option<String>,
     /// The agent obelus is talking to, once something has needed it.
     talker: Option<crate::acp::Talk>,
+    /// The commands an agent asked to run, while they run.
+    ///
+    /// On the loop rather than on the connection's thread, because a
+    /// command is a thing on the page: the row that says what is happening
+    /// reads its output, and a key stops it.
+    runs: crate::running::Runs,
+    /// Who is waiting to be told a command has ended.
+    ///
+    /// The agent's `terminal/wait_for_exit`, held until the command does.
+    /// Answered from the frame check rather than by blocking: the loop
+    /// that draws must not wait on a compile.
+    waiting_on: Vec<(String, crate::acp::Answer<Option<crate::running::Ended>>)>,
     /// What obelus knows about the agents it could run.
     agents: agents::Agents,
     /// The settings as they stand, and where each part came from.
@@ -578,6 +590,8 @@ impl App {
 
             tools_url: None,
             talker: None,
+            runs: crate::running::Runs::default(),
+            waiting_on: Vec::new(),
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),
             settings: None,
@@ -1364,6 +1378,7 @@ impl App {
             notes.lay_out(laid.0, laid.1);
         }
         self.check_servers();
+        self.check_runs();
         // What the conversation says is happening, read off the state
         // rather than remembered: a row that is worked out every frame
         // cannot be left saying something that stopped being true.

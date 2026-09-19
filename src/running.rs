@@ -248,11 +248,7 @@ impl Runs {
     }
 
     /// Stops and forgets every one of them.
-    ///
-    /// For the way out: a command obelus started and left behind is a
-    /// process the reader has no way to see, which is the complaint that
-    /// got the language servers killed on the way out.
-    pub fn release_all(&mut self) {
+    fn release_all(&mut self) {
         let ids: Vec<RunId> = self.running.keys().cloned().collect();
         for id in ids {
             self.release(&id);
@@ -263,6 +259,21 @@ impl Runs {
     #[must_use]
     pub fn anything_running(&self) -> bool {
         self.running.values().any(|run| run.child.is_some())
+    }
+}
+
+impl Drop for Runs {
+    /// Stops everything still running when these go.
+    ///
+    /// `Child` does not, deliberately: a child outliving its parent is the
+    /// usual thing to want, which is what every daemon started from a
+    /// shell depends on. It is not the thing to want here, for the reason
+    /// `lsp::Client` gives in its own words -- and more sharply, because
+    /// these are commands a reader never typed. A `cargo build` left
+    /// running after obelus is gone is a process eating a machine on
+    /// behalf of a conversation nobody can see any more.
+    fn drop(&mut self) {
+        self.release_all();
     }
 }
 
@@ -495,6 +506,39 @@ mod tests {
             text.trim(),
             "|cat|dumb",
             "the command was given something that waits for a key"
+        );
+    }
+
+    /// Nothing is left running when the runs go.
+    ///
+    /// A command a reader never typed, still going after obelus is gone,
+    /// is a process eating a machine on behalf of a conversation nobody
+    /// can see any more.
+    ///
+    /// Broken deliberately by taking the `Drop` off `Runs`: the sleep
+    /// outlives them and this goes red.
+    #[test]
+    fn nothing_is_left_running_when_the_runs_go() {
+        let mut runs = Runs::default();
+        // Writes its own name where the test can see it, so that "still
+        // running" is a question the test can ask the machine rather than
+        // the thing that was just dropped.
+        let mark = std::env::temp_dir().join(format!("obelus-run-{}", std::process::id()));
+        let _ = std::fs::remove_file(&mark);
+        runs.start(
+            &format!("sleep 0.4; : > {}", mark.display()),
+            &[],
+            &[],
+            None,
+            std::path::Path::new("."),
+            None,
+        )
+        .expect("the shell");
+        drop(runs);
+        std::thread::sleep(std::time::Duration::from_millis(900));
+        assert!(
+            !mark.exists(),
+            "a command outlived the runs it belonged to"
         );
     }
 

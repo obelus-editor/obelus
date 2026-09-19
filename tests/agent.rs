@@ -3329,3 +3329,44 @@ fn an_agent_that_can_do_neither_is_not_asked() {
         "obelus asked for a conversation the agent said it could not give:\n{text}"
     );
 }
+
+/// A command the agent asks for is run, and what it said comes back.
+///
+/// The five `terminal/*` methods want a process, not a screen: started,
+/// its output read, its exit status waited for, and a way to stop it.
+/// obelus does not ask the reader first -- the agent asks, which is the
+/// rule obelus's own tools follow too -- and what it owes instead is that
+/// the command is on the page and a key stops it.
+///
+/// Broken deliberately by declaring `terminal(false)` in the handshake: a
+/// well-behaved agent stops asking and this goes red.
+#[test]
+fn a_command_the_agent_asks_for_is_run() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/run");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what the command said", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text.contains("obelus-ran-this"))
+        })
+    });
+
+    // Its output and its exit status, both as the command really gave
+    // them: the agent read them back out of obelus.
+    let said = app
+        .chat()
+        .expect("the conversation")
+        .rows(WIDTH)
+        .iter()
+        .map(|row| row.text.clone())
+        .collect::<String>();
+    assert!(
+        said.contains("it said obelus-ran-this and ended 3"),
+        "the command's own words and code did not come back: {said:?}"
+    );
+}
