@@ -114,12 +114,23 @@ rather than on the setting. The glyph switch is the precedent. The cost is
 paid by the tests, which have to take turns -- and go in a binary of their
 own, because a test beside them that sets a config moves it underneath.
 
-**An agent may change what the reader is looking at, and nothing else.** The
-refusal was never that an agent should not write. It was that a reader could
-not see the change arrive or take it back, which an undo answers: a write
-goes through the buffer as one change, and `ctrl+z` is what it was.
+**What an agent does, the reader can see and take back -- and where it
+cannot be taken back, seeing it is the whole of the answer.** The refusal
+was never that an agent should not write. It was that a reader could not see
+the change arrive or undo it, which an undo answers: a write goes through the
+buffer as one change, and `ctrl+z` is what it was.
 A fake agent that asks to write a file in the repository is a test that
 rewrites the repository -- it asks about a path outside the tree instead.
+
+Running a command has no undo, so it is held to the other half only, and
+held to it harder. obelus runs what it is asked without asking the reader:
+*the agent* asks -- that is what `session/request_permission` is for, and a
+client asking again is a second question about one thing, which is the same
+rule obelus's own tools follow. What obelus owes in exchange is that the
+command is on the page in the words it was actually run in (not the agent's
+title for it), that everything it printed is there and a failed one stays
+open, and that the key which stops the agent stops the process too -- obelus
+started it, and nothing else can.
 
 **A setting the reader turned on is not a reason to refuse them.** Saving
 with formatting on and no server to ask writes the file unformatted. The

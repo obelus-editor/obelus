@@ -1391,6 +1391,7 @@ impl App {
             | talking::Talking::Gone => None,
         };
         self.in_transcript(|chat| chat.doing(doing));
+        self.show_what_is_running();
         // A grammar too slow to keep up with typing leaves a tree owing an
         // answer, and the ticker is what comes back for it: the reader
         // stops, the next tick lands, and the colours catch up.

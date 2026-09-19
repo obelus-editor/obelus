@@ -3348,11 +3348,14 @@ fn a_command_the_agent_asks_for_is_run() {
     });
     support::type_text(&mut app, "/run");
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "what the command said", |app| {
+    // Until the *agent* says what it read back, not until the words are
+    // anywhere on the page: the row that shows the command carries them
+    // too, which is the point of the test beside this one.
+    pump(&mut app, &events, "what the agent read back", |app| {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("obelus-ran-this"))
+                .any(|row| row.text.contains("it said"))
         })
     });
 
@@ -3368,5 +3371,101 @@ fn a_command_the_agent_asks_for_is_run() {
     assert!(
         said.contains("it said obelus-ran-this and ended 3"),
         "the command's own words and code did not come back: {said:?}"
+    );
+}
+
+/// A command is on the page while it runs, in the words it was run in.
+///
+/// The half obelus owes for not asking before it runs one. The agent
+/// decides whether to ask; obelus decides that once it runs, the reader
+/// sees the command line itself -- not the agent's title for it -- and
+/// everything it printed, and that the call's own state says how it ended.
+///
+/// Broken deliberately by leaving `Chat::running` uncalled: the row
+/// carries the agent's title and nothing else, and this goes red.
+#[test]
+fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/run");
+    support::press(&mut app, KeyCode::Enter);
+    // Until the command has *ended*, not until its words are on the page:
+    // the command line says them too, so a row carrying them is the row
+    // that says what is being run.
+    pump(&mut app, &events, "the command to finish", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH).iter().any(|row| {
+                row.text.contains("Run the tests") && row.state.as_deref() == Some("failed")
+            })
+        })
+    });
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    assert!(
+        screen
+            .iter()
+            .any(|row| row.contains("$ sleep 0.3; printf %s obelus-ran-this; exit 3")),
+        "the command the reader never typed is not on the page:\n{dump}"
+    );
+    // And what it printed, under it -- a row of its own, which is what
+    // makes it the command's output rather than more of the title.
+    assert!(
+        screen
+            .iter()
+            .filter_map(|row| row.split_once('|'))
+            .any(|(_, said)| said.trim() == "obelus-ran-this"),
+        "what the command printed is not on the page:\n{dump}"
+    );
+    // And the call says it failed, because the command did.
+    let state = app
+        .chat()
+        .expect("the conversation")
+        .rows(WIDTH)
+        .iter()
+        .find(|row| row.text.contains("Run the tests"))
+        .and_then(|row| row.state.clone());
+    assert_eq!(
+        state,
+        Some("failed".to_string()),
+        "a call whose command exited 3 does not say it failed"
+    );
+}
+
+/// The key that stops the agent stops what obelus is running for it.
+///
+/// The processes are obelus's -- it started them -- and an agent told to
+/// stop is under no obligation to release a terminal on its way out. One
+/// that did not would leave a build running that the reader has just said
+/// they want stopped, with nothing on screen that could stop it.
+///
+/// Broken deliberately by taking the stopping out of `interrupt_agent`:
+/// the command is still going and this goes red.
+#[test]
+fn the_key_that_stops_the_agent_stops_what_it_is_running() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus::app::talking::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the command to start", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text.contains("sleep 300"))
+        })
+    });
+    assert!(
+        app.anything_running(),
+        "the command obelus was asked to run is not running"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    assert!(
+        !app.anything_running(),
+        "a command the reader asked to stop is still running"
     );
 }

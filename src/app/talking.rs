@@ -503,7 +503,25 @@ impl App {
     }
 
     /// Asks the agent to stop what it is doing.
+    ///
+    /// And stops the commands obelus is running for this conversation,
+    /// rather than only asking. The processes are obelus's -- it started
+    /// them -- and an agent told to stop is under no obligation to release
+    /// a terminal on its way out: one that did not would leave a build
+    /// running that the reader has just said they want stopped, with
+    /// nothing left on screen that could stop it.
+    ///
+    /// The half obelus owes for not asking before it runs them: a key
+    /// stops it.
     pub(super) fn interrupt_agent(&mut self) {
+        let running: Vec<String> = self
+            .conversation()
+            .map(|talk| talk.chat.commands())
+            .unwrap_or_default();
+        for id in running {
+            self.runs.stop(&id);
+            self.tell_whoever_waited(&id);
+        }
         let session = self.session_now();
         let Some(talker) = self.talker.as_mut() else {
             return;
@@ -1345,6 +1363,68 @@ impl App {
             | acp::Incoming::Forget { .. } => None,
         };
         whose.is_none_or(|session| self.session_now().as_ref() == Some(session))
+    }
+
+    /// Whether any command obelus was asked to run is still going.
+    #[must_use]
+    pub fn anything_running(&self) -> bool {
+        self.runs.anything_running()
+    }
+
+    /// Puts what obelus's commands are doing on the rows that are about
+    /// them.
+    ///
+    /// Every frame, from the runner rather than from anything kept: the
+    /// process owns its output, and a row drawn from a copy is a row that
+    /// can be a moment behind what the reader is watching.
+    ///
+    /// This is the half obelus owes for not asking. The agent decides
+    /// whether to ask before running something; obelus decides that once
+    /// it runs, the reader sees the command in the words it was run in and
+    /// everything it printed.
+    pub(super) fn show_what_is_running(&mut self) {
+        let runs = &mut self.runs;
+        let mut said: Vec<(String, crate::component::chat::Doing)> = Vec::new();
+        for document in self.documents.iter().flatten() {
+            let Some(talk) = Document::chat(document) else {
+                continue;
+            };
+            for id in talk.chat.commands() {
+                let Some(command) = runs.said(&id).map(str::to_string) else {
+                    continue;
+                };
+                let (output, truncated, ended) = runs
+                    .output(&id)
+                    .unwrap_or_else(|| (String::new(), false, None));
+                let mut words = format!("$ {command}");
+                if !output.is_empty() {
+                    words.push('\n');
+                    words.push_str(output.trim_end());
+                }
+                if truncated {
+                    words.push_str("\n\u{2026} and more, which obelus did not keep");
+                }
+                // The call's state, not a second mark beside it: a call
+                // running a command that failed is a call that failed, and
+                // a reader scanning a turn reads one glyph.
+                let state = ended.map(|ended| match ended {
+                    crate::running::Ended { code: Some(0), .. } => "completed".to_string(),
+                    _ => "failed".to_string(),
+                });
+                said.push((id, crate::component::chat::Doing { words, state }));
+            }
+        }
+        if said.is_empty() {
+            return;
+        }
+        let said: std::collections::HashMap<String, crate::component::chat::Doing> =
+            said.into_iter().collect();
+        for document in self.documents.iter_mut().flatten() {
+            let Some(talk) = Document::chat_mut(document) else {
+                continue;
+            };
+            talk.chat.running(&|id| said.get(id).cloned());
+        }
     }
 
     /// Answers whoever is waiting on a command that has ended.

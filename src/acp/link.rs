@@ -275,7 +275,10 @@ pub enum Incoming {
         session: SessionId,
         /// The call it is asking about, which is the same call the
         /// transcript already has a row for -- or is about to.
-        call: Call,
+        /// Boxed, like the one on [`Update::Tool`] and for the same
+        /// reason: this enum travels inside an event, where every other
+        /// variant is a key or a path.
+        call: Box<Call>,
         /// And in its own words: which command, which file -- what the
         /// reader is actually being asked about.
         reason: Option<String>,
@@ -468,7 +471,12 @@ pub enum Update {
     /// It is using a tool, and this is where it has got to.
     Tool {
         /// The call itself.
-        call: Call,
+        ///
+        /// Boxed: a call carries six fields of its own and this enum
+        /// travels inside [`crate::event::Event`], where every other
+        /// variant is a key or a path -- one fat arm makes every event on
+        /// the channel that size.
+        call: Box<Call>,
         /// `pending`, `in_progress`, `completed` or `failed`. Empty on an
         /// update that did not say, which means it has not changed.
         status: String,
@@ -705,6 +713,14 @@ pub struct Call {
     pub places: Vec<Place>,
     /// The change it is making, when it said.
     pub change: Option<Change>,
+    /// The command obelus is running for it, where it is running one.
+    ///
+    /// The agent embeds one it asked for with `terminal/create`, so the
+    /// call's row is where the command shows: what it is running, what it
+    /// has printed, and whether it is still going. obelus holds the
+    /// process, so the row is filled from what obelus has rather than from
+    /// anything the agent sends.
+    pub ran: Option<String>,
     /// What it said in words, which is not always nothing.
     ///
     /// A call may carry text as well as a diff -- the plan an agent asks
@@ -1039,7 +1055,10 @@ async fn talk(
                 let (answer, answered) = oneshot::channel();
                 let question = Incoming::Permission {
                     session: request.session_id.clone(),
-                    call: call_of(&request.tool_call.tool_call_id, &request.tool_call.fields),
+                    call: Box::new(call_of(
+                        &request.tool_call.tool_call_id,
+                        &request.tool_call.fields,
+                    )),
                     reason: reason_of(&request),
                     options: request
                         .options
@@ -1753,20 +1772,21 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
             .into_iter()
             .collect(),
         SessionUpdate::ToolCall(call) => vec![Update::Tool {
-            call: Call {
+            call: Box::new(Call {
                 id: call.tool_call_id.0.to_string(),
                 title: call.title.clone(),
                 kind: said_as(&call.kind),
                 places: call.locations.iter().map(place_of).collect(),
                 change: change_of(&call.content),
+                ran: ran_in(&call.content),
                 said: words_of(&call.content),
-            },
+            }),
             status: said_as(&call.status),
         }],
         // A later update carries only what changed, so what it leaves out
         // arrives here as nothing and is read as "the same as before".
         SessionUpdate::ToolCallUpdate(call) => vec![Update::Tool {
-            call: call_of(&call.tool_call_id, &call.fields),
+            call: Box::new(call_of(&call.tool_call_id, &call.fields)),
             status: call
                 .fields
                 .status
@@ -2209,6 +2229,10 @@ fn call_of(id: &ToolCallId, fields: &ToolCallUpdateFields) -> Call {
             .content
             .clone()
             .and_then(|content| change_of(&content)),
+        ran: fields
+            .content
+            .clone()
+            .and_then(|content| ran_in(&content)),
         said: fields.content.as_deref().map(words_of).unwrap_or_default(),
     }
 }
@@ -2230,6 +2254,14 @@ fn words_of(content: &[ToolCallContent]) -> Vec<String> {
             _ => None,
         })
         .collect()
+}
+
+/// The command a call is running, if it is running one.
+fn ran_in(content: &[ToolCallContent]) -> Option<String> {
+    content.iter().find_map(|content| match content {
+        ToolCallContent::Terminal(terminal) => Some(terminal.terminal_id.0.to_string()),
+        _ => None,
+    })
 }
 
 /// The change a call carries, if it carries one.

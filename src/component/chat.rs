@@ -105,6 +105,19 @@ pub enum Speaker {
     Step,
 }
 
+/// What a command is doing, for the row that is about it.
+///
+/// Handed over rather than read: obelus holds the process, and the rows
+/// are filled from it every frame the way [`Chat::doing`] is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Doing {
+    /// The command and everything it has printed, as the row's own words.
+    pub words: String,
+    /// How the call stands now, where the command has ended: a call
+    /// running a command that failed is a call that failed.
+    pub state: Option<String>,
+}
+
 /// One thing that was said.
 #[derive(Clone, Debug)]
 pub struct Said {
@@ -132,6 +145,14 @@ pub struct Said {
     /// rather than the two texts: the diff is worked out once, when it
     /// arrives.
     pub change: Vec<crate::git::change::Line>,
+    /// The command obelus is running for this call, where it is running
+    /// one.
+    ///
+    /// The output is not kept here: obelus holds the process, and what it
+    /// has printed is read off that every frame -- the same rule
+    /// [`Chat::doing`] follows, so there is no way for the rows to be
+    /// showing a command's output from a moment ago.
+    pub ran: Option<String>,
     /// What a tool call says, in the order it gave it -- and, for a row
     /// the reader was sent away by, the one address it sent them to.
     ///
@@ -575,11 +596,49 @@ impl Chat {
             kind: String::new(),
             places: Vec::new(),
             change: Vec::new(),
+            ran: None,
             // Kept rather than shown: the row says what it was for, and
             // the address is what pressing the key on it does.
             words: vec![url.to_string()],
             opened: None,
         });
+    }
+
+    /// Every command a row of this conversation is about.
+    #[must_use]
+    pub fn commands(&self) -> Vec<String> {
+        self.said
+            .iter()
+            .filter_map(|said| said.ran.clone())
+            .collect()
+    }
+
+    /// Says what a command is doing, for every row that is running one.
+    ///
+    /// Called every frame with whatever obelus's own runner has, the way
+    /// [`Chat::doing`] is: the output belongs to the process and the rows
+    /// are drawn from it rather than from a copy that could be a moment
+    /// behind. Which command a row is about is the row's own `ran`, so a
+    /// caller hands over one answer per command and this finds them.
+    pub fn running(&mut self, what: &dyn Fn(&str) -> Option<Doing>) {
+        for said in &mut self.said {
+            let Some(id) = said.ran.as_deref() else {
+                continue;
+            };
+            let Some(Doing { words, state }) = what(id) else {
+                continue;
+            };
+            // The command and what it has printed, in the place a call's
+            // own words go: for a call that is a command, this *is* what
+            // it says.
+            said.words = vec![words];
+            // And how it is going, which is the call's state rather than a
+            // second mark: a call running a command that failed is a call
+            // that failed.
+            if let Some(state) = state {
+                said.state = Some(state);
+            }
+        }
     }
 
     /// Says what was to happen where the reader was sent has happened.
@@ -615,6 +674,7 @@ impl Chat {
                 kind: call.kind.clone(),
                 places: places_of(call),
                 change: changed_rows(call),
+                ran: call.ran.clone(),
                 words: call.said.clone(),
                 opened: None,
             });
@@ -975,8 +1035,18 @@ impl Chat {
         // made the file itself has them, and obelus draws a file's changes
         // in the margin beside them -- so the block folds away and the row
         // that opens it stays.
+        //
+        // And open once it has finished badly, which that reason does not
+        // cover: what a change said is in the file afterwards, and what a
+        // command printed is nowhere at all. A reader whose tests have just
+        // failed is looking for the failure, and folding it away hands them
+        // a row and a glyph. The same rule the arm below has for a run of
+        // calls, which is where it was already written down.
         if !said.change.is_empty() || !said.words.is_empty() {
-            return matches!(said.state.as_deref(), Some("pending" | "in_progress"));
+            return matches!(
+                said.state.as_deref(),
+                Some("pending" | "in_progress" | "failed")
+            );
         }
         self.said[self.run_from(at)]
             .iter()
@@ -1278,6 +1348,7 @@ impl Chat {
             kind: String::new(),
             places: Vec::new(),
             change: Vec::new(),
+            ran: None,
             words: Vec::new(),
             opened: None,
         });
@@ -1488,6 +1559,7 @@ mod tests {
             kind: kind.to_string(),
             places,
             change: None,
+            ran: None,
             said: Vec::new(),
         }
     }

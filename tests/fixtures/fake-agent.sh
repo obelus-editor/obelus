@@ -303,6 +303,11 @@ while IFS= read -r line; do
             ;;
         *'"id":920'*)
             term=$(printf '%s' "$line" | sed 's/.*"terminalId":"//; s/".*//')
+            # Embedded in the call, which is how a client is told where to
+            # show it: the client holds the process, so the row it draws is
+            # filled from what the client has rather than from anything
+            # said here.
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"c9","title":"Run the tests","kind":"execute","status":"in_progress","content":[{"type":"terminal","terminalId":"%s"}]}}}\n' "$session" "$term"
             printf '{"jsonrpc":"2.0","id":921,"method":"terminal/wait_for_exit","params":{"sessionId":"%s","terminalId":"%s"}}\n' "$session" "$term"
             ;;
         *'"id":921'*)
@@ -314,6 +319,18 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"it said %s and ended %s"}}}}\n' "$session" "$out" "$code"
             printf '{"jsonrpc":"2.0","id":923,"method":"terminal/release","params":{"sessionId":"%s","terminalId":"%s"}}\n' "$session" "$term"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'/forever'*)
+            # A command that does not end on its own, for the key that
+            # stops it. The agent never releases it -- which is the case
+            # the client has to survive, because the process is the
+            # client's and nothing else can stop it.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":930,"method":"terminal/create","params":{"sessionId":"%s","command":"sleep 300","args":[]}}\n' "$session"
+            ;;
+        *'"id":930'*)
+            term=$(printf '%s' "$line" | sed 's/.*"terminalId":"//; s/".*//')
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"c8","title":"Wait for ever","kind":"execute","status":"in_progress","content":[{"type":"terminal","terminalId":"%s"}]}}}\n' "$session" "$term"
             ;;
         *'"method":"session/prompt"'*'/echo'*)
             # An agent that sends the prompt it was just given straight
