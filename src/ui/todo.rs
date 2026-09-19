@@ -15,7 +15,9 @@ use crate::{
     app::App,
     component::todo::{Row, TodoView as Notes},
     theme::Theme,
-    ui::{Hint, Marked, editor::SCROLLBAR_WIDTH, fill, foot, footed, put, write_marked},
+    ui::{
+        Hint, Marked, editor::SCROLLBAR_WIDTH, fill, foot_without_a_card, footed, put, write_marked,
+    },
 };
 
 /// The box in front of a note, ticked and not.
@@ -40,30 +42,45 @@ fn box_of(done: bool) -> char {
 /// is would be a page that overshoots by however much they disagreed.
 #[must_use]
 pub fn list_region(area: Rect, hints: &[Hint]) -> Rect {
-    // Nothing above it. There are no tabs here and nothing to filter by, so
-    // a title row would be one row of the reader's screen spent saying what
-    // they just asked for.
+    // Nothing above it. A conversation has a header saying who is being
+    // talked to, and this had the same claim on one the moment it became a
+    // document the reader switches to rather than a page they had just
+    // opened -- but there is one notes document and its name never varies,
+    // so a header here would be a row of the reader's screen spent on a
+    // constant. What says where they are is the status row, which carries
+    // the mark and how much is left.
     footed(area, hints)
 }
 
 /// What the keys do here, and which of them do anything at the moment.
 ///
-/// One list, read two ways: the foot draws the common ones that can be
-/// pressed, and the card draws all of them with the rest greyed. A view that
-/// kept two lists would be a view whose card and foot could disagree about
-/// what it answers to.
+/// One list, all of it common: what the foot draws is the whole of what
+/// this view says about itself. Which of them are on varies with what is
+/// selected, so the row is what can be pressed right now rather than a
+/// standing notice.
 #[must_use]
 pub fn hints(notes: &Notes) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let chord = crate::keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
     let alt = |code| chord(code, KeyModifiers::ALT);
-    let control = |letter| chord(KeyCode::Char(letter), KeyModifiers::CONTROL);
     let on = notes.selected_note();
+    // All of them at the foot, and none of them held back. A card of every
+    // key is what a dialog has -- a thing opened over what the reader was
+    // doing, which owns the keyboard while it is up and has to be able to
+    // say so. This is a document, and a document's keys are either worth a
+    // row here or not worth saying at all.
+    //
+    // Nothing about typing, the arrows or `shift+enter`: this is a page
+    // being written, and what a page being written does with a letter is
+    // not news. `enter` is here for the opposite reason -- it is what a
+    // text box does *not* do with it, because `shift+enter` is the line
+    // break and `enter` starts another note.
+    //
+    // Nothing about copy, cut and paste either, which were on the card
+    // because "can I paste in here?" is a question a dialog has to answer.
+    // Here they are what they are everywhere else.
     vec![
-        // Nothing about typing, the arrows or `shift+enter`: this is a page
-        // being written, and what a page being written does with a letter is
-        // not news. What is worth a row is what it does with a *note*.
         Hint::common(bare(KeyCode::Enter), "another").saying("start another note"),
         Hint::common(alt(KeyCode::Char(' ')), "done")
             .saying("done, or not")
@@ -74,14 +91,13 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
         Hint::common(alt(KeyCode::Char('a')), "talk")
             .saying("talk to an agent about this one")
             .when(on.is_some()),
-        // At the foot rather than on the card alone: taking a whole note
-        // away is the one thing here a reader will go looking for and not
-        // find, because backspace on its own is a letter.
+        // Taking a whole note away is the one thing here a reader will go
+        // looking for and not find, because backspace on its own is a
+        // letter.
         Hint::common(alt(KeyCode::Backspace), "drop")
             .saying("take the whole note away")
             .when(on.is_some()),
-        Hint::common(bare(KeyCode::Esc), "leave").saying("leave, keeping what is written"),
-        Hint::rare(alt(KeyCode::Up), "move")
+        Hint::common(alt(KeyCode::Up), "move")
             .saying("move it up or down")
             .or(alt(KeyCode::Down))
             .when(notes.rows().len() > 1),
@@ -89,28 +105,12 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
         // top can only go in, and one as deep as it may go can only come
         // out. A single row for both would be on whenever either was, and
         // would be saying a key works when it does not.
-        Hint::rare(bare(KeyCode::Tab), "under")
+        Hint::common(bare(KeyCode::Tab), "under")
             .saying("put it under the one above")
             .when(notes.can_shift(false)),
-        Hint::rare(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "out")
+        Hint::common(chord(KeyCode::BackTab, KeyModifiers::SHIFT), "out")
             .saying("bring it back out a level")
             .when(notes.can_shift(true)),
-        // The four a reader arrives already holding, on the card rather
-        // than at the foot: they are what these keys are everywhere else,
-        // so the foot would spend four of its columns saying nothing. On
-        // the card, though, because "can I paste in here?" is a question a
-        // dialog has to have an answer to -- and because what copy and cut
-        // take when nothing is held is this view's own rule.
-        Hint::rare(control('c'), "copy")
-            .saying("copy what is held, or the whole note")
-            .when(on.is_some()),
-        Hint::rare(control('x'), "cut")
-            .saying("cut what is held, or the whole note")
-            .when(on.is_some()),
-        Hint::rare(control('v'), "paste").saying("paste what was copied"),
-        Hint::rare(control('a'), "all")
-            .saying("take hold of the whole note")
-            .when(on.is_some()),
     ]
 }
 
@@ -136,9 +136,6 @@ pub fn text_width_in(area: Rect) -> u16 {
 /// the status row, which no card covers.
 #[must_use]
 pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
-    if notes.showing_keys() {
-        return None;
-    }
     let composer = notes.writing()?;
     let at = notes.writing_at()?;
     let hints = hints(notes);
@@ -239,7 +236,7 @@ impl Widget for TodoUi<'_> {
                 .bg(self.theme.background),
         );
         let hints = hints(self.notes);
-        foot(cells, area, &hints, self.theme);
+        foot_without_a_card(cells, area, &hints, self.theme);
 
         let list = list_region(area, &hints);
         if list.height == 0 {
@@ -247,7 +244,6 @@ impl Widget for TodoUi<'_> {
         }
         if self.notes.rows().is_empty() {
             crate::ui::nothing(cells, list, "nothing to come back to", self.theme);
-            self.keys(cells, area, &hints);
             return;
         }
 
@@ -291,24 +287,10 @@ impl Widget for TodoUi<'_> {
                 self.theme,
             );
         }
-
-        self.keys(cells, area, &hints);
     }
 }
 
 impl TodoUi<'_> {
-    /// Every key this view answers to, where the reader asked for them.
-    ///
-    /// Over everything, because it is what they asked for and the list is
-    /// what they asked about.
-    fn keys(&self, cells: &mut CellBuffer, area: Rect, hints: &[Hint]) {
-        if self.notes.showing_keys() {
-            // Above the foot: the foot says how to close this, and a card
-            // that covered it would be a card with no way out on screen.
-            crate::ui::keys_card(cells, footed(area, hints), hints, self.theme);
-        }
-    }
-
     /// One row: the mark, the box, what it says, and where it points.
     fn row(&self, cells: &mut CellBuffer, area: Rect, row: &Row, selected: bool) {
         let background = self.theme.background;

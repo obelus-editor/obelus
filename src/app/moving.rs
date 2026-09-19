@@ -442,7 +442,7 @@ impl App {
     #[must_use]
     pub(super) fn somewhere_to_type(&self) -> bool {
         self.prompt.is_some()
-            || self.notes.is_some()
+            || self.notes().is_some()
             || self.settings.is_some()
             || self.picker.is_some()
             || self.conversation_takes_text()
@@ -481,10 +481,6 @@ impl App {
                 }
                 return;
             }
-            Some(Layer::Notes) => {
-                self.paste_into_notes(what);
-                return;
-            }
             Some(Layer::Settings) => {
                 if let Some(settings) = self.settings.as_mut() {
                     settings.put_in_query(what);
@@ -515,6 +511,13 @@ impl App {
             // was typing in, and not in the file behind it either.
             None if self.conversation().is_some() => {
                 self.paste_into_conversation(what);
+                return;
+            }
+            // And the notes, for the same reason and by the same route:
+            // they were a layer, and the text stopped arriving anywhere the
+            // moment they stopped being one.
+            None if self.notes().is_some() => {
+                self.paste_into_notes(what);
                 return;
             }
             None => {}

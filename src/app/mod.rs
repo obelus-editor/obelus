@@ -375,8 +375,6 @@ pub struct App {
     settings: Option<Settings>,
     /// The line counts, while they are showing.
     counts: Option<Counts>,
-    /// What the tree means to come back to, while it is showing.
-    notes: Option<crate::component::todo::TodoView>,
     /// The whole screen, as of the last frame.
     ///
     /// Kept beside `editor_area` because one view is not in it: the counts
@@ -408,6 +406,15 @@ pub struct App {
     /// on the row they were reading rather than on the file they happen to
     /// have open.
     stood_on: Option<PathBuf>,
+    /// When the notes were last typed into, so they can be written once the
+    /// reader stops.
+    ///
+    /// Structural changes -- a note added, finished, moved -- are written
+    /// the moment they happen and never come through here: they are one
+    /// act each, and there is nothing to wait for. Typing is not one act,
+    /// and it used to be written when the reader left the page. There is no
+    /// leaving a document, so this is the moment instead.
+    notes_settling: Option<std::time::Instant>,
     /// A rename of a file, from the question to the act.
     ///
     /// The gap between the two is a round trip: a server that knows the
@@ -596,12 +603,12 @@ impl App {
             agents: agents::Agents::default(),
             settings: None,
             counts: None,
-            notes: None,
             screen_area: Rect::ZERO,
             given_statuses: None,
             listing: Vec::new(),
             found: Vec::new(),
             stood_on: None,
+            notes_settling: None,
             renaming: None,
             opened: std::collections::HashSet::new(),
             history: history_view::Showing::default(),
@@ -644,6 +651,12 @@ impl App {
 
     /// Asks the loop to stop after this iteration.
     pub fn request_quit(&mut self) {
+        // The notes first, and without asking. A buffer that is unwritten
+        // is a decision the reader has to make -- their change, or the file
+        // on disk -- and there is no such decision here: a note lives
+        // nowhere else, and typing that has not had its pause yet is
+        // typing they did and would expect to find.
+        self.write_the_notes();
         // Not while something is unwritten: the reader is asked, because
         // "press it again" is an answer that has to be guessed at, and the
         // two things they might have meant -- write them, or let them go --
@@ -1170,7 +1183,6 @@ impl App {
     pub fn layers(&self) -> layers::Layers {
         layers::Layers::showing(|layer| match layer {
             layers::Layer::Counts => self.counts.is_some(),
-            layers::Layer::Notes => self.notes.is_some(),
             layers::Layer::Settings => self.settings.is_some(),
             layers::Layer::Picker => self.picker.is_some(),
             layers::Layer::Prompt => self.prompt.is_some(),
@@ -1230,19 +1242,6 @@ impl App {
                 // nothing else has to be put back.
                 if let Some((name, before)) = self.theme_before.take() {
                     self.set_theme(&name, before);
-                }
-            }
-            // Written down on the way out, because leaving a note *is*
-            // finishing it: there is no other moment, and the file is the
-            // only place a note survives.
-            Layer::Notes => {
-                if let Some(notes) = self.notes.as_ref() {
-                    let todo = notes.as_written();
-                    self.save_notes(&todo);
-                }
-                self.notes = None;
-                if let Some(watcher) = self.watcher.as_mut() {
-                    watcher.unwatch(&crate::todo::path(&self.working_directory));
                 }
             }
             Layer::Settings => self.settings = None,
@@ -1373,7 +1372,7 @@ impl App {
         // resized and a setting is changed while they are open, and the rows
         // they are made of depend on both.
         let laid = self.notes_laid_out();
-        if let Some(notes) = self.notes.as_mut() {
+        if let Some(notes) = self.notes_mut() {
             notes.lay_out(laid.0, laid.1);
         }
         self.check_servers();
@@ -1402,7 +1401,9 @@ impl App {
                 // And a rename waiting on a server: the clock is what ends
                 // that wait, so a clock that is asleep would leave the
                 // reader's file where it was for ever.
-                || self.renaming_is_waiting(),
+                || self.renaming_is_waiting()
+                // And the notes waiting to be written down.
+                || self.notes_settling.is_some(),
         );
 
         // Which rows the list will draw is what decides which rows need
@@ -1680,6 +1681,7 @@ impl App {
                 // is one parse for a burst of typing rather than one per
                 // key.
                 self.settle_syntax();
+                self.settle_notes();
                 // And the end of the wait for a server that was asked what
                 // a rename changes. A file the reader asked to be called
                 // something else is not held up by a subprocess that
@@ -1817,7 +1819,6 @@ impl App {
                 Layer::Prompt => self.prompt_key(&key),
                 Layer::Picker => self.picker_key(&key),
                 Layer::Settings => self.settings_key(&key),
-                Layer::Notes => self.notes_key(&key),
                 Layer::Counts => self.counts_key(&key),
             };
             if taken {
@@ -1830,6 +1831,14 @@ impl App {
         // is over a file; before the panels and the file's own keys, which
         // are about a file and there is not one.
         if self.chat_key(&key) {
+            return;
+        }
+
+        // And where that document is the notes. Beside the conversation
+        // rather than in the loop above, because that is what it now is:
+        // something the reader goes to, not something over what they were
+        // reading.
+        if self.notes_key(&key) {
             return;
         }
 
@@ -1941,8 +1950,7 @@ impl App {
 
         let area = self.editor_area;
         let Some(at) = self
-            .notes
-            .as_ref()
+            .notes()
             .and_then(|notes| ui::todo::place_at(area, notes, x, y))
         else {
             return;
@@ -1951,7 +1959,7 @@ impl App {
             Pointer::Pressed => self.clicks_at(x, y),
             _ => 0,
         };
-        let Some(notes) = self.notes.as_mut() else {
+        let Some(notes) = self.notes_mut() else {
             return;
         };
         let width = notes.caret_width();
@@ -2049,7 +2057,7 @@ impl App {
         // The notes, which are a page with a box on it: the box takes the
         // pointer the way the file does, and the rest of the page takes
         // nothing rather than letting it through to the code behind.
-        if self.notes.is_some() {
+        if self.notes().is_some() {
             self.pointer_in_notes(kind, x, y);
             return;
         }

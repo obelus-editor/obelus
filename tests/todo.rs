@@ -118,10 +118,15 @@ fn there_is_no_mode_to_get_into() {
         "typing did not reach the note:\n{dump}"
     );
 
-    // And leaving keeps it: there is no moment the reader says "done with
-    // this note", so every way out of the view is one.
+    // And escape keeps it: there is no moment the reader says "done with
+    // this note", so every way out of it is one. What escape does *not* do
+    // any more is close anything -- the notes are a document, and escape
+    // leaves whatever is over the document being read.
     press(&mut app, KeyCode::Esc);
-    assert!(app.notes().is_none(), "escape did not leave");
+    assert!(
+        app.notes().is_some(),
+        "escape closed a document, which is not what escape is for"
+    );
     let written = std::fs::read_to_string(scratch.path().join(".obelus").join("todo.toml"))
         .expect("the notes");
     assert!(written.contains("!!wire the counts"), "{written}");
@@ -290,18 +295,24 @@ fn cutting_with_nothing_held_takes_the_note() {
     );
 }
 
-/// What the terminal pastes lands in the note, not in the file behind it.
+/// What the terminal pastes lands in the note, not in the file.
 ///
 /// Broken deliberately by sending every paste straight to the buffer: the
 /// notes are a whole screen of their own, and the reader's text went into a
 /// file they could not see.
+///
+/// The file is asked for by its place in the list rather than through
+/// `current_buffer`, because the notes *are* what is being read now: a
+/// document that is not a file answers `None` to everything that wants
+/// one, which is the whole point of the type.
 #[test]
 fn what_the_terminal_pastes_lands_in_the_note() {
     let scratch = tree("bracketed", THREE);
     let mut app = open(&scratch, 76, 18);
+    let file = obelus::buffer::DocumentId::new(0);
     let was = app
-        .current_buffer()
-        .expect("a buffer")
+        .file(file)
+        .expect("the file it was opened on")
         .text()
         .rope()
         .to_string();
@@ -314,9 +325,9 @@ fn what_the_terminal_pastes_lands_in_the_note() {
         "the paste did not reach the note:\n{dump}"
     );
     assert_eq!(
-        app.current_buffer().expect("a buffer").text().rope(),
+        app.file(file).expect("the file").text().rope(),
         &was,
-        "the paste went into the file behind the notes"
+        "the paste went into the file instead of the note"
     );
 }
 
@@ -480,7 +491,7 @@ fn the_foot_drops_a_key_that_would_do_nothing() {
     // The first note is about the project, so there is nowhere to go.
     let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
     assert!(!text.contains("go there"), "{text}");
-    assert!(text.contains("another") && text.contains("leave"), "{text}");
+    assert!(text.contains("another"), "{text}");
 
     press(&mut app, KeyCode::Down);
     let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
@@ -490,25 +501,57 @@ fn the_foot_drops_a_key_that_would_do_nothing() {
     );
 }
 
-/// `f1` shows every key, including the ones the foot left out.
+/// The foot points at no card, and takes back the room the pointer had.
+///
+/// Every other view with a foot ends it with `f1 keys`, because every other
+/// view with a foot is a layer and has a card behind it. Pointing at one
+/// from here would be a key that appears to do nothing -- and would cost
+/// the row the eight cells the pointer sits in, which is a hint.
+///
+/// Broken deliberately by calling `ui::foot` from `ui::todo` instead of
+/// `ui::foot_without_a_card`: the pointer comes back and this goes red.
 #[test]
-fn f1_shows_every_key_this_view_has() {
+fn the_foot_of_the_notes_points_at_no_card() {
+    let scratch = tree("no-card", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
+    let foot = text
+        .lines()
+        .find(|row| row.contains("another"))
+        .unwrap_or_else(|| panic!("no foot at all:\n{text}"));
+    assert!(
+        !foot.contains("keys"),
+        "the foot still points at a card:\n{foot}"
+    );
+}
+
+/// `f1` over the notes opens a file, the way it does from anywhere else.
+///
+/// It used to put up a card of every key here. A card is a layer's: a thing
+/// opened over the reader's work, which owns the keyboard while it is up.
+/// The notes are a document -- the reader is *in* them -- and a document
+/// that swallows `f1` leaves them with no way to open a file without
+/// leaving first.
+///
+/// Broken deliberately by giving `component::todo` an `F(1)` arm again: the
+/// picker never opens and this goes red.
+#[test]
+fn f1_over_the_notes_opens_a_file() {
     let scratch = tree("keys", THREE);
     let mut app = open(&scratch, 76, 18);
-    press(&mut app, KeyCode::F(1));
+    assert!(app.picker().is_none(), "something was already open");
 
-    let dump = support::render(&mut app, 76, 18);
-    let text = support::text_block(&dump);
-    assert!(text.contains("the keys here"), "no card:\n{dump}");
-    for word in ["move it up or down", "take the whole note away"] {
-        assert!(text.contains(word), "{word:?} is not on the card:\n{dump}");
-    }
-
-    press(&mut app, KeyCode::Esc);
-    assert!(app.notes().is_some(), "escape left the view, not the card");
+    support::press_function(&mut app, 1);
     assert!(
-        !support::text_block(&support::render(&mut app, 76, 18)).contains("the keys here"),
-        "the card stayed"
+        app.picker().is_some(),
+        "f1 did not open the file picker from the notes"
+    );
+
+    // And nothing that reads like a card of keys went up in its place.
+    let dump = support::render(&mut app, 76, 18);
+    assert!(
+        !support::text_block(&dump).contains("the keys here"),
+        "the card is still there:\n{dump}"
     );
 }
 
@@ -605,23 +648,15 @@ fn the_caret_is_on_the_cell_the_letter_goes_in() {
     );
 }
 
-/// Taking a whole note away is at the foot, not only on the card: backspace
-/// on its own is a letter here, so it is the one thing a reader will go
-/// looking for and not find.
+/// Taking a whole note away is at the foot: backspace on its own is a
+/// letter here, so it is the one thing a reader will go looking for and not
+/// find. There is nowhere else it could be said -- this view has no card.
 #[test]
 fn dropping_a_note_is_at_the_foot() {
     let scratch = tree("drop-foot", THREE);
     let mut app = open(&scratch, 76, 14);
     let text = support::text_block(&support::render(&mut app, 76, 14)).to_string();
     assert!(text.contains("drop"), "the foot does not say how:\n{text}");
-
-    // And the card says it at length, which is what a card is for.
-    press(&mut app, KeyCode::F(1));
-    let dump = support::render(&mut app, 76, 16);
-    assert!(
-        support::text_block(&dump).contains("take the whole note away"),
-        "the card only has the foot's word for it:\n{dump}"
-    );
 }
 
 /// A note too long for the row wraps, where the reader asked for wrapping.
@@ -1887,34 +1922,103 @@ fn down_lets_go_of_what_is_held_before_it_leaves_the_note() {
     );
 }
 
-/// The caret is put away while the list of every key is up.
+/// Typing is written down once the reader stops, not on every key.
 ///
-/// The card is drawn in the middle of the list, which is where a note's
-/// caret lives, so it blinked on the card -- claiming a box on a page that
-/// has none.
-///
-/// Broken deliberately by taking the `showing_keys` arm out of
-/// `todo::caret`: the caret comes back on the card and this goes red.
+/// Every other way the notes change is one act and is written the moment it
+/// happens. Typing is not one act, and it used to be written when the
+/// reader left the page -- there is no leaving a document, so the pause is
+/// the moment instead.
 #[test]
-fn the_caret_is_put_away_while_every_key_is_showing() {
-    let scratch = tree("keys-card", THREE);
-    let mut app = open(&scratch, 60, 16);
-    let dump = support::render(&mut app, 60, 16);
-    assert_ne!(
-        support::cursor_line(&dump),
-        "none",
-        "the note being written had no caret to begin with:\n{dump}"
+fn typing_is_written_down_once_the_reader_stops() {
+    let scratch = tree("settles", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let file = scratch.path().join(".obelus").join("todo.toml");
+
+    support::type_text(&mut app, "!!");
+    let at_once = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        !at_once.contains("!!wire the counts"),
+        "every keystroke wrote the file:\n{at_once}"
     );
 
-    support::press_function(&mut app, 1);
-    let dump = support::render(&mut app, 60, 16);
+    // The clock is what comes back for it, which is why it is kept awake.
+    // Asked after a frame, because that is where the question is answered.
+    support::lay_out(&mut app, 76, 18);
+    assert!(app.is_waking(), "nothing will come back to write the notes");
+    std::thread::sleep(std::time::Duration::from_millis(350));
+    app.handle(Event::Tick);
+    let after = std::fs::read_to_string(&file).expect("the notes");
     assert!(
-        support::text_block(&dump).contains("done"),
-        "the list of every key is not showing:\n{dump}"
+        after.contains("!!wire the counts"),
+        "the pause did not write the notes:\n{after}"
     );
-    assert_eq!(
-        support::cursor_line(&dump),
-        "none",
-        "the caret is still on the page the card covers:\n{dump}"
+    support::lay_out(&mut app, 76, 18);
+    assert!(!app.is_waking(), "the clock is still being kept awake");
+}
+
+/// And closing the document writes what the pause has not yet.
+///
+/// A second between typing and `ctrl+w` is the one moment the pause has not
+/// come. A note lives nowhere but the file.
+#[test]
+fn closing_the_notes_writes_what_was_typed() {
+    let scratch = tree("closes", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let file = scratch.path().join(".obelus").join("todo.toml");
+
+    support::type_text(&mut app, "??");
+    dispatch::dispatch(&mut app, Command::DocumentClose);
+
+    assert!(app.notes().is_none(), "the notes did not close");
+    let written = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        written.contains("??wire the counts"),
+        "closing lost what was typed:\n{written}"
+    );
+}
+
+/// And so does leaving obelus, for the same reason and without asking.
+///
+/// An unwritten buffer is a decision -- the reader's change, or the file on
+/// disk -- and there is no such decision here.
+#[test]
+fn leaving_obelus_writes_what_was_typed() {
+    let scratch = tree("leaves", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let file = scratch.path().join(".obelus").join("todo.toml");
+
+    support::type_text(&mut app, "~~");
+    app.request_quit();
+
+    let written = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        written.contains("~~wire the counts"),
+        "leaving lost what was typed:\n{written}"
+    );
+}
+
+/// The status row says which document this is, and how much is left in it.
+///
+/// A conversation carries no name on this row -- its identity is a header
+/// inside the region -- and the notes cannot do that: there is one of them
+/// and a header would be a row of the reader's screen spent on a constant.
+/// So the mark goes where a file's path goes, which is what tells it from a
+/// file at a glance, and the one number about it that changes goes where a
+/// file's cursor position goes.
+#[test]
+fn the_status_row_says_it_is_the_notes_and_what_is_left() {
+    let scratch = tree("status", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let dump = support::render(&mut app, 76, 18);
+    let rows = support::text_block(&dump);
+    let status = rows.lines().last().unwrap_or_default();
+
+    assert!(
+        status.contains("todo"),
+        "the row does not say which document this is:\n{dump}"
+    );
+    assert!(
+        status.contains("to come back to"),
+        "the row does not say how much is left:\n{dump}"
     );
 }

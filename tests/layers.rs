@@ -41,7 +41,6 @@ fn reading() -> App {
 fn open(app: &mut App, layer: Layer) {
     match layer {
         Layer::Counts => dispatch::dispatch(app, Command::CountLines),
-        Layer::Notes => dispatch::dispatch(app, Command::TodoOpen),
         Layer::Settings => dispatch::dispatch(app, Command::ConfigOpen),
         Layer::Picker => dispatch::dispatch(app, Command::DocumentList),
         Layer::Prompt => dispatch::dispatch(app, Command::GoLine),
@@ -212,8 +211,8 @@ fn a_key_goes_to_the_nearest_layer() {
         "the list did not get the key it was nearest to"
     );
     assert!(
-        app.layers().has(Layer::Notes),
-        "the page went away under the list"
+        app.notes().is_some(),
+        "the document the list opened over went away under it"
     );
 }
 
@@ -294,7 +293,7 @@ fn opening_anything_covers_the_question() {
 /// than from a key -- so what is asserted here is the rule.
 #[test]
 fn two_pages_are_never_open_at_once() {
-    let pages = [Layer::Counts, Layer::Notes, Layer::Settings];
+    let pages = [Layer::Counts, Layer::Settings];
     for first in pages {
         for second in pages {
             let mut app = reading();
@@ -323,18 +322,18 @@ fn two_pages_are_never_open_at_once() {
 #[test]
 fn a_list_opens_over_a_page_rather_than_instead_of_it() {
     let mut app = reading();
-    dispatch::dispatch(&mut app, Command::TodoOpen);
+    dispatch::dispatch(&mut app, Command::CountLines);
     dispatch::dispatch(&mut app, Command::DocumentList);
     assert_eq!(
         app.layers().furthest_first().collect::<Vec<_>>(),
-        [Layer::Notes, Layer::Picker],
+        [Layer::Counts, Layer::Picker],
         "the list did not open over the page"
     );
 
     press(&mut app, KeyCode::Esc);
     assert_eq!(
         app.layers().furthest_first().collect::<Vec<_>>(),
-        [Layer::Notes],
+        [Layer::Counts],
         "leaving the list took the page with it"
     );
     press(&mut app, KeyCode::Esc);

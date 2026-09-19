@@ -19,17 +19,16 @@
 //! still nothing riding on it. Nothing churned, and the conversation went
 //! in.
 
-use crate::{buffer::Buffer, conversation::Conversation};
+use crate::{buffer::Buffer, component::todo::TodoView, conversation::Conversation};
 
 /// One of the things the reader can be looking at.
+/// A buffer is what a slot in this list usually holds, so it is the one
+/// that should not be behind a pointer. The conversation is boxed because
+/// it was twice the size, and there are a handful of them against a
+/// reader's whole tree of files. `large_enum_variant` had to be silenced
+/// for that until the notes went in beside them: three variants of 440,
+/// 8 and 240 bytes is a spread clippy does not mind.
 #[derive(Debug)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "a buffer is what a slot in this list usually holds, so it is \
-              the one that should not be behind a pointer; the conversation \
-              is boxed because it was twice the size and there are a handful \
-              of them against a reader's whole tree of files"
-)]
 pub enum Document {
     /// A file, or a file as a commit had it.
     File(Buffer),
@@ -45,6 +44,17 @@ pub enum Document {
     /// every slot in the list would be that big: a reader with forty files
     /// open would pay for forty conversations they have not had.
     Chat(Box<Conversation>),
+    /// What this project means to come back to.
+    ///
+    /// A page over the editor until now, which made escape mean two things:
+    /// everywhere else it leaves whatever is *over* what is being read, and
+    /// there it closed the thing itself. It is somewhere the reader goes
+    /// and comes back to, which is what a document is.
+    ///
+    /// Not boxed. A conversation is twice a buffer and pays for a pointer;
+    /// this is 240 bytes against a buffer's 440, so it rides in the space
+    /// the list already spends.
+    Notes(TodoView),
 }
 
 impl Document {
@@ -61,7 +71,7 @@ impl Document {
     pub const fn file(&self) -> Option<&Buffer> {
         match self {
             Self::File(buffer) => Some(buffer),
-            Self::Chat(_) => None,
+            Self::Chat(_) | Self::Notes(_) => None,
         }
     }
 
@@ -70,7 +80,7 @@ impl Document {
     pub const fn file_mut(&mut self) -> Option<&mut Buffer> {
         match self {
             Self::File(buffer) => Some(buffer),
-            Self::Chat(_) => None,
+            Self::Chat(_) | Self::Notes(_) => None,
         }
     }
 
@@ -79,7 +89,7 @@ impl Document {
     pub fn chat(&self) -> Option<&Conversation> {
         match self {
             Self::Chat(talk) => Some(talk),
-            Self::File(_) => None,
+            Self::File(_) | Self::Notes(_) => None,
         }
     }
 
@@ -87,8 +97,32 @@ impl Document {
     pub fn chat_mut(&mut self) -> Option<&mut Conversation> {
         match self {
             Self::Chat(talk) => Some(talk),
-            Self::File(_) => None,
+            Self::File(_) | Self::Notes(_) => None,
         }
+    }
+
+    /// The notes, where this is them.
+    #[must_use]
+    pub const fn notes(&self) -> Option<&TodoView> {
+        match self {
+            Self::Notes(notes) => Some(notes),
+            Self::File(_) | Self::Chat(_) => None,
+        }
+    }
+
+    /// And to change them.
+    #[must_use]
+    pub const fn notes_mut(&mut self) -> Option<&mut TodoView> {
+        match self {
+            Self::Notes(notes) => Some(notes),
+            Self::File(_) | Self::Chat(_) => None,
+        }
+    }
+}
+
+impl From<TodoView> for Document {
+    fn from(notes: TodoView) -> Self {
+        Self::Notes(notes)
     }
 }
 

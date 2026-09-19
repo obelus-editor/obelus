@@ -128,8 +128,6 @@ pub struct TodoView {
     rows: Vec<Row>,
     /// Which row is selected and which is on top.
     window: Window,
-    /// Whether every key this view answers to is showing.
-    keys: bool,
     /// How wide a note's own text is, and whether it wraps there.
     ///
     /// Kept because the rows depend on it: a note of one long line is one
@@ -715,11 +713,6 @@ impl TodoView {
     }
 
     /// Whether the list of every key is showing.
-    #[must_use]
-    pub const fn showing_keys(&self) -> bool {
-        self.keys
-    }
-
     /// Which row the note being written starts on, for the caret.
     #[must_use]
     pub fn writing_at(&self) -> Option<usize> {
@@ -747,18 +740,10 @@ impl TodoView {
         let control = key.modifiers == KeyModifiers::CONTROL;
         match key.code {
             // The card first: a key that opens a thing closes that thing.
-            KeyCode::Esc if bare && self.keys => {
-                self.keys = false;
-                TodoOutcome::Consumed
-            }
             KeyCode::Esc if bare => {
                 self.keep();
                 self.rebuild();
                 TodoOutcome::Cancelled
-            }
-            KeyCode::F(1) if bare => {
-                self.keys = !self.keys;
-                TodoOutcome::Consumed
             }
 
             // One level in, and out. Taken from the box, which until now

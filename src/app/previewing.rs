@@ -225,7 +225,7 @@ impl App {
             // and the settings scroll with the keys and have never taken
             // the wheel. Saying so is the point: the next view added has to
             // answer here rather than being quietly left out.
-            Layer::Prompt | Layer::Notes | Layer::Settings => false,
+            Layer::Prompt | Layer::Settings => false,
         }
     }
 

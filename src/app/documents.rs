@@ -123,6 +123,40 @@ impl App {
         }
     }
 
+    /// The notes, as a row of the list of what is open.
+    ///
+    /// Called `todo` rather than `notes`, which is obelus's own word for it
+    /// in prose: `todo` is what the reader types into the palette, what
+    /// `alt+t` stands for, and what the file is called. The mark is the
+    /// command's, so the row and the row that opened it wear the same one.
+    fn notes_row(index: usize, notes: &crate::component::todo::TodoView) -> PickerItem {
+        let left = notes
+            .as_written()
+            .notes
+            .iter()
+            .filter(|note| !note.done)
+            .count();
+        PickerItem {
+            prose: false,
+            marker: None,
+            icon: icons::enabled().then(|| icons::for_command(crate::command::Command::TodoOpen)),
+            label: "todo".to_string(),
+            // How many are still to come back to, where a changed file puts
+            // how much it moved: it is the one number about this row that
+            // says whether it is worth opening.
+            detail: None,
+            trailing: (left > 0).then(|| left.to_string()),
+            changed: None,
+            value: PickerValue::Document(DocumentId::new(index)),
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            kind: None,
+            tab: None,
+        }
+    }
+
     /// Offers every file under the working directory.
     pub fn open_file_picker(&mut self) {
         self.open_files(Listing::All);
@@ -621,6 +655,7 @@ impl App {
                 Document::File(buffer) => {
                     Self::file_row(index, buffer, statuses, &self.working_directory)
                 }
+                Document::Notes(notes) => Self::notes_row(index, notes),
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::FullArea);
@@ -732,6 +767,26 @@ impl App {
 
     /// Stops showing one document, whichever the reader is on.
     pub(super) fn close(&mut self, id: DocumentId) {
+        // The notes, before the slot is emptied. Typing waits for the
+        // reader to stop before it is written, and closing a second after
+        // typing is the one moment that pause has not come -- so it is
+        // taken here. A note lives nowhere but the file.
+        if self
+            .document(id)
+            .is_some_and(|document| document.notes().is_some())
+        {
+            if let Some(todo) = self
+                .document(id)
+                .and_then(Document::notes)
+                .map(crate::component::todo::TodoView::as_written)
+            {
+                self.notes_settling = None;
+                self.save_notes(&todo);
+            }
+            if let Some(watcher) = self.watcher.as_mut() {
+                watcher.unwatch(&crate::todo::path(&self.working_directory));
+            }
+        }
         let Some(document) = self.documents.get_mut(id.get()).and_then(Option::take) else {
             return;
         };

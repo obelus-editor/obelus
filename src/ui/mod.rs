@@ -199,7 +199,6 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
         // which is the row it will be read in. The same answer the
         // conversation gives, for the same reason: what is typed is a
         // paragraph, and a paragraph does not fit on the status bar.
-        Some(Layer::Notes) => return todo::caret(regions.editor, app.notes()?),
         // Nothing is typed into the counts, so there is no caret in them:
         // what marks where the keys are going is the row's background, and
         // a caret as well would be two marks for one fact. Without this the
@@ -213,6 +212,10 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
             // a paragraph does not fit on one row.
             if let Some(chat) = app.chat() {
                 return chat::ChatView::caret(regions.editor, chat, app.card());
+            }
+            // And the notes, which are written into the same way.
+            if let Some(notes) = app.notes() {
+                return todo::caret(regions.editor, notes);
             }
         }
     }
@@ -262,23 +265,27 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // every view: what is above it changes and the boundary does not.
     rule(cells, regions.edge, app.theme());
 
-    // The document being read, under everything. Which is a file or a
-    // conversation: both fill the editor region, and neither is over the
-    // other -- switching between them is switching documents, not opening
-    // something. A file being shown some other way is shown that way: the
-    // editor view draws the file's own bytes, which in that mode is not
-    // what is on screen.
-    match chat::ChatView::new(app) {
-        Some(view) => view.render(regions.editor, cells),
-        None => match app.rendering() {
-            Some(rows) => {
-                let top = app
-                    .current_buffer()
-                    .map_or(0, |buffer| buffer.viewport().top.get());
-                reading::draw(cells, regions.editor, rows, top, app.theme());
-            }
-            None => editor::EditorView::new(app).render(regions.editor, cells),
-        },
+    // The document being read, under everything. A file, a conversation or
+    // the notes: each fills the editor region, and none is over another --
+    // switching between them is switching documents, not opening something.
+    // A file being shown some other way is shown that way: the editor view
+    // draws the file's own bytes, which in that mode is not what is on
+    // screen.
+    if let Some(view) = todo::TodoUi::new(app) {
+        view.render(regions.editor, cells);
+    } else {
+        match chat::ChatView::new(app) {
+            Some(view) => view.render(regions.editor, cells),
+            None => match app.rendering() {
+                Some(rows) => {
+                    let top = app
+                        .current_buffer()
+                        .map_or(0, |buffer| buffer.viewport().top.get());
+                    reading::draw(cells, regions.editor, rows, top, app.theme());
+                }
+                None => editor::EditorView::new(app).render(regions.editor, cells),
+            },
+        }
     }
     // Nothing open and nothing to open: the one moment a reader needs
     // telling what the keys are. Not while something has taken the region,
@@ -294,15 +301,6 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // thing a key reaches.
     for layer in layers.furthest_first() {
         match layer {
-            // The notes and the settings take the region for the same
-            // reason: each is its own screen, and a list of what to come
-            // back to with the code behind it would be two things on one
-            // screen with no way to tell which a key would reach.
-            Layer::Notes => {
-                if let Some(view) = todo::TodoUi::new(app) {
-                    view.render(regions.editor, cells);
-                }
-            }
             Layer::Settings => {
                 if let Some(view) = settings::SettingsView::new(app) {
                     view.render(regions.editor, cells);
@@ -1047,6 +1045,23 @@ pub fn footed(area: Rect, hints: &[Hint]) -> Rect {
 /// right-hand end saying there are more. At the foot rather than beside a
 /// title, because a key needs a word and words need room.
 pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
+    row_of_keys(cells, area, hints, theme, true);
+}
+
+/// The same row, for a view with no card behind it.
+///
+/// A card of every key is a layer's: something opened over the reader's
+/// work, which owns the keyboard while it is up and has to be able to say
+/// so. A document is where the reader already was, `f1` over one is
+/// whatever `f1` means everywhere, and this row is the whole of what the
+/// view says about itself -- so it points at nothing, and gets the width
+/// the pointer would have taken.
+pub fn foot_without_a_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
+    row_of_keys(cells, area, hints, theme, false);
+}
+
+/// Draws that row, with or without the pointer at the end of it.
+fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme, card: bool) {
     if hints.is_empty() || area.height < FOOT_ROWS {
         return;
     }
@@ -1076,7 +1091,7 @@ pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
     // keys would be a foot that hides the thing it exists to point at.
     let all = format!("{} keys", keys_chord().label());
     let width = u16::try_from(text_width(&all)).unwrap_or(0);
-    let edge = match area.width.checked_sub(width + 2) {
+    let edge = match area.width.checked_sub(width + 2).filter(|_| card) {
         Some(offset) => {
             write(
                 cells,

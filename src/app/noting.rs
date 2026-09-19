@@ -21,10 +21,30 @@ use crate::{
 };
 
 impl App {
-    /// The notes, while they are showing.
+    /// The notes, while the reader is in them.
+    ///
+    /// Looked up in the list of what is open rather than held beside it:
+    /// the notes are a document, so there is nowhere else for them to be.
     #[must_use]
-    pub const fn notes(&self) -> Option<&TodoView> {
-        self.notes.as_ref()
+    pub fn notes(&self) -> Option<&TodoView> {
+        self.document(self.current?)?.notes()
+    }
+
+    /// And to change them.
+    pub fn notes_mut(&mut self) -> Option<&mut TodoView> {
+        let id = self.current?;
+        self.document_mut(id)?.notes_mut()
+    }
+
+    /// Which document is the notes, if one of them is.
+    ///
+    /// There is one at most, the way there is one file per path: asking for
+    /// the notes a second time goes back to them rather than reading the
+    /// file again over the reader's place in it.
+    pub(super) fn notes_document(&self) -> Option<DocumentId> {
+        (0..self.documents.len())
+            .map(DocumentId::new)
+            .find(|id| self.document(*id).is_some_and(|it| it.notes().is_some()))
     }
 
     /// Opens what the tree means to come back to.
@@ -38,13 +58,23 @@ impl App {
     /// place in the list would still be lost for nothing. `add_todo` checks,
     /// which is why.
     pub fn open_todo(&mut self) {
-        // What the reader is in, before it is covered: a conversation about
-        // a note is how the list knows where to stand.
+        // Already open: go back to it. Reading the file again would put the
+        // reader at the top of a list they had walked into, and lose
+        // whatever they were part way through writing.
+        if let Some(id) = self.notes_document() {
+            if self.current != Some(id) {
+                let from = self.here();
+                self.record(from);
+            }
+            self.go_to_document(id);
+            return;
+        }
+        // What the reader is in, before they are somewhere else: a
+        // conversation about a note is how the list knows where to stand.
         let about = match self.conversation().map(|talk| talk.topic.clone()) {
             Some(crate::conversation::Topic::Note(note)) => Some(note),
             Some(crate::conversation::Topic::Loose) | None => None,
         };
-        self.make_room(Room::Region);
         let todo = Todo::read(&self.working_directory);
         // Names given to notes that had none go back to the file now, not
         // the next time something happens to write it: a name minted and
@@ -58,25 +88,63 @@ impl App {
         // depend on both, and the view has to be laid out before anything
         // asks it how many rows it has.
         let laid = self.notes_laid_out();
-        self.notes = Some(TodoView::new(todo, where_now, laid));
-        // Heard about for as long as the page is showing, which is the
-        // window that matters: obelus writes the whole file from what it
-        // holds, so a change made while the reader has the list open is a
+        let mut view = TodoView::new(todo, where_now, laid);
+        // Opened from a conversation: standing on the note it came out of,
+        // which is the return leg of that key. A note that has since been
+        // taken away simply is not found, and the list opens at the top --
+        // which is where a list with nothing to return to puts a reader.
+        if let Some(note) = about {
+            view.focus(&note);
+        }
+        let from = self.here();
+        self.record(from);
+        self.documents
+            .push(Some(crate::document::Document::from(view)));
+        let id = DocumentId::new(self.documents.len() - 1);
+        self.go_to_document(id);
+        // Heard about for as long as it is open, which as a document is
+        // until it is closed: obelus writes the whole file from what it
+        // holds, so a change made by somebody else while it is open is a
         // change the next save would put back the way it was.
         if let Some(watcher) = self.watcher.as_mut()
             && let Err(error) = watcher.watch(&crate::todo::path(&self.working_directory))
         {
             tracing::debug!(%error, "not watching what the tree means to come back to");
         }
-        // Opened from a conversation: standing on the note it came out of,
-        // which is the return leg of that key. A note that has since been
-        // taken away simply is not found, and the list opens at the top --
-        // which is where a list with nothing to return to puts a reader.
-        if let Some(note) = about
-            && let Some(notes) = self.notes.as_mut()
-        {
-            notes.focus(&note);
+    }
+
+    /// Writes the notes down once the reader has stopped typing in them.
+    ///
+    /// Called from the clock, which is awake for as long as this is
+    /// waiting. Three hundred milliseconds, the same pause a slow grammar
+    /// waits out: what it is for is the same, which is a burst of keys
+    /// costing one piece of work rather than one each.
+    pub(super) fn settle_notes(&mut self) {
+        let Some(since) = self.notes_settling else {
+            return;
+        };
+        if since.elapsed() < Self::SETTLES_AFTER {
+            return;
         }
+        self.notes_settling = None;
+        self.write_the_notes();
+    }
+
+    /// Writes what the notes hold, if the reader has them open.
+    ///
+    /// The one place the three moments share: the pause, closing the
+    /// document, and leaving obelus. A note is only ever in the file, so
+    /// the pause is what makes the other two rare rather than what makes
+    /// them unnecessary.
+    pub(super) fn write_the_notes(&mut self) {
+        let Some(todo) = self
+            .notes()
+            .map(crate::component::todo::TodoView::as_written)
+        else {
+            return;
+        };
+        self.notes_settling = None;
+        self.save_notes(&todo);
     }
 
     /// Where each note points now, which is a question for git and the disk.
@@ -102,7 +170,7 @@ impl App {
     /// Only while the page is showing: with it shut there is nothing to
     /// keep in step, and the next open reads the file anyway.
     pub(super) fn reread_notes(&mut self) {
-        if self.notes.is_none() {
+        if self.notes().is_none() {
             return;
         }
         let todo = Todo::read(&self.working_directory);
@@ -110,7 +178,7 @@ impl App {
             self.save_notes(&todo);
         }
         let where_now = self.where_the_notes_point(&todo);
-        if let Some(notes) = self.notes.as_mut() {
+        if let Some(notes) = self.notes_mut() {
             notes.reread(todo, where_now);
         }
     }
@@ -124,10 +192,10 @@ impl App {
     /// ever sees it in.
     pub fn add_todo(&mut self) {
         let at = self.here_now();
-        if self.notes.is_none() {
+        if self.notes().is_none() {
             self.open_todo();
         }
-        if let Some(notes) = self.notes.as_mut() {
+        if let Some(notes) = self.notes_mut() {
             notes.write_new(at);
         }
     }
@@ -141,7 +209,7 @@ impl App {
     /// Nothing while the notes themselves are showing: there is no line
     /// under a list, and a note made from here is about the project.
     fn here_now(&self) -> Option<At> {
-        if self.notes.is_some() {
+        if self.notes().is_some() {
             return None;
         }
         let buffer = self.current_buffer()?;
@@ -178,7 +246,7 @@ impl App {
     /// the reader was looking at.
     pub(super) fn paste_into_notes(&mut self, what: &str) {
         let laid = self.notes_laid_out();
-        let Some(notes) = self.notes.as_mut() else {
+        let Some(notes) = self.notes_mut() else {
             return;
         };
         notes.lay_out(laid.0, laid.1);
@@ -261,7 +329,7 @@ impl App {
         self.save_notes(&todo);
         // The page, where it is open: a reader looking at their notes while
         // an agent writes one should watch it arrive.
-        if self.notes.is_some() {
+        if self.notes().is_some() {
             self.reread_notes();
         }
         said
@@ -320,16 +388,32 @@ impl App {
     /// Whatever a key means to the notes, if they are showing.
     pub(super) fn notes_key(&mut self, key: &KeyEvent) -> bool {
         let laid = self.notes_laid_out();
-        let Some(notes) = self.notes.as_mut() else {
+        // Read before the view is borrowed: a page of the list is measured
+        // from the region it is drawn in, and the region belongs to the
+        // application rather than to the notes.
+        let area = self.editor_area;
+        let Some(notes) = self.notes_mut() else {
             return false;
         };
         notes.lay_out(laid.0, laid.1);
         let hints = crate::ui::todo::hints(notes);
-        let list = crate::ui::todo::list_region(self.editor_area, &hints);
+        let list = crate::ui::todo::list_region(area, &hints);
         let outcome = notes.handle_key(key, list.height);
+        // Typing, which is the one change that is not one act: every other
+        // way the notes change is written the moment it happens, and this
+        // one is written when the reader stops. Asked of whether a note is
+        // open to be typed in rather than of the key, because a key that
+        // moved the caret inside one is a key that may have been part of
+        // typing -- and one write after a pause costs nothing.
+        let typing = notes.writing().is_some();
         match outcome {
             TodoOutcome::Ignored => false,
-            TodoOutcome::Consumed => true,
+            TodoOutcome::Consumed => {
+                if typing {
+                    self.notes_settling = Some(std::time::Instant::now());
+                }
+                true
+            }
             // Nothing is saved: a copy takes a note away from the page and
             // changes nothing on it.
             TodoOutcome::Copy { text, what } => {
@@ -352,6 +436,7 @@ impl App {
             }
             TodoOutcome::Changed => {
                 let todo = notes.as_written();
+                self.notes_settling = None;
                 self.save_notes(&todo);
                 true
             }
@@ -366,14 +451,24 @@ impl App {
                 self.talk_about(&note);
                 true
             }
+            // Escape, which used to close the page. A document is not
+            // closed by escape: escape leaves whatever is *over* what is
+            // being read, and nothing is over this. What it does here is
+            // write what has been typed, which is what leaving used to be
+            // the moment for.
             TodoOutcome::Cancelled => {
-                self.leave(Layer::Notes);
+                let todo = notes.as_written();
+                self.save_notes(&todo);
                 true
             }
             TodoOutcome::Go(path, line) => {
+                // The notes stay open. They were closed here while they
+                // were a page, because a page is what the reader was in
+                // and they are going somewhere else -- but a document they
+                // came from is a document they come back to, standing on
+                // the note that sent them.
                 let todo = notes.as_written();
                 self.save_notes(&todo);
-                self.notes = None;
                 self.go_to_note(&path, line);
                 true
             }

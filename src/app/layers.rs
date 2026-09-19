@@ -32,7 +32,6 @@ pub enum Layer {
     /// How much code is here.
     Counts,
     /// What the tree means to come back to.
-    Notes,
     /// The settings, the reader's or the tree's.
     Settings,
     /// A list with a query over it: the palette, the files, a search, a
@@ -51,13 +50,7 @@ pub enum Layer {
 /// the notes and the settings -- cannot be open together, so their order among
 /// themselves is never observed; it is declared anyway, because an order nobody
 /// wrote down is an order every reader of the code guesses at.
-pub const STACK: [Layer; 5] = [
-    Layer::Counts,
-    Layer::Notes,
-    Layer::Settings,
-    Layer::Picker,
-    Layer::Prompt,
-];
+pub const STACK: [Layer; 4] = [Layer::Counts, Layer::Settings, Layer::Picker, Layer::Prompt];
 
 /// How much of the screen a view takes.
 ///
@@ -104,7 +97,7 @@ impl Layer {
     pub const fn room(self) -> Room {
         match self {
             Self::Counts => Room::Screen,
-            Self::Notes | Self::Settings => Room::Region,
+            Self::Settings => Room::Region,
             Self::Picker => Room::Band,
             Self::Prompt => Room::Row,
         }
@@ -288,7 +281,7 @@ mod tests {
     #[test]
     fn only_a_row_leaves_the_global_keys_alone() {
         assert_eq!(Layer::Prompt.context(), Context::Normal);
-        for layer in [Layer::Counts, Layer::Notes, Layer::Settings, Layer::Picker] {
+        for layer in [Layer::Counts, Layer::Settings, Layer::Picker] {
             assert_eq!(layer.context(), Context::Dialog, "{layer:?}");
         }
     }

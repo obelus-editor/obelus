@@ -62,14 +62,17 @@ fn dragging_in_a_note_selects_in_it() {
         Some("world"),
         "the drag did not hold the word it crossed"
     );
+    // The file by its place in the list, not through `current_buffer`: the
+    // notes are the document being read, and a document that is not a file
+    // answers `None` to everything that wants one.
     assert_eq!(
-        app.current_buffer()
-            .expect("a file")
+        app.file(obelus::buffer::DocumentId::new(0))
+            .expect("the file it was opened on")
             .text()
             .rope()
             .to_string(),
         "fn main() {}\n",
-        "the drag reached the file behind the page"
+        "the drag reached the file instead of the note"
     );
 }
 

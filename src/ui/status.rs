@@ -42,6 +42,8 @@ pub struct StatusView<'a> {
     settings: Option<&'a crate::component::settings::Settings>,
     /// And when a question is being asked, the row is the question.
     prompt: Option<&'a crate::component::prompt::Prompt>,
+    /// The notes, while they are what is being read.
+    notes: Option<&'a crate::component::todo::TodoView>,
     /// Which of them is nearest the reader, and so whose row this is.
     ///
     /// The same question the caret asks. Three of these can be on screen
@@ -67,6 +69,7 @@ impl<'a> StatusView<'a> {
             picker: app.picker(),
             settings: app.settings(),
             prompt: app.prompt(),
+            notes: app.notes(),
             nearest: app.layers().nearest(),
             theme: app.theme(),
             working_directory: app.working_directory(),
@@ -121,11 +124,13 @@ impl Widget for StatusView<'_> {
                     self.render_filter(settings, area, cells, style);
                 }
             }
-            // Nothing over the file, or something that has no use for this
-            // row: the notes and the counts are read in the region above
-            // it, and what the row says is what is being read.
+            // Nothing over what is being read, so the row is about that.
+            // The counts are still the exception: they take the row as
+            // well as the region, which is what `Room::Screen` says.
             _ => {
-                if let Some(buffer) = self.buffer {
+                if let Some(notes) = self.notes {
+                    self.render_notes(notes, area, cells, style);
+                } else if let Some(buffer) = self.buffer {
                     self.render_file(buffer, area, cells, style);
                 }
             }
@@ -502,6 +507,50 @@ impl StatusView<'_> {
             style,
             &marked,
         );
+    }
+
+    /// The notes, where a file would have its path.
+    ///
+    /// The mark first, which is what tells this from a file at a glance: a
+    /// lowercase word where a path usually goes reads as a file with a
+    /// short name. It is the command's own mark, so the row the reader
+    /// opened this from and the row they are in now wear the same one.
+    ///
+    /// And one number, where a file puts the cursor's place: how many are
+    /// still to come back to. It is the only thing about this document that
+    /// changes, and it is the answer to whether it is worth switching to.
+    fn render_notes(
+        &self,
+        notes: &crate::component::todo::TodoView,
+        area: Rect,
+        cells: &mut CellBuffer,
+        style: Style,
+    ) {
+        let name = match icons::enabled() {
+            true => format!(
+                "{}  todo",
+                icons::for_command(crate::command::Command::TodoOpen)
+            ),
+            false => "todo".to_string(),
+        };
+        write(cells, area.x + 1, area.y, &name, style);
+
+        let left = notes
+            .as_written()
+            .notes
+            .iter()
+            .filter(|note| !note.done)
+            .count();
+        if left == 0 {
+            return;
+        }
+        let said = format!("{left} to come back to");
+        if let Ok(offset) =
+            u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
+            && area.x + offset > area.x + 1 + u16::try_from(text_width(&name)).unwrap_or(0)
+        {
+            write(cells, area.x + offset, area.y, &said, style);
+        }
     }
 
     fn render_prompt(&self, picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style) {
