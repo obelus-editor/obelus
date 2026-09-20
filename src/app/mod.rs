@@ -124,11 +124,11 @@ const EVENT_DRAIN_LIMIT: usize = 256;
 /// remembered as much as a text does: otherwise every keystroke goes and
 /// finds out again that there is nothing to find.
 #[derive(Debug)]
-pub(super) struct Committed {
+pub(crate) struct Committed {
     /// Which file, and which commit it is being compared with.
-    pub(super) of: (PathBuf, Option<gix::ObjectId>),
+    pub(crate) of: (PathBuf, Option<gix::ObjectId>),
     /// What that commit had in it.
-    pub(super) text: Option<String>,
+    pub(crate) text: Option<String>,
 }
 
 /// Everything obelus is currently showing or remembering.
@@ -552,12 +552,12 @@ pub struct App {
 /// server something needs those two borrows apart, and a method on `App`
 /// cannot give it that -- so the handful of places that do reach the list
 /// through this rather than writing the four lines out again.
-pub(super) fn file_in(documents: &[Option<Document>], id: DocumentId) -> Option<&Buffer> {
+pub(crate) fn file_in(documents: &[Option<Document>], id: DocumentId) -> Option<&Buffer> {
     documents.get(id.get())?.as_ref()?.file()
 }
 
 /// The same, to change.
-pub(super) fn file_in_mut(
+pub(crate) fn file_in_mut(
     documents: &mut [Option<Document>],
     id: DocumentId,
 ) -> Option<&mut Buffer> {
@@ -769,7 +769,7 @@ impl App {
     /// that all say the same thing: a note about a conversation nobody is
     /// in goes nowhere, and every one of them was written when there was
     /// one conversation and it was always there.
-    pub(super) fn in_transcript(&mut self, what: impl FnOnce(&mut crate::component::chat::Chat)) {
+    pub(crate) fn in_transcript(&mut self, what: impl FnOnce(&mut crate::component::chat::Chat)) {
         if let Some(talk) = self.conversation_mut() {
             what(&mut talk.chat);
         }
@@ -792,12 +792,12 @@ impl App {
     /// is the document the reader is on, which is one fact in one place --
     /// and a `showing_chat` beside a conversation that exists was two.
     #[must_use]
-    pub(super) fn conversation(&self) -> Option<&crate::conversation::Conversation> {
+    pub(crate) fn conversation(&self) -> Option<&crate::conversation::Conversation> {
         self.document(self.current?)?.chat()
     }
 
     /// The same, to change.
-    pub(super) fn conversation_mut(&mut self) -> Option<&mut crate::conversation::Conversation> {
+    pub(crate) fn conversation_mut(&mut self) -> Option<&mut crate::conversation::Conversation> {
         self.document_mut(self.current?)?.chat_mut()
     }
 
@@ -1160,7 +1160,7 @@ impl App {
     /// Everything open rather than what is on screen: a tree left behind on
     /// a document nobody is looking at would keep the ticker awake for the
     /// rest of the session.
-    pub(super) fn settle_syntax(&mut self) {
+    pub(crate) fn settle_syntax(&mut self) {
         // Nothing else has to be told: the text did not move, only what
         // obelus knows about it, so everything keyed on the version stays
         // keyed on the version it already had.
@@ -1196,7 +1196,7 @@ impl App {
     /// conversation used to put a file list on top of it, which then took
     /// two escapes to leave and gave no way to tell which of the two a key
     /// would reach.
-    pub(super) fn context(&self) -> Context {
+    pub(crate) fn context(&self) -> Context {
         // A list whose rows are open files is the list of open files, and
         // that one has a command of its own.
         if self.selected_document().is_some() {
@@ -1241,7 +1241,7 @@ impl App {
     /// allow two pages at once. The rule is that a view covers what shares
     /// its room, which is [`Room::covers`] and is declared beside the view
     /// rather than here.
-    pub(super) fn make_room(&mut self, room: layers::Room) {
+    pub(crate) fn make_room(&mut self, room: layers::Room) {
         for layer in self.layers().nearest_first() {
             if room.covers(layer.room()) {
                 self.leave(layer);
@@ -1255,7 +1255,7 @@ impl App {
     /// and not the other: the notes are written down however the reader
     /// leaves them, and a list that was an agent's question is answered on
     /// the way out however it goes.
-    pub(super) fn leave(&mut self, layer: Layer) {
+    pub(crate) fn leave(&mut self, layer: Layer) {
         match layer {
             Layer::Picker => {
                 self.picker = None;
@@ -2224,27 +2224,27 @@ impl App {
 
 /// The pointer, standing still.
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Resting {
+pub(crate) struct Resting {
     /// Which cell of the screen.
-    pub(super) x: u16,
-    pub(super) y: u16,
+    pub(crate) x: u16,
+    pub(crate) y: u16,
     /// When it arrived there.
-    pub(super) since: std::time::Instant,
+    pub(crate) since: std::time::Instant,
     /// Whether this rest has asked what is under it.
-    pub(super) asked: bool,
+    pub(crate) asked: bool,
 }
 
 /// A document that has been changed, waiting to be asked about.
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Settling {
+pub(crate) struct Settling {
     /// Which document.
-    pub(super) buffer: DocumentId,
+    pub(crate) buffer: DocumentId,
     /// When it last changed.
-    pub(super) since: std::time::Instant,
+    pub(crate) since: std::time::Instant,
 }
 
 /// A path as it should be read: relative to the root when it lies under it.
-pub(super) fn relative(path: &Path, root: &Path) -> String {
+pub(crate) fn relative(path: &Path, root: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .display()

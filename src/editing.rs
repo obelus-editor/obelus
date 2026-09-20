@@ -55,7 +55,7 @@ pub struct Cursor {
     /// wrong place: the column would have been clamped on the way through and
     /// the original never recovered. Within a *row* rather than within a line,
     /// because with wrapping a row is what moving up and down steps over.
-    pub(crate) remembered_cell: DisplayColumn,
+    pub remembered_cell: DisplayColumn,
 }
 
 impl Cursor {
@@ -365,7 +365,7 @@ fn first_written(text: &Text, line: LineNumber, first: CharColumn, end: CharColu
 }
 
 /// Whether a character is part of a word rather than between words.
-pub(crate) fn wordish(character: char) -> bool {
+pub fn wordish(character: char) -> bool {
     character.is_alphanumeric() || character == '_'
 }
 
@@ -375,7 +375,7 @@ pub(crate) fn wordish(character: char) -> bool {
 /// about the line rather than the selection, the word motions are about
 /// words, and up and down carry on from the caret because a selection has
 /// no top or bottom end that a reader is pointing at.
-pub(crate) fn end_of(span: Span, motion: Motion) -> Option<(LineNumber, CharColumn)> {
+pub fn end_of(span: Span, motion: Motion) -> Option<(LineNumber, CharColumn)> {
     match motion {
         Motion::Left => Some((span.line, span.column)),
         Motion::Right => Some((span.end_line, span.end_column)),
@@ -404,7 +404,7 @@ fn characters(text: &Text, line: LineNumber) -> Vec<char> {
 
 /// The start of the word to the left, stepping onto the line above where
 /// there is nothing to the left on this one.
-pub(crate) fn word_left(
+pub fn word_left(
     text: &Text,
     folds: &dyn Hides,
     mut line: LineNumber,
@@ -439,7 +439,7 @@ pub(crate) fn word_left(
 }
 
 /// Past the end of the word to the right, stepping onto the line below.
-pub(crate) fn word_right(
+pub fn word_right(
     text: &Text,
     folds: &dyn Hides,
     mut line: LineNumber,
@@ -500,7 +500,7 @@ fn remember(text: &Text, cursor: &mut Cursor, width: u16) {
 /// A modifier obelus has no meaning for disqualifies the key: `ctrl+left` is a
 /// word motion it does not have yet, and treating it as a plain left would be
 /// a wrong answer rather than a missing one.
-pub(crate) fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
+pub fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
     // Judged the same way the key table judges, so a key means the same thing
     // in both places or nothing in both places.
     let modifiers = crate::keymap::modifiers_of(key)?;
@@ -559,7 +559,7 @@ pub(crate) fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
 /// crossterm reports already has it applied. Every other modifier is
 /// somebody else's -- a `ctrl` chord is a command, and typing one would put
 /// a character in where the reader asked for an action.
-pub(crate) fn typing_for(key: &KeyEvent) -> Option<Typing> {
+pub fn typing_for(key: &KeyEvent) -> Option<Typing> {
     let modifiers = crate::keymap::modifiers_of(key)?;
     // The one pair of `ctrl` chords that type rather than command: they
     // take out a word, which is the pair of `ctrl` with the arrows moving
