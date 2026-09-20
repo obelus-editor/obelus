@@ -220,6 +220,12 @@ tokio = { version = "1.53.1", default-features = false, features = [
     "net",
     "process",
     "io-util",
+    # `tokio::sync::mpsc`, which the watcher's debounce and the language
+    # server's reader both use. It compiled without being named here only
+    # because reqwest, rmcp and axum each ask for it and cargo unifies the
+    # three; nothing obelus declares implies it, so a tree without those
+    # three -- which is what the watcher alone is -- would not build.
+    "sync",
     "time",
     "macros",
 ] }

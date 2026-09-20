@@ -53,7 +53,48 @@ pub const SERVERS: &str = "lsp";
 /// with it.
 #[must_use]
 pub fn is_server(target: &str) -> bool {
-    target == "obelus::lsp" || target.starts_with("obelus::lsp::")
+    // Two spellings because a module path names the crate first, and the
+    // reading of a language server is its own crate: `obelus::lsp::client`
+    // while obelus was one crate, `obelus_lsp::client` now that it is
+    // several. Matching one of them and not the other is silent -- the
+    // servers' log is simply empty, and the handshake it should have held
+    // is in obelus's own log instead.
+    ["obelus::lsp", "obelus_lsp"].iter().any(|name| {
+        target == *name || target.strip_prefix(name).is_some_and(|rest| rest.starts_with("::"))
+    })
+}
+
+/// The crates obelus is, as `tracing` spells them.
+///
+/// A target is a module path and its first segment is the crate, and a
+/// filter directive matches whole segments -- so `obelus` does not cover
+/// `obelus_lsp`, and a crate missing from this list writes nothing above
+/// `warn`. That is the failure this list exists to prevent, and it is one
+/// nothing reports: the log is not empty, it is just missing the half of
+/// obelus that was left out of it.
+///
+/// `ob` is the binary rather than a library: the lines main writes -- what
+/// started, and that it left -- carry the target of the crate the `ob`
+/// target is compiled as.
+pub const OURS: &[&str] = &["obelus", "ob"];
+
+/// What is logged when `RUST_LOG` says nothing.
+///
+/// `tokei=off` because counting a tree warns once per file whose extension
+/// it does not know -- `Cargo.lock` alone does it on this repository --
+/// and that is a fact about the tree rather than anything obelus has to
+/// say about itself. A line per unrecognised file would bury the dozen
+/// obelus writes, which is the thing this log is for.
+fn ours_at_info() -> EnvFilter {
+    let mut filter = EnvFilter::new("warn,tokei=off");
+    for name in OURS {
+        filter = filter.add_directive(
+            format!("{name}=info")
+                .parse()
+                .expect("a crate name and a level are a directive"),
+        );
+    }
+    filter
 }
 
 /// Installs the file subscriber and returns its flush guards.
@@ -71,17 +112,7 @@ pub fn install() -> Option<(WorkerGuard, WorkerGuard)> {
     let (ours, kept) = writer(&directory, OBELUS)?;
     let (theirs, also_kept) = writer(&directory, SERVERS)?;
 
-    // `ob` as well as `obelus`: the binary is its own crate, so the lines
-    // main writes -- what started, and that it left -- carry that target
-    // and were filtered out of their own log.
-    //
-    // `tokei=off` because counting a tree warns once per file whose
-    // extension it does not know -- `Cargo.lock` alone does it on this
-    // repository -- and that is a fact about the tree rather than anything
-    // obelus has to say about itself. A line per unrecognised file would
-    // bury the dozen obelus writes, which is the thing this log is for.
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("warn,obelus=info,ob=info,tokei=off"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| ours_at_info());
 
     // Two layers over one registry, each taking the events the other does
     // not: the split is by target, so an event goes to exactly one file and
@@ -367,6 +398,29 @@ mod tests {
         assert!(!super::is_server("obelus"));
         // A module whose name starts the same way and is not it.
         assert!(!super::is_server("obelus::lspish"));
+        // The same question once obelus is a workspace and the crate is
+        // named in the target rather than a module of one crate.
+        assert!(super::is_server("obelus_lsp"));
+        assert!(super::is_server("obelus_lsp::client"));
+        assert!(!super::is_server("obelus_lspish"));
+        assert!(!super::is_server("obelus_app::semantics"));
+    }
+
+    /// The list every crate of the workspace has to be on, and the filter
+    /// built from it. A crate left off logs nothing above `warn` and says
+    /// nothing about having been left off, so what is pinned here is the
+    /// spelling: `tracing` sees the name a module path uses, which is the
+    /// one with underscores, and a directive written with the hyphen of the
+    /// package name would silently match nothing.
+    #[test]
+    fn every_crate_of_obelus_is_named_the_way_a_target_is() {
+        for name in super::OURS {
+            assert!(
+                !name.contains('-'),
+                "{name} is a package name; a target uses underscores"
+            );
+        }
+        let _ = super::ours_at_info();
     }
 
     use std::{fs, time::Duration};
