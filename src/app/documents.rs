@@ -311,7 +311,7 @@ impl App {
         let Some(sender) = self.events.clone() else {
             return;
         };
-        files::spawn_walk(
+        crate::search::spawn_walk(
             &self.working_directory,
             self.walk_generation.claim(mine),
             self.config().ignored_files,

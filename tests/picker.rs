@@ -900,12 +900,7 @@ fn the_walk_offers_the_ignored_files_only_when_asked() {
         for _ in 0..generation {
             latest.next();
         }
-        obelus::component::picker::files::spawn_walk(
-            scratch.path(),
-            latest.claim(generation),
-            ignored,
-            sender,
-        );
+        obelus::search::spawn_walk(scratch.path(), latest.claim(generation), ignored, sender);
         let mut names = Vec::new();
         while let Ok(Event::FilesFound { paths, .. }) = events.recv() {
             names.extend(paths.into_iter().map(|path| path.display().to_string()));
@@ -3831,7 +3826,7 @@ fn a_walk_nobody_wants_stops() {
     let latest = Latest::default();
     let mine = latest.next();
     let (sender, events) = std::sync::mpsc::channel();
-    files::spawn_walk(scratch.path(), latest.claim(mine), false, sender);
+    obelus::search::spawn_walk(scratch.path(), latest.claim(mine), false, sender);
 
     // The reader asks for something else before the walk has finished.
     latest.next();
