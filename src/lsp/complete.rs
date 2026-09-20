@@ -17,7 +17,7 @@ use lsp_types::{
 };
 use serde_json::Value;
 
-use crate::{coordinates::Span, text::Text, theme::SyntaxKind};
+use crate::{coordinates::Span, kind::SyntaxKind, text::Text};
 
 /// One thing that could be typed next.
 #[derive(Clone, Debug, PartialEq, Eq)]

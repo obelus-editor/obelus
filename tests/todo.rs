@@ -3,7 +3,11 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use obelus::{app::App, app::dispatch, command::Command, event::Event};
+use obelus::{
+    app::{App, dispatch},
+    command::Command,
+    event::Event,
+};
 use support::press;
 
 /// A tree with notes already in it.

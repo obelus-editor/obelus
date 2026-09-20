@@ -13,8 +13,7 @@ mod support;
 
 use crossterm::event::KeyCode;
 use obelus::{
-    app::dispatch,
-    app::{App, layers::Layer},
+    app::{App, dispatch, layers::Layer},
     command::Command,
 };
 use support::press;

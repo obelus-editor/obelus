@@ -12,7 +12,7 @@
 use lsp_types::{DiagnosticSeverity, PositionEncodingKind, PublishDiagnosticsParams};
 use serde_json::Value;
 
-use crate::{coordinates::Span, text::Text, theme::SyntaxKind};
+use crate::{coordinates::Span, kind::SyntaxKind, text::Text};
 
 /// How bad a server says something is.
 ///

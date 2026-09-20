@@ -10,11 +10,9 @@ use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets:
 use crate::{
     component::picker::{Marking, Picker, PickerItem, PickerLayout},
     git::FileStatus,
+    text::text_width,
     theme::Theme,
-    ui::{
-        Hint, Marked, Matched, drop_from_left, drop_from_right, editor::SCROLLBAR_WIDTH, fill,
-        text_width,
-    },
+    ui::{Hint, Marked, Matched, drop_from_left, drop_from_right, editor::SCROLLBAR_WIDTH, fill},
 };
 
 /// How many rows of the list a reader gets to walk.
@@ -369,7 +367,7 @@ impl Widget for PickerView<'_> {
             // its rows out from under the reader when it stops.
             if let Some(note) = self.picker.is_filling() {
                 let room = usize::from(under.width)
-                    .saturating_sub(crate::ui::text_width(note) + FILLING_INSET);
+                    .saturating_sub(crate::text::text_width(note) + FILLING_INSET);
                 if let Ok(offset) = u16::try_from(room)
                     && under.x + offset > used
                 {

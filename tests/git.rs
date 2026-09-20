@@ -11,11 +11,7 @@ mod support;
 use std::sync::mpsc::Receiver;
 
 use obelus::{
-    app::App,
-    buffer::Buffer,
-    coordinates::LineNumber,
-    event::Event,
-    git::{Changes, Marker},
+    app::App, buffer::Buffer, coordinates::LineNumber, event::Event, git::Changes, marker::Marker,
 };
 
 #[test]
@@ -452,7 +448,11 @@ fn a_hunk_opens_in_place_and_closes_again() {
 #[test]
 fn the_caret_walks_into_what_a_hunk_replaced() {
     use crossterm::event::KeyCode;
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     let repository = Repository::new("walk-in", "alpha\nbeta\ngamma\nkept\n");
     repository.write("delta\nkept\n");
@@ -606,7 +606,11 @@ fn the_caret_walks_into_what_a_hunk_replaced() {
 #[test]
 fn walking_through_a_block_comes_out_the_other_side() {
     use crossterm::event::KeyCode;
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     // A change in the middle, so there is a line above the block and a line
     // below it. The lines are long enough to have a column worth keeping.
@@ -691,8 +695,7 @@ fn walking_through_a_block_comes_out_the_other_side() {
 fn a_hunk_with_nothing_removed_is_not_walked_into() {
     use crossterm::event::KeyCode;
     use obelus::{
-        app::App,
-        app::dispatch,
+        app::{App, dispatch},
         buffer::{Block, Buffer},
         command::Command,
     };
@@ -732,7 +735,11 @@ fn a_hunk_with_nothing_removed_is_not_walked_into() {
 #[test]
 fn a_removed_line_too_long_for_the_screen_wraps() {
     use crossterm::event::KeyCode;
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     let long = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
     let repository = Repository::new("wrapped", &format!("{long}\nkept\n"));
@@ -788,7 +795,11 @@ fn a_removed_line_too_long_for_the_screen_wraps() {
 #[test]
 fn selecting_in_a_block_selects_nothing_in_the_file() {
     use crossterm::event::KeyCode;
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     let repository = Repository::new("anchors", "first\nold one\nold two\nlast\n");
     repository.write("first\nnew one\nlast\n");
@@ -829,7 +840,11 @@ fn selecting_in_a_block_selects_nothing_in_the_file() {
 #[test]
 fn escape_clears_a_selection_in_a_block() {
     use crossterm::event::KeyCode;
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     let repository = Repository::new("clearing", "alpha\nbeta\nkept\n");
     repository.write("delta\nkept\n");
@@ -867,7 +882,11 @@ fn escape_clears_a_selection_in_a_block() {
 #[test]
 fn the_key_that_opened_a_hunk_closes_it_from_inside() {
     use crossterm::event::KeyCode;
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     let repository = Repository::new("closing", "first\nold one\nold two\nlast\n");
     repository.write("first\nnew one\nlast\n");
@@ -911,7 +930,11 @@ fn the_key_that_opened_a_hunk_closes_it_from_inside() {
 #[test]
 fn a_deletion_taller_than_the_screen_can_be_read() {
     use crossterm::event::KeyCode;
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     // Eighty lines replaced by one, on a screen with ten rows of text.
     let mut committed = String::new();
@@ -2055,7 +2078,11 @@ fn a_commit_from_somewhere_else_empties_the_margin() {
 #[test]
 fn two_hunks_can_be_open_at_once() {
     use crossterm::event::KeyCode;
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     let repository = Repository::new("two-hunks", "one\nold a\nthree\nfour\nfive\nold b\nseven\n");
     repository.write("one\nnew a\nthree\nfour\nfive\nnew b\nseven\n");
@@ -2103,7 +2130,11 @@ fn two_hunks_can_be_open_at_once() {
 #[test]
 fn a_selection_stays_in_the_block_it_was_made_in() {
     use crossterm::event::KeyCode;
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     let repository = Repository::new(
         "two-selections",
@@ -3113,7 +3144,7 @@ fn opening_a_file_does_not_find_a_commits_version_of_it() {
 #[test]
 fn a_commits_version_is_marked_against_the_commit_before_it() {
     use crossterm::event::KeyCode;
-    use obelus::{app::App, coordinates::LineNumber, git::Marker};
+    use obelus::{app::App, coordinates::LineNumber, marker::Marker};
 
     let repository = Repository::new("history-margin", "one\ntwo\nthree\n");
     repository.write("one\nCHANGED\nthree\n");
@@ -4169,7 +4200,11 @@ fn a_line_opens_the_commit_that_wrote_it() {
 
 #[test]
 fn the_commit_that_wrote_a_line_is_where_the_walk_stops() {
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     let repository = Repository::new("line-commit-end", "a\nb\n");
     repository.write("x\ny\na\nb\n");
@@ -4328,7 +4363,11 @@ fn a_query_for_a_name_finds_the_nearest_name() {
 
 #[test]
 fn the_commit_behind_a_line_can_be_asked_for_with_the_names_off() {
-    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
+    use obelus::{
+        app::{App, dispatch},
+        buffer::Buffer,
+        command::Command,
+    };
 
     let repository = Repository::new("line-commit-no-names", "a\nb\n");
     repository.write("x\na\nb\n");

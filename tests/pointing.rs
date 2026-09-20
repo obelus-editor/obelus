@@ -14,8 +14,7 @@
 mod support;
 
 use obelus::{
-    app::App,
-    app::dispatch,
+    app::{App, dispatch},
     buffer::Buffer,
     command::Command,
     event::{Event, Pointer},

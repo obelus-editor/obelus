@@ -173,8 +173,7 @@ fn a_paste_goes_in_under_the_same_rules() {
 /// was typed, wherever obelus asks a short question.
 mod in_place {
     use obelus::{
-        app::App,
-        app::dispatch,
+        app::{App, dispatch},
         buffer::Buffer,
         command::Command,
         event::{Event, Pointer},

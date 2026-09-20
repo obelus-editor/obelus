@@ -479,13 +479,13 @@ impl Completion {
         self.labels = shown()
             .map(|candidate| {
                 usize::from(candidate.icon.is_some()) * ICON_COLUMNS
-                    + crate::ui::text_width(&candidate.label)
+                    + crate::text::text_width(&candidate.label)
             })
             .max()
             .unwrap_or(0);
         let detail = shown()
             .filter_map(|candidate| candidate.detail.as_deref())
-            .map(crate::ui::text_width)
+            .map(crate::text::text_width)
             .max()
             .unwrap_or(0);
         self.width = match detail {

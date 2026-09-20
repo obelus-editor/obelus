@@ -3,7 +3,12 @@
 mod support;
 
 use crossterm::event::KeyCode;
-use obelus::{app::App, app::dispatch, command::Command, config, event::Event};
+use obelus::{
+    app::{App, dispatch},
+    command::Command,
+    config,
+    event::Event,
+};
 
 /// Applying a setting touches process-wide state -- the glyph switch is one
 /// switch the drawing code can read without a flag threaded into every

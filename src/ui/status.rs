@@ -15,8 +15,9 @@ use crate::{
     component::picker::Picker,
     icons,
     lsp::ServerState,
+    text::text_width,
     theme::Theme,
-    ui::{Marked, fill, relative_to, text_width, truncate_from_left, write, write_marked},
+    ui::{Marked, fill, relative_to, truncate_from_left, write, write_marked},
 };
 
 /// The status region.

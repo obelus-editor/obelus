@@ -55,7 +55,7 @@ pub enum Ink {
     /// fence names has said what each run is. A block with no language, or
     /// one obelus has no grammar for, stays [`Ink::Code`] -- one colour,
     /// which says "this is code" and nothing more.
-    Syntax(crate::theme::SyntaxKind),
+    Syntax(crate::kind::SyntaxKind),
 }
 
 /// A run of text with one look.

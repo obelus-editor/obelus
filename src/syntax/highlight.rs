@@ -10,7 +10,7 @@ use std::ops::Range;
 use ropey::Rope;
 use tree_sitter::{Node, QueryCursor, StreamingIterator as _};
 
-use crate::{coordinates::ByteOffset, syntax::parse::SyntaxState, text::Text, theme::SyntaxKind};
+use crate::{coordinates::ByteOffset, kind::SyntaxKind, syntax::parse::SyntaxState, text::Text};
 
 /// The kind of every byte in one range of the document.
 ///

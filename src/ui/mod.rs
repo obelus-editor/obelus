@@ -85,6 +85,7 @@ use unicode_width::UnicodeWidthChar as _;
 use crate::{
     app::{App, layers::Layer},
     component::picker::{Colouring, Picker},
+    text::text_width,
     theme::Theme,
 };
 
@@ -1448,15 +1449,6 @@ pub fn nothing(cells: &mut CellBuffer, area: Rect, reason: &str, theme: &Theme) 
         reason,
         Style::new().fg(theme.gutter).bg(theme.background),
     );
-}
-
-/// How many cells a string occupies.
-#[must_use]
-pub fn text_width(contents: &str) -> usize {
-    contents
-        .chars()
-        .map(|character| character.width().unwrap_or(0))
-        .sum()
 }
 
 /// How many leading characters to drop so the rest of `contents` fits in

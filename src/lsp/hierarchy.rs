@@ -72,7 +72,7 @@ pub struct Called {
     /// What it is called.
     pub name: String,
     /// What sort of thing it is, as the colour it will be drawn in.
-    pub kind: crate::theme::SyntaxKind,
+    pub kind: crate::kind::SyntaxKind,
     /// Which file it is in.
     pub path: std::path::PathBuf,
     /// Which line and column to go to, counted from zero.

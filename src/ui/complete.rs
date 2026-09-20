@@ -23,8 +23,9 @@ use crate::{
         Completion, DETAIL_GAP, ICON_COLUMNS, LEAST_DOCUMENTATION, MOST_DOCUMENTATION, MOST_ROWS,
     },
     icons,
+    text::text_width,
     theme::Theme,
-    ui::{Marked, Matched, editor, fill, put, text_width, write_marked},
+    ui::{Marked, Matched, editor, fill, put, write_marked},
 };
 
 /// The narrowest a panel gets, whatever its rows want.

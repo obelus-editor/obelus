@@ -8,7 +8,7 @@
 use lsp_types::{DocumentSymbol, DocumentSymbolResponse, SymbolInformation, SymbolKind};
 use serde_json::Value;
 
-use crate::theme::SyntaxKind;
+use crate::kind::SyntaxKind;
 
 /// One symbol, ready to become a row.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -228,7 +228,7 @@ mod workspace_tests {
     use serde_json::json;
 
     use super::found_in;
-    use crate::theme::SyntaxKind;
+    use crate::kind::SyntaxKind;
 
     /// The tree these replies are about.
     fn root() -> std::path::PathBuf {

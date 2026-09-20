@@ -9,7 +9,7 @@ use std::{path::Path, sync::OnceLock};
 
 use tree_sitter::{Language, Query};
 
-use crate::theme::SyntaxKind;
+use crate::kind::SyntaxKind;
 
 /// A language obelus can highlight.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -41,7 +41,7 @@ use std::{
 };
 
 pub use blame::Blamed;
-pub use change::{Changes, Hunk, Marker};
+pub use change::{Changes, Hunk};
 
 /// Where a file sits inside its repository, which is how git addresses it.
 ///

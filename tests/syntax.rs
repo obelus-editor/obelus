@@ -4,13 +4,13 @@ mod support;
 
 use obelus::{
     coordinates::ByteOffset,
+    kind::SyntaxKind,
     syntax::{
         LanguageId,
         highlight::Highlights,
         parse::{self, SyntaxState},
     },
     text::Text,
-    theme::SyntaxKind,
 };
 
 const SOURCE: &str = "\

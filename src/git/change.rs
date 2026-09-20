@@ -7,7 +7,7 @@
 
 use imara_diff::{Algorithm, Diff, InternedInput};
 
-use crate::coordinates::LineNumber;
+use crate::{coordinates::LineNumber, marker::Marker};
 
 /// One run of lines that differs.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,21 +54,6 @@ impl Hunk {
         let start = self.line.get();
         at >= start && at < start + if self.lines == 0 { 1 } else { self.lines }
     }
-}
-
-/// What a line's marker means.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Marker {
-    /// The line is new since the last commit.
-    Added,
-    /// The line replaced something.
-    Modified,
-    /// Lines were removed from in front of this one.
-    ///
-    /// The only one that is about a *boundary* rather than about the line
-    /// itself, which is why it is drawn differently: a full-height bar would
-    /// claim the line changed, and it did not.
-    Removed,
 }
 
 /// One row of a change as it is drawn.

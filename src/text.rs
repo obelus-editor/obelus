@@ -592,6 +592,20 @@ fn char_width(character: char, width: usize) -> usize {
     }
 }
 
+/// How many cells a string occupies.
+///
+/// Tabs are not in it: this measures a piece of text that stands on its own
+/// -- a label, a candidate, a line of a card -- rather than a run inside a
+/// line, and a tab only means anything once there is a column to advance
+/// from. That is [`char_width`], which this is the rest of.
+#[must_use]
+pub fn text_width(contents: &str) -> usize {
+    contents
+        .chars()
+        .map(|character| character.width().unwrap_or(0))
+        .sum()
+}
+
 /// One visual row of a wrapped line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WrapRow {

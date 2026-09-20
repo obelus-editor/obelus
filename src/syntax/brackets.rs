@@ -12,9 +12,7 @@
 
 use std::ops::Range;
 
-use crate::{
-    coordinates::ByteOffset, syntax::highlight::Highlights, text::Text, theme::SyntaxKind,
-};
+use crate::{coordinates::ByteOffset, kind::SyntaxKind, syntax::highlight::Highlights, text::Text};
 
 /// The pairs obelus matches.
 ///

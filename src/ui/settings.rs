@@ -11,11 +11,9 @@ use crate::{
     app::{App, agents::Listed},
     component::settings::{DESCRIPTION_INDENT, GROUP_INDENT, Refused, Settings},
     config::{Config, Kind, Value},
+    text::text_width,
     theme::Theme,
-    ui::{
-        Hint, Marked, Matched, fill, put, rule, text_width, truncate_from_right, write,
-        write_marked,
-    },
+    ui::{Hint, Marked, Matched, fill, put, rule, truncate_from_right, write, write_marked},
 };
 
 /// How wide a control's column is.
@@ -165,7 +163,7 @@ impl Widget for SettingsView<'_> {
             // starts before the tabs end is a name written over them, which
             // is what a narrow screen got.
             let arrows = 4;
-            let width = u16::try_from(crate::ui::text_width(tree)).unwrap_or(0);
+            let width = u16::try_from(crate::text::text_width(tree)).unwrap_or(0);
             let at = area.right().saturating_sub(width + arrows + 2);
             if at > after + 1 {
                 write(
@@ -422,7 +420,7 @@ impl SettingsView<'_> {
         let names = rows
             .iter()
             .filter(|row| row.detail.is_some())
-            .map(|row| crate::ui::text_width(&row.label))
+            .map(|row| crate::text::text_width(&row.label))
             .max()
             .unwrap_or(0);
         let detail_at = name_at + u16::try_from(names).unwrap_or(0) + 2;
@@ -495,7 +493,7 @@ impl SettingsView<'_> {
                     truncate_from_right(source, usize::from(room))
                 });
             let reserved = source.as_deref().map_or(0, |source| {
-                u16::try_from(crate::ui::text_width(source)).unwrap_or(0) + lock + 1
+                u16::try_from(crate::text::text_width(source)).unwrap_or(0) + lock + 1
             });
 
             // Cut to what is left before the right-hand column: a line
@@ -559,7 +557,7 @@ impl SettingsView<'_> {
             // says which file has it and the lock says it is shut, which
             // between them is the whole answer without a word of prose.
             if let Some(source) = &source {
-                let width = u16::try_from(crate::ui::text_width(source)).unwrap_or(0);
+                let width = u16::try_from(crate::text::text_width(source)).unwrap_or(0);
                 write(
                     cells,
                     aside_at.saturating_sub(width + lock + 1),

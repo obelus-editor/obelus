@@ -45,7 +45,7 @@ pub fn layout(app: &App, editor: Rect) -> Option<Rect> {
         return None;
     }
     let width = u16::try_from(
-        crate::ui::text_width(&signature.label) + usize::from(crate::ui::PANEL_INSET * 2),
+        crate::text::text_width(&signature.label) + usize::from(crate::ui::PANEL_INSET * 2),
     )
     .unwrap_or(u16::MAX)
     .min(editor.width);
@@ -90,7 +90,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     }
     let part: String = shown[from..to.min(shown.len())].iter().collect();
     let before: String = shown[..from].iter().collect();
-    let Ok(offset) = u16::try_from(crate::ui::text_width(&before)) else {
+    let Ok(offset) = u16::try_from(crate::text::text_width(&before)) else {
         return;
     };
     write(

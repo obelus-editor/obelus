@@ -184,7 +184,7 @@ impl Listing {
 ///
 /// Char offsets into the label, not bytes and not screen columns: the label
 /// is what the row draws, and a run is a claim about its characters.
-pub type Colouring = (u16, u16, crate::theme::SyntaxKind);
+pub type Colouring = (u16, u16, crate::kind::SyntaxKind);
 
 /// What a row's mark is saying, which is what it gets drawn in.
 ///
@@ -305,7 +305,7 @@ pub struct PickerItem {
     /// only honest way to highlight a name is by what it names. The matched
     /// characters still win over it -- why a row is in the list beats what
     /// the row is.
-    pub kind: Option<crate::theme::SyntaxKind>,
+    pub kind: Option<crate::kind::SyntaxKind>,
     /// Which tab the row belongs to, if the picker has tabs.
     ///
     /// An index into the picker's own tab names. `None` means every tab,

@@ -47,8 +47,9 @@ use crate::{
         chat::{Chat, DEEPER, Focus, Row, Speaker},
     },
     icons,
+    text::text_width,
     theme::Theme,
-    ui::{fill, put, rule, text_width, write},
+    ui::{fill, put, rule, write},
 };
 
 /// How far a speaker's mark is from the edge.

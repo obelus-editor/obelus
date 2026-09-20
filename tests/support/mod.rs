@@ -347,7 +347,7 @@ pub fn column_of(row: &str, needle: &str) -> usize {
     let at = cells
         .find(needle)
         .unwrap_or_else(|| panic!("no {needle:?} on {cells:?}"));
-    obelus::ui::text_width(&cells[..at])
+    obelus::text::text_width(&cells[..at])
 }
 
 /// The corner a panel obelus floats over the page is drawn with.

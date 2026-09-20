@@ -5,7 +5,7 @@
 //! fallback when the answer is empty. A server cannot be made to produce
 //! any of those on demand.
 
-use obelus::{lsp::outline, theme::SyntaxKind};
+use obelus::{kind::SyntaxKind, lsp::outline};
 use serde_json::json;
 
 #[test]

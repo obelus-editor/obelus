@@ -409,8 +409,8 @@ pub fn for_agent(id: &str) -> char {
 /// taken from a chart, because a wrong one looks exactly like a missing
 /// font.
 #[must_use]
-pub fn for_kind(kind: crate::theme::SyntaxKind) -> char {
-    use crate::theme::SyntaxKind;
+pub fn for_kind(kind: crate::kind::SyntaxKind) -> char {
+    use crate::kind::SyntaxKind;
     match kind {
         // `md-function`.
         SyntaxKind::Function => '\u{f0295}',
@@ -570,7 +570,7 @@ mod command_tests {
     /// none of them may wear the one that means "no idea what this is".
     #[test]
     fn the_kinds_a_list_names_have_their_own_glyphs() {
-        use crate::theme::SyntaxKind;
+        use crate::kind::SyntaxKind;
 
         let named = [
             SyntaxKind::Function,

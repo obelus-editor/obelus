@@ -100,7 +100,8 @@ use crate::{
     app::App,
     buffer::Buffer,
     coordinates::{ByteOffset, CharColumn, LineNumber, Span},
-    git::{self, Changes, Marker},
+    git::{self, Changes},
+    marker::Marker,
     syntax::{brackets, highlight::Highlights},
     text::WrapRow,
     theme::Theme,
@@ -971,9 +972,9 @@ impl Widget for EditorView<'_> {
                     let elision = elided(text, &fold);
                     let at = area.x + margin + gutter + folds + ended;
                     let mark_width =
-                        u16::try_from(crate::ui::text_width(&elision.mark)).unwrap_or(width);
+                        u16::try_from(crate::text::text_width(&elision.mark)).unwrap_or(width);
                     let closing_width =
-                        u16::try_from(crate::ui::text_width(&elision.closing)).unwrap_or(width);
+                        u16::try_from(crate::text::text_width(&elision.closing)).unwrap_or(width);
                     if ended + mark_width + closing_width <= width {
                         crate::ui::write(
                             cells,
@@ -1328,7 +1329,7 @@ fn draw_row(
                 crate::ui::Drawn::Hint(hint) => {
                     let style = style.fg(painting
                         .theme
-                        .colour_for(Some(crate::theme::SyntaxKind::Comment)));
+                        .colour_for(Some(crate::kind::SyntaxKind::Comment)));
                     let mut cell = 0usize;
                     for character in hint.label.chars() {
                         let taken = unicode_width::UnicodeWidthChar::width(character)
@@ -1401,7 +1402,7 @@ fn draw_change_count(
     ];
     let wanted: usize = words
         .iter()
-        .map(|(word, _)| crate::ui::text_width(word) + 1)
+        .map(|(word, _)| crate::text::text_width(word) + 1)
         .sum();
     let Ok(wanted) = u16::try_from(wanted) else {
         return;
@@ -1429,7 +1430,7 @@ fn draw_blame(
     colour: Color,
     cells: &mut CellBuffer,
 ) {
-    let Ok(label_width) = u16::try_from(crate::ui::text_width(label)) else {
+    let Ok(label_width) = u16::try_from(crate::text::text_width(label)) else {
         return;
     };
     // One column short of the edge, because the bar is the next cell and

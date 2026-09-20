@@ -24,8 +24,9 @@ use crate::{
     app::App,
     component::counts::{Counts, Row},
     counts::Tally,
+    text::text_width,
     theme::Theme,
-    ui::{Hint, editor::SCROLLBAR_WIDTH, fill, put, rule, text_width, write},
+    ui::{Hint, editor::SCROLLBAR_WIDTH, fill, put, rule, write},
 };
 
 /// How wide the column of file counts is.

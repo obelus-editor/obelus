@@ -158,7 +158,7 @@ fn a_deleted_file_reports_an_error_and_keeps_the_text() {
 /// tree had a keyword does not have that problem.
 #[test]
 fn highlighting_still_works_after_a_reload() {
-    use obelus::{coordinates::ByteOffset, syntax::highlight::Highlights, theme::SyntaxKind};
+    use obelus::{coordinates::ByteOffset, kind::SyntaxKind, syntax::highlight::Highlights};
 
     const AFTER: &str = "const S: &str = \"hello\";\nfn main() {}\n";
 

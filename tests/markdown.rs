@@ -316,8 +316,8 @@ fn obelus_can_read_its_own_log() {
 /// of is what its fence says it is.
 mod fences {
     use obelus::{
+        kind::SyntaxKind,
         reading::{Ink, Row},
-        theme::SyntaxKind,
     };
 
     use super::{render, text};

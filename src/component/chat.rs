@@ -213,7 +213,7 @@ pub struct Row {
     pub open: bool,
     /// What the row is, where it is a line of a change: gone, new, or the
     /// line it is at.
-    pub marker: Option<crate::git::change::Marker>,
+    pub marker: Option<crate::marker::Marker>,
     /// How much a change adds and takes away, on the row that heads it.
     pub changed: Option<(usize, usize)>,
     /// How deep the row sits: the members of an opened run are drawn under
@@ -1871,10 +1871,10 @@ mod tests {
         for row in &rows {
             let room = usize::from(ROOM.reading.saturating_sub(u16::from(row.depth) * DEEPER));
             assert!(
-                crate::ui::text_width(&row.text) <= room,
+                crate::text::text_width(&row.text) <= room,
                 "{:?} is {} cells wide with {room} to write in",
                 row.text,
-                crate::ui::text_width(&row.text)
+                crate::text::text_width(&row.text)
             );
         }
     }

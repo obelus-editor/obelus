@@ -17,9 +17,9 @@ use tree_sitter::{QueryCursor, StreamingIterator as _};
 
 use crate::{
     coordinates::{ByteOffset, CharColumn, LineNumber},
+    kind::SyntaxKind,
     syntax::{LanguageId, parse::SyntaxState},
     text::Text,
-    theme::SyntaxKind,
 };
 
 /// Something a file defines, and where.

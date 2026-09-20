@@ -329,7 +329,7 @@ mod tests {
     fn called(name: &str, line: u32) -> Called {
         Called {
             name: name.to_string(),
-            kind: crate::theme::SyntaxKind::Function,
+            kind: crate::kind::SyntaxKind::Function,
             path: std::path::PathBuf::from("/tmp/one.rs"),
             at: (line, 0),
             end: (line, u32::try_from(name.len()).unwrap_or(0)),
