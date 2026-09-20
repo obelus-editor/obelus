@@ -3,11 +3,7 @@
 mod support;
 
 use crossterm::event::KeyCode;
-use obelus::{
-    app::App,
-    buffer::Buffer,
-    command::{Command, dispatch},
-};
+use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
 /// Says where it should be instead, over what is already in the question.
 ///

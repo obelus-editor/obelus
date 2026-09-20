@@ -2443,7 +2443,7 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     // Into the notes and on to the one note's conversation.
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
     support::press_alt(&mut app, 'a');
     assert!(app.chat().is_some(), "no conversation about the note");
     pump(&mut app, &events, "the session", |app| {
@@ -2552,7 +2552,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
     support::press_alt(&mut app, 'a');
     pump(&mut app, &events, "a session of some kind", |app| {
         app.talking() == obelus::app::talking::Talking::Ready
@@ -3265,7 +3265,7 @@ fn remembering(
     let mut arguments = vec!["tests/fixtures/fake-agent.sh".to_string()];
     arguments.extend(how.iter().map(|word| (*word).to_string()));
     app.talk_to("fake", Path::new("sh"), &arguments);
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::TodoOpen);
     support::press_alt(&mut app, 'a');
     (scratch, app, events)
 }

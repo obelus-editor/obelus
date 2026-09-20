@@ -10,8 +10,11 @@
 //! The enum grows one variant at a time, as each command's handler is written.
 //! A variant that dispatches to nothing would compile, appear in the palette,
 //! and do nothing when chosen — a failure that announces itself to nobody.
-
-pub mod dispatch;
+//!
+//! Running one is not here. A handler is a method on the application, so the
+//! match that picks it lives with what it calls, in `app::dispatch`, and this
+//! module is the names alone -- which is what lets the key table, the icons
+//! and the palette read it without reaching the application at all.
 
 /// Everything obelus can be asked to do by name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -174,8 +174,9 @@ fn a_paste_goes_in_under_the_same_rules() {
 mod in_place {
     use obelus::{
         app::App,
+        app::dispatch,
         buffer::Buffer,
-        command::{Command, dispatch},
+        command::Command,
         event::{Event, Pointer},
     };
 

@@ -294,10 +294,7 @@ fn what_obelus_says_it_can_do() {
 /// that stops them doing it is not being told.
 #[test]
 fn a_key_with_no_server_to_ask_says_so() {
-    use obelus::{
-        command::{Command, dispatch},
-        syntax::LanguageId,
-    };
+    use obelus::{app::dispatch, command::Command, syntax::LanguageId};
 
     let asking = [
         Command::CodeActions,
@@ -377,7 +374,7 @@ fn a_typed_letter_with_no_server_says_nothing() {
 
     // And the key that asks on purpose, in the same file, does say -- the
     // two doors into one question are the point, so one test holds both.
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::SymbolComplete);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::SymbolComplete);
     assert!(
         app.note().unwrap_or_default().contains("server"),
         "the key that asks on purpose said nothing: {:?}",

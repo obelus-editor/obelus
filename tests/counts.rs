@@ -5,7 +5,8 @@ mod support;
 use crossterm::event::KeyCode;
 use obelus::{
     app::App,
-    command::{Command, dispatch},
+    app::dispatch,
+    command::Command,
     counts::{Child, Counted, File, Language, Tally},
     event::Event,
 };

@@ -237,11 +237,7 @@ fn a_re_read_forgets_what_could_have_been_put_back() {
 /// Editing as a reader does it: through the keys.
 mod keys {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     use super::support;
 
@@ -733,11 +729,7 @@ mod keys {
 /// Writing a document back, and what happens when the file moved first.
 mod saving {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     use super::support;
 
@@ -1159,11 +1151,7 @@ mod saving {
 /// Saying what is unwritten, and not throwing it away by accident.
 mod saying {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     use super::support;
 
@@ -1397,11 +1385,7 @@ mod saying {
 /// Whether a document differs from what is on disk is a question about
 /// where it is in its own history, not about whether anybody has typed.
 mod unwritten {
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     use super::support;
 
@@ -1558,11 +1542,7 @@ mod unwritten {
 /// Its own question because a closed buffer takes its undo with it: there
 /// is no other way back to what was in it.
 mod closing {
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     use super::support;
 
@@ -1690,11 +1670,7 @@ mod closing {
 
 /// What a file was written with, it is written back with.
 mod bytes {
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     use super::support;
 
@@ -2052,11 +2028,7 @@ mod indenting {
 
 /// An agent changing a file obelus has open.
 mod agents {
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     use super::support;
 
@@ -2192,11 +2164,7 @@ mod formatting {
 
 /// Saving with formatting turned on, when nobody can format.
 mod format_on_save {
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     use super::support;
 
@@ -2333,7 +2301,7 @@ mod indenting_a_block {
         support::press_shift(&mut app, KeyCode::Down);
         support::press_shift(&mut app, KeyCode::Down);
         support::press(&mut app, KeyCode::Tab);
-        obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::Undo);
+        obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::Undo);
         assert_eq!(text(&app), "a\nb\nc\n");
     }
 
@@ -2380,12 +2348,7 @@ mod indenting_a_block {
 /// meant for moving, meant for taking out and taking a copy as well.
 mod by_the_word_and_the_line {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        clipboard,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, clipboard, command::Command};
 
     use super::support;
 
@@ -2494,11 +2457,7 @@ mod by_the_word_and_the_line {
 /// edit moves some of them.
 mod going_back {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     use super::support;
 
@@ -2588,11 +2547,7 @@ mod going_back {
 /// whole lines that are neither typing nor indenting.
 mod whole_lines {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     use super::support;
 
@@ -2774,7 +2729,7 @@ mod widening {
     }
 
     fn widen(app: &mut App) {
-        obelus::command::dispatch::dispatch(app, Command::SelectionWiden);
+        obelus::app::dispatch::dispatch(app, Command::SelectionWiden);
     }
 
     /// The word first, because that is the step every reader wants and the

@@ -60,7 +60,10 @@ pub fn is_server(target: &str) -> bool {
     // servers' log is simply empty, and the handshake it should have held
     // is in obelus's own log instead.
     ["obelus::lsp", "obelus_lsp"].iter().any(|name| {
-        target == *name || target.strip_prefix(name).is_some_and(|rest| rest.starts_with("::"))
+        target == *name
+            || target
+                .strip_prefix(name)
+                .is_some_and(|rest| rest.starts_with("::"))
     })
 }
 

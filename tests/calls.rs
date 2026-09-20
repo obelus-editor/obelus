@@ -8,12 +8,7 @@
 mod support;
 
 use crossterm::event::KeyCode;
-use obelus::{
-    app::App,
-    buffer::Buffer,
-    command::{Command, dispatch},
-    syntax::LanguageId,
-};
+use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command, syntax::LanguageId};
 use serde_json::json;
 
 /// A file with something to call in it, and the app reading it.

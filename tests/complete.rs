@@ -541,7 +541,7 @@ fn a_list_opened_over_the_file_takes_the_panel_away() {
         "the panel never opened"
     );
 
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::CommandPalette);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::CommandPalette);
     let dump = support::render(&mut app, 60, 16);
     assert!(
         !dump.contains("push_str"),
@@ -655,7 +655,7 @@ mod against_a_real_server {
 
         let deadline = Instant::now() + READY;
         while Instant::now() < deadline {
-            obelus::command::dispatch::dispatch(app, obelus::command::Command::SymbolComplete);
+            obelus::app::dispatch::dispatch(app, obelus::command::Command::SymbolComplete);
             if pump(app, events, Duration::from_secs(3), |app| {
                 app.completion().is_some()
             }) {

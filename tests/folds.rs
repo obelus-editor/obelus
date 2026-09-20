@@ -374,7 +374,7 @@ fn folding_everything_and_opening_it_again() {
         "opening everything was offered with nothing folded"
     );
 
-    obelus::command::dispatch::dispatch(&mut app, Command::FoldAll);
+    obelus::app::dispatch::dispatch(&mut app, Command::FoldAll);
     let dump = support::render(&mut app, 60, 20);
     let text = support::text_block(&dump);
     assert!(
@@ -395,7 +395,7 @@ fn folding_everything_and_opening_it_again() {
     );
     assert!(app.offers(Command::UnfoldAll), "nothing offered to open");
 
-    obelus::command::dispatch::dispatch(&mut app, Command::UnfoldAll);
+    obelus::app::dispatch::dispatch(&mut app, Command::UnfoldAll);
     let dump = support::render(&mut app, 60, 20);
     let text = support::text_block(&dump);
     assert!(text.contains("pub name"), "opening everything kept a fold");
@@ -841,7 +841,7 @@ mod after_an_edit {
     #[test]
     fn what_the_reader_folded_survives_typing() {
         let (_scratch, mut app) = editing("fold-kept", SOURCE);
-        obelus::command::dispatch::dispatch(&mut app, Command::Fold);
+        obelus::app::dispatch::dispatch(&mut app, Command::Fold);
         assert!(
             app.current_buffer().expect("a buffer").folds().any_folded(),
             "nothing was folded to begin with"

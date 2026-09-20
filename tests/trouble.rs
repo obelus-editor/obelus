@@ -138,7 +138,7 @@ fn the_status_row_says_how_many() {
 fn the_list_names_what_is_wrong_and_goes_there() {
     let (_scratch, mut app, path) = editing("trouble-list", "fn main() {\n    nmae;\n}\n");
     app.publish_for_test(published(&path, 1, 4, 8, 1));
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::SymbolTroubles);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::SymbolTroubles);
 
     let dump = support::render(&mut app, 60, 16);
     assert!(

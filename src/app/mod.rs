@@ -19,6 +19,7 @@ mod changing;
 mod choosing;
 mod completing;
 mod counting;
+pub mod dispatch;
 mod documents;
 mod fixing;
 mod hierarchy;
@@ -60,7 +61,7 @@ use semantics::{Asked, Question, named as server_named};
 
 use crate::{
     buffer::{Buffer, Cursor, DocumentId, Mode, Motion, TextArea},
-    command::{Command, Requires, dispatch},
+    command::{Command, Requires},
     component::{
         chat::{ChatOutcome, Room as ChatRoom},
         completion::Completion,

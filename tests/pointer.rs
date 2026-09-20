@@ -171,7 +171,7 @@ fn moving_the_pointer_moves_nothing() {
 fn a_click_does_nothing_while_a_list_is_open() {
     let (_scratch, mut app) = editing("pointer-list", "fn main() {\n    let name = 1;\n}\n");
     let (x, y) = cell_of(&mut app, "name");
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::CommandPalette);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::CommandPalette);
     press_at(&mut app, x, y);
     assert_eq!(caret(&app), (0, 0), "the click reached the file");
 }
@@ -186,7 +186,7 @@ fn a_click_does_nothing_over_a_reading() {
     let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
     app.working_directory_for_test(scratch.path().to_path_buf());
     support::lay_out(&mut app, 60, 16);
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::PreviewToggle);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::PreviewToggle);
 
     press_at(&mut app, 4, 2);
     assert_eq!(caret(&app), (0, 0));

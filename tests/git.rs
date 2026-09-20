@@ -348,7 +348,7 @@ fn a_hunk_opens_in_place_and_closes_again() {
         "the removed text is showing before it was asked for:\n{closed}"
     );
 
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
     let opened = support::render(&mut app, 40, 8);
     let rows: Vec<&str> = support::text_block(&opened)
         .lines()
@@ -434,7 +434,7 @@ fn a_hunk_opens_in_place_and_closes_again() {
     );
 
     // The same command closes it.
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
     assert!(
         !support::text_block(&support::render(&mut app, 40, 8)).contains("old two"),
         "it would not close"
@@ -452,11 +452,7 @@ fn a_hunk_opens_in_place_and_closes_again() {
 #[test]
 fn the_caret_walks_into_what_a_hunk_replaced() {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     let repository = Repository::new("walk-in", "alpha\nbeta\ngamma\nkept\n");
     repository.write("delta\nkept\n");
@@ -610,11 +606,7 @@ fn the_caret_walks_into_what_a_hunk_replaced() {
 #[test]
 fn walking_through_a_block_comes_out_the_other_side() {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     // A change in the middle, so there is a line above the block and a line
     // below it. The lines are long enough to have a column worth keeping.
@@ -700,8 +692,9 @@ fn a_hunk_with_nothing_removed_is_not_walked_into() {
     use crossterm::event::KeyCode;
     use obelus::{
         app::App,
+        app::dispatch,
         buffer::{Block, Buffer},
-        command::{Command, dispatch},
+        command::Command,
     };
 
     let repository = Repository::new("nothing-removed", "one\ntwo\n");
@@ -739,11 +732,7 @@ fn a_hunk_with_nothing_removed_is_not_walked_into() {
 #[test]
 fn a_removed_line_too_long_for_the_screen_wraps() {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     let long = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
     let repository = Repository::new("wrapped", &format!("{long}\nkept\n"));
@@ -799,11 +788,7 @@ fn a_removed_line_too_long_for_the_screen_wraps() {
 #[test]
 fn selecting_in_a_block_selects_nothing_in_the_file() {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     let repository = Repository::new("anchors", "first\nold one\nold two\nlast\n");
     repository.write("first\nnew one\nlast\n");
@@ -844,11 +829,7 @@ fn selecting_in_a_block_selects_nothing_in_the_file() {
 #[test]
 fn escape_clears_a_selection_in_a_block() {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     let repository = Repository::new("clearing", "alpha\nbeta\nkept\n");
     repository.write("delta\nkept\n");
@@ -886,11 +867,7 @@ fn escape_clears_a_selection_in_a_block() {
 #[test]
 fn the_key_that_opened_a_hunk_closes_it_from_inside() {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     let repository = Repository::new("closing", "first\nold one\nold two\nlast\n");
     repository.write("first\nnew one\nlast\n");
@@ -934,11 +911,7 @@ fn the_key_that_opened_a_hunk_closes_it_from_inside() {
 #[test]
 fn a_deletion_taller_than_the_screen_can_be_read() {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     // Eighty lines replaced by one, on a screen with ten rows of text.
     let mut committed = String::new();
@@ -1065,7 +1038,7 @@ fn the_caret_walks_the_lines_of_an_opened_hunk() {
     // Onto the first changed line, and open it: five removed lines above
     // five changed ones.
     support::press(&mut app, crossterm::event::KeyCode::Down);
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
 
     // The caret is on the row its own line is drawn on, not on one of the
     // rows the removed lines took.
@@ -1103,7 +1076,7 @@ fn the_caret_walks_the_lines_of_an_opened_hunk() {
 
     // And from there the same key closes it, because that is still inside
     // the hunk.
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
     assert!(
         app.opened_hunks().is_empty(),
         "the last line of the hunk would not close it"
@@ -1136,7 +1109,7 @@ fn a_hunk_above_the_screen_does_not_move_the_caret() {
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     support::lay_out(&mut app, 40, 12);
     support::press(&mut app, crossterm::event::KeyCode::Down);
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
     // Down the file until the hunk is off the top of the screen.
     for _ in 0..30 {
         support::press(&mut app, crossterm::event::KeyCode::Down);
@@ -1196,7 +1169,7 @@ fn added_lines_open_onto_their_own_colour() {
     support::press(&mut app, crossterm::event::KeyCode::Esc);
 
     let closed = support::render(&mut app, 40, 8);
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
     assert_eq!(app.note(), None, "it refused to open");
     let opened = support::render(&mut app, 40, 8);
 
@@ -1239,7 +1212,7 @@ fn added_lines_open_onto_their_own_colour() {
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     support::lay_out(&mut app, 40, 8);
     support::press(&mut app, crossterm::event::KeyCode::Down);
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
     let modified = support::render(&mut app, 40, 8);
     // Row 1 there is the line it *replaced*, which the open hunk shows
     // above it, so the changed line itself is row 2.
@@ -1257,7 +1230,7 @@ fn added_lines_open_onto_their_own_colour() {
     );
 
     // The same command closes it again, tint and all.
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
     let shut = support::render(&mut app, 40, 8);
     assert_eq!(
         background(&shut, 1),
@@ -1354,15 +1327,15 @@ fn the_changes_can_be_stepped_through() {
     // A leap, so the history brings the reader back where they were: to
     // where the last step started, and then to where the one before it did
     // -- including the line the reader had walked to by hand.
-    obelus::command::dispatch::dispatch(&mut app, Command::GoBack);
+    obelus::app::dispatch::dispatch(&mut app, Command::GoBack);
     assert_eq!(line(&app), 20, "the step did not record where it left");
-    obelus::command::dispatch::dispatch(&mut app, Command::GoBack);
+    obelus::app::dispatch::dispatch(&mut app, Command::GoBack);
     assert_eq!(line(&app), 22, "the step before that recorded nothing");
 
     // And a change the reader had to leap to arrives in the middle of the
     // screen, not against an edge: what a change means is the code around
     // it, and a hunk on the last row has half of that missing.
-    obelus::command::dispatch::dispatch(&mut app, Command::GitNext);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitNext);
     let dump = support::render(&mut app, 40, 12);
     let rows: Vec<&str> = support::text_block(&dump)
         .lines()
@@ -2082,11 +2055,7 @@ fn a_commit_from_somewhere_else_empties_the_margin() {
 #[test]
 fn two_hunks_can_be_open_at_once() {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     let repository = Repository::new("two-hunks", "one\nold a\nthree\nfour\nfive\nold b\nseven\n");
     repository.write("one\nnew a\nthree\nfour\nfive\nnew b\nseven\n");
@@ -2134,11 +2103,7 @@ fn two_hunks_can_be_open_at_once() {
 #[test]
 fn a_selection_stays_in_the_block_it_was_made_in() {
     use crossterm::event::KeyCode;
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     let repository = Repository::new(
         "two-selections",
@@ -3972,7 +3937,7 @@ fn a_hunk_in_a_commits_version_is_what_that_commit_changed() {
         "the caret is not on the line the commit changed:\n{dump}"
     );
 
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
     let opened = support::render(&mut app, 52, 16);
     let rows: Vec<&str> = support::text_block(&opened).lines().collect();
 
@@ -4014,7 +3979,7 @@ fn the_hunk_key_never_takes_a_commits_message_away() {
 
     // The caret opens inside the message, which is where a reader lands and
     // where they press keys before they have gone anywhere.
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
     let dump = support::render(&mut app, 100, 12);
     assert!(
         support::text_block(&dump).contains("the second"),
@@ -4025,7 +3990,7 @@ fn the_hunk_key_never_takes_a_commits_message_away() {
     for _ in 0..3 {
         support::press(&mut app, KeyCode::Down);
     }
-    obelus::command::dispatch::dispatch(&mut app, Command::GitHunk);
+    obelus::app::dispatch::dispatch(&mut app, Command::GitHunk);
     let dump = support::render(&mut app, 100, 12);
     assert!(
         support::text_block(&dump).contains("the second"),
@@ -4183,7 +4148,7 @@ fn a_line_opens_the_commit_that_wrote_it() {
     for _ in 0..4 {
         support::press(&mut app, KeyCode::Down);
     }
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::HistoryLine);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::HistoryLine);
 
     let dump = support::render(&mut app, 70, 14);
     let text = support::text_block(&dump);
@@ -4204,11 +4169,7 @@ fn a_line_opens_the_commit_that_wrote_it() {
 
 #[test]
 fn the_commit_that_wrote_a_line_is_where_the_walk_stops() {
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     let repository = Repository::new("line-commit-end", "a\nb\n");
     repository.write("x\ny\na\nb\n");
@@ -4367,11 +4328,7 @@ fn a_query_for_a_name_finds_the_nearest_name() {
 
 #[test]
 fn the_commit_behind_a_line_can_be_asked_for_with_the_names_off() {
-    use obelus::{
-        app::App,
-        buffer::Buffer,
-        command::{Command, dispatch},
-    };
+    use obelus::{app::App, app::dispatch, buffer::Buffer, command::Command};
 
     let repository = Repository::new("line-commit-no-names", "a\nb\n");
     repository.write("x\na\nb\n");

@@ -118,10 +118,7 @@ fn a_colour_about_a_file_that_has_changed_is_dropped() {
 /// colours to report.
 #[test]
 fn the_question_that_goes_out_is_the_one_the_protocol_names() {
-    use obelus::{
-        command::{Command, dispatch},
-        syntax::LanguageId,
-    };
+    use obelus::{app::dispatch, command::Command, syntax::LanguageId};
 
     let (_scratch, mut app) = styling("colour-asked", "a { color: #3264eb; }\n");
     let (sender, heard) = obelus::event::channel();

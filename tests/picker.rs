@@ -2692,18 +2692,18 @@ fn stopping_and_restarting_say_what_happened() {
 
     let mut empty = App::new(vec![]);
     support::lay_out(&mut empty, 60, 12);
-    obelus::command::dispatch::dispatch(&mut empty, Command::LspStop);
+    obelus::app::dispatch::dispatch(&mut empty, Command::LspStop);
     assert_eq!(empty.note(), Some("No file to stop a server for"));
-    obelus::command::dispatch::dispatch(&mut empty, Command::LspRestart);
+    obelus::app::dispatch::dispatch(&mut empty, Command::LspRestart);
     assert_eq!(empty.note(), Some("No file to restart a server for"));
 
     // A language obelus highlights but has no server for. The reason is the
     // useful part: "nothing happened" is not.
     let mut toml = App::new(vec![support::open_fixture("sample.toml")]);
     support::lay_out(&mut toml, 60, 12);
-    obelus::command::dispatch::dispatch(&mut toml, Command::LspStop);
+    obelus::app::dispatch::dispatch(&mut toml, Command::LspStop);
     assert_eq!(toml.note(), Some("no language server for toml"));
-    obelus::command::dispatch::dispatch(&mut toml, Command::LspRestart);
+    obelus::app::dispatch::dispatch(&mut toml, Command::LspRestart);
     assert_eq!(toml.note(), Some("no language server for toml"));
 
     // And the note is on screen, which is the only place it is of any use.
@@ -2717,7 +2717,7 @@ fn stopping_and_restarting_say_what_happened() {
     // names the program so that "not installed" can be acted on.
     let mut rust = app();
     support::lay_out(&mut rust, 60, 12);
-    obelus::command::dispatch::dispatch(&mut rust, Command::LspStop);
+    obelus::app::dispatch::dispatch(&mut rust, Command::LspStop);
     let note = rust.note().unwrap_or_default().to_string();
     assert!(note.contains("rust-analyzer"), "{note:?}");
 }
@@ -2945,7 +2945,7 @@ fn closing_the_last_file_goes_back_to_the_welcome_screen() {
 
     let mut app = app();
     support::lay_out(&mut app, 64, 20);
-    obelus::command::dispatch::dispatch(&mut app, Command::DocumentClose);
+    obelus::app::dispatch::dispatch(&mut app, Command::DocumentClose);
 
     let dump = support::render(&mut app, 64, 20);
     assert!(
@@ -2959,7 +2959,7 @@ fn closing_the_last_file_goes_back_to_the_welcome_screen() {
 
     // And a stale id -- the jump list keeps them -- does nothing rather than
     // finding a different file.
-    obelus::command::dispatch::dispatch(&mut app, Command::GoBack);
+    obelus::app::dispatch::dispatch(&mut app, Command::GoBack);
     let after = support::render(&mut app, 64, 20);
     assert!(
         !support::text_block(&after).contains("fn main"),
@@ -3240,7 +3240,7 @@ fn a_line_number_is_typed_on_the_status_bar() {
     assert_eq!(row.parse::<u16>().expect("a row"), 5, "{after}");
 
     // And it is a jump, so going back comes back.
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
     assert_eq!(
         app.current_buffer().expect("a buffer").cursor().line.get(),
         0,
@@ -3335,7 +3335,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
     );
 
     // And back to the line that was being read, not to the top of it.
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
     let buffer = app.current_buffer().expect("a buffer");
     assert_eq!(buffer.path(), first, "went back to the wrong file");
     assert_eq!(buffer.cursor().line, left, "went back to the wrong line");
@@ -3359,7 +3359,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
             .ends_with("long.rs"),
         "the already-open file was not switched to"
     );
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
     assert_eq!(
         app.current_buffer().expect("a buffer").path(),
         first,
@@ -3376,7 +3376,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
             .path()
             .ends_with("long.rs")
     );
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::GoBack);
     assert_eq!(
         app.current_buffer().expect("a buffer").path(),
         first,
@@ -3390,7 +3390,7 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
     press_function(&mut app, 2);
     type_text(&mut app, "many_lines");
     press(&mut app, KeyCode::Enter);
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::GoForward);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::GoForward);
     assert!(
         app.current_buffer()
             .expect("a buffer")
@@ -3467,10 +3467,7 @@ fn the_document_list_previews_each_file_where_it_was_left() {
 /// second one first.
 #[test]
 fn the_file_list_has_a_tab_for_what_has_changed() {
-    use obelus::{
-        command::{Command, dispatch},
-        git::FileStatus,
-    };
+    use obelus::{app::dispatch, command::Command, git::FileStatus};
 
     // A clean tree: one listing, and no row of tabs at all, because a row
     // of tabs with one tab on it says there is somewhere else to go.

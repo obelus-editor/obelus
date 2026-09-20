@@ -1304,7 +1304,7 @@ fn markdown_is_a_mode_over_the_same_file() {
         "a file opened in some mode other than its bytes"
     );
 
-    obelus::command::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    obelus::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
     let rendered = support::render(&mut app, 60, 14);
     let text = support::text_block(&rendered);
     assert!(text.contains("Title"), "{rendered}");
@@ -1327,7 +1327,7 @@ fn markdown_is_a_mode_over_the_same_file() {
     assert_eq!(support::cursor_line(&rendered), "none", "{rendered}");
 
     // The same command again puts the file back.
-    obelus::command::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    obelus::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
     assert_eq!(
         support::text_block(&support::render(&mut app, 60, 14)),
         support::text_block(&source),
@@ -1344,7 +1344,7 @@ fn only_a_markdown_file_can_be_rendered() {
 
     let mut app = app();
     support::lay_out(&mut app, 60, 14);
-    obelus::command::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    obelus::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
 
     assert_eq!(app.note(), Some("Nothing to preview in this file"));
 
@@ -1355,7 +1355,7 @@ fn only_a_markdown_file_can_be_rendered() {
         obelus::buffer::Buffer::open(&shouting).expect("opening it"),
     ]);
     support::lay_out(&mut upper, 60, 14);
-    obelus::command::dispatch::dispatch(&mut upper, Command::PreviewToggle);
+    obelus::app::dispatch::dispatch(&mut upper, Command::PreviewToggle);
     assert_eq!(
         upper.current_buffer().expect("a buffer").mode(),
         obelus::buffer::Mode::Preview,
@@ -1376,7 +1376,7 @@ fn a_rendering_scrolls_by_rows() {
 
     let mut app = App::new(vec![support::open_fixture("sample.md")]);
     support::lay_out(&mut app, 60, 8);
-    obelus::command::dispatch::dispatch(&mut app, Command::PreviewToggle);
+    obelus::app::dispatch::dispatch(&mut app, Command::PreviewToggle);
 
     let first = support::render(&mut app, 60, 8);
     assert!(support::text_block(&first).contains("Title"), "{first}");
@@ -1575,7 +1575,7 @@ fn escape_stops_selecting() {
 /// The same rule in the rendered view: a rendering that fits has no bar.
 #[test]
 fn a_rendering_with_nowhere_to_scroll_draws_no_bar() {
-    use obelus::command::{Command, dispatch};
+    use obelus::{app::dispatch, command::Command};
 
     // The last column of each row, because a rendered table draws the same
     // box-drawing character in the middle of a row.
@@ -2148,7 +2148,7 @@ fn a_file_with_no_reading_opens_as_itself() {
         "a file that is not a log was read as one because of its name"
     );
     // And the command says so rather than doing something.
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::PreviewToggle);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::PreviewToggle);
     assert_eq!(app.note(), Some("Nothing to preview in this file"));
 
     let _ = std::fs::remove_file(&path);

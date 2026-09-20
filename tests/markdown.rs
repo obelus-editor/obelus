@@ -544,7 +544,7 @@ fn a_block_of_code_is_drawn_in_a_box() {
     support::lay_out(&mut app, 40, 20);
     // A reading is what preview shows: the editor draws the file's own
     // bytes, fences and all.
-    obelus::command::dispatch::dispatch(&mut app, obelus::command::Command::PreviewToggle);
+    obelus::app::dispatch::dispatch(&mut app, obelus::command::Command::PreviewToggle);
 
     let dump = support::render(&mut app, 40, 20);
     // Past the row number the dump puts in front of every row, and past
