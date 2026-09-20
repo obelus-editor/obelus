@@ -17,6 +17,26 @@ pub mod registry;
 
 use std::path::{Path, PathBuf};
 
+/// One row of the agents page: what the registry says, and what obelus
+/// knows about it here.
+///
+/// Here rather than with the page because none of the four is the page's:
+/// the entry is the registry's, the status and the progress are this
+/// module's, and which one is active is a setting. What the page adds is
+/// the drawing, and a view that has to be reached to name the thing it
+/// draws is a view nothing below it can read.
+#[derive(Clone, Debug)]
+pub struct Listed {
+    /// The registry's entry.
+    pub agent: Agent,
+    /// What obelus knows about it locally.
+    pub status: Status,
+    /// How far an install has got, while one is running.
+    pub progress: Option<install::Progress>,
+    /// Whether this is the one obelus would talk to.
+    pub active: bool,
+}
+
 /// One agent, as the registry describes it.
 ///
 /// Every field the registry promises, and nothing invented: a reader

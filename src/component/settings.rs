@@ -45,8 +45,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
-    agent::Status,
-    app::agents::Listed as Agent,
+    agent::{Listed as Agent, Status},
     command::Command,
     component::{
         field::Field,

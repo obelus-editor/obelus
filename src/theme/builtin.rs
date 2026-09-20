@@ -125,9 +125,6 @@ pub const LIGHT: Theme = Theme {
 /// with this. What it is is a label on a shelf, so it lives on the shelf.
 pub const ALL: &[(&str, &Theme)] = &[("dark", &DARK), ("light", &LIGHT)];
 
-/// The name of the one obelus starts with.
-pub const DEFAULT: &str = "dark";
-
 /// The theme a name names, if it names one.
 ///
 /// The way in from anything written down -- the settings file, and a row of

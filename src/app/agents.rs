@@ -7,23 +7,9 @@
 
 use super::*;
 use crate::{
-    agent::{self, Agent, Status, install::Progress},
+    agent::{self, Agent, Listed, Status, install::Progress},
     ui::image::{Images, Palette},
 };
-
-/// One row of the agents page: what the registry says, and what obelus
-/// knows about it here.
-#[derive(Clone, Debug)]
-pub struct Listed {
-    /// The registry's entry.
-    pub agent: Agent,
-    /// What obelus knows about it locally.
-    pub status: Status,
-    /// How far an install has got, while one is running.
-    pub progress: Option<Progress>,
-    /// Whether this is the one obelus would talk to.
-    pub active: bool,
-}
 
 /// What obelus knows about the agents it could run.
 ///

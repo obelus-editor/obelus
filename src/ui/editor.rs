@@ -587,7 +587,7 @@ impl Widget for EditorView<'_> {
         // The bracket pair, worked out once for the frame rather than per
         // row: it is one scan over what is on screen, and every row asks the
         // same question.
-        let visible = crate::app::visible_bytes(buffer, area.height);
+        let visible = buffer.visible_bytes(area.height);
         let at = text.byte_of_char(text.char_offset(cursor.line, cursor.column));
         let brackets = brackets::pair_at(text, self.highlights, at, visible);
 

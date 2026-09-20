@@ -133,7 +133,7 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
     let step = notes
         .rows()
         .get(at)
-        .map_or(0, |row| row.depth * crate::component::todo::INDENT);
+        .map_or(0, |row| row.depth * crate::todo::INDENT);
     (y < list.bottom()).then(|| ratatui::layout::Position {
         x: (list.x + MARGIN + step + cell.get()).min(list.right().saturating_sub(1)),
         y,
@@ -343,7 +343,7 @@ impl TodoUi<'_> {
         // edge: the box is the note's own mark, and a column of them all
         // hard left with the text stepping away from them reads as one flat
         // list with ragged words.
-        let step = row.depth * crate::component::todo::INDENT;
+        let step = row.depth * crate::todo::INDENT;
         if row.head {
             put(
                 cells,

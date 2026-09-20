@@ -304,7 +304,7 @@ impl App {
         preview.scrolled = preview.buffer.scroll_rows(preview.scrolled, text);
         preview.marked = marked.resolve(preview.buffer.text(), &encoding);
 
-        let range = visible_bytes(&preview.buffer, area.height);
+        let range = preview.buffer.visible_bytes(area.height);
         if let Some(state) = preview.buffer.syntax() {
             preview
                 .highlights

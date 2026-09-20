@@ -578,7 +578,7 @@ impl App {
             documents,
             current,
             theme: builtin::DARK,
-            theme_name: builtin::DEFAULT.to_string(),
+            theme_name: crate::config::DEFAULT_THEME.to_string(),
             picker: None,
             servers: HashMap::new(),
             stopped: HashSet::new(),
@@ -1599,7 +1599,7 @@ impl App {
             highlights.clear();
             return;
         };
-        let range = visible_bytes(buffer, area.height);
+        let range = buffer.visible_bytes(area.height);
         highlights.refresh(state, buffer.text(), range);
     }
 
@@ -2250,41 +2250,6 @@ pub(crate) fn relative(path: &Path, root: &Path) -> String {
         .unwrap_or(path)
         .display()
         .to_string()
-}
-
-/// The byte range the viewport covers.
-///
-/// Whole lines, so a highlight that starts just off the top edge still reaches
-/// the first visible row.
-pub(crate) fn visible_bytes(buffer: &Buffer, height: u16) -> std::ops::Range<ByteOffset> {
-    let text = buffer.text();
-    let folds = buffer.folds();
-    let top = buffer.viewport().top;
-    // Walked the way the view walks it, past whatever is folded away. A
-    // count of `height` *file* lines is the same thing only while nothing
-    // is folded: with a run of two hundred lines closed at the top of the
-    // screen, the rows below it are lines two hundred further down, and a
-    // range that stopped at `top + height` would leave every one of them
-    // outside what has been highlighted -- which is not a subtle failure.
-    // The code below the fold is simply drawn in the plain foreground.
-    //
-    // A bound rather than an exact answer: a wrapped line takes more than
-    // one row, so this can reach further than the screen does. Covering too
-    // much costs a little query time and nothing else; covering too little
-    // costs the colours.
-    let mut line = folds.first_shown(top);
-    let mut rows = 0;
-    while rows < usize::from(height) && line.get() < text.line_count() {
-        rows += 1;
-        line = folds.first_shown(line.saturating_add(1));
-    }
-    let start = text.line_start_byte(top);
-    let end = if line.get() >= text.line_count() {
-        text.byte_length()
-    } else {
-        text.line_start_byte(line)
-    };
-    start..end
 }
 
 /// Lays out, scrolls and draws one frame.

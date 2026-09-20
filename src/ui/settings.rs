@@ -8,7 +8,8 @@
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
 use crate::{
-    app::{App, agents::Listed},
+    agent::Listed,
+    app::App,
     component::settings::{DESCRIPTION_INDENT, GROUP_INDENT, Refused, Settings},
     config::{Config, Kind, Value},
     text::text_width,

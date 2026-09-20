@@ -6,7 +6,10 @@
 //! not, and while the reader moves through them.
 
 use super::*;
-use crate::editing::{end_of, wordish};
+use crate::{
+    coordinates::ByteOffset,
+    editing::{end_of, wordish},
+};
 
 impl Buffer {
     /// Where the cursor is.
@@ -289,6 +292,41 @@ impl Buffer {
     #[must_use]
     pub fn has_selection(&self) -> bool {
         self.selection().is_some() || self.block_selection().is_some()
+    }
+
+    /// The byte range the viewport covers.
+    ///
+    /// Whole lines, so a highlight that starts just off the top edge still
+    /// reaches the first visible row.
+    pub fn visible_bytes(&self, height: u16) -> std::ops::Range<ByteOffset> {
+        let text = self.text();
+        let folds = self.folds();
+        let top = self.viewport().top;
+        // Walked the way the view walks it, past whatever is folded away. A
+        // count of `height` *file* lines is the same thing only while nothing
+        // is folded: with a run of two hundred lines closed at the top of the
+        // screen, the rows below it are lines two hundred further down, and a
+        // range that stopped at `top + height` would leave every one of them
+        // outside what has been highlighted -- which is not a subtle failure.
+        // The code below the fold is simply drawn in the plain foreground.
+        //
+        // A bound rather than an exact answer: a wrapped line takes more than
+        // one row, so this can reach further than the screen does. Covering too
+        // much costs a little query time and nothing else; covering too little
+        // costs the colours.
+        let mut line = folds.first_shown(top);
+        let mut rows = 0;
+        while rows < usize::from(height) && line.get() < text.line_count() {
+            rows += 1;
+            line = folds.first_shown(line.saturating_add(1));
+        }
+        let start = text.line_start_byte(top);
+        let end = if line.get() >= text.line_count() {
+            text.byte_length()
+        } else {
+            text.line_start_byte(line)
+        };
+        start..end
     }
 
     /// What part of the document is on screen.

@@ -24,7 +24,7 @@ use crate::{
         window::Window,
     },
     coordinates::LineNumber,
-    todo::{Note, Todo},
+    todo::{INDENT, Note, Todo},
 };
 
 /// One row of the view.
@@ -99,13 +99,6 @@ pub enum TodoOutcome {
     /// application's question: this knows about a text and a caret in it.
     Paste,
 }
-
-/// How many cells one level of nesting takes.
-///
-/// A drawing number kept here rather than in the view that draws it,
-/// because it is also an arithmetic one: where the words start is where
-/// they wrap, and the caret is measured against the same figure.
-pub const INDENT: u16 = 2;
 
 /// The notes, while they are showing.
 #[derive(Debug, Default)]

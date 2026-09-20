@@ -162,7 +162,7 @@ impl Obelus {
                 let at = note.at.as_ref().map_or_else(String::new, |at| {
                     format!(" ({}:{})", at.path.display(), at.line.get() + 1)
                 });
-                let under = " ".repeat(usize::from(note.depth * crate::component::todo::INDENT));
+                let under = " ".repeat(usize::from(note.depth * crate::todo::INDENT));
                 // The first line beside the name and the rest under it. A
                 // note is allowed to be a paragraph, and printing the whole
                 // of one where a line was expected put newlines in the

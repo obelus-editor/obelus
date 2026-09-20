@@ -16,6 +16,14 @@
 
 use std::path::{Path, PathBuf};
 
+/// How far one note is indented under the one above it.
+///
+/// A number about the notes rather than about any one way of showing them:
+/// the page indents by it, the caret is measured against it, and what an
+/// agent is told the list looks like is written with it. One figure, or
+/// three that drift.
+pub const INDENT: u16 = 2;
+
 use crate::coordinates::LineNumber;
 
 /// Where a tree keeps what it means to come back to.

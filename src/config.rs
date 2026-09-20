@@ -33,6 +33,13 @@
 
 use std::path::{Path, PathBuf};
 
+/// The theme a reader who has not chosen one gets.
+///
+/// Here rather than beside the themes themselves because it is a written
+/// default like every other field below it -- the name of a theme, not a
+/// theme -- and the list of names obelus will accept is already next door.
+pub const DEFAULT_THEME: &str = "dark";
+
 /// Everything the reader can decide.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
@@ -111,7 +118,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            theme: crate::theme::builtin::DEFAULT.to_string(),
+            theme: DEFAULT_THEME.to_string(),
             icons: true,
             blame_margin: true,
             // Off, so a line is a line: a reader counting rows, comparing
