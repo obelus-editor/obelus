@@ -1726,7 +1726,19 @@ impl App {
             .map_or(lsp_types::PositionEncodingKind::UTF16, |client| {
                 client.encoding().clone()
             });
-        let troubles = crate::lsp::trouble::published(params, buffer.text(), &encoding);
+        let mut troubles = crate::lsp::trouble::published(params, buffer.text(), &encoding);
+        // In the order they are in the file, which is not the order they
+        // arrive in. rustc reports what it found in the order it found it,
+        // and rust-analyzer forwards that, so a file whose errors come out
+        // at lines 73, 98, 25 is an ordinary file rather than a strange
+        // one. Everything downstream reads this as a list of places in a
+        // file -- the list walks it top to bottom, and opening that list on
+        // the one nearest the caret lands on a row whose position in the
+        // list means something.
+        //
+        // Sorted here rather than where the list is built, so that there is
+        // one order and every reader of it gets the same one.
+        troubles.sort_by_key(|trouble| (trouble.span.line, trouble.span.column));
         // An empty set is a server saying the file is clean, which is news
         // worth keeping: it is how what was wrong stops being shown.
         match troubles.is_empty() {

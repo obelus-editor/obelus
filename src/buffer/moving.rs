@@ -972,6 +972,35 @@ impl Buffer {
         self.viewport.top_row = top_row;
     }
 
+    /// Whether a line has a row on the screen the area describes.
+    ///
+    /// Asked about a line rather than about the caret: a list showing the
+    /// reader somewhere must not move the view for somewhere they can
+    /// already see, and where it is showing them is not where the caret is.
+    ///
+    /// The area is the room that is actually *visible*, which for a list
+    /// drawn over the foot of the editor is short of what the editor
+    /// draws. A line under the list is a line the reader cannot see, and
+    /// answering otherwise would leave them looking at nothing.
+    #[must_use]
+    pub fn is_on_screen(&self, line: LineNumber, area: TextArea) -> bool {
+        if line < self.viewport.top {
+            return false;
+        }
+        let mut at = (self.viewport.top, self.viewport.top_row);
+        for _ in 0..usize::from(area.height) {
+            if at.0 == line {
+                return true;
+            }
+            let next = self.step_screen_rows(at, 1, area);
+            if next == at {
+                return false;
+            }
+            at = next;
+        }
+        false
+    }
+
     /// Puts a line in the middle of the text area, leaving the caret where
     /// it is.
     ///

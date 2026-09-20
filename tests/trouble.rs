@@ -706,3 +706,128 @@ fn the_list_of_problems_shows_each_one_and_comes_back() {
         "escaping a later list went back to where an earlier one started:\n{dump}"
     );
 }
+
+/// The list is in the order the problems are in the file, whatever order
+/// they arrived in.
+///
+/// A server reports what it found in the order it found it: rustc walks
+/// its own passes, rust-analyzer forwards that, and a file whose errors
+/// come out at lines 100, 10, 40 is an ordinary file rather than a strange
+/// one. Listed that way the rows are a bag, and the row nearest the caret
+/// is somewhere in the middle of it -- which is what "why did it pick that
+/// one" looks like from the outside.
+///
+/// Broken deliberately by taking the sort out of `on_published`: the rows
+/// come back in the order they were sent and the nearest is no longer the
+/// first.
+#[test]
+fn the_problems_are_listed_in_the_order_they_are_in_the_file() {
+    let mut file = String::new();
+    for line in 0..120 {
+        file.push_str(&format!("    let _ = {line};\n"));
+    }
+    let (_scratch, mut app, path) = editing("trouble-order", &file);
+    let one = |line: u32| {
+        json!({
+            "range": { "start": { "line": line, "character": 4 },
+                       "end": { "line": line, "character": 8 } },
+            "severity": 1,
+            "source": "rustc",
+            "message": format!("wrong at {line}")
+        })
+    };
+    // Out of order, the way they arrive.
+    app.publish_for_test(json!({
+        "uri": format!("file://{}", path.display()),
+        "diagnostics": [one(100), one(10), one(40)]
+    }));
+    support::press_alt(&mut app, 'e');
+    let dump = support::render(&mut app, 60, 20);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains("wrong at "))
+        .collect();
+    let said: Vec<&str> = rows
+        .iter()
+        .filter_map(|row| row.split("wrong at ").nth(1))
+        .map(|rest| rest.split_whitespace().next().unwrap_or(""))
+        .collect();
+    assert_eq!(
+        said,
+        vec!["10", "40", "100"],
+        "the rows are in the order they arrived, not the order they are in:\n{dump}"
+    );
+
+    // And the caret is at the top, so the nearest is the first row: which
+    // is a thing worth asserting only because the order makes it true.
+    let picker = app.picker().expect("the list");
+    assert_eq!(
+        picker.selected(),
+        0,
+        "the list did not open on the problem nearest the caret:\n{dump}"
+    );
+}
+
+/// A place the reader can already see does not move the view, and a place
+/// hidden behind the list is not one of them.
+///
+/// The same rule `go-to-next-change` follows: a short hop is not worth
+/// throwing away where they were looking. It matters more here, because
+/// the list shows its selection in the file itself -- so a reader standing
+/// at the top of a file, opening the list on a problem ten lines down,
+/// would have watched it scroll away for nothing.
+///
+/// The room is what is *visible*, not what the editor draws: the list is
+/// drawn over the foot of the editor, so a line under it is a line the
+/// reader cannot see. Measured against the whole height, a problem behind
+/// the list reads as one the reader can see and the view stays put --
+/// leaving them looking at a list whose selection is nowhere on screen.
+///
+/// Broken deliberately by looking at the selection unconditionally, which
+/// moves the view in the first case, or by measuring against the editor's
+/// whole height, which fails to move it in the second. Both need a line
+/// far enough down that centring on it is not clamped back to the top,
+/// which is why neither of these is three lines in.
+#[test]
+fn the_view_moves_only_for_a_problem_the_reader_cannot_see() {
+    let opened_on = |name: &str, line: u32| {
+        let mut file = String::new();
+        for at in 0..120 {
+            file.push_str(&format!("    let _ = {at};\n"));
+        }
+        let (scratch, mut app, path) = editing(name, &file);
+        app.publish_for_test(json!({
+            "uri": format!("file://{}", path.display()),
+            "diagnostics": [{
+                "range": { "start": { "line": line, "character": 4 },
+                           "end": { "line": line, "character": 8 } },
+                "severity": 1,
+                "source": "rustc",
+                "message": "wrong"
+            }]
+        }));
+        support::render(&mut app, 60, 20);
+        let was = app.current_buffer().expect("a file").viewport().top.get();
+        support::press_alt(&mut app, 'e');
+        let dump = support::render(&mut app, 60, 20);
+        let now = app.current_buffer().expect("a file").viewport().top.get();
+        (scratch, was, now, dump)
+    };
+
+    // Twelve rows of the editor are visible under a list of one; line ten
+    // is on screen, and far enough down that centring on it would move the
+    // view if anything asked it to.
+    let (_scratch, was, now, dump) = opened_on("trouble-still", 10);
+    assert_eq!(
+        was, now,
+        "the view moved for a problem the reader could already see:\n{dump}"
+    );
+
+    // Line fifteen is drawn by the editor and covered by the list, so the
+    // reader cannot see it however many rows the editor thinks it has.
+    let (_scratch, was, now, dump) = opened_on("trouble-hidden", 15);
+    assert_ne!(
+        was, now,
+        "the view stayed put for a problem hidden behind the list:\n{dump}"
+    );
+}

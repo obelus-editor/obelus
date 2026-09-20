@@ -1016,8 +1016,9 @@ impl App {
 
     /// What the server says is wrong with the file being read.
     ///
-    /// In the order the server sent them, which is the order they are in
-    /// the file for every server obelus talks to.
+    /// In the order they are in the file, which is put right as they
+    /// arrive: a server reports what it found in the order it found it,
+    /// and that is not top to bottom.
     #[must_use]
     pub fn troubles(&self) -> &[crate::lsp::trouble::Trouble] {
         self.current_buffer()

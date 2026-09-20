@@ -124,15 +124,32 @@ impl App {
         if here.as_deref() != Some(path.as_path()) {
             return;
         }
-        let area = self.text_area();
-        // Remembered the first time and not after, because after that the
-        // view is somewhere this put it: saving again would remember a
-        // look rather than the place the reader was looking from.
+        // The room the reader can actually see, which is short of what the
+        // editor draws: a compact list is drawn *over* the foot of it.
+        // Centring in the whole of it would put the place under the list.
+        let covered = ui::picker::region(picker, self.editor_area).height;
+        let whole = self.text_area();
+        let area = TextArea {
+            height: whole.height.saturating_sub(covered).max(1),
+            ..whole
+        };
+        let line = crate::coordinates::LineNumber::new(line);
         let (Some(id), Some(buffer)) = (self.current, self.current_buffer_mut()) else {
             return;
         };
+        // Nothing at all for somewhere already on screen, which is the same
+        // rule `go-to-next-change` follows: a place the reader can see is a
+        // short hop, and moving the view for it throws away their place --
+        // and on the row they are standing on, walking a list would scroll
+        // the file out from under them before they had chosen anything.
+        if buffer.is_on_screen(line, area) {
+            return;
+        }
+        // Remembered the first time and not after, because after that the
+        // view is somewhere this put it: saving again would remember a
+        // look rather than the place the reader was looking from.
         let from = buffer.viewport();
-        buffer.look_at(crate::coordinates::LineNumber::new(line), area);
+        buffer.look_at(line, area);
         self.looked_from.get_or_insert((id, from));
     }
 
