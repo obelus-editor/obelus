@@ -75,6 +75,28 @@ pub enum Event {
     Acp(crate::acp::Incoming),
 }
 
+/// What obelus is doing about an agent.
+///
+/// Six states rather than the four questions a view used to ask -- is one
+/// chosen, is it running, has it a session, is it working -- because those
+/// four have answers that cannot all be true and a view that asks them one
+/// at a time can draw a combination that does not exist.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Talking {
+    /// No agent has been chosen.
+    Nobody,
+    /// One has been chosen and is not running: nothing has needed it yet.
+    Idle,
+    /// Starting, or opening a session.
+    Starting,
+    /// There is a session, and it is waiting to be asked something.
+    Ready,
+    /// It is working on a prompt.
+    Thinking,
+    /// It was running and has stopped.
+    Gone,
+}
+
 /// One row of the agents page: what the registry says, and what obelus
 /// knows about it here.
 ///

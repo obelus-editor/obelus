@@ -12,8 +12,9 @@
 mod support;
 
 use crossterm::event::KeyCode;
-use obelus_app::app::{App, dispatch, layers::Layer};
+use obelus_app::app::{App, dispatch};
 use obelus_command::Command;
+use obelus_component::layers::Layer;
 use support::press;
 
 /// Wide enough for the settings page's two columns, tall enough for a list.
@@ -52,7 +53,7 @@ fn open(app: &mut App, layer: Layer) {
 /// showing.
 #[test]
 fn opening_one_puts_the_reader_in_it() {
-    for layer in obelus_app::app::layers::STACK {
+    for layer in obelus_component::layers::STACK {
         let mut app = reading();
         assert_eq!(app.layers().nearest(), None, "{layer:?}: not a clean start");
         open(&mut app, layer);
@@ -71,7 +72,7 @@ fn opening_one_puts_the_reader_in_it() {
 /// never more than one thing to leave.
 #[test]
 fn escape_from_anywhere_comes_back_to_the_file() {
-    for layer in obelus_app::app::layers::STACK {
+    for layer in obelus_component::layers::STACK {
         let mut app = reading();
         open(&mut app, layer);
         press(&mut app, KeyCode::Esc);
@@ -104,7 +105,7 @@ fn escape_from_anywhere_comes_back_to_the_file() {
 /// getting through are the same bug.
 #[test]
 fn nothing_typed_over_a_layer_reaches_the_file() {
-    for layer in obelus_app::app::layers::STACK {
+    for layer in obelus_component::layers::STACK {
         let mut app = reading();
         let before = app
             .current_buffer()
@@ -141,7 +142,7 @@ fn nothing_typed_over_a_layer_reaches_the_file() {
 /// because nothing on screen changes and the damage is found later.
 #[test]
 fn no_motion_over_a_layer_moves_the_hidden_cursor() {
-    for layer in obelus_app::app::layers::STACK {
+    for layer in obelus_component::layers::STACK {
         let mut app = reading();
         // Somewhere with room to move in both directions, so a motion that
         // does get through has somewhere to go.
@@ -170,7 +171,7 @@ fn no_motion_over_a_layer_moves_the_hidden_cursor() {
 /// behind it would move a caret nobody can see.
 #[test]
 fn only_a_question_leaves_the_file_pointable() {
-    for layer in obelus_app::app::layers::STACK {
+    for layer in obelus_component::layers::STACK {
         let mut app = reading();
         open(&mut app, layer);
         let covering = app.layers().covering();
@@ -266,7 +267,7 @@ fn the_caret_is_where_the_keys_are() {
 /// a guard against a question that no other view needed.
 #[test]
 fn opening_anything_covers_the_question() {
-    for layer in obelus_app::app::layers::STACK {
+    for layer in obelus_component::layers::STACK {
         if layer == Layer::Prompt {
             continue;
         }

@@ -18,8 +18,7 @@ use std::{
 };
 
 use obelus_lsp::{
-    Message,
-    action,
+    Message, action,
     action::SymbolAction,
     client::{Client, Reply},
 };

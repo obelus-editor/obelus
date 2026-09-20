@@ -137,7 +137,7 @@ fn screen(app: &mut App) -> String {
 fn a_whole_turn_of_conversation() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     // What the agent calls itself, which obelus only knows because it asked.
     assert_eq!(app.agent_name(), Some("Fake Agent 0.1"));
@@ -220,7 +220,7 @@ fn a_whole_turn_of_conversation() {
     // Allow it, and the turn finishes.
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the end of the turn", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -255,7 +255,7 @@ fn a_whole_turn_of_conversation() {
 fn escape_on_the_question_tells_the_agent_it_was_not_answered() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "go on");
     support::press(&mut app, KeyCode::Enter);
@@ -269,7 +269,7 @@ fn escape_on_the_question_tells_the_agent_it_was_not_answered() {
     support::press(&mut app, KeyCode::Esc);
     assert!(!app.is_asking_permission());
     pump(&mut app, &events, "the end of the turn", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -288,7 +288,7 @@ fn escape_on_the_question_tells_the_agent_it_was_not_answered() {
 fn escape_stops_the_turn_and_never_closes_the_conversation() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "remember this");
     support::press(&mut app, KeyCode::Enter);
@@ -303,7 +303,7 @@ fn escape_stops_the_turn_and_never_closes_the_conversation() {
     // happening" rather than "close this".
     assert!(app.chat().is_some(), "escape closed it mid-turn");
     pump(&mut app, &events, "the end of the turn", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
 
     // And with nothing in flight it does nothing at all: a conversation is
@@ -328,18 +328,18 @@ fn escape_stops_the_turn_and_never_closes_the_conversation() {
 fn escape_stops_an_agent_that_is_working() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "think about it slowly");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "it to start thinking", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Thinking
+        app.talking() == obelus_agent::Talking::Thinking
     });
 
     support::press(&mut app, KeyCode::Esc);
     assert!(app.chat().is_some(), "escape closed the view instead");
     pump(&mut app, &events, "the turn to end", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -359,7 +359,7 @@ fn the_view_says_when_nobody_is_chosen() {
         text.contains("no agent is active"),
         "it did not say why it is empty:\n{text}"
     );
-    assert_eq!(app.talking(), obelus_app::app::talking::Talking::Nobody);
+    assert_eq!(app.talking(), obelus_agent::Talking::Nobody);
 }
 
 /// The box holds more than one line, and enter sends the lot.
@@ -372,7 +372,7 @@ fn the_view_says_when_nobody_is_chosen() {
 fn the_box_takes_a_paragraph() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
 
     support::type_text(&mut app, "first");
@@ -587,7 +587,7 @@ fn a_slash_is_a_command_and_anything_else_is_a_message() {
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the message to go", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(text.contains("ran czzz"), "enter did not send it:\n{text}");
@@ -597,7 +597,7 @@ fn a_slash_is_a_command_and_anything_else_is_a_message() {
     // says which one it ran.
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the command to run", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -790,7 +790,7 @@ fn down_scrolls_the_transcript_before_it_leaves_the_box() {
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn to end", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let short = 14;
     support::lay_out(&mut app, WIDTH, short);
@@ -844,7 +844,7 @@ fn a_status_row_with_no_room_says_there_is_more() {
 fn an_agent_with_nothing_to_change_says_so() {
     let (mut app, events) = playing(&["nothing-to-change"]);
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
@@ -1005,7 +1005,7 @@ fn a_command_named_like_a_setting_still_goes_to_the_agent() {
     assert!(app.picker().is_none(), "obelus opened a list of its own");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the agent to run it", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -1171,7 +1171,7 @@ fn a_permission_question_says_what_it_will_do() {
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn to end", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     assert!(
         screen(&mut app).contains("and I was refused"),
@@ -1191,7 +1191,7 @@ fn a_permission_question_says_what_it_will_do() {
 fn obeluss_own_keys_work_inside_a_conversation() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
 
     support::press_control(&mut app, 'p');
@@ -1223,7 +1223,7 @@ fn obeluss_own_keys_work_inside_a_conversation() {
 fn a_form_puts_its_answers_and_room_for_your_own_on_one_card() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/pick");
     support::lay_out(&mut app, WIDTH, HEIGHT);
@@ -1299,7 +1299,7 @@ fn a_form_puts_its_answers_and_room_for_your_own_on_one_card() {
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the answer to go back", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -1321,7 +1321,7 @@ fn a_form_puts_its_answers_and_room_for_your_own_on_one_card() {
 fn writing_your_own_answer_goes_with_the_one_you_choose() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/pick");
     support::lay_out(&mut app, WIDTH, HEIGHT);
@@ -1357,7 +1357,7 @@ fn writing_your_own_answer_goes_with_the_one_you_choose() {
     }
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the answer to go back", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -1375,7 +1375,7 @@ fn writing_your_own_answer_goes_with_the_one_you_choose() {
 fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/ask ");
     support::press(&mut app, KeyCode::Enter);
@@ -1457,7 +1457,7 @@ fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
     // And the agent says what it was given: the id of the row, the switch
     // as a boolean, the number as a number.
     pump(&mut app, &events, "what the agent was given", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -1480,7 +1480,7 @@ fn a_form_the_agent_asks_for_is_put_one_field_at_a_time() {
 fn several_answers_are_ticked_and_sent_from_a_row_of_their_own() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/several");
     support::lay_out(&mut app, WIDTH, HEIGHT);
@@ -1551,7 +1551,7 @@ fn several_answers_are_ticked_and_sent_from_a_row_of_their_own() {
     }
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the answer to go back", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -1570,7 +1570,7 @@ fn several_answers_are_ticked_and_sent_from_a_row_of_their_own() {
 fn the_box_on_a_ticked_card_is_ticked_open() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/several");
     support::lay_out(&mut app, WIDTH, HEIGHT);
@@ -1614,7 +1614,7 @@ fn the_box_on_a_ticked_card_is_ticked_open() {
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the answer to go back", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -1666,7 +1666,7 @@ fn a_question_asked_while_the_conversation_is_away_brings_it_back() {
 fn escape_on_a_form_tells_the_agent_it_was_not_answered() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/ask ");
     support::press(&mut app, KeyCode::Enter);
@@ -1680,7 +1680,7 @@ fn escape_on_a_form_tells_the_agent_it_was_not_answered() {
     // nearest thing first.
     assert!(app.chat().is_some(), "escape closed the conversation");
     pump(&mut app, &events, "the agent to hear it", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -1778,12 +1778,12 @@ fn talking_to_an_agent_that_stopped_starts_it_again() {
     app.config_file_for_test(file);
     app.open_agent();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/die");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "it to stop", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Gone
+        app.talking() == obelus_agent::Talking::Gone
     });
 
     // What it says is a line, not the protocol crate's own error with the
@@ -1813,7 +1813,7 @@ fn talking_to_an_agent_that_stopped_starts_it_again() {
     pump(&mut app, &events, "it to start again", |app| {
         matches!(
             app.talking(),
-            obelus_app::app::talking::Talking::Thinking | obelus_app::app::talking::Talking::Ready
+            obelus_agent::Talking::Thinking | obelus_agent::Talking::Ready
         )
     });
     pump(
@@ -1838,7 +1838,7 @@ fn talking_to_an_agent_that_stopped_starts_it_again() {
 fn a_question_goes_when_the_agent_does() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/pick");
     support::lay_out(&mut app, WIDTH, HEIGHT);
@@ -1877,7 +1877,7 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
     );
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the end of the turn", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
 
     // Up from the box, which is empty: the caret cannot move in it, so the
@@ -1932,7 +1932,7 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
 fn the_arrows_still_scroll_a_transcript_with_nowhere_to_stand() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let chat = app.chat().expect("the conversation");
     assert!(
@@ -1959,13 +1959,13 @@ fn the_arrows_still_scroll_a_transcript_with_nowhere_to_stand() {
 fn a_run_of_tool_calls_folds_into_one_row() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/many");
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
 
     // Four reads, one row -- and the one that is not a read is its own row,
@@ -2047,7 +2047,7 @@ fn what_is_happening_is_in_the_transcript_and_not_in_the_header() {
     // And when it is not working, it is not there.
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the end of the turn", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -2077,7 +2077,7 @@ fn a_row_naming_a_file_that_is_gone_changes_nothing() {
     );
     app.open_agent();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     // Where the reader left their own file. Not `current_buffer`, because
     // the conversation is what is current now -- it is a document, and
@@ -2091,7 +2091,7 @@ fn a_row_naming_a_file_that_is_gone_changes_nothing() {
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
 
     support::press(&mut app, KeyCode::Up);
@@ -2128,7 +2128,7 @@ fn a_row_naming_a_file_that_is_gone_changes_nothing() {
 fn a_change_it_is_asking_to_make_is_read_in_the_transcript() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/edit");
     support::press(&mut app, KeyCode::Enter);
@@ -2167,7 +2167,7 @@ fn a_change_it_is_asking_to_make_is_read_in_the_transcript() {
     // stays, with the count still on it.
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -2229,7 +2229,7 @@ fn the_row_that_says_it_is_working_turns_while_it_is_working() {
     // Answered, the turn ends and the ticking stops with it.
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the end of the turn", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     // A frame, so the ticker is asked for again and not wanted, and then
     // whatever was already on its way. Bounded: a ticker that has not
@@ -2284,7 +2284,7 @@ fn shades_down_the_bar(dump: &str) -> Vec<char> {
 fn a_transcript_with_more_than_fits_has_a_bar() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
 
     // Nothing said yet, so nothing to scroll and no bar to say so.
@@ -2309,7 +2309,7 @@ fn a_transcript_with_more_than_fits_has_a_bar() {
         pump(&mut app, &events, "the question", App::is_asking_permission);
         support::press(&mut app, KeyCode::Enter);
         pump(&mut app, &events, "the turn", |app| {
-            app.talking() == obelus_app::app::talking::Talking::Ready
+            app.talking() == obelus_agent::Talking::Ready
         });
     }
 
@@ -2365,7 +2365,7 @@ fn a_transcript_with_more_than_fits_has_a_bar() {
 fn a_note_is_said_on_a_conversations_own_row() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     // A jump forward from a conversation nobody jumped back from: the whole
     // of what it does is say so.
@@ -2389,7 +2389,7 @@ fn a_note_is_said_on_a_conversations_own_row() {
 fn a_paste_goes_into_the_card_and_not_behind_it() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/pick");
     support::lay_out(&mut app, WIDTH, HEIGHT);
@@ -2446,7 +2446,7 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
     support::press_alt(&mut app, 'a');
     assert!(app.chat().is_some(), "no conversation about the note");
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
 
     support::type_text(&mut app, "/blocks");
@@ -2494,7 +2494,7 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
 fn a_loose_conversation_carries_no_opening() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/blocks");
     support::press(&mut app, KeyCode::Enter);
@@ -2554,7 +2554,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
     support::press_alt(&mut app, 'a');
     pump(&mut app, &events, "a session of some kind", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     // Said in the conversation it is about, rather than in whichever one the
     // reader happens to be looking at.
@@ -2593,7 +2593,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
 fn a_note_can_be_offered_in_a_conversation_about_nothing() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     assert!(
         app.what_this_conversation_is_about().is_none(),
@@ -2647,7 +2647,7 @@ fn a_note_can_be_offered_in_a_conversation_about_nothing() {
 fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/plan");
     support::press(&mut app, KeyCode::Enter);
@@ -2689,7 +2689,7 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn to end", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
@@ -2714,7 +2714,7 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
 fn what_the_agent_means_to_do_is_one_row_that_opens() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/steps");
     support::press(&mut app, KeyCode::Enter);
@@ -2805,7 +2805,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
 fn how_full_the_agent_is_goes_on_the_status_row() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/used");
     support::press(&mut app, KeyCode::Enter);
@@ -2885,7 +2885,7 @@ fn colour_of(dump: &str, needle: &str) -> String {
 fn an_agent_with_room_left_says_so_quietly() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/room");
     support::press(&mut app, KeyCode::Enter);
@@ -2928,7 +2928,7 @@ fn somewhere_to_go_is_put_on_a_card_and_opened() {
 
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/signin");
     support::press(&mut app, KeyCode::Enter);
@@ -2998,12 +2998,12 @@ fn a_url_obelus_will_not_open_never_reaches_the_reader() {
 
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/nowhere");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn to end", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
 
     assert!(app.card().is_none(), "obelus put a file: url to the reader");
@@ -3036,7 +3036,7 @@ fn where_the_reader_was_sent_stays_on_the_page_until_it_is_done() {
 
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/signin");
     support::press(&mut app, KeyCode::Enter);
@@ -3110,7 +3110,7 @@ fn where_the_reader_was_sent_stays_on_the_page_until_it_is_done() {
 fn a_narrow_row_keeps_the_settings_and_the_keys() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/used");
     support::press(&mut app, KeyCode::Enter);
@@ -3163,12 +3163,12 @@ fn a_narrow_row_keeps_the_settings_and_the_keys() {
 fn the_readers_own_words_come_back_from_the_agent() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/relay");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the turn to end", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
 
     // In the reader's voice, because that is whose words they are.
@@ -3201,7 +3201,7 @@ fn the_readers_own_words_come_back_from_the_agent() {
 fn an_agent_that_echoes_the_prompt_does_not_say_it_twice() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/echo");
     support::press(&mut app, KeyCode::Enter);
@@ -3384,7 +3384,7 @@ fn an_agent_that_can_do_neither_is_not_asked() {
 fn a_command_the_agent_asks_for_is_run() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/run");
     support::press(&mut app, KeyCode::Enter);
@@ -3427,7 +3427,7 @@ fn a_command_the_agent_asks_for_is_run() {
 fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/run");
     support::press(&mut app, KeyCode::Enter);
@@ -3487,7 +3487,7 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
 fn the_key_that_stops_the_agent_stops_what_it_is_running() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_app::app::talking::Talking::Ready
+        app.talking() == obelus_agent::Talking::Ready
     });
     support::type_text(&mut app, "/forever");
     support::press(&mut app, KeyCode::Enter);

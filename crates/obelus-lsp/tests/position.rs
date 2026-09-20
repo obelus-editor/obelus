@@ -59,4 +59,3 @@ fn the_two_encodings_give_different_numbers_past_a_wide_character() {
     assert_eq!(bytes.character, 15, "three bytes each");
     assert_eq!(units.character, 11, "one code unit each");
 }
-

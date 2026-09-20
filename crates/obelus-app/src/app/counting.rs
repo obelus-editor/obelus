@@ -1,12 +1,12 @@
 //! How much code is here: opening the view, and what comes back from the walk.
 
-use obelus_component::counts::{Counts, CountsOutcome};
-use obelus_search::counts::Counted;
-
-use super::{
-    App,
+use obelus_component::{
+    counts::{Counts, CountsOutcome},
     layers::{Layer, Room},
 };
+use obelus_search::counts::Counted;
+
+use super::App;
 
 impl App {
     /// The line counts, while they are showing.

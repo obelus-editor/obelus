@@ -15,8 +15,8 @@
 //! of those were decisions. They were a predicate somebody had to remember
 //! to update, and did not.
 //!
-//! Nothing here draws. A layer says how much room it takes; `ui` reads that
-//! and hands it a rectangle.
+//! Nothing here draws, and nothing here is a view. A layer says how much
+//! room it takes; the renderer reads that and hands it a rectangle.
 
 use obelus_editing::keymap::Context;
 
@@ -140,7 +140,7 @@ impl Layers {
     /// module: a caller handed the array would have to know which slot
     /// means which view, and that is a second place holding the order.
     #[must_use]
-    pub(super) fn showing(mut open: impl FnMut(Layer) -> bool) -> Self {
+    pub fn showing(mut open: impl FnMut(Layer) -> bool) -> Self {
         Self {
             shown: STACK.map(&mut open),
         }

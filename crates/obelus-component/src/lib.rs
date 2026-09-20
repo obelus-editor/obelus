@@ -11,6 +11,7 @@ pub mod composer;
 pub mod counts;
 pub mod field;
 pub mod hover;
+pub mod layers;
 pub mod picker;
 pub mod prompt;
 pub mod settings;

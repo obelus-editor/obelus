@@ -30,7 +30,6 @@ mod hovering;
 mod noting;
 pub use history_view::About;
 mod keys;
-pub mod layers;
 mod moving;
 mod naming;
 mod preferences;
@@ -51,7 +50,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use document::Document;
 use documents::Rendered;
 use history::Changed;
-use layers::{Layer, Room};
+use obelus_agent::Talking;
 use obelus_buffer::{Buffer, Cursor, DocumentId, Mode, Motion, TextArea};
 use obelus_command::{Command, Requires};
 use obelus_component::{
@@ -59,6 +58,7 @@ use obelus_component::{
     completion::Completion,
     counts::Counts,
     hover::Hover,
+    layers::{self, Layer, Room},
     picker::{
         Colouring, Listing, Marking, Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue,
         files,
@@ -1444,12 +1444,9 @@ impl App {
         // rather than remembered: a row that is worked out every frame
         // cannot be left saying something that stopped being true.
         let doing = match self.talking() {
-            talking::Talking::Starting => Some("starting\u{2026}"),
-            talking::Talking::Thinking => Some("thinking\u{2026}"),
-            talking::Talking::Nobody
-            | talking::Talking::Idle
-            | talking::Talking::Ready
-            | talking::Talking::Gone => None,
+            Talking::Starting => Some("starting\u{2026}"),
+            Talking::Thinking => Some("thinking\u{2026}"),
+            Talking::Nobody | Talking::Idle | Talking::Ready | Talking::Gone => None,
         };
         self.in_transcript(|chat| chat.doing(doing));
         self.show_what_is_running();

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use obelus_buffer::Buffer;
-use obelus_component::picker::Picker;
+use obelus_component::{layers::Layer, picker::Picker};
 use obelus_lsp::ServerState;
 use obelus_text::text_width;
 use obelus_theme::Theme;
@@ -15,7 +15,7 @@ use ratatui::{
 };
 
 use crate::{
-    app::{App, layers::Layer},
+    app::App,
     ui::{Marked, fill, relative_to, truncate_from_left, write, write_marked},
 };
 

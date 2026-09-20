@@ -74,7 +74,10 @@ pub mod welcome;
 
 use std::ops::Range;
 
-use obelus_component::picker::{Colouring, Picker};
+use obelus_component::{
+    layers::Layer,
+    picker::{Colouring, Picker},
+};
 use obelus_text::text_width;
 use obelus_theme::Theme;
 use ratatui::{
@@ -85,7 +88,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthChar as _;
 
-use crate::app::{App, layers::Layer};
+use crate::app::App;
 
 /// Where the two regions of the screen are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

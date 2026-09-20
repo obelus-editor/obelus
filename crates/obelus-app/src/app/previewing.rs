@@ -319,8 +319,8 @@ impl App {
     /// Every layer answers, including the ones with nothing to scroll: a
     /// match the compiler checks is what stops the next view being left out
     /// of this the way the notes were.
-    fn scroll_layer(&mut self, layer: crate::app::layers::Layer, rows: isize) -> bool {
-        use crate::app::layers::Layer;
+    fn scroll_layer(&mut self, layer: obelus_component::layers::Layer, rows: isize) -> bool {
+        use obelus_component::layers::Layer;
         match layer {
             // One row a notch in a list. Three is right for text, where a
             // notch is a gesture at a paragraph; a list is chosen through

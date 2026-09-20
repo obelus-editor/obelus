@@ -37,7 +37,7 @@
 
 use std::path::Path;
 
-use obelus_agent::acp;
+use obelus_agent::{Talking, acp};
 use obelus_component::{
     card::Card,
     chat::{Chat, DEEPER, Focus, Row, Speaker},
@@ -47,7 +47,7 @@ use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
 use crate::{
-    app::{App, talking::Talking},
+    app::App,
     ui::{fill, put, rule, write},
 };
 

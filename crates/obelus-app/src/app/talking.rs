@@ -11,7 +11,7 @@
 //! source, so nothing here waits on anything.
 
 use crossterm::event::{KeyCode, KeyModifiers};
-use obelus_agent::acp;
+use obelus_agent::{Talking, acp};
 use obelus_component::{
     card::{Card, CardOutcome, Choice},
     chat::{Chat, Speaker},
@@ -19,23 +19,6 @@ use obelus_component::{
 
 use super::*;
 use crate::conversation::{Asking, Topic};
-
-/// What obelus is doing about an agent, for the view to say so.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Talking {
-    /// No agent has been chosen.
-    Nobody,
-    /// One has been chosen and is not running: nothing has needed it yet.
-    Idle,
-    /// Starting, or opening a session.
-    Starting,
-    /// There is a session, and it is waiting to be asked something.
-    Ready,
-    /// It is working on a prompt.
-    Thinking,
-    /// It was running and has stopped.
-    Gone,
-}
 
 impl App {
     /// Goes to the conversation, opening one if there is none.
