@@ -524,7 +524,14 @@ fn a_complaint_is_framed_and_its_count_rides_the_rail() {
     );
 }
 
-/// A narrow window gives up the indent, then the frame -- never the fit.
+/// A narrow window gives up the indent and keeps the frame whole.
+///
+/// The frame is the thing that says these rows are not the file, and half
+/// a frame says it worse than none -- so what a narrow window costs is the
+/// words wrapping harder inside it, which is only prose being prose. The
+/// indent is the one thing given up, and given up outright rather than
+/// shaved: which word the complaint is about is a nicety, and it is not
+/// worth every sentence wrapping twice as hard.
 ///
 /// Anything wider than the room is wrapped by the editor like any other
 /// text, and a wrapped frame is a rail to a row: the frame taken apart
@@ -532,12 +539,13 @@ fn a_complaint_is_framed_and_its_count_rides_the_rail() {
 /// is affordable before the words are laid out, rather than the frame
 /// being built and clamped afterwards.
 ///
-/// Broken deliberately by letting the words inside be wider than what is
-/// left of the row -- which is what a `max` on that width does, however
-/// reasonable the number in it looks.
+/// Broken deliberately by shaving the indent rather than dropping it, or
+/// by letting the words inside be wider than what is left of the row --
+/// which is what a `max` on that width does, however reasonable the number
+/// in it looks.
 #[test]
-fn a_narrow_window_gives_up_the_frame_before_it_gives_up_the_fit() {
-    let framed_at = |width: u16| {
+fn a_narrow_window_gives_up_the_indent_and_keeps_the_frame_whole() {
+    let rows_at = |width: u16| {
         let scratch = support::Scratch::new(&format!("trouble-narrow-{width}"));
         let path = scratch.path().join("sample.rs");
         std::fs::write(&path, "fn main() {\n    let _ = step_99(point);\n}\n").expect("writing");
@@ -552,9 +560,9 @@ fn a_narrow_window_gives_up_the_frame_before_it_gives_up_the_fit() {
             Vec::new(),
         );
         support::lay_out(&mut app, width, 24);
-        // One sentence, so that the whole frame fits the screen: what is
-        // being measured is its width, and a bottom rail scrolled off the
-        // bottom would read as a bottom rail that was never drawn.
+        // One sentence, so the whole frame fits the screen: what is being
+        // measured is its width, and a bottom rail scrolled off the bottom
+        // would read as a bottom rail that was never drawn.
         app.publish_for_test(json!({
             "uri": format!("file://{}", path.display()),
             "diagnostics": [{
@@ -575,55 +583,88 @@ fn a_narrow_window_gives_up_the_frame_before_it_gives_up_the_fit() {
         (rows, dump)
     };
 
-    // Narrow, but with room to frame: every rail is whole, on one row.
-    let (rows, dump) = framed_at(34);
-    let tops: Vec<&String> = rows.iter().filter(|row| row.contains('\u{250c}')).collect();
-    assert_eq!(
-        tops.len(),
-        1,
-        "the top rail is on more than one row:\n{dump}"
-    );
-    assert!(
-        tops[0].contains('\u{2510}'),
-        "the top rail ran off the row it started on:\n{dump}"
-    );
-    let bottoms: Vec<&String> = rows.iter().filter(|row| row.contains('\u{2514}')).collect();
-    assert_eq!(
-        bottoms.len(),
-        1,
-        "the bottom rail is on more than one row:\n{dump}"
-    );
-    assert!(
-        bottoms[0].contains('\u{2518}'),
-        "the bottom rail ran off the row it started on:\n{dump}"
-    );
-    // Every row of words has both of its side rails, which is the same
-    // fact said about the middle of the frame.
-    let words: Vec<&String> = rows
-        .iter()
-        .filter(|row| row.contains("cannot") || row.contains("scope"))
-        .collect();
-    assert!(!words.is_empty(), "the words are nowhere:\n{dump}");
-    for row in words {
-        assert_eq!(
-            row.matches('\u{2502}').count(),
-            2,
-            "a row of words is missing a rail:\n{dump}"
+    // Whole at every width, which is four facts: one top rail with both
+    // its corners, one bottom rail with both of its, and a pair of side
+    // rails on every row of words.
+    let whole = |rows: &[String], dump: &str, width: u16| {
+        for (corner, opposite, which) in [
+            ('\u{250c}', '\u{2510}', "top"),
+            ('\u{2514}', '\u{2518}', "bottom"),
+        ] {
+            let found: Vec<&String> = rows.iter().filter(|row| row.contains(corner)).collect();
+            assert_eq!(
+                found.len(),
+                1,
+                "at {width} the {which} rail is on {} rows:\n{dump}",
+                found.len()
+            );
+            assert!(
+                found[0].contains(opposite),
+                "at {width} the {which} rail ran off the row it started on:\n{dump}"
+            );
+        }
+        let words: Vec<&String> = rows
+            .iter()
+            .filter(|row| row.contains("cannot") || row.contains("scope"))
+            .collect();
+        assert!(
+            !words.is_empty(),
+            "at {width} the words are nowhere:\n{dump}"
         );
-    }
+        for row in words {
+            assert_eq!(
+                row.matches('\u{2502}').count(),
+                2,
+                "at {width} a row of words is missing a rail:\n{dump}"
+            );
+        }
+    };
+    // Where the frame's left-hand rail starts, in characters.
+    let starts = |rows: &[String]| {
+        let row = rows
+            .iter()
+            .find(|row| row.contains('\u{250c}'))
+            .expect("a top rail");
+        let byte = row.find('\u{250c}').expect("the corner");
+        row[..byte].chars().count()
+    };
 
-    // Too narrow to frame: the words, and nothing pretending to be a
-    // frame. Said as "no rail anywhere" rather than "no corner", because a
-    // frame that had come apart would leave the rails behind.
-    let (rows, dump) = framed_at(20);
+    let (wide, dump) = rows_at(60);
+    whole(&wide, &dump, 60);
+    let (narrow, dump) = rows_at(20);
+    whole(&narrow, &dump, 20);
+    // And one in between, where a shaved indent and a given-up one are
+    // different numbers: at the narrowest they both come out at nothing,
+    // so a width where they disagree is the only place the rule is
+    // actually being read.
+    let (between, middle) = rows_at(40);
+    whole(&between, &middle, 40);
+
+    // And the indent is what paid for it: at the wider width the frame
+    // hangs under the word, at the narrower one it is back at the code's
+    // own left edge.
     assert!(
-        rows.iter().any(|row| row.contains("cannot")),
-        "the words went with the frame:\n{dump}"
+        starts(&wide) > starts(&narrow),
+        "the narrow window kept an indent it could not afford:\n{dump}"
     );
-    assert!(
-        !rows.iter().any(|row| row.contains('\u{2502}')
-            || row.contains('\u{250c}')
-            || row.contains('\u{2514}')),
-        "a frame was drawn where there was no room for one:\n{dump}"
+    let left = |rows: &[String]| {
+        rows.iter()
+            .find(|row| row.contains("fn main"))
+            // In characters: the fold mark before it is three bytes wide.
+            .map(|row| {
+                let byte = row.find("fn").expect("the word");
+                row[..byte].chars().count()
+            })
+            .expect("the first line")
+    };
+    assert_eq!(
+        starts(&narrow),
+        left(&narrow),
+        "the narrowest window kept an indent:\n{dump}"
+    );
+    assert_eq!(
+        starts(&between),
+        left(&between),
+        "the indent was shaved rather than given up:\n{middle}"
     );
 }

@@ -587,25 +587,29 @@ impl App {
         let room = self.text_area().width;
         // What the frame costs the row: a rail and a space at either end.
         const FRAME: u16 = 4;
-        // And the least room worth leaving the words inside it. Below
-        // this a complaint is a word to a row, which is not reading.
-        const LEAST: u16 = 12;
-        // Given up in this order as the window narrows: first the indent,
-        // because which word the complaint is about is a nicety and
-        // reading it is not; then the frame itself.
+        // And the least room worth leaving the words if the indent is to
+        // be kept.
+        const LEAST: u16 = 24;
+        // The indent is the one thing given up as the window narrows, and
+        // it is given up outright rather than shaved: which word the
+        // complaint is about is a nicety, and it is not worth buying at
+        // the price of every sentence wrapping twice as hard.
         //
-        // Never merely clamped. Anything wider than the room is wrapped by
-        // the editor like any other text, and a wrapped frame is a rail to
-        // a row -- the frame taken apart into the shape it was drawn to
-        // avoid.
-        let indent = column.min(room / 2).min(room.saturating_sub(FRAME + LEAST));
-        let framing = room >= FRAME + LEAST;
-        let inside = if framing {
-            room - FRAME - indent
+        // The frame itself is never given up. It is the thing that says
+        // these rows are not the file, and half a frame says it worse than
+        // none -- so what a narrow window costs is harder wrapping inside
+        // it, which is only prose being prose.
+        let indent = if room >= FRAME + LEAST + column {
+            column
         } else {
-            room.max(1)
+            0
         };
-        let words = crate::text::wrapped(&worst.message, inside);
+        let inside = room.saturating_sub(FRAME + indent);
+        // Under a window with no room for a rail, a space and a character
+        // and the same again: a frame there could not be whole whatever it
+        // gave up, and an unclosed one is the shape this is drawn to avoid.
+        let framing = inside > 0;
+        let words = crate::text::wrapped(&worst.message, inside.max(1));
         let tally = (here.len() > 1).then(|| format!("and {} more here", here.len() - 1));
         let said = if framing {
             framed(&" ".repeat(usize::from(indent)), &words, tally.as_deref())
