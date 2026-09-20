@@ -3814,7 +3814,7 @@ fn a_rule_is_a_rule_over_whatever_is_under_it() {
 /// still wanted them for a long time; this one had not.
 #[test]
 fn a_walk_nobody_wants_stops() {
-    use obelus::{cancel::Latest, component::picker::files, event::Event};
+    use obelus::{cancel::Latest, event::Event};
 
     let scratch = support::Scratch::new("walk-cancelled");
     // Enough files that the walk sends several batches, so there is a
