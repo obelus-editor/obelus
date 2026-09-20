@@ -810,7 +810,7 @@ fn the_key_is_not_offered_where_it_would_do_nothing() {
     app.statuses_for_test(
         [(
             std::path::PathBuf::from("src/main.rs"),
-            obelus_git::FileStatus::Changed,
+            obelus_git::FileStatus::Changed.into(),
         )]
         .into_iter()
         .collect(),
@@ -1021,8 +1021,8 @@ fn a_glyph_is_the_colour_of_the_name_beside_it() {
     // same colour cannot tell the name's colour from the plain one.
     app.statuses_for_test(
         [
-            (root.join("new.rs"), FileStatus::New),
-            (root.join("old.rs"), FileStatus::Changed),
+            (root.join("new.rs"), FileStatus::New.into()),
+            (root.join("old.rs"), FileStatus::Changed.into()),
         ]
         .into_iter()
         .collect(),
@@ -2182,7 +2182,7 @@ fn a_list_with_tabs_still_walks_ten_rows() {
     app.statuses_for_test(
         [(
             root.join("tests/fixtures/many_lines.rs"),
-            FileStatus::Changed,
+            FileStatus::Changed.into(),
         )]
         .into_iter()
         .collect(),
@@ -3477,8 +3477,8 @@ fn the_file_list_has_a_tab_for_what_has_changed() {
     let root = dirty.working_directory().to_path_buf();
     dirty.statuses_for_test(
         [
-            (root.join("src/late.rs"), FileStatus::Changed),
-            (root.join("src/early.rs"), FileStatus::New),
+            (root.join("src/late.rs"), FileStatus::Changed.into()),
+            (root.join("src/early.rs"), FileStatus::New.into()),
         ]
         .into_iter()
         .collect(),
@@ -3533,7 +3533,7 @@ fn a_walk_in_flight_does_not_land_in_the_changed_listing() {
     let mut app = app();
     let root = app.working_directory().to_path_buf();
     app.statuses_for_test(
-        [(root.join("src/changed.rs"), FileStatus::Changed)]
+        [(root.join("src/changed.rs"), FileStatus::Changed.into())]
             .into_iter()
             .collect(),
     );
@@ -3578,7 +3578,7 @@ fn a_key_opens_the_changed_files_directly() {
     let mut app = app();
     let root = app.working_directory().to_path_buf();
     app.statuses_for_test(
-        [(root.join("src/changed.rs"), FileStatus::Changed)]
+        [(root.join("src/changed.rs"), FileStatus::Changed.into())]
             .into_iter()
             .collect(),
     );

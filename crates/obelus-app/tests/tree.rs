@@ -252,7 +252,7 @@ fn coming_back_from_the_other_tab_puts_the_tree_back() {
     // A second tab, which is only there when something has changed.
     app.statuses_for_test(std::collections::HashMap::from([(
         scratch.join("src/main.rs"),
-        obelus_git::FileStatus::Changed,
+        obelus_git::FileStatus::Changed.into(),
     )]));
     support::press(&mut app, KeyCode::Esc);
     support::press_function(&mut app, 1);

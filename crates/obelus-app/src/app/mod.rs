@@ -362,7 +362,7 @@ pub struct App {
     ///
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
-    statuses: std::collections::HashMap<PathBuf, obelus_git::FileStatus>,
+    statuses: std::collections::HashMap<PathBuf, obelus_git::Standing>,
     /// Where an agent reaches what obelus offers it, if it could listen.
     ///
     /// Taken once and kept: the address is what each agent is told, so a
@@ -402,7 +402,7 @@ pub struct App {
     /// is actually drawn.
     screen_area: Rect,
     /// What a test said git would say, instead of asking it.
-    given_statuses: Option<HashMap<PathBuf, obelus_git::FileStatus>>,
+    given_statuses: Option<HashMap<PathBuf, obelus_git::Standing>>,
     /// Which listings the open file list is showing, in tab order.
     ///
     /// The changed listing has a tab only when something has changed, so
@@ -1825,27 +1825,31 @@ impl App {
                 if let Some(picker) = self.picker.as_mut() {
                     let statuses = &self.statuses;
                     let root = &self.working_directory;
-                    picker.extend(paths.into_iter().map(|path| PickerItem {
-                        prose: false,
-                        marker: None,
-                        icon: Some(obelus_icons::for_path(&path)),
-                        label: path.display().to_string(),
-                        detail: None,
-                        trailing: None,
-                        changed: None,
-                        value: PickerValue::File(path.clone()),
-                        enabled: true,
-                        colours: None,
-                        // Git says nothing about a file it was told to
-                        // ignore -- `git status` leaves them out -- so the
-                        // walk that went looking is what says it.
-                        status: match ignored {
-                            true => Some(obelus_git::FileStatus::Ignored),
-                            false => statuses.get(&root.join(&path)).copied(),
-                        },
-                        depth: 0,
-                        kind: None,
-                        tab: None,
+                    picker.extend(paths.into_iter().map(|path| {
+                        PickerItem {
+                            prose: false,
+                            marker: None,
+                            icon: Some(obelus_icons::for_path(&path)),
+                            label: path.display().to_string(),
+                            detail: None,
+                            trailing: None,
+                            changed: None,
+                            value: PickerValue::File(path.clone()),
+                            enabled: true,
+                            colours: None,
+                            // Git says nothing about a file it was told to
+                            // ignore -- `git status` leaves them out -- so the
+                            // walk that went looking is what says it.
+                            status: match ignored {
+                                true => Some(obelus_git::FileStatus::Ignored),
+                                false => statuses
+                                    .get(&root.join(&path))
+                                    .map(|standing| standing.status),
+                            },
+                            depth: 0,
+                            kind: None,
+                            tab: None,
+                        }
                     }));
                 }
             }

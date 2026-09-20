@@ -15,7 +15,7 @@ impl App {
     fn file_row(
         index: usize,
         buffer: &Buffer,
-        statuses: &std::collections::HashMap<PathBuf, obelus_git::FileStatus>,
+        statuses: &std::collections::HashMap<PathBuf, obelus_git::Standing>,
         root: &Path,
     ) -> PickerItem {
         PickerItem {
@@ -52,7 +52,7 @@ impl App {
             value: PickerValue::Document(DocumentId::new(index)),
             enabled: true,
             colours: None,
-            status: statuses.get(buffer.path()).copied(),
+            status: statuses.get(buffer.path()).map(|standing| standing.status),
             depth: 0,
             kind: None,
             tab: None,
@@ -179,7 +179,7 @@ impl App {
     /// The walk itself, without keeping the answer: what needs it kept is
     /// the list of files, and what needs it fresh is the question of
     /// whether there is anything to list at all.
-    pub(super) fn tree_statuses(&self) -> HashMap<PathBuf, obelus_git::FileStatus> {
+    pub(super) fn tree_statuses(&self) -> HashMap<PathBuf, obelus_git::Standing> {
         match &self.given_statuses {
             Some(given) => given.clone(),
             None => obelus_git::statuses(&self.working_directory),
@@ -204,7 +204,7 @@ impl App {
     /// on: with a real answer, a list of files looks one way on a clean tree
     /// and another while someone is working in it -- and the second is the
     /// one anyone runs them on.
-    pub fn statuses_for_test(&mut self, statuses: HashMap<PathBuf, obelus_git::FileStatus>) {
+    pub fn statuses_for_test(&mut self, statuses: HashMap<PathBuf, obelus_git::Standing>) {
         self.given_statuses = Some(statuses);
         self.gather_statuses();
     }
@@ -386,7 +386,7 @@ impl App {
                     false => self
                         .statuses
                         .get(&self.working_directory.join(path))
-                        .copied(),
+                        .map(|standing| standing.status),
                 },
                 depth: 0,
                 kind: None,
@@ -448,7 +448,7 @@ impl App {
                 // row that is only there because the reader asked for it.
                 status: match entry.ignored {
                     true => Some(obelus_git::FileStatus::Ignored),
-                    false => self.statuses.get(&full).copied(),
+                    false => self.statuses.get(&full).map(|standing| standing.status),
                 },
                 enabled: true,
                 colours: None,
@@ -574,10 +574,10 @@ impl App {
                     picker.offering_ignored(None);
                 }
                 let root = self.working_directory.clone();
-                let mut rows: Vec<(String, obelus_git::FileStatus)> = self
+                let mut rows: Vec<(String, obelus_git::Standing)> = self
                     .statuses
                     .iter()
-                    .map(|(path, status)| (relative(path, &root), *status))
+                    .map(|(path, standing)| (relative(path, &root), standing.clone()))
                     .collect();
                 // By name, because the order git reports them in is the order
                 // it walked the tree, and a list that reorders itself between
@@ -594,9 +594,13 @@ impl App {
                         .cloned()
                         .collect::<Vec<std::path::PathBuf>>(),
                 );
+                // What the last commit is, for the rows naming a file that
+                // is not there any more: the only version of it left is the
+                // one git has, and that is what such a row opens.
+                let head = obelus_git::head_commit(&root);
                 let items = rows
                     .into_iter()
-                    .map(|(name, status)| PickerItem {
+                    .map(|(name, standing)| PickerItem {
                         prose: false,
                         marker: None,
                         // What it did to the file, at the row's right-hand
@@ -605,15 +609,39 @@ impl App {
                         // most of that answer.
                         changed: counts.get(&root.join(&name)).copied(),
                         icon: Some(obelus_icons::for_path(std::path::Path::new(&name))),
-                        enabled: true,
+                        // A submodule is another repository at a path, and
+                        // obelus has no notion of one. It is listed because
+                        // it is a change to this tree and git reports it as
+                        // one; it cannot be pressed, and the row is drawn in
+                        // the colour that says so rather than waiting to be
+                        // pressed to say it.
+                        enabled: !standing.submodule,
                         colours: None,
-                        status: Some(status),
+                        status: Some(standing.status),
                         depth: 0,
                         kind: None,
                         label: name.clone(),
-                        detail: None,
+                        // What it was called before, where git says it was
+                        // moved, and what it is, where it is not a file.
+                        // The same arrow the history uses for the same
+                        // fact, pointing back at the name it had.
+                        detail: match (&standing.was, standing.submodule) {
+                            (Some(was), _) => Some(format!("\u{2190} {}", was.display())),
+                            (None, true) => Some("submodule".to_string()),
+                            (None, false) => None,
+                        },
                         trailing: None,
-                        value: PickerValue::File(std::path::PathBuf::from(name)),
+                        // A file that is gone opens the way a commit's own
+                        // version of a file opens: read-only, and saying
+                        // above the first line which commit it is. There is
+                        // no other version of it to offer.
+                        value: match (standing.status, head) {
+                            (obelus_git::FileStatus::Gone, Some(id)) => PickerValue::CommitFile {
+                                id,
+                                path: std::path::PathBuf::from(&name),
+                            },
+                            _ => PickerValue::File(std::path::PathBuf::from(&name)),
+                        },
                         tab: None,
                     })
                     .collect();

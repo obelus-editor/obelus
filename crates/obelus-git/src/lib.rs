@@ -218,6 +218,14 @@ pub enum FileStatus {
     Changed,
     /// Not in the last commit at all.
     New,
+    /// In the last commit, and not on the disk any more.
+    ///
+    /// A row for something that is not there, which is the point: it is a
+    /// change to the tree, git reports it as one, and a list of changes
+    /// that left it out was a list that disagreed with `git status`.
+    /// Choosing one opens what the last commit had, to read and not to
+    /// edit -- the only version of it there is.
+    Gone,
     /// Kept out of the tree by `.gitignore` and friends.
     ///
     /// Never from [`statuses`], which does not ask about them -- `git
@@ -284,8 +292,103 @@ pub fn anything_changed(root: &Path) -> bool {
     iterator.filter_map(Result::ok).next().is_some()
 }
 
+/// The mode a staged change records, whichever side of it has one.
+fn mode_of(change: &gix::diff::index::Change) -> Option<gix::index::entry::Mode> {
+    use gix::diff::index::Change;
+    Some(match change {
+        Change::Addition { entry_mode, .. }
+        | Change::Deletion { entry_mode, .. }
+        | Change::Modification { entry_mode, .. }
+        | Change::Rewrite { entry_mode, .. } => *entry_mode,
+    })
+}
+
+/// Whether a mode is the gitlink git records another repository as.
+fn gix_mode_is_submodule(mode: gix::index::entry::Mode) -> bool {
+    mode.is_submodule()
+}
+
+/// How one file stands with git.
+///
+/// A struct and not just the status, because a move is one change with two
+/// names in it and `git status` says both: `R moved.rs -> deep/moved.rs` is
+/// one row there and is one row here.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Standing {
+    /// What has happened to it.
+    pub status: FileStatus,
+    /// Another repository at this path.
+    ///
+    /// Git records one as a commit at a path and reports it as changed the
+    /// moment that commit moves, so it arrives here looking exactly like a
+    /// modified file and is a directory. It is a change to the tree and is
+    /// listed as one; it is not something obelus can open, and the row says
+    /// so rather than waiting to be pressed to say it.
+    pub submodule: bool,
+    /// What it was called before, for a move git has been told about.
+    ///
+    /// Only a move git itself reports -- which is one that has been staged,
+    /// by `git mv` or by adding both halves. A file moved in the working
+    /// tree and not staged is a deletion and an untracked file to git, and
+    /// obelus says what git says: pairing those two up would be obelus's
+    /// inference rather than the tree's state, and this list is the tree's
+    /// state.
+    pub was: Option<PathBuf>,
+}
+
+impl From<FileStatus> for Standing {
+    /// A file in that state, where it was, and a file rather than another
+    /// repository -- which is the ordinary case and the one a test setting
+    /// up a tree means.
+    fn from(status: FileStatus) -> Self {
+        Self {
+            status,
+            submodule: false,
+            was: None,
+        }
+    }
+}
+
+impl Standing {
+    /// Changed, and still where it was.
+    #[must_use]
+    fn changed() -> Self {
+        Self {
+            status: FileStatus::Changed,
+            submodule: false,
+            was: None,
+        }
+    }
+
+    /// Not in the last commit at all.
+    #[must_use]
+    fn new() -> Self {
+        Self {
+            status: FileStatus::New,
+            submodule: false,
+            was: None,
+        }
+    }
+
+    /// In the last commit, and not on the disk any more.
+    #[must_use]
+    fn gone() -> Self {
+        Self {
+            status: FileStatus::Gone,
+            submodule: false,
+            was: None,
+        }
+    }
+}
+
+/// What `HEAD` points at, for asking what a file used to say.
+#[must_use]
+pub fn head_commit(root: &Path) -> Option<gix::ObjectId> {
+    Some(repository(root)?.head_id().ok()?.detach())
+}
+
 /// Everything git says has changed in a tree, by path.
-pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
+pub fn statuses(root: &Path) -> HashMap<PathBuf, Standing> {
     let mut statuses = HashMap::new();
     let Some(repository) = repository(root) else {
         return statuses;
@@ -312,10 +415,33 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
 
     for item in iterator.filter_map(Result::ok) {
         use gix::status::{Item, index_worktree};
-        let (path, status) = match item {
-            // Tracked and different from the index.
-            Item::IndexWorktree(index_worktree::Item::Modification { rela_path, .. }) => {
-                (rela_path, FileStatus::Changed)
+        let (path, standing) = match item {
+            // Tracked, and not as the index has it. What kind of not is
+            // git's own answer rather than a guess from the disk: a file
+            // that is gone says so, and a submodule -- which git records as
+            // a commit at a path and reports as changed the moment that
+            // commit moves -- says that too, and is a directory obelus has
+            // no notion of opening.
+            Item::IndexWorktree(index_worktree::Item::Modification {
+                rela_path, status, ..
+            }) => {
+                use gix::status::plumbing::index_as_worktree::{Change, EntryStatus};
+                match status {
+                    EntryStatus::Change(Change::Removed) => (rela_path, Standing::gone()),
+                    // Another repository at a path. Listed, because it is
+                    // a change to this tree and git reports it as one; the
+                    // row says what it is and cannot be pressed, which is
+                    // the word said where it is read rather than behind a
+                    // key that answers "no".
+                    EntryStatus::Change(Change::SubmoduleModification(_)) => (
+                        rela_path,
+                        Standing {
+                            submodule: true,
+                            ..Standing::changed()
+                        },
+                    ),
+                    _ => (rela_path, Standing::changed()),
+                }
             }
             // Found by the directory walk, which is how a file git has never
             // seen arrives.
@@ -328,59 +454,74 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, FileStatus> {
                 if !matches!(entry.disk_kind, Some(gix::dir::entry::Kind::File)) {
                     continue;
                 }
-                (entry.rela_path, FileStatus::New)
+                (entry.rela_path, Standing::new())
             }
-            // A rename is a deletion and an addition to git; to a reader
-            // looking for something to read, the file that is *there* is a
-            // file they have changed.
-            Item::IndexWorktree(index_worktree::Item::Rewrite { dirwalk_entry, .. }) => {
-                (dirwalk_entry.rela_path, FileStatus::Changed)
-            }
-            // Staged: the index differs from `HEAD`. An addition is a file
-            // that is not in the last commit at all, which is what `New`
-            // means; everything else is a change to a file that is.
+            // A move git found between the index and the working tree.
+            Item::IndexWorktree(index_worktree::Item::Rewrite {
+                dirwalk_entry,
+                source,
+                ..
+            }) => (
+                dirwalk_entry.rela_path,
+                Standing {
+                    status: FileStatus::Changed,
+                    submodule: false,
+                    was: gix::path::try_from_bstr(source.rela_path())
+                        .ok()
+                        .map(|path| path.into_owned()),
+                },
+            ),
+            // Staged: the index differs from `HEAD`.
             Item::TreeIndex(change) => {
-                let new = matches!(change, gix::diff::index::Change::Addition { .. });
                 let path = change.location().to_owned();
-                (
-                    path,
-                    if new {
-                        FileStatus::New
-                    } else {
-                        FileStatus::Changed
+                // A submodule arrives here too, once the commit it records
+                // has been staged, and it is the same directory it was
+                // before. Told by the mode git keeps for one -- a gitlink,
+                // which is neither a file nor a tree -- because that is
+                // what it is rather than what the disk happens to hold.
+                let submodule = mode_of(&change).is_some_and(gix_mode_is_submodule);
+                if submodule {
+                    let Ok(path) = gix::path::try_from_bstring(path) else {
+                        continue;
+                    };
+                    statuses
+                        .entry(work_dir.join(path))
+                        .or_insert_with(|| Standing {
+                            submodule: true,
+                            ..Standing::changed()
+                        });
+                    continue;
+                }
+                let standing = match &change {
+                    // Not in the last commit at all.
+                    gix::diff::index::Change::Addition { .. } => Standing::new(),
+                    gix::diff::index::Change::Deletion { .. } => Standing::gone(),
+                    gix::diff::index::Change::Modification { .. } => Standing::changed(),
+                    // The one change that carries two names, and the reason
+                    // this is a struct: `git status` writes it
+                    // `R old -> new`, and so does the list.
+                    gix::diff::index::Change::Rewrite {
+                        source_location, ..
+                    } => Standing {
+                        status: FileStatus::Changed,
+                        submodule: false,
+                        was: gix::path::try_from_bstr(source_location.as_ref())
+                            .ok()
+                            .map(|path| path.into_owned()),
                     },
-                )
+                };
+                (path, standing)
             }
         };
         let Ok(path) = gix::path::try_from_bstring(path) else {
             continue;
         };
-        let full = work_dir.join(path);
-        // Only what is on the disk now. What this feeds is a list of files
-        // to *open*, and git reports two kinds of change that are not one:
-        // a file the reader deleted, and a submodule -- which git records
-        // as a commit at a path and reports as changed the moment that
-        // commit moves, so `vendor` arrives looking exactly like a
-        // modified file and is a directory.
-        //
-        // Neither is a row obelus can do anything with. A reader who wants
-        // to know what they deleted has the history, which is the view
-        // built for what a file used to say; a submodule is another
-        // repository, and obelus has no notion of one. The alternative was
-        // rows that cannot be pressed, each needing a word to say why it
-        // cannot -- attention spent to say "nothing here".
-        //
-        // Asked of the disk rather than of git's own mode, because that is
-        // the question: not "is this a submodule" but "is there a file to
-        // open". One predicate covers both, and the walk one arm up has
-        // refused directories on the same grounds since it was written.
-        if !full.is_file() {
-            continue;
-        }
         // The first answer wins: a file can be reported twice -- staged and
-        // then modified again -- and "new" is the more surprising of the two
-        // to lose.
-        statuses.entry(full).or_insert(status);
+        // then modified again -- and the first says the more surprising
+        // thing, which is what a reader scanning the list is looking for.
+        statuses
+            .entry(work_dir.join(path))
+            .or_insert_with(|| standing.clone());
     }
     statuses
 }

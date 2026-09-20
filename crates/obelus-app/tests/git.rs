@@ -1688,13 +1688,13 @@ fn a_list_of_files_says_which_have_changed() {
 
     let found = statuses(&repository.directory);
     assert_eq!(
-        found.get(&repository.path()).copied(),
-        Some(FileStatus::Changed),
+        found.get(&repository.path()).cloned(),
+        Some(FileStatus::Changed.into()),
         "a tracked file that differs: {found:?}"
     );
     assert_eq!(
-        found.get(&repository.directory.join("new.rs")).copied(),
-        Some(FileStatus::New),
+        found.get(&repository.directory.join("new.rs")).cloned(),
+        Some(FileStatus::New.into()),
         "a file git has never seen: {found:?}"
     );
 
@@ -1709,15 +1709,15 @@ fn a_list_of_files_says_which_have_changed() {
     std::fs::write(new_module.join("inner").join("deep.rs"), "fn deep() {}\n").expect("another");
     let found = statuses(&repository.directory);
     assert_eq!(
-        found.get(&new_module.join("mod.rs")).copied(),
-        Some(FileStatus::New),
+        found.get(&new_module.join("mod.rs")).cloned(),
+        Some(FileStatus::New.into()),
         "the file in a new directory is not listed: {found:?}"
     );
     assert_eq!(
         found
             .get(&new_module.join("inner").join("deep.rs"))
-            .copied(),
-        Some(FileStatus::New),
+            .cloned(),
+        Some(FileStatus::New.into()),
         "a file further down is not listed either: {found:?}"
     );
     // And a repository checked out inside the tree, which is the one thing
@@ -4837,16 +4837,52 @@ fn a_repository_does_not_get_to_run_a_program_because_obelus_read_it() {
     );
 }
 
-/// The list of what changed is a list of files on disk.
+/// A move git has been told about is one row with both names on it.
 ///
-/// git reports two kinds of change that are not one. A submodule is
-/// recorded as a commit at a path and reported as changed the moment that
-/// commit moves, so `vendor` arrives looking exactly like a modified file
-/// and is a directory; and a file the reader deleted is reported too, and
-/// is not there. Neither is a row obelus can open, and a row that cannot be
-/// pressed costs a reader attention to say "nothing here".
+/// `git status` writes it `R old -> new`, and this list says the same
+/// thing. Only a move git itself reports, which is one that has been
+/// staged: a file moved in the working tree and not staged is a deletion
+/// and an untracked file to git, and pairing those two up would be obelus's
+/// inference rather than the tree's state.
 #[test]
-fn only_what_is_on_disk_is_something_that_changed() {
+fn a_move_git_knows_about_is_one_row_with_the_name_it_had() {
+    let lines: String = (0..40).map(|n| format!("line {n}\n")).collect();
+    let repository = Repository::new("statuses-moved", &lines);
+    std::fs::create_dir_all(repository.directory().join("deep")).expect("a directory");
+    repository.run(&["mv", "file.rs", "deep/moved.rs"]);
+    std::fs::write(
+        repository.directory().join("deep/moved.rs"),
+        format!("{lines}an edit\n"),
+    )
+    .expect("editing it where it landed");
+
+    let statuses = obelus_git::statuses(&repository.directory());
+    let moved = statuses
+        .get(&repository.directory().join("deep/moved.rs"))
+        .expect("the file where it is now");
+    assert_eq!(
+        moved.was,
+        Some(std::path::PathBuf::from("file.rs")),
+        "a move is not said to be one: {statuses:?}"
+    );
+    assert!(
+        !statuses.contains_key(&repository.path()),
+        "a move is two rows, the way it would be without the inference: {statuses:?}"
+    );
+}
+
+/// The list of what changed says what git says has changed.
+///
+/// Two of the things git reports are not files to open, and both used to be
+/// dropped for it. A file the reader deleted is not there, and a submodule
+/// -- recorded as a commit at a path and reported as changed the moment
+/// that commit moves -- is a directory. But a list of changes that leaves
+/// out changes is a list that disagrees with `git status` while looking
+/// complete, and that was the worse answer: what a deleted file opens is
+/// what the last commit had, and a submodule is drawn as the row nobody can
+/// press.
+#[test]
+fn what_git_says_has_changed_is_what_the_list_says() {
     let outer = Repository::new("on-disk-outer", "main\n");
     let inner = Repository::new("on-disk-inner", "one\n");
     outer.run(&[
@@ -4894,25 +4930,43 @@ fn only_what_is_on_disk_is_something_that_changed() {
         statuses.contains_key(&outer.path()),
         "the file that really did change is missing: {statuses:?}"
     );
-    assert!(
-        !statuses.contains_key(&outer.directory().join("vendor")),
-        "a submodule is offered as a file to open: {statuses:?}"
+    // A file that is gone is a change to the tree and git reports it as
+    // one. It is listed, and what it opens is what the last commit had:
+    // there is no other version of it left.
+    assert_eq!(
+        statuses.get(&gone).map(|standing| standing.status),
+        Some(obelus_git::FileStatus::Gone),
+        "a file the reader deleted is not among the changes: {statuses:?}"
     );
+    // So is a submodule, which git reports as changed the moment the commit
+    // it records moves. It is not a file obelus can open, and the row says
+    // so -- rather than being left out of a list that claims to be what git
+    // says has changed.
+    let vendor = statuses
+        .get(&outer.directory().join("vendor"))
+        .expect("a submodule that moved on is not among the changes");
     assert!(
-        !statuses.contains_key(&gone),
-        "a file that is not there is offered as one to open: {statuses:?}"
+        vendor.submodule,
+        "a submodule is offered as a file to open: {vendor:?}"
     );
 
-    // And once it is staged, which arrives down a different arm.
+    // And once they are staged, which arrives down a different arm: the
+    // index against `HEAD` rather than the working tree against the index.
+    // A submodule is told apart there by the mode git keeps for one -- a
+    // gitlink is neither a file nor a tree -- because the directory on disk
+    // looks the same either way.
     outer.run(&["add", "-A"]);
     let staged = obelus_git::statuses(&outer.directory());
     assert!(
-        !staged.contains_key(&outer.directory().join("vendor")),
+        staged
+            .get(&outer.directory().join("vendor"))
+            .is_some_and(|standing| standing.submodule),
         "a staged submodule is offered as a file to open: {staged:?}"
     );
-    assert!(
-        !staged.contains_key(&gone),
-        "a staged deletion is offered as a file to open: {staged:?}"
+    assert_eq!(
+        staged.get(&gone).map(|standing| standing.status),
+        Some(obelus_git::FileStatus::Gone),
+        "a staged deletion is not among the changes: {staged:?}"
     );
 }
 

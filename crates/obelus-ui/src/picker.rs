@@ -480,6 +480,14 @@ impl PickerView<'_> {
             // few that have been are what a reader is looking for.
             (Some(FileStatus::Changed), _) => style.fg(self.theme.change_modified),
             (Some(FileStatus::New), _) => style.fg(self.theme.change_added),
+            // The colour a deleted line wears in the margin, and struck
+            // through: the name is of something that is not there, and a
+            // list where that is the only difference is a list a reader
+            // has to look twice at. A terminal that has not got the
+            // attribute ignores it and the colour still says it.
+            (Some(FileStatus::Gone), _) => style
+                .fg(self.theme.change_removed)
+                .add_modifier(ratatui::style::Modifier::CROSSED_OUT),
             // Dim, because the tree said it does not keep this one: it is
             // in the list only because the reader asked for the ignored
             // ones too, and a build artefact in the same ink as the source
