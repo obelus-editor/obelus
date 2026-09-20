@@ -1323,6 +1323,18 @@ impl App {
         self.phase
     }
 
+    /// Puts the animation back where it starts, for a test.
+    ///
+    /// A spinner is a cell that changes on a clock nobody in a test is
+    /// driving on purpose: the ticker runs on a thread, so how many of its
+    /// ticks have arrived by the time a screen is drawn depends on how
+    /// quickly the machine got there. A golden screen holding one is a
+    /// golden screen that passes on the machine it was made on -- which is
+    /// what `⠋` against `⠼` means, and it says nothing about obelus.
+    pub const fn phase_for_test(&mut self, phase: u32) {
+        self.phase = phase;
+    }
+
     /// What obelus has to say, until the next key.
     #[must_use]
     pub fn note(&self) -> Option<&str> {

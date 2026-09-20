@@ -403,7 +403,10 @@ fn a_path_survives_the_round_trip_through_a_uri() {
         "/tmp/\u{8def}\u{5f84}/\u{6587}\u{4ef6}.rs",
         "/tmp/hash#and?query/one.rs",
     ] {
-        let path = std::path::PathBuf::from(path);
+        // Absolute in this platform's own language: a URI names a file on a
+        // machine, and `/tmp/one.rs` is a name of one only where paths start
+        // that way.
+        let path = support::fake_path(path);
         let uri = uri_for(&path).expect("a uri");
         assert_eq!(
             path_of_uri(uri.as_str()).as_deref(),

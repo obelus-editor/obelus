@@ -175,7 +175,7 @@ impl Repository {
                 String::from_utf8_lossy(&status.stderr)
             );
         };
-        git(&["init", "--quiet"]);
+        git(&["init", "--quiet", "--initial-branch=master"]);
         std::fs::write(directory.join("file.rs"), committed).expect("the file");
         git(&["add", "file.rs"]);
         git(&["commit", "--quiet", "-m", "committed"]);
@@ -1733,7 +1733,7 @@ fn a_list_of_files_says_which_have_changed() {
     std::process::Command::new("git")
         .arg("-C")
         .arg(&nested)
-        .args(["init", "--quiet"])
+        .args(["init", "--quiet", "--initial-branch=master"])
         .output()
         .expect("running git");
     std::fs::write(nested.join("theirs.rs"), "fn theirs() {}\n").expect("a file in it");
@@ -3362,7 +3362,7 @@ impl Pushed {
         let (bare, work) = (directory.join("remote.git"), directory.join("work"));
         std::fs::create_dir_all(&work).expect("a directory");
         std::process::Command::new("git")
-            .args(["init", "--bare", "--quiet"])
+            .args(["init", "--bare", "--quiet", "--initial-branch=master"])
             .arg(&bare)
             .output()
             .expect("a remote");
@@ -3380,7 +3380,7 @@ impl Pushed {
                 .expect("running git");
             assert!(outcome.status.success(), "git {arguments:?} failed");
         };
-        git(&work, &["init", "--quiet"]);
+        git(&work, &["init", "--quiet", "--initial-branch=master"]);
         for commit in 0..3 {
             std::fs::write(work.join("file.rs"), format!("line {commit}\n")).expect("the file");
             git(&work, &["add", "-A"]);

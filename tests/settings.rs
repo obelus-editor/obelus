@@ -686,7 +686,7 @@ fn a_setting_the_tree_has_cannot_be_changed_here() {
     // And the row says where it comes from.
     let dump = support::render(&mut app, 76, 12);
     assert!(
-        support::text_block(&dump).contains(".obelus/config.toml"),
+        support::text_block(&dump).contains(&support::as_shown(".obelus/config.toml")),
         "the row does not say which file has it:\n{dump}"
     );
 }
@@ -843,7 +843,10 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     assert!(text.contains("Global"), "{dump}");
     assert!(text.contains("Default"), "{dump}");
     // And the file it would be writing is named on the tab row.
-    assert!(text.contains(".obelus/config.toml"), "{dump}");
+    assert!(
+        text.contains(&support::as_shown(".obelus/config.toml")),
+        "{dump}"
+    );
 
     // And the setting the tree does have says so, in the same column: a
     // column where two of the three layers have a word and the third is
@@ -976,7 +979,11 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
     let dump = support::render(&mut app, 76, 16);
     assert_eq!(
         letter(&dump, "Wrap long lines", "long"),
-        letter(&dump, "Wrap long lines", ".obelus/config.toml"),
+        letter(
+            &dump,
+            "Wrap long lines",
+            &support::as_shown(".obelus/config.toml")
+        ),
         "a row the reader cannot use is not dim throughout:\n{dump}"
     );
 }
@@ -1016,7 +1023,10 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
 
     // Wide: the name is there, after the tabs.
     let wide = tabs(&mut app, 76);
-    assert!(wide.contains(".obelus/config.toml"), "{wide:?}");
+    assert!(
+        wide.contains(&support::as_shown(".obelus/config.toml")),
+        "{wide:?}"
+    );
     assert!(
         wide.find("Agents") < wide.find(".obelus"),
         "the name is not after the tabs: {wide:?}"

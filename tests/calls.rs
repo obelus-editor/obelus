@@ -33,7 +33,7 @@ fn item(path: &std::path::Path, name: &str, line: u32) -> serde_json::Value {
     json!({
         "name": name,
         "kind": 12,
-        "uri": format!("file://{}", path.display()),
+        "uri": support::uri_for(path),
         "range": { "start": { "line": line, "character": 0 },
                    "end": { "line": line + 2, "character": 1 } },
         "selectionRange": { "start": { "line": line, "character": 3 },

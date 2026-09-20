@@ -169,7 +169,13 @@ fn standing_on(app: &obelus::app::App) -> String {
 }
 
 /// The path behind it, which is what tells two rows of the same name apart.
-fn path_of(app: &obelus::app::App) -> String {
+///
+/// The path itself rather than the string it displays as. A path written
+/// out in a test is written with `/`, and the one the walk found wears
+/// whatever this platform puts between two parts of a path -- so the
+/// comparison has to be about the parts and not about the letters between
+/// them.
+fn path_of(app: &obelus::app::App) -> std::path::PathBuf {
     use obelus::component::picker::PickerValue;
 
     match app
@@ -177,8 +183,8 @@ fn path_of(app: &obelus::app::App) -> String {
         .and_then(obelus::component::picker::Picker::selected_item)
         .map(|item| &item.value)
     {
-        Some(PickerValue::File(path) | PickerValue::Directory(path)) => path.display().to_string(),
-        _ => String::new(),
+        Some(PickerValue::File(path) | PickerValue::Directory(path)) => path.clone(),
+        _ => std::path::PathBuf::new(),
     }
 }
 
@@ -281,22 +287,48 @@ fn coming_back_from_the_other_tab_puts_the_tree_back() {
 fn it_goes_back_to_the_row_and_not_to_the_name() {
     use crossterm::event::KeyCode;
 
+    // More presses than the tree has rows. Both walks below are bounded
+    // because a walk towards a row that cannot be recognised is a test
+    // that hangs rather than one that fails -- and a suite that does not
+    // finish says nothing about any of the rest of itself. Which is what
+    // this cost while the comparison was against a written-out string:
+    // the row was there, and `src\lsp\mod.rs` is not `src/lsp/mod.rs`.
+    const ENOUGH: usize = 40;
+
     let (_scratch, mut app) = a_tree("tree-same-name");
     // Open `src/app` as well, so both of the `mod.rs` rows are on screen.
-    while standing_on(&app) != "app" {
+    for _ in 0..ENOUGH {
+        if standing_on(&app) == "app" {
+            break;
+        }
         support::press(&mut app, KeyCode::Up);
     }
+    assert_eq!(
+        standing_on(&app),
+        "app",
+        "there is no second mod.rs to tell the first one from"
+    );
     support::press(&mut app, KeyCode::Enter);
-    while standing_on(&app) != "mod.rs" || path_of(&app) != "src/lsp/mod.rs" {
+
+    let wanted = std::path::Path::new("src/lsp/mod.rs");
+    for _ in 0..ENOUGH {
+        if standing_on(&app) == "mod.rs" && path_of(&app) == wanted {
+            break;
+        }
         support::press(&mut app, KeyCode::Down);
     }
+    assert_eq!(
+        path_of(&app),
+        wanted,
+        "the walk never arrived at the row this is about"
+    );
 
     support::type_text(&mut app, "z");
     support::press(&mut app, KeyCode::Backspace);
 
     assert_eq!(
         path_of(&app),
-        "src/lsp/mod.rs",
+        wanted,
         "it went back to a row with the right name and the wrong path"
     );
 }

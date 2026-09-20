@@ -176,14 +176,11 @@ fn a_server_is_asked_before_the_file_moves() {
     let files = &asked[0]["params"]["files"][0];
     assert_eq!(
         files["oldUri"],
-        json!(format!("file://{}", scratch.join("src/hint.rs").display())),
+        json!(support::uri_for(scratch.join("src/hint.rs"))),
     );
     assert_eq!(
         files["newUri"],
-        json!(format!(
-            "file://{}",
-            scratch.join("src/lsp/hints.rs").display()
-        )),
+        json!(support::uri_for(scratch.join("src/lsp/hints.rs"))),
     );
     // And not yet moved: the answer is what the move is waiting for.
     assert!(
@@ -223,7 +220,7 @@ fn the_answer_changes_the_files_that_named_it() {
         Ok(json!({
             "documentChanges": [{
                 "textDocument": {
-                    "uri": format!("file://{}", scratch.join("src/main.rs").display()),
+                    "uri": support::uri_for(scratch.join("src/main.rs")),
                     "version": null
                 },
                 "edits": [{
@@ -364,7 +361,7 @@ fn the_question_is_on_the_row_the_caret_is_in() {
     let rows = support::text_block(&dump);
     let last = rows.lines().last().unwrap_or_default();
     assert!(
-        last.contains("Call it: src/hint.rs"),
+        last.contains(&format!("Call it: {}", support::as_shown("src/hint.rs"))),
         "the status row is not the question:\n{dump}"
     );
 

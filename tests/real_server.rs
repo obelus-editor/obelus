@@ -72,8 +72,8 @@ where
 }
 
 fn start() -> Option<(Client, Receiver<Event>)> {
-    if !obelus::lsp::on_path("rust-analyzer") {
-        eprintln!("skipped: rust-analyzer is not on PATH");
+    if !usable() {
+        eprintln!("skipped: there is no rust-analyzer here that answers");
         return None;
     }
     let (sender, events) = obelus::event::channel();
@@ -81,6 +81,27 @@ fn start() -> Option<(Client, Receiver<Event>)> {
     let client =
         Client::start(LanguageId::Rust, server, &root(), sender).expect("starting rust-analyzer");
     Some((client, events))
+}
+
+/// Whether there is a rust-analyzer here that will actually answer.
+///
+/// Being on the path is not the same as working, and the difference is not
+/// hypothetical: rustup installs a proxy under this name for every tool it
+/// knows of, whether or not the component is there. So the file exists on any
+/// machine with rustup, is executable, and exits saying `Unknown binary` --
+/// which arrives in these tests as a server that ended before it spoke, and
+/// as a dozen failures on a machine that simply has not got the thing they
+/// are about. Asked by running it, because nothing short of running it tells
+/// a program from a message about one.
+fn usable() -> bool {
+    obelus::lsp::on_path("rust-analyzer")
+        && std::process::Command::new("rust-analyzer")
+            .arg("--version")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
 }
 
 /// The assumption the whole coordinate story rests on: offered bytes and
@@ -555,8 +576,15 @@ fn a_real_server_reads_as_running_and_then_as_gone() {
 /// a question asked of a process that no longer exists.
 #[test]
 fn a_restarted_server_hands_out_the_same_ids_again() {
+    // A file that is not there, named the way this platform names one: the
+    // server is asked about it and the answer is not what this is about.
+    let nowhere = std::env::temp_dir().join("nowhere.rs");
     let params = serde_json::json!({
-        "textDocument": { "uri": "file:///nowhere.rs" },
+        "textDocument": {
+            "uri": obelus::lsp::client::uri_for(&nowhere)
+                .expect("a uri")
+                .as_str()
+        },
     });
 
     let Some((mut first, _events)) = start() else {

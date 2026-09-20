@@ -232,6 +232,13 @@ fn a_theme_rewritten_on_disk_arrives_here() {
 /// what rewrites it replaces that directory rather than the file: a change
 /// arrives on a path inside the directory the link points into, which a
 /// watch on the link's own would never have been looking at.
+///
+/// Unix only, because the link is: making one on Windows wants a privilege
+/// an ordinary test run has not got, and a link is the whole of what this
+/// covers. Written without the guard, it was not a test that skipped --
+/// `std::os::unix` is not there to call, so the file did not compile and
+/// the other nine tests in it did not run either.
+#[cfg(unix)]
 #[test]
 fn a_theme_whose_directory_is_replaced_arrives_here() {
     let scratch = reader("replaced");

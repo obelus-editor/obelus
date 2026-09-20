@@ -29,7 +29,7 @@ fn published(
     severity: u8,
 ) -> serde_json::Value {
     json!({
-        "uri": format!("file://{}", path.display()),
+        "uri": support::uri_for(path),
         "diagnostics": [{
             "range": { "start": { "line": line, "character": from },
                        "end": { "line": line, "character": to } },
@@ -120,7 +120,7 @@ fn the_status_row_says_how_many() {
 
     // And a clean file says nothing at all.
     app.publish_for_test(json!({
-        "uri": format!("file://{}", path.display()),
+        "uri": support::uri_for(path),
         "diagnostics": []
     }));
     let dump = support::render(&mut app, 60, 16);
@@ -192,8 +192,8 @@ fn the_shapes_a_notification_arrives_in() {
     // A uri with an escape in it, which is what a path with a space comes
     // back as.
     assert_eq!(
-        path_of(&json!({ "uri": "file:///tmp/a%20b/one.rs" })),
-        Some(std::path::PathBuf::from("/tmp/a b/one.rs"))
+        path_of(&json!({ "uri": support::fake_uri("/tmp/a b/one.rs") })),
+        Some(support::fake_path("/tmp/a b/one.rs"))
     );
     assert_eq!(path_of(&json!({ "uri": "untitled:nowhere" })), None);
 
@@ -335,7 +335,7 @@ fn the_caret_walks_from_one_problem_to_the_next() {
         })
     };
     app.publish_for_test(json!({
-        "uri": format!("file://{}", path.display()),
+        "uri": support::uri_for(path),
         "diagnostics": [one(2), one(5)]
     }));
 
@@ -396,7 +396,7 @@ fn a_complaint_is_framed_and_its_count_rides_the_rail() {
         })
     };
     app.publish_for_test(json!({
-        "uri": format!("file://{}", path.display()),
+        "uri": support::uri_for(path),
         "diagnostics": [one(4, 8, 1, "cannot find value `nmae` in this scope"),
                         one(4, 8, 2, "unused something")]
     }));
@@ -496,7 +496,7 @@ fn a_narrow_window_gives_up_the_indent_and_keeps_the_frame_whole() {
         // measured is its width, and a bottom rail scrolled off the bottom
         // would read as a bottom rail that was never drawn.
         app.publish_for_test(json!({
-            "uri": format!("file://{}", path.display()),
+            "uri": support::uri_for(path),
             "diagnostics": [{
                 "range": { "start": { "line": 1, "character": 12 },
                            "end": { "line": 1, "character": 19 } },
@@ -637,7 +637,7 @@ fn the_list_of_problems_shows_each_one_and_comes_back() {
         })
     };
     app.publish_for_test(json!({
-        "uri": format!("file://{}", path.display()),
+        "uri": support::uri_for(path),
         "diagnostics": [one(5), one(100)]
     }));
     // Down near the second one, so the nearest is not the first.
@@ -738,7 +738,7 @@ fn the_problems_are_listed_in_the_order_they_are_in_the_file() {
     };
     // Out of order, the way they arrive.
     app.publish_for_test(json!({
-        "uri": format!("file://{}", path.display()),
+        "uri": support::uri_for(path),
         "diagnostics": [one(100), one(10), one(40)]
     }));
     support::press_alt(&mut app, 'e');
@@ -800,7 +800,7 @@ fn the_view_moves_only_for_a_problem_the_reader_cannot_see() {
         }
         let (scratch, mut app, path) = editing(name, &file);
         app.publish_for_test(json!({
-            "uri": format!("file://{}", path.display()),
+            "uri": support::uri_for(path),
             "diagnostics": [{
                 "range": { "start": { "line": line, "character": 4 },
                            "end": { "line": line, "character": 8 } },
@@ -874,7 +874,7 @@ fn the_complaint_follows_the_list_rather_than_the_caret() {
         })
     };
     app.publish_for_test(json!({
-        "uri": format!("file://{}", path.display()),
+        "uri": support::uri_for(path),
         "diagnostics": [one(4), one(60)]
     }));
     // On the first of them, so the caret has a complaint of its own to be
@@ -947,7 +947,7 @@ fn two_problems_on_one_line_are_two_complaints() {
     // for both rows. A remark rather than a hint, because a hint is a note
     // hung on another diagnostic and the list leaves those out.
     app.publish_for_test(json!({
-        "uri": format!("file://{}", path.display()),
+        "uri": support::uri_for(path),
         "diagnostics": [one(4, 1, "cannot find value here"),
                         one(8, 3, "defined over here")]
     }));
@@ -1019,7 +1019,7 @@ fn the_notes_hung_on_a_diagnostic_are_not_problems_of_their_own() {
     // A note pointing back at an error further down, the error itself, a
     // second note, and a warning: the shape rustc's children arrive in.
     app.publish_for_test(json!({
-        "uri": format!("file://{}", path.display()),
+        "uri": support::uri_for(path),
         "diagnostics": [one(5, 4, "function defined here"),
                         one(10, 1, "cannot find it"),
                         one(12, 4, "a function with a similar name exists"),

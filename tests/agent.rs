@@ -242,6 +242,7 @@ fn a_whole_turn_of_conversation() {
     // the rule under it, who said what in which colour, and the row being
     // typed on the status bar. The text assertions above say what is there;
     // this says what it looks like.
+    app.phase_for_test(0);
     support::check(
         &format!("agent_{WIDTH}x{HEIGHT}"),
         &support::render(&mut app, WIDTH, HEIGHT),
@@ -1289,6 +1290,7 @@ fn a_form_puts_its_answers_and_room_for_your_own_on_one_card() {
     // every list marks it, the one they are not on plain, and the row for
     // their own answer saying what it is for in the colour obelus writes
     // everything that is not there yet in.
+    app.phase_for_test(0);
     support::check(
         &format!("asked_{WIDTH}x{HEIGHT}"),
         &support::render(&mut app, WIDTH, HEIGHT),
@@ -1606,6 +1608,7 @@ fn the_box_on_a_ticked_card_is_ticked_open() {
     // with the conversation's own status row still at the foot of the
     // screen, because a card is part of the conversation rather than a
     // list opened over it.
+    app.phase_for_test(0);
     support::check(
         &format!("card_{WIDTH}x{HEIGHT}"),
         &support::render(&mut app, WIDTH, HEIGHT),
@@ -1788,9 +1791,18 @@ fn talking_to_an_agent_that_stopped_starts_it_again() {
 
     // What it says is a line, not the protocol crate's own error with the
     // source path of a cargo registry in it.
+    //
+    // The words around the number are `std`'s rather than obelus's, and
+    // `ExitStatus` says them differently per platform: `exit status: 3`
+    // where a process has a status, `exit code: 3` where it has a code.
+    // What obelus owes is the number, and one line to read it on.
     let text = screen(&mut app);
+    let said_as = match cfg!(windows) {
+        true => "exit code: 3",
+        false => "exit status: 3",
+    };
     assert!(
-        text.contains("exit status: 3"),
+        text.contains(said_as),
         "it does not say why it stopped:\n{text}"
     );
     assert!(
@@ -2127,6 +2139,7 @@ fn a_change_it_is_asking_to_make_is_read_in_the_transcript() {
     // The file, how much it changes, and the lines themselves -- worked out
     // by obelus from the two texts the agent sent, with the engine it works
     // out every other change with.
+    app.phase_for_test(0);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let shown = rows(&dump);
     let heading = shown
@@ -2731,6 +2744,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
     // and it is now a row that does something.
     support::press(&mut app, KeyCode::Up);
     support::press(&mut app, KeyCode::Enter);
+    app.phase_for_test(0);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
     for step in [

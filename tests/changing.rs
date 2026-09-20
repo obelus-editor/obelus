@@ -48,13 +48,13 @@ fn open_text(app: &App) -> String {
 fn renaming(open: &std::path::Path, closed: &std::path::Path) -> serde_json::Value {
     json!({
         "changes": {
-            format!("file://{}", open.display()): [
+            support::uri_for(open): [
                 { "range": { "start": { "line": 0, "character": 3 },
                              "end": { "line": 0, "character": 8 } }, "newText": "widget" },
                 { "range": { "start": { "line": 3, "character": 4 },
                              "end": { "line": 3, "character": 9 } }, "newText": "widget" }
             ],
-            format!("file://{}", closed.display()): [
+            support::uri_for(closed): [
                 { "range": { "start": { "line": 1, "character": 11 },
                              "end": { "line": 1, "character": 16 } }, "newText": "widget" }
             ]
@@ -182,7 +182,7 @@ fn an_edit_obelus_will_not_make_is_declined() {
     let (_scratch, mut app, open, _closed) = project("apply-refused");
     let answer = app.asked_edit_for_test(json!({
         "documentChanges": [
-            { "kind": "delete", "uri": format!("file://{}", open.display()) }
+            { "kind": "delete", "uri": support::uri_for(&open) }
         ]
     }));
 
@@ -248,7 +248,7 @@ fn a_save_asks_only_for_what_a_server_does_to_a_whole_file() {
             at,
             json!([
                 { "title": "Whatever this one is", "kind": kind,
-                  "edit": { "changes": { format!("file://{}", open.display()): [
+                  "edit": { "changes": { support::uri_for(&open): [
                       { "range": { "start": { "line": 0, "character": 0 },
                                    "end": { "line": 0, "character": 0 } },
                         "newText": format!("// {kind}\n") }
@@ -394,7 +394,7 @@ fn a_save_passes_over_an_offer_the_server_will_not_carry_out() {
             json!([
                 { "title": "Something that cannot be done", "kind": kind,
                   "disabled": { "reason": "the file is generated" },
-                  "edit": { "changes": { format!("file://{}", open.display()): [
+                  "edit": { "changes": { support::uri_for(&open): [
                       { "range": { "start": { "line": 0, "character": 0 },
                                    "end": { "line": 0, "character": 0 } },
                         "newText": "// SHOULD NOT BE HERE\n" }
@@ -461,7 +461,7 @@ fn edits_to_one_file_do_not_move_each_other() {
     // front to back, every one after the first would land short.
     app.rename_for_test(json!({
         "changes": {
-            format!("file://{}", path.display()): [
+            support::uri_for(&path): [
                 { "range": { "start": { "line": 0, "character": 0 },
                              "end": { "line": 0, "character": 3 } }, "newText": "first" },
                 { "range": { "start": { "line": 0, "character": 4 },
@@ -480,13 +480,13 @@ fn moving_a_file_is_refused_and_reported() {
     let (_scratch, mut app, open, _closed) = project("rename-refused");
     app.rename_for_test(json!({
         "documentChanges": [
-            { "textDocument": { "uri": format!("file://{}", open.display()), "version": null },
+            { "textDocument": { "uri": support::uri_for(&open), "version": null },
               "edits": [ { "range": { "start": { "line": 0, "character": 3 },
                                       "end": { "line": 0, "character": 8 } },
                            "newText": "widget" } ] },
             { "kind": "rename",
-              "oldUri": format!("file://{}", open.display()),
-              "newUri": format!("file://{}", open.with_file_name("moved.rs").display()) }
+              "oldUri": support::uri_for(&open),
+              "newUri": support::uri_for(open.with_file_name("moved.rs")) }
         ]
     }));
 
@@ -533,7 +533,7 @@ fn offers_about_a_file_that_has_changed_are_refused() {
     let (_scratch, mut app, open, _closed) = project("actions-stale");
     let offer = json!([
         { "title": "Remove unused import", "kind": "quickfix",
-          "edit": { "changes": { format!("file://{}", open.display()): [
+          "edit": { "changes": { support::uri_for(&open): [
               { "range": { "start": { "line": 0, "character": 0 },
                            "end": { "line": 1, "character": 0 } }, "newText": "" }
           ] } } }
@@ -557,7 +557,7 @@ fn offers_about_a_file_that_has_changed_are_refused() {
     let text = open_text(&app);
     app.action_at_version_for_test(
         json!({ "title": "Remove unused import", "kind": "quickfix",
-                "edit": { "changes": { format!("file://{}", open.display()): [
+                "edit": { "changes": { support::uri_for(&open): [
                     { "range": { "start": { "line": 0, "character": 0 },
                                  "end": { "line": 1, "character": 0 } }, "newText": "" }
                 ] } } }),
@@ -576,7 +576,7 @@ fn what_can_be_done_here_is_a_list_and_choosing_one_does_it() {
     let (_scratch, mut app, open, _closed) = project("actions-list");
     app.actions_for_test(json!([
         { "title": "Remove unused import", "kind": "quickfix",
-          "edit": { "changes": { format!("file://{}", open.display()): [
+          "edit": { "changes": { support::uri_for(&open): [
               { "range": { "start": { "line": 0, "character": 0 },
                            "end": { "line": 1, "character": 0 } }, "newText": "" }
           ] } } },
@@ -613,7 +613,7 @@ fn an_offer_the_server_will_not_carry_out_is_shown_and_not_offered() {
         { "title": "Extract into function", "kind": "refactor.extract",
           "disabled": { "reason": "the selection crosses a `?`" } },
         { "title": "Remove unused import", "kind": "quickfix",
-          "edit": { "changes": { format!("file://{}", open.display()): [
+          "edit": { "changes": { support::uri_for(&open): [
               { "range": { "start": { "line": 0, "character": 0 },
                            "end": { "line": 1, "character": 0 } }, "newText": "" }
           ] } } }

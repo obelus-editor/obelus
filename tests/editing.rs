@@ -933,7 +933,10 @@ mod saving {
         dispatch::dispatch(&mut app, Command::FileSave);
         let dump = support::render(&mut app, 70, 12);
         assert!(
-            support::said(&dump).contains("inner/sample.rs changed on disk"),
+            support::said(&dump).contains(&format!(
+                "{} changed on disk",
+                support::as_shown("inner/sample.rs")
+            )),
             "the question does not say which of the files called sample.rs:\n{dump}"
         );
     }

@@ -322,15 +322,15 @@ fn the_symbols_of_the_project_or_of_everything() {
 
     let reply = json!([
         { "name": "mine", "kind": 12,
-          "location": { "uri": "file:///p/src/main.rs",
+          "location": { "uri": support::fake_uri("/p/src/main.rs"),
                         "range": { "start": { "line": 1, "character": 3 },
                                    "end": { "line": 1, "character": 7 } } } },
         { "name": "theirs", "kind": 12,
-          "location": { "uri": "file:///home/reader/.cargo/registry/serde/lib.rs",
+          "location": { "uri": support::fake_uri("/home/reader/.cargo/registry/serde/lib.rs"),
                         "range": { "start": { "line": 2, "character": 0 },
                                    "end": { "line": 2, "character": 6 } } } },
     ]);
-    let root = std::path::Path::new("/p");
+    let root = support::fake_path("/p");
 
     let names = |within: Option<&std::path::Path>| -> Vec<String> {
         obelus::lsp::outline::found_in(Ok(reply.clone()), within)
@@ -338,7 +338,7 @@ fn the_symbols_of_the_project_or_of_everything() {
             .map(|found| found.name.clone())
             .collect()
     };
-    assert_eq!(names(Some(root)), ["mine"]);
+    assert_eq!(names(Some(&root)), ["mine"]);
     assert_eq!(names(None), ["mine", "theirs"]);
 }
 
@@ -380,7 +380,10 @@ fn the_search_reaches_what_the_file_list_offers() {
     };
 
     assert_eq!(found(false, 1), vec!["kept.rs"]);
-    assert_eq!(found(true, 2), vec!["kept.rs", "target/build.log"]);
+    assert_eq!(
+        found(true, 2),
+        vec!["kept.rs".to_string(), support::as_shown("target/build.log")]
+    );
 }
 
 /// The rows are the lines of one version of one file, so a file rewritten

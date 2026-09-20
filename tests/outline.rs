@@ -57,7 +57,11 @@ fn the_flat_shape_is_read_too() {
             "name": "free",
             "kind": 12,
             "location": {
-                "uri": "file:///nowhere.rs",
+                "uri": obelus::lsp::client::uri_for(
+                    &std::env::temp_dir().join("nowhere.rs")
+                )
+                .expect("a uri")
+                .as_str(),
                 "range": { "start": { "line": 4, "character": 3 },
                            "end": { "line": 6, "character": 1 } }
             }

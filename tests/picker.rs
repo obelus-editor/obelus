@@ -868,7 +868,7 @@ fn a_file_the_tree_ignores_is_drawn_dim() {
     let dump = support::render(&mut app, 72, 20);
     let text = support::text_block(&dump);
     assert!(
-        text.contains("target/debug/build.log"),
+        text.contains(&support::as_shown("target/debug/build.log")),
         "the ignored file was not offered:\n{dump}"
     );
     // By a letter each name has and the other does not -- `b` of "build",
@@ -1617,12 +1617,23 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
         "show-outline",
         "go-to-line",
         "open-log",
-        "open-server-log",
         "restart-server",
         "quit",
     ] {
         assert_eq!(listed(name), Some(true), "{name} cannot be chosen");
     }
+
+    // Except one, whose answer is about the machine rather than about this
+    // session: the servers' log is there to be opened once a server has
+    // written to it, and on a machine where none ever has there is no file
+    // and the row says so. Asked the way the palette asks, so the two agree
+    // on a machine that has never started one -- which is every machine the
+    // first time, and was a failure here that said nothing about obelus.
+    assert_eq!(
+        listed("open-server-log"),
+        Some(obelus::logging::current_file(obelus::logging::SERVERS).is_some()),
+        "the row does not follow whether there is a log to open"
+    );
 }
 
 /// The selection walks past what cannot be chosen, and Enter on a dim row
@@ -3124,7 +3135,12 @@ fn the_document_list_keeps_the_order_the_files_were_opened_in() {
     let opened = listed(&app);
     let names: Vec<&str> = opened
         .iter()
-        .map(|label| label.rsplit('/').next().unwrap_or(label))
+        .map(|label| {
+            std::path::Path::new(label)
+                .file_name()
+                .and_then(std::ffi::OsStr::to_str)
+                .unwrap_or(label)
+        })
         .collect();
     assert_eq!(
         names,

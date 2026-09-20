@@ -32,6 +32,37 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus::{app::App, buffer::Buffer, event::Event, ui};
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Color};
 
+/// The URI a language server would name a file by.
+///
+/// `lsp::client::uri_for`, never a `format!` beside the test. A path is not a
+/// URI with a scheme in front of it: a Windows path begins at a drive letter
+/// where a URI's path begins with `/`, and writes `\` between its parts where
+/// a URI writes `/`. A test that builds its own agrees with itself and with
+/// nothing else -- which is how a dozen of these passed for as long as obelus
+/// was only ever run on one platform.
+pub fn uri_for(path: impl AsRef<Path>) -> String {
+    obelus::lsp::client::uri_for(path.as_ref())
+        .expect("a uri")
+        .as_str()
+        .to_string()
+}
+
+/// A made-up absolute path, written the unix way and read the local way.
+///
+/// `/nowhere.rs` is an absolute path on one platform and an ordinary relative
+/// name on another. `C:\nowhere.rs` is the same fiction told locally.
+pub fn fake_path(unixish: &str) -> PathBuf {
+    match cfg!(windows) {
+        true => PathBuf::from(format!("C:{}", unixish.replace('/', "\\"))),
+        false => PathBuf::from(unixish),
+    }
+}
+
+/// And the URI a server would name one by.
+pub fn fake_uri(unixish: &str) -> String {
+    uri_for(fake_path(unixish))
+}
+
 /// Lays the screen out without keeping the result.
 ///
 /// The loop draws before it waits for a key, so by the time any key arrives
@@ -157,13 +188,14 @@ fn section<'a>(dump: &'a str, from: &str, to: &str) -> &'a str {
 /// Compares a dump against its fixture.
 pub fn check(name: &str, actual: &str) {
     let path = fixtures().join(format!("{name}.txt"));
+    let actual = &one_spelling(actual);
 
     if std::env::var_os("UPDATE_FIXTURES").is_some() {
         fs::write(&path, actual).expect("writing the fixture");
         return;
     }
 
-    let Ok(expected) = fs::read_to_string(&path) else {
+    let Ok(expected) = fs::read_to_string(&path).map(|text| one_spelling(&text)) else {
         panic!(
             "fixture {name} does not exist yet.\n\
              Review this output, then create it with UPDATE_FIXTURES=1:\n\n{actual}"
@@ -171,11 +203,40 @@ pub fn check(name: &str, actual: &str) {
     };
 
     assert!(
-        expected == actual,
+        &expected == actual,
         "{name} does not match its fixture.\n\
          If the change is intended: UPDATE_FIXTURES=1 cargo test\n\n\
          --- fixture ---\n{expected}\n--- rendered ---\n{actual}"
     );
+}
+
+/// A dump with every separator in a path written the one way.
+///
+/// obelus draws a path the way this platform writes one, so a row that reads
+/// `src/main.rs` here reads `src\main.rs` there. A fixture is one file and
+/// both platforms are read against it, so both sides come through here --
+/// which also means a fixture regenerated on either is the same file, and a
+/// suite run on a machine nobody has used before does not rewrite thirty of
+/// them.
+///
+/// Safe because nothing obelus draws carries a backslash of its own: no
+/// fixture in this directory holds one. A test that needed to tell the two
+/// apart would have to say so some other way, and none does.
+fn one_spelling(dump: &str) -> String {
+    dump.replace('\\', "/")
+}
+
+/// A path written the unix way, spelled the way this platform spells one.
+///
+/// The other side of [`one_spelling`], for the tests that read a row rather
+/// than a whole dump: they are written once and run on both, so what they
+/// hold is the unix spelling and this makes it local at the moment of the
+/// comparison.
+pub fn as_shown(path: &str) -> String {
+    match cfg!(windows) {
+        true => path.replace('/', "\\"),
+        false => path.to_string(),
+    }
 }
 
 fn fixtures() -> PathBuf {

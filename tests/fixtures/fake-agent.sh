@@ -34,6 +34,20 @@
 # Every reply's id is read out of the request rather than assumed, because
 # the point of the exercise is that obelus's numbering is its own business.
 
+# The working directory, spelled the way the program on the other end spells
+# one.
+#
+# `$PWD` is this shell's, and on Windows this shell is a POSIX one running
+# beside a Windows obelus: it says `/e/work/obelus` where obelus says
+# `E:/work/obelus`, and a tool call naming a file that way names no file at
+# all -- the transcript showed the path and obelus could not read it.
+# `cygpath` is what those shells ship for exactly this, and where there is
+# none there is nothing to translate.
+here=$PWD
+if command -v cygpath >/dev/null 2>&1; then
+    here=$(cygpath -m "$here")
+fi
+
 # The id, verbatim: a number stays a number and a string keeps its quotes.
 # Real clients number requests however they like -- the protocol's own crate
 # uses uuids -- and an answer has to carry back exactly what came in.
@@ -421,7 +435,7 @@ while IFS= read -r line; do
             # client that draws thirty of these has drawn a log.
             set_turn "$session" "$(id_of "$line")"
             for name in app acp buffer ui; do
-                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"r-%s","title":"Read src/%s","kind":"read","status":"completed","locations":[{"path":"%s/tests/fixtures/many_lines.rs","line":4}]}}}\n' "$name" "$name" "$PWD"
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"r-%s","title":"Read src/%s","kind":"read","status":"completed","locations":[{"path":"%s/tests/fixtures/many_lines.rs","line":4}]}}}\n' "$name" "$name" "$here"
             done
             # And one that failed, after them: the run it belongs to is not
             # the same run, because what failed is not a read.
@@ -436,7 +450,7 @@ while IFS= read -r line; do
             set_turn "$session" "$(id_of "$line")"
             before='fn step_rows(row: usize) -> usize {\n    row\n}\n'
             after='fn step_rows(row: ScreenRow) -> usize {\n    row.get()\n}\n'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"e-1","title":"Edit the file","kind":"edit","status":"pending","content":[{"type":"diff","path":"%s/tests/fixtures/many_lines.rs","oldText":"%s","newText":"%s"}]}}}\n' "$PWD" "$before" "$after"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"e-1","title":"Edit the file","kind":"edit","status":"pending","content":[{"type":"diff","path":"%s/tests/fixtures/many_lines.rs","oldText":"%s","newText":"%s"}]}}}\n' "$here" "$before" "$after"
             printf '{"jsonrpc":"2.0","id":907,"method":"session/request_permission","params":{"sessionId":"'"$session"'","toolCall":{"toolCallId":"e-1"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n'
             ;;
         *'"id":907'*)
@@ -452,7 +466,7 @@ while IFS= read -r line; do
             # A tool call naming a file that is not there, which is what an
             # agent that deleted one -- or made one up -- sends.
             set_turn "$session" "$(id_of "$line")"
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"g-1","title":"Read the missing file","kind":"read","status":"completed","locations":[{"path":"%s/tests/fixtures/not-here.rs","line":2}]}}}\n' "$PWD"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"g-1","title":"Read the missing file","kind":"read","status":"completed","locations":[{"path":"%s/tests/fixtures/not-here.rs","line":2}]}}}\n' "$here"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/die'*)
@@ -538,7 +552,7 @@ while IFS= read -r line; do
             # With the kind and the file it is about, the way a real agent
             # sends them: the kind is what the client draws a glyph from,
             # and the location is what makes the row somewhere to go.
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"t1","title":"Read the file","kind":"read","status":"in_progress","locations":[{"path":"%s/tests/fixtures/many_lines.rs","line":7}]}}}\n' "$PWD"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"t1","title":"Read the file","kind":"read","status":"in_progress","locations":[{"path":"%s/tests/fixtures/many_lines.rs","line":7}]}}}\n' "$here"
             printf '{"jsonrpc":"2.0","id":900,"method":"fs/read_text_file","params":{"sessionId":"'"$session"'","path":"tests/fixtures/read-me.txt"}}\n'
             ;;
         *'"id":900'*)
