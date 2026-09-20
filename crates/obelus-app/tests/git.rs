@@ -2341,6 +2341,45 @@ fn a_file_a_commit_moved_is_one_row_that_says_where_it_was() {
     );
 }
 
+/// A file's history does not stop where the file was given its name.
+///
+/// The question a reader asks is about the file, and a file that was moved
+/// is the same file: stopping at the move answers a question about a *path*
+/// and looks like a complete answer to the one that was asked. Git records
+/// no rename -- it infers one from what a commit added and removed, and
+/// `git log --follow` is that inference -- so this has to make the same
+/// one, or obelus's history is obelus's opinion.
+///
+/// Edited on the way, because a move with no edit is matched on content
+/// alone and would pass with the search for near-misses turned off.
+#[test]
+fn a_files_history_goes_on_under_the_name_it_had_before() {
+    use obelus_git::history;
+
+    let lines: String = (0..40).map(|n| format!("line {n}\n")).collect();
+    let repository = Repository::new("history-following", &lines);
+    repository.write(&format!("{lines}an edit\n"));
+    repository.commit("editing it where it was");
+
+    std::fs::create_dir_all(repository.directory().join("deep")).expect("a directory");
+    std::fs::remove_file(repository.directory().join("file.rs")).expect("taking it away");
+    std::fs::write(
+        repository.directory().join("deep/moved.rs"),
+        format!("{lines}an edit\nand another\n"),
+    )
+    .expect("the file in its new place");
+    repository.commit_all("moving it");
+
+    let root = repository.directory();
+    let found = history::of(&root, Some(&root.join("deep/moved.rs")), 50);
+    let subjects: Vec<&str> = found.iter().map(|commit| commit.subject.as_str()).collect();
+    assert_eq!(
+        subjects,
+        ["moving it", "editing it where it was", "committed"],
+        "the history stopped where the file was renamed"
+    );
+}
+
 /// A file as a commit had it, which is what choosing a row opens.
 #[test]
 fn a_file_can_be_read_as_a_commit_had_it() {

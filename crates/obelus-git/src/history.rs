@@ -3,17 +3,23 @@
 //! A walk of the commits reachable from `HEAD`, newest first. Filtering by
 //! path is done the way the question is asked -- "did this commit change
 //! this file?" -- by comparing what the path pointed at in the commit with
-//! what it pointed at in its first parent. A walk of one file's history
-//! therefore ends where the file was last given its name: renames are not
-//! followed, and the list does not yet say so.
+//! what it pointed at in its first parent.
 //!
-//! What a commit *opened* says is another matter, and there renames are
-//! followed. Git records none -- it infers them from what a commit added
-//! and removed -- but every reader of a history has that inference in their
-//! head already, and without it a commit that moved a file says the file
-//! was deleted and a stranger of the same content arrived, two rows to pair
-//! up by eye. See `looking_for_moves` for what the search costs and where
-//! it gives up.
+//! Where that path was not in the parent at all, the file has either just
+//! been written or just been moved here, and the walk asks which: a file
+//! that was moved goes on being walked under the name it had before. Git
+//! records no rename -- it infers one from what a commit added and removed,
+//! which is what `git log --follow` is -- and the same inference has to be
+//! made here, because the reader has it in their head already and a history
+//! that stopped at the move would be answering about a *path* while looking
+//! like a complete answer about the file.
+//!
+//! The same goes for what a commit opens into: without it a commit that
+//! moved a file says the file was deleted and a stranger of the same
+//! content arrived, which is two rows to pair up by eye and, where the
+//! lines are counted, the whole file counted away and the whole of it
+//! counted back. `looking_for_moves` and `looking_harder_for_moves` are the
+//! two budgets that pays for, and why they differ.
 //!
 //! What the remote has not seen is marked, in the colour a new file wears.
 //! The few commits a reader has not pushed are the ones still theirs to change,
@@ -29,7 +35,7 @@
 //! is not on the remote when it is would be the worse lie.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -227,7 +233,7 @@ fn walk(within: &Path, only: Option<&Path>, mut each: impl FnMut(Option<Commit>)
     // project: asking about one file and being handed every commit is the
     // wrong answer told confidently. Nothing says what is true -- obelus has
     // nothing to show about this path.
-    let relative = match only {
+    let mut relative = match only {
         Some(path) => match within_repository(&repository, path) {
             Some(relative) => Some(relative),
             None => return,
@@ -245,13 +251,22 @@ fn walk(within: &Path, only: Option<&Path>, mut each: impl FnMut(Option<Commit>)
         let Ok(commit) = repository.find_commit(info.id) else {
             continue;
         };
-        if let Some(relative) = relative.as_deref()
-            && !touches(&repository, &commit, relative)
-        {
-            if !each(None) {
-                return;
+        let mut moved_from = None;
+        if let Some(path) = relative.as_deref() {
+            match touches(&repository, &commit, path) {
+                Touch::No => {
+                    if !each(None) {
+                        return;
+                    }
+                    continue;
+                }
+                Touch::Yes => {}
+                // The commit where the file arrived under this name. It is
+                // shown, and everything older is about the name it had
+                // before -- which is what a reader asking for the history
+                // of a file means by it.
+                Touch::Moved(from) => moved_from = Some(from),
             }
-            continue;
         }
         let Ok(author) = commit.author() else {
             continue;
@@ -267,6 +282,9 @@ fn walk(within: &Path, only: Option<&Path>, mut each: impl FnMut(Option<Commit>)
         };
         if !each(Some(found)) {
             return;
+        }
+        if let Some(from) = moved_from {
+            relative = Some(from);
         }
     }
 }
@@ -286,18 +304,110 @@ fn within_repository(repository: &gix::Repository, path: &Path) -> Option<PathBu
     Some(path.strip_prefix(work_dir).ok()?.to_path_buf())
 }
 
-/// Whether a commit changed what a path points at.
+/// What a commit did to a path.
+#[derive(Debug)]
+enum Touch {
+    /// Left it as its parent had it.
+    No,
+    /// Changed what it points at.
+    Yes,
+    /// Is where the file arrived under this name, having been this before.
+    Moved(PathBuf),
+}
+
+/// What a commit did to a path.
 ///
 /// Against its first parent only. A merge that took one side's version
 /// changed nothing on that side, and a list that showed every merge a file
 /// was carried through would be a list of merges.
-fn touches(repository: &gix::Repository, commit: &gix::Commit<'_>, path: &Path) -> bool {
+///
+/// A path that is in the commit and not in the parent has either just been
+/// written or just been moved here, and those are the same thing to every
+/// test but one: whether something of the same content went away in the
+/// same commit. That is the only place this asks -- the search is not cheap
+/// and a file that was merely edited never reaches it.
+fn touches(repository: &gix::Repository, commit: &gix::Commit<'_>, path: &Path) -> Touch {
     let at = entry_of(repository, commit.id, path);
-    let parent = commit
-        .parent_ids()
-        .next()
-        .and_then(|parent| entry_of(repository, parent.detach(), path));
-    at != parent
+    let parent_id = commit.parent_ids().next().map(gix::Id::detach);
+    let parent = parent_id.and_then(|parent| entry_of(repository, parent, path));
+    match (at.is_some(), parent.is_some()) {
+        _ if at == parent => Touch::No,
+        (true, false) => {
+            match parent_id.and_then(|parent| moved_to(repository, parent, commit, path)) {
+                Some(from) => Touch::Moved(from),
+                None => Touch::Yes,
+            }
+        }
+        _ => Touch::Yes,
+    }
+}
+
+/// What `path` was called before this commit, if this commit moved it here.
+///
+/// One tree diff, run only where a file appears under a name its parent did
+/// not have. See `looking_for_moves` for what the search costs and where it
+/// gives up: past that, a file that was edited on the way reads as having
+/// been written here, which is what obelus said about every move before any
+/// of this.
+fn moved_to(
+    repository: &gix::Repository,
+    parent: gix::ObjectId,
+    commit: &gix::Commit<'_>,
+    path: &Path,
+) -> Option<PathBuf> {
+    moves_of(repository, parent, commit).get(path).cloned()
+}
+
+/// Every move one commit made, from the name after to the name before.
+///
+/// The whole map rather than the one entry asked for, because the search
+/// works that way: it pairs every addition with every deletion at once, and
+/// having paid for that there is no sense in throwing away all but one of
+/// the answers.
+fn moves_of(
+    repository: &gix::Repository,
+    parent: gix::ObjectId,
+    commit: &gix::Commit<'_>,
+) -> Moved {
+    let remembered = MOVES.get_or_init(Default::default);
+    if let Ok(known) = remembered.lock()
+        && let Some(moves) = known.get(&commit.id)
+    {
+        return std::sync::Arc::clone(moves);
+    }
+
+    let mut moves = HashMap::new();
+    if let Some(before) = repository
+        .find_commit(parent)
+        .ok()
+        .and_then(|parent| parent.tree().ok())
+        && let Ok(after) = commit.tree()
+        && let Ok(mut changes) = before.changes()
+    {
+        changes.options(|options| {
+            options.track_rewrites(Some(looking_harder_for_moves()));
+        });
+        let _ = changes.for_each_to_obtain_tree(&after, |change| {
+            if let gix::object::tree::diff::Change::Rewrite {
+                location,
+                source_location,
+                ..
+            } = change
+            {
+                moves.insert(
+                    PathBuf::from(location.to_string()),
+                    PathBuf::from(source_location.to_string()),
+                );
+            }
+            Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
+        });
+    }
+
+    let moves = std::sync::Arc::new(moves);
+    if let Ok(mut known) = remembered.lock() {
+        known.insert(commit.id, std::sync::Arc::clone(&moves));
+    }
+    moves
 }
 
 /// What a path pointed at in a commit, if anything.
@@ -340,6 +450,45 @@ fn looking_for_moves() -> gix::diff::Rewrites {
         ..Default::default()
     }
 }
+
+/// The same search, with the cap off.
+///
+/// For the walk of one file's history, which is the other place that asks.
+/// Two budgets because the two are paid by different people: opening a
+/// commit happens under a keystroke and has to be quick or not at all,
+/// while a walk already runs in the background and already says how far it
+/// has got. Three seconds of a list filling in is a list filling in; three
+/// seconds of a key not answering is a broken program.
+///
+/// A million pairings is git's own `diff.renameLimit` of a thousand files
+/// on each side, and the answer is memoised per commit, so the tree's one
+/// giant reorganisation is searched once in a session however many files
+/// are read through it.
+fn looking_harder_for_moves() -> gix::diff::Rewrites {
+    gix::diff::Rewrites {
+        percentage: Some(0.5),
+        limit: 1_000 * 1_000,
+        ..Default::default()
+    }
+}
+
+/// What each commit moved, worked out once.
+///
+/// Keyed by the commit, because the answer is about two trees git will
+/// never change again: it cannot go stale, and nothing has to say when to
+/// forget it. What it saves is the search itself -- a blob diff for every
+/// addition against every deletion -- which for the commit that moved this
+/// tree into crates is three seconds, and which every file read through
+/// that commit would otherwise ask for again.
+static MOVES: std::sync::OnceLock<std::sync::Mutex<HashMap<gix::ObjectId, Moved>>> =
+    std::sync::OnceLock::new();
+
+/// What one commit moved, from the name after to the name before.
+///
+/// Shared rather than copied out: the map for the commit that moved this
+/// tree into crates has two hundred entries in it, and every file read
+/// through that commit wants the same one.
+type Moved = std::sync::Arc<HashMap<PathBuf, PathBuf>>;
 
 /// The files a commit changed, against its first parent.
 ///
