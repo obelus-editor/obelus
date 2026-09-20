@@ -248,15 +248,22 @@ pub const CHANGE_MAP_WIDTH: u16 = 1;
 /// background and nothing else, so two facts in one column is the gap or it
 /// is nothing, and a reader who wants to know where else to look wants both
 /// answers in the one picture.
-const MAP_MARK: char = '\u{258c}';
-
-/// The other half of the same cell, for a row that has only a problem.
+/// Half a cell of ink against its left edge, and half against its right.
 ///
-/// Drawn as its own glyph rather than as the background under [`MAP_MARK`]
+/// Named by where the ink is rather than by what it means, because what it
+/// means flips between the two columns: the change is always the half
+/// nearer the line it is about, and the text is to the *right* of the
+/// margin and to the *left* of the map. So in the margin the change is
+/// [`RIGHT_HALF`] and the problem [`LEFT_HALF`], and out past the text they
+/// are the other way round.
+///
+/// A row that carries only one of the two gets the half it would have had
+/// beside the other, drawn as its own glyph rather than as a background
 /// painted in the page's colour: the two say the same thing to a terminal
 /// and not to a reader of this file, and one of them says which half is
 /// meant.
-const MAP_WRONG_MARK: char = '\u{2590}';
+const LEFT_HALF: char = '\u{258c}';
+const RIGHT_HALF: char = '\u{2590}';
 
 /// The column the scrollbar takes, on the right.
 ///
@@ -403,10 +410,12 @@ impl EditorView<'_> {
                 (None, Some(wrong)) => Style::new().fg(wrong),
                 (None, None) => continue,
             };
+            // Out here the text is to the left, so the change is the
+            // left half and a lone problem keeps the right.
             let glyph = if marker.is_some() {
-                MAP_MARK
+                LEFT_HALF
             } else {
-                MAP_WRONG_MARK
+                RIGHT_HALF
             };
             put(cells, area.x, area.y + row, glyph, style);
         }
@@ -751,34 +760,34 @@ impl Widget for EditorView<'_> {
                                 }
                             }),
                         );
-                        // The bar a line on screen gets, not the boundary
-                        // mark: `Marker::Removed`'s top edge exists because
+                        // A bar down the whole height rather than the
+                        // boundary mark a deletion gets in the margin:
+                        // `Marker::Removed`'s top edge exists because
                         // deleted lines have no row of their own, and
                         // opening the hunk is exactly the act of giving
                         // them one. The colour still says they are gone.
-                        draw_marker(
-                            area.x,
-                            y,
-                            Some(Marker::Modified),
-                            match block.kind {
-                                crate::buffer::Held::Removed => self.theme.change_removed,
-                                crate::buffer::Held::Message => self.theme.gutter,
-                                // How bad it is, in the colour the same
-                                // trouble underlines the line in: one
-                                // complaint, one colour, whichever of the
-                                // two the reader's eye lands on first.
-                                crate::buffer::Held::Wrong => {
-                                    block.severity.map_or(self.theme.gutter, |severity| {
-                                        self.theme.colour_for(Some(severity.kind()))
-                                    })
-                                }
-                            },
-                            // A row the file does not have, so there is no
-                            // line for a server to have said anything
-                            // about.
-                            None,
-                            cells,
-                        );
+                        //
+                        // On the same half of the cell as the mark beside
+                        // the line these rows hang from, or the bar and the
+                        // thing it belongs to would sit a half-cell apart
+                        // and read as two marks: a change and a message
+                        // hug the text, and a complaint hugs the screen's
+                        // edge, exactly as they do on a line of the file.
+                        let (half, colour) = match block.kind {
+                            crate::buffer::Held::Removed => (RIGHT_HALF, self.theme.change_removed),
+                            crate::buffer::Held::Message => (RIGHT_HALF, self.theme.gutter),
+                            // How bad it is, in the colour the same
+                            // trouble underlines the line in: one
+                            // complaint, one colour, whichever of the
+                            // three the reader's eye lands on first.
+                            crate::buffer::Held::Wrong => (
+                                LEFT_HALF,
+                                block.severity.map_or(self.theme.gutter, |severity| {
+                                    self.theme.colour_for(Some(severity.kind()))
+                                }),
+                            ),
+                        };
+                        put(cells, area.x, y, half, Style::new().fg(colour));
                         // No line number: these lines have no number in
                         // this file, and borrowing the next one's would be
                         // a lie about where they are.
@@ -810,6 +819,25 @@ impl Widget for EditorView<'_> {
                             &Painting {
                                 highlights: &plain,
                                 theme: self.theme,
+                                // A complaint is prose about a line, not a
+                                // line, and it is drawn in its trouble's
+                                // colour so that it does not read as a
+                                // line of the file written in English.
+                                // Its last row is obelus counting the
+                                // other troubles on that line rather than
+                                // the server's own words, and goes a shade
+                                // back for the reason the commit's `+n -n`
+                                // does: obelus's arithmetic must not read
+                                // as something somebody said.
+                                //
+                                // A deletion keeps the plain colour: the
+                                // tint behind it is what says those lines
+                                // are gone, and a second thing saying it
+                                // in a different colour says a different
+                                // thing.
+                                ink: block
+                                    .severity
+                                    .map(|severity| self.theme.colour_for(Some(severity.kind()))),
                                 marked: &[],
                                 // A block is a commit's version of these
                                 // lines, and what a server found is in the
@@ -956,6 +984,8 @@ impl Widget for EditorView<'_> {
                     &Painting {
                         highlights: self.highlights,
                         theme: self.theme,
+                        // The file's own lines, which have a syntax tree.
+                        ink: None,
                         marked: self.marked,
                         drawn: self.drawn,
                         selection: self.selection,
@@ -1189,7 +1219,7 @@ fn draw_marker(
         // the same half of it as it would beside a change, rather than
         // moving because it happens to be alone.
         if let Some(wrong) = wrong {
-            put(cells, x, y, MAP_MARK, Style::new().fg(wrong));
+            put(cells, x, y, LEFT_HALF, Style::new().fg(wrong));
         }
         return;
     };
@@ -1200,7 +1230,7 @@ fn draw_marker(
         // about; right of the scrollbar it sits at the edge of the screen.
         // Against the other edge each one floats a cell away from the thing
         // it belongs to.
-        Marker::Added | Marker::Modified => MAP_WRONG_MARK,
+        Marker::Added | Marker::Modified => RIGHT_HALF,
         // Lines that are not there: a mark on the boundary they were on,
         // which is the top edge of this cell.
         Marker::Removed => '\u{2594}',
@@ -1221,6 +1251,15 @@ fn draw_marker(
 struct Painting<'a> {
     highlights: &'a Highlights,
     theme: &'a Theme,
+    /// One colour for every character of the row, where the row is not the
+    /// file and has no syntax to be coloured by.
+    ///
+    /// A complaint is written in the colour everything else about that
+    /// trouble is written in -- the underline under the word, the bar down
+    /// its left, the mark out on the map. Four things saying one thing, so
+    /// one colour. `None` leaves the row to the highlights, which is every
+    /// row of the file and the lines a commit removed.
+    ink: Option<Color>,
     /// The run a preview is about.
     marked: &'a [Span],
     /// What is drawn in the line that the line does not contain: the
@@ -1291,9 +1330,11 @@ fn draw_row(
         if offset >= width {
             break;
         }
-        let colour = painting
-            .theme
-            .colour_for(painting.highlights.kind_at(glyph.first_byte));
+        let colour = painting.ink.unwrap_or_else(|| {
+            painting
+                .theme
+                .colour_for(painting.highlights.kind_at(glyph.first_byte))
+        });
 
         // A foreground, so the background the fill painted stays — except
         // where the run being marked needs one of its own.

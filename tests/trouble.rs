@@ -236,6 +236,23 @@ fn what_is_wrong_with_this_line_is_opened_under_it() {
         "the words the server used are not under the line:\n{dump}"
     );
 
+    // The bar down the complaint's left is the same half-cell as the mark
+    // beside the line it hangs from. Two halves of one column is half a
+    // cell apart on screen, which is exactly far enough to read as two
+    // marks that failed to line up.
+    let cells = support::cells_of(&mut app, 60, 16);
+    let margin = |y: u16| cells.cell((0, y)).expect("a cell").symbol().to_string();
+    assert_eq!(
+        margin(1),
+        margin(2),
+        "the complaint's bar is not on the half its line is marked on:\n{dump}"
+    );
+    assert_eq!(
+        margin(2),
+        margin(3),
+        "the complaint's own rows are not all marked alike:\n{dump}"
+    );
+
     // And away again -- one key, not two: the caret steps over a complaint
     // rather than into it, because it is not a thing the reader opened.
     support::press(&mut app, crossterm::event::KeyCode::Down);
@@ -416,5 +433,197 @@ fn a_file_with_no_repository_still_says_where_the_problems_are() {
     assert_eq!(
         marked, 1,
         "the map does not have the one problem on it:\n{dump}"
+    );
+}
+
+/// The words are framed, and the frame starts under the word they are about.
+///
+/// A complaint is prose about a line, and prose drawn in the plain colour
+/// at the code's own left edge reads as a line of the file written in
+/// English. The frame says it is not the file; the indent says which word
+/// it is about.
+///
+/// The count of the others on the line rides the bottom rail rather than
+/// sitting inside: what is inside is what the server said, and the frame
+/// is obelus's, and so is the arithmetic.
+///
+/// Broken deliberately by returning the words unframed, by putting the
+/// count inside the frame with them, or by dropping the indent: each is a
+/// different assertion here and each goes red.
+#[test]
+fn a_complaint_is_framed_and_its_count_rides_the_rail() {
+    let (_scratch, mut app, path) = editing("trouble-frame", "fn main() {\n    nmae;\n}\n");
+    // Two of them on the one line, so there is something left to count.
+    let one = |from: u32, to: u32, severity: u8, message: &str| {
+        json!({
+            "range": { "start": { "line": 1, "character": from },
+                       "end": { "line": 1, "character": to } },
+            "severity": severity,
+            "source": "rustc",
+            "message": message
+        })
+    };
+    app.publish_for_test(json!({
+        "uri": format!("file://{}", path.display()),
+        "diagnostics": [one(4, 8, 1, "cannot find value `nmae` in this scope"),
+                        one(4, 8, 2, "unused something")]
+    }));
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+
+    let dump = support::render(&mut app, 60, 16);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .map(|row| &row[row.find('|').expect("a divider") + 1..])
+        .collect();
+    let column = |row: &str, of: &str| {
+        row.find(of)
+            .map(|byte| row[..byte].chars().count())
+            .unwrap_or_else(|| panic!("{of:?} is not on {row:?}:\n{dump}"))
+    };
+
+    let about = rows
+        .iter()
+        .position(|row| row.contains("nmae"))
+        .expect("the line it is about");
+    let top = rows
+        .iter()
+        .position(|row| row.contains('\u{250c}'))
+        .unwrap_or_else(|| panic!("the words are not framed:\n{dump}"));
+    let bottom = rows
+        .iter()
+        .position(|row| row.contains('\u{2514}'))
+        .unwrap_or_else(|| panic!("the frame has no bottom rail:\n{dump}"));
+    let said = rows
+        .iter()
+        .position(|row| row.contains("cannot find value"))
+        .expect("the words");
+    assert!(
+        top == about + 1 && said > top && bottom > said,
+        "the frame is not wrapped round the words under the line:\n{dump}"
+    );
+    assert!(
+        rows[said].contains('\u{2502}'),
+        "the row the words are on has no rails:\n{dump}"
+    );
+    // Under the word it is about, not at the code's own left edge.
+    assert_eq!(
+        column(rows[top], "\u{250c}"),
+        column(rows[about], "nmae"),
+        "the frame does not start under the word it is about:\n{dump}"
+    );
+    // On the rail, which is obelus's, and not inside, which is the
+    // server's.
+    assert!(
+        rows[bottom].contains("and 1 more here"),
+        "the count is not on the bottom rail:\n{dump}"
+    );
+    assert!(
+        !rows[said].contains("and 1 more here") && !rows[said - 1].contains("more here"),
+        "the count is inside the frame with the server's own words:\n{dump}"
+    );
+}
+
+/// A narrow window gives up the indent, then the frame -- never the fit.
+///
+/// Anything wider than the room is wrapped by the editor like any other
+/// text, and a wrapped frame is a rail to a row: the frame taken apart
+/// into exactly the shape it was drawn to avoid. So the room decides what
+/// is affordable before the words are laid out, rather than the frame
+/// being built and clamped afterwards.
+///
+/// Broken deliberately by letting the words inside be wider than what is
+/// left of the row -- which is what a `max` on that width does, however
+/// reasonable the number in it looks.
+#[test]
+fn a_narrow_window_gives_up_the_frame_before_it_gives_up_the_fit() {
+    let framed_at = |width: u16| {
+        let scratch = support::Scratch::new(&format!("trouble-narrow-{width}"));
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, "fn main() {\n    let _ = step_99(point);\n}\n").expect("writing");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        // Wrapped, because it is the wrapping that took the frame apart.
+        app.configure(
+            obelus::config::Config {
+                wrap: true,
+                ..obelus::config::Config::default()
+            },
+            Vec::new(),
+        );
+        support::lay_out(&mut app, width, 24);
+        // One sentence, so that the whole frame fits the screen: what is
+        // being measured is its width, and a bottom rail scrolled off the
+        // bottom would read as a bottom rail that was never drawn.
+        app.publish_for_test(json!({
+            "uri": format!("file://{}", path.display()),
+            "diagnostics": [{
+                "range": { "start": { "line": 1, "character": 12 },
+                           "end": { "line": 1, "character": 19 } },
+                "severity": 1,
+                "source": "rustc",
+                "message": "cannot find function `step_99` in this scope"
+            }]
+        }));
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        let dump = support::render(&mut app, width, 24);
+        let rows: Vec<String> = support::text_block(&dump)
+            .lines()
+            .filter(|row| row.contains('|'))
+            .map(|row| row[row.find('|').expect("a divider") + 1..].to_string())
+            .collect();
+        (rows, dump)
+    };
+
+    // Narrow, but with room to frame: every rail is whole, on one row.
+    let (rows, dump) = framed_at(34);
+    let tops: Vec<&String> = rows.iter().filter(|row| row.contains('\u{250c}')).collect();
+    assert_eq!(
+        tops.len(),
+        1,
+        "the top rail is on more than one row:\n{dump}"
+    );
+    assert!(
+        tops[0].contains('\u{2510}'),
+        "the top rail ran off the row it started on:\n{dump}"
+    );
+    let bottoms: Vec<&String> = rows.iter().filter(|row| row.contains('\u{2514}')).collect();
+    assert_eq!(
+        bottoms.len(),
+        1,
+        "the bottom rail is on more than one row:\n{dump}"
+    );
+    assert!(
+        bottoms[0].contains('\u{2518}'),
+        "the bottom rail ran off the row it started on:\n{dump}"
+    );
+    // Every row of words has both of its side rails, which is the same
+    // fact said about the middle of the frame.
+    let words: Vec<&String> = rows
+        .iter()
+        .filter(|row| row.contains("cannot") || row.contains("scope"))
+        .collect();
+    assert!(!words.is_empty(), "the words are nowhere:\n{dump}");
+    for row in words {
+        assert_eq!(
+            row.matches('\u{2502}').count(),
+            2,
+            "a row of words is missing a rail:\n{dump}"
+        );
+    }
+
+    // Too narrow to frame: the words, and nothing pretending to be a
+    // frame. Said as "no rail anywhere" rather than "no corner", because a
+    // frame that had come apart would leave the rails behind.
+    let (rows, dump) = framed_at(20);
+    assert!(
+        rows.iter().any(|row| row.contains("cannot")),
+        "the words went with the frame:\n{dump}"
+    );
+    assert!(
+        !rows.iter().any(|row| row.contains('\u{2502}')
+            || row.contains('\u{250c}')
+            || row.contains('\u{2514}')),
+        "a frame was drawn where there was no room for one:\n{dump}"
     );
 }

@@ -573,10 +573,45 @@ impl App {
             self.close_the_complaint();
             return;
         };
-        let mut said: Vec<String> = worst.message.lines().map(str::to_string).collect();
-        if here.len() > 1 {
-            said.push(format!("and {} more here", here.len() - 1));
-        }
+        // Indented to the column the trouble starts at, so the words hang
+        // under the thing they are about rather than under the left-hand
+        // edge of code they may have nothing to do with. In display
+        // columns, because that is what a tab is worth on screen and the
+        // block's own indent is spaces.
+        //
+        // Never more than half the room: a complaint about something near
+        // the right-hand edge would otherwise be a word to a row.
+        let column = self.current_buffer().map_or(0, |buffer| {
+            buffer.text().display_column(line, worst.span.column).get()
+        });
+        let room = self.text_area().width;
+        // What the frame costs the row: a rail and a space at either end.
+        const FRAME: u16 = 4;
+        // And the least room worth leaving the words inside it. Below
+        // this a complaint is a word to a row, which is not reading.
+        const LEAST: u16 = 12;
+        // Given up in this order as the window narrows: first the indent,
+        // because which word the complaint is about is a nicety and
+        // reading it is not; then the frame itself.
+        //
+        // Never merely clamped. Anything wider than the room is wrapped by
+        // the editor like any other text, and a wrapped frame is a rail to
+        // a row -- the frame taken apart into the shape it was drawn to
+        // avoid.
+        let indent = column.min(room / 2).min(room.saturating_sub(FRAME + LEAST));
+        let framing = room >= FRAME + LEAST;
+        let inside = if framing {
+            room - FRAME - indent
+        } else {
+            room.max(1)
+        };
+        let words = crate::text::wrapped(&worst.message, inside);
+        let tally = (here.len() > 1).then(|| format!("and {} more here", here.len() - 1));
+        let said = if framing {
+            framed(&" ".repeat(usize::from(indent)), &words, tally.as_deref())
+        } else {
+            words.into_iter().chain(tally).collect()
+        };
         // Already saying exactly this, in exactly this place: rebuilding it
         // would put the caret out of it on every frame, and a reader cannot
         // select what is rebuilt underneath them.
@@ -2166,6 +2201,52 @@ fn place_rows(places: &[crate::lsp::action::Place], root: &Path) -> Vec<PickerIt
 /// they would install, start or look in the log of.
 pub(super) fn named(language: LanguageId) -> &'static str {
     lsp::command_for(language).unwrap_or("the language server")
+}
+
+/// A complaint's words with a frame drawn round them.
+///
+/// The frame is text rather than something the view draws over these rows,
+/// because it needs two rows of its own and rows come from the block's
+/// text: everything that counts them, wraps them or scrolls to them asks
+/// the text, and a frame the text did not know about would be drawn where
+/// nothing had made room for it. The words arrive already wrapped to fit
+/// inside, so the editor's own wrapping never has a rail to break.
+///
+/// The count of the other troubles on the line rides the bottom rail
+/// rather than sitting inside it. What is inside the frame is what a
+/// server said; the frame is obelus's, and so is the arithmetic -- the
+/// same line [`crate::buffer::Block::changed`] draws for a commit's
+/// `+n -n`. Told apart by where it is rather than by a shade, because the
+/// whole of this is drawn in one colour: the rails share their rows with
+/// the words, so a dimmer frame would mean colouring by which character a
+/// cell happens to hold.
+fn framed(indent: &str, words: &[String], tally: Option<&str>) -> Vec<String> {
+    use unicode_width::UnicodeWidthStr;
+
+    let cells = |text: &str| UnicodeWidthStr::width(text);
+    // One cell wider than the count, so the bottom rail always has a stroke
+    // of frame left after it.
+    let widest = words
+        .iter()
+        .map(|word| cells(word))
+        .chain(tally.map(|tally| cells(tally) + 1))
+        .max()
+        .unwrap_or(0);
+    let mut lines = Vec::with_capacity(words.len() + 2);
+    let rail = |length: usize| "\u{2500}".repeat(length);
+    lines.push(format!("{indent}\u{250c}{}\u{2510}", rail(widest + 2)));
+    for word in words {
+        let padding = " ".repeat(widest - cells(word));
+        lines.push(format!("{indent}\u{2502} {word}{padding} \u{2502}"));
+    }
+    let bottom = match tally {
+        // `-- and 2 more here ------`: a stroke, the count, then the rest
+        // of the rail.
+        Some(tally) => format!("\u{2500} {tally} {}", rail(widest - cells(tally) - 1)),
+        None => rail(widest + 2),
+    };
+    lines.push(format!("{indent}\u{2514}{bottom}\u{2518}"));
+    lines
 }
 
 #[cfg(test)]
