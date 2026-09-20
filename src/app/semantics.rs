@@ -539,6 +539,76 @@ impl App {
     /// belongs. The alternative is forgetting them, which takes every cell
     /// off the screen on every keystroke and puts them all back a fifth of
     /// a second later: measured, and far worse to read.
+    /// Puts what is wrong with the line the caret is on under the reader's
+    /// eye, and takes away the one that was there.
+    ///
+    /// Every frame, from the troubles and the caret rather than from
+    /// anything remembered -- the same rule the row that says what is
+    /// happening follows, so there is no way for a complaint to be left on
+    /// a line that no longer has one.
+    ///
+    /// Only the caret's line. One of these costs a row of the file's own
+    /// space, and a file with thirty of them is a file whose shape is the
+    /// complaints rather than the code. Every other one is said by the
+    /// underline, which costs no room at all and is on all of them.
+    pub(super) fn show_what_is_wrong(&mut self) {
+        if !self.config().diagnostics {
+            self.close_the_complaint();
+            return;
+        }
+        let Some(buffer) = self.current_buffer() else {
+            return;
+        };
+        let line = buffer.cursor().line;
+        // The worst of them where a line has several, and how many others
+        // there are: the same two facts the underline settles, settled the
+        // same way.
+        let mut here: Vec<&crate::lsp::trouble::Trouble> = self
+            .troubles()
+            .iter()
+            .filter(|trouble| trouble.span.line == line)
+            .collect();
+        here.sort_by_key(|trouble| trouble.severity);
+        let Some(worst) = here.first() else {
+            self.close_the_complaint();
+            return;
+        };
+        let mut said: Vec<String> = worst.message.lines().map(str::to_string).collect();
+        if here.len() > 1 {
+            said.push(format!("and {} more here", here.len() - 1));
+        }
+        // Already saying exactly this, in exactly this place: rebuilding it
+        // would put the caret out of it on every frame, and a reader cannot
+        // select what is rebuilt underneath them.
+        // Under the line, which is where a complaint about it belongs. Past
+        // the end of the file on its last line, which is a place a block
+        // can hang: the row after the last line is counted by
+        // `screen_rows_of` and drawn by the pass the view makes past the
+        // end, both of which a hunk deleting the end of a file needed
+        // first.
+        let under = crate::coordinates::LineNumber::new(line.get() + 1);
+        let standing = self
+            .current_buffer()
+            .and_then(|buffer| buffer.block_above(under))
+            .filter(|block| block.kind == crate::buffer::Held::Wrong)
+            .is_some_and(|block| block.opened_with() == said);
+        if standing {
+            return;
+        }
+        let severity = worst.severity;
+        self.close_the_complaint();
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.open_saying(under, &said, crate::buffer::Held::Wrong, Some(severity));
+        }
+    }
+
+    /// Takes away whatever complaint is showing.
+    fn close_the_complaint(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.close_blocks(crate::buffer::Held::Wrong);
+        }
+    }
+
     pub(super) fn redraw_cells(&mut self, id: DocumentId) {
         let Some(buffer) = self.file(id) else {
             return;

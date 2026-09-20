@@ -558,13 +558,20 @@ impl Widget for EditorView<'_> {
         let mut line = viewport.top;
         let mut skip = viewport.top_row;
 
-        while screen_row < area.height && line.get() < text.line_count() {
-            // Past whatever is folded away here. Not a `continue` per line:
-            // a file folded down to a dozen rows would otherwise walk every
-            // line it is hiding, once per frame.
-            line = buffer.folds().first_shown(line);
-            if line.get() >= text.line_count() {
-                break;
+        // One past the last line, because a block can hang there: a hunk
+        // that deleted the end of a file, or what a server says is wrong
+        // with its last line. That pass draws the block and stops -- there
+        // is no line at it to draw, and nothing after it.
+        while screen_row < area.height && line.get() <= text.line_count() {
+            let past = line.get() == text.line_count();
+            if !past {
+                // Past whatever is folded away here. Not a `continue` per
+                // line: a file folded down to a dozen rows would otherwise
+                // walk every line it is hiding, once per frame.
+                line = buffer.folds().first_shown(line);
+                if line.get() > text.line_count() {
+                    break;
+                }
             }
             // What this line replaced, if the reader has opened it. Above the
             // line, because that is where it was, and pushing the file down
@@ -623,7 +630,16 @@ impl Widget for EditorView<'_> {
                                 // height of somebody's prose, was the
                                 // loudest thing on a screen whose subject
                                 // is the code underneath.
-                                crate::buffer::Held::Message => self.theme.background,
+                                // The page's own colour for a complaint
+                                // too, and for the same reason twice over:
+                                // it has the bar and no line numbers
+                                // already, and a red panel across the file
+                                // would be the loudest thing on a screen
+                                // whose subject is the code the complaint
+                                // is about.
+                                crate::buffer::Held::Message | crate::buffer::Held::Wrong => {
+                                    self.theme.background
+                                }
                             }),
                         );
                         // The bar a line on screen gets, not the boundary
@@ -638,6 +654,15 @@ impl Widget for EditorView<'_> {
                             match block.kind {
                                 crate::buffer::Held::Removed => self.theme.change_removed,
                                 crate::buffer::Held::Message => self.theme.gutter,
+                                // How bad it is, in the colour the same
+                                // trouble underlines the line in: one
+                                // complaint, one colour, whichever of the
+                                // two the reader's eye lands on first.
+                                crate::buffer::Held::Wrong => {
+                                    block.severity.map_or(self.theme.gutter, |severity| {
+                                        self.theme.colour_for(Some(severity.kind()))
+                                    })
+                                }
                             },
                             cells,
                         );
@@ -711,6 +736,10 @@ impl Widget for EditorView<'_> {
                         screen_row += 1;
                     }
                 }
+            }
+
+            if past {
+                break;
             }
 
             let wrap_width = if self.wrap { width } else { u16::MAX };

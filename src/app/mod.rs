@@ -1377,6 +1377,7 @@ impl App {
         }
         self.check_servers();
         self.check_runs();
+        self.show_what_is_wrong();
         // What the conversation says is happening, read off the state
         // rather than remembered: a row that is worked out every frame
         // cannot be left saying something that stopped being true.

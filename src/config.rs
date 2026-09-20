@@ -69,6 +69,15 @@ pub struct Config {
     /// which is what the switch is for: turned off, the file on disk is
     /// what is on screen, to the column.
     pub inlay_hints: bool,
+    /// Whether what a server says is wrong with the line the caret is on is
+    /// opened under it.
+    ///
+    /// The underline is not this switch: what is wrong is marked on every
+    /// line that has something wrong with it, always, and costs no room.
+    /// This is the *words*, which take a row of the file's own space -- so
+    /// a reader who would rather keep the shape of the code and read the
+    /// complaint from the list can have that.
+    pub diagnostics: bool,
     /// Whether the file list offers the files a tree has said to ignore.
     ///
     /// About the list, not about the files: what `.gitignore` keeps out is
@@ -124,6 +133,7 @@ impl Default for Config {
             // and three lines somewhere else rewritten.
             code_actions_on_save: false,
             inlay_hints: true,
+            diagnostics: true,
             // Off, because a tree says what it ignores and mostly means it:
             // a list whose first hundred rows are `target` is a list nobody
             // can find anything in.
@@ -367,6 +377,14 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Switch,
     },
     Setting {
+        key: "diagnostics",
+        name: "What a server says is wrong",
+        about: "open the words under the line the caret is on. What is wrong is underlined on every line either way; this is whether the complaint itself is read where it is, which costs that line a row of the file's own space",
+        group: Group::Reading,
+        reach: Reach::Anywhere,
+        kind: Kind::Switch,
+    },
+    Setting {
         key: "ignored_files",
         name: "Files a tree ignores",
         about: "offer them in the file list as well -- what `.gitignore` keeps out is build output most days and the file you are looking for on the others",
@@ -393,6 +411,7 @@ impl Config {
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
             "code_actions_on_save" => Some(Value::Switch(self.code_actions_on_save)),
             "inlay_hints" => Some(Value::Switch(self.inlay_hints)),
+            "diagnostics" => Some(Value::Switch(self.diagnostics)),
             "ignored_files" => Some(Value::Switch(self.ignored_files)),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
@@ -413,6 +432,7 @@ impl Config {
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
             ("code_actions_on_save", Value::Switch(on)) => self.code_actions_on_save = *on,
             ("inlay_hints", Value::Switch(on)) => self.inlay_hints = *on,
+            ("diagnostics", Value::Switch(on)) => self.diagnostics = *on,
             ("ignored_files", Value::Switch(on)) => self.ignored_files = *on,
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
@@ -633,6 +653,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     {
         config.inlay_hints = on;
     }
+    if let Some(on) = table.get("diagnostics").and_then(toml::Value::as_bool)
+        && allowed("diagnostics")
+    {
+        config.diagnostics = on;
+    }
     if let Some(on) = table.get("ignored_files").and_then(toml::Value::as_bool)
         && allowed("ignored_files")
     {
@@ -711,6 +736,7 @@ pub fn over(existing: &str, config: &Config) -> String {
     document["format_on_save"] = toml_edit::value(config.format_on_save);
     document["code_actions_on_save"] = toml_edit::value(config.code_actions_on_save);
     document["inlay_hints"] = toml_edit::value(config.inlay_hints);
+    document["diagnostics"] = toml_edit::value(config.diagnostics);
     document["ignored_files"] = toml_edit::value(config.ignored_files);
     // Written even when there is nobody, so the file says what obelus read
     // rather than leaving the reader to wonder whether it noticed.
@@ -1005,6 +1031,7 @@ mod tests {
             format_on_save: true,
             code_actions_on_save: true,
             inlay_hints: true,
+            diagnostics: true,
             ignored_files: true,
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and

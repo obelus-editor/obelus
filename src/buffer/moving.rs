@@ -584,7 +584,15 @@ impl Buffer {
             Motion::Down => below.and_then(|line| self.block_above(line)),
             _ => None,
         }
-        .filter(|block| !block.is_empty())?;
+        .filter(|block| !block.is_empty())
+        // Not into a complaint. The others are rows the reader *opened*,
+        // and walking into what you opened is the point of opening it;
+        // this one arrived on its own because the caret came to rest on
+        // the line above, and stepping through it would charge a keystroke
+        // for every line a server has something to say about -- on the one
+        // motion the whole thing is built around, which is moving to the
+        // line to read it.
+        .filter(|block| block.kind != Held::Wrong)?;
         let width = area.wrap_width();
         let (row, _) = self
             .editing
@@ -707,6 +715,7 @@ impl Buffer {
         }
         self.rows_above(line, area.wrap_width())
             + self.editing.text().row_count(line, area.wrap_width())
+            + self.rows_below(line, area.wrap_width())
     }
 
     /// The next line with rows of its own, in either direction.
@@ -739,6 +748,34 @@ impl Buffer {
     /// reader has opened there and nothing else.
     fn rows_above(&self, line: LineNumber, width: u16) -> usize {
         self.block_above(line).map_or(0, |block| block.rows(width))
+    }
+
+    /// How many rows the view draws *below* a line, which is only ever the
+    /// block hanging past the end of the file.
+    ///
+    /// A block belongs to the line it is drawn above, and the row after the
+    /// last line belongs to no line at all -- so a hunk that deleted the
+    /// end of a file, or a complaint about its last line, hung off a line
+    /// nothing counts and nothing drew. Counted here, on the last line,
+    /// rather than by teaching every walk about a line past the end:
+    /// everything that counts rows counts with `screen_rows_of`, and one
+    /// more term in it is how folding is done too.
+    fn rows_below(&self, line: LineNumber, width: u16) -> usize {
+        if line != self.editing.text().last_line() {
+            return 0;
+        }
+        self.rows_under(line, width)
+    }
+
+    /// How many rows hang directly under a line, wherever they are counted.
+    ///
+    /// The same rows as [`Buffer::rows_above`] of the line below, said from
+    /// the other side. Which line *counts* them depends on whether there is
+    /// a line below to count them; which line they belong *to* does not,
+    /// and this is the question the viewport asks.
+    fn rows_under(&self, line: LineNumber, width: u16) -> usize {
+        self.block_above(LineNumber::new(line.get() + 1))
+            .map_or(0, |block| block.rows(width))
     }
 
     /// The row of the screen `rows` away, crossing line boundaries and
@@ -1006,6 +1043,17 @@ impl Buffer {
         }
 
         let cursor = self.cursor_screen_row(area);
+        // What hangs directly under the caret's line comes with it. A
+        // complaint is opened *because* the caret arrived on that line, so
+        // one below the bottom edge is an answer to a question the reader
+        // just asked and cannot see -- walking onto a wrong line would
+        // look like nothing happened. Capped below the height, because
+        // keeping a tall block on screen must not push the line it is
+        // about off the top: the line is the thing being read.
+        let tail = self
+            .rows_under(self.cursor().line, area.wrap_width())
+            .min(height - 1);
+        let wanted = self.step_screen_rows(cursor, isize::try_from(tail).unwrap_or(0), area);
         let mut at = (self.viewport.top, self.viewport.top_row);
 
         if cursor < at {
@@ -1018,7 +1066,7 @@ impl Buffer {
         // that the cursor is below the window wherever exactly it is, and the
         // answer is the same either way.
         for _ in 0..height {
-            if at == cursor {
+            if at == wanted {
                 return;
             }
             let next = self.step_screen_rows(at, 1, area);
@@ -1030,7 +1078,7 @@ impl Buffer {
         }
 
         let back = isize::try_from(height - 1).unwrap_or(isize::MAX);
-        let (top, top_row) = self.step_screen_rows(cursor, -back, area);
+        let (top, top_row) = self.step_screen_rows(wanted, -back, area);
         self.viewport.top = top;
         self.viewport.top_row = top_row;
     }

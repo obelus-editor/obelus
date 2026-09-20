@@ -201,3 +201,101 @@ fn the_shapes_a_notification_arrives_in() {
     );
     assert_eq!(Severity::Error.title(), "Error");
 }
+
+/// What is wrong with the line the caret is on is opened under the reader's
+/// eye, in the words the server used.
+///
+/// The underline says *that* something is wrong and costs no room; this
+/// says *what*, and costs the line a row of the file's own space. Which is
+/// why it is only ever the caret's line: a file with thirty of these is a
+/// file whose shape is the complaints rather than the code.
+///
+/// Broken deliberately by leaving `show_what_is_wrong` uncalled: the words
+/// are nowhere on the page and this goes red.
+#[test]
+fn what_is_wrong_with_this_line_is_opened_under_it() {
+    let (_scratch, mut app, path) = editing("trouble-block", "fn main() {\n    nmae;\n}\n");
+    app.publish_for_test(published(&path, 1, 4, 8, 1));
+
+    // The caret starts on the first line, which has nothing wrong with it.
+    let dump = support::render(&mut app, 60, 16);
+    assert!(
+        !support::text_block(&dump).contains("cannot find value"),
+        "a complaint about a line the caret is not on:\n{dump}"
+    );
+
+    // Onto the line that has.
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    let dump = support::render(&mut app, 60, 16);
+    assert!(
+        support::text_block(&dump).contains("cannot find value"),
+        "the words the server used are not under the line:\n{dump}"
+    );
+
+    // And away again -- one key, not two: the caret steps over a complaint
+    // rather than into it, because it is not a thing the reader opened.
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    assert_eq!(
+        app.current_buffer()
+            .map(|buffer| buffer.cursor().line.get()),
+        Some(2),
+        "one key did not step past the complaint"
+    );
+    let dump = support::render(&mut app, 60, 16);
+    assert!(
+        !support::text_block(&dump).contains("cannot find value"),
+        "the complaint stayed on a line the caret has left:\n{dump}"
+    );
+}
+
+/// A complaint about the file's last line still opens under it.
+///
+/// The row after the last line is a place a block can hang, which nothing
+/// could use before: a hunk that deleted the end of a file hung its removed
+/// lines off a line the view never reached, so they could not be opened at
+/// all. The alternative was a complaint that opened above its line at the
+/// bottom of a file and below it everywhere else.
+///
+/// Reached by walking there rather than by starting there, in a file
+/// taller than the screen, because the three things this needs each only
+/// bite once the view has to scroll. Broken deliberately, three ways, each
+/// leaving the words nowhere on the page: stopping the view's pass past the
+/// end; taking `rows_below` out of `screen_rows_of`, so the last screenful
+/// stops one row short of the block; and capping `scroll_into_view`'s tail
+/// at nothing, so the block hangs just under the bottom edge with nothing
+/// to pull it up.
+#[test]
+fn what_is_wrong_with_the_last_line_is_opened_under_it() {
+    // Long enough that the last line is only reached by scrolling, and no
+    // newline at the end so that line really is the last one: with a
+    // trailing newline there is an empty line after it and the block hangs
+    // off that, which is the ordinary case and not this one.
+    let mut file = "fn main() {\n".to_string();
+    for _ in 0..40 {
+        file.push_str("    let _ = 1;\n");
+    }
+    file.push_str("    nmae");
+    let (_scratch, mut app, path) = editing("trouble-last", &file);
+    app.publish_for_test(published(&path, 41, 4, 8, 1));
+    for _ in 0..41 {
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+    }
+
+    let dump = support::render(&mut app, 60, 16);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .collect();
+    let said = rows
+        .iter()
+        .position(|row| row.contains("cannot find value"))
+        .unwrap_or_else(|| panic!("the words are not on the page:\n{dump}"));
+    let about = rows
+        .iter()
+        .position(|row| row.contains("nmae"))
+        .expect("the line it is about");
+    assert!(
+        said > about,
+        "the complaint about the last line opened above it:\n{dump}"
+    );
+}

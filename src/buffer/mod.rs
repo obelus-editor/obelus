@@ -300,8 +300,9 @@ pub struct Viewport {
 /// say, and a reader who can see them wants to read them and take a copy.
 ///
 /// Held by the buffer because the caret and the viewport both need them:
-/// one to have somewhere to be, the other to count the rows on screen. One
-/// block, because one hunk is open at a time.
+/// one to have somewhere to be, the other to count the rows on screen.
+/// A list rather than one slot, for the reason `folds` gives: a reader
+/// comparing two changes wants both on screen.
 #[derive(Debug)]
 pub struct Block {
     /// The line of the file they are drawn above.
@@ -330,6 +331,13 @@ pub struct Block {
     full: Vec<String>,
     /// Whether it is showing its opening lines rather than all of them.
     folded: bool,
+    /// How bad what this says is, where it says something is wrong.
+    ///
+    /// On the block rather than looked up from the line it hangs over,
+    /// because which line that is depends on which side it opened on --
+    /// and a bar drawn in the colour of the wrong line's trouble is a bar
+    /// that is quietly the wrong colour at the bottom of a file.
+    pub severity: Option<crate::lsp::trouble::Severity>,
     /// What the commit did to the file the block hangs over, where that is
     /// known: lines added, lines taken away.
     ///
@@ -375,6 +383,18 @@ pub const FOLDED_LINES: usize = 5;
 const MORE: &str = "\u{2026}";
 
 impl Block {
+    /// Every line it was opened with, whether or not it is showing them
+    /// all.
+    ///
+    /// What it *holds* rather than what is on screen, which is what a
+    /// caller comparing it against what it would open now has to ask: the
+    /// text is rewritten by folding, and comparing against that would
+    /// reopen a folded block on every frame.
+    #[must_use]
+    pub fn opened_with(&self) -> &[String] {
+        &self.full
+    }
+
     /// What the rows say.
     #[must_use]
     pub const fn text(&self) -> &Text {
@@ -493,16 +513,36 @@ impl Block {
 
 /// What an opened block is holding.
 ///
-/// Two things are drawn the same way -- rows of text the file does not have,
-/// between two lines it does -- and they are not the same thing, so they do
-/// not read the same: lines a commit removed are gone, and a commit's
-/// message is a note.
+/// Three things are drawn the same way -- rows of text the file does not
+/// have, between two lines it does -- and they are not the same thing, so
+/// they do not read the same: lines a commit removed are gone, a commit's
+/// message is a note, and what a server says is wrong with a line is a
+/// complaint about the line under it.
+///
+/// Every `match` on this is exhaustive on purpose. Adding a fourth has to
+/// be answered where a block is drawn, which is two questions -- what
+/// colour it is tinted and what its bar is written in -- and a default arm
+/// would answer both wrongly and quietly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Held {
     /// The lines a hunk replaced.
     Removed,
     /// What a commit said about itself.
     Message,
+    /// What a server says is wrong with a line.
+    ///
+    /// Under that line, which is where a complaint about something goes.
+    /// On the last line of the file that is the row past the end, which
+    /// `Held::Removed` needed before this did and neither had: a hunk that
+    /// deleted the end of a file hung its removed lines off a line the view
+    /// never reached, so they could not be opened at all.
+    ///
+    /// Only ever the line the caret is on. One of these costs a row of the
+    /// file's own space, and a file with thirty of them is a file whose
+    /// shape is the complaints rather than the code -- which is the thing
+    /// obelus is for looking at. The rest are said by the underline, which
+    /// costs nothing and is on every one of them.
+    Wrong,
 }
 
 /// The room the text has, and whether it wraps in it.
@@ -854,7 +894,19 @@ impl Buffer {
 
     /// The same, for rows that are not a hunk's.
     pub fn open_held(&mut self, above: LineNumber, lines: &[String], kind: Held) {
+        self.open_saying(above, lines, kind, None);
+    }
+
+    /// The same, for a block that says how bad what it holds is.
+    pub fn open_saying(
+        &mut self,
+        above: LineNumber,
+        lines: &[String],
+        kind: Held,
+        severity: Option<crate::lsp::trouble::Severity>,
+    ) {
         let block = Block {
+            severity,
             above,
             kind,
             // Joined without a trailing newline: a text that ends in one
