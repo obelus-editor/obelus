@@ -811,23 +811,32 @@ fn the_view_moves_only_for_a_problem_the_reader_cannot_see() {
         support::press_alt(&mut app, 'e');
         let dump = support::render(&mut app, 60, 20);
         let now = app.current_buffer().expect("a file").viewport().top.get();
-        (scratch, was, now, dump)
+        (scratch, was, now, dump, app.text_area().height)
     };
 
-    // Twelve rows of the editor are visible under a list of one; line ten
-    // is on screen, and far enough down that centring on it would move the
-    // view if anything asked it to.
-    let (_scratch, was, now, dump) = opened_on("trouble-still", 10);
+    // Well inside the room the list leaves, and far enough down that
+    // centring on it would move the view if anything asked it to.
+    let (_scratch, was, now, dump, room) = opened_on("trouble-still", 6);
     assert_eq!(
         was, now,
         "the view moved for a problem the reader could already see:\n{dump}"
     );
 
-    // Line fifteen is drawn by the editor and covered by the list, so the
-    // reader cannot see it however many rows the editor thinks it has.
-    let (_scratch, was, now, dump) = opened_on("trouble-hidden", 15);
+    // Past the room the list leaves: drawn by the editor before this, and
+    // covered, so the reader could not see it however many rows the editor
+    // thought it had.
+    let (_scratch, was, now, dump, _) = opened_on("trouble-hidden", u32::from(room) + 3);
     assert_ne!(
         was, now,
         "the view stayed put for a problem hidden behind the list:\n{dump}"
+    );
+
+    // And on the very last row the reader has, which is on the screen and
+    // not somewhere they can read: the list is against it and there is no
+    // file under it.
+    let (_scratch, was, now, dump, _) = opened_on("trouble-edge", u32::from(room) - 1);
+    assert_ne!(
+        was, now,
+        "the view left the problem pinned against the list:\n{dump}"
     );
 }

@@ -972,7 +972,8 @@ impl Buffer {
         self.viewport.top_row = top_row;
     }
 
-    /// Whether a line has a row on the screen the area describes.
+    /// Which row of the screen a line's first row is drawn on, if it is
+    /// drawn at all.
     ///
     /// Asked about a line rather than about the caret: a list showing the
     /// reader somewhere must not move the view for somewhere they can
@@ -982,23 +983,27 @@ impl Buffer {
     /// drawn over the foot of the editor is short of what the editor
     /// draws. A line under the list is a line the reader cannot see, and
     /// answering otherwise would leave them looking at nothing.
+    ///
+    /// The row rather than a yes: whether somewhere counts as shown
+    /// depends on how near the edge it is, and only the caller knows how
+    /// much room around it the reader needs.
     #[must_use]
-    pub fn is_on_screen(&self, line: LineNumber, area: TextArea) -> bool {
+    pub fn screen_row_of(&self, line: LineNumber, area: TextArea) -> Option<u16> {
         if line < self.viewport.top {
-            return false;
+            return None;
         }
         let mut at = (self.viewport.top, self.viewport.top_row);
-        for _ in 0..usize::from(area.height) {
+        for row in 0..area.height {
             if at.0 == line {
-                return true;
+                return Some(row);
             }
             let next = self.step_screen_rows(at, 1, area);
             if next == at {
-                return false;
+                return None;
             }
             at = next;
         }
-        false
+        None
     }
 
     /// Puts a line in the middle of the text area, leaving the caret where

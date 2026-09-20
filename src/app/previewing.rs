@@ -133,12 +133,24 @@ impl App {
         let Some(buffer) = self.current_buffer_mut() else {
             return;
         };
-        // Nothing at all for somewhere already on screen, which is the same
+        // Nothing at all for somewhere already shown, which is the same
         // rule `go-to-next-change` follows: a place the reader can see is a
         // short hop, and moving the view for it throws away their place --
         // and on the row they are standing on, walking a list would scroll
         // the file out from under them before they had chosen anything.
-        if buffer.is_on_screen(line, area) {
+        //
+        // Shown, not merely drawn. A line on the last row above the list is
+        // a line with the list against it and nothing of the file under it,
+        // which reads as the list having covered the very thing it is
+        // pointing at. A few rows of margin either side is the difference
+        // between being on the screen and being somewhere the reader can
+        // read -- and on a short screen there is no room to be fussy, so
+        // the margin is a share of the room rather than a number.
+        let edge = (area.height / 4).min(3);
+        if buffer
+            .screen_row_of(line, area)
+            .is_some_and(|row| row >= edge && row + edge < area.height)
+        {
             return;
         }
         buffer.look_at(line, area);
