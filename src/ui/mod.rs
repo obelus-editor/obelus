@@ -231,7 +231,7 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
     // with.
     let offset = editor::text_offset(
         buffer.text().line_count(),
-        editor::marks(app.changes().is_some(), buffer.language()),
+        editor::changed(app.changes()),
         !buffer.folds().is_empty(),
     );
     if offset >= regions.editor.width {

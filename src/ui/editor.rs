@@ -159,29 +159,34 @@ pub const FOLD_WIDTH: u16 = 1;
 /// row is a summary, not two lines pretending to be one.
 const ELIDED: &str = "\u{2026}";
 
-/// Whether the two columns that mark a file's lines are reserved for it.
+/// Whether git has anything to say about this file.
 ///
-/// Both of them or neither: the margin and the map are one answer at two
-/// scales -- what happened to this line, and where else in the file to look
-/// -- and each cell of each is split between what changed and what is
-/// wrong. A file given one of the two columns would have half a picture.
-///
-/// Two reasons, and both are facts about *which file is open* rather than
-/// about what is in it or what anyone has said about it. Being in a
-/// repository is the older one. The newer one is the language having a
-/// server in [`crate::lsp::server_for`]'s table -- reserved whether or not
-/// that server is installed, whether or not it has started, and whether or
-/// not it has found anything, for exactly the reason the repository's
-/// column is reserved for a file nobody has changed: a width that arrived
-/// with an answer would rewrap every line under the reader the moment a
-/// server spoke.
-///
-/// `wrongs` is the language of a view that shows what is wrong with the
-/// file, and `None` for one that does not. A preview is a look at somewhere
-/// else and never carries a complaint, so it has only the older reason.
+/// Something to say rather than merely being asked: a file in a repository
+/// that nobody has touched would otherwise spend a column on an answer of
+/// "nothing", which is every file in every clean tree. What that costs is
+/// a cell of sideways shift when a file does change under the reader --
+/// and with wrapping on, a rewrap -- and it is paid where there is news
+/// worth the column.
 #[must_use]
-pub fn marks(changes: bool, wrongs: Option<crate::syntax::LanguageId>) -> bool {
-    changes || wrongs.is_some_and(|language| crate::lsp::server_for(language).is_some())
+pub fn changed(changes: Option<&Changes>) -> bool {
+    changes.is_some_and(|changes| !changes.hunks().is_empty())
+}
+
+/// How many columns the map takes, just inside the scrollbar.
+///
+/// One for what changed and one for what is wrong, each reserved by its
+/// own news: a file outside a repository can still have a server, and a
+/// file in a clean tree with nothing wrong with it spends neither.
+///
+/// Two columns rather than two halves of one cell. A cell has one
+/// foreground and one background, and both of these say what *kind* of
+/// news they are by hue -- git's deleted is the same red as a server's
+/// error, and its modified the same yellow as a warning. Halved into one
+/// cell the two merge into a solid block exactly where they matter most,
+/// and a mark that cannot be told from the other mark is not a mark.
+#[must_use]
+pub fn map_width(changes: Option<&Changes>, wrong: bool) -> u16 {
+    u16::from(changed(changes)) + u16::from(wrong)
 }
 
 /// How many columns come before the text: the change margin, the gutter,
@@ -193,12 +198,12 @@ pub fn marks(changes: bool, wrongs: Option<crate::syntax::LanguageId>) -> bool {
 /// the character it was on -- which is what choosing a search match looks
 /// like when the match is the thing you are staring at.
 ///
-/// `marks` is [`marks`], which every caller asks rather than working out
-/// for itself: two of them answering it differently is the same defect this
-/// function was written to end, one column further left.
+/// `changed` is [`changed`], which every caller asks rather than working
+/// out for itself: two of them answering it differently is the same defect
+/// this function was written to end, one column further left.
 #[must_use]
-pub fn text_offset(lines: usize, marks: bool, folds: bool) -> u16 {
-    let margin = if marks { MARGIN_WIDTH } else { 0 };
+pub fn text_offset(lines: usize, changed: bool, folds: bool) -> u16 {
+    let margin = if changed { MARGIN_WIDTH } else { 0 };
     let folding = if folds { FOLD_WIDTH } else { 0 };
     margin
         .saturating_add(gutter_width(lines))
@@ -248,22 +253,14 @@ pub const CHANGE_MAP_WIDTH: u16 = 1;
 /// background and nothing else, so two facts in one column is the gap or it
 /// is nothing, and a reader who wants to know where else to look wants both
 /// answers in the one picture.
-/// Half a cell of ink against its left edge, and half against its right.
+/// The mark a row of either map column carries.
 ///
-/// Named by where the ink is rather than by what it means, because what it
-/// means flips between the two columns: the change is always the half
-/// nearer the line it is about, and the text is to the *right* of the
-/// margin and to the *left* of the map. So in the margin the change is
-/// [`RIGHT_HALF`] and the problem [`LEFT_HALF`], and out past the text they
-/// are the other way round.
-///
-/// A row that carries only one of the two gets the half it would have had
-/// beside the other, drawn as its own glyph rather than as a background
-/// painted in the page's colour: the two say the same thing to a terminal
-/// and not to a reader of this file, and one of them says which half is
-/// meant.
-const LEFT_HALF: char = '\u{258c}';
-const RIGHT_HALF: char = '\u{2590}';
+/// The margin's own mark is against the *right* of its cell, where it sits
+/// beside the text it is about. These are against the left, so that
+/// neither touches what is on its right: two thin strokes with a gap read
+/// as two things, and a stroke against the scrollbar -- which is a full
+/// block -- reads as one thick bar.
+const MAP_MARK: char = '\u{258c}';
 
 /// The column the scrollbar takes, on the right.
 ///
@@ -394,58 +391,34 @@ impl EditorView<'_> {
             }
         }
 
+        // One column each, side by side, each reserved by its own news --
+        // so on a file nobody has changed the problems are against the
+        // scrollbar and there is no empty column before them.
+        let changes = u16::from(changed(self.changes));
         for (row, (marker, severity)) in rows.iter().enumerate() {
             let Ok(row) = u16::try_from(row) else {
                 break;
             };
-            let wrong = severity.map(|severity| self.theme.colour_for(Some(severity.kind())));
-            let style = match (marker, wrong) {
-                (Some(marker), wrong) => {
-                    let style = Style::new().fg(self.theme.marker_colour(*marker));
-                    match wrong {
-                        Some(wrong) => style.bg(wrong),
-                        None => style,
-                    }
-                }
-                (None, Some(wrong)) => Style::new().fg(wrong),
-                (None, None) => continue,
-            };
-            // Out here the text is to the left, so the change is the
-            // left half and a lone problem keeps the right.
-            let glyph = if marker.is_some() {
-                LEFT_HALF
-            } else {
-                RIGHT_HALF
-            };
-            put(cells, area.x, area.y + row, glyph, style);
+            let y = area.y + row;
+            if changes > 0
+                && let Some(marker) = marker
+            {
+                let colour = self.theme.marker_colour(*marker);
+                put(cells, area.x, y, MAP_MARK, Style::new().fg(colour));
+            }
+            if area.x + changes < area.right()
+                && let Some(severity) = severity
+            {
+                let colour = self.theme.colour_for(Some(severity.kind()));
+                put(
+                    cells,
+                    area.x + changes,
+                    y,
+                    MAP_MARK,
+                    Style::new().fg(colour),
+                );
+            }
         }
-    }
-
-    /// The language whose complaints this view shows, if it shows any.
-    ///
-    /// `None` for a preview, which is a look at somewhere else: what is
-    /// wrong with the file the reader is in is not about it, which is why
-    /// its troubles are empty -- and a column reserved for marks that can
-    /// never arrive is a column spent on nothing.
-    fn wrongs(&self, buffer: &Buffer) -> Option<crate::syntax::LanguageId> {
-        match self.editing {
-            Editing::Allowed => buffer.language(),
-            Editing::Refused => None,
-        }
-    }
-
-    /// The colour of the worst thing the server says about a line.
-    ///
-    /// The worst where there are several, which is the rule the underline
-    /// and the complaint under the caret both follow: one line, one
-    /// colour, whichever of the three the reader's eye lands on first.
-    fn trouble_at(&self, line: LineNumber) -> Option<Color> {
-        self.troubles
-            .iter()
-            .filter(|trouble| trouble.span.line == line)
-            .map(|trouble| trouble.severity)
-            .min()
-            .map(|severity| self.theme.colour_for(Some(severity.kind())))
     }
 
     /// What to write after a line: who changed it and how long ago.
@@ -579,7 +552,7 @@ impl Widget for EditorView<'_> {
         // The margin is leftmost because it is about the line as a whole and
         // the line number is about where it is: a mark inside the numbers
         // would read as part of one.
-        let marking = marks(self.changes.is_some(), self.wrongs(buffer));
+        let marking = changed(self.changes);
         let margin = if marking {
             MARGIN_WIDTH.min(area.width)
         } else {
@@ -599,11 +572,8 @@ impl Widget for EditorView<'_> {
         } else {
             0
         };
-        let map = if marking {
-            CHANGE_MAP_WIDTH.min(area.width - margin - gutter - folds)
-        } else {
-            0
-        };
+        let map = map_width(self.changes, !self.troubles.is_empty())
+            .min(area.width - margin - gutter - folds);
         // The same total the caret's position is worked out from, which is
         // what keeps the two agreeing -- checked only where the caret is
         // drawn at all. A screen too narrow for what goes before the text
@@ -767,27 +737,36 @@ impl Widget for EditorView<'_> {
                         // opening the hunk is exactly the act of giving
                         // them one. The colour still says they are gone.
                         //
-                        // On the same half of the cell as the mark beside
-                        // the line these rows hang from, or the bar and the
-                        // thing it belongs to would sit a half-cell apart
-                        // and read as two marks: a change and a message
-                        // hug the text, and a complaint hugs the screen's
-                        // edge, exactly as they do on a line of the file.
-                        let (half, colour) = match block.kind {
-                            crate::buffer::Held::Removed => (RIGHT_HALF, self.theme.change_removed),
-                            crate::buffer::Held::Message => (RIGHT_HALF, self.theme.gutter),
-                            // How bad it is, in the colour the same
-                            // trouble underlines the line in: one
-                            // complaint, one colour, whichever of the
-                            // three the reader's eye lands on first.
-                            crate::buffer::Held::Wrong => (
-                                LEFT_HALF,
-                                block.severity.map_or(self.theme.gutter, |severity| {
-                                    self.theme.colour_for(Some(severity.kind()))
-                                }),
-                            ),
-                        };
-                        put(cells, area.x, y, half, Style::new().fg(colour));
+                        // In the first column of whatever comes before
+                        // the text: the margin where there is one, and the
+                        // gutter's own left-hand padding where there is
+                        // not. Not a column of its own and not skipped
+                        // when the margin is unreserved -- these rows have
+                        // no line number, so that cell is empty either
+                        // way, and a bar that came and went with whether
+                        // git had anything to say would be a bar that
+                        // means something it does not.
+                        {
+                            draw_marker(
+                                area.x,
+                                y,
+                                Marker::Modified,
+                                match block.kind {
+                                    crate::buffer::Held::Removed => self.theme.change_removed,
+                                    crate::buffer::Held::Message => self.theme.gutter,
+                                    // How bad it is, in the colour the same
+                                    // trouble underlines the line in: one
+                                    // complaint, one colour, whichever of
+                                    // them the reader's eye lands on first.
+                                    crate::buffer::Held::Wrong => {
+                                        block.severity.map_or(self.theme.gutter, |severity| {
+                                            self.theme.colour_for(Some(severity.kind()))
+                                        })
+                                    }
+                                },
+                                cells,
+                            );
+                        }
                         // No line number: these lines have no number in
                         // this file, and borrowing the next one's would be
                         // a lie about where they are.
@@ -918,16 +897,11 @@ impl Widget for EditorView<'_> {
                 // The margin marks the line, whether or not this is the
                 // row its number is on: a wrapped line is one line, and a
                 // change to it is a change to all of it.
-                if margin > 0 {
-                    let marker = self.changes.and_then(|changes| changes.marker_at(line));
-                    draw_marker(
-                        area.x,
-                        y,
-                        marker,
-                        marker.map_or(self.theme.gutter, |marker| self.theme.marker_colour(marker)),
-                        self.trouble_at(line),
-                        cells,
-                    );
+                if margin > 0
+                    && let Some(changes) = self.changes
+                    && let Some(marker) = changes.marker_at(line)
+                {
+                    draw_marker(area.x, y, marker, self.theme.marker_colour(marker), cells);
                 }
 
                 // Beside the number, and on the numbered row only: a
@@ -1188,8 +1162,7 @@ struct Placement {
     left: usize,
 }
 
-/// One cell of margin, saying what happened to a line and what is wrong
-/// with it.
+/// One cell of margin, saying what happened to a line.
 ///
 /// A bar for a line that is there and differs; a mark hugging the top edge
 /// for lines that are *not* there. The second is the whole difficulty of
@@ -1198,49 +1171,23 @@ struct Placement {
 /// edge of the cell below it is that boundary. A full bar there would claim
 /// the line changed, and it did not.
 ///
-/// The problem goes behind it, on the half against the screen's edge, which
-/// is the half the change does not use -- the mirror of [`MAP_MARK`] out
-/// past the text, and the same rule read from the other side: the change is
-/// the half nearer the line it is about. A removed mark is the one case
-/// where the two are not halves: it is a tick on the top edge, so a problem
-/// behind it fills nearly the cell. Loud, and left loud on purpose -- both
-/// facts are still there, and the alternative was picking one of them
-/// without saying so.
-fn draw_marker(
-    x: u16,
-    y: u16,
-    marker: Option<Marker>,
-    colour: Color,
-    wrong: Option<Color>,
-    cells: &mut CellBuffer,
-) {
-    let Some(marker) = marker else {
-        // Nothing changed here, so the problem has the cell -- and takes
-        // the same half of it as it would beside a change, rather than
-        // moving because it happens to be alone.
-        if let Some(wrong) = wrong {
-            put(cells, x, y, LEFT_HALF, Style::new().fg(wrong));
-        }
-        return;
-    };
+/// git's news and nothing else. What is wrong with a line the reader can
+/// see is said by the underline under the word and, when the caret is on
+/// it, by the complaint framed underneath -- a third mark beside the line
+/// would be the same news a third time, and it would have to share this
+/// cell with marks whose colours it cannot be told apart from.
+fn draw_marker(x: u16, y: u16, marker: Marker, colour: Color, cells: &mut CellBuffer) {
     let glyph = match marker {
         // A line that is there and differs: a bar down its whole height,
-        // half a cell wide and against the *right* edge of its cell in both
-        // columns. Left of the numbers it then sits beside the text it is
-        // about; right of the scrollbar it sits at the edge of the screen.
-        // Against the other edge each one floats a cell away from the thing
-        // it belongs to.
-        Marker::Added | Marker::Modified => RIGHT_HALF,
+        // half a cell wide and against the *right* edge of its cell. It
+        // then sits beside the text it is about; against the other edge it
+        // would float a cell away from it.
+        Marker::Added | Marker::Modified => '\u{2590}',
         // Lines that are not there: a mark on the boundary they were on,
         // which is the top edge of this cell.
         Marker::Removed => '\u{2594}',
     };
-    let style = Style::new().fg(colour);
-    let style = match wrong {
-        Some(wrong) => style.bg(wrong),
-        None => style,
-    };
-    put(cells, x, y, glyph, style);
+    put(cells, x, y, glyph, Style::new().fg(colour));
 }
 
 /// Everything about how a row looks, as against where it goes.

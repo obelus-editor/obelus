@@ -146,19 +146,16 @@ impl App {
         // the gutter would wrap the preview at a column wider than the room
         // it is given, and the last cells of a wrapped line would fall off
         // the edge.
-        // `None`, because a preview never shows what is wrong with a
-        // file: its second reason to reserve the columns does not apply.
-        let marking = ui::editor::marks(preview.changes.is_some(), None);
+        // `false`, because a preview never shows what is wrong with a
+        // file: it is a look at somewhere else, and the problems column is
+        // reserved by problems it does not carry.
+        let changes = preview.changes.as_ref();
         let aside = ui::editor::text_offset(
             preview.buffer.text().line_count(),
-            marking,
+            ui::editor::changed(changes),
             !preview.buffer.folds().is_empty(),
         )
-        .saturating_add(if marking {
-            ui::editor::CHANGE_MAP_WIDTH
-        } else {
-            0
-        })
+        .saturating_add(ui::editor::map_width(changes, false))
         .saturating_add(ui::editor::SCROLLBAR_WIDTH);
         let text = TextArea {
             width: area.width.saturating_sub(aside),

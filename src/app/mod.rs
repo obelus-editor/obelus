@@ -1325,17 +1325,12 @@ impl App {
                 // cell wider than the view draws wraps a line here and not
                 // there, and the caret then sits a row below the character
                 // it is on.
-                let marking = ui::editor::marks(self.changes.is_some(), buffer.language());
                 let before = ui::editor::text_offset(
                     buffer.text().line_count(),
-                    marking,
+                    ui::editor::changed(self.changes()),
                     !buffer.folds().is_empty(),
                 );
-                let after = if marking {
-                    ui::editor::CHANGE_MAP_WIDTH
-                } else {
-                    0
-                };
+                let after = ui::editor::map_width(self.changes(), !self.troubles().is_empty());
                 self.editor_area
                     .width
                     .saturating_sub(before)
@@ -2094,7 +2089,7 @@ impl App {
         // reader pointed at a line.
         let offset = ui::editor::text_offset(
             buffer.text().line_count(),
-            ui::editor::marks(self.changes().is_some(), buffer.language()),
+            ui::editor::changed(self.changes()),
             !buffer.folds().is_empty(),
         );
         let row = y - area.y;

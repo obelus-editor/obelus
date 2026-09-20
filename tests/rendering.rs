@@ -262,9 +262,11 @@ fn the_terminal_is_told_where_to_put_its_cursor() {
     let mut app = app();
     let dump = support::render(&mut app, WIDTH, HEIGHT);
 
-    // A five-cell gutter, the change margin before it and the fold column
-    // after it, so the first character of the first line is cell seven.
-    assert_eq!(support::cursor_line(&dump), "7,0", "{dump}");
+    // A five-cell gutter and the fold column after it, so the first
+    // character of the first line is cell six. No change margin: this
+    // fixture is committed and unchanged, and the margin is reserved by
+    // git having something to say rather than by there being a repository.
+    assert_eq!(support::cursor_line(&dump), "6,0", "{dump}");
     support::check("sample_40x8", &dump);
 }
 
@@ -277,11 +279,11 @@ fn the_cursor_follows_the_keys() {
     }
 
     // Line 1 is `\tlet greeting = ...`. The tab is four cells, then `let `
-    // is four more, so character five sits at cell eight — and the change
-    // margin, the gutter and the fold column are seven columns before that.
-    // The tab is why the two numbers differ.
+    // is four more, so character five sits at cell eight — and the gutter
+    // and the fold column are six columns before that. The tab is why the
+    // two numbers differ.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
-    assert_eq!(support::cursor_line(&dump), "15,1", "{dump}");
+    assert_eq!(support::cursor_line(&dump), "14,1", "{dump}");
 }
 
 /// Shift extends the selection from where the reader began, while an ordinary
@@ -479,13 +481,13 @@ fn the_cursor_follows_a_wrapped_line_down_its_rows() {
 
     press(&mut app, KeyCode::Down);
     let first = support::render(&mut app, 40, 10);
-    assert_eq!(support::cursor_line(&first), "6,1", "{first}");
+    assert_eq!(support::cursor_line(&first), "5,1", "{first}");
 
     press(&mut app, KeyCode::Down);
     let second = support::render(&mut app, 40, 10);
     // The second row of the long line, indented to nothing since the line has
     // no indentation of its own.
-    assert_eq!(support::cursor_line(&second), "6,2", "{second}");
+    assert_eq!(support::cursor_line(&second), "5,2", "{second}");
 }
 
 #[test]
@@ -855,7 +857,7 @@ fn a_jump_lands_in_the_middle_of_the_screen() {
     // Eleven rows of text under the status bar, so the middle one is the
     // sixth: five rows of what leads up to the definition.
     let dump = support::render(&mut app, 40, 12);
-    assert_eq!(support::cursor_line(&dump), "16,5", "{dump}");
+    assert_eq!(support::cursor_line(&dump), "15,5", "{dump}");
 
     let rows: Vec<&str> = support::text_block(&dump)
         .lines()

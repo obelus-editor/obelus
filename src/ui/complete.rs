@@ -64,7 +64,7 @@ pub fn layout(app: &App, editor: Rect) -> Option<Panel> {
     }
     let offset = editor::text_offset(
         buffer.text().line_count(),
-        editor::marks(app.changes().is_some(), buffer.language()),
+        editor::changed(app.changes()),
         !buffer.folds().is_empty(),
     );
     let (row, cell) = buffer.cursor_screen_cell(app.text_area())?;

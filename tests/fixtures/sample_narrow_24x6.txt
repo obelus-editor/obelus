@@ -1,16 +1,16 @@
 screen 24x6  editor 24x4  status 24x1
 -- text --
- 0|    1 ▾fn main() {     █
- 1|    2      let greetin █
- 2|    3      println!("{ █
- 3|    4  }               █
+ 0|   1 ▾fn main() {      █
+ 1|   2      let greeting █
+ 2|   3      println!("{gr█
+ 3|   4  }                █
  4|────────────────────────
  5| …ixtures/sample.rs 1:1 
 -- style --
- 0|aaaabacddaeeeebbabaaaaab
- 1|aaaacaaaaaadddaaaaaaaaab
- 2|aaaacaaaaaaeeeeeeeebffab
- 3|aaaacaabaaaaaaaaaaaaaaag
+ 0|aaabacddaeeeebbabaaaaaab
+ 1|aaacaaaaaadddaaaaaaaaaab
+ 2|aaacaaaaaaeeeeeeeebffffb
+ 3|aaacaabaaaaaaaaaaaaaaaag
  4|cccccccccccccccccccccccc
  5|hhhhhhhhhhhhhhhhhhhhhhhh
 -- legend --
@@ -23,4 +23,4 @@ f fg=#a3e635 bg=#18181b
 g fg=#404047 bg=#18181b
 h fg=#d4d4d8 bg=#18181b
 -- cursor --
-7,0
+6,0

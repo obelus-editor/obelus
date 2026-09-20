@@ -11,27 +11,27 @@ screen 60x35  editor 60x33  status 60x1
  8|                                                            
  9|                                                            
 10|────────────────────────────────────────────────────────────
-11|   20 pub const LINE_19: u32 = 19;                         █
-12|   21 pub const LINE_20: u32 = 20;                         █
-13|   22 pub const LINE_21: u32 = 21;                         █
-14|   23 pub const LINE_22: u32 = 22;                         █
-15|   24 pub const LINE_23: u32 = 23;                         █
-16|   25 pub const LINE_24: u32 = 24;                         █
-17|   26 pub const LINE_25: u32 = 25;                         █
-18|   27 pub const LINE_26: u32 = 26;                         █
-19|   28 pub const LINE_27: u32 = 27;                         █
-20|   29 pub const LINE_28: u32 = 28;                         █
-21|   30 pub const LINE_29: u32 = 29;                         █
-22|   31 pub const LINE_30: u32 = 30;                         █
-23|   32 pub const LINE_31: u32 = 31;                         █
-24|   33 pub const LINE_32: u32 = 32;                         █
-25|   34 pub const LINE_33: u32 = 33;                         █
-26|   35 pub const LINE_34: u32 = 34;                         █
-27|   36 pub const LINE_35: u32 = 35;                         █
-28|   37 pub const LINE_36: u32 = 36;                         █
-29|   38 pub const LINE_37: u32 = 37;                         █
-30|   39 pub const LINE_38: u32 = 38;                         █
-31|   40                                                      █
+11|  20 pub const LINE_19: u32 = 19;                          █
+12|  21 pub const LINE_20: u32 = 20;                          █
+13|  22 pub const LINE_21: u32 = 21;                          █
+14|  23 pub const LINE_22: u32 = 22;                          █
+15|  24 pub const LINE_23: u32 = 23;                          █
+16|  25 pub const LINE_24: u32 = 24;                          █
+17|  26 pub const LINE_25: u32 = 25;                          █
+18|  27 pub const LINE_26: u32 = 26;                          █
+19|  28 pub const LINE_27: u32 = 27;                          █
+20|  29 pub const LINE_28: u32 = 28;                          █
+21|  30 pub const LINE_29: u32 = 29;                          █
+22|  31 pub const LINE_30: u32 = 30;                          █
+23|  32 pub const LINE_31: u32 = 31;                          █
+24|  33 pub const LINE_32: u32 = 32;                          █
+25|  34 pub const LINE_33: u32 = 33;                          █
+26|  35 pub const LINE_34: u32 = 34;                          █
+27|  36 pub const LINE_35: u32 = 35;                          █
+28|  37 pub const LINE_36: u32 = 36;                          █
+29|  38 pub const LINE_37: u32 = 37;                          █
+30|  39 pub const LINE_38: u32 = 38;                          █
+31|  40                                                       █
 32|                                                           █
 33|────────────────────────────────────────────────────────────
 34| 󰍉                                                          
@@ -47,27 +47,27 @@ screen 60x35  editor 60x33  status 60x1
  8|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
  9|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 10|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-11|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
-12|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
-13|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
-14|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
-15|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
-16|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
-17|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
-18|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
-19|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
-20|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddj
-21|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
-22|dddhhdfffdfffffdkkkkkkkhdgggdddiihdddddddddddddddddddddddddh
-23|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
-24|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
-25|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
-26|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
-27|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
-28|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
-29|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
-30|dddeedfffdfffffdggggggghdgggdddiihdddddddddddddddddddddddddh
-31|dddeeddddddddddddddddddddddddddddddddddddddddddddddddddddddh
+11|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddj
+12|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddj
+13|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddj
+14|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddj
+15|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddj
+16|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddj
+17|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddj
+18|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddj
+19|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddj
+20|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddj
+21|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+22|ddhhdfffdfffffdkkkkkkkhdgggdddiihddddddddddddddddddddddddddh
+23|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+24|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+25|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+26|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+27|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+28|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+29|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+30|ddeedfffdfffffdggggggghdgggdddiihddddddddddddddddddddddddddh
+31|ddeedddddddddddddddddddddddddddddddddddddddddddddddddddddddh
 32|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddh
 33|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 34|llllllllllllllllllllllllllllllllllllllllllllllllllllllllllll

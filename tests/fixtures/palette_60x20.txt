@@ -1,10 +1,10 @@
 screen 60x20  editor 60x18  status 60x1
 -- text --
- 0|    1 ▾fn main() {                                          
- 1|    2      let greeting = "你好";                           
- 2|    3      println!("{greeting} world");                    
- 3|    4  }                                                    
- 4|    5                                                       
+ 0|   1 ▾fn main() {                                           
+ 1|   2      let greeting = "你好";                            
+ 2|   3      println!("{greeting} world");                     
+ 3|   4  }                                                     
+ 4|   5                                                        
  5|────────────────────────────────────────────────────────────
  6|  All  Files  Code  obelus                              ⇤ ⇥ 
  7|────────────────────────────────────────────────────────────
@@ -21,11 +21,11 @@ screen 60x20  editor 60x18  status 60x1
 18|────────────────────────────────────────────────────────────
 19| 󰍉                                                          
 -- style --
- 0|aaaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 1|aaaacaaaaaadddaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|aaaacaaaaaaeeeeeeeebffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaa
- 3|aaaacaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|aaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|aaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaacaaaaaadddaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaacaaaaaaeeeeeeeebffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaaa
+ 3|aaacaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  6|cgggggcccccccccccccccccccccccccccccccccccccccccccccccccccccc
  7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc

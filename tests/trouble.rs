@@ -236,23 +236,6 @@ fn what_is_wrong_with_this_line_is_opened_under_it() {
         "the words the server used are not under the line:\n{dump}"
     );
 
-    // The bar down the complaint's left is the same half-cell as the mark
-    // beside the line it hangs from. Two halves of one column is half a
-    // cell apart on screen, which is exactly far enough to read as two
-    // marks that failed to line up.
-    let cells = support::cells_of(&mut app, 60, 16);
-    let margin = |y: u16| cells.cell((0, y)).expect("a cell").symbol().to_string();
-    assert_eq!(
-        margin(1),
-        margin(2),
-        "the complaint's bar is not on the half its line is marked on:\n{dump}"
-    );
-    assert_eq!(
-        margin(2),
-        margin(3),
-        "the complaint's own rows are not all marked alike:\n{dump}"
-    );
-
     // And away again -- one key, not two: the caret steps over a complaint
     // rather than into it, because it is not a thing the reader opened.
     support::press(&mut app, crossterm::event::KeyCode::Down);
@@ -385,22 +368,22 @@ fn the_caret_walks_from_one_problem_to_the_next() {
     );
 }
 
-/// A file outside a repository is marked too.
+/// A file outside a repository is still marked.
 ///
-/// The two columns used to be reserved for one reason -- being in a
-/// repository -- and a file that was not in one had nowhere to carry a
-/// mark, so the only news that something was wrong was an underline on the
-/// line the reader was already looking at. They are reserved for a second
-/// reason now: the language having a server in obelus's table.
+/// The map's columns are reserved one at a time, each by its own news:
+/// this file is in no repository, so it has no changes column at all and
+/// the problems sit straight against the scrollbar. Before, both columns
+/// came together or not at all, and a file with nothing to say about git
+/// had nowhere to carry what a server said.
 ///
-/// On the language rather than on anything anyone has said, and this file
-/// is the case that shows why: there is no repository, no server installed
-/// in the test's environment and nothing has started -- and the columns are
-/// there all the same, because a width that arrived with an answer would
-/// rewrap every line under the reader the moment a server spoke.
+/// The margin is git's and says nothing here. What is wrong with a line
+/// the reader can see is said by the underline under the word and by the
+/// complaint framed under it; the map is for the lines that are not on
+/// screen, which have neither.
 ///
-/// Broken deliberately by putting `marks` back to the changes alone: both
-/// columns go, and with them everything this asserts.
+/// Broken deliberately by reserving the two columns together again: the
+/// problem lands a column to the left of where this looks, which is the
+/// column a change would have had.
 #[test]
 fn a_file_with_no_repository_still_says_where_the_problems_are() {
     let (_scratch, mut app, path) = editing("trouble-nowhere", "fn main() {\n    nmae;\n}\n");
@@ -414,25 +397,26 @@ fn a_file_with_no_repository_still_says_where_the_problems_are() {
     let dump = support::render(&mut app, 60, 16);
     let at = |x: u16, y: u16| cells.cell((x, y)).expect("a cell").clone();
 
-    // The margin is the first column, and the line with something wrong
-    // with it is the second row.
+    // The column just inside the scrollbar, because there is no changes
+    // column in front of it to push it along.
+    let marked: Vec<u16> = (0..14)
+        .filter(|y| at(58, *y).symbol() == "\u{258c}")
+        .collect();
     assert_eq!(
-        at(0, 1).symbol(),
-        "\u{258c}",
-        "the margin does not mark the line, or is not there at all:\n{dump}"
+        marked.len(),
+        1,
+        "the map does not have the one problem on it:\n{dump}"
     );
     assert_ne!(
-        at(0, 1).fg,
-        at(0, 0).fg,
+        at(58, marked[0]).fg,
+        at(58, marked[0] + 1).fg,
         "the mark is the colour of a cell with nothing in it:\n{dump}"
     );
-    // And the map, in the column before the bar.
-    let marked = (0..14)
-        .filter(|y| at(58, *y).symbol() == "\u{2590}")
-        .count();
+    // And the margin is not reserved at all: nothing has changed here.
     assert_eq!(
-        marked, 1,
-        "the map does not have the one problem on it:\n{dump}"
+        at(0, 1).symbol().trim(),
+        "",
+        "a margin was drawn for a file git has nothing to say about:\n{dump}"
     );
 }
 

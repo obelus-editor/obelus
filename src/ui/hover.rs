@@ -22,7 +22,7 @@ pub fn layout(app: &App, editor: Rect) -> Option<Rect> {
     }
     let offset = editor::text_offset(
         buffer.text().line_count(),
-        editor::marks(app.changes().is_some(), buffer.language()),
+        editor::changed(app.changes()),
         !buffer.folds().is_empty(),
     );
     // Over the place the answer is *about*, which is not the caret when

@@ -1,19 +1,19 @@
 screen 40x8  editor 40x6  status 40x1
 -- text --
- 0|    1 ▾fn main() {                      
- 1|    2      let greeting = "你好";       
- 2|    3      println!("{greeting} world"  
- 3|    4  }                                
- 4|    5                                   
+ 0|   1 ▾fn main() {                       
+ 1|   2      let greeting = "你好";        
+ 2|   3      println!("{greeting} world"); 
+ 3|   4  }                                 
+ 4|   5                                    
  5|                                        
  6|────────────────────────────────────────
  7|   tests/fixtures/sample.rs        1:1 
 -- style --
- 0|aaaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaa
- 1|aaaacaaaaaadddaaaaaaaaaaaaffffffbaaaaaaa
- 2|aaaacaaaaaaeeeeeeeebffffffffffffffffffaa
- 3|aaaacaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|aaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|aaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaacaaaaaadddaaaaaaaaaaaaffffffbaaaaaaaa
+ 2|aaacaaaaaaeeeeeeeebffffffffffffffffffbba
+ 3|aaacaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  6|cccccccccccccccccccccccccccccccccccccccc
  7|gggggggggggggggggggggggggggggggggggggggg
@@ -26,4 +26,4 @@ e fg=#60a5fa bg=#18181b
 f fg=#a3e635 bg=#18181b
 g fg=#d4d4d8 bg=#18181b
 -- cursor --
-7,0
+6,0

@@ -4759,108 +4759,106 @@ fn a_path_that_went_away_after_the_list_was_built_says_so() {
     );
 }
 
-/// The margin and the map each say two things in one cell.
+/// Each column is reserved by its own news, and carries only that.
 ///
-/// A column is one cell wide and a cell has one foreground and one
-/// background, so two facts in one column is a split cell or it is nothing.
-/// Split the same way in both, mirrored about the text between them: the
-/// change takes the half nearer the line it is about -- the right of the
-/// margin, the left of the map -- and the problem takes the half against
-/// the edge of the screen.
+/// A cell has one foreground and one background, and both kinds of news
+/// say what *kind* they are by hue: git's deleted is the same red as a
+/// server's error, and its modified the same yellow as a warning. Halved
+/// into one cell the two merge into a solid block exactly where they
+/// matter most -- a line both changed and wrong -- so they get a column
+/// each instead.
 ///
-/// What this cost is the gap that used to keep the map off the scrollbar,
-/// which is a full block. Spent knowingly: the alternative was a reader
-/// having to choose, when opening a file, between seeing where they had
-/// changed something and seeing where something was wrong.
+/// And a column each means a column each *when there is news*: a file in a
+/// clean tree spends nothing on git, a file with nothing wrong with it
+/// spends nothing on problems, and the map is one column wide, two, or not
+/// there at all.
 ///
-/// Broken deliberately by dropping the background from either column, or by
-/// letting the lone-problem mark keep the change's half: the two colours
-/// collapse into one and the halves stop lining up across the text.
+/// Broken deliberately by giving the map a fixed width, or by reserving
+/// its two columns together: the problems land in the column the changes
+/// had, one cell left of where this looks.
 #[test]
-fn the_margin_and_the_map_carry_a_change_and_a_problem_at_once() {
+fn each_map_column_is_reserved_by_its_own_news() {
     use obelus::{app::App, buffer::Buffer};
 
     let committed = "fn main() {\n    let a = 1;\n    nmae;\n}\n";
-    let repository = Repository::new("both", committed);
-    // Line 1 changed; line 2 did not. Both are wrong, so between them they
-    // are every case the cell has to draw.
+    let repository = Repository::new("columns", committed);
+    // Line 1 changed; line 2 did not. Only line 2 is wrong, so between
+    // them they are every case a column has to draw.
     repository.write("fn main() {\n    let b = 1;\n    nmae;\n}\n");
 
+    let read = |app: &mut App| {
+        let cells = support::cells_of(app, 30, 12);
+        let dump = support::render(app, 30, 12);
+        (cells, dump)
+    };
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     support::lay_out(&mut app, 30, 12);
-    let wrong = |line: u32| {
-        serde_json::json!({
-            "range": { "start": { "line": line, "character": 4 },
-                       "end": { "line": line, "character": 8 } },
+    app.publish_for_test(serde_json::json!({
+        "uri": format!("file://{}", repository.path().display()),
+        "diagnostics": [{
+            "range": { "start": { "line": 2, "character": 4 },
+                       "end": { "line": 2, "character": 8 } },
             "severity": 1,
             "source": "rustc",
             "message": "cannot find value `nmae` in this scope"
-        })
-    };
-    app.publish_for_test(serde_json::json!({
-        "uri": format!("file://{}", repository.path().display()),
-        "diagnostics": [wrong(1), wrong(2)]
+        }]
     }));
-
-    let cells = support::cells_of(&mut app, 30, 12);
-    let dump = support::render(&mut app, 30, 12);
+    let (cells, dump) = read(&mut app);
     let at = |x: u16, y: u16| cells.cell((x, y)).expect("a cell").clone();
 
-    // The margin is the first column, and the file is short enough that a
-    // line of it is the row of the same number.
-    let changed_and_wrong = at(0, 1);
-    let only_wrong = at(0, 2);
+    // The margin is git's. The changed line has its bar; the line that is
+    // only wrong has nothing, because git has nothing to say about it.
     assert_eq!(
-        changed_and_wrong.symbol(),
+        at(0, 1).symbol(),
         "\u{2590}",
-        "the changed line's margin is not the change's own half:\n{dump}"
+        "the margin does not mark the changed line:\n{dump}"
     );
     assert_eq!(
-        only_wrong.symbol(),
-        "\u{258c}",
-        "a problem on its own did not take the half away from the text:\n{dump}"
-    );
-    assert_eq!(
-        changed_and_wrong.bg, only_wrong.fg,
-        "the problem is a different colour depending on whether the line also changed:\n{dump}"
-    );
-    assert_ne!(
-        changed_and_wrong.fg, changed_and_wrong.bg,
-        "the change and the problem are the same colour, so the cell says one thing:\n{dump}"
-    );
-    assert_ne!(
-        at(0, 0).bg,
-        changed_and_wrong.bg,
-        "a line with nothing wrong with it is painted anyway:\n{dump}"
+        at(0, 2).symbol().trim(),
+        "",
+        "the margin marked a line git has nothing to say about:\n{dump}"
     );
 
-    // And the map, on the other side of the text, split the other way
-    // round. Its rows are lines of the file rather than rows of the screen,
-    // so they are found rather than counted.
-    let map: Vec<(String, ratatui::style::Color, ratatui::style::Color)> = (0..10)
-        .map(|y| {
-            let cell = at(28, y);
-            (cell.symbol().to_string(), cell.fg, cell.bg)
-        })
-        .collect();
-    let both = map
-        .iter()
-        .find(|(symbol, _, bg)| symbol == "\u{258c}" && *bg == changed_and_wrong.bg)
-        .unwrap_or_else(|| panic!("no row of the map carries both:\n{dump}"));
-    let lone = map
-        .iter()
-        .find(|(symbol, _, _)| symbol == "\u{2590}")
-        .unwrap_or_else(|| panic!("no row of the map carries a problem on its own:\n{dump}"));
+    // Two map columns before the bar: changes, then problems.
+    let column = |x: u16| -> Vec<(u16, ratatui::style::Color)> {
+        (0..10)
+            .filter(|y| at(x, *y).symbol() == "\u{258c}")
+            .map(|y| (y, at(x, y).fg))
+            .collect()
+    };
+    let changes = column(27);
+    let problems = column(28);
     assert_eq!(
-        both.2, lone.1,
-        "the map's problem is a different colour depending on whether the line changed:\n{dump}"
+        changes.len(),
+        1,
+        "the changes column does not have the one hunk on it:\n{dump}"
     );
     assert_eq!(
-        both.2, changed_and_wrong.bg,
-        "the margin and the map disagree about what colour a problem is:\n{dump}"
+        problems.len(),
+        1,
+        "the problems column does not have the one problem on it:\n{dump}"
     );
     assert_ne!(
-        both.1, both.2,
-        "the map's two halves are one colour, so the cell says one thing:\n{dump}"
+        changes[0].1, problems[0].1,
+        "the two columns are the same colour, so neither says which it is:\n{dump}"
+    );
+
+    // And with nothing wrong, that column is not there: the changes move
+    // along into it.
+    app.publish_for_test(serde_json::json!({
+        "uri": format!("file://{}", repository.path().display()),
+        "diagnostics": []
+    }));
+    let (cells, dump) = read(&mut app);
+    let at = |x: u16, y: u16| cells.cell((x, y)).expect("a cell").clone();
+    assert_eq!(
+        at(28, changes[0].0).symbol(),
+        "\u{258c}",
+        "the problems column was kept for a file with no problems:\n{dump}"
+    );
+    assert_eq!(
+        at(27, changes[0].0).symbol().trim(),
+        "",
+        "the changes stayed where the problems column had pushed them:\n{dump}"
     );
 }

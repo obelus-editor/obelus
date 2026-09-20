@@ -11,13 +11,13 @@ screen 60x22  editor 60x20  status 60x1
  8|                                                            
  9|                                                            
 10|────────────────────────────────────────────────────────────
-11|    1 fn before() {}                                        
-12|    2 const NAMES: [&str; 12] = ["item-00", "item-01",      
-13|      "item-02", "item-03", "item-04", "item-05",           
-14|      "item-06", "item-07", "item-08", "item-09",           
-15|      "item-10", "item-11"];                                
-16|    3 fn after() {}                                         
-17|    4                                                       
+11|   1 fn before() {}                                         
+12|   2 const NAMES: [&str; 12] = ["item-00", "item-01",       
+13|     "item-02", "item-03", "item-04", "item-05",            
+14|     "item-06", "item-07", "item-08", "item-09",            
+15|     "item-10", "item-11"];                                 
+16|   3 fn after() {}                                          
+17|   4                                                        
 18|                                                            
 19|                                                            
 20|────────────────────────────────────────────────────────────
@@ -34,13 +34,13 @@ screen 60x22  editor 60x20  status 60x1
  8|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
  9|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 10|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-11|ddddedffdgggggghhdhhdddddddddddddddddddddddddddddddddddddddd
-12|ddddhdfffffdiiiiihdhhjjjhdkkhdddhlllllllllhdlllllllllhdddddd
-13|ddddddlllllllllhdlllllllllhdlllllllllhdlllllllllhddddddddddd
-14|ddddddlllllllllhdlllllllllhdlllllllllhdlllllllllhddddddddddd
-15|ddddddlllllllllhdlllllllllhhdddddddddddddddddddddddddddddddd
-16|ddddedffdggggghhdhhddddddddddddddddddddddddddddddddddddddddd
-17|ddddeddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+11|dddedffdgggggghhdhhddddddddddddddddddddddddddddddddddddddddd
+12|dddhdfffffdiiiiihdhhjjjhdkkhdddhlllllllllhdlllllllllhddddddd
+13|dddddlllllllllhdlllllllllhdlllllllllhdlllllllllhdddddddddddd
+14|dddddlllllllllhdlllllllllhdlllllllllhdlllllllllhdddddddddddd
+15|dddddlllllllllhdlllllllllhhddddddddddddddddddddddddddddddddd
+16|dddedffdggggghhdhhdddddddddddddddddddddddddddddddddddddddddd
+17|dddedddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 18|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 19|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 20|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee

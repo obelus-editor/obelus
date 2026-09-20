@@ -1939,12 +1939,11 @@ mod moving {
             "the caret left the row end was pressed on:\n{rows}"
         );
         // In front of its last character, which is as far as the row goes.
-        // Eight columns of text on a screen of sixteen: five of gutter, one
-        // of scrollbar, and one each for the two columns that mark a file
-        // whose language obelus has a server for -- reserved here with no
-        // repository and no server running, which is the point of reserving
-        // them on the language rather than on what has been said.
-        assert_eq!(at(&app).1, 7, "end did not reach the end of the row");
+        // Ten columns of text on a screen of sixteen: five of gutter and
+        // one of scrollbar. Nothing has changed in this file and nothing
+        // is wrong with it, so neither the margin nor either column of the
+        // map is reserved -- each is paid for by the news it carries.
+        assert_eq!(at(&app).1, 9, "end did not reach the end of the row");
     }
 
     /// And with wrapping off a row is a line, so the keys mean what they

@@ -243,7 +243,7 @@ impl App {
         }
         let offset = ui::editor::text_offset(
             buffer.text().line_count(),
-            ui::editor::marks(self.changes().is_some(), buffer.language()),
+            ui::editor::changed(self.changes()),
             !buffer.folds().is_empty(),
         );
         // Left of the text is the gutter, which names a line without
