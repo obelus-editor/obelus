@@ -99,7 +99,7 @@ pub(super) struct Showing {
     /// One at a time: a list where three commits are open is a list whose
     /// rows are mostly somebody else's files, and the reader is looking for
     /// one thing.
-    pub opened: Option<(gix::ObjectId, Vec<(PathBuf, obelus_git::FileStatus)>)>,
+    pub opened: Option<(gix::ObjectId, Vec<obelus_git::history::Touched>)>,
     /// Which commit the list was read at.
     ///
     /// A history is an answer about a repository at a moment, and the
@@ -459,14 +459,22 @@ impl App {
                 tab: None,
             });
             if let Some((_, files)) = self.history.opened.as_ref().filter(|_| open) {
-                for (path, status) in files {
+                for touched in files {
+                    let path = &touched.path;
                     items.push(PickerItem {
                         // A path, and paths lose their head.
                         prose: false,
                         icon: obelus_icons::enabled().then(|| obelus_icons::for_path(path)),
                         marker: None,
                         label: path.display().to_string(),
-                        detail: None,
+                        // Where the commit moved it, what it was called
+                        // before. Dimmed and after the name, because it is
+                        // why this row is here rather than what it is --
+                        // and a row too narrow for both keeps the name.
+                        detail: touched
+                            .was
+                            .as_ref()
+                            .map(|was| format!("was {}", was.display())),
                         trailing: None,
                         changed: None,
                         value: PickerValue::CommitFile {
@@ -474,7 +482,7 @@ impl App {
                             path: path.clone(),
                         },
                         depth: 1,
-                        status: Some(*status),
+                        status: Some(touched.status),
                         enabled: true,
                         colours: None,
                         kind: None,

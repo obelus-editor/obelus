@@ -2280,10 +2280,64 @@ fn a_commit_opens_into_the_files_it_changed() {
     assert_eq!(
         files,
         [
-            (std::path::PathBuf::from("deep/new.rs"), FileStatus::New),
-            (std::path::PathBuf::from("file.rs"), FileStatus::Changed),
+            history::Touched {
+                path: std::path::PathBuf::from("deep/new.rs"),
+                status: FileStatus::New,
+                was: None,
+            },
+            history::Touched {
+                path: std::path::PathBuf::from("file.rs"),
+                status: FileStatus::Changed,
+                was: None,
+            },
         ],
         "not the files it changed, and only the files"
+    );
+}
+
+/// A file a commit moved is one file, and says where it came from.
+///
+/// Git records no rename: it is inferred from what a commit added and what
+/// it removed, and without the inference the list shows the file twice --
+/// once gone, once arriving under a name a reader has to pair up by eye --
+/// and the lines it counts are the whole file taken away and the whole of
+/// it put back.
+///
+/// Edited on the way, because a move with no edit is matched on content
+/// alone and would pass with the search for near-misses turned off.
+#[test]
+fn a_file_a_commit_moved_is_one_row_that_says_where_it_was() {
+    use obelus_git::{FileStatus, history};
+
+    let lines: String = (0..40).map(|n| format!("line {n}\n")).collect();
+    let repository = Repository::new("history-renamed", &lines);
+    std::fs::create_dir_all(repository.directory().join("deep")).expect("a directory");
+    std::fs::remove_file(repository.directory().join("file.rs")).expect("taking it away");
+    std::fs::write(
+        repository.directory().join("deep/moved.rs"),
+        format!("{lines}one more line\n"),
+    )
+    .expect("the file in its new place");
+    repository.commit_all("moving it");
+
+    let root = repository.directory();
+    let head = history::of(&root, None, 1);
+    assert_eq!(
+        history::files_in(&root, head[0].id),
+        [history::Touched {
+            path: std::path::PathBuf::from("deep/moved.rs"),
+            status: FileStatus::Changed,
+            was: Some(std::path::PathBuf::from("file.rs")),
+        }],
+        "a move read as a deletion and an unrelated arrival"
+    );
+
+    // And the lines it counts are the edit, not the whole file twice.
+    let (added, removed) = history::counted_in(&root, head[0].id).expect("a count");
+    assert_eq!(
+        (added, removed),
+        (1, 0),
+        "the move was counted as forty lines gone and forty-one arriving"
     );
 }
 

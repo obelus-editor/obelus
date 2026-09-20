@@ -3,11 +3,17 @@
 //! A walk of the commits reachable from `HEAD`, newest first. Filtering by
 //! path is done the way the question is asked -- "did this commit change
 //! this file?" -- by comparing what the path pointed at in the commit with
-//! what it pointed at in its first parent. Renames are not followed: git
-//! does not record them, it infers them from what a commit added and
-//! removed, and inferring is a different answer to a different question.
-//! The list says where it stopped rather than pretending it is the whole
-//! of the history.
+//! what it pointed at in its first parent. A walk of one file's history
+//! therefore ends where the file was last given its name: renames are not
+//! followed, and the list does not yet say so.
+//!
+//! What a commit *opened* says is another matter, and there renames are
+//! followed. Git records none -- it infers them from what a commit added
+//! and removed -- but every reader of a history has that inference in their
+//! head already, and without it a commit that moved a file says the file
+//! was deleted and a stranger of the same content arrived, two rows to pair
+//! up by eye. See `looking_for_moves` for what the search costs and where
+//! it gives up.
 //!
 //! What the remote has not seen is marked, in the colour a new file wears.
 //! The few commits a reader has not pushed are the ones still theirs to change,
@@ -302,6 +308,39 @@ fn entry_of(repository: &gix::Repository, id: gix::ObjectId, path: &Path) -> Opt
     Some(entry.object_id())
 }
 
+/// How hard to look for a file that was moved rather than replaced.
+///
+/// Git does not record a rename; it infers one from what a commit added and
+/// removed, and every reader of a history has git's inference in their head
+/// already. Without it a commit that moved a file says the file was deleted
+/// and a stranger of the same content was added -- two rows a reader has to
+/// pair up by eye, and, where the lines are counted, the whole file counted
+/// as gone and the whole of it counted as new.
+///
+/// Half is what `git diff -M50%` uses, which is the answer to compare
+/// against.
+///
+/// The cap is gix's own, and it is a count of *pairings* -- additions times
+/// deletions -- rather than of files, whatever the field's documentation
+/// says. A thousand of them is about thirty files moved in one commit,
+/// which covers moving a module and everything short of reorganising the
+/// whole tree. Past it gix does not do a partial pass, it skips the search
+/// for anything that was edited on the way; a commit that moved two hundred
+/// files reads as two hundred deletions and two hundred additions, the way
+/// it did before any of this.
+///
+/// That cliff is deliberate and the alternative was measured: the search is
+/// a blob diff per pairing, so the two-hundred-file commit costs seven
+/// seconds, and this runs on the keystroke that opens a commit. Files moved
+/// without being edited are matched on content alone and are found whatever
+/// the cap says, so the ordinary `git mv` never falls off it.
+fn looking_for_moves() -> gix::diff::Rewrites {
+    gix::diff::Rewrites {
+        percentage: Some(0.5),
+        ..Default::default()
+    }
+}
+
 /// The files a commit changed, against its first parent.
 ///
 /// What a row of the project's history opens into: a commit is not a file,
@@ -309,7 +348,7 @@ fn entry_of(repository: &gix::Repository, id: gix::ObjectId, path: &Path) -> Opt
 /// parent only, for the reason the walk uses it -- a merge that took one
 /// side's version changed nothing on that side.
 #[must_use]
-pub fn files_in(within: &Path, id: gix::ObjectId) -> Vec<(PathBuf, FileStatus)> {
+pub fn files_in(within: &Path, id: gix::ObjectId) -> Vec<Touched> {
     let Some(repository) = super::repository(within) else {
         return Vec::new();
     };
@@ -325,10 +364,13 @@ pub fn files_in(within: &Path, id: gix::ObjectId) -> Vec<(PathBuf, FileStatus)> 
         .and_then(|parent| repository.find_commit(parent.detach()).ok())
         .and_then(|parent| parent.tree().ok());
 
-    let mut changed: Vec<(PathBuf, FileStatus)> = Vec::new();
+    let mut changed: Vec<Touched> = Vec::new();
     match parent {
         Some(parent) => {
             if let Ok(mut changes) = parent.changes() {
+                changes.options(|options| {
+                    options.track_rewrites(Some(looking_for_moves()));
+                });
                 let _ = changes.for_each_to_obtain_tree(&tree, |change| {
                     if let Some(file) = file_of(&change) {
                         changed.push(file);
@@ -342,19 +384,35 @@ pub fn files_in(within: &Path, id: gix::ObjectId) -> Vec<(PathBuf, FileStatus)> 
         // The first commit of a project, where everything in it is new.
         None => {
             for entry in tree.iter().flatten() {
-                changed.push((
-                    PathBuf::from(entry.inner.filename.to_string()),
-                    FileStatus::New,
-                ));
+                changed.push(Touched {
+                    path: PathBuf::from(entry.inner.filename.to_string()),
+                    status: FileStatus::New,
+                    was: None,
+                });
             }
         }
     }
-    changed.sort_by(|left, right| left.0.cmp(&right.0));
+    changed.sort_by(|left, right| left.path.cmp(&right.path));
     changed
 }
 
-/// One change from a tree diff, as a path and what happened to it, or
-/// `None` for a change to a directory.
+/// One file a commit touched.
+///
+/// A struct and not a pair, because what a reader needs about a row is
+/// three things now: where the file is, what happened to it, and -- where
+/// the commit moved it -- what it used to be called.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Touched {
+    /// Where the file is, as the commit left it.
+    pub path: PathBuf,
+    /// What happened to it.
+    pub status: FileStatus,
+    /// What it was called before, where this commit is the one that moved
+    /// it. `None` for a file that stayed where it was.
+    pub was: Option<PathBuf>,
+}
+
+/// One change from a tree diff, or `None` for a change to a directory.
 ///
 /// A directory turns up in the walk because the walk goes through it: a
 /// commit that changes `src/keymap.rs` changes `src` as well, and a list
@@ -364,14 +422,14 @@ pub fn files_in(within: &Path, id: gix::ObjectId) -> Vec<(PathBuf, FileStatus)> 
 /// deletions included: those two are what the file list colours by, and a
 /// file a commit removed is a change to it as far as a reader scanning the
 /// list is concerned.
-fn file_of(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(PathBuf, FileStatus)> {
+fn file_of(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<Touched> {
     use gix::object::tree::diff::Change;
-    let (location, mode, status) = match change {
+    let (location, mode, status, was) = match change {
         Change::Addition {
             location,
             entry_mode,
             ..
-        } => (location, entry_mode, FileStatus::New),
+        } => (location, entry_mode, FileStatus::New, None),
         Change::Deletion {
             location,
             entry_mode,
@@ -381,14 +439,27 @@ fn file_of(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(Path
             location,
             entry_mode,
             ..
-        }
-        | Change::Rewrite {
+        } => (location, entry_mode, FileStatus::Changed, None),
+        // Moved, and mostly itself on the way. `Changed` rather than `New`
+        // because that is what it is: the content came through, and the
+        // name it came from is what the row says besides.
+        Change::Rewrite {
             location,
             entry_mode,
+            source_location,
             ..
-        } => (location, entry_mode, FileStatus::Changed),
+        } => (
+            location,
+            entry_mode,
+            FileStatus::Changed,
+            Some(PathBuf::from(source_location.to_string())),
+        ),
     };
-    (!mode.is_tree()).then(|| (PathBuf::from(location.to_string()), status))
+    (!mode.is_tree()).then(|| Touched {
+        path: PathBuf::from(location.to_string()),
+        status,
+        was,
+    })
 }
 
 /// How many lines a commit added and took away, over everything it touched.
@@ -420,6 +491,9 @@ pub fn counted_in(within: &Path, id: gix::ObjectId) -> Option<(usize, usize)> {
     let mut added = 0usize;
     let mut removed = 0usize;
     let mut changes = before.changes().ok()?;
+    changes.options(|options| {
+        options.track_rewrites(Some(looking_for_moves()));
+    });
     let _ = changes.for_each_to_obtain_tree(&tree, |change| {
         if let Some((was, now)) = texts_of(change) {
             let (up, down) = super::change::counted(&super::change::drawn(&was, &now));
