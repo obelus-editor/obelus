@@ -238,7 +238,7 @@ fn the_caret_is_where_the_keys_are() {
     let mut app = reading();
     dispatch::dispatch(&mut app, Command::TodoOpen);
     dispatch::dispatch(&mut app, Command::DocumentList);
-    let over = obelus_app::ui::cursor_position(area, &app).expect("a caret somewhere");
+    let over = obelus_ui::cursor_position(area, &app).expect("a caret somewhere");
     assert_eq!(
         over.y,
         HEIGHT - 1,
@@ -251,7 +251,7 @@ fn the_caret_is_where_the_keys_are() {
     let mut app = reading();
     app.open_agent();
     assert!(!app.layers().any(), "a conversation is not over anything");
-    let alone = obelus_app::ui::cursor_position(area, &app).expect("a caret somewhere");
+    let alone = obelus_ui::cursor_position(area, &app).expect("a caret somewhere");
     assert!(
         alone.y < HEIGHT - 1,
         "the conversation's caret was on the status row"

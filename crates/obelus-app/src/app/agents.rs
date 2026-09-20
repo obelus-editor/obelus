@@ -6,9 +6,9 @@
 //! last time one was tried.
 
 use obelus_agent::{Agent, Listed, Status, install::Progress};
+use obelus_ui::image::{Images, Palette};
 
 use super::*;
-use crate::ui::image::{Images, Palette};
 
 /// What obelus knows about the agents it could run.
 ///
@@ -32,7 +32,7 @@ pub(super) struct Agents {
     pub asked_icons: bool,
     /// The marks again, as pixels the terminal will take -- or nothing to
     /// take them, on a terminal that cannot show a picture.
-    pub images: crate::ui::image::Images,
+    pub images: obelus_ui::image::Images,
     /// The installs running, and how far each has got.
     pub installing: HashMap<String, obelus_agent::install::Progress>,
     /// Why an install did not work, per agent, until it is tried again.

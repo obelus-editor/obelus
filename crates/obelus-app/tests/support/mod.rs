@@ -29,7 +29,7 @@ use std::{
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use obelus_app::{app::App, event::Event, ui};
+use obelus_app::{app::App, event::Event};
 use obelus_buffer::Buffer;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Color};
 
@@ -246,7 +246,7 @@ fn fixtures() -> PathBuf {
 
 /// One cell grid, as text.
 fn dump(cells: &CellBuffer, width: u16, height: u16) -> String {
-    let regions = ui::regions(ui::area_of(ratatui::layout::Size { width, height }));
+    let regions = obelus_ui::regions(obelus_ui::area_of(ratatui::layout::Size { width, height }));
 
     let mut out = String::new();
     let _ = writeln!(

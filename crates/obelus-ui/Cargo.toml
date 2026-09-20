@@ -1,6 +1,6 @@
 [package]
-name = "obelus-app"
-description = "Everything obelus knows, the screen, and the loop"
+name = "obelus-ui"
+description = "Drawing a frame, from what the application says is on it"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,39 +12,22 @@ workspace = true
 [dependencies]
 obelus-agent.workspace = true
 obelus-buffer.workspace = true
-obelus-clipboard.workspace = true
 obelus-command.workspace = true
 obelus-component.workspace = true
 obelus-config.workspace = true
 obelus-editing.workspace = true
 obelus-git.workspace = true
 obelus-icons.workspace = true
-obelus-logging.workspace = true
 obelus-lsp.workspace = true
-obelus-mcp.workspace = true
 obelus-reading.workspace = true
-obelus-runtime.workspace = true
 obelus-search.workspace = true
 obelus-syntax.workspace = true
 obelus-text.workspace = true
 obelus-theme.workspace = true
-obelus-ui.workspace = true
-obelus-watch.workspace = true
-anyhow.workspace = true
 crossterm.workspace = true
-futures.workspace = true
-gix.workspace = true
 image.workspace = true
-lsp-types.workspace = true
 ratatui.workspace = true
 ratatui-image.workspace = true
 resvg.workspace = true
-serde_json.workspace = true
-tokio.workspace = true
-toml.workspace = true
 tracing.workspace = true
 unicode-width.workspace = true
-
-[dev-dependencies]
-obelus-ui.workspace = true
-ureq.workspace = true

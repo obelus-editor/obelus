@@ -1070,7 +1070,7 @@ fn mark_of(rung: &Rung) -> Option<(Marking, String)> {
     }
     match (rung.opened, rung.holds()) {
         (true, _) | (false, Some(true)) => {
-            Some((Marking::Aside, crate::ui::opens(rung.opened).to_string()))
+            Some((Marking::Aside, obelus_ui::opens(rung.opened).to_string()))
         }
         (false, _) => None,
     }

@@ -433,7 +433,7 @@ impl App {
                 // pressed, and one that offers to open an empty directory
                 // is one nobody presses twice.
                 marker: (entry.directory && entry.holds)
-                    .then(|| (Marking::Aside, crate::ui::opens(open).to_string())),
+                    .then(|| (Marking::Aside, obelus_ui::opens(open).to_string())),
                 label: name,
                 detail: None,
                 trailing: None,

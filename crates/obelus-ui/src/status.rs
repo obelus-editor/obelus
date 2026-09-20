@@ -14,10 +14,7 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::{
-    app::App,
-    ui::{Marked, fill, relative_to, truncate_from_left, write, write_marked},
-};
+use crate::{Marked, Screen, fill, relative_to, truncate_from_left, write, write_marked};
 
 /// The status region.
 pub struct StatusView<'a> {
@@ -59,7 +56,7 @@ pub struct StatusView<'a> {
 impl<'a> StatusView<'a> {
     /// Borrows what the view needs from the application.
     #[must_use]
-    pub fn new(app: &'a App) -> Self {
+    pub fn new(app: &'a impl Screen) -> Self {
         Self {
             buffer: app.current_buffer(),
             middle: app.note().or_else(|| app.server_working_on()),

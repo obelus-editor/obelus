@@ -187,7 +187,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
         );
         let mut x = area.x + MARGIN;
         if card.several() {
-            x = crate::ui::ticked(cells, x, y, choice.chosen, style);
+            x = crate::ticked(cells, x, y, choice.chosen, style);
         } else if let Some(icon) = choice.icon {
             // A private-use codepoint measures one cell and a Nerd Font's
             // own glyphs are drawn two wide, so the one after it is left
@@ -222,7 +222,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
             false => plain,
         };
         fill(cells, row, style);
-        let x = crate::ui::ticked(cells, area.x + MARGIN, row.y, card.writing_wanted(), style);
+        let x = crate::ticked(cells, area.x + MARGIN, row.y, card.writing_wanted(), style);
         write(
             cells,
             x,
@@ -322,7 +322,7 @@ mod tests {
     use ratatui::layout::Rect;
 
     use super::{Layout, layout, width_of};
-    use crate::ui::chat;
+    use crate::chat;
 
     /// A card measured against one width and drawn against another lays out
     /// a row it then does not draw.

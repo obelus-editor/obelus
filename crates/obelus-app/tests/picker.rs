@@ -2041,8 +2041,8 @@ fn a_file_is_previewed_from_its_first_line() {
 /// the screen to show nothing in it.
 #[test]
 fn a_full_area_list_previews_only_if_it_said_it_would() {
-    use obelus_app::ui::picker::preview_region;
     use obelus_component::picker::{Picker, PickerLayout};
+    use obelus_ui::picker::preview_region;
     use ratatui::layout::Rect;
 
     let editor = Rect::new(0, 0, 80, 30);

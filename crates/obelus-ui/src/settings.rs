@@ -13,8 +13,7 @@ use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
 use crate::{
-    app::App,
-    ui::{Hint, Marked, Matched, fill, put, rule, truncate_from_right, write, write_marked},
+    Hint, Marked, Matched, Screen, fill, put, rule, truncate_from_right, write, write_marked,
 };
 
 /// How wide a control's column is.
@@ -40,7 +39,7 @@ pub struct SettingsView<'a> {
     /// Why the list could not be fetched, if it could not.
     failure: Option<&'a str>,
     /// The agents' own marks, for a terminal that can draw one.
-    images: &'a crate::ui::image::Images,
+    images: &'a crate::image::Images,
     /// Every command and the key it is on, for the keys page.
     keys: Vec<(
         obelus_command::Command,
@@ -61,7 +60,7 @@ pub struct SettingsView<'a> {
 impl<'a> SettingsView<'a> {
     /// Borrows what the view needs, or nothing if the settings are not open.
     #[must_use]
-    pub fn new(app: &'a App) -> Option<Self> {
+    pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
             settings: app.settings()?,
             config: app.config(),
@@ -77,7 +76,7 @@ impl<'a> SettingsView<'a> {
             // write, because that is the question a reader opening it has.
             tree: (app.settings().is_some_and(Settings::on_tree) || app.tree_config().is_some())
                 .then(|| {
-                    crate::ui::relative_to(
+                    crate::relative_to(
                         &obelus_config::tree_path_for(app.working_directory()),
                         app.working_directory(),
                     )
@@ -91,7 +90,7 @@ impl<'a> SettingsView<'a> {
 /// How many rows the page gives up to the keys at its foot.
 #[must_use]
 pub fn footed(area: Rect, settings: &Settings) -> Rect {
-    crate::ui::footed(area, &hints(settings))
+    crate::footed(area, &hints(settings))
 }
 
 /// What the keys do here, and which of them do anything at the moment.
@@ -122,7 +121,7 @@ pub fn hints(settings: &Settings) -> Vec<Hint> {
         Hint::common(bare(KeyCode::Delete), "Unset")
             .saying("Take this setting out of the tree's file")
             .when(settings.on_tree() && !settings.on_keys() && !settings.on_agents()),
-        // The card's, not the foot's: see `ui::foot`.
+        // The card's, not the foot's: see `crate::foot`.
         Hint::rare(bare(KeyCode::Esc), "Leave").saying("Leave the settings"),
     ]
 }
@@ -144,7 +143,7 @@ impl Widget for SettingsView<'_> {
         // through: what a tab looks like is not this page's business.
         // Where the tabs end, which is what says whether anything else
         // fits on this row.
-        let after = crate::ui::tabs(
+        let after = crate::tabs(
             cells,
             area,
             &Settings::tabs(),
@@ -190,8 +189,8 @@ impl Widget for SettingsView<'_> {
         );
 
         let hints = hints(self.settings);
-        crate::ui::foot(cells, area, &hints, self.theme);
-        let under = crate::ui::footed(area, &hints);
+        crate::foot(cells, area, &hints, self.theme);
+        let under = crate::footed(area, &hints);
 
         // The agents are a page of cards rather than a column of controls:
         // a reader choosing between forty programs is reading about them,
@@ -223,7 +222,7 @@ impl Widget for SettingsView<'_> {
         // accept: a page of controls that all refuse is a page that has to
         // be tried before it can be understood.
         if self.settings.on_tree() && (self.settings.on_keys() || self.settings.on_agents()) {
-            crate::ui::nothing(
+            crate::nothing(
                 cells,
                 Rect {
                     height: 1,
@@ -372,7 +371,7 @@ impl SettingsView<'_> {
     /// way out would be a card with no way out on screen.
     fn keys_card(&self, cells: &mut CellBuffer, area: Rect, hints: &[Hint]) {
         if self.settings.showing_keys() {
-            crate::ui::keys_card(cells, crate::ui::footed(area, hints), hints, self.theme);
+            crate::keys_card(cells, crate::footed(area, hints), hints, self.theme);
         }
     }
 
@@ -387,7 +386,7 @@ impl SettingsView<'_> {
             .fg(self.theme.foreground)
             .bg(self.theme.background);
         if rows.is_empty() {
-            crate::ui::nothing(
+            crate::nothing(
                 cells,
                 Rect {
                     height: 1,
@@ -404,12 +403,10 @@ impl SettingsView<'_> {
         let window = self.settings.window();
         let scrolling = window.scrollable(region.height);
         if scrolling {
-            crate::ui::scrollbar(cells, region, window.top(), rows.len(), self.theme);
+            crate::scrollbar(cells, region, window.top(), rows.len(), self.theme);
         }
         let room = match scrolling {
-            true => region
-                .width
-                .saturating_sub(crate::ui::editor::SCROLLBAR_WIDTH),
+            true => region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
             false => region.width,
         };
         let aside_at = region.x + room.saturating_sub(CONTROL_WIDTH + 1);
@@ -993,7 +990,7 @@ fn draw_control(
         // it -- a reader who has learnt this shape in one of those should
         // not have to learn a second one here.
         (Kind::Switch, Value::Switch(on)) => {
-            crate::ui::ticked(cells, x, y, *on, style.fg(ink));
+            crate::ticked(cells, x, y, *on, style.fg(ink));
         }
         (Kind::Count(_), Value::Count(count)) => {
             let after = write(cells, x, y, &count.to_string(), style.fg(ink));

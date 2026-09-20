@@ -24,10 +24,7 @@ use obelus_text::text_width;
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
-use crate::{
-    app::App,
-    ui::{Hint, editor::SCROLLBAR_WIDTH, fill, put, rule, write},
-};
+use crate::{Hint, Screen, editor::SCROLLBAR_WIDTH, fill, put, rule, write};
 
 /// How wide the column of file counts is.
 const FILES_WIDTH: u16 = 6;
@@ -63,7 +60,7 @@ const FURNITURE: u16 = 3;
 /// is would be a page that overshoots by however much they disagreed.
 #[must_use]
 pub fn list_region(area: Rect, counts: &Counts) -> Rect {
-    let area = crate::ui::footed(area, &hints(counts));
+    let area = crate::footed(area, &hints(counts));
     Rect {
         y: area.y + FURNITURE,
         height: area.height.saturating_sub(FURNITURE),
@@ -106,7 +103,7 @@ pub fn hints(counts: &Counts) -> Vec<Hint> {
             None => "Read the file this row names",
         })
         .when(on.is_some_and(|row| row.go.is_some())),
-        // The card's, not the foot's: see `ui::foot`. What earns it a card
+        // The card's, not the foot's: see `crate::foot`. What earns it a card
         // row rather than nothing at all is the *other* thing escape does
         // here -- one press drops the language a tab is narrowed to, and
         // only the next leaves.
@@ -227,7 +224,7 @@ pub struct CountsView<'a> {
 impl<'a> CountsView<'a> {
     /// Borrows what the view needs, or nothing if the counts are not open.
     #[must_use]
-    pub fn new(app: &'a App) -> Option<Self> {
+    pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
             counts: app.counts()?,
             theme: app.theme(),
@@ -249,7 +246,7 @@ impl Widget for CountsView<'_> {
         }
 
         let tabs = self.counts.tabs();
-        crate::ui::tabs(cells, area, &tabs, self.counts.tab(), self.theme);
+        crate::tabs(cells, area, &tabs, self.counts.tab(), self.theme);
         let under_tabs = Rect {
             y: area.y + 1,
             height: 1,
@@ -283,7 +280,7 @@ impl Widget for CountsView<'_> {
         let hints = hints(self.counts);
         let body = list_region(area, self.counts);
         if rows.is_empty() {
-            crate::ui::nothing(
+            crate::nothing(
                 cells,
                 body,
                 if self.counts.is_counting() {
@@ -297,12 +294,12 @@ impl Widget for CountsView<'_> {
             self.rows(cells, body, layout);
         }
 
-        crate::ui::foot(cells, area, &hints, self.theme);
+        crate::foot(cells, area, &hints, self.theme);
         // Over everything, because it is what the reader asked for and the
         // table is what they asked about. Above the foot, which says how to
         // close it.
         if self.counts.showing_keys() {
-            crate::ui::keys_card(cells, crate::ui::footed(area, &hints), &hints, self.theme);
+            crate::keys_card(cells, crate::footed(area, &hints), &hints, self.theme);
         }
     }
 }
@@ -350,7 +347,7 @@ impl CountsView<'_> {
         // either way, so nothing moves sideways when a list grows past the
         // screen.
         if window.scrollable(area.height) {
-            crate::ui::scrollbar(cells, area, window.top(), rows.len(), self.theme);
+            crate::scrollbar(cells, area, window.top(), rows.len(), self.theme);
         }
     }
 
@@ -418,7 +415,7 @@ impl CountsView<'_> {
         // allocates one cell for and the font draws two.
         if self.counts.folds() {
             if let Some(open) = row.open {
-                put(cells, x, y, crate::ui::opens(open), style);
+                put(cells, x, y, crate::opens(open), style);
             }
             x += 1;
         }
@@ -565,7 +562,7 @@ fn clipped(contents: &str, room: usize) -> String {
     if text_width(contents) <= room {
         return contents.to_string();
     }
-    crate::ui::truncate_from_left(contents, room)
+    crate::truncate_from_left(contents, room)
 }
 
 #[cfg(test)]
@@ -642,12 +639,12 @@ mod tests {
         let list = list_region(area, &counts);
         // Under the tabs, the rule and the headings; over the rule and the
         // row of keys at the foot.
-        assert_eq!(list_height(area, &counts), 24 - 3 - crate::ui::FOOT_ROWS);
+        assert_eq!(list_height(area, &counts), 24 - 3 - crate::FOOT_ROWS);
         assert_eq!(list.height, list_height(area, &counts));
         assert_eq!(list.y, area.y + 3);
         assert_eq!(
             list.bottom(),
-            area.bottom() - crate::ui::FOOT_ROWS,
+            area.bottom() - crate::FOOT_ROWS,
             "the list runs under its own foot"
         );
         // A region with no room for a list at all does not go round.

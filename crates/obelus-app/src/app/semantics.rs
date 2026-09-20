@@ -688,8 +688,8 @@ impl App {
             (
                 coloured.span.line,
                 coloured.span.column,
-                crate::ui::swatch_cells(),
-                crate::ui::Drawn::Swatch(coloured.colour),
+                obelus_ui::swatch_cells(),
+                obelus_ui::Drawn::Swatch(coloured.colour),
             )
         });
         let worked_out = hints.iter().map(|hint| {
@@ -697,7 +697,7 @@ impl App {
                 hint.line,
                 hint.column,
                 hint.cells(),
-                crate::ui::Drawn::Hint(hint.clone()),
+                obelus_ui::Drawn::Hint(hint.clone()),
             )
         });
         for (line, column, wide, what) in swatches.chain(worked_out) {
@@ -721,7 +721,7 @@ impl App {
 
     /// What is drawn in the file being read that the file does not contain.
     #[must_use]
-    pub fn drawn(&self) -> &[crate::ui::Drawn] {
+    pub fn drawn(&self) -> &[obelus_ui::Drawn] {
         self.current_buffer()
             .and_then(|buffer| self.drawn.get(buffer.path()))
             .map_or(&[], Vec::as_slice)

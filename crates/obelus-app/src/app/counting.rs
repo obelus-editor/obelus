@@ -54,7 +54,7 @@ impl App {
         let Some(counts) = self.counts.as_ref() else {
             return false;
         };
-        let rows = crate::ui::counts::list_height(self.screen_area, counts);
+        let rows = obelus_ui::counts::list_height(self.screen_area, counts);
         let Some(counts) = self.counts.as_mut() else {
             return false;
         };

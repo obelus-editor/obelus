@@ -430,7 +430,7 @@ impl App {
                 // The mark, when this tab has anything to open: a reader
                 // cannot press a key on a row that never said it had
                 // something behind it.
-                marker: expands.then(|| (Marking::Aside, crate::ui::opens(open).to_string())),
+                marker: expands.then(|| (Marking::Aside, obelus_ui::opens(open).to_string())),
                 label: commit.subject.clone(),
                 detail: None,
                 // Both on the right, where the width is taken out of the

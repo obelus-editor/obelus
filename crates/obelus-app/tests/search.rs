@@ -535,7 +535,7 @@ fn only_the_rows_on_screen_cost_anything() {
     let tree = std::path::Path::new(env!("OBELUS_TREE"));
     for directory in [
         "crates/obelus-app/src/app",
-        "crates/obelus-app/src/ui",
+        "crates/obelus-ui/src",
         "crates/obelus-lsp/src",
         "crates/obelus-syntax/src",
         "crates/obelus-theme/src",

@@ -46,10 +46,7 @@ use obelus_text::text_width;
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
-use crate::{
-    app::App,
-    ui::{fill, put, rule, write},
-};
+use crate::{Screen, fill, put, rule, write};
 
 /// How far a speaker's mark is from the edge.
 ///
@@ -297,7 +294,7 @@ const BAR: char = '\u{2590}';
 
 /// Which mark a row that folds something carries.
 fn opens(open: bool) -> String {
-    format!(" {}", crate::ui::opens(open))
+    format!(" {}", crate::opens(open))
 }
 
 /// What says the row holds more than it had room to draw.
@@ -362,7 +359,7 @@ impl<'a> ChatView<'a> {
     /// Borrows what the view needs, or nothing if the conversation is not
     /// what the region is showing.
     #[must_use]
-    pub fn new(app: &'a App) -> Option<Self> {
+    pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
             chat: app.chat()?,
             theme: app.theme(),
@@ -508,7 +505,7 @@ impl ChatView<'_> {
         // this is there". The column is already spare -- the rows are
         // wrapped to leave it -- so nothing moves to make room.
         if self.chat.scrollable(area.height) {
-            crate::ui::scrollbar(cells, area, self.chat.top(), rows.len(), self.theme);
+            crate::scrollbar(cells, area, self.chat.top(), rows.len(), self.theme);
         }
         let first = self.chat.top().min(rows.len());
         for (offset, row) in rows.iter().skip(first).enumerate() {
@@ -603,7 +600,7 @@ impl ChatView<'_> {
                 // cog says a tool was used, and only movement says it is
                 // still going.
                 if row.speaker == Speaker::Doing {
-                    put(cells, at, y, crate::ui::spinning(self.phase), style);
+                    put(cells, at, y, crate::spinning(self.phase), style);
                 } else if obelus_icons::enabled() {
                     put(cells, at, y, glyph, style);
                 } else {
@@ -959,7 +956,7 @@ impl ChatView<'_> {
             cells,
             column,
             area.y,
-            &crate::ui::truncate_from_right(about, room),
+            &crate::truncate_from_right(about, room),
             dim,
         );
     }

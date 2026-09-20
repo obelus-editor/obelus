@@ -105,10 +105,7 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::{
-    app::App,
-    ui::{fill, put},
-};
+use crate::{Screen, fill, put};
 
 /// The narrowest the gutter is allowed to be.
 ///
@@ -140,7 +137,7 @@ pub const FOLD_WIDTH: u16 = 1;
 
 /// What a folded line carries in that column, and what an open one does.
 ///
-/// [`crate::ui::opens`], because folding a run of lines, a run of tool
+/// [`crate::opens`], because folding a run of lines, a run of tool
 /// calls and a commit's files are the same act. Both states are marked,
 /// because a reader cannot press a key on a line that never said it had
 /// anything behind it -- and the one turned down is the quieter of the two,
@@ -314,7 +311,7 @@ pub struct EditorView<'a> {
     /// Under everything the reader did -- a selection, a mark -- because
     /// those are answers to something they just asked and these are
     /// standing facts about the text.
-    drawn: &'a [crate::ui::Drawn],
+    drawn: &'a [crate::Drawn],
     /// The characters selected in the file being read.
     selection: Option<Span>,
     /// What the language server says is wrong with the file being read.
@@ -368,7 +365,7 @@ impl EditorView<'_> {
         let folds = buffer.folds();
         let shown = |line: LineNumber| line.get() - folds.hidden_before(line);
         let total = buffer.text().line_count() - folds.hidden_total();
-        let row_of = |line: LineNumber| crate::ui::bar_row(shown(line), total, area.height);
+        let row_of = |line: LineNumber| crate::bar_row(shown(line), total, area.height);
 
         // Gathered before anything is drawn, because a row holds many
         // lines: on a file taller than the screen two hunks land on the
@@ -442,7 +439,7 @@ pub enum Editing {
 impl<'a> EditorView<'a> {
     /// Borrows what the view needs from the application.
     #[must_use]
-    pub fn new(app: &'a App) -> Self {
+    pub fn new(app: &'a impl Screen) -> Self {
         Self {
             buffer: app.current_buffer(),
             highlights: app.highlights(),
@@ -893,9 +890,9 @@ impl Widget for EditorView<'_> {
                 // the row that says so is the row the run starts on.
                 if folds > 0 && index == 0 {
                     let mark = if buffer.folds().is_folded_at(line) {
-                        Some((crate::ui::FOLDED, self.theme.gutter_current))
+                        Some((crate::FOLDED, self.theme.gutter_current))
                     } else if buffer.folds().opens_at(line) {
-                        Some((crate::ui::UNFOLDED, self.theme.gutter))
+                        Some((crate::UNFOLDED, self.theme.gutter))
                     } else {
                         None
                     };
@@ -978,7 +975,7 @@ impl Widget for EditorView<'_> {
                     let closing_width =
                         u16::try_from(obelus_text::text_width(&elision.closing)).unwrap_or(width);
                     if ended + mark_width + closing_width <= width {
-                        crate::ui::write(
+                        crate::write(
                             cells,
                             at,
                             y,
@@ -986,7 +983,7 @@ impl Widget for EditorView<'_> {
                             Style::new().fg(self.theme.gutter),
                         );
                         if !elision.closing.is_empty() {
-                            crate::ui::write(
+                            crate::write(
                                 cells,
                                 at + mark_width,
                                 y,
@@ -1033,7 +1030,7 @@ impl Widget for EditorView<'_> {
             // you, and with a run closed the document is shorter and the
             // reader is further into it than the file's own numbers say.
             let folds = buffer.folds();
-            crate::ui::scrollbar(
+            crate::scrollbar(
                 cells,
                 area,
                 viewport.top.get() - folds.hidden_before(viewport.top),
@@ -1196,7 +1193,7 @@ struct Painting<'a> {
     /// What is drawn in the line that the line does not contain: the
     /// colours a server found written down, and what it would have the
     /// reader know.
-    drawn: &'a [crate::ui::Drawn],
+    drawn: &'a [crate::Drawn],
     /// The characters the reader selected in the file being read.
     selection: Option<Span>,
     /// What the language server says is wrong with the file.
@@ -1321,14 +1318,14 @@ fn draw_row(
                 // syntax colour: painting it said the same thing over
                 // seven characters, and over the sixteen of an
                 // `rgba(0, 0, 0, .5)` it said it over half a line.
-                crate::ui::Drawn::Swatch(colour) => {
-                    put(cells, x + offset, y, crate::ui::SWATCH, style.fg(*colour));
+                crate::Drawn::Swatch(colour) => {
+                    put(cells, x + offset, y, crate::SWATCH, style.fg(*colour));
                     ended = offset + 1;
                 }
                 // Dim, and in its own colour: a hint is not code, and a
                 // reader skimming a file for what it says has to be able
                 // to skip it without reading it.
-                crate::ui::Drawn::Hint(hint) => {
+                crate::Drawn::Hint(hint) => {
                     let style = style.fg(painting
                         .theme
                         .colour_for(Some(obelus_text::kind::SyntaxKind::Comment)));
@@ -1417,7 +1414,7 @@ fn draw_change_count(
         return;
     }
     for (word, colour) in words {
-        column = crate::ui::write(cells, x + column, y, &word, Style::new().fg(colour))
+        column = crate::write(cells, x + column, y, &word, Style::new().fg(colour))
             .saturating_sub(x)
             .saturating_add(1);
     }
@@ -1445,7 +1442,7 @@ fn draw_blame(
     if offset < text_ends + 2 {
         return;
     }
-    crate::ui::write(cells, x + offset, y, label, Style::new().fg(colour));
+    crate::write(cells, x + offset, y, label, Style::new().fg(colour));
 }
 
 #[cfg(test)]

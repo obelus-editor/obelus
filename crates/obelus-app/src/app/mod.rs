@@ -50,11 +50,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use document::Document;
 use documents::Rendered;
 use history::Changed;
-use obelus_agent::Talking;
+use obelus_agent::{Listed, Talking, acp};
 use obelus_buffer::{Buffer, Cursor, DocumentId, Mode, Motion, TextArea};
 use obelus_command::{Command, Requires};
 use obelus_component::{
-    chat::{ChatOutcome, Room as ChatRoom},
+    card::Card,
+    chat::{Chat, ChatOutcome, Room as ChatRoom},
     completion::Completion,
     counts::Counts,
     hover::Hover,
@@ -65,6 +66,7 @@ use obelus_component::{
     },
     prompt::{Prompt, PromptKind, PromptOutcome},
     settings::{Settings, SettingsOutcome},
+    todo::TodoView,
 };
 use obelus_editing::{
     keymap,
@@ -82,6 +84,7 @@ use obelus_search::Scope;
 use obelus_syntax::{LanguageId, brackets, highlight::Highlights, parse::SyntaxState, tags};
 use obelus_text::coordinates::{ByteOffset, CharColumn, LineNumber, Span};
 use obelus_theme::{Theme, builtin};
+use obelus_ui::{Previewed, Screen, image::Images};
 use obelus_watch::Watcher;
 use previewing::Preview;
 use ratatui::{
@@ -96,7 +99,6 @@ use crate::{
     event,
     event::{Event, Ticker},
     jump::{Jump, JumpList},
-    ui,
 };
 
 /// How many rows a compact picker may take.
@@ -300,7 +302,7 @@ pub struct App {
     ///
     /// Both answers in one list, because a cell of a line points at one
     /// entry of it and cannot say which of two lists it meant.
-    drawn: HashMap<PathBuf, Vec<ui::Drawn>>,
+    drawn: HashMap<PathBuf, Vec<obelus_ui::Drawn>>,
     /// Where the reader has been.
     jumps: JumpList,
     /// The file the picker's selection names, opened so it can be shown.
@@ -1106,7 +1108,7 @@ impl App {
     /// laying one out.
     fn picker_area(&self) -> Rect {
         match self.chat() {
-            Some(chat) => ui::chat::above_writing(self.editor_area, chat),
+            Some(chat) => obelus_ui::chat::above_writing(self.editor_area, chat),
             None => self.editor_area,
         }
     }
@@ -1391,17 +1393,17 @@ impl App {
                 // cell wider than the view draws wraps a line here and not
                 // there, and the caret then sits a row below the character
                 // it is on.
-                let before = ui::editor::text_offset(
+                let before = obelus_ui::editor::text_offset(
                     buffer.text().line_count(),
-                    ui::editor::changed(self.changes()),
+                    obelus_ui::editor::changed(self.changes()),
                     !buffer.folds().is_empty(),
                 );
-                let after = ui::editor::map_width(self.changes());
+                let after = obelus_ui::editor::map_width(self.changes());
                 self.editor_area
                     .width
                     .saturating_sub(before)
                     .saturating_sub(after)
-                    .saturating_sub(ui::editor::SCROLLBAR_WIDTH)
+                    .saturating_sub(obelus_ui::editor::SCROLLBAR_WIDTH)
             }
             None => self.editor_area.width,
         };
@@ -1473,7 +1475,7 @@ impl App {
         let rows = self
             .picker
             .as_ref()
-            .map(|picker| ui::picker::rows_drawn(picker, self.picker_area()));
+            .map(|picker| obelus_ui::picker::rows_drawn(picker, self.picker_area()));
         if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
             picker.refresh_indices(rows);
         }
@@ -1537,7 +1539,7 @@ impl App {
             // What it is drawn in, so that paging it moves what is on
             // screen rather than a number nothing reads.
             hover.settle(
-                ui::hover::room(editor_area),
+                obelus_ui::hover::room(editor_area),
                 obelus_component::hover::MOST_ROWS,
             );
         }
@@ -1545,7 +1547,7 @@ impl App {
         // as much as the drawing does: a page of documentation is the rows
         // of it that are on screen, and only the geometry knows how many
         // that is.
-        if let Some(panel) = ui::complete::layout(self, editor_area)
+        if let Some(panel) = obelus_ui::complete::layout(self, editor_area)
             && let Some(completion) = self.completion.as_mut()
         {
             // The width inside the box, less the column the reading keeps
@@ -1556,7 +1558,7 @@ impl App {
                     .area
                     .width
                     .saturating_sub(2)
-                    .saturating_sub(ui::editor::SCROLLBAR_WIDTH),
+                    .saturating_sub(obelus_ui::editor::SCROLLBAR_WIDTH),
             );
             completion.settle(panel.list, panel.documentation);
         }
@@ -1564,7 +1566,7 @@ impl App {
         self.refresh_rendering(
             editor_area
                 .width
-                .saturating_sub(crate::ui::editor::SCROLLBAR_WIDTH),
+                .saturating_sub(obelus_ui::editor::SCROLLBAR_WIDTH),
         );
         self.refresh_changes();
         self.refresh_blame();
@@ -1618,9 +1620,9 @@ impl App {
     /// is allowed: it is arithmetic over sizes, not work.
     pub fn draw_into(&mut self, cells: &mut CellBuffer, area: Rect) -> Option<Position> {
         self.screen_area = area;
-        self.prepare(ui::editor_room(area, self));
-        ui::draw(cells, area, self);
-        ui::cursor_position(area, self)
+        self.prepare(obelus_ui::editor_room(area, self));
+        obelus_ui::draw(cells, area, self);
+        obelus_ui::cursor_position(area, self)
     }
 
     /// Reacts to one event.
@@ -1965,7 +1967,7 @@ impl App {
     fn pointer_on_status(&mut self, kind: crate::event::Pointer, x: u16, y: u16) -> bool {
         use crate::event::Pointer;
 
-        let status = ui::regions(self.screen_area).status;
+        let status = obelus_ui::regions(self.screen_area).status;
         if status.height == 0 || y != status.y || x < status.x || x >= status.right() {
             return false;
         }
@@ -1973,13 +1975,13 @@ impl App {
         // order the keys go in by, and the same insets the renderer draws
         // them at.
         let inset = if self.prompt.is_some() {
-            self.prompt.as_ref().map(ui::status::answer_inset)
+            self.prompt.as_ref().map(obelus_ui::status::answer_inset)
         } else if self.settings.is_some() {
-            Some(ui::status::typed_inset(None))
+            Some(obelus_ui::status::typed_inset(None))
         } else {
             self.picker
                 .as_ref()
-                .map(|picker| ui::status::typed_inset(picker.question()))
+                .map(|picker| obelus_ui::status::typed_inset(picker.question()))
         };
         let Some(inset) = inset else {
             return false;
@@ -2018,7 +2020,7 @@ impl App {
         let area = self.editor_area;
         let Some(at) = self
             .notes()
-            .and_then(|notes| ui::todo::place_at(area, notes, x, y))
+            .and_then(|notes| obelus_ui::todo::place_at(area, notes, x, y))
         else {
             return;
         };
@@ -2057,7 +2059,7 @@ impl App {
         let carded = self.card().is_some();
         let Some(at) = self
             .conversation()
-            .and_then(|talk| ui::chat::ChatView::place_at(area, &talk.chat, carded, x, y))
+            .and_then(|talk| obelus_ui::chat::ChatView::place_at(area, &talk.chat, carded, x, y))
         else {
             return;
         };
@@ -2065,7 +2067,7 @@ impl App {
             Pointer::Pressed => self.clicks_at(x, y),
             _ => 0,
         };
-        let width = ui::chat::writing_width(area);
+        let width = obelus_ui::chat::writing_width(area);
         self.in_transcript(|chat| {
             let writing = chat.writing_mut();
             match kind {
@@ -2157,9 +2159,9 @@ impl App {
         // left of it -- on the gutter, a fold mark, the change margin --
         // is a click at the start of that row rather than nothing: the
         // reader pointed at a line.
-        let offset = ui::editor::text_offset(
+        let offset = obelus_ui::editor::text_offset(
             buffer.text().line_count(),
-            ui::editor::changed(self.changes()),
+            obelus_ui::editor::changed(self.changes()),
             !buffer.folds().is_empty(),
         );
         let row = y - area.y;
@@ -2454,4 +2456,147 @@ where
     }
 
     Ok(())
+}
+
+/// What the renderer may ask the application.
+///
+/// Every one of these forwards to the method of the same name: the trait is
+/// the list of questions, and the answers stay where they are written. The
+/// two cannot drift -- a signature that stopped matching is a compile error
+/// here -- and the alternative, moving forty-four methods out of the
+/// application's own impl blocks, would have made every one of its several
+/// hundred internal calls go through a trait that has to be in scope.
+impl Screen for App {
+    fn agent_name(&self) -> Option<&str> {
+        App::agent_name(self)
+    }
+    fn agent_settings(&self) -> &[acp::Setting] {
+        App::agent_settings(self)
+    }
+    fn agent_usage(&self) -> Option<&acp::Usage> {
+        App::agent_usage(self)
+    }
+    fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]> {
+        App::blame(self)
+    }
+    fn card(&self) -> Option<&Card> {
+        App::card(self)
+    }
+    fn changes(&self) -> Option<&obelus_git::Changes> {
+        App::changes(self)
+    }
+    fn chat(&self) -> Option<&Chat> {
+        App::chat(self)
+    }
+    fn completion(&self) -> Option<&Completion> {
+        App::completion(self)
+    }
+    fn config(&self) -> &obelus_config::Config {
+        App::config(self)
+    }
+    fn counts(&self) -> Option<&Counts> {
+        App::counts(self)
+    }
+    fn current_buffer(&self) -> Option<&Buffer> {
+        App::current_buffer(self)
+    }
+    fn drawn(&self) -> &[obelus_ui::Drawn] {
+        App::drawn(self)
+    }
+    fn highlights(&self) -> &Highlights {
+        App::highlights(self)
+    }
+    fn hover(&self) -> Option<&Hover> {
+        App::hover(self)
+    }
+    fn images(&self) -> &Images {
+        App::images(self)
+    }
+    fn keymap(&self) -> &Keymap {
+        App::keymap(self)
+    }
+    fn layers(&self) -> layers::Layers {
+        App::layers(self)
+    }
+    fn listed_agents(&self) -> Vec<Listed> {
+        App::listed_agents(self)
+    }
+    fn marked_runs(&self) -> &[obelus_text::coordinates::Span] {
+        App::marked_runs(self)
+    }
+    fn note(&self) -> Option<&str> {
+        App::note(self)
+    }
+    fn notes(&self) -> Option<&TodoView> {
+        App::notes(self)
+    }
+    fn opened_hunks(&self) -> Vec<LineNumber> {
+        App::opened_hunks(self)
+    }
+    fn phase(&self) -> u32 {
+        App::phase(self)
+    }
+    fn picker(&self) -> Option<&Picker> {
+        App::picker(self)
+    }
+    fn pinned(&self) -> &[&'static str] {
+        App::pinned(self)
+    }
+    fn preview(&self) -> Option<Previewed<'_>> {
+        App::preview(self)
+    }
+    fn prompt(&self) -> Option<&Prompt> {
+        App::prompt(self)
+    }
+    fn readers_named(&self) -> &[&'static str] {
+        App::readers_named(self)
+    }
+    fn reading_nothing(&self) -> bool {
+        App::reading_nothing(self)
+    }
+    fn registry_failure(&self) -> Option<&str> {
+        App::registry_failure(self)
+    }
+    fn rendered_rows(&self) -> Option<usize> {
+        App::rendered_rows(self)
+    }
+    fn rendering(&self) -> Option<&[obelus_reading::Row]> {
+        App::rendering(self)
+    }
+    fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)> {
+        App::server_state(self)
+    }
+    fn server_working_on(&self) -> Option<&str> {
+        App::server_working_on(self)
+    }
+    fn settings(&self) -> Option<&Settings> {
+        App::settings(self)
+    }
+    fn signature(&self) -> Option<&obelus_lsp::signature::Signature> {
+        App::signature(self)
+    }
+    fn slash(&self) -> Option<&Picker> {
+        App::slash(self)
+    }
+    fn talking(&self) -> Talking {
+        App::talking(self)
+    }
+    fn text_area(&self) -> TextArea {
+        App::text_area(self)
+    }
+    fn theme(&self) -> &Theme {
+        App::theme(self)
+    }
+    fn tree_config(&self) -> Option<&Path> {
+        App::tree_config(self)
+    }
+    fn troubles(&self) -> &[obelus_lsp::trouble::Trouble] {
+        App::troubles(self)
+    }
+    fn what_this_conversation_is_about(&self) -> Option<String> {
+        App::what_this_conversation_is_about(self)
+    }
+    fn working_directory(&self) -> &Path {
+        App::working_directory(self)
+    }
 }

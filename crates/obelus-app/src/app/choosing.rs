@@ -316,7 +316,7 @@ impl App {
     /// the reader can see. Nothing above this needs to know that.
     pub(super) fn picker_key(&mut self, key: &KeyEvent) -> bool {
         let page = self.picker.as_ref().map_or(1, |picker| {
-            ui::picker::rows_drawn(picker, self.picker_area())
+            obelus_ui::picker::rows_drawn(picker, self.picker_area())
         });
         // A tree of calls: its tabs are the two directions, and walking
         // onto one asks the other question. Asked before the list is

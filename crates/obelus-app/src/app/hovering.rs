@@ -148,7 +148,7 @@ impl App {
 
     /// Whether a cell is inside it.
     fn inside_hover(&self, x: u16, y: u16) -> bool {
-        ui::hover::layout(self, self.editor_area)
+        obelus_ui::hover::layout(self, self.editor_area)
             .is_some_and(|area| x >= area.x && x < area.right() && y >= area.y && y < area.bottom())
     }
 
@@ -243,9 +243,9 @@ impl App {
         if x < area.x || x >= area.right() || y < area.y || y >= area.bottom() {
             return None;
         }
-        let offset = ui::editor::text_offset(
+        let offset = obelus_ui::editor::text_offset(
             buffer.text().line_count(),
-            ui::editor::changed(self.changes()),
+            obelus_ui::editor::changed(self.changes()),
             !buffer.folds().is_empty(),
         );
         // Left of the text is the gutter, which names a line without
@@ -298,7 +298,7 @@ impl App {
             self.hover = None;
             return false;
         };
-        let room = ui::hover::layout(self, self.editor_area)
+        let room = obelus_ui::hover::layout(self, self.editor_area)
             .map_or(1, |area| area.height.saturating_sub(2));
         match (modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Esc) => {

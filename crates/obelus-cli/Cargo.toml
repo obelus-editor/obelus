@@ -17,6 +17,7 @@ workspace = true
 obelus-app.workspace = true
 obelus-buffer.workspace = true
 obelus-logging.workspace = true
+obelus-ui.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 crossterm.workspace = true

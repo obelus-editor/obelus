@@ -23,27 +23,9 @@
 //! is the one answer; a list that had its own would be a list where choosing a
 //! row moved the screen under the reader.
 
-use super::*;
+use obelus_ui::Previewed;
 
-/// What a preview is, for the view that draws it.
-///
-/// A borrow of the whole of it rather than a tuple: it is the same list of
-/// things the editor draws for the document being read, and a tuple of four
-/// grows a fifth without saying what any of them are.
-pub struct Previewed<'a> {
-    /// The file, read into a buffer of its own.
-    pub buffer: &'a Buffer,
-    /// Its syntax, refreshed for the rows on screen.
-    pub highlights: &'a Highlights,
-    /// The runs of characters the preview is about, once converted.
-    ///
-    /// A list rather than one: a language server names one run, and a
-    /// search names whatever characters the query matched, which is as
-    /// many runs as the match is scattered over.
-    pub marked: &'a [Span],
-    /// What git says about the file.
-    pub changes: Option<&'a obelus_git::Changes>,
-}
+use super::*;
 
 impl App {
     /// The file the picker's selection names, if it has been read, and the
@@ -219,7 +201,8 @@ impl App {
     /// Reads whatever the picker's selection names, and points it at the line
     /// the selection is about.
     pub(super) fn refresh_preview(&mut self, editor_area: Rect) {
-        let Some(area) = ui::picker::preview_region(self.picker.as_ref(), editor_area) else {
+        let Some(area) = obelus_ui::picker::preview_region(self.picker.as_ref(), editor_area)
+        else {
             self.preview = None;
             return;
         };
@@ -274,13 +257,13 @@ impl App {
         // it is given, and the last cells of a wrapped line would fall off
         // the edge.
         let changes = preview.changes.as_ref();
-        let aside = ui::editor::text_offset(
+        let aside = obelus_ui::editor::text_offset(
             preview.buffer.text().line_count(),
-            ui::editor::changed(changes),
+            obelus_ui::editor::changed(changes),
             !preview.buffer.folds().is_empty(),
         )
-        .saturating_add(ui::editor::map_width(changes))
-        .saturating_add(ui::editor::SCROLLBAR_WIDTH);
+        .saturating_add(obelus_ui::editor::map_width(changes))
+        .saturating_add(obelus_ui::editor::SCROLLBAR_WIDTH);
         let text = TextArea {
             width: area.width.saturating_sub(aside),
             height: area.height,
@@ -338,7 +321,7 @@ impl App {
                 let Some(counts) = self.counts.as_ref() else {
                     return false;
                 };
-                let height = crate::ui::counts::list_height(self.screen_area, counts);
+                let height = obelus_ui::counts::list_height(self.screen_area, counts);
                 if let Some(counts) = self.counts.as_mut() {
                     counts.scroll(rows, height);
                 }
@@ -421,7 +404,8 @@ impl App {
     /// Not a command: it is navigation, and navigation belongs to whatever
     /// holds the position it moves. What holds this one is the preview.
     pub(super) fn scroll_preview(&mut self, pages: isize) {
-        let Some(area) = ui::picker::preview_region(self.picker.as_ref(), self.editor_area) else {
+        let Some(area) = obelus_ui::picker::preview_region(self.picker.as_ref(), self.editor_area)
+        else {
             return;
         };
         let Some(preview) = self.preview.as_mut() else {

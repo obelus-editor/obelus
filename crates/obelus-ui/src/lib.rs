@@ -35,7 +35,7 @@ pub(crate) const SWATCH: char = '\u{25a0}';
 /// the line is laid out with and the thing drawn in it have to agree, and
 /// two constants that must agree are one that can be changed alone.
 #[must_use]
-pub(crate) fn swatch_cells() -> usize {
+pub fn swatch_cells() -> usize {
     unicode_width::UnicodeWidthChar::width(SWATCH).unwrap_or(1)
 }
 
@@ -55,6 +55,160 @@ pub enum Drawn {
     Swatch(ratatui::style::Color),
     /// Something a server would have you read that the file does not say.
     Hint(obelus_lsp::hint::Hinted),
+}
+
+use std::path::Path;
+
+use obelus_agent::{Listed, Talking, acp};
+use obelus_buffer::{Buffer, TextArea};
+use obelus_component::{
+    card::Card, chat::Chat, completion::Completion, counts::Counts, hover::Hover, layers,
+    prompt::Prompt, settings::Settings, todo::TodoView,
+};
+use obelus_editing::keymap::Keymap;
+use obelus_syntax::highlight::Highlights;
+use obelus_text::coordinates::{LineNumber, Span};
+
+use crate::image::Images;
+
+/// What a preview is, for the view that draws it.
+///
+/// A borrow of the whole of it rather than a tuple: it is the same list of
+/// things the editor draws for the document being read, and a tuple of four
+/// grows a fifth without saying what any of them are.
+///
+/// Here rather than with the application, for the same reason as the rest
+/// of this file: it exists only so that a preview can be drawn, and every
+/// field of it is a borrow of something the renderer would otherwise have
+/// to be handed one at a time.
+pub struct Previewed<'a> {
+    /// The file, read into a buffer of its own.
+    pub buffer: &'a Buffer,
+    /// Its syntax, refreshed for the rows on screen.
+    pub highlights: &'a Highlights,
+    /// The runs of characters the preview is about, once converted.
+    ///
+    /// A list rather than one: a language server names one run, and a
+    /// search names whatever characters the query matched, which is as
+    /// many runs as the match is scattered over.
+    pub marked: &'a [Span],
+    /// What git says about the file.
+    pub changes: Option<&'a obelus_git::Changes>,
+}
+
+/// Everything a frame is drawn from.
+///
+/// The renderer used to take `&App`, and this is the list of what it
+/// actually asked it -- forty-four questions of a type with several
+/// hundred methods. Written down, the list is an interface rather than an
+/// acquaintance: what draws can be compiled and read without the
+/// application, and the application cannot quietly become something a view
+/// reaches into.
+///
+/// Every one of these is a question about state that has already settled.
+/// None may take `&mut self` and none may do work: a frame is drawn on
+/// every keystroke, and a view that could change what it is drawing is a
+/// view whose output depends on how often it was asked for.
+///
+/// One trait rather than one per view, because the views overlap heavily
+/// -- eleven of them ask for the theme, six for the file being read -- and
+/// eleven traits with the same dozen methods is one list kept in eleven
+/// places.
+pub trait Screen {
+    /// What to call the agent on screen.
+    fn agent_name(&self) -> Option<&str>;
+    /// The settings it lets the reader change.
+    fn agent_settings(&self) -> &[acp::Setting];
+    /// How full the agent's memory of this conversation is, once it has
+    /// said -- and what it has cost, where it counts that too.
+    fn agent_usage(&self) -> Option<&acp::Usage>;
+    /// Who last changed each line of the file being read, if the answer has
+    /// arrived and the reader wants to see it.
+    fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]>;
+    /// The card an agent's question is on, while one is up.
+    fn card(&self) -> Option<&Card>;
+    /// What has changed in the current file, if obelus can tell.
+    fn changes(&self) -> Option<&obelus_git::Changes>;
+    /// The conversation, while it is what the reader is looking at.
+    fn chat(&self) -> Option<&Chat>;
+    /// What could be typed next, while a server's answer is on screen.
+    fn completion(&self) -> Option<&Completion>;
+    /// What the reader has decided.
+    fn config(&self) -> &obelus_config::Config;
+    /// The line counts, while they are showing.
+    fn counts(&self) -> Option<&Counts>;
+    /// The document being read, if any is open.
+    fn current_buffer(&self) -> Option<&Buffer>;
+    /// What is drawn in the file being read that the file does not contain.
+    fn drawn(&self) -> &[crate::Drawn];
+    /// The highlight kinds for what is on screen.
+    fn highlights(&self) -> &Highlights;
+    /// What the server says the place under the caret is, while it is up.
+    fn hover(&self) -> Option<&Hover>;
+    /// The marks, for the view to draw.
+    fn images(&self) -> &Images;
+    /// The bindings currently in force.
+    fn keymap(&self) -> &Keymap;
+    /// What is on screen over the file, worked out from what is open.
+    fn layers(&self) -> layers::Layers;
+    /// The agents page's rows.
+    fn listed_agents(&self) -> Vec<Listed>;
+    /// The runs the editor marks: the uses of the name the pointer is
+    /// resting on.
+    fn marked_runs(&self) -> &[obelus_text::coordinates::Span];
+    /// What obelus has to say, until the next key.
+    fn note(&self) -> Option<&str>;
+    /// The notes, while the reader is in them.
+    fn notes(&self) -> Option<&TodoView>;
+    /// The hunk the reader has opened in place, if any.
+    fn opened_hunks(&self) -> Vec<LineNumber>;
+    /// How far along the welcome screen's colours have travelled, in ticks.
+    fn phase(&self) -> u32;
+    /// The open picker, for the renderer.
+    fn picker(&self) -> Option<&Picker>;
+    /// The settings the tree has set, which are the ones the reader cannot
+    /// change from here.
+    fn pinned(&self) -> &[&'static str];
+    /// The file the picker's selection names, if it has been read, and the
+    /// part of it the selection is about.
+    fn preview(&self) -> Option<Previewed<'_>>;
+    /// The question being asked, if one is.
+    fn prompt(&self) -> Option<&Prompt>;
+    /// Which settings the reader's own file named.
+    fn readers_named(&self) -> &[&'static str];
+    /// Whether there is anything being read at all.
+    fn reading_nothing(&self) -> bool;
+    /// Why the list could not be fetched, if it could not.
+    fn registry_failure(&self) -> Option<&str>;
+    /// How many rows it has, for the keys that scroll it.
+    fn rendered_rows(&self) -> Option<usize>;
+    /// The reading on screen, if the current file is being shown as one.
+    fn rendering(&self) -> Option<&[obelus_reading::Row]>;
+    /// The server for the file being read, and what it is doing.
+    fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)>;
+    /// What a language server is busy with, if one is.
+    fn server_working_on(&self) -> Option<&str>;
+    /// The settings view, while it is open.
+    fn settings(&self) -> Option<&Settings>;
+    /// What the call the cursor is inside takes, while it is showing.
+    fn signature(&self) -> Option<&obelus_lsp::signature::Signature>;
+    /// The agent's own commands, while one is being typed.
+    fn slash(&self) -> Option<&Picker>;
+    /// What obelus is doing about an agent.
+    fn talking(&self) -> Talking;
+    /// The room the text has, once the gutter has taken its columns.
+    fn text_area(&self) -> TextArea;
+    /// The colours currently in force.
+    fn theme(&self) -> &Theme;
+    /// The tree's own settings file, while the tree has one.
+    fn tree_config(&self) -> Option<&Path>;
+    /// What the server says is wrong with the file being read.
+    fn troubles(&self) -> &[obelus_lsp::trouble::Trouble];
+    /// The note the conversation being read is about, in the words the
+    /// reader wrote.
+    fn what_this_conversation_is_about(&self) -> Option<String>;
+    /// Where obelus was started, and the root every path is shown relative to.
+    fn working_directory(&self) -> &Path;
 }
 
 pub mod card;
@@ -87,8 +241,6 @@ use ratatui::{
     widgets::Widget as _,
 };
 use unicode_width::UnicodeWidthChar as _;
-
-use crate::app::App;
 
 /// Where the two regions of the screen are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -155,7 +307,7 @@ pub fn regions(area: Rect) -> Regions {
 /// above the box a message is written in, so it has already made the room
 /// -- and shortening it here would put the list under its own box.
 #[must_use]
-pub fn editor_room(area: Rect, app: &App) -> Rect {
+pub fn editor_room(area: Rect, app: &impl Screen) -> Rect {
     let editor = regions(area).editor;
     let Some(list) = app
         .picker()
@@ -211,7 +363,7 @@ pub fn relative_to<'a>(path: &'a std::path::Path, root: &std::path::Path) -> &'a
 /// While a picker is open the cursor belongs in the prompt, which is also
 /// where the keys are going.
 #[must_use]
-pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
+pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
     let regions = regions(area);
     // Most of them filter or answer by typing on the status row, so the
     // caret goes where that typing does.
@@ -299,7 +451,7 @@ pub fn cursor_position(area: Rect, app: &App) -> Option<Position> {
 /// cell a wide glyph covers — correctly, since the terminal advances two
 /// columns for it, but the record left behind cannot be told apart from a cell
 /// nothing painted.
-pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
+pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     let regions = regions(area);
     let layers = app.layers();
     // Under whatever the region holds and over the status bar, once, for
@@ -449,7 +601,7 @@ pub fn spinning(phase: u32) -> char {
 /// The editor region, less what a conversation's box has taken from the
 /// foot of it: a list drawn over the box would cover the thing the reader
 /// is typing into to find the list.
-fn room_for_a_list(app: &App, editor: Rect) -> Rect {
+fn room_for_a_list(app: &impl Screen, editor: Rect) -> Rect {
     app.chat()
         .map_or(editor, |chat| chat::above_writing(editor, chat))
 }
@@ -459,7 +611,7 @@ fn room_for_a_list(app: &App, editor: Rect) -> Rect {
 /// One function for all of them, because a list opened over the code, over
 /// the settings and over a conversation is the same list: what differs is
 /// the room it is given, which is the argument.
-fn list_over(cells: &mut CellBuffer, app: &App, list: &Picker, room: Rect) {
+fn list_over(cells: &mut CellBuffer, app: &impl Screen, list: &Picker, room: Rect) {
     let region = picker::region(list, room);
     picker::PickerView::new(list, app.theme(), app.phase()).render(region, cells);
 
@@ -621,7 +773,7 @@ pub(crate) const UNFOLDED: char = '\u{25be}';
 
 /// Whichever of the two says how a row stands.
 #[must_use]
-pub(crate) const fn opens(open: bool) -> char {
+pub const fn opens(open: bool) -> char {
     match open {
         true => UNFOLDED,
         false => FOLDED,

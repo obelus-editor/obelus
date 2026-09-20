@@ -162,7 +162,7 @@ fn a_click_in_a_scrolled_box_lands_where_it_points() {
     // measured against a box that had scrolled out from under the pointer.
     // What is being pinned here is the arithmetic, which is the first
     // half.
-    let width = obelus_app::ui::chat::writing_width(app.editor_area_for_test());
+    let width = obelus_ui::chat::writing_width(app.editor_area_for_test());
     assert_eq!(
         app.chat()
             .map(obelus_component::chat::Chat::writing)

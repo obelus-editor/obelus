@@ -3511,6 +3511,7 @@ dependencies = [
  "obelus-syntax",
  "obelus-text",
  "obelus-theme",
+ "obelus-ui",
  "obelus-watch",
  "ratatui",
  "ratatui-image",
@@ -3548,6 +3549,7 @@ dependencies = [
  "obelus-app",
  "obelus-buffer",
  "obelus-logging",
+ "obelus-ui",
  "ratatui",
  "tracing",
 ]
@@ -3761,6 +3763,33 @@ dependencies = [
  "ratatui",
  "toml 1.1.5+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "obelus-ui"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "image",
+ "obelus-agent",
+ "obelus-buffer",
+ "obelus-command",
+ "obelus-component",
+ "obelus-config",
+ "obelus-editing",
+ "obelus-git",
+ "obelus-icons",
+ "obelus-lsp",
+ "obelus-reading",
+ "obelus-search",
+ "obelus-syntax",
+ "obelus-text",
+ "obelus-theme",
+ "ratatui",
+ "ratatui-image",
+ "resvg",
+ "tracing",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]

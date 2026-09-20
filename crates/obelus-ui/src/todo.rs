@@ -14,10 +14,8 @@ use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
 use crate::{
-    app::App,
-    ui::{
-        Hint, Marked, editor::SCROLLBAR_WIDTH, fill, foot_without_a_card, footed, put, write_marked,
-    },
+    Hint, Marked, Screen, editor::SCROLLBAR_WIDTH, fill, foot_without_a_card, footed, put,
+    write_marked,
 };
 
 /// Where the notes go, inside a region this size.
@@ -203,7 +201,7 @@ pub struct TodoUi<'a> {
 impl<'a> TodoUi<'a> {
     /// Borrows what the view needs, or nothing if the notes are not open.
     #[must_use]
-    pub fn new(app: &'a App) -> Option<Self> {
+    pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
             notes: app.notes()?,
             theme: app.theme(),
@@ -228,7 +226,7 @@ impl Widget for TodoUi<'_> {
             return;
         }
         if self.notes.rows().is_empty() {
-            crate::ui::nothing(cells, list, "Nothing to come back to", self.theme);
+            crate::nothing(cells, list, "Nothing to come back to", self.theme);
             return;
         }
 
@@ -264,7 +262,7 @@ impl Widget for TodoUi<'_> {
         // Only where there is somewhere to scroll: a track with no thumb on
         // it is a control that does not work.
         if window.scrollable(list.height) {
-            crate::ui::scrollbar(
+            crate::scrollbar(
                 cells,
                 list,
                 window.top(),
@@ -345,13 +343,7 @@ impl TodoUi<'_> {
         // list with ragged words.
         let step = row.depth * obelus_git::todo::INDENT;
         if row.head {
-            put(
-                cells,
-                area.x + 1 + step,
-                y,
-                crate::ui::tick(row.done),
-                style,
-            );
+            put(cells, area.x + 1 + step, y, crate::tick(row.done), style);
         }
         let x = area.x + MARGIN + step;
 
@@ -378,7 +370,7 @@ impl TodoUi<'_> {
             },
             x,
             y,
-            &crate::ui::truncate_from_right(
+            &crate::truncate_from_right(
                 &row.said,
                 usize::from(
                     area.width

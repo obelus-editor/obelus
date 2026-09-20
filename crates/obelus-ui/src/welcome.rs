@@ -21,10 +21,7 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr};
 
-use crate::{
-    app::App,
-    ui::{put, write},
-};
+use crate::{Screen, put, write};
 
 /// The commands worth naming, with the words this screen says them in.
 ///
@@ -153,7 +150,7 @@ pub struct WelcomeView<'a> {
 impl<'a> WelcomeView<'a> {
     /// Borrows what the view needs.
     #[must_use]
-    pub fn new(app: &'a App) -> Self {
+    pub fn new(app: &'a impl Screen) -> Self {
         Self {
             keymap: app.keymap(),
             theme: app.theme(),

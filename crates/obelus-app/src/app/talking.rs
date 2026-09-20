@@ -249,8 +249,8 @@ impl App {
         let card_width = self
             .conversation()
             .and_then(|talk| talk.card.as_ref())
-            .map(|card| crate::ui::card::width_of(crate::ui::chat::bands_for(area, card).writing));
-        let width = crate::ui::chat::writing_width(area);
+            .map(|card| obelus_ui::card::width_of(obelus_ui::chat::bands_for(area, card).writing));
+        let width = obelus_ui::chat::writing_width(area);
         let Some(talk) = self.conversation_mut() else {
             return;
         };
@@ -629,7 +629,10 @@ impl App {
             .and_then(|talk| talk.slash.as_ref())
             .zip(self.chat())
             .map(|(slash, chat)| {
-                ui::picker::rows_drawn(slash, ui::chat::above_writing(self.editor_area, chat))
+                obelus_ui::picker::rows_drawn(
+                    slash,
+                    obelus_ui::chat::above_writing(self.editor_area, chat),
+                )
             });
         if let (Some(rows), Some(slash)) = (
             rows,
@@ -727,12 +730,12 @@ impl App {
         // and the caret moves by the rows the box really has.
         let room = ChatRoom {
             transcript: self.conversation().map_or(0, |talk| {
-                crate::ui::chat::bands(self.editor_area, &talk.chat, talk.card.as_ref())
+                obelus_ui::chat::bands(self.editor_area, &talk.chat, talk.card.as_ref())
                     .transcript
                     .height
             }),
-            reading: crate::ui::chat::reading_width(self.editor_area),
-            writing: crate::ui::chat::writing_width(self.editor_area),
+            reading: obelus_ui::chat::reading_width(self.editor_area),
+            writing: obelus_ui::chat::writing_width(self.editor_area),
         };
         // The list of the agent's own commands, when one is showing: it
         // follows what is being typed in the box, so it takes the keys that
@@ -812,7 +815,7 @@ impl App {
         // The width a card's own rows have, which is what its caret is
         // worked out against.
         let width =
-            crate::ui::card::width_of(crate::ui::chat::bands_for(self.editor_area, card).writing);
+            obelus_ui::card::width_of(obelus_ui::chat::bands_for(self.editor_area, card).writing);
         let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut()) else {
             return false;
         };
@@ -1286,9 +1289,9 @@ impl App {
         let Some(talk) = self.conversation() else {
             return;
         };
-        let width = crate::ui::chat::writing_width(editor_area);
+        let width = obelus_ui::chat::writing_width(editor_area);
         let needed = talk.chat.writing().rows(width).len();
-        let region = crate::ui::chat::regions(editor_area, needed).transcript;
+        let region = obelus_ui::chat::regions(editor_area, needed).transcript;
         let rows = talk.chat.rows(region.width.saturating_sub(4)).len();
         if let Some(talk) = self.conversation_mut() {
             talk.chat.settle(rows, region.height);

@@ -806,7 +806,7 @@ mod against_a_real_server {
         // every cell on the way is a pointer that has left the word, and
         // an answer that vanished as you moved towards it could not be
         // read to the end.
-        let panel = obelus_app::ui::hover::layout(&app, app.editor_area_for_test())
+        let panel = obelus_ui::hover::layout(&app, app.editor_area_for_test())
             .expect("the answer is drawn somewhere");
         app.handle(Event::Pointer {
             kind: Pointer::Moved,

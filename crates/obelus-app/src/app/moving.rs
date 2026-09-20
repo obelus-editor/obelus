@@ -375,7 +375,7 @@ impl App {
             // The width the box really has, from the same function the
             // view lays it out with: a cut is over a selection, and where
             // a selection ends was decided by where the rows wrap.
-            let room = ui::chat::writing_width(self.editor_area);
+            let room = obelus_ui::chat::writing_width(self.editor_area);
             if let Some((text, what)) = self.conversation_mut().map(|talk| talk.chat.cut(room)) {
                 self.cut_away(&text, what);
             }

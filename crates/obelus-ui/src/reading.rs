@@ -16,7 +16,7 @@ use ratatui::{
     style::{Modifier, Style},
 };
 
-use crate::ui::{fill, put, scrollbar};
+use crate::{fill, put, scrollbar};
 
 /// Draws the reading, starting `top` rows in.
 ///
@@ -37,7 +37,7 @@ pub fn draw(
         return;
     }
 
-    let bar = crate::ui::editor::SCROLLBAR_WIDTH.min(area.width);
+    let bar = crate::editor::SCROLLBAR_WIDTH.min(area.width);
     let width = area.width - bar;
     // One row of the reading per row of the screen, so this is exact.
     if rows.len() > usize::from(area.height) {

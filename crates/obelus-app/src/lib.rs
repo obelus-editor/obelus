@@ -8,10 +8,10 @@
 //! write. [`event`] is the one channel the loop reads, and the `From` impls
 //! on it are where each worker's own events are said to be the same inbox --
 //! written here because this is the only crate that has heard of every
-//! worker. [`ui`] draws, which needs the state to draw from.
+//! worker. The same goes for `impl Screen for App`: the renderer says what
+//! a frame is drawn from, and this is the only thing that has all of it.
 
 pub mod app;
 pub mod conversation;
 pub mod event;
 pub mod jump;
-pub mod ui;

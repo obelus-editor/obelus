@@ -11,7 +11,7 @@ use obelus_text::text_width;
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
-use crate::ui::{
+use crate::{
     Hint, Marked, Matched, drop_from_left, drop_from_right, editor::SCROLLBAR_WIDTH, fill,
 };
 
@@ -129,11 +129,11 @@ pub fn foot_of(cells: &mut CellBuffer, picker: &Picker, room: Rect, theme: &Them
     if hints.is_empty() {
         return;
     }
-    crate::ui::foot(cells, room, &hints, theme);
+    crate::foot(cells, room, &hints, theme);
     if picker.showing_keys() {
         // Above the foot: the foot says how to close this, and a card over
         // it would be a card with no way out on screen.
-        crate::ui::keys_card(cells, room_for(picker, room), &hints, theme);
+        crate::keys_card(cells, room_for(picker, room), &hints, theme);
     }
 }
 
@@ -144,7 +144,7 @@ pub fn foot_of(cells: &mut CellBuffer, picker: &Picker, room: Rect, theme: &Them
 /// foot written across the file.
 #[must_use]
 pub fn room_for(picker: &Picker, editor: Rect) -> Rect {
-    crate::ui::footed(editor, &hints(picker))
+    crate::footed(editor, &hints(picker))
 }
 
 /// The fewest rows worth giving a preview.
@@ -324,7 +324,7 @@ impl Widget for PickerView<'_> {
             let words = obelus_text::wrapped(about, area.width.saturating_sub(2));
             for (row, words) in words.iter().enumerate().take(usize::from(about_rows) - 1) {
                 let Ok(row) = u16::try_from(row) else { break };
-                crate::ui::write(
+                crate::write(
                     cells,
                     area.x + 1,
                     area.y + row,
@@ -334,7 +334,7 @@ impl Widget for PickerView<'_> {
                         .bg(self.theme.background),
                 );
             }
-            crate::ui::rule(
+            crate::rule(
                 cells,
                 Rect {
                     y: area.y + about_rows - 1,
@@ -356,7 +356,7 @@ impl Widget for PickerView<'_> {
                 height: area.height.saturating_sub(about_rows),
                 ..area
             };
-            let used = crate::ui::tabs(
+            let used = crate::tabs(
                 cells,
                 under,
                 self.picker.tabs(),
@@ -372,7 +372,7 @@ impl Widget for PickerView<'_> {
                 if let Ok(offset) = u16::try_from(room)
                     && under.x + offset > used
                 {
-                    crate::ui::write(
+                    crate::write(
                         cells,
                         under.x + offset,
                         under.y,
@@ -381,7 +381,7 @@ impl Widget for PickerView<'_> {
                     );
                 }
             }
-            crate::ui::rule(
+            crate::rule(
                 cells,
                 Rect {
                     y: under.y + 1,
@@ -397,7 +397,7 @@ impl Widget for PickerView<'_> {
         // of that region. Below the tabs rather than instead of them: an
         // empty tab is the one place a reader most needs to see the others.
         if let Some(reason) = self.picker.nothing_to_show() {
-            crate::ui::nothing(cells, list, reason, self.theme);
+            crate::nothing(cells, list, reason, self.theme);
             return;
         }
 
@@ -413,7 +413,7 @@ impl Widget for PickerView<'_> {
         // answer -- the same one every other list asks it for.
         let matched = self.picker.match_count();
         if self.picker.window().scrollable(list.height) {
-            crate::ui::scrollbar(cells, list, first, matched, self.theme);
+            crate::scrollbar(cells, list, first, matched, self.theme);
         }
 
         let selected = self.picker.selected();
@@ -527,7 +527,7 @@ impl PickerView<'_> {
             // from the ticker rather than from the row, because what it is
             // saying is that time is passing somewhere else.
             let marker = match marker.is_empty() {
-                true => crate::ui::spinning(self.phase).to_string(),
+                true => crate::spinning(self.phase).to_string(),
                 false => marker.clone(),
             };
             // With a blank column after it, the way the icon has one: two
@@ -748,7 +748,7 @@ impl PickerView<'_> {
 /// edge rather than from the screen's.
 ///
 /// Every list in obelus draws its characters through
-/// [`crate::ui::write_marked`] -- what marks a match, what colours a line of
+/// [`crate::write_marked`] -- what marks a match, what colours a line of
 /// code, what a truncated head skips. A picker's rows are laid out relative
 /// to the row, so this is the one line of arithmetic between the two.
 fn at(
@@ -760,6 +760,6 @@ fn at(
     style: Style,
     marked: &Marked<'_>,
 ) -> u16 {
-    crate::ui::write_marked(cells, area, area.x + column, y, contents, style, marked)
+    crate::write_marked(cells, area, area.x + column, y, contents, style, marked)
         .saturating_sub(area.x)
 }

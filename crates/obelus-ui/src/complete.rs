@@ -22,10 +22,7 @@ use ratatui::{
     style::{Modifier, Style},
 };
 
-use crate::{
-    app::App,
-    ui::{Marked, Matched, editor, fill, put, write_marked},
-};
+use crate::{Marked, Matched, Screen, editor, fill, put, write_marked};
 
 /// The narrowest a panel gets, whatever its rows want.
 ///
@@ -56,7 +53,7 @@ pub struct Panel {
 /// panel remembers: where the cursor is on screen changes with every
 /// keystroke, and a remembered rectangle would be a frame behind.
 #[must_use]
-pub fn layout(app: &App, editor: Rect) -> Option<Panel> {
+pub fn layout(app: &impl Screen, editor: Rect) -> Option<Panel> {
     let completion = app.completion()?;
     let buffer = app.current_buffer()?;
     if editor.width == 0 || editor.height == 0 {
@@ -79,7 +76,7 @@ pub fn layout(app: &App, editor: Rect) -> Option<Panel> {
     let wanted = u16::try_from(
         completion
             .width()
-            .saturating_add(usize::from(crate::ui::PANEL_INSET * 2)),
+            .saturating_add(usize::from(crate::PANEL_INSET * 2)),
     )
     .unwrap_or(u16::MAX);
     let width = wanted.clamp(LEAST_WIDTH.min(editor.width), editor.width);
@@ -144,7 +141,7 @@ pub fn layout(app: &App, editor: Rect) -> Option<Panel> {
 }
 
 /// Draws the panel.
-pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &App) {
+pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &impl Screen) {
     let Some(completion) = app.completion() else {
         return;
     };
@@ -153,8 +150,8 @@ pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &App) {
     if area.width < 2 || area.height < 3 {
         return;
     }
-    crate::ui::panel(cells, area, theme);
-    let room = crate::ui::inside(area);
+    crate::panel(cells, area, theme);
+    let room = crate::inside(area);
 
     // The two halves, in the order they are drawn on screen. The list is
     // always the half against the cursor.
@@ -193,7 +190,7 @@ pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &App) {
     if let Some(area) = documentation {
         // The reading draws its own bar in the column it keeps for one,
         // which is the column the rows were laid out without.
-        crate::ui::reading::draw(
+        crate::reading::draw(
             cells,
             area,
             completion.documentation_rows(),
@@ -247,7 +244,7 @@ fn rows(cells: &mut CellBuffer, area: Rect, completion: &Completion, theme: &The
         {
             let mut glyph = String::new();
             glyph.push(icon);
-            crate::ui::write(cells, x, y, &glyph, Style::new().fg(colour).bg(background));
+            crate::write(cells, x, y, &glyph, Style::new().fg(colour).bg(background));
             // A blank column after it, always: a Nerd Font's glyphs are
             // drawn two cells wide in a terminal that allocated one.
             x = x.saturating_add(u16::try_from(ICON_COLUMNS).unwrap_or(2));
@@ -257,7 +254,7 @@ fn rows(cells: &mut CellBuffer, area: Rect, completion: &Completion, theme: &The
             Matched::Indices(completion.indices_at(row)),
             theme.picker_match_background,
         );
-        let label = crate::ui::truncate_from_right(
+        let label = crate::truncate_from_right(
             &candidate.label,
             usize::from(room.right().saturating_sub(x)),
         );
@@ -284,8 +281,8 @@ fn rows(cells: &mut CellBuffer, area: Rect, completion: &Completion, theme: &The
         if room_left == 0 {
             continue;
         }
-        let detail = crate::ui::truncate_from_right(detail, room_left);
-        crate::ui::write(
+        let detail = crate::truncate_from_right(detail, room_left);
+        crate::write(
             cells,
             x,
             y,
@@ -297,6 +294,6 @@ fn rows(cells: &mut CellBuffer, area: Rect, completion: &Completion, theme: &The
         );
     }
     if scrolling {
-        crate::ui::scrollbar(cells, area, completion.top(), completion.count(), theme);
+        crate::scrollbar(cells, area, completion.top(), completion.count(), theme);
     }
 }

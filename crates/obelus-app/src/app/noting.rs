@@ -4,7 +4,7 @@
 //! to, when they are read and written, and what a key that reaches one of
 //! them does. The notes themselves, and the file, are that module's; how
 //! they are walked and drawn are [`obelus_component::todo`] and
-//! [`crate::ui::todo`].
+//! [`obelus_ui::todo`].
 //!
 //! Read when the view opens rather than held: obelus is not the only thing
 //! that can write the file -- the reader has an editor, and a second obelus
@@ -383,7 +383,7 @@ impl App {
 
     /// How wide a note's own text is, and whether it wraps there.
     pub(super) fn notes_laid_out(&self) -> (u16, bool) {
-        let room = crate::ui::todo::text_width_in(self.editor_area);
+        let room = obelus_ui::todo::text_width_in(self.editor_area);
         (room, self.config().wrap)
     }
 
@@ -398,8 +398,8 @@ impl App {
             return false;
         };
         notes.lay_out(laid.0, laid.1);
-        let hints = crate::ui::todo::hints(notes);
-        let list = crate::ui::todo::list_region(area, &hints);
+        let hints = obelus_ui::todo::hints(notes);
+        let list = obelus_ui::todo::list_region(area, &hints);
         let outcome = notes.handle_key(key, list.height);
         // Typing, which is the one change that is not one act: every other
         // way the notes change is written the moment it happens, and this

@@ -6,7 +6,7 @@
 
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect};
 
-use crate::{app::App, ui::editor};
+use crate::{Screen, editor};
 
 /// Where the box goes, if there is one to draw.
 ///
@@ -14,7 +14,7 @@ use crate::{app::App, ui::editor};
 /// the cursor is the code being read next and what is above it has already
 /// been read.
 #[must_use]
-pub fn layout(app: &App, editor: Rect) -> Option<Rect> {
+pub fn layout(app: &impl Screen, editor: Rect) -> Option<Rect> {
     let hover = app.hover()?;
     let buffer = app.current_buffer()?;
     if editor.width < 8 || editor.height < 4 {
@@ -89,12 +89,12 @@ pub(crate) fn width(editor: Rect) -> u16 {
 #[must_use]
 pub fn room(editor: Rect) -> u16 {
     width(editor)
-        .saturating_sub(crate::ui::PANEL_INSET * 2)
+        .saturating_sub(crate::PANEL_INSET * 2)
         .saturating_sub(editor::SCROLLBAR_WIDTH)
 }
 
 /// Draws it.
-pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
+pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     let Some(hover) = app.hover() else {
         return;
     };
@@ -102,10 +102,10 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     if area.width < 3 || area.height < 3 {
         return;
     }
-    crate::ui::panel(cells, area, theme);
-    crate::ui::reading::draw(
+    crate::panel(cells, area, theme);
+    crate::reading::draw(
         cells,
-        crate::ui::inside(area),
+        crate::inside(area),
         hover.rows(),
         hover.scrolled(),
         theme,

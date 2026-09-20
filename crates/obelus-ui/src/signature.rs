@@ -12,14 +12,11 @@ use ratatui::{
     style::{Modifier, Style},
 };
 
-use crate::{
-    app::App,
-    ui::{editor, truncate_from_right, write},
-};
+use crate::{Screen, editor, truncate_from_right, write};
 
 /// Where the line goes, if there is one to draw.
 #[must_use]
-pub fn layout(app: &App, editor: Rect) -> Option<Rect> {
+pub fn layout(app: &impl Screen, editor: Rect) -> Option<Rect> {
     let signature = app.signature()?;
     let buffer = app.current_buffer()?;
     if editor.width < 4 || editor.height < 2 {
@@ -45,7 +42,7 @@ pub fn layout(app: &App, editor: Rect) -> Option<Rect> {
         return None;
     }
     let width = u16::try_from(
-        obelus_text::text_width(&signature.label) + usize::from(crate::ui::PANEL_INSET * 2),
+        obelus_text::text_width(&signature.label) + usize::from(crate::PANEL_INSET * 2),
     )
     .unwrap_or(u16::MAX)
     .min(editor.width);
@@ -59,14 +56,14 @@ pub fn layout(app: &App, editor: Rect) -> Option<Rect> {
 }
 
 /// Draws it.
-pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
+pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     let Some(signature) = app.signature() else {
         return;
     };
     let theme = app.theme();
-    crate::ui::panel(cells, area, theme);
+    crate::panel(cells, area, theme);
 
-    let inside = crate::ui::inside(area);
+    let inside = crate::inside(area);
     let room = usize::from(inside.width);
     let label = truncate_from_right(&signature.label, room);
     let x = inside.x;
