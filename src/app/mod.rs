@@ -1026,6 +1026,34 @@ impl App {
             .map_or(&[], Vec::as_slice)
     }
 
+    /// The ones that are a problem in their own right, which is everything
+    /// the server said except the notes it hung on the others.
+    ///
+    /// A compiler answers with one diagnostic and several sub-diagnostics:
+    /// rustc's `this function takes 2 arguments but 1 was supplied` comes
+    /// with `function defined here`, its `cannot find function step_99`
+    /// with `a function with a similar name exists`. rust-analyzer sends
+    /// each of those as a diagnostic of its own, at the place it points
+    /// at and one severity down -- so `function defined here` arrives as a
+    /// hint eighty lines away from the error it belongs to.
+    ///
+    /// Read alone they say nothing: "function defined here" is not a
+    /// question anybody asked, and the error it is an answer to is in the
+    /// list anyway. So they are left out of the two places a reader works
+    /// through what is wrong -- the list and the keys that walk it -- and
+    /// left in everywhere the reader is asking about a particular place:
+    /// the underline under the word, the complaint under the caret's line,
+    /// the count on the status row. A mark the reader can see and cannot
+    /// ask about would be worse than a row they can skip.
+    ///
+    /// The cost, and it is a real one: a server that uses hints for
+    /// something that does stand alone loses it from the list.
+    pub fn problems(&self) -> impl Iterator<Item = &crate::lsp::trouble::Trouble> {
+        self.troubles()
+            .iter()
+            .filter(|trouble| trouble.severity != crate::lsp::trouble::Severity::Hint)
+    }
+
     /// What the call the cursor is inside takes, while it is showing.
     ///
     /// Not while the completion panel is up: the two would be drawn in the

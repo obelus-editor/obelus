@@ -1791,7 +1791,7 @@ impl App {
     /// how many are there.
     #[must_use]
     pub fn trouble_from(&self, line: LineNumber, forward: bool) -> Option<LineNumber> {
-        let at = self.troubles().iter().map(|trouble| trouble.span.line);
+        let at = self.problems().map(|trouble| trouble.span.line);
         if forward {
             at.filter(|at| *at > line).min()
         } else {
@@ -1836,7 +1836,7 @@ impl App {
 
     /// Lists what the server says is wrong with this file.
     pub fn open_troubles(&mut self) {
-        let troubles = self.troubles().to_vec();
+        let troubles: Vec<crate::lsp::trouble::Trouble> = self.problems().cloned().collect();
         if troubles.is_empty() {
             self.note = Some(match self.server_state() {
                 Some((_, lsp::ServerState::Ready)) => "Nothing wrong with this file".to_string(),

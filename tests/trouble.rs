@@ -942,13 +942,14 @@ fn two_problems_on_one_line_are_two_complaints() {
             "message": message
         })
     };
-    // The mistake and a note about it, at two places on the one line, and
-    // the note is the milder of the two: told only the line, the complaint
-    // would show the mistake for both rows.
+    // Two of them at two places on the one line, the second milder than
+    // the first: told only the line, the complaint would show the first
+    // for both rows. A remark rather than a hint, because a hint is a note
+    // hung on another diagnostic and the list leaves those out.
     app.publish_for_test(json!({
         "uri": format!("file://{}", path.display()),
         "diagnostics": [one(4, 1, "cannot find value here"),
-                        one(8, 4, "defined over here")]
+                        one(8, 3, "defined over here")]
     }));
 
     // The words of the complaint, which are the ones not on a row of the
@@ -979,5 +980,83 @@ fn two_problems_on_one_line_are_two_complaints() {
     assert_ne!(
         first, second,
         "two rows saying different things showed the same complaint:\n{dump}"
+    );
+}
+
+/// The notes a compiler hangs on its diagnostics are not rows of their own.
+///
+/// rustc answers with one diagnostic and several sub-diagnostics: `this
+/// function takes 2 arguments but 1 was supplied` comes with `function
+/// defined here`, `cannot find function step_99` with `a function with a
+/// similar name exists`. rust-analyzer sends each of those as a diagnostic
+/// of its own, at the place it points at and one severity down -- so
+/// `function defined here` arrives as a hint eighty lines from the error
+/// it belongs to, and a file with seven errors lists sixteen rows.
+///
+/// Read alone they say nothing, and the error each is an answer to is in
+/// the list anyway. So they are left out of the two places a reader works
+/// through what is wrong -- this list, and the keys that walk it -- and
+/// left in everywhere the reader is asking about a particular place.
+///
+/// Broken deliberately by listing or walking `troubles` rather than
+/// `problems`.
+#[test]
+fn the_notes_hung_on_a_diagnostic_are_not_problems_of_their_own() {
+    let mut file = String::new();
+    for line in 0..40 {
+        file.push_str(&format!("    let _ = {line};\n"));
+    }
+    let (_scratch, mut app, path) = editing("trouble-hints", &file);
+    let one = |line: u32, severity: u8, message: &str| {
+        json!({
+            "range": { "start": { "line": line, "character": 4 },
+                       "end": { "line": line, "character": 8 } },
+            "severity": severity,
+            "source": "rustc",
+            "message": message
+        })
+    };
+    // A note pointing back at an error further down, the error itself, a
+    // second note, and a warning: the shape rustc's children arrive in.
+    app.publish_for_test(json!({
+        "uri": format!("file://{}", path.display()),
+        "diagnostics": [one(5, 4, "function defined here"),
+                        one(10, 1, "cannot find it"),
+                        one(12, 4, "a function with a similar name exists"),
+                        one(20, 2, "unused")]
+    }));
+
+    support::press_alt(&mut app, 'e');
+    let dump = support::render(&mut app, 60, 20);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains("rustc"))
+        .collect();
+    assert_eq!(rows.len(), 2, "the notes were listed as problems:\n{dump}");
+    assert!(
+        rows.iter().any(|row| row.contains("cannot find it"))
+            && rows.iter().any(|row| row.contains("unused")),
+        "the list lost a problem along with the notes:\n{dump}"
+    );
+    support::press(&mut app, crossterm::event::KeyCode::Esc);
+
+    // And the keys walk the same set. From the top, the first stop is the
+    // error rather than the note five lines in.
+    support::press_alt(&mut app, ']');
+    assert_eq!(
+        app.current_buffer()
+            .map(|buffer| buffer.cursor().line.get()),
+        Some(10),
+        "walking stopped at a note"
+    );
+
+    // What is wrong with the line the reader is on is still answered in
+    // full: a note is underlined where it is, and a mark a reader can see
+    // and cannot ask about would be worse than a row they can skip.
+    let dump = support::render(&mut app, 60, 20);
+    assert_eq!(
+        app.troubles().len(),
+        4,
+        "the notes were dropped rather than left out of the list:\n{dump}"
     );
 }
