@@ -201,13 +201,33 @@ pub fn text_offset(lines: usize, changes: bool, folds: bool) -> u16 {
 /// news about where you are is on the right.
 pub const CHANGE_MAP_WIDTH: u16 = 1;
 
-/// The mark a row of the map carries.
+/// The mark a row of the map carries: a change on the half nearest the
+/// text, a problem on the half away from it.
 ///
-/// The margin's own mark is against the *right* of its cell, where it sits
-/// beside the text it is about. This one is against the left, so that it
-/// does not touch the bar it is next to: two thin strokes with a gap read
-/// as two things, and `map + bar` with no gap reads as one thick bar.
+/// Both columns are split the same way, mirrored about the text between
+/// them: in the margin the change hugs the text's edge of its cell and the
+/// problem the screen's, and out here the change hugs the text's edge again
+/// and the problem the scrollbar's. So a reader learns one rule -- the
+/// change is the half nearer what it is about -- and reads both columns
+/// with it.
+///
+/// This used to be a stroke on the left with the right half kept empty, so
+/// that the map did not touch the bar: two thin strokes with a gap read as
+/// two things, and `map + bar` with no gap reads as one thick bar. The gap
+/// is spent now, and knowingly -- the bar beside it is a *full* block, so
+/// this is the side that touches hardest. A cell has one foreground and one
+/// background and nothing else, so two facts in one column is the gap or it
+/// is nothing, and a reader who wants to know where else to look wants both
+/// answers in the one picture.
 const MAP_MARK: char = '\u{258c}';
+
+/// The other half of the same cell, for a row that has only a problem.
+///
+/// Drawn as its own glyph rather than as the background under [`MAP_MARK`]
+/// painted in the page's colour: the two say the same thing to a terminal
+/// and not to a reader of this file, and one of them says which half is
+/// meant.
+const MAP_WRONG_MARK: char = '\u{2590}';
 
 /// The column the scrollbar takes, on the right.
 ///
@@ -297,9 +317,6 @@ impl EditorView<'_> {
     /// the same mapping the bar uses, so a mark is level with the part of
     /// the bar that would bring it into view.
     fn change_map(&self, cells: &mut CellBuffer, area: Rect, buffer: &Buffer) {
-        let Some(changes) = self.changes else {
-            return;
-        };
         // The same picture at the same scale as the bar beside it, so the
         // same count: what is folded away is not part of the document this
         // is a picture of, and a change inside a closed run sits at the row
@@ -307,28 +324,77 @@ impl EditorView<'_> {
         let folds = buffer.folds();
         let shown = |line: LineNumber| line.get() - folds.hidden_before(line);
         let total = buffer.text().line_count() - folds.hidden_total();
-        for hunk in changes.hunks() {
-            let marker = hunk.marker();
-            let first = crate::ui::bar_row(shown(hunk.line), total, area.height);
-            // At least the row it starts on, so a change of one line is not
-            // lost to the arithmetic, and every row a long one covers, so
-            // that a rewrite does not read like a one-line fix.
-            let last = crate::ui::bar_row(
-                shown(hunk.line.saturating_add(hunk.lines.max(1) - 1)),
-                total,
-                area.height,
-            )
-            .max(first);
-            for row in first..=last {
-                put(
-                    cells,
-                    area.x,
-                    area.y + row,
-                    MAP_MARK,
-                    Style::new().fg(self.theme.marker_colour(marker)),
+        let row_of = |line: LineNumber| crate::ui::bar_row(shown(line), total, area.height);
+
+        // Gathered before anything is drawn, because a cell holds one of
+        // each and a row holds many lines: on a file taller than the screen
+        // two hunks and three problems land on the same row, and which of
+        // them the reader sees cannot be whichever was looked at last.
+        let mut rows: Vec<(Option<Marker>, Option<crate::lsp::trouble::Severity>)> =
+            vec![(None, None); usize::from(area.height)];
+        if let Some(changes) = self.changes {
+            for hunk in changes.hunks() {
+                let first = row_of(hunk.line);
+                // At least the row it starts on, so a change of one line is
+                // not lost to the arithmetic, and every row a long one
+                // covers, so that a rewrite does not read like a one-line
+                // fix.
+                let last = row_of(hunk.line.saturating_add(hunk.lines.max(1) - 1)).max(first);
+                for row in first..=last {
+                    if let Some(cell) = rows.get_mut(usize::from(row)) {
+                        cell.0 = Some(hunk.marker());
+                    }
+                }
+            }
+        }
+        // The worst of them where several share a row, which is the same
+        // rule the underline and the complaint follow.
+        for trouble in self.troubles {
+            if let Some(cell) = rows.get_mut(usize::from(row_of(trouble.span.line))) {
+                cell.1 = Some(
+                    cell.1
+                        .map_or(trouble.severity, |worst| worst.min(trouble.severity)),
                 );
             }
         }
+
+        for (row, (marker, severity)) in rows.iter().enumerate() {
+            let Ok(row) = u16::try_from(row) else {
+                break;
+            };
+            let wrong = severity.map(|severity| self.theme.colour_for(Some(severity.kind())));
+            let style = match (marker, wrong) {
+                (Some(marker), wrong) => {
+                    let style = Style::new().fg(self.theme.marker_colour(*marker));
+                    match wrong {
+                        Some(wrong) => style.bg(wrong),
+                        None => style,
+                    }
+                }
+                (None, Some(wrong)) => Style::new().fg(wrong),
+                (None, None) => continue,
+            };
+            let glyph = if marker.is_some() {
+                MAP_MARK
+            } else {
+                MAP_WRONG_MARK
+            };
+            put(cells, area.x, area.y + row, glyph, style);
+        }
+    }
+
+    /// The colour of the worst thing the server says about a line.
+    ///
+    /// The worst where there are several, which is the rule the underline
+    /// and the complaint under the caret both follow: one line, one
+    /// colour, whichever of the three the reader's eye lands on first.
+    fn trouble_at(&self, line: LineNumber) -> Option<Color> {
+        self.troubles
+            .iter()
+            .filter(|trouble| trouble.span.line == line)
+            .map(|trouble| trouble.severity)
+            .min()
+            .map(|severity| self.theme.colour_for(Some(severity.kind())))
     }
 
     /// What to write after a line: who changed it and how long ago.
@@ -650,7 +716,7 @@ impl Widget for EditorView<'_> {
                         draw_marker(
                             area.x,
                             y,
-                            Marker::Modified,
+                            Some(Marker::Modified),
                             match block.kind {
                                 crate::buffer::Held::Removed => self.theme.change_removed,
                                 crate::buffer::Held::Message => self.theme.gutter,
@@ -664,6 +730,10 @@ impl Widget for EditorView<'_> {
                                     })
                                 }
                             },
+                            // A row the file does not have, so there is no
+                            // line for a server to have said anything
+                            // about.
+                            None,
                             cells,
                         );
                         // No line number: these lines have no number in
@@ -777,11 +847,16 @@ impl Widget for EditorView<'_> {
                 // The margin marks the line, whether or not this is the
                 // row its number is on: a wrapped line is one line, and a
                 // change to it is a change to all of it.
-                if margin > 0
-                    && let Some(changes) = self.changes
-                    && let Some(marker) = changes.marker_at(line)
-                {
-                    draw_marker(area.x, y, marker, self.theme.marker_colour(marker), cells);
+                if margin > 0 {
+                    let marker = self.changes.and_then(|changes| changes.marker_at(line));
+                    draw_marker(
+                        area.x,
+                        y,
+                        marker,
+                        marker.map_or(self.theme.gutter, |marker| self.theme.marker_colour(marker)),
+                        self.trouble_at(line),
+                        cells,
+                    );
                 }
 
                 // Beside the number, and on the numbered row only: a
@@ -1040,7 +1115,8 @@ struct Placement {
     left: usize,
 }
 
-/// One cell of margin or map, saying what happened to a line.
+/// One cell of margin, saying what happened to a line and what is wrong
+/// with it.
 ///
 /// A bar for a line that is there and differs; a mark hugging the top edge
 /// for lines that are *not* there. The second is the whole difficulty of
@@ -1048,7 +1124,32 @@ struct Placement {
 /// their own, so what is left is the boundary they were on, and the top
 /// edge of the cell below it is that boundary. A full bar there would claim
 /// the line changed, and it did not.
-fn draw_marker(x: u16, y: u16, marker: Marker, colour: Color, cells: &mut CellBuffer) {
+///
+/// The problem goes behind it, on the half against the screen's edge, which
+/// is the half the change does not use -- the mirror of [`MAP_MARK`] out
+/// past the text, and the same rule read from the other side: the change is
+/// the half nearer the line it is about. A removed mark is the one case
+/// where the two are not halves: it is a tick on the top edge, so a problem
+/// behind it fills nearly the cell. Loud, and left loud on purpose -- both
+/// facts are still there, and the alternative was picking one of them
+/// without saying so.
+fn draw_marker(
+    x: u16,
+    y: u16,
+    marker: Option<Marker>,
+    colour: Color,
+    wrong: Option<Color>,
+    cells: &mut CellBuffer,
+) {
+    let Some(marker) = marker else {
+        // Nothing changed here, so the problem has the cell -- and takes
+        // the same half of it as it would beside a change, rather than
+        // moving because it happens to be alone.
+        if let Some(wrong) = wrong {
+            put(cells, x, y, MAP_MARK, Style::new().fg(wrong));
+        }
+        return;
+    };
     let glyph = match marker {
         // A line that is there and differs: a bar down its whole height,
         // half a cell wide and against the *right* edge of its cell in both
@@ -1056,12 +1157,17 @@ fn draw_marker(x: u16, y: u16, marker: Marker, colour: Color, cells: &mut CellBu
         // about; right of the scrollbar it sits at the edge of the screen.
         // Against the other edge each one floats a cell away from the thing
         // it belongs to.
-        Marker::Added | Marker::Modified => '\u{2590}',
+        Marker::Added | Marker::Modified => MAP_WRONG_MARK,
         // Lines that are not there: a mark on the boundary they were on,
         // which is the top edge of this cell.
         Marker::Removed => '\u{2594}',
     };
-    put(cells, x, y, glyph, Style::new().fg(colour));
+    let style = Style::new().fg(colour);
+    let style = match wrong {
+        Some(wrong) => style.bg(wrong),
+        None => style,
+    };
+    put(cells, x, y, glyph, style);
 }
 
 /// Everything about how a row looks, as against where it goes.

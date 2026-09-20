@@ -4758,3 +4758,109 @@ fn a_path_that_went_away_after_the_list_was_built_says_so() {
         "opening a directory said something else"
     );
 }
+
+/// The margin and the map each say two things in one cell.
+///
+/// A column is one cell wide and a cell has one foreground and one
+/// background, so two facts in one column is a split cell or it is nothing.
+/// Split the same way in both, mirrored about the text between them: the
+/// change takes the half nearer the line it is about -- the right of the
+/// margin, the left of the map -- and the problem takes the half against
+/// the edge of the screen.
+///
+/// What this cost is the gap that used to keep the map off the scrollbar,
+/// which is a full block. Spent knowingly: the alternative was a reader
+/// having to choose, when opening a file, between seeing where they had
+/// changed something and seeing where something was wrong.
+///
+/// Broken deliberately by dropping the background from either column, or by
+/// letting the lone-problem mark keep the change's half: the two colours
+/// collapse into one and the halves stop lining up across the text.
+#[test]
+fn the_margin_and_the_map_carry_a_change_and_a_problem_at_once() {
+    use obelus::{app::App, buffer::Buffer};
+
+    let committed = "fn main() {\n    let a = 1;\n    nmae;\n}\n";
+    let repository = Repository::new("both", committed);
+    // Line 1 changed; line 2 did not. Both are wrong, so between them they
+    // are every case the cell has to draw.
+    repository.write("fn main() {\n    let b = 1;\n    nmae;\n}\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 30, 12);
+    let wrong = |line: u32| {
+        serde_json::json!({
+            "range": { "start": { "line": line, "character": 4 },
+                       "end": { "line": line, "character": 8 } },
+            "severity": 1,
+            "source": "rustc",
+            "message": "cannot find value `nmae` in this scope"
+        })
+    };
+    app.publish_for_test(serde_json::json!({
+        "uri": format!("file://{}", repository.path().display()),
+        "diagnostics": [wrong(1), wrong(2)]
+    }));
+
+    let cells = support::cells_of(&mut app, 30, 12);
+    let dump = support::render(&mut app, 30, 12);
+    let at = |x: u16, y: u16| cells.cell((x, y)).expect("a cell").clone();
+
+    // The margin is the first column, and the file is short enough that a
+    // line of it is the row of the same number.
+    let changed_and_wrong = at(0, 1);
+    let only_wrong = at(0, 2);
+    assert_eq!(
+        changed_and_wrong.symbol(),
+        "\u{2590}",
+        "the changed line's margin is not the change's own half:\n{dump}"
+    );
+    assert_eq!(
+        only_wrong.symbol(),
+        "\u{258c}",
+        "a problem on its own did not take the half away from the text:\n{dump}"
+    );
+    assert_eq!(
+        changed_and_wrong.bg, only_wrong.fg,
+        "the problem is a different colour depending on whether the line also changed:\n{dump}"
+    );
+    assert_ne!(
+        changed_and_wrong.fg, changed_and_wrong.bg,
+        "the change and the problem are the same colour, so the cell says one thing:\n{dump}"
+    );
+    assert_ne!(
+        at(0, 0).bg,
+        changed_and_wrong.bg,
+        "a line with nothing wrong with it is painted anyway:\n{dump}"
+    );
+
+    // And the map, on the other side of the text, split the other way
+    // round. Its rows are lines of the file rather than rows of the screen,
+    // so they are found rather than counted.
+    let map: Vec<(String, ratatui::style::Color, ratatui::style::Color)> = (0..10)
+        .map(|y| {
+            let cell = at(28, y);
+            (cell.symbol().to_string(), cell.fg, cell.bg)
+        })
+        .collect();
+    let both = map
+        .iter()
+        .find(|(symbol, _, bg)| symbol == "\u{258c}" && *bg == changed_and_wrong.bg)
+        .unwrap_or_else(|| panic!("no row of the map carries both:\n{dump}"));
+    let lone = map
+        .iter()
+        .find(|(symbol, _, _)| symbol == "\u{2590}")
+        .unwrap_or_else(|| panic!("no row of the map carries a problem on its own:\n{dump}"));
+    assert_eq!(
+        both.2, lone.1,
+        "the map's problem is a different colour depending on whether the line changed:\n{dump}"
+    );
+    assert_eq!(
+        both.2, changed_and_wrong.bg,
+        "the margin and the map disagree about what colour a problem is:\n{dump}"
+    );
+    assert_ne!(
+        both.1, both.2,
+        "the map's two halves are one colour, so the cell says one thing:\n{dump}"
+    );
+}
