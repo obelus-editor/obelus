@@ -827,9 +827,15 @@ pub struct Reference {
 /// Branches first, then remote branches, then tags, and newest first within
 /// each -- a reader has a handful of branches and may have a thousand tags,
 /// and the handful is what they came for. No walk: each name is one commit
-/// to decode, and no tree is looked at.
+/// to decode.
+///
+/// `only` drops the names whose commit has no such file. Choosing one of
+/// these opens the file as that name has it, so a name that has not got it
+/// is a row nobody can open -- and on a tree that has just been
+/// reorganised that is most of them. `None` asks for every name, which is
+/// the question a list about no file is asking.
 #[must_use]
-pub fn refs_of(within: &Path) -> Vec<Reference> {
+pub fn refs_of(within: &Path, only: Option<&Path>) -> Vec<Reference> {
     let Some(repository) = super::repository(within) else {
         return Vec::new();
     };
@@ -843,6 +849,15 @@ pub fn refs_of(within: &Path) -> Vec<Reference> {
     };
     let Ok(all) = platform.all() else {
         return Vec::new();
+    };
+    // Placed once, outside the loop: it is the same answer for every name,
+    // and it is the half of the question that touches the working tree.
+    let relative = match only {
+        Some(path) => match within_repository(&repository, path) {
+            Some(relative) => Some(relative),
+            None => return Vec::new(),
+        },
+        None => None,
     };
 
     let mut found = Vec::new();
@@ -858,6 +873,11 @@ pub fn refs_of(within: &Path) -> Vec<Reference> {
         // commit by path would discover and open the repository once per
         // name, which on a project with a thousand tags is the whole cost
         // of the list.
+        if let Some(relative) = relative.as_deref()
+            && entry_of(&repository, id.detach(), relative).is_none()
+        {
+            continue;
+        }
         let Some(at) = commit_in(&repository, id.detach()) else {
             continue;
         };

@@ -263,7 +263,8 @@ impl App {
                 // started cannot arrive into this list.
                 self.next_history_walk();
                 self.history.reading = None;
-                self.history.refs = obelus_git::history::refs_of(&self.working_directory);
+                self.history.refs =
+                    obelus_git::history::refs_of(&self.working_directory, only.as_deref());
             }
             About::File | About::Project => {
                 self.history.reading = Some(0);

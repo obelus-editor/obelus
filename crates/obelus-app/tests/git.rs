@@ -2405,6 +2405,48 @@ fn a_files_history_goes_on_under_the_name_it_had_before() {
     }
 }
 
+/// The names a file can be opened at are the names that have it.
+///
+/// Choosing one of these rows opens the file as that name has it, so a
+/// name whose commit has not got the file is a row nobody can open -- and
+/// on a tree that has just been reorganised that is most of them.
+#[test]
+fn a_name_without_the_file_is_not_offered_as_a_place_to_read_it() {
+    use obelus_git::history;
+
+    let repository = Repository::new("history-refs", "one\n");
+    repository.run(&["branch", "before"]);
+    std::fs::write(repository.directory().join("later.rs"), "later\n").expect("a second file");
+    repository.commit_all("a file the branch never had");
+    repository.run(&["tag", "after"]);
+
+    let root = repository.directory();
+    let names = |only: Option<&std::path::Path>| -> Vec<String> {
+        let mut found: Vec<String> = history::refs_of(&root, only)
+            .into_iter()
+            .map(|reference| reference.name)
+            .collect();
+        found.sort();
+        found
+    };
+
+    assert_eq!(
+        names(None),
+        ["after", "before", "master"],
+        "not every name in the repository"
+    );
+    assert_eq!(
+        names(Some(&root.join("later.rs"))),
+        ["after", "master"],
+        "a branch from before the file was written is offered as somewhere to read it"
+    );
+    assert_eq!(
+        names(Some(&root.join("file.rs"))),
+        ["after", "before", "master"],
+        "a file every name has is not offered at all of them"
+    );
+}
+
 /// A file as a commit had it, which is what choosing a row opens.
 #[test]
 fn a_file_can_be_read_as_a_commit_had_it() {
