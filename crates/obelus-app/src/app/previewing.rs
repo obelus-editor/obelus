@@ -506,7 +506,12 @@ impl App {
             // commit had it, message and all; in the project's it opens the
             // commit's files under it, and until one of them is picked there
             // is no file to show -- so what the commit said is all there is.
-            PickerValue::Commit(id) => Some(match self.commit_opens() {
+            //
+            // Under the name that commit had it under, which is the name
+            // the row opens: a walk goes on under the name a file had
+            // before it was moved, and asking for the name it has now
+            // would find nothing for every row older than the move.
+            PickerValue::Commit(id) => Some(match self.commit_opens_at(*id) {
                 Some(path) => {
                     let path = self.working_directory.join(path);
                     let at = self.read_at(&path, Some(*id));

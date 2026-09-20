@@ -5093,3 +5093,111 @@ fn the_margin_and_the_map_are_reserved_by_there_being_a_change() {
         "the margin arrived without costing the text a column, or cost it two:\n{dump}"
     );
 }
+
+/// Choosing a row of a file's own history opens that commit's version.
+///
+/// Not the file as it is now, which is what a row would open if the name it
+/// was walked under were thrown away -- and every row older than a move is
+/// under a name the working tree has not got.
+#[test]
+fn a_row_of_a_files_history_opens_that_commits_version() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::{App, dispatch};
+    use obelus_buffer::Buffer;
+    use obelus_command::Command;
+
+    let lines: String = (0..40).map(|n| format!("line {n}\n")).collect();
+    let repository = Repository::new("history-opening", &lines);
+    repository.write(&format!("{lines}an edit\n"));
+    repository.commit("editing it where it was");
+    std::fs::create_dir_all(repository.directory().join("deep")).expect("a directory");
+    repository.run(&["mv", "file.rs", "deep/moved.rs"]);
+    std::fs::write(
+        repository.directory().join("deep/moved.rs"),
+        format!("{lines}an edit\nand another\n"),
+    )
+    .expect("the file where it landed");
+    repository.run(&["add", "-A"]);
+    repository.run(&["commit", "--quiet", "-m", "moving it"]);
+
+    let moved = repository.directory().join("deep/moved.rs");
+    let mut app = App::new(vec![Buffer::open(&moved).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 76, 24);
+    dispatch::dispatch(&mut app, Command::HistoryFile);
+    support::read_history(&mut app, &events);
+
+    // Down once: onto the commit before the move, which is under a name
+    // the working tree has not got.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+
+    let buffer = app.current_buffer().expect("a buffer");
+    let read = buffer.text().rope().to_string();
+    assert_eq!(
+        read.lines().count(),
+        41,
+        "opened something else: {} lines",
+        read.lines().count()
+    );
+    assert!(
+        !read.contains("and another"),
+        "the row opened the file as it is now, not as that commit had it"
+    );
+}
+
+/// The preview shows the row's own version, not the file as it is now.
+///
+/// It asked for the name the file has, and every row older than a move is
+/// under the name it had: there was nothing to show, so the pane kept
+/// whatever was in it -- which is the newest version, and reads as a
+/// history where every commit says the same thing.
+#[test]
+fn the_preview_of_a_history_row_is_that_commits_version() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::{App, dispatch};
+    use obelus_buffer::Buffer;
+    use obelus_command::Command;
+
+    let lines: String = (0..40).map(|n| format!("line {n}\n")).collect();
+    let repository = Repository::new("history-previewing", &lines);
+    repository.write(&format!("{lines}an edit\n"));
+    repository.commit("editing it where it was");
+    std::fs::create_dir_all(repository.directory().join("deep")).expect("a directory");
+    repository.run(&["mv", "file.rs", "deep/moved.rs"]);
+    std::fs::write(
+        repository.directory().join("deep/moved.rs"),
+        format!("{lines}an edit\nand another\n"),
+    )
+    .expect("the file where it landed");
+    repository.run(&["add", "-A"]);
+    repository.run(&["commit", "--quiet", "-m", "moving it"]);
+
+    let moved = repository.directory().join("deep/moved.rs");
+    let mut app = App::new(vec![Buffer::open(&moved).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 76, 24);
+    dispatch::dispatch(&mut app, Command::HistoryFile);
+    support::read_history(&mut app, &events);
+
+    let shown = |app: &mut App| -> usize {
+        support::lay_out(app, 76, 24);
+        app.preview()
+            .map(|preview| preview.buffer.text().rope().to_string().lines().count())
+            .expect("a preview")
+    };
+
+    // Newest first: the move, then the edit before it, then the first
+    // commit -- forty-two lines, forty-one, forty.
+    assert_eq!(shown(&mut app), 42, "the newest row");
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(
+        shown(&mut app),
+        41,
+        "the row before the move previews the file as it is now"
+    );
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(shown(&mut app), 40, "the oldest row");
+}
