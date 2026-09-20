@@ -18,9 +18,9 @@ foreground = "{{ foreground }}"
 gutter = "{{ dark_foreground }}"
 gutter_current = "{{ light_foreground }}"
 
-# Surfaces: a scrollbar's track, a switch's track, a card, a chosen row.
+# Surfaces: a scrollbar's track, a key's cap and the card behind it, a
+# chosen row.
 scrollbar_track = "{{ lighter_background }}"
-control_background = "{{ lighter_background }}"
 raised_background = "{{ lighter_background }}"
 selected_row_background = "{{ selection }}"
 selection_background = "{{ selection }}"

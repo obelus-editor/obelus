@@ -1,7 +1,7 @@
 //! A theme read from a file.
 //!
 //! Every colour is optional and whatever is not given comes from a theme
-//! that is compiled in. A file that had to name all thirty-nine would be a
+//! that is compiled in. A file that had to name all thirty-seven would be a
 //! format nobody writes by hand and a template nobody can generate: the
 //! thing generating one -- a desktop that themes every program it has --
 //! knows a dozen colours by a semantic name and nothing at all about which
@@ -64,8 +64,8 @@ pub fn read(path: &Path) -> Result<Theme> {
 #[must_use]
 pub fn over(table: &toml::Table) -> Theme {
     // Named `base` rather than `mode`, because it names a theme rather than
-    // a kind of one: what a file inherits is thirty-nine colours, and which
-    // thirty-nine is the whole of what this says.
+    // a kind of one: what a file inherits is thirty-seven colours, and which
+    // thirty-seven is the whole of what this says.
     let base = table
         .get("base")
         .and_then(toml::Value::as_str)
@@ -87,7 +87,6 @@ pub fn over(table: &toml::Table) -> Theme {
         gutter: of("gutter", base.gutter),
         gutter_current: of("gutter_current", base.gutter_current),
         scrollbar_track: of("scrollbar_track", base.scrollbar_track),
-        control_background: of("control_background", base.control_background),
         status_foreground: of("status_foreground", base.status_foreground),
         status_stale: of("status_stale", base.status_stale),
         selected_row_background: of("selected_row_background", base.selected_row_background),

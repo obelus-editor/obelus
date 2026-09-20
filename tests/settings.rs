@@ -233,35 +233,39 @@ fn walking_the_theme_list_wears_each_one() {
     );
 }
 
-/// A switch is a slider, and enter flips it: the knob moves to the other
-/// end. The arrows are not it -- they walk the tabs, as they do in every
-/// other view with tabs on it.
+/// A switch is a box, and enter marks it. The arrows are not it -- they
+/// walk the tabs, as they do in every other view with tabs on it.
 #[test]
-fn a_switch_is_a_slider_that_enter_flips() {
+fn a_switch_is_a_box_that_enter_marks() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let scratch = temporary("slider");
+    let scratch = temporary("switch-box");
     let file = settings_file(&scratch);
     let mut app = open(&file);
     support::press(&mut app, KeyCode::Down);
 
-    // Where the knob is drawn on the row.
-    let knob = |app: &mut App| {
+    // The box on the row, marked or not. It was a slider, and this looked
+    // for where its knob had slid to. Read off the row rather than asked of
+    // `ui::tick`: what matters is that the two states differ.
+    let box_of = |app: &mut App| {
         let dump = support::render(app, 66, 12);
         support::text_block(&dump)
             .lines()
             .find(|row| row.contains("Nerd Font"))
-            .and_then(|row| row.find('\u{25a0}'))
-            .expect("the knob")
+            .map(|row| support::glyph_after(row, "Nerd Font glyphs"))
+            .expect("the row")
     };
 
     assert!(app.config().icons, "the glyphs start on");
-    let on = knob(&mut app);
+    let on = box_of(&mut app);
     support::press(&mut app, KeyCode::Enter);
     assert!(!app.config().icons, "enter did not flip it");
-    let off = knob(&mut app);
-    assert!(off < on, "the knob did not move: {off} then {on}");
+    assert_ne!(
+        box_of(&mut app),
+        on,
+        "the box reads the same whichever way it is set"
+    );
 
     // The arrows do not touch it: they are the tabs'.
     support::press(&mut app, KeyCode::Right);
@@ -1926,7 +1930,10 @@ fn the_settings_say_what_their_keys_do() {
     dispatch::dispatch(&mut app, Command::ConfigTree);
 
     let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
-    for word in ["Change", "type to filter", "Unset", "Leave", "Keys"] {
+    // "type" is capped as the key and "to filter" is what it does, so the
+    // two are looked for apart. Escape is not here at all: it is on the
+    // card, because it means the same thing in every view obelus has.
+    for word in ["Change", "type", "to filter", "Unset", "Keys"] {
         assert!(word_on(&text, word), "{word:?} is not at the foot:\n{text}");
     }
 

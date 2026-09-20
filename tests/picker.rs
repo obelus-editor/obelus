@@ -778,25 +778,30 @@ fn the_foot_says_which_way_the_key_is_set() {
     support::lay_out(&mut app, 72, 24);
     press_function(&mut app, 1);
 
-    let knob = |app: &mut App| -> usize {
+    // The box itself, not where a knob sits: the two states are two glyphs,
+    // so what the row says is readable without measuring anything against
+    // anything. This was a slider, and the test that covered it compared
+    // two columns.
+    //
+    // Read off the row rather than asked of `ui::tick`, which is the rule
+    // under test: what is checked is that the glyph *changes*, and changes
+    // back, which is the whole of what the reader needs from it.
+    let box_of = |app: &mut App| -> char {
         let dump = support::render(app, 72, 24);
         let row = support::text_block(&dump)
             .lines()
             .find(|row| row.contains("Ignored files"))
             .unwrap_or_else(|| panic!("no foot:\n{dump}"))
             .to_string();
-        support::column_of(&row, "\u{25a0}")
+        support::glyph_after(&row, "Ignored files")
     };
 
-    let off = knob(&mut app);
+    let off = box_of(&mut app);
     press_alt_key(&mut app, KeyCode::Char('i'));
-    let on = knob(&mut app);
-    assert!(
-        on > off,
-        "the switch did not slide: the knob was at {off} and is at {on}"
-    );
+    let on = box_of(&mut app);
+    assert_ne!(on, off, "the box says the same thing either way");
     press_alt_key(&mut app, KeyCode::Char('i'));
-    assert_eq!(knob(&mut app), off, "it did not slide back");
+    assert_eq!(box_of(&mut app), off, "the mark did not come out again");
 }
 
 /// And on the changed tab it says nothing, because there the key means

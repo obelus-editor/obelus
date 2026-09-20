@@ -95,7 +95,7 @@ pub enum PickerValue {
     /// Switch theme, by the name it answers to.
     ///
     /// The name rather than the colours: a row of a list should not be
-    /// carrying thirty-nine of them, and which colours a name stands for is
+    /// carrying thirty-seven of them, and which colours a name stands for is
     /// a question about the settings directories -- which the list knows
     /// nothing about and the application does.
     Theme(String),

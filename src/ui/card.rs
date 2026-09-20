@@ -189,7 +189,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
         );
         let mut x = area.x + MARGIN;
         if card.several() {
-            x = write(cells, x, y, tick_of(choice.chosen), style);
+            x = crate::ui::ticked(cells, x, y, choice.chosen, style);
         } else if let Some(icon) = choice.icon {
             // A private-use codepoint measures one cell and a Nerd Font's
             // own glyphs are drawn two wide, so the one after it is left
@@ -224,13 +224,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
             false => plain,
         };
         fill(cells, row, style);
-        let x = write(
-            cells,
-            area.x + MARGIN,
-            row.y,
-            tick_of(card.writing_wanted()),
-            style,
-        );
+        let x = crate::ui::ticked(cells, area.x + MARGIN, row.y, card.writing_wanted(), style);
         write(
             cells,
             x,
@@ -321,14 +315,6 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
                 );
             }
         }
-    }
-}
-
-/// What a tick looks like, ticked or not.
-const fn tick_of(ticked: bool) -> &'static str {
-    match ticked {
-        true => "[x] ",
-        false => "[ ] ",
     }
 }
 

@@ -501,6 +501,52 @@ fn the_foot_drops_a_key_that_would_do_nothing() {
     );
 }
 
+/// A foot that ran out of room says so, rather than looking complete.
+///
+/// The notes answer to eight keys. On a narrow terminal the row can hold
+/// three of them, and what it used to do with the rest was stop -- leaving
+/// a foot indistinguishable from one that had said everything it had. A
+/// reader was told this view answers to three keys.
+///
+/// Here the mark is the whole of the trace, because a document's foot has
+/// no card behind it to point at: it says the terminal is too narrow for
+/// all of this, and promises nothing else.
+///
+/// Broken deliberately by returning from `ui::row_of_keys` without calling
+/// `cut`: the narrow row looks exactly like the wide one and this goes red.
+#[test]
+fn a_foot_that_ran_out_of_room_says_so() {
+    let scratch = tree("cut", THREE);
+    let mut app = open(&scratch, 76, 18);
+
+    let foot = |app: &mut App, width: u16| -> String {
+        let dump = support::render(app, width, 18);
+        let text = support::text_block(&dump);
+        let rows: Vec<&str> = text.lines().collect();
+        rows[rows.len() - 3].to_string()
+    };
+
+    let whole = foot(&mut app, 76);
+    assert!(
+        whole.contains("Move"),
+        "the wide row is not the whole row:\n{whole}"
+    );
+    assert!(
+        !whole.contains('\u{2026}'),
+        "a row with room for everything is marked as cut:\n{whole}"
+    );
+
+    let narrow = foot(&mut app, 40);
+    assert!(
+        !narrow.contains("Move"),
+        "nothing was dropped, so this proves nothing:\n{narrow}"
+    );
+    assert!(
+        narrow.contains('\u{2026}'),
+        "the row was cut and did not say so:\n{narrow}"
+    );
+}
+
 /// The foot points at no card, and takes back the room the pointer had.
 ///
 /// Every other view with a foot ends it with `f1 keys`, because every other
@@ -1786,11 +1832,25 @@ fn the_note_the_keys_are_on_is_marked_down_its_edge() {
     support::press_control_key(&mut app, KeyCode::Char('a'));
     let dump = support::render(&mut app, 60, 14);
 
-    // Nothing on the page wears the ground a selected row wears, so the
-    // one coloured ground in the list is what the reader is holding.
+    // Nothing in the list wears the ground a selected row wears, so the
+    // one coloured ground among the notes is what the reader is holding.
+    //
+    // The *list*, and not the whole page: the foot draws each key in a cap,
+    // and a cap's ground is the same colour as a selected row in the themes
+    // obelus ships. Under a rule and among keys it is not something the
+    // selection argues with.
     let ground = support::spelled(app.theme().selected_row_background);
+    let letters: Vec<char> = support::legend_block(&dump)
+        .lines()
+        .filter(|entry| entry.contains(&format!("bg={ground}")))
+        .filter_map(|entry| entry.chars().next())
+        .collect();
+    let styles: Vec<&str> = support::style_block(&dump).lines().collect();
+    let list = &styles[..styles.len().saturating_sub(3)];
     assert!(
-        !support::legend_block(&dump).contains(&format!("bg={ground}")),
+        !list
+            .iter()
+            .any(|row| row.chars().any(|cell| letters.contains(&cell))),
         "the list is drawing a ground the selection has to argue with:\n{dump}"
     );
     let held = support::spelled(app.theme().selection_background);

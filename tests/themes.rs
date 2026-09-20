@@ -314,7 +314,6 @@ fn the_template_for_omarchy_names_colours_obelus_has() {
         theme.gutter,
         theme.gutter_current,
         theme.scrollbar_track,
-        theme.control_background,
         theme.status_foreground,
         theme.status_stale,
         theme.selected_row_background,

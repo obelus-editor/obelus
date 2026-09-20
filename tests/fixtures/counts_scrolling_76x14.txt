@@ -13,7 +13,7 @@ screen 76x14  editor 76x12  status 76x1
 10|   ├   file05.rs                              385     355      20      10 █
 11|   ├   file06.rs                              376     346      20      10 █
 12|────────────────────────────────────────────────────────────────────────────
-13|  󰌑 Close   󱊷 Leave                                                 󱊫 Keys  
+13|   󰌑  Close                                                        󱊫  Keys  
 -- style --
  0|aaaaaaaaaaaabbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -28,7 +28,7 @@ screen 76x14  editor 76x12  status 76x1
 10|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
 11|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-13|ccecaaaaacccecaaaaacccccccccccccccccccccccccccccccccccccccccccccccccaaaaaacc
+13|cchhhcaaaaaccccccccccccccccccccccccccccccccccccccccccccccccccccccchhhcaaaacc
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a
@@ -37,5 +37,6 @@ d fg=#71717a bg=#18181b
 e fg=#a1a1aa bg=#18181b
 f fg=#52525b bg=#27272a
 g fg=#404047 bg=#18181b
+h fg=#a1a1aa bg=#27272a
 -- cursor --
 none

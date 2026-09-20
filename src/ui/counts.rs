@@ -105,7 +105,11 @@ pub fn hints(counts: &Counts) -> Vec<Hint> {
             None => "Read the file this row names",
         })
         .when(on.is_some_and(|row| row.go.is_some())),
-        Hint::common(bare(KeyCode::Esc), "Leave").saying("Leave, or drop the language first"),
+        // The card's, not the foot's: see `ui::foot`. What earns it a card
+        // row rather than nothing at all is the *other* thing escape does
+        // here -- one press drops the language a tab is narrowed to, and
+        // only the next leaves.
+        Hint::rare(bare(KeyCode::Esc), "Leave").saying("Leave, or drop the language first"),
     ]
 }
 

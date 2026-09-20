@@ -19,7 +19,7 @@ screen 60x22  editor 60x20  status 60x1
 16|                                                            
 17|                                                            
 18|────────────────────────────────────────────────────────────
-19|  󰘵 i Ignored files ■■     󰘵 n Rename               󱊫 Keys  
+19|   󰘵 i  Ignored files 󰄱     󰘵 n  Rename            󱊫  Keys  
 20|────────────────────────────────────────────────────────────
 21| 󰍉  fixtures                                                
 -- style --
@@ -42,7 +42,7 @@ screen 60x22  editor 60x20  status 60x1
 16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 18|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-19|cceeecdddddddddddddciiaaccceeecddddddcccccccccccccccddddddcc
+19|cciiiiicdddddddddddddcdcccciiiiicddddddccccccccccciiicddddcc
 20|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 21|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --
@@ -54,7 +54,7 @@ e fg=#a1a1aa bg=#18181b
 f fg=#c084fc bg=#18181b
 g fg=#60a5fa bg=#18181b
 h fg=#a3e635 bg=#18181b
-i fg=#52525b bg=#27272a
+i fg=#a1a1aa bg=#27272a
 j fg=#d4d4d8 bg=#18181b
 -- cursor --
 12,21

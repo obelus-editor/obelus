@@ -253,14 +253,6 @@ pub struct Theme {
     /// repository's own golden grids are full of them, and a rule over one
     /// grew a tick everywhere the file had a bar under it.
     pub scrollbar_track: Color,
-    /// Behind a control that is a surface rather than words: the track a
-    /// switch's knob slides along.
-    ///
-    /// A shade off the page, which is all a surface has to be. It was the
-    /// status line's own band until the rule above the line made the band a
-    /// second answer to the same question -- and a strip of colour is the
-    /// heaviest thing obelus draws, on a screen that is otherwise text.
-    pub control_background: Color,
     /// The status line's text.
     pub status_foreground: Color,
     /// What the status row says in when a reader has to do something about
@@ -286,7 +278,14 @@ pub struct Theme {
     /// to see which row refused.
     pub selected_row_background: Color,
     /// Behind something that reads as a surface rather than as prose: the
-    /// cap a key is drawn in on the welcome screen.
+    /// cap a key is drawn in at the foot of a view, and the ground of the
+    /// card that lists every key.
+    ///
+    /// Not the welcome screen, which has the same key-and-word shape and
+    /// argues its way out of the cap: six caps in a block is six strips of
+    /// colour on a screen that is otherwise a wordmark and some words, and
+    /// there each key has a column to itself. A foot is one row among the
+    /// reader's work, where nothing else gives the key an edge.
     ///
     /// The same colour as a selected row in the themes obelus ships, and a
     /// field of its own because they are two different promises -- one says

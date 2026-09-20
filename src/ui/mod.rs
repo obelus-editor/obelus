@@ -975,49 +975,95 @@ pub fn keys_chord() -> crate::keymap::KeyChord {
     )
 }
 
-/// How wide a switch's track is, in cells.
+/// How wide a tick is, in cells.
 ///
-/// Four: two for the knob and two for the room it slides into. Anything
-/// narrower stops looking like something that slides.
-pub const TRACK_WIDTH: u16 = 4;
+/// Two: a Nerd Font draws its glyphs over two columns while the terminal
+/// allocates one, so the blank after it belongs to it.
+pub const TICK_WIDTH: u16 = 2;
 
-/// A switch, drawn where it is asked for, and the column after it.
+/// What a tick looks like, set and not.
 ///
-/// A square knob at one end of a short track. The shape says which way it
-/// is without a word to read, and it says it the same way wherever a switch
-/// appears: this is the settings page's control, so a reader who has seen
-/// one there knows what one at the foot of a list is saying.
+/// The plain ones where there is no Nerd Font. The same box in both, with
+/// a mark in the second -- a pair that changed shape would put a jog in a
+/// column read straight down.
 ///
-/// Squares rather than full blocks: a full block fills its cell's whole
-/// height, and two of them one above the other read as one tall bar.
-pub fn switch(cells: &mut CellBuffer, x: u16, y: u16, on: bool, ink: Color, theme: &Theme) -> u16 {
-    fill(
-        cells,
-        Rect {
-            x,
-            y,
-            width: TRACK_WIDTH,
-            height: 1,
-        },
-        Style::new().bg(theme.control_background),
-    );
-    // Bright when on and dim when off, rather than a colour: the knob's
-    // *position* already says which way it is, so a hue would be a second
-    // answer to a question already answered.
-    let (at, colour) = match on {
-        true => (x + TRACK_WIDTH / 2, ink),
-        false => (x, theme.gutter),
-    };
-    for cell in 0..TRACK_WIDTH / 2 {
-        put(
-            cells,
-            at + cell,
-            y,
-            '\u{25a0}',
-            Style::new().fg(colour).bg(theme.control_background),
-        );
+/// This was a slider: a four-cell track with a knob at one end of it. What
+/// a slider says is *which way it is*, by a position the eye has to measure
+/// against a track two cells longer than the knob -- and obelus draws it in
+/// a row of text, at a size where that measurement is a guess. A box is
+/// either marked or it is not, which is the same question answered in a
+/// glyph.
+#[must_use]
+pub fn tick(on: bool) -> char {
+    match (crate::icons::enabled(), on) {
+        (true, false) => crate::icons::ui::TODO,
+        (true, true) => crate::icons::ui::TODO_DONE,
+        (false, false) => '\u{25a1}',
+        (false, true) => '\u{2611}',
     }
-    x + TRACK_WIDTH
+}
+
+/// Draws one, and says where whatever follows it goes.
+pub fn ticked(cells: &mut CellBuffer, x: u16, y: u16, on: bool, style: Style) -> u16 {
+    put(cells, x, y, tick(on), style);
+    x + TICK_WIDTH
+}
+
+/// Draws a key in a cap of its own, and says where the next thing goes.
+///
+/// A blank inside the cap either side, and the cap on a ground a shade off
+/// the page. What binds a key to the word beside it is the block it sits
+/// in: the row used to separate a key from its word by one blank and one
+/// item from the next by three, which are near enough the same gap that the
+/// eye could not tell which side of it a word belonged to.
+fn capped(cells: &mut CellBuffer, x: u16, y: u16, keys: &str, style: Style) -> u16 {
+    write(cells, x, y, &format!(" {keys} "), style)
+}
+
+/// How far apart two items on that row sit.
+///
+/// Three, against the one blank inside the cap and the one before a word:
+/// the gap between items has to beat the gaps inside one, or the row is a
+/// line of tokens with nothing saying which belongs to which.
+const BETWEEN: u16 = 3;
+
+/// How wide a cap is, with the key in it.
+///
+/// Asked by the item that is about to be drawn and by the pointer at the
+/// far end, which were each carrying their own idea of how much a cap adds.
+fn cap_width(keys: &str) -> usize {
+    text_width(keys) + 2
+}
+
+/// How much of the row one hint takes, the gap after it aside.
+///
+/// The cap, the word and the blank before it, and the box with its own. One
+/// answer, because the drawing asks it twice: once to find out whether the
+/// item fits, and once by advancing exactly that far.
+fn width_of(hint: &Hint) -> usize {
+    cap_width(&hint.keys())
+        + hint.does.map_or(0, |does| text_width(does) + 1)
+        + hint.switched.map_or(0, |_| usize::from(TICK_WIDTH) + 1)
+}
+
+/// Marks a row that stopped before it had said everything.
+///
+/// The mark obelus cuts text with everywhere else, in the dim ink, in the
+/// blank the next item would have started in. Where the pointer to the card
+/// is up this says which of the two is the whole list; where there is no
+/// card -- a document's foot has none behind it -- it says on its own that
+/// the terminal is too narrow for all of this.
+fn cut(cells: &mut CellBuffer, x: u16, y: u16, edge: u16, theme: &Theme) {
+    if x >= edge {
+        return;
+    }
+    put(
+        cells,
+        x,
+        y,
+        '\u{2026}',
+        Style::new().fg(theme.gutter).bg(theme.background),
+    );
 }
 
 /// How many rows a view gives up to its foot, where it has one.
@@ -1044,6 +1090,14 @@ pub fn footed(area: Rect, hints: &[Hint]) -> Rect {
 /// The common ones that can be pressed at the moment, and `f1` at the
 /// right-hand end saying there are more. At the foot rather than beside a
 /// title, because a key needs a word and words need room.
+///
+/// What belongs here is what *this* view does. A key that means the same
+/// thing wherever the reader is does not: escape backs out of the nearest
+/// thing everywhere in obelus -- `keymap::why_not` refuses to rebind it for
+/// that reason -- so a foot that spends a third of itself saying `Leave` is
+/// a row of the reader's screen saying what every other view already said.
+/// Those go on the card, which is every key here rather than the ones worth
+/// telling.
 pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
     row_of_keys(cells, area, hints, theme, true);
 }
@@ -1089,15 +1143,24 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
     // The one at the end first, because it is the one that must not be given
     // up: a foot that ran out of room and dropped the way to the rest of the
     // keys would be a foot that hides the thing it exists to point at.
-    let all = format!("{} Keys", keys_chord().label());
-    let width = u16::try_from(text_width(&all)).unwrap_or(0);
+    let chord = keys_chord().label();
+    let width = u16::try_from(cap_width(&chord) + 1 + text_width("Keys")).unwrap_or(0);
     let edge = match area.width.checked_sub(width + 2).filter(|_| card) {
         Some(offset) => {
-            write(
+            let after = capped(
                 cells,
                 area.x + offset,
                 y,
-                &all,
+                &chord,
+                Style::new()
+                    .fg(theme.gutter_current)
+                    .bg(theme.raised_background),
+            );
+            write(
+                cells,
+                after + 1,
+                y,
+                "Keys",
                 Style::new().fg(theme.gutter).bg(theme.background),
             );
             area.x + offset
@@ -1108,24 +1171,30 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
     let mut x = area.x + 2;
     for hint in hints.iter().filter(|hint| hint.common && hint.usable) {
         let keys = hint.keys();
-        let switched = hint.switched.map_or(0, |_| usize::from(TRACK_WIDTH) + 1);
-        let wanted =
-            text_width(&keys) + hint.does.map_or(0, |does| text_width(does) + 1) + switched + 3;
-        let Ok(wanted) = u16::try_from(wanted) else {
-            return;
-        };
-        if x + wanted > edge {
+        // Saturating rather than refused: a hint wider than the screen can
+        // hold is one that does not fit, which is the same answer the row
+        // gives anything else that does not.
+        let wanted = u16::try_from(width_of(hint)).unwrap_or(u16::MAX);
+        if x.saturating_add(wanted).saturating_add(BETWEEN) > edge {
+            // The row stops here, and says so. A foot that ran out of room
+            // used to drop the rest of its keys and look exactly like a
+            // foot that had said everything it had -- so a reader on a
+            // narrow terminal was told a view answered to two keys when it
+            // answered to eight, and nothing on the screen disagreed.
+            cut(cells, x, y, edge, theme);
             return;
         }
-        // The key brighter than the word: what a reader is looking for down
-        // here is which key, and the word is read once to find out that it
-        // is the one.
-        x = write(
+        // The key in a cap and the word out of it: what a reader is looking
+        // for down here is which key, and the word is read once to find out
+        // that it is the one.
+        x = capped(
             cells,
             x,
             y,
             &keys,
-            Style::new().fg(theme.gutter_current).bg(theme.background),
+            Style::new()
+                .fg(theme.gutter_current)
+                .bg(theme.raised_background),
         );
         if let Some(does) = hint.does {
             x = write(
@@ -1137,9 +1206,23 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
             );
         }
         if let Some(on) = hint.switched {
-            x = switch(cells, x + 1, y, on, theme.foreground, theme);
+            // Bright when it is set and dim when it is not, under a glyph
+            // that already says which: a box that is empty and loud is the
+            // brightest thing on a row about keys, and it is the one thing
+            // here that is off.
+            let ink = match on {
+                true => theme.foreground,
+                false => theme.gutter,
+            };
+            x = ticked(
+                cells,
+                x + 1,
+                y,
+                on,
+                Style::new().fg(ink).bg(theme.background),
+            );
         }
-        x += 3;
+        x += BETWEEN;
     }
 }
 
@@ -1167,7 +1250,7 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
             .iter()
             .map(|hint| {
                 hint.said.or(hint.does).map_or(0, text_width)
-                    + hint.switched.map_or(0, |_| usize::from(TRACK_WIDTH) + 1)
+                    + hint.switched.map_or(0, |_| usize::from(TICK_WIDTH) + 1)
             })
             .max()
             .unwrap_or(0),
@@ -1249,7 +1332,7 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
                 true => theme.foreground,
                 false => theme.gutter,
             };
-            switch(cells, x + 1, y, on, ink, theme);
+            ticked(cells, x + 1, y, on, style.fg(ink));
         }
     }
 }
@@ -1391,7 +1474,33 @@ pub fn truncate_from_left(contents: &str, cells: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{drop_from_left, drop_from_right, truncate_from_left, truncate_from_right};
+    use super::{drop_from_left, drop_from_right, tick, truncate_from_left, truncate_from_right};
+
+    /// A box says which way it is set by being a different box.
+    ///
+    /// The whole of what replaced a slider: a slider said it by where its
+    /// knob sat, which is a distance to measure, and this is a glyph to
+    /// recognise. So the one thing that must be true of the pair is that
+    /// they are not the same glyph -- in a terminal with the font and in
+    /// one without, because both are drawn.
+    ///
+    /// Broken deliberately by giving either pair the same character twice:
+    /// every switch obelus draws goes quiet about its state, and only this
+    /// says so -- the views' own tests flip a switch and read the box, and
+    /// the settings' one flips the glyphs themselves and so reads one of
+    /// each pair.
+    #[test]
+    fn a_box_is_not_the_same_box_when_it_is_marked() {
+        for glyphs in [true, false] {
+            crate::icons::use_glyphs(glyphs);
+            assert_ne!(
+                tick(true),
+                tick(false),
+                "the box reads the same either way, with glyphs {glyphs}"
+            );
+        }
+        crate::icons::use_glyphs(true);
+    }
 
     #[test]
     fn a_path_that_fits_is_left_alone() {

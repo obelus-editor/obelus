@@ -289,6 +289,41 @@ pub fn column_of(row: &str, needle: &str) -> usize {
     obelus::ui::text_width(&cells[..at])
 }
 
+/// The first glyph after `word` on a row, blanks skipped.
+///
+/// For the marks a row wears beside its words: the box after a switch's
+/// name, and whatever else is drawn against a label rather than written
+/// into it. Read off the row rather than spelled here, so a test says the
+/// mark *changed* rather than deciding what a mark looks like -- which
+/// would be asking the thing under test what it expects.
+#[must_use]
+pub fn glyph_after(row: &str, word: &str) -> char {
+    let at = row
+        .find(word)
+        .unwrap_or_else(|| panic!("no {word:?} on {row:?}"));
+    row[at + word.len()..]
+        .chars()
+        .find(|glyph| !glyph.is_whitespace())
+        .unwrap_or_else(|| panic!("nothing after {word:?} on {row:?}"))
+}
+
+/// The same, on the other side of it.
+///
+/// The row's own `NN|` prefix is not a glyph: a mark in the first column
+/// would otherwise come back as the bar that separates the dump's numbers
+/// from its cells.
+#[must_use]
+pub fn glyph_before(row: &str, word: &str) -> char {
+    let at = row
+        .find(word)
+        .unwrap_or_else(|| panic!("no {word:?} on {row:?}"));
+    row[..at]
+        .chars()
+        .rev()
+        .find(|glyph| !glyph.is_whitespace() && *glyph != '|')
+        .unwrap_or_else(|| panic!("nothing in front of {word:?} on {row:?}"))
+}
+
 /// The legend entry for the first cell drawing `glyph`: `fg=… bg=…`.
 ///
 /// The whole entry, for a test about a background: [`colour_under`] answers

@@ -1492,13 +1492,18 @@ fn several_answers_are_ticked_and_sent_from_a_row_of_their_own() {
     // Every answer with a box in front of it, none of them ticked: a card
     // that ticked something for the reader would be answering for them.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
-    assert!(
-        rows(&dump).iter().any(|row| row.contains("[ ] src/acp")),
-        "the answers are not ticks:\n{dump}"
-    );
-    assert!(
-        rows(&dump).iter().any(|row| row.contains("[ ] Other")),
-        "the box has no tick of its own:\n{dump}"
+    let box_before = |dump: &str, word: &str| -> char {
+        rows(dump)
+            .iter()
+            .find(|row| row.contains(word))
+            .map(|row| support::glyph_before(row, word))
+            .unwrap_or_else(|| panic!("no row for {word:?}:\n{dump}"))
+    };
+    let untouched = box_before(&dump, "src/acp");
+    assert_eq!(
+        box_before(&dump, "Other"),
+        untouched,
+        "the box of the reader's own answer is not one of the ticks:\n{dump}"
     );
 
     // Enter ticks, and the card stays: ticking and sending cannot both be
@@ -1507,8 +1512,9 @@ fn several_answers_are_ticked_and_sent_from_a_row_of_their_own() {
     support::press(&mut app, KeyCode::Enter);
     assert!(app.is_asking(), "a tick answered the question");
     let dump = support::render(&mut app, WIDTH, HEIGHT);
-    assert!(
-        rows(&dump).iter().any(|row| row.contains("[x] src/acp")),
+    assert_ne!(
+        box_before(&dump, "src/acp"),
+        untouched,
         "the answer was not ticked:\n{dump}"
     );
 

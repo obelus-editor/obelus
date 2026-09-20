@@ -306,7 +306,8 @@ impl WelcomeView<'_> {
     /// in plain ink rather than on a panel: six panels in a block is six
     /// strips of colour on a screen that is otherwise a wordmark and some
     /// words, and the key does not need to be told apart from prose when it
-    /// is a glyph in its own column.
+    /// is a glyph in its own column. A foot answers the other way, and for
+    /// the opposite reason -- see `theme::Theme::raised_background`.
     ///
     /// The picture belongs to the words, not to the key -- it is a picture
     /// of the *thing* -- so it sits against them, and the key column is left

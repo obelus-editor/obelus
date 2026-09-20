@@ -755,8 +755,9 @@ can render perfectly and show nothing.
 own colour, like the conversation's row below the box: it has a rule above it
 saying it is a different subject from the file, and saying that twice makes a
 strip -- the heaviest thing obelus draws -- out of the smallest part of the
-screen. What is left of that band is `control_background`, one shade off the
-page, behind the track a switch's knob slides along.
+screen. What is left of that band is `raised_background`, one shade off the
+page, behind the cap a key is drawn in at the foot of a view and behind the
+card that lists every key -- a few cells wide, and a box, never a row.
 
 A preview's margin comes from git, so a fixture that shows one depends on
 the fixture file being *committed*: edit `tests/fixtures/long.rs` without

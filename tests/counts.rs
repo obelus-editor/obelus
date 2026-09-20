@@ -230,7 +230,7 @@ fn the_counts_take_the_whole_screen() {
     // there belongs to this view or there is nothing there at all.
     let foot = text.lines().last().unwrap_or_default();
     assert!(
-        foot.contains("Leave"),
+        foot.contains("Keys"),
         "the foot is not this view's:\n{dump}"
     );
 }
@@ -429,9 +429,21 @@ fn the_counts_say_what_their_keys_do() {
     let mut app = open(76, 18);
     press(&mut app, KeyCode::Tab);
     let text = support::text_block(&support::render(&mut app, 76, 18)).to_string();
-    for word in ["Open", "Leave", "Keys"] {
+    for word in ["Open", "Keys"] {
         assert!(text.contains(word), "{word:?} is not at the foot:\n{text}");
     }
+    // And not escape, which means the same thing in every view obelus has:
+    // a foot is for what *this* one does. It is on the card.
+    assert!(
+        !text.contains("Leave"),
+        "the foot is spending itself on escape:\n{text}"
+    );
+    support::press_function(&mut app, 1);
+    assert!(
+        support::text_block(&support::render(&mut app, 76, 18)).contains("Leave"),
+        "and it is not on the card either"
+    );
+    press(&mut app, KeyCode::Esc);
 
     // On a file it reads it instead: one key, two acts, and the foot says
     // which one is in front of the reader.

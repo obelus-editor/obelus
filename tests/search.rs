@@ -206,20 +206,21 @@ fn the_three_switches_change_what_the_search_finds() {
         .find(|row| row.contains("Regex"))
         .expect("the foot")
         .to_string();
-    // How far the knob sits from its word: a switch that is on has slid to
-    // the far end of its track, and one that is off has not. The blanks
-    // between are one cell each, so the distance is the gap.
-    let gap = |word: &str| -> usize {
-        let after = foot.find(word).expect("the word") + word.len();
-        foot[after..].find('\u{25a0}').expect("the switch")
-    };
-    assert!(
-        gap("Regex") > gap("Word"),
-        "the pattern switch is not slid across: {foot:?}"
+    // The box after each word, which is either marked or is not. This
+    // compared two distances once, because the switches were sliders and a
+    // slider says which way it is by where its knob sits.
+    //
+    // Which glyph means which is not asked of `ui::tick`: what is checked
+    // is that the one the reader turned on differs from the two they did
+    // not, and that those two agree.
+    assert_ne!(
+        support::glyph_after(&foot, "Regex"),
+        support::glyph_after(&foot, "Word"),
+        "the pattern switch reads the same as one nobody touched: {foot:?}"
     );
     assert_eq!(
-        gap("Word"),
-        gap("Case"),
+        support::glyph_after(&foot, "Word"),
+        support::glyph_after(&foot, "Case"),
         "two switches nobody touched are set differently: {foot:?}"
     );
 
@@ -229,6 +230,47 @@ fn the_three_switches_change_what_the_search_finds() {
     let picker = app.picker().expect("the search");
     assert_eq!(picker.match_count(), 0);
     assert_eq!(picker.nothing_to_show(), Some("That is not a pattern"));
+}
+
+/// A cut row still points at the card, and the card still has everything.
+///
+/// The two traces are different promises. The mark says this row is not
+/// all of it; the pointer says where the rest is. A view with a card shows
+/// both, and the card is drawn from the same list the foot was cut from,
+/// so what the reader finds there is what the row could not hold.
+///
+/// Broken deliberately by returning from `ui::row_of_keys` without calling
+/// `cut`: the narrow row keeps its pointer and says nothing about the keys
+/// that went, and this goes red.
+#[test]
+fn a_cut_foot_still_points_at_the_card() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 44, 16);
+    support::press_function(&mut app, 5);
+
+    let dump = support::render(&mut app, 44, 16);
+    let text = support::text_block(&dump);
+    let rows: Vec<&str> = text.lines().collect();
+    let foot = rows[rows.len() - 3];
+    assert!(
+        !foot.contains("Case"),
+        "nothing was dropped, so this proves nothing:\n{foot}"
+    );
+    assert!(
+        foot.contains('\u{2026}'),
+        "the row was cut and did not say so:\n{foot}"
+    );
+    assert!(
+        foot.contains("Keys"),
+        "the way to the rest was given up instead:\n{foot}"
+    );
+
+    // And the key the row could not hold is on the card.
+    support::press_function(&mut app, 1);
+    assert!(
+        support::text_block(&support::render(&mut app, 44, 16)).contains("as typed"),
+        "the card does not have what the foot dropped"
+    );
 }
 
 /// Which switches mean anything depends on the tab: three of them read a

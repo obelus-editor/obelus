@@ -120,7 +120,8 @@ pub fn hints(settings: &Settings) -> Vec<Hint> {
         Hint::common(bare(KeyCode::Delete), "Unset")
             .saying("Take this setting out of the tree's file")
             .when(settings.on_tree() && !settings.on_keys() && !settings.on_agents()),
-        Hint::common(bare(KeyCode::Esc), "Leave").saying("Leave the settings"),
+        // The card's, not the foot's: see `ui::foot`.
+        Hint::rare(bare(KeyCode::Esc), "Leave").saying("Leave the settings"),
     ]
 }
 
@@ -985,11 +986,12 @@ fn draw_control(
         theme.gutter
     };
     match (kind, value) {
-        // A slider, drawn by the one thing that draws sliders: the foot of
-        // a list has them too, and a reader who has learnt this shape here
-        // should not have to learn a second one there.
+        // A tick, drawn by the one thing that draws ticks: the foot of a
+        // list has them, a card has them, and a note has one in front of
+        // it -- a reader who has learnt this shape in one of those should
+        // not have to learn a second one here.
         (Kind::Switch, Value::Switch(on)) => {
-            crate::ui::switch(cells, x, y, *on, ink, theme);
+            crate::ui::ticked(cells, x, y, *on, style.fg(ink));
         }
         (Kind::Count(_), Value::Count(count)) => {
             let after = write(cells, x, y, &count.to_string(), style.fg(ink));
