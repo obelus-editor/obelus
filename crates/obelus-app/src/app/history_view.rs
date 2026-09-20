@@ -432,7 +432,15 @@ impl App {
                 // something behind it.
                 marker: expands.then(|| (Marking::Aside, obelus_ui::opens(open).to_string())),
                 label: commit.subject.clone(),
-                detail: None,
+                // The commit that moved the file says what it was called
+                // before. On this one row and not on the forty older ones
+                // it changed the name for: the move happened once, and
+                // saying so on every row below would be saying it about
+                // commits that did not do it.
+                detail: commit
+                    .was
+                    .as_ref()
+                    .map(|was| format!("was {}", was.display())),
                 // Both on the right, where the width is taken out of the
                 // subject's before it is truncated: a subject is long and a
                 // row is narrow, so the one thing that must survive the cut
@@ -542,6 +550,23 @@ impl App {
     /// there.
     pub(super) fn commit_opens(&self) -> Option<PathBuf> {
         self.history.of.clone()
+    }
+
+    /// The name the file had in a commit, for a row of its own history.
+    ///
+    /// Not the name it has now. A walk goes on under the name a file had
+    /// before it was moved, so a row older than the move is about a path
+    /// that does not exist any more, and opening the current one would open
+    /// nothing. Falls back to the name it has for anything the walk did not
+    /// say about -- a commit somebody named, or a project's history, which
+    /// is about no path at all.
+    pub(super) fn commit_opens_at(&self, id: gix::ObjectId) -> Option<PathBuf> {
+        self.history
+            .commits
+            .iter()
+            .find(|commit| commit.id == id)
+            .and_then(|commit| commit.at.clone())
+            .or_else(|| self.commit_opens())
     }
 
     /// Opens a commit's files under it, or closes them again.

@@ -2378,6 +2378,31 @@ fn a_files_history_goes_on_under_the_name_it_had_before() {
         ["moving it", "editing it where it was", "committed"],
         "the history stopped where the file was renamed"
     );
+
+    // The move is said on the commit that made it, and on no other: it
+    // happened once, and a row that said it about a commit which did not
+    // do it would be pointing at the wrong one.
+    assert_eq!(
+        found
+            .iter()
+            .map(|commit| commit.was.clone())
+            .collect::<Vec<_>>(),
+        [Some(std::path::PathBuf::from("file.rs")), None, None],
+        "the move is not said where it happened"
+    );
+
+    // And every row opens, which is the whole point of walking past the
+    // move: the name each commit had the file under is the name that
+    // commit can be asked for it by, and it is not the name it has now.
+    for commit in &found {
+        let at = commit.at.clone().expect("a walk of one file names it");
+        assert!(
+            history::text_at(&root, commit.id, &root.join(&at)).is_some(),
+            "{} offers a row that opens nothing: {}",
+            commit.short(),
+            at.display()
+        );
+    }
 }
 
 /// A file as a commit had it, which is what choosing a row opens.
@@ -3982,6 +4007,8 @@ fn a_batch_landing_does_not_move_the_reader_off_their_row() {
             body: String::new(),
             who: "somebody".to_string(),
             when: 0,
+            at: None,
+            was: None,
         }],
         walked: 900,
         done: false,

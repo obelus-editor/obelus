@@ -413,7 +413,7 @@ impl App {
             if self.expand_commit(id) {
                 return;
             }
-            if let Some(path) = self.commit_opens() {
+            if let Some(path) = self.commit_opens_at(id) {
                 self.picker = None;
                 self.open_at_commit(id, &path, None);
                 return;

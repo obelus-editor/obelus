@@ -57,6 +57,21 @@ pub struct Commit {
     pub who: String,
     /// When, in seconds since the epoch.
     pub when: i64,
+    /// What the file was called in this commit, for a walk of one file.
+    ///
+    /// Not the name it has now: a walk goes on under the name a file had
+    /// before it was moved, so every commit older than the move is about a
+    /// path that no longer exists. Opening one means opening *that* path,
+    /// and a row that opened the current name would open nothing at all.
+    ///
+    /// `None` for a walk of the whole project, which is about no path.
+    pub at: Option<PathBuf>,
+    /// What it was called before, where this is the commit that moved it.
+    ///
+    /// Set on the one commit rather than on every commit older than it: the
+    /// move is a thing that happened once, and saying so on forty rows
+    /// would be saying it about forty commits that did not do it.
+    pub was: Option<PathBuf>,
 }
 
 impl Commit {
@@ -214,6 +229,10 @@ fn commit_in(repository: &gix::Repository, id: gix::ObjectId) -> Option<Commit> 
         body,
         who: author.name.to_string(),
         when: author.time().map(|time| time.seconds).unwrap_or_default(),
+        // Asked for by its id and about no path: this is a commit somebody
+        // named, not a step in a walk of one file.
+        at: None,
+        was: None,
     })
 }
 
@@ -279,6 +298,8 @@ fn walk(within: &Path, only: Option<&Path>, mut each: impl FnMut(Option<Commit>)
             body,
             who: author.name.to_string(),
             when: author.time().map(|time| time.seconds).unwrap_or_default(),
+            at: relative.clone(),
+            was: moved_from.clone(),
         };
         if !each(Some(found)) {
             return;
@@ -699,7 +720,10 @@ fn texts_of(change: gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(Stri
 #[must_use]
 pub fn text_at(within: &Path, id: gix::ObjectId, path: &Path) -> Option<String> {
     let repository = super::repository(within)?;
-    let relative = super::in_repository(&repository, path)?;
+    // Placed the way the walk places a path, which is the way that works for
+    // a name the working tree no longer has: a file a commit deleted, or one
+    // a later commit moved, and a history is the question that outlives both.
+    let relative = within_repository(&repository, path)?;
     let commit = repository.find_commit(id).ok()?;
     let mut tree = commit.tree().ok()?;
     let entry = tree.peel_to_entry_by_path(relative).ok()??;
