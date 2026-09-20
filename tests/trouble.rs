@@ -745,7 +745,10 @@ fn the_problems_are_listed_in_the_order_they_are_in_the_file() {
     let dump = support::render(&mut app, 60, 20);
     let rows: Vec<&str> = support::text_block(&dump)
         .lines()
-        .filter(|row| row.contains("wrong at "))
+        // The list's own rows, which are the ones naming the tool that
+        // said it: the complaint framed under the selection quotes the
+        // same words, and it is not a row of the list.
+        .filter(|row| row.contains("wrong at ") && row.contains("rustc"))
         .collect();
     let said: Vec<&str> = rows
         .iter()
@@ -838,5 +841,143 @@ fn the_view_moves_only_for_a_problem_the_reader_cannot_see() {
     assert_ne!(
         was, now,
         "the view left the problem pinned against the list:\n{dump}"
+    );
+}
+
+/// The complaint follows the list's selection, not the caret.
+///
+/// The row in the list and the place in the file are the same thing, and
+/// this is what says so: walking the rows scrolls the file to each one and
+/// opens the server's words under it. Without it a reader has to pair a
+/// row with a line number by eye, which is the work the list was meant to
+/// save them.
+///
+/// It follows the selection back, too: leaving without choosing puts the
+/// complaint where the caret is, because that is where the reader is again.
+///
+/// Broken deliberately by asking the caret for the line the complaint is
+/// about, which is what it asked before.
+#[test]
+fn the_complaint_follows_the_list_rather_than_the_caret() {
+    let mut file = String::new();
+    for line in 0..120 {
+        file.push_str(&format!("    let _ = {line};\n"));
+    }
+    let (_scratch, mut app, path) = editing("trouble-follow", &file);
+    let one = |line: u32| {
+        json!({
+            "range": { "start": { "line": line, "character": 4 },
+                       "end": { "line": line, "character": 8 } },
+            "severity": 1,
+            "source": "rustc",
+            "message": format!("wrong at {line}")
+        })
+    };
+    app.publish_for_test(json!({
+        "uri": format!("file://{}", path.display()),
+        "diagnostics": [one(4), one(60)]
+    }));
+    // On the first of them, so the caret has a complaint of its own to be
+    // told apart from the list's.
+    for _ in 0..4 {
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+    }
+    let dump = support::render(&mut app, 60, 20);
+    let says = |dump: &str, what: &str| {
+        support::text_block(dump)
+            .lines()
+            .any(|row| row.contains(what) && !row.contains("rustc"))
+    };
+    assert!(
+        says(&dump, "wrong at 4"),
+        "the caret's own line has no complaint under it:\n{dump}"
+    );
+
+    // Down the list, and the complaint goes with it.
+    support::press_alt(&mut app, 'e');
+    support::render(&mut app, 60, 20);
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        says(&dump, "wrong at 60"),
+        "the complaint did not follow the selection:\n{dump}"
+    );
+    assert!(
+        !says(&dump, "wrong at 4"),
+        "the caret's complaint stayed open under a line nobody is looking at:\n{dump}"
+    );
+
+    // And back to the caret's own when the list goes.
+    support::press(&mut app, crossterm::event::KeyCode::Esc);
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        says(&dump, "wrong at 4"),
+        "the complaint did not come back to the caret:\n{dump}"
+    );
+}
+
+/// Two problems on one line are two rows, and two different complaints.
+///
+/// The list has a row per trouble and a line can hold several -- a server
+/// reports the mistake and its own notes about it at the same place. Told
+/// only which line the reader has selected, the complaint shows the worst
+/// of them whichever row it is, and two rows saying different things look
+/// like one thing said twice.
+///
+/// Broken deliberately by finding the trouble by its line alone: both rows
+/// then show the first of them.
+#[test]
+fn two_problems_on_one_line_are_two_complaints() {
+    let mut file = String::new();
+    for line in 0..60 {
+        file.push_str(&format!("    let _ = {line};\n"));
+    }
+    let (_scratch, mut app, path) = editing("trouble-two", &file);
+    let one = |column: u32, severity: u8, message: &str| {
+        json!({
+            "range": { "start": { "line": 20, "character": column },
+                       "end": { "line": 20, "character": column + 3 } },
+            "severity": severity,
+            "source": "rustc",
+            "message": message
+        })
+    };
+    // The mistake and a note about it, at two places on the one line, and
+    // the note is the milder of the two: told only the line, the complaint
+    // would show the mistake for both rows.
+    app.publish_for_test(json!({
+        "uri": format!("file://{}", path.display()),
+        "diagnostics": [one(4, 1, "cannot find value here"),
+                        one(8, 4, "defined over here")]
+    }));
+
+    // The words of the complaint, which are the ones not on a row of the
+    // list: a row names the tool that said them and the frame does not.
+    let framed = |app: &mut App| {
+        let dump = support::render(app, 60, 20);
+        let said: String = support::text_block(&dump)
+            .lines()
+            .filter(|row| row.contains('\u{2502}'))
+            .collect::<Vec<&str>>()
+            .join("\n");
+        (said, dump)
+    };
+
+    support::press_alt(&mut app, 'e');
+    let (first, dump) = framed(&mut app);
+    assert!(
+        first.contains("cannot find value here") && !first.contains("defined over here"),
+        "the first row's complaint is not the first row's:\n{dump}"
+    );
+
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    let (second, dump) = framed(&mut app);
+    assert!(
+        second.contains("defined over here") && !second.contains("cannot find value here"),
+        "the second row showed the first row's complaint:\n{dump}"
+    );
+    assert_ne!(
+        first, second,
+        "two rows saying different things showed the same complaint:\n{dump}"
     );
 }

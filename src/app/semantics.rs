@@ -559,7 +559,20 @@ impl App {
         let Some(buffer) = self.current_buffer() else {
             return;
         };
-        let line = buffer.cursor().line;
+        // Whatever the reader is looking at, which is the caret's line
+        // until a list is showing them somewhere else. Then it is the row
+        // they have walked to: the file scrolls to it and the complaint
+        // opens under it, so the row in the list and the place in the file
+        // are obviously the same thing rather than two things a reader has
+        // to pair up by line number.
+        //
+        // The column as well as the line, because the list has a row per
+        // trouble and a line can hold several: told only the line, the box
+        // would show the worst of them whichever row was selected, and two
+        // rows that say different things would look like one thing said
+        // twice.
+        let chosen = self.the_selection_in_this_file();
+        let line = chosen.map_or_else(|| buffer.cursor().line, |(line, _)| line);
         // The worst of them where a line has several, and how many others
         // there are: the same two facts the underline settles, settled the
         // same way.
@@ -569,7 +582,16 @@ impl App {
             .filter(|trouble| trouble.span.line == line)
             .collect();
         here.sort_by_key(|trouble| trouble.severity);
-        let Some(worst) = here.first() else {
+        // The one the reader has picked out of the list, where they have
+        // picked one; the worst on the line otherwise, which is what the
+        // underline settles too.
+        let worst = chosen
+            .and_then(|(line, column)| {
+                here.iter()
+                    .find(|trouble| trouble.span.line == line && trouble.span.column == column)
+            })
+            .or_else(|| here.first());
+        let Some(worst) = worst else {
             self.close_the_complaint();
             return;
         };

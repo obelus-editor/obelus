@@ -106,30 +106,14 @@ impl App {
     /// choosing -- so walking a list of problems costs nothing to change
     /// your mind about.
     pub(super) fn look_at_the_selection(&mut self) {
-        let Some(picker) = self.picker.as_ref() else {
+        let Some((line, _)) = self.the_selection_in_this_file() else {
             return;
         };
-        if picker.layout() == crate::component::picker::PickerLayout::FullArea {
-            return;
-        }
-        let Some(PickerValue::Place { path, line, .. }) =
-            picker.selected_item().map(|item| &item.value)
-        else {
-            return;
-        };
-        let (path, line) = (path.clone(), *line as usize);
-        let here = self
-            .current_buffer()
-            .map(|buffer| buffer.path().to_path_buf());
-        if here.as_deref() != Some(path.as_path()) {
-            return;
-        }
         // The room the reader can actually see, which the editor has been
         // given rather than having to be worked out here: a list sitting on
         // the status bar shortens the editor's region rather than covering
         // it, so this is the same area everything else measures with.
         let area = self.text_area();
-        let line = crate::coordinates::LineNumber::new(line);
         let Some(buffer) = self.current_buffer_mut() else {
             return;
         };
@@ -154,6 +138,63 @@ impl App {
             return;
         }
         buffer.look_at(line, area);
+    }
+
+    /// The line a list sitting on the status bar has selected, when what it
+    /// has selected is a place in the file being read.
+    ///
+    /// The line the reader is looking at, in other words -- which is not
+    /// the caret's while a list is up. Two things ask: the look, which
+    /// scrolls the file to it, and the complaint, which opens under it. One
+    /// answer, so the row they are on and the box they are reading are
+    /// always about the same place.
+    ///
+    /// `None` for a full-area list, which has covered the file rather than
+    /// sitting on it, and for a place in another file: scrolling this file
+    /// to a line number that belongs to another one would be showing the
+    /// reader somewhere with confidence and getting it wrong.
+    #[must_use]
+    pub(super) fn the_selection_in_this_file(
+        &self,
+    ) -> Option<(
+        crate::coordinates::LineNumber,
+        crate::coordinates::CharColumn,
+    )> {
+        let picker = self.picker.as_ref()?;
+        if picker.layout() == crate::component::picker::PickerLayout::FullArea {
+            return None;
+        }
+        let PickerValue::Place {
+            path,
+            line,
+            character,
+            ..
+        } = &picker.selected_item()?.value
+        else {
+            return None;
+        };
+        let buffer = self.current_buffer()?;
+        if buffer.path() != path {
+            return None;
+        }
+        // Back into the file's own units, which is the same conversion the
+        // rows were made with read the other way: a row carries the
+        // protocol's position because that is what a row that names a place
+        // carries, and what is wrong with a line is held in the file's.
+        let encoding = buffer
+            .language()
+            .and_then(|language| self.servers.get(&language))
+            .map_or(lsp_types::PositionEncodingKind::UTF16, |client| {
+                client.encoding().clone()
+            });
+        Some(crate::lsp::position::from_lsp(
+            buffer.text(),
+            lsp_types::Position {
+                line: *line,
+                character: *character,
+            },
+            &encoding,
+        ))
     }
 
     /// Puts the view back where the reader was looking before a list showed
