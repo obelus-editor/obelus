@@ -4759,106 +4759,84 @@ fn a_path_that_went_away_after_the_list_was_built_says_so() {
     );
 }
 
-/// Each column is reserved by its own news, and carries only that.
+/// The margin and the map are reserved by there being a change, not by
+/// there being a repository.
 ///
-/// A cell has one foreground and one background, and both kinds of news
-/// say what *kind* they are by hue: git's deleted is the same red as a
-/// server's error, and its modified the same yellow as a warning. Halved
-/// into one cell the two merge into a solid block exactly where they
-/// matter most -- a line both changed and wrong -- so they get a column
-/// each instead.
+/// A file in a clean tree would otherwise spend two columns on an answer
+/// of "nothing", which is most files most of the time. What that costs is
+/// a cell of sideways shift when a file does change under the reader --
+/// and with wrapping on, a rewrap -- paid where there is news worth the
+/// column.
 ///
-/// And a column each means a column each *when there is news*: a file in a
-/// clean tree spends nothing on git, a file with nothing wrong with it
-/// spends nothing on problems, and the map is one column wide, two, or not
-/// there at all.
+/// Both of them carry git's news and nothing else. What a server says is
+/// wrong is said by the underline under the word, by the complaint framed
+/// under the caret's line, by the count on the status row and by the key
+/// that walks to the next one; a mark here would be a fourth telling, in a
+/// column whose colours it cannot be told apart from.
 ///
-/// Broken deliberately by giving the map a fixed width, or by reserving
-/// its two columns together: the problems land in the column the changes
-/// had, one cell left of where this looks.
+/// Broken deliberately by reserving either of them for a file that is
+/// merely *in* a repository.
 #[test]
-fn each_map_column_is_reserved_by_its_own_news() {
+fn the_margin_and_the_map_are_reserved_by_there_being_a_change() {
     use obelus::{app::App, buffer::Buffer};
 
-    let committed = "fn main() {\n    let a = 1;\n    nmae;\n}\n";
-    let repository = Repository::new("columns", committed);
-    // Line 1 changed; line 2 did not. Only line 2 is wrong, so between
-    // them they are every case a column has to draw.
-    repository.write("fn main() {\n    let b = 1;\n    nmae;\n}\n");
+    let committed = "fn main() {\n    let a = 1;\n    let b = 2;\n}\n";
+    let repository = Repository::new("reserved", committed);
 
     let read = |app: &mut App| {
         let cells = support::cells_of(app, 30, 12);
         let dump = support::render(app, 30, 12);
         (cells, dump)
     };
+    // Nothing changed yet, so neither column is there and the text starts
+    // at the very first cell.
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     support::lay_out(&mut app, 30, 12);
-    app.publish_for_test(serde_json::json!({
-        "uri": format!("file://{}", repository.path().display()),
-        "diagnostics": [{
-            "range": { "start": { "line": 2, "character": 4 },
-                       "end": { "line": 2, "character": 8 } },
-            "severity": 1,
-            "source": "rustc",
-            "message": "cannot find value `nmae` in this scope"
-        }]
-    }));
     let (cells, dump) = read(&mut app);
-    let at = |x: u16, y: u16| cells.cell((x, y)).expect("a cell").clone();
+    let row = |cells: &ratatui::buffer::Buffer, y: u16| {
+        (0..30)
+            .map(|x| cells.cell((x, y)).expect("a cell").symbol().to_string())
+            .collect::<String>()
+    };
+    // Where the text begins, which is what a reserved column moves.
+    let starts = |cells: &ratatui::buffer::Buffer| {
+        let row = row(cells, 0);
+        row.find("fn").map(|byte| row[..byte].chars().count())
+    };
+    let clean = starts(&cells).expect("the first line");
+    assert!(
+        !row(&cells, 0).contains('\u{258c}'),
+        "a clean file has something on its map:\n{dump}"
+    );
 
-    // The margin is git's. The changed line has its bar; the line that is
-    // only wrong has nothing, because git has nothing to say about it.
+    // Change a line and both arrive: the margin marks it, and the map has
+    // it too.
+    repository.write("fn main() {\n    let a = 9;\n    let b = 2;\n}\n");
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 30, 12);
+    let (cells, dump) = read(&mut app);
     assert_eq!(
-        at(0, 1).symbol(),
+        cells.cell((0, 1)).expect("a cell").symbol(),
         "\u{2590}",
         "the margin does not mark the changed line:\n{dump}"
     );
+    let marked = (0..10)
+        .filter(|y| cells.cell((28, *y)).expect("a cell").symbol() == "\u{258c}")
+        .count();
     assert_eq!(
-        at(0, 2).symbol().trim(),
-        "",
-        "the margin marked a line git has nothing to say about:\n{dump}"
+        marked, 1,
+        "the map does not have the one change on it:\n{dump}"
     );
-
-    // Two map columns before the bar: changes, then problems.
-    let column = |x: u16| -> Vec<(u16, ratatui::style::Color)> {
-        (0..10)
-            .filter(|y| at(x, *y).symbol() == "\u{258c}")
-            .map(|y| (y, at(x, y).fg))
-            .collect()
-    };
-    let changes = column(27);
-    let problems = column(28);
-    assert_eq!(
-        changes.len(),
-        1,
-        "the changes column does not have the one hunk on it:\n{dump}"
-    );
-    assert_eq!(
-        problems.len(),
-        1,
-        "the problems column does not have the one problem on it:\n{dump}"
-    );
+    // And the map is one column, not two: the cell before it is the text's.
     assert_ne!(
-        changes[0].1, problems[0].1,
-        "the two columns are the same colour, so neither says which it is:\n{dump}"
-    );
-
-    // And with nothing wrong, that column is not there: the changes move
-    // along into it.
-    app.publish_for_test(serde_json::json!({
-        "uri": format!("file://{}", repository.path().display()),
-        "diagnostics": []
-    }));
-    let (cells, dump) = read(&mut app);
-    let at = |x: u16, y: u16| cells.cell((x, y)).expect("a cell").clone();
-    assert_eq!(
-        at(28, changes[0].0).symbol(),
+        cells.cell((27, 1)).expect("a cell").symbol(),
         "\u{258c}",
-        "the problems column was kept for a file with no problems:\n{dump}"
+        "the map is two columns wide:\n{dump}"
     );
+    // And the margin cost the text exactly the one column it takes.
     assert_eq!(
-        at(27, changes[0].0).symbol().trim(),
-        "",
-        "the changes stayed where the problems column had pushed them:\n{dump}"
+        starts(&cells).expect("the first line"),
+        clean + 1,
+        "the margin arrived without costing the text a column, or cost it two:\n{dump}"
     );
 }

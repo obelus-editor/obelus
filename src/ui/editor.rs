@@ -174,19 +174,28 @@ pub fn changed(changes: Option<&Changes>) -> bool {
 
 /// How many columns the map takes, just inside the scrollbar.
 ///
-/// One for what changed and one for what is wrong, each reserved by its
-/// own news: a file outside a repository can still have a server, and a
-/// file in a clean tree with nothing wrong with it spends neither.
+/// git's news and nothing else, and only where there is some.
 ///
-/// Two columns rather than two halves of one cell. A cell has one
-/// foreground and one background, and both of these say what *kind* of
-/// news they are by hue -- git's deleted is the same red as a server's
-/// error, and its modified the same yellow as a warning. Halved into one
-/// cell the two merge into a solid block exactly where they matter most,
-/// and a mark that cannot be told from the other mark is not a mark.
+/// What a server says is wrong is deliberately not here, and it was tried
+/// three ways first: halved into this cell, given a column of its own, and
+/// laid under the changes as a wash. The first two are what the trying
+/// taught. A cell has one foreground and one background, and both kinds of
+/// news say what *kind* they are by hue -- git's deleted is the same red as
+/// an error, its modified the same yellow as a warning -- so halved they
+/// merge into a solid block exactly where they matter most; and a column
+/// each reads as one broken double bar rather than as two answers.
+///
+/// But the reason it is not here is not that it was awkward. A map is for
+/// something with a shape: a twenty-line rewrite is a longer bar than a
+/// one-line fix, and nothing else on screen says that. A problem has no
+/// shape -- it is a point -- and where the other ones are is already
+/// answered by the count on the status row, by `go-to-next-problem`, which
+/// takes the reader there rather than telling them it exists, and by the
+/// list, which names every one of them. A speckle in one column adds
+/// nothing to those three.
 #[must_use]
-pub fn map_width(changes: Option<&Changes>, wrong: bool) -> u16 {
-    u16::from(changed(changes)) + u16::from(wrong)
+pub fn map_width(changes: Option<&Changes>) -> u16 {
+    u16::from(changed(changes))
 }
 
 /// How many columns come before the text: the change margin, the gutter,
@@ -253,13 +262,12 @@ pub const CHANGE_MAP_WIDTH: u16 = 1;
 /// background and nothing else, so two facts in one column is the gap or it
 /// is nothing, and a reader who wants to know where else to look wants both
 /// answers in the one picture.
-/// The mark a row of either map column carries.
+/// The mark a row of the map carries.
 ///
 /// The margin's own mark is against the *right* of its cell, where it sits
-/// beside the text it is about. These are against the left, so that
-/// neither touches what is on its right: two thin strokes with a gap read
-/// as two things, and a stroke against the scrollbar -- which is a full
-/// block -- reads as one thick bar.
+/// beside the text it is about. This one is against the left, so that it
+/// does not touch the bar it is next to: two thin strokes with a gap read
+/// as two things, and `map + bar` with no gap reads as one thick bar.
 const MAP_MARK: char = '\u{258c}';
 
 /// The column the scrollbar takes, on the right.
@@ -359,12 +367,11 @@ impl EditorView<'_> {
         let total = buffer.text().line_count() - folds.hidden_total();
         let row_of = |line: LineNumber| crate::ui::bar_row(shown(line), total, area.height);
 
-        // Gathered before anything is drawn, because a cell holds one of
-        // each and a row holds many lines: on a file taller than the screen
-        // two hunks and three problems land on the same row, and which of
-        // them the reader sees cannot be whichever was looked at last.
-        let mut rows: Vec<(Option<Marker>, Option<crate::lsp::trouble::Severity>)> =
-            vec![(None, None); usize::from(area.height)];
+        // Gathered before anything is drawn, because a row holds many
+        // lines: on a file taller than the screen two hunks land on the
+        // same row, and which of them the reader sees cannot be whichever
+        // was looked at last.
+        let mut rows: Vec<Option<Marker>> = vec![None; usize::from(area.height)];
         if let Some(changes) = self.changes {
             for hunk in changes.hunks() {
                 let first = row_of(hunk.line);
@@ -375,49 +382,24 @@ impl EditorView<'_> {
                 let last = row_of(hunk.line.saturating_add(hunk.lines.max(1) - 1)).max(first);
                 for row in first..=last {
                     if let Some(cell) = rows.get_mut(usize::from(row)) {
-                        cell.0 = Some(hunk.marker());
+                        *cell = Some(hunk.marker());
                     }
                 }
             }
         }
-        // The worst of them where several share a row, which is the same
-        // rule the underline and the complaint follow.
-        for trouble in self.troubles {
-            if let Some(cell) = rows.get_mut(usize::from(row_of(trouble.span.line))) {
-                cell.1 = Some(
-                    cell.1
-                        .map_or(trouble.severity, |worst| worst.min(trouble.severity)),
-                );
-            }
-        }
 
-        // One column each, side by side, each reserved by its own news --
-        // so on a file nobody has changed the problems are against the
-        // scrollbar and there is no empty column before them.
-        let changes = u16::from(changed(self.changes));
-        for (row, (marker, severity)) in rows.iter().enumerate() {
-            let Ok(row) = u16::try_from(row) else {
-                break;
+        for (row, marker) in rows.iter().enumerate() {
+            let (Ok(row), Some(marker)) = (u16::try_from(row), marker) else {
+                continue;
             };
-            let y = area.y + row;
-            if changes > 0
-                && let Some(marker) = marker
-            {
-                let colour = self.theme.marker_colour(*marker);
-                put(cells, area.x, y, MAP_MARK, Style::new().fg(colour));
-            }
-            if area.x + changes < area.right()
-                && let Some(severity) = severity
-            {
-                let colour = self.theme.colour_for(Some(severity.kind()));
-                put(
-                    cells,
-                    area.x + changes,
-                    y,
-                    MAP_MARK,
-                    Style::new().fg(colour),
-                );
-            }
+            let colour = self.theme.marker_colour(*marker);
+            put(
+                cells,
+                area.x,
+                area.y + row,
+                MAP_MARK,
+                Style::new().fg(colour),
+            );
         }
     }
 
@@ -572,8 +554,7 @@ impl Widget for EditorView<'_> {
         } else {
             0
         };
-        let map = map_width(self.changes, !self.troubles.is_empty())
-            .min(area.width - margin - gutter - folds);
+        let map = map_width(self.changes).min(area.width - margin - gutter - folds);
         // The same total the caret's position is worked out from, which is
         // what keeps the two agreeing -- checked only where the caret is
         // drawn at all. A screen too narrow for what goes before the text

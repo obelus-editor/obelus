@@ -368,58 +368,6 @@ fn the_caret_walks_from_one_problem_to_the_next() {
     );
 }
 
-/// A file outside a repository is still marked.
-///
-/// The map's columns are reserved one at a time, each by its own news:
-/// this file is in no repository, so it has no changes column at all and
-/// the problems sit straight against the scrollbar. Before, both columns
-/// came together or not at all, and a file with nothing to say about git
-/// had nowhere to carry what a server said.
-///
-/// The margin is git's and says nothing here. What is wrong with a line
-/// the reader can see is said by the underline under the word and by the
-/// complaint framed under it; the map is for the lines that are not on
-/// screen, which have neither.
-///
-/// Broken deliberately by reserving the two columns together again: the
-/// problem lands a column to the left of where this looks, which is the
-/// column a change would have had.
-#[test]
-fn a_file_with_no_repository_still_says_where_the_problems_are() {
-    let (_scratch, mut app, path) = editing("trouble-nowhere", "fn main() {\n    nmae;\n}\n");
-    assert!(
-        app.changes().is_none(),
-        "the scratch directory turned out to be a repository, so this proves nothing"
-    );
-    app.publish_for_test(published(&path, 1, 4, 8, 1));
-
-    let cells = support::cells_of(&mut app, 60, 16);
-    let dump = support::render(&mut app, 60, 16);
-    let at = |x: u16, y: u16| cells.cell((x, y)).expect("a cell").clone();
-
-    // The column just inside the scrollbar, because there is no changes
-    // column in front of it to push it along.
-    let marked: Vec<u16> = (0..14)
-        .filter(|y| at(58, *y).symbol() == "\u{258c}")
-        .collect();
-    assert_eq!(
-        marked.len(),
-        1,
-        "the map does not have the one problem on it:\n{dump}"
-    );
-    assert_ne!(
-        at(58, marked[0]).fg,
-        at(58, marked[0] + 1).fg,
-        "the mark is the colour of a cell with nothing in it:\n{dump}"
-    );
-    // And the margin is not reserved at all: nothing has changed here.
-    assert_eq!(
-        at(0, 1).symbol().trim(),
-        "",
-        "a margin was drawn for a file git has nothing to say about:\n{dump}"
-    );
-}
-
 /// The words are framed, and the frame starts under the word they are about.
 ///
 /// A complaint is prose about a line, and prose drawn in the plain colour

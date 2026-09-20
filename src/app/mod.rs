@@ -1330,7 +1330,7 @@ impl App {
                     ui::editor::changed(self.changes()),
                     !buffer.folds().is_empty(),
                 );
-                let after = ui::editor::map_width(self.changes(), !self.troubles().is_empty());
+                let after = ui::editor::map_width(self.changes());
                 self.editor_area
                     .width
                     .saturating_sub(before)
