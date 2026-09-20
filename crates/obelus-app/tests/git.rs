@@ -1465,9 +1465,12 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
 /// margin. That ambiguity does not show up in a sample anybody would write
 /// by hand: every five-line case I tried is drawn the same way with or
 /// without the tidying. In real code it shows up constantly -- of the
-/// seventy-nine file diffs in the last dozen commits, nineteen land
-/// somewhere git does not put them if the diff is used as the algorithm
-/// leaves it.
+/// file diffs in the last few dozen commits, a quarter land somewhere git
+/// does not put them if the diff is used as the algorithm leaves it.
+///
+/// Over a window of commits rather than a fixed list, and only over the
+/// files still on disk: a commit that moved everything contributes nothing
+/// comparable, so the window has to be wide enough to see past one.
 ///
 /// Skipped where there is no history to read, which is what a tarball
 /// without a `.git` is.
@@ -1483,7 +1486,7 @@ fn a_run_of_changes_is_where_git_draws_it() {
             .expect("running git");
         String::from_utf8_lossy(&out.stdout).to_string()
     };
-    let commits: Vec<String> = git(&["log", "-12", "--format=%H"])
+    let commits: Vec<String> = git(&["log", "-60", "--format=%H"])
         .lines()
         .map(str::to_string)
         .collect();

@@ -376,7 +376,7 @@ mod tests {
     #[test]
     fn an_embedded_language_is_counted_beside_its_parent_not_inside_it() {
         let root = Path::new(env!("OBELUS_TREE"));
-        let counted = count(&root);
+        let counted = count(root);
 
         let rust = counted
             .languages

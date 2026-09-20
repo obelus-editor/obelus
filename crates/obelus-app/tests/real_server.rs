@@ -296,7 +296,7 @@ fn a_real_server_offers_what_could_be_typed() {
     // the punctuation the panel is offered after. A file written for the
     // test would be a file outside the crate's module tree, which is a
     // thing rust-analyzer has nothing to say about.
-    let path = root().join("src/jump.rs");
+    let path = root().join("crates/obelus-app/src/jump.rs");
     let source = std::fs::read_to_string(&path).expect("reading the file");
     let uri = obelus_lsp::client::uri_for(&path).expect("a uri");
     client
@@ -419,7 +419,7 @@ fn a_real_server_finds_a_definition() {
     });
 
     // `buffer::DocumentId` on line three of jump.rs, at column twelve.
-    let path = root().join("src/jump.rs");
+    let path = root().join("crates/obelus-app/src/jump.rs");
     let text = std::fs::read_to_string(&path).expect("reading the file");
     let uri = obelus_lsp::client::uri_for(&path).expect("a uri");
 
@@ -460,11 +460,13 @@ fn a_real_server_finds_a_definition() {
             action::Outcome::Places(places) => {
                 let named = &places[0];
                 // The buffer module, however it is spelled on disk: it
-                // was one file and is now a directory, and which of those
-                // it is has nothing to do with what this is testing.
+                // has been a file, a directory and a crate root, and which
+                // of those it is has nothing to do with what this is
+                // testing.
                 assert!(
                     named.path.ends_with("src/buffer.rs")
-                        || named.path.ends_with("src/buffer/mod.rs"),
+                        || named.path.ends_with("src/buffer/mod.rs")
+                        || named.path.ends_with("obelus-buffer/src/lib.rs"),
                     "expected the buffer module, got {}",
                     named.path.display()
                 );
@@ -623,7 +625,7 @@ fn a_real_server_outlines_a_file_by_name_and_by_nesting() {
     let Some((mut client, events)) = start() else {
         return;
     };
-    let path = root().join("src/jump.rs");
+    let path = root().join("crates/obelus-app/src/jump.rs");
     let uri = obelus_lsp::client::uri_for(&path).expect("a uri");
     let text = std::fs::read_to_string(&path).expect("reading the file");
     client
@@ -705,7 +707,7 @@ fn a_real_server_offers_something_to_do_on_ordinary_code() {
     let Some((mut client, events)) = start() else {
         return;
     };
-    let path = root().join("src/lsp/actions.rs");
+    let path = root().join("crates/obelus-lsp/src/actions.rs");
     let uri = obelus_lsp::client::uri_for(&path).expect("a uri");
     let text = std::fs::read_to_string(&path).expect("reading the file");
     client
@@ -876,7 +878,7 @@ fn a_real_server_says_who_calls_something() {
     // A function with a caller in its own file, found by looking rather
     // than written down: a line number here would be a test that breaks
     // when the file above it is edited.
-    let path = root().join("src/lsp/hierarchy.rs");
+    let path = root().join("crates/obelus-lsp/src/hierarchy.rs");
     let text = std::fs::read_to_string(&path).expect("reading the file");
     let uri = obelus_lsp::client::uri_for(&path).expect("a uri");
     let line = text
@@ -1062,7 +1064,7 @@ fn probe_what_a_move_changes() {
     );
 
     let from = root().join("crates/obelus-lsp/src/hint.rs");
-    let to = root().join("src/lsp/hints.rs");
+    let to = root().join("crates/obelus-lsp/src/hints.rs");
     let deadline = Instant::now() + INDEXED;
     loop {
         assert!(Instant::now() < deadline, "nothing came back");
@@ -1136,7 +1138,7 @@ fn a_real_server_says_which_files_it_wants_told_about_before_they_move() {
         "rust-analyzer no longer wants asking about a Rust file that moves"
     );
     assert!(
-        renaming::asked_before(capabilities, &root().join("src/lsp"), true),
+        renaming::asked_before(capabilities, &root().join("crates/obelus-lsp/src"), true),
         "rust-analyzer no longer wants asking about a directory that moves"
     );
     // And the filters are read rather than assumed: it registered `*.rs`
@@ -1169,7 +1171,7 @@ fn a_real_server_works_out_what_moving_a_file_would_change() {
     });
 
     let from = root().join("crates/obelus-lsp/src/hint.rs");
-    let to = root().join("src/lsp/hints.rs");
+    let to = root().join("crates/obelus-lsp/src/hints.rs");
     let params = renaming::params(&from, &to).expect("two uris");
 
     let deadline = Instant::now() + INDEXED;

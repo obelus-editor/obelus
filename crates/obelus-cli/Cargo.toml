@@ -1,6 +1,6 @@
 [package]
 name = "obelus-cli"
-description = "The `ob` command"
+description.workspace = true
 version.workspace = true
 edition.workspace = true
 license.workspace = true

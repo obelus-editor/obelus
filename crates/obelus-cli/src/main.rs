@@ -9,7 +9,10 @@ use obelus_buffer::Buffer;
 
 /// A terminal code reader. It doesn't want you to type.
 #[derive(Parser)]
-#[command(version, about)]
+// Named rather than left to the package: clap takes the name from
+// `CARGO_PKG_NAME`, which is the crate this binary is built from and not
+// the command a reader types. `obelus-cli --version` is a name nobody has.
+#[command(name = "ob", version, about)]
 struct Arguments {
     /// What to open: a file, or a directory to work in.
     ///
