@@ -14,7 +14,7 @@ use ratatui::{
 
 use crate::{
     app::App,
-    ui::{editor, fill, truncate_from_right, write},
+    ui::{editor, truncate_from_right, write},
 };
 
 /// Where the line goes, if there is one to draw.
@@ -44,9 +44,11 @@ pub fn layout(app: &App, editor: Rect) -> Option<Rect> {
     if !above && y + 3 > editor.bottom() {
         return None;
     }
-    let width = u16::try_from(crate::ui::text_width(&signature.label) + 2)
-        .unwrap_or(u16::MAX)
-        .min(editor.width);
+    let width = u16::try_from(
+        crate::ui::text_width(&signature.label) + usize::from(crate::ui::PANEL_INSET * 2),
+    )
+    .unwrap_or(u16::MAX)
+    .min(editor.width);
     let x = cursor_x.min(editor.right().saturating_sub(width));
     Some(Rect {
         x,
@@ -62,12 +64,12 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
         return;
     };
     let theme = app.theme();
-    fill(cells, area, Style::new().bg(theme.background));
-    crate::ui::complete::edges(cells, area, theme);
+    crate::ui::panel(cells, area, theme);
 
-    let room = usize::from(area.width.saturating_sub(2));
+    let inside = crate::ui::inside(area);
+    let room = usize::from(inside.width);
     let label = truncate_from_right(&signature.label, room);
-    let x = area.x + 1;
+    let x = inside.x;
     let y = area.y + 1;
     write(
         cells,

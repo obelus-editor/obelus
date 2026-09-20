@@ -71,7 +71,7 @@ fn the_answer_is_drawn_over_the_place_it_is_about() {
     let rows: Vec<&str> = support::text_block(&dump).lines().collect();
     let panel = rows
         .iter()
-        .position(|row| row.contains('\u{250c}'))
+        .position(|row| row.contains(support::PANEL_CORNER))
         .expect("a box");
     let word = rows
         .iter()
@@ -193,6 +193,70 @@ fn the_paging_keys_read_the_rest_of_it() {
     );
 }
 
+/// Nothing inside a panel touches its border, and the panel is not the
+/// colour of the page behind it.
+///
+/// A hover holds a README, and a README's fenced blocks are boxes of their
+/// own -- so without the blank there were two lines side by side with
+/// nothing between them, one obelus's and one the document's. The raised
+/// ground says the same thing a second way, for a panel whose contents
+/// reach its edge: a box outlined in one thin line over code of exactly
+/// the same colour is a box that disappears into what it covers.
+///
+/// Broken deliberately by setting `ui::PANEL_INSET` to 1, or by filling in
+/// `ui::panel` with `theme.background`: the first puts the fence against
+/// the side, the second leaves the panel the colour of the file.
+#[test]
+fn a_panel_holds_its_contents_off_its_own_edge() {
+    let (_scratch, mut app) = editing("hover-inset", SOURCE);
+    at_the_word(&mut app);
+    app.hover_for_test(answered(None));
+
+    let dump = support::render(&mut app, 76, 18);
+    let text = support::text_block(&dump);
+    let rows: Vec<&str> = text.lines().collect();
+    let at = rows
+        .iter()
+        .position(|row| row.contains(support::PANEL_CORNER))
+        .unwrap_or_else(|| panic!("no box:\n{dump}"));
+
+    // Every row of it, because what reaches the edge is whichever row is
+    // widest and the test should not have to know which.
+    for row in &rows[at + 1..] {
+        let Some(side) = row.find('\u{2502}') else {
+            break;
+        };
+        let after = row[side + '\u{2502}'.len_utf8()..]
+            .chars()
+            .next()
+            .unwrap_or(' ');
+        assert_eq!(after, ' ', "{after:?} is against the panel's side:\n{dump}");
+    }
+
+    // And the panel's own cells wear the raised ground -- asked of the
+    // cells and not of the legend, because the themes obelus ships give a
+    // selected row the same colour, so a legend that has it says nothing
+    // about which thing on screen is wearing it.
+    let ground = support::spelled(app.theme().raised_background);
+    let letters: Vec<char> = support::legend_block(&dump)
+        .lines()
+        .filter(|entry| entry.contains(&format!("bg={ground}")))
+        .filter_map(|entry| entry.chars().next())
+        .collect();
+    let styles: Vec<&str> = support::style_block(&dump).lines().collect();
+    let corner = support::column_of(rows[at], &support::PANEL_CORNER.to_string());
+    let under = styles[at + 1]
+        .split_once('|')
+        .map_or(styles[at + 1], |(_, rest)| rest)
+        .chars()
+        .nth(corner + 1)
+        .expect("a cell inside the panel");
+    assert!(
+        letters.contains(&under),
+        "the panel is the colour of the file it covers:\n{dump}"
+    );
+}
+
 /// What is written on the first row inside the box, which is what
 /// scrolling it changes.
 ///
@@ -204,7 +268,7 @@ fn inside_the_top(dump: &str) -> String {
     let rows: Vec<&str> = support::text_block(dump).lines().collect();
     let at = rows
         .iter()
-        .position(|row| row.contains('\u{250c}'))
+        .position(|row| row.contains(support::PANEL_CORNER))
         .unwrap_or_else(|| panic!("no box:\n{dump}"));
     let row = rows[at + 1];
     let from = row
@@ -225,7 +289,7 @@ fn says_something(dump: &str) -> bool {
     let rows: Vec<&str> = support::text_block(dump).lines().collect();
     let at = rows
         .iter()
-        .position(|row| row.contains('\u{250c}'))
+        .position(|row| row.contains(support::PANEL_CORNER))
         .unwrap_or_else(|| panic!("no box:\n{dump}"));
     rows[at + 1..]
         .iter()
@@ -277,7 +341,7 @@ fn a_pointed_answer_is_drawn_beside_the_word_it_is_about() {
     let corner = rows
         .iter()
         .enumerate()
-        .find_map(|(at, row)| row.find('\u{250c}').map(|x| (at, x)))
+        .find_map(|(at, row)| row.find(support::PANEL_CORNER).map(|x| (at, x)))
         .unwrap_or_else(|| panic!("no box: {rows:?}"));
     assert_eq!(
         corner,

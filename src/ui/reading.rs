@@ -21,12 +21,20 @@ use crate::{
 };
 
 /// Draws the reading, starting `top` rows in.
-pub fn draw(cells: &mut CellBuffer, area: Rect, rows: &[Row], top: usize, theme: &Theme) {
-    fill(
-        cells,
-        area,
-        Style::new().fg(theme.foreground).bg(theme.background),
-    );
+///
+/// `ground` because the same reading is drawn in two places: a markdown
+/// file previewed in the editor sits on the page, and a hover or a
+/// completion's documentation sits on a panel's raised one. Filling with
+/// the page's own colour painted a panel's ground back out from under it.
+pub fn draw(
+    cells: &mut CellBuffer,
+    area: Rect,
+    rows: &[Row],
+    top: usize,
+    theme: &Theme,
+    ground: ratatui::style::Color,
+) {
+    fill(cells, area, Style::new().fg(theme.foreground).bg(ground));
     if area.width == 0 || area.height == 0 {
         return;
     }
@@ -64,7 +72,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, rows: &[Row], top: usize, theme:
 
         let mut column = 0u16;
         for span in &row.spans {
-            let style = style_of(span.ink, span.bold, span.italic, theme);
+            let style = style_of(span.ink, span.bold, span.italic, theme, ground);
             for character in span.text.chars() {
                 if column >= width {
                     break;
@@ -82,8 +90,14 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, rows: &[Row], top: usize, theme:
 /// quote or a timestamp the colour of a comment. That mapping is the same
 /// one the *highlighting* uses, so the reading and the bytes of one file are
 /// recognizably the same file.
-fn style_of(ink: Ink, bold: bool, italic: bool, theme: &Theme) -> Style {
-    let mut style = Style::new().bg(theme.background);
+fn style_of(
+    ink: Ink,
+    bold: bool,
+    italic: bool,
+    theme: &Theme,
+    ground: ratatui::style::Color,
+) -> Style {
+    let mut style = Style::new().bg(ground);
     style = match ink {
         Ink::Plain => style.fg(theme.foreground),
         Ink::Heading(_) => style.fg(theme.syntax.keyword).add_modifier(Modifier::BOLD),

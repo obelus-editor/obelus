@@ -76,7 +76,12 @@ pub fn layout(app: &App, editor: Rect) -> Option<Panel> {
     let typed = u16::try_from(text_width(completion.query())).unwrap_or(0);
     let left = cursor_x.saturating_sub(typed).max(editor.x);
 
-    let wanted = u16::try_from(completion.width().saturating_add(2)).unwrap_or(u16::MAX);
+    let wanted = u16::try_from(
+        completion
+            .width()
+            .saturating_add(usize::from(crate::ui::PANEL_INSET * 2)),
+    )
+    .unwrap_or(u16::MAX);
     let width = wanted.clamp(LEAST_WIDTH.min(editor.width), editor.width);
     // Overhanging the right edge moves the whole panel left rather than
     // narrowing it: the list is read down its left edge.
@@ -148,48 +153,40 @@ pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &App) {
     if area.width < 2 || area.height < 3 {
         return;
     }
-    fill(cells, area, Style::new().bg(theme.background));
+    crate::ui::panel(cells, area, theme);
+    let room = crate::ui::inside(area);
 
     // The two halves, in the order they are drawn on screen. The list is
     // always the half against the cursor.
     let documentation = (panel.documentation > 0).then(|| Rect {
-        x: area.x + 1,
         y: match panel.above {
-            true => area.y + 1,
-            false => area.bottom() - 1 - panel.documentation,
+            true => room.y,
+            false => room.bottom() - panel.documentation,
         },
-        width: area.width - 2,
         height: panel.documentation,
+        ..room
     });
     let list = Rect {
-        x: area.x + 1,
         y: match (panel.above, documentation) {
-            (true, Some(_)) => area.bottom() - 1 - panel.list,
-            _ => area.y + 1,
+            (true, Some(_)) => room.bottom() - panel.list,
+            _ => room.y,
         },
-        width: area.width - 2,
         height: panel.list,
+        ..room
     };
-
-    edges(cells, area, theme);
     // The line between the halves, which is the box's own: one thing with
     // two parts rather than two boxes touching.
     if documentation.is_some() {
         let y = match panel.above {
-            true => area.y + 1 + panel.documentation,
-            false => area.y + 1 + panel.list,
+            true => room.y + panel.documentation,
+            false => room.y + panel.list,
         };
-        put(cells, area.x, y, '\u{251c}', Style::new().fg(theme.gutter));
+        let edge = Style::new().fg(theme.gutter).bg(theme.raised_background);
+        put(cells, area.x, y, '\u{251c}', edge);
         for x in area.x + 1..area.right() - 1 {
-            put(cells, x, y, '\u{2500}', Style::new().fg(theme.gutter));
+            put(cells, x, y, '\u{2500}', edge);
         }
-        put(
-            cells,
-            area.right() - 1,
-            y,
-            '\u{2524}',
-            Style::new().fg(theme.gutter),
-        );
+        put(cells, area.right() - 1, y, '\u{2524}', edge);
     }
 
     rows(cells, list, completion, theme);
@@ -202,29 +199,8 @@ pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &App) {
             completion.documentation_rows(),
             completion.scrolled(),
             theme,
+            theme.raised_background,
         );
-    }
-}
-
-/// The box round the whole panel.
-///
-/// Shared with the signature line, which is the same kind of thing: a
-/// server's answer put where the reader is looking.
-pub(crate) fn edges(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
-    let style = Style::new().fg(theme.gutter);
-    let (left, right) = (area.x, area.right() - 1);
-    let (top, bottom) = (area.y, area.bottom() - 1);
-    put(cells, left, top, '\u{250c}', style);
-    put(cells, right, top, '\u{2510}', style);
-    put(cells, left, bottom, '\u{2514}', style);
-    put(cells, right, bottom, '\u{2518}', style);
-    for x in left + 1..right {
-        put(cells, x, top, '\u{2500}', style);
-        put(cells, x, bottom, '\u{2500}', style);
-    }
-    for y in top + 1..bottom {
-        put(cells, left, y, '\u{2502}', style);
-        put(cells, right, y, '\u{2502}', style);
     }
 }
 

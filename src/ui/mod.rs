@@ -281,7 +281,14 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
                     let top = app
                         .current_buffer()
                         .map_or(0, |buffer| buffer.viewport().top.get());
-                    reading::draw(cells, regions.editor, rows, top, app.theme());
+                    reading::draw(
+                        cells,
+                        regions.editor,
+                        rows,
+                        top,
+                        app.theme(),
+                        app.theme().background,
+                    );
                 }
                 None => editor::EditorView::new(app).render(regions.editor, cells),
             },
@@ -1066,6 +1073,76 @@ fn cut(cells: &mut CellBuffer, x: u16, y: u16, edge: u16, theme: &Theme) {
     );
 }
 
+/// How much of a panel's edge is not for what is inside it.
+///
+/// Two each side: the line, and a blank inside it. Text against a border
+/// reads as text that ran into it -- and a hover holds a README, whose own
+/// fenced blocks are boxes, so without the blank there were two lines
+/// touching with nothing between them.
+pub const PANEL_INSET: u16 = 2;
+
+/// The frame round something obelus floats over the reader's work.
+///
+/// One shape for all of them: the completion list, the signature line, a
+/// hover, and the card of every key. They are the same kind of thing --
+/// something put over the page for a moment -- and four of them wearing two
+/// shapes was a screen where the shape said nothing.
+///
+/// Rounded, and on a ground a shade off the page. The rounding is not
+/// decoration: what a hover holds is a *document*, and a document's own
+/// boxes -- a markdown table, a fenced block -- are square, because that is
+/// what every markdown renderer draws. A square frame around a square frame
+/// is one thing that looks like two; a round one says which of them is
+/// obelus's furniture and which is the reader's text. The ground says the
+/// same thing again for a panel whose contents reach its edge.
+pub fn panel(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
+    if area.width < 2 || area.height < 2 {
+        return;
+    }
+    fill(
+        cells,
+        area,
+        Style::new()
+            .fg(theme.foreground)
+            .bg(theme.raised_background),
+    );
+    let edge = Style::new().fg(theme.gutter).bg(theme.raised_background);
+    let (left, right) = (area.x, area.right() - 1);
+    let (top, bottom) = (area.y, area.bottom() - 1);
+    for (x, y, glyph) in [
+        (left, top, '\u{256d}'),
+        (right, top, '\u{256e}'),
+        (left, bottom, '\u{2570}'),
+        (right, bottom, '\u{256f}'),
+    ] {
+        put(cells, x, y, glyph, edge);
+    }
+    for x in left + 1..right {
+        put(cells, x, top, '\u{2500}', edge);
+        put(cells, x, bottom, '\u{2500}', edge);
+    }
+    for y in top + 1..bottom {
+        put(cells, left, y, '\u{2502}', edge);
+        put(cells, right, y, '\u{2502}', edge);
+    }
+}
+
+/// What is left of a panel for the thing inside it.
+///
+/// One answer, asked by the drawing of the frame and by whatever is laid
+/// out to fit in it -- which in a hover's case happens a frame earlier,
+/// because markdown cannot be made into rows until there is a width to
+/// make them for.
+#[must_use]
+pub fn inside(area: Rect) -> Rect {
+    Rect {
+        x: area.x + PANEL_INSET,
+        y: area.y + 1,
+        width: area.width.saturating_sub(PANEL_INSET * 2),
+        height: area.height.saturating_sub(2),
+    }
+}
+
 /// How many rows a view gives up to its foot, where it has one.
 pub const FOOT_ROWS: u16 = 2;
 
@@ -1276,52 +1353,34 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
         height,
     };
 
-    let ground = Style::new()
-        .fg(theme.foreground)
-        .bg(theme.raised_background);
-    fill(cells, card, ground);
-    // An edge, because this sits over a list it is not part of: a raised
-    // ground alone reads as the list having changed colour.
-    let edge = Style::new().fg(theme.gutter).bg(theme.raised_background);
-    let last = card.width - 1;
-    let foot = card.height - 1;
-    for (x, glyph) in [(0, '\u{256d}'), (last, '\u{256e}')] {
-        put(cells, card.x + x, card.y, glyph, edge);
-    }
-    for (x, glyph) in [(0, '\u{2570}'), (last, '\u{256f}')] {
-        put(cells, card.x + x, card.y + foot, glyph, edge);
-    }
-    for x in 1..last {
-        put(cells, card.x + x, card.y, '\u{2500}', edge);
-        put(cells, card.x + x, card.y + foot, '\u{2500}', edge);
-    }
-    for y in 1..foot {
-        put(cells, card.x, card.y + y, '\u{2502}', edge);
-        put(cells, card.x + last, card.y + y, '\u{2502}', edge);
-    }
+    panel(cells, card, theme);
+    let room = inside(card);
 
     write(
         cells,
-        card.x + 2,
-        card.y + 1,
+        room.x,
+        room.y,
         "The keys here",
         Style::new()
             .fg(theme.status_foreground)
             .bg(theme.raised_background),
     );
+    let ground = Style::new()
+        .fg(theme.foreground)
+        .bg(theme.raised_background);
     let off = Style::new().fg(theme.gutter).bg(theme.raised_background);
     for (at, hint) in hints.iter().enumerate() {
         let Ok(offset) = u16::try_from(at) else { break };
-        let y = card.y + 3 + offset;
-        if y >= card.y + foot {
+        let y = room.y + 2 + offset;
+        if y >= room.bottom() {
             break;
         }
         let style = match hint.usable {
             true => ground,
             false => off,
         };
-        write(cells, card.x + 2, y, &hint.keys(), style);
-        let mut x = card.x + 2 + column;
+        write(cells, room.x, y, &hint.keys(), style);
+        let mut x = room.x + column;
         if let Some(does) = hint.said.or(hint.does) {
             x = write(cells, x, y, does, style);
         }

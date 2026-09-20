@@ -57,9 +57,9 @@ fn a_panel_opens_beside_the_word_being_typed() {
     let rows: Vec<&str> = support::text_block(&dump).lines().collect();
     let box_row = rows
         .iter()
-        .find(|row| row.contains('\u{250c}'))
+        .find(|row| row.contains(support::PANEL_CORNER))
         .unwrap_or_else(|| panic!("no panel:\n{dump}"));
-    let corner = box_row.find('\u{250c}').expect("a corner");
+    let corner = box_row.find(support::PANEL_CORNER).expect("a corner");
     let word = rows
         .iter()
         .find(|row| row.contains("    pu"))
@@ -320,7 +320,7 @@ fn typing_narrows_what_is_showing() {
     support::type_text(&mut app, "zz");
     let dump = support::render(&mut app, 60, 16);
     assert!(
-        !dump.contains('\u{250c}'),
+        !dump.contains(support::PANEL_CORNER),
         "an empty panel is still on screen:\n{dump}"
     );
 }
@@ -441,7 +441,7 @@ fn the_panel_hangs_above_the_cursor_when_it_has_to() {
         .unwrap_or_else(|| panic!("the word is not on screen:\n{dump}"));
     let panel = rows
         .iter()
-        .position(|row| row.contains('\u{250c}'))
+        .position(|row| row.contains(support::PANEL_CORNER))
         .unwrap_or_else(|| panic!("no panel:\n{dump}"));
     assert!(
         panel < word,

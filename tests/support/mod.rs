@@ -289,6 +289,14 @@ pub fn column_of(row: &str, needle: &str) -> usize {
     obelus::ui::text_width(&cells[..at])
 }
 
+/// The corner a panel obelus floats over the page is drawn with.
+///
+/// Rounded, and spelled here rather than in each test: what a test is about
+/// is *where* a panel is, and a test that went looking for a square corner
+/// found the markdown fence inside a hover instead -- which is square
+/// because it belongs to the document, not to obelus.
+pub const PANEL_CORNER: char = '\u{256d}';
+
 /// The first glyph after `word` on a row, blanks skipped.
 ///
 /// For the marks a row wears beside its words: the box after a switch's

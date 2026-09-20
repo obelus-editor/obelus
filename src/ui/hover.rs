@@ -4,12 +4,9 @@
 //! markdown renderer makes of the answer: a hover is a README about one
 //! symbol, and a README is a thing obelus already knows how to draw.
 
-use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
+use ratatui::{buffer::Buffer as CellBuffer, layout::Rect};
 
-use crate::{
-    app::App,
-    ui::{editor, fill},
-};
+use crate::{app::App, ui::editor};
 
 /// Where the box goes, if there is one to draw.
 ///
@@ -87,12 +84,12 @@ pub(crate) fn width(editor: Rect) -> u16 {
     WANTED.min(editor.width).max(editor.width.min(24))
 }
 
-/// The cells the markdown itself has: inside the box, less the column the
-/// reading keeps for its scrollbar.
+/// The cells the markdown itself has: inside the panel, less the column
+/// the reading keeps for its scrollbar.
 #[must_use]
 pub fn room(editor: Rect) -> u16 {
     width(editor)
-        .saturating_sub(2)
+        .saturating_sub(crate::ui::PANEL_INSET * 2)
         .saturating_sub(editor::SCROLLBAR_WIDTH)
 }
 
@@ -105,18 +102,13 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     if area.width < 3 || area.height < 3 {
         return;
     }
-    fill(cells, area, Style::new().bg(theme.background));
-    crate::ui::complete::edges(cells, area, theme);
+    crate::ui::panel(cells, area, theme);
     crate::ui::reading::draw(
         cells,
-        Rect {
-            x: area.x + 1,
-            y: area.y + 1,
-            width: area.width - 2,
-            height: area.height - 2,
-        },
+        crate::ui::inside(area),
         hover.rows(),
         hover.scrolled(),
         theme,
+        theme.raised_background,
     );
 }
