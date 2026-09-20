@@ -390,9 +390,9 @@ fn a_real_server_draws_a_type_nobody_wrote_down() {
     }
 
     // A file of this project, so the server has a workspace to read.
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lsp/hint.rs");
+    let path = std::path::PathBuf::from(env!("OBELUS_TREE")).join("src/lsp/hint.rs");
     let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
-    app.working_directory_for_test(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    app.working_directory_for_test(std::path::PathBuf::from(env!("OBELUS_TREE")));
     support::lay_out(&mut app, 120, 40);
     let events = support::drive(&mut app);
     assert!(
@@ -472,9 +472,9 @@ fn probe_how_long_until_they_come_back() {
     if !obelus::lsp::on_path("rust-analyzer") {
         return;
     }
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lsp/hint.rs");
+    let path = std::path::PathBuf::from(env!("OBELUS_TREE")).join("src/lsp/hint.rs");
     let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
-    app.working_directory_for_test(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    app.working_directory_for_test(std::path::PathBuf::from(env!("OBELUS_TREE")));
     support::lay_out(&mut app, 120, 40);
     let events = support::drive(&mut app);
     assert!(app.stand_in_server_for_test(LanguageId::Rust, "rust-analyzer"));

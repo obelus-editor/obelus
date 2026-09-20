@@ -1,0 +1,14 @@
+# Where the repository is, for the handful of tests that read it.
+#
+# A few tests are about real files rather than made-up ones: the two
+# readings of a fold have to agree on shapes nobody writes into a test, and
+# counting a tree is only worth asserting on a tree with more than one
+# language in it. Those tests reached for `CARGO_MANIFEST_DIR`, which is the
+# crate's own directory -- one answer while obelus was one crate, and the
+# wrong one in every crate but the root once it is several.
+#
+# `relative = true` resolves the value against this file's parent, which is
+# the workspace root. Cargo does the resolving, so it is right wherever the
+# build is started from.
+[env]
+OBELUS_TREE = { value = ".", relative = true }

@@ -2315,7 +2315,7 @@ mod tests {
     /// names, and the file after it.
     #[test]
     fn a_place_is_the_line_it_names_and_the_file_it_is_in() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let root = std::path::PathBuf::from(env!("OBELUS_TREE"));
         let path = root.join("tests/fixtures/long.rs");
         let places = [
             Place {
@@ -2366,7 +2366,7 @@ mod tests {
     /// the row says where.
     #[test]
     fn a_line_that_cannot_be_read_leaves_the_place_as_the_row() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let root = std::path::PathBuf::from(env!("OBELUS_TREE"));
         let gone = root.join("tests/fixtures/nothing-here.rs");
         let places = [Place {
             path: gone,

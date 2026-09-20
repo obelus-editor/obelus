@@ -282,7 +282,7 @@ mod tests {
     /// found them.
     #[test]
     fn a_tree_is_counted_biggest_first_with_relative_paths() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let root = Path::new(env!("OBELUS_TREE")).join("tests/fixtures");
         let counted = count(&root);
         assert!(
             counted.languages.len() > 1,
@@ -341,7 +341,7 @@ mod tests {
     /// -- every bar on the page a single cell.
     #[test]
     fn the_widest_row_is_what_bars_are_measured_against() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let root = Path::new(env!("OBELUS_TREE")).join("tests/fixtures");
         let counted = count(&root);
         assert!(
             counted.languages.len() > 1 && counted.files.len() > 1,
@@ -365,13 +365,17 @@ mod tests {
 
     /// A language written inside another is kept apart from it.
     ///
+    /// Over the repository itself, because the shape being asserted on --
+    /// Rust with Markdown written inside its doc comments -- is what obelus
+    /// is made of and is tedious to fake.
+    ///
     /// Broken deliberately by folding the children's lines into the parent's
-    /// tally: this crate's Rust then counted its doc comments twice, and the
+    /// tally: the tree's Rust then counted its doc comments twice, and the
     /// assertion that the parent's own comments are fewer than the whole
     /// file's failed.
     #[test]
     fn an_embedded_language_is_counted_beside_its_parent_not_inside_it() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let root = Path::new(env!("OBELUS_TREE"));
         let counted = count(&root);
 
         let rust = counted

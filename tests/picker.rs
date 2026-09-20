@@ -2089,7 +2089,7 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
     use obelus::component::picker::{PickerItem, PickerLayout, PickerValue};
 
     let mut app = app();
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/long.rs");
+    let path = std::path::PathBuf::from(env!("OBELUS_TREE")).join("tests/fixtures/long.rs");
     // Line 1 of `long.rs` is the long `const NAMES` line; `NAMES` is at
     // characters six to eleven.
     app.open_picker_for_test(
@@ -2385,8 +2385,7 @@ fn the_preview_stops_at_the_top_of_the_file() {
 fn moving_the_selection_forgets_the_scrolling() {
     use obelus::component::picker::{PickerItem, PickerLayout, PickerValue};
 
-    let path =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let path = std::path::PathBuf::from(env!("OBELUS_TREE")).join("tests/fixtures/many_lines.rs");
     let place = |line: u32| PickerItem {
         prose: false,
         marker: None,
@@ -2476,8 +2475,7 @@ fn a_key_with_an_unknown_modifier_falls_through() {
 fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
     use obelus::component::picker::{PickerItem, PickerLayout, PickerValue};
 
-    let path =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let path = std::path::PathBuf::from(env!("OBELUS_TREE")).join("tests/fixtures/many_lines.rs");
     let mut app = app();
     app.open_picker_for_test(
         vec![PickerItem {

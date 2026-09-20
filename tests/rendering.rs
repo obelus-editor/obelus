@@ -822,8 +822,7 @@ fn a_motion_with_an_unknown_modifier_does_not_move() {
 fn a_jump_lands_in_the_middle_of_the_screen() {
     use obelus::component::picker::{PickerItem, PickerLayout, PickerValue};
 
-    let path =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let path = std::path::PathBuf::from(env!("OBELUS_TREE")).join("tests/fixtures/many_lines.rs");
     let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
     support::lay_out(&mut app, 40, 12);
 
@@ -881,8 +880,7 @@ fn a_jump_back_lands_in_the_middle_too() {
     use crossterm::event::{KeyEvent, KeyModifiers};
     use obelus::component::picker::{PickerItem, PickerLayout, PickerValue};
 
-    let path =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/many_lines.rs");
+    let path = std::path::PathBuf::from(env!("OBELUS_TREE")).join("tests/fixtures/many_lines.rs");
     let mut app = App::new(vec![support::open_fixture("many_lines.rs")]);
     support::lay_out(&mut app, 40, 12);
 

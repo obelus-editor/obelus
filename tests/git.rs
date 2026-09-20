@@ -116,7 +116,7 @@ fn an_unchanged_file_has_nothing_to_say() {
 /// what is on disk.
 #[test]
 fn the_committed_text_comes_from_git() {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+    let path = std::path::PathBuf::from(env!("OBELUS_TREE")).join("src/lib.rs");
     let committed = obelus::git::head_text(&path).expect("src/lib.rs is committed");
     assert!(
         committed.contains("pub mod app;"),
@@ -1476,7 +1476,7 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
 /// without a `.git` is.
 #[test]
 fn a_run_of_changes_is_where_git_draws_it() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let root = std::path::PathBuf::from(env!("OBELUS_TREE"));
     let git = |arguments: &[&str]| {
         let out = std::process::Command::new("git")
             .arg("-C")

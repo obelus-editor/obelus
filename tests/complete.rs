@@ -582,7 +582,7 @@ mod against_a_real_server {
         if !obelus::lsp::on_path("rust-analyzer") {
             return None;
         }
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let root = std::path::PathBuf::from(env!("OBELUS_TREE"));
         let mut app = App::new(vec![
             Buffer::open(&root.join("src/jump.rs")).expect("opening it"),
         ]);
@@ -738,7 +738,7 @@ mod against_a_real_server {
 
         let before = app.told_servers_for_test();
         app.handle(Event::Watched(obelus::watch::Changed {
-            path: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
+            path: std::path::PathBuf::from(env!("OBELUS_TREE")).join("src/lib.rs"),
         }));
         assert_eq!(
             app.told_servers_for_test(),

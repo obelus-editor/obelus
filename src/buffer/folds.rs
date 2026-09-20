@@ -765,7 +765,7 @@ mod tests {
     /// And on real files, which have shapes nobody writes into a test.
     #[test]
     fn the_two_readings_agree_on_this_repository() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let root = std::path::Path::new(env!("OBELUS_TREE"));
         for file in [
             "src/app/mod.rs",
             "src/buffer/folds.rs",

@@ -240,7 +240,7 @@ pub fn as_shown(path: &str) -> String {
 }
 
 fn fixtures() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+    PathBuf::from(env!("OBELUS_TREE")).join("tests/fixtures")
 }
 
 /// One cell grid, as text.

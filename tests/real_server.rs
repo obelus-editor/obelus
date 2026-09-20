@@ -35,7 +35,7 @@ const HANDSHAKE: Duration = Duration::from_secs(30);
 const INDEXED: Duration = Duration::from_secs(120);
 
 fn root() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    std::path::PathBuf::from(env!("OBELUS_TREE"))
 }
 
 /// Pumps messages into the client until `done` says so, or the deadline.

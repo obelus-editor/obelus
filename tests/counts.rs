@@ -319,7 +319,7 @@ fn enter_on_a_file_opens_it() {
     let mut app = App::new(Vec::new());
     // A real tree, because the file has to be there to be read: this one is
     // the repository the tests are run from.
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let root = std::path::PathBuf::from(env!("OBELUS_TREE"));
     app.working_directory_for_test(root);
     support::lay_out(&mut app, 76, 24);
     dispatch::dispatch(&mut app, Command::CountLines);
@@ -371,7 +371,7 @@ fn enter_on_a_file_opens_it() {
 fn the_tree_is_counted_on_a_thread_and_the_answer_comes_back() {
     let (sender, events) = obelus::event::channel();
     // The fixtures: a handful of small files, in more than one language.
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let root = std::path::PathBuf::from(env!("OBELUS_TREE")).join("tests/fixtures");
     obelus::counts::spawn_count(&root, sender);
 
     let event = events
