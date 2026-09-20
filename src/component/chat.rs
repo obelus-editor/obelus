@@ -3,7 +3,7 @@
 //! Not a buffer. A buffer is a file with a cursor in it and a history behind
 //! it; this is a transcript, which grows at the end and is read from the
 //! bottom. It is in the list of what is open all the same -- as a
-//! [`crate::document::Document::Chat`], which is the shape that let it be
+//! `Document::Chat`, which is the shape that let it be
 //! listed without having to become one.
 //!
 //! It holds no client. What it has is what arrived, and every key it does

@@ -19,7 +19,9 @@ pub mod log;
 /// Markdown, rendered rather than shown as its own source.
 pub mod markdown;
 
-use crate::buffer::Buffer;
+use std::path::Path;
+
+use crate::text::Text;
 
 /// What a run of text looks like.
 ///
@@ -115,19 +117,23 @@ pub enum Reading {
 /// Enough to be sure and few enough to do while a file is being opened.
 const HEAD_LINES: usize = 20;
 
-/// The reading a buffer's bytes have, if they have one.
+/// The reading a file's bytes have, if they have one.
+///
+/// A path and the text rather than the buffer holding them: what the
+/// question needs is a name and some lines, and asking for the buffer
+/// would mean everything that can answer it has to know what a buffer
+/// is.
 ///
 /// Markdown by its extension, because markdown looks like the text it came
 /// from and sniffing it would be guessing. A log by its *lines*, because a
 /// log file is called `syslog` or `access.log` or anything else at all, and
 /// the format is the only thing that can say.
 #[must_use]
-pub fn of(buffer: &Buffer) -> Option<Reading> {
-    if is_markdown(buffer.path()) {
+pub fn of(path: &Path, text: &Text) -> Option<Reading> {
+    if is_markdown(path) {
         return Some(Reading::Markdown);
     }
-    let head: String = buffer
-        .text()
+    let head: String = text
         .rope()
         .lines()
         .take(HEAD_LINES)

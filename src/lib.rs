@@ -20,7 +20,6 @@ pub mod config;
 pub mod conversation;
 pub mod coordinates;
 pub mod counts;
-pub mod document;
 pub mod editing;
 pub mod event;
 pub mod git;

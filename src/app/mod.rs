@@ -20,6 +20,7 @@ mod choosing;
 mod completing;
 mod counting;
 pub mod dispatch;
+pub mod document;
 mod documents;
 mod fixing;
 mod hierarchy;
@@ -47,6 +48,7 @@ use std::{
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use document::Document;
 use documents::Rendered;
 use history::Changed;
 use layers::{Layer, Room};
@@ -75,7 +77,6 @@ use crate::{
         settings::{Settings, SettingsOutcome},
     },
     coordinates::{ByteOffset, CharColumn, LineNumber, Span},
-    document::Document,
     editing::motion_for,
     event::{self, Event, Ticker},
     git, icons,

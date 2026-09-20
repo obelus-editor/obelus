@@ -4,7 +4,7 @@
 //! documents are open, which one is being read, and what happens when the
 //! file behind one of them changes on disk. Not only files: a conversation
 //! is a document too, and the list, the closing and the switching are the
-//! same for both -- which is the whole of what [`crate::document`] bought.
+//! same for both -- which is the whole of what [`super::document`] bought.
 
 use super::*;
 use crate::buffer::Disk;
@@ -877,7 +877,8 @@ impl App {
     /// Which reading the current file has, if it has one.
     #[must_use]
     pub fn reading_of_current(&self) -> Option<Reading> {
-        self.current_buffer().and_then(reading::of)
+        self.current_buffer()
+            .and_then(|buffer| reading::of(buffer.path(), buffer.text()))
     }
 
     /// The reading on screen, if the current file is being shown as one.
@@ -918,7 +919,7 @@ impl App {
         // Asked on a miss and nowhere else: deciding which reading a file
         // has means reading its first lines, and the answer changes only
         // when one of the three things above does.
-        let Some(reading) = reading::of(buffer) else {
+        let Some(reading) = reading::of(buffer.path(), buffer.text()) else {
             self.rendered = None;
             return;
         };

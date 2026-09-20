@@ -99,7 +99,7 @@ impl App {
         let from = self.here();
         self.record(from);
         self.documents
-            .push(Some(crate::document::Document::from(view)));
+            .push(Some(crate::app::document::Document::from(view)));
         let id = DocumentId::new(self.documents.len() - 1);
         self.go_to_document(id);
         // Heard about for as long as it is open, which as a document is
