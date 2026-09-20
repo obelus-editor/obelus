@@ -1,0 +1,20 @@
+[package]
+name = "obelus-buffer"
+description = "An open document: its text, its cursor, its folds"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-config.workspace = true
+obelus-editing.workspace = true
+obelus-lsp.workspace = true
+obelus-syntax.workspace = true
+obelus-text.workspace = true
+anyhow.workspace = true
+gix.workspace = true
+tracing.workspace = true

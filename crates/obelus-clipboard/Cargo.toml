@@ -1,0 +1,15 @@
+[package]
+name = "obelus-clipboard"
+description = "The clipboard, and opening a link"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+base64.workspace = true
+open.workspace = true
+tracing.workspace = true

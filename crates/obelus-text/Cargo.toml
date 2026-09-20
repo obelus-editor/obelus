@@ -1,0 +1,15 @@
+[package]
+name = "obelus-text"
+description = "Text, and the coordinate spaces the type system keeps apart"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+ropey.workspace = true
+unicode-linebreak.workspace = true
+unicode-width.workspace = true

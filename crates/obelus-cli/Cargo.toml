@@ -1,0 +1,25 @@
+[package]
+name = "obelus-cli"
+description = "The `ob` command"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ob"
+path = "src/main.rs"
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-app.workspace = true
+obelus-buffer.workspace = true
+obelus-logging.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+image.workspace = true
+ratatui.workspace = true
+tracing.workspace = true

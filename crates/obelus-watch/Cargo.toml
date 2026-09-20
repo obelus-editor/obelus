@@ -1,0 +1,18 @@
+[package]
+name = "obelus-watch"
+description = "What changed on disk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-runtime.workspace = true
+obelus-sink.workspace = true
+anyhow.workspace = true
+notify.workspace = true
+tokio.workspace = true
+tracing.workspace = true

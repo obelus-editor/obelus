@@ -1,0 +1,17 @@
+[package]
+name = "obelus-editing"
+description = "Editing a text, and the key table that drives it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-command.workspace = true
+obelus-icons.workspace = true
+obelus-text.workspace = true
+crossterm.workspace = true
+tracing.workspace = true

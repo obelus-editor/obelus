@@ -1,0 +1,18 @@
+[package]
+name = "obelus-search"
+description = "Walking a tree: what matches, and how much there is"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-runtime.workspace = true
+obelus-sink.workspace = true
+ignore.workspace = true
+regex.workspace = true
+tokei.workspace = true
+tracing.workspace = true

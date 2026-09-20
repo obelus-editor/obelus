@@ -1,0 +1,13 @@
+[package]
+name = "obelus-program"
+description = "Whether a program is installed"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+which.workspace = true

@@ -1,0 +1,14 @@
+[package]
+name = "obelus-icons"
+description = "One glyph per thing obelus draws"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-command.workspace = true
+obelus-text.workspace = true

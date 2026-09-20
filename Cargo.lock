@@ -3460,48 +3460,272 @@ dependencies = [
 ]
 
 [[package]]
-name = "obelus"
+name = "obelus-agent"
 version = "0.1.0"
 dependencies = [
- "access_log_parser",
  "agent-client-protocol",
- "anyhow",
- "axum",
- "base64 0.23.1",
- "clap",
- "crossterm",
  "dirs",
  "flate2",
  "futures",
- "gix",
- "globset",
- "ignore",
- "image",
- "imara-diff",
- "lsp-types",
- "notify",
- "nucleo-matcher",
- "open",
- "ratatui",
- "ratatui-image",
- "regex",
+ "obelus-git",
+ "obelus-logging",
+ "obelus-program",
+ "obelus-runtime",
+ "obelus-sink",
  "reqwest",
- "resvg",
- "rmcp",
- "ropey",
- "schemars 1.2.2",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tar",
- "termimad",
- "tokei",
  "tokio",
+ "toml 1.1.5+spec-1.1.0",
+ "tracing",
+ "zip",
+]
+
+[[package]]
+name = "obelus-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "futures",
+ "gix",
+ "image",
+ "lsp-types",
+ "obelus-agent",
+ "obelus-buffer",
+ "obelus-clipboard",
+ "obelus-command",
+ "obelus-component",
+ "obelus-config",
+ "obelus-editing",
+ "obelus-git",
+ "obelus-icons",
+ "obelus-logging",
+ "obelus-lsp",
+ "obelus-mcp",
+ "obelus-reading",
+ "obelus-runtime",
+ "obelus-search",
+ "obelus-syntax",
+ "obelus-text",
+ "obelus-theme",
+ "obelus-watch",
+ "ratatui",
+ "ratatui-image",
+ "resvg",
+ "serde_json",
+ "tokio",
+ "toml 1.1.5+spec-1.1.0",
+ "tracing",
+ "unicode-width 0.2.2",
+ "ureq",
+]
+
+[[package]]
+name = "obelus-buffer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gix",
+ "obelus-config",
+ "obelus-editing",
+ "obelus-lsp",
+ "obelus-syntax",
+ "obelus-text",
+ "tracing",
+]
+
+[[package]]
+name = "obelus-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crossterm",
+ "image",
+ "obelus-app",
+ "obelus-buffer",
+ "obelus-logging",
+ "ratatui",
+ "tracing",
+]
+
+[[package]]
+name = "obelus-clipboard"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "open",
+ "tracing",
+]
+
+[[package]]
+name = "obelus-command"
+version = "0.1.0"
+
+[[package]]
+name = "obelus-component"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "gix",
+ "ignore",
+ "nucleo-matcher",
+ "obelus-agent",
+ "obelus-buffer",
+ "obelus-command",
+ "obelus-config",
+ "obelus-editing",
+ "obelus-git",
+ "obelus-icons",
+ "obelus-lsp",
+ "obelus-reading",
+ "obelus-search",
+ "obelus-text",
+ "tracing",
+]
+
+[[package]]
+name = "obelus-config"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "obelus-text",
  "toml 1.1.5+spec-1.1.0",
  "toml_edit",
  "tracing",
+]
+
+[[package]]
+name = "obelus-editing"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "obelus-command",
+ "obelus-icons",
+ "obelus-text",
+ "tracing",
+]
+
+[[package]]
+name = "obelus-git"
+version = "0.1.0"
+dependencies = [
+ "gix",
+ "imara-diff",
+ "obelus-runtime",
+ "obelus-sink",
+ "obelus-text",
+ "open",
+ "toml 1.1.5+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "obelus-icons"
+version = "0.1.0"
+dependencies = [
+ "obelus-command",
+ "obelus-text",
+]
+
+[[package]]
+name = "obelus-logging"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "tracing",
  "tracing-appender",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "obelus-lsp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "globset",
+ "lsp-types",
+ "obelus-command",
+ "obelus-icons",
+ "obelus-program",
+ "obelus-runtime",
+ "obelus-sink",
+ "obelus-syntax",
+ "obelus-text",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "unicode-width 0.2.2",
+ "url",
+]
+
+[[package]]
+name = "obelus-mcp"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures",
+ "obelus-git",
+ "obelus-runtime",
+ "obelus-sink",
+ "rmcp",
+ "schemars 1.2.2",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "obelus-program"
+version = "0.1.0"
+dependencies = [
+ "which",
+]
+
+[[package]]
+name = "obelus-reading"
+version = "0.1.0"
+dependencies = [
+ "access_log_parser",
+ "obelus-syntax",
+ "obelus-text",
+ "termimad",
+]
+
+[[package]]
+name = "obelus-runtime"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
+name = "obelus-search"
+version = "0.1.0"
+dependencies = [
+ "ignore",
+ "obelus-runtime",
+ "obelus-sink",
+ "regex",
+ "tokei",
+ "tracing",
+]
+
+[[package]]
+name = "obelus-sink"
+version = "0.1.0"
+
+[[package]]
+name = "obelus-syntax"
+version = "0.1.0"
+dependencies = [
+ "obelus-text",
+ "ropey",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",
@@ -3517,12 +3741,38 @@ dependencies = [
  "tree-sitter-toml-ng",
  "tree-sitter-typescript",
  "tree-sitter-yaml",
+]
+
+[[package]]
+name = "obelus-text"
+version = "0.1.0"
+dependencies = [
+ "ropey",
  "unicode-linebreak",
  "unicode-width 0.2.2",
- "ureq",
- "url",
- "which",
- "zip",
+]
+
+[[package]]
+name = "obelus-theme"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "obelus-text",
+ "ratatui",
+ "toml 1.1.5+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "obelus-watch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "notify",
+ "obelus-runtime",
+ "obelus-sink",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

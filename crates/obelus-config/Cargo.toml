@@ -1,0 +1,17 @@
+[package]
+name = "obelus-config"
+description = "The settings, and the file they are written in"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-text.workspace = true
+dirs.workspace = true
+toml.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true

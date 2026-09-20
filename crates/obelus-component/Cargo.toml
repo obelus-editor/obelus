@@ -1,0 +1,28 @@
+[package]
+name = "obelus-component"
+description = "What each part of the screen knows, apart from drawing it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-agent.workspace = true
+obelus-buffer.workspace = true
+obelus-command.workspace = true
+obelus-config.workspace = true
+obelus-editing.workspace = true
+obelus-git.workspace = true
+obelus-icons.workspace = true
+obelus-lsp.workspace = true
+obelus-reading.workspace = true
+obelus-search.workspace = true
+obelus-text.workspace = true
+crossterm.workspace = true
+gix.workspace = true
+ignore.workspace = true
+nucleo-matcher.workspace = true
+tracing.workspace = true

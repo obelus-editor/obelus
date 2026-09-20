@@ -1,0 +1,13 @@
+[package]
+name = "obelus-sink"
+description = "Where a background worker's events go"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+
