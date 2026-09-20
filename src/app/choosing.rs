@@ -424,6 +424,12 @@ impl App {
                 .map(|column| *column as usize)
         });
         self.picker = None;
+        // Not `look_back`: a row was chosen, so wherever the list was
+        // showing the reader is where they meant to be. Forgotten rather
+        // than gone back to -- and forgotten it must be, or the next list
+        // they escape out of would put them back at a place they left on
+        // purpose two lists ago.
+        self.looked_from = None;
         // The history goes with its list: the radii are what says a history
         // is open at all. A tree of calls goes the same way, for the same
         // reason.

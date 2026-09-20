@@ -972,6 +972,38 @@ impl Buffer {
         self.viewport.top_row = top_row;
     }
 
+    /// Puts a line in the middle of the text area, leaving the caret where
+    /// it is.
+    ///
+    /// For showing the reader somewhere while they decide whether to go
+    /// there. A list that sits on the status bar leaves the file on screen
+    /// above it, so what it shows its selection in is the file itself --
+    /// and the caret has not moved, because nobody has chosen anything yet.
+    ///
+    /// Detached for that reason: the view would otherwise be dragged back
+    /// to the caret on the very next frame. It is the same thing a wheel
+    /// scroll says -- the reader is looking somewhere their caret is not --
+    /// said the same way.
+    pub fn look_at(&mut self, line: LineNumber, area: TextArea) {
+        let line = self.editing.text().clamp_line(line);
+        let above = isize::try_from(area.height / 2).unwrap_or(isize::MAX);
+        let (top, top_row) = self.step_screen_rows((line, 0), -above, area);
+        self.viewport.top = top;
+        self.viewport.top_row = top_row;
+        self.detached = true;
+    }
+
+    /// Puts the view back exactly where a look took it from.
+    ///
+    /// Exactly, rather than by letting the caret pull it back: the caret is
+    /// wherever it was, which may be anywhere on the screen the reader
+    /// left, and scrolling the least amount to reach it would land them at
+    /// an edge of a screen they had not moved from.
+    pub const fn look_back(&mut self, viewport: Viewport) {
+        self.viewport = viewport;
+        self.detached = false;
+    }
+
     /// Moves the viewport by whole visual rows, leaving the cursor where it
     /// is, and answers how many rows it actually moved.
     ///

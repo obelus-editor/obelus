@@ -146,6 +146,15 @@ pub struct App {
     /// whoever holds it gets nothing and does nothing.
     documents: Vec<Option<Document>>,
     current: Option<DocumentId>,
+    /// Where the reader was looking before a list started showing them
+    /// somewhere else, and which document they were looking at it in.
+    ///
+    /// A list that sits on the status bar leaves the file on screen above
+    /// it, so walking its rows scrolls that file to each place. That is a
+    /// look and not a move -- the caret has not gone anywhere -- so leaving
+    /// the list without choosing has to put the view back *exactly*, and
+    /// this is the only thing that knows where exactly was.
+    looked_from: Option<(DocumentId, crate::buffer::Viewport)>,
     /// The colours in force, and the name they answer to.
     ///
     /// Owned rather than borrowed from the built-in ones, because a theme
@@ -563,6 +572,7 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            looked_from: None,
             keymap: Keymap::new(),
             documents,
             current,
@@ -1220,6 +1230,10 @@ impl App {
         match layer {
             Layer::Picker => {
                 self.picker = None;
+                // Back to where they were looking from. The other way out
+                // of a list is choosing a row, and that goes somewhere on
+                // purpose -- see `App::accept`.
+                self.look_back();
                 self.history = history_view::Showing::default();
                 self.close_calls();
                 // What a server offered to do here, which the rows were
@@ -1523,6 +1537,7 @@ impl App {
         }
 
         self.refresh_preview(editor_area);
+        self.look_at_the_selection();
 
         let Self {
             documents,

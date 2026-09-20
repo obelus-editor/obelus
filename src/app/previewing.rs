@@ -89,6 +89,72 @@ impl App {
         }
     }
 
+    /// Shows the reader where the list's selection is, in the file itself.
+    ///
+    /// Only for a list that sits on the status bar. A full-area one has
+    /// covered the file and shows its selection in a preview of its own,
+    /// so the question of what is behind it does not arise; a compact one
+    /// is drawn *on* the file precisely so that the file stays readable,
+    /// and then the file is the preview.
+    ///
+    /// Only for a place in the file being read, too: scrolling this file to
+    /// a line number that belongs to another one would be showing the
+    /// reader somewhere with confidence and getting it wrong.
+    ///
+    /// A look and not a move. The caret stays where the reader left it, and
+    /// [`App::look_back`] puts the view there too if they leave without
+    /// choosing -- so walking a list of problems costs nothing to change
+    /// your mind about.
+    pub(super) fn look_at_the_selection(&mut self) {
+        let Some(picker) = self.picker.as_ref() else {
+            return;
+        };
+        if picker.layout() == crate::component::picker::PickerLayout::FullArea {
+            return;
+        }
+        let Some(PickerValue::Place { path, line, .. }) =
+            picker.selected_item().map(|item| &item.value)
+        else {
+            return;
+        };
+        let (path, line) = (path.clone(), *line as usize);
+        let here = self
+            .current_buffer()
+            .map(|buffer| buffer.path().to_path_buf());
+        if here.as_deref() != Some(path.as_path()) {
+            return;
+        }
+        let area = self.text_area();
+        // Remembered the first time and not after, because after that the
+        // view is somewhere this put it: saving again would remember a
+        // look rather than the place the reader was looking from.
+        let (Some(id), Some(buffer)) = (self.current, self.current_buffer_mut()) else {
+            return;
+        };
+        let from = buffer.viewport();
+        buffer.look_at(crate::coordinates::LineNumber::new(line), area);
+        self.looked_from.get_or_insert((id, from));
+    }
+
+    /// Puts the view back where the reader was looking before a list showed
+    /// them somewhere else.
+    ///
+    /// Nothing at all if they never looked anywhere -- a list of commands
+    /// has no places in it -- and nothing if they have since moved to
+    /// another document, which is a reader who has gone somewhere rather
+    /// than one who is coming back.
+    pub(super) fn look_back(&mut self) {
+        let Some((id, viewport)) = self.looked_from.take() else {
+            return;
+        };
+        if self.current != Some(id) {
+            return;
+        }
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.look_back(viewport);
+        }
+    }
+
     /// Reads whatever the picker's selection names, and points it at the line
     /// the selection is about.
     pub(super) fn refresh_preview(&mut self, editor_area: Rect) {

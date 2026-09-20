@@ -600,3 +600,109 @@ fn a_narrow_window_gives_up_the_indent_and_keeps_the_frame_whole() {
         "the indent was shaved rather than given up:\n{middle}"
     );
 }
+
+/// The list of problems shows each one in the file, and puts the view back
+/// if the reader leaves without choosing.
+///
+/// It sits on the status bar rather than over the file, which is the whole
+/// reason it is drawn that way: the code stays visible, so the file itself
+/// is what a selection is shown in. A full-area list has a preview of its
+/// own and this question does not arise for it.
+///
+/// A look and not a move. The caret stays where the reader left it, so
+/// escaping is free -- and that is what makes walking a list of problems
+/// something a reader will actually do.
+///
+/// It opens on the one nearest the caret. A reader asks this about where
+/// they are, and a list that always started at line one would scroll the
+/// file away from them before they had touched a key.
+///
+/// Broken deliberately by selecting the first row instead of the nearest,
+/// by leaving the viewport alone while the selection moves, or by not
+/// putting it back on the way out: each is a different assertion here.
+#[test]
+fn the_list_of_problems_shows_each_one_and_comes_back() {
+    let mut file = String::new();
+    for line in 0..120 {
+        file.push_str(&format!("    let _ = {line};\n"));
+    }
+    let (_scratch, mut app, path) = editing("trouble-walk-list", &file);
+    let one = |line: u32| {
+        json!({
+            "range": { "start": { "line": line, "character": 4 },
+                       "end": { "line": line, "character": 8 } },
+            "severity": 1,
+            "source": "rustc",
+            "message": "cannot find value"
+        })
+    };
+    app.publish_for_test(json!({
+        "uri": format!("file://{}", path.display()),
+        "diagnostics": [one(5), one(100)]
+    }));
+    // Down near the second one, so the nearest is not the first.
+    for _ in 0..90 {
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+    }
+    support::render(&mut app, 60, 20);
+    let at = |app: &App| app.current_buffer().expect("a file").cursor().line.get();
+    let top = |app: &App| app.current_buffer().expect("a file").viewport().top.get();
+    let (was, looking) = (at(&app), top(&app));
+    assert_eq!(was, 90, "the caret did not get to where this starts");
+
+    // Opened on the nearest, which is the one below rather than the one at
+    // the top of the file.
+    support::press_alt(&mut app, 'e');
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        top(&app) > looking,
+        "the list did not show the problem nearest the caret:\n{dump}"
+    );
+    assert_eq!(at(&app), was, "showing it moved the caret:\n{dump}");
+    let shown = top(&app);
+
+    // And walking the rows shows each one in turn.
+    support::press(&mut app, crossterm::event::KeyCode::Up);
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        top(&app) < shown,
+        "walking the list did not show the other problem:\n{dump}"
+    );
+    assert_eq!(at(&app), was, "walking the list moved the caret:\n{dump}");
+
+    // Leaving without choosing puts the view back exactly, because the
+    // reader never went anywhere.
+    support::press(&mut app, crossterm::event::KeyCode::Esc);
+    let dump = support::render(&mut app, 60, 20);
+    assert_eq!(
+        top(&app),
+        looking,
+        "escaping left the reader somewhere they did not choose to be:\n{dump}"
+    );
+    assert_eq!(at(&app), was, "escaping moved the caret:\n{dump}");
+
+    // Choosing one is what actually goes there.
+    support::press_alt(&mut app, 'e');
+    support::render(&mut app, 60, 20);
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    let dump = support::render(&mut app, 60, 20);
+    assert_eq!(
+        at(&app),
+        100,
+        "choosing the nearest problem did not go to it:\n{dump}"
+    );
+
+    // And the place they were looking from is forgotten when they choose,
+    // not kept: escaping out of the *next* list must put them back here,
+    // not at a place they left on purpose two lists ago.
+    let chosen = top(&app);
+    support::press_alt(&mut app, 'e');
+    support::render(&mut app, 60, 20);
+    support::press(&mut app, crossterm::event::KeyCode::Esc);
+    let dump = support::render(&mut app, 60, 20);
+    assert_eq!(
+        top(&app),
+        chosen,
+        "escaping a later list went back to where an earlier one started:\n{dump}"
+    );
+}

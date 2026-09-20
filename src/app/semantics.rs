@@ -1864,6 +1864,25 @@ impl App {
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: 10 });
         picker.keeps_order(true);
+        // Opened on the one nearest the caret rather than at the top of the
+        // file. A reader asks this about where they are, and a list that
+        // always starts at line one makes them walk back to somewhere they
+        // were already standing -- while the file behind it scrolls away
+        // from them, because the list shows its selection in the file.
+        //
+        // Nearest either way, not the next one down: the one they are on is
+        // the one they meant, and it is the caret's own line that is
+        // nearest it.
+        if let Some(line) = self
+            .current_buffer()
+            .map(|buffer| buffer.cursor().line.get())
+            && let Some((at, _)) = troubles
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, trouble)| trouble.span.line.get().abs_diff(line))
+        {
+            picker.select_item(at);
+        }
         picker.about(&format!(
             "{} in {}",
             counted(&troubles),
