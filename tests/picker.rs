@@ -3881,3 +3881,91 @@ fn going_to_a_definition_has_a_key_and_the_palette_says_which() {
         "a second symbol question has taken a key"
     );
 }
+
+/// A list that sits on the status bar shortens the editor rather than
+/// covering it.
+///
+/// It is drawn over the foot of the editor's region, so the editor used to
+/// draw rows nobody could see. Every measurement of a screenful was then a
+/// measurement of a screen that was partly a list: the caret could be
+/// scrolled to a row behind it, paging went a listful too far, and a list
+/// showing its selection in the file put it where the list was.
+///
+/// Not about any one list. It is the geometry every view over the code
+/// shares, which is why the fix is in the one function that splits the
+/// screen rather than in the list that noticed.
+///
+/// Broken deliberately by giving the editor the whole region again: the
+/// room stops shrinking, and the caret on the last row it had stays on a
+/// row the list is now drawn over.
+#[test]
+fn a_list_on_the_status_bar_takes_its_rows_from_the_editor() {
+    let scratch = support::Scratch::new("picker-room");
+    let path = scratch.path().join("sample.rs");
+    let mut file = String::new();
+    for line in 0..200 {
+        file.push_str(&format!("    let _ = {line};\n"));
+    }
+    std::fs::write(&path, &file).expect("writing the file");
+    let mut app = App::new(vec![
+        obelus::buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 60, 20);
+
+    // Down to the last row the editor has, so the caret is exactly where a
+    // list would be drawn.
+    let whole = app.text_area();
+    for _ in 0..whole.height {
+        press(&mut app, KeyCode::Down);
+    }
+    support::render(&mut app, 60, 20);
+    let on_screen = |app: &App| {
+        app.current_buffer()
+            .expect("a file")
+            .cursor_screen_cell(app.text_area())
+    };
+    assert!(
+        on_screen(&app).is_some(),
+        "the caret was not on screen to begin with"
+    );
+
+    press_control(&mut app, 'p');
+    let dump = support::render(&mut app, 60, 20);
+    assert!(
+        app.text_area().height < whole.height,
+        "the list did not take its rows from the editor:\n{dump}"
+    );
+    assert!(
+        on_screen(&app).is_some(),
+        "the caret ended up on a row the list is drawn over:\n{dump}"
+    );
+    // Down to the row exactly: the rule that says the list and the file are
+    // two things is the list's row, not a row of file. Kept by the editor
+    // it would be drawn and then covered -- which looks right and measures
+    // wrong, and what measures it is everything that counts a screenful.
+    let rule = support::text_block(&dump)
+        .lines()
+        // The section starts with a blank line, which is not a row.
+        .filter(|row| row.contains('|'))
+        .position(|row| {
+            // Past the row number the dump writes in front of each row.
+            let row = row.find('|').map_or("", |at| &row[at + 1..]);
+            !row.is_empty() && row.chars().all(|glyph| glyph == '\u{2500}')
+        })
+        .expect("the rule under the file");
+    assert_eq!(
+        usize::from(app.text_area().height),
+        rule,
+        "the editor kept a row the rule is drawn on:\n{dump}"
+    );
+
+    // And the editor has it all back when the list goes.
+    press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, 60, 20);
+    assert_eq!(
+        app.text_area().height,
+        whole.height,
+        "the editor did not get its rows back:\n{dump}"
+    );
+}

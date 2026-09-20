@@ -136,6 +136,45 @@ pub fn regions(area: Rect) -> Regions {
     }
 }
 
+/// The room the document being read actually has: the editor region, less
+/// whatever is drawn over its foot.
+///
+/// A list that sits on the status bar is drawn *over* the editor, so the
+/// editor drew rows nobody could see. Every measurement of a screenful was
+/// then a measurement of a screen that was partly a list: the caret could
+/// be scrolled to a row behind it, paging went a listful too far, and a
+/// list showing its selection in the file put it where the list was.
+///
+/// One function, for the reason [`regions`] is one: what the drawing
+/// measures and what the scrolling measures cannot be allowed to disagree,
+/// and two subtractions in two places is how they come to.
+///
+/// Not for a conversation. A conversation puts a list *inside* itself,
+/// above the box a message is written in, so it has already made the room
+/// -- and shortening it here would put the list under its own box.
+#[must_use]
+pub fn editor_room(area: Rect, app: &App) -> Rect {
+    let editor = regions(area).editor;
+    let Some(list) = app
+        .picker()
+        .filter(|list| list.layout() != crate::component::picker::PickerLayout::FullArea)
+    else {
+        return editor;
+    };
+    if app.chat().is_some() {
+        return editor;
+    }
+    // The rule above it is the list's too: it is there to say the list and
+    // the file are two things, and a row of rule is not a row of file.
+    let region = picker::region(list, editor);
+    let height = region
+        .y
+        .saturating_sub(1)
+        .saturating_sub(editor.y)
+        .min(editor.height);
+    Rect { height, ..editor }
+}
+
 /// The screen as a `Rect` starting at the origin.
 #[must_use]
 pub fn area_of(size: Size) -> Rect {
@@ -271,8 +310,14 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
     // A file being shown some other way is shown that way: the editor view
     // draws the file's own bytes, which in that mode is not what is on
     // screen.
+    //
+    // In the room it actually has, which is short of the region when a
+    // list is sitting on the status bar over it. A conversation is the one
+    // that takes the whole region: it puts a list *inside* itself, above
+    // the box a message is written in, so it has already made the room.
+    let room = editor_room(area, app);
     if let Some(view) = todo::TodoUi::new(app) {
-        view.render(regions.editor, cells);
+        view.render(room, cells);
     } else {
         match chat::ChatView::new(app) {
             Some(view) => view.render(regions.editor, cells),
@@ -281,16 +326,9 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &App) {
                     let top = app
                         .current_buffer()
                         .map_or(0, |buffer| buffer.viewport().top.get());
-                    reading::draw(
-                        cells,
-                        regions.editor,
-                        rows,
-                        top,
-                        app.theme(),
-                        app.theme().background,
-                    );
+                    reading::draw(cells, room, rows, top, app.theme(), app.theme().background);
                 }
-                None => editor::EditorView::new(app).render(regions.editor, cells),
+                None => editor::EditorView::new(app).render(room, cells),
             },
         }
     }

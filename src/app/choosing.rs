@@ -286,6 +286,15 @@ impl App {
     /// question over the conversation it was asked in.
     pub(super) fn show_list(&mut self, picker: Picker) {
         self.make_room(Room::Band);
+        // Where the reader is looking, before the list takes any of it.
+        // Taken here rather than when the list first shows them somewhere,
+        // because a list that sits on the status bar shortens the editor
+        // and the file scrolls to keep the caret in what is left -- so by
+        // the time anything is being shown, the place they were looking
+        // from has already gone.
+        self.looked_from = self
+            .current
+            .zip(self.current_buffer().map(Buffer::viewport));
         self.picker = Some(picker);
     }
 

@@ -124,17 +124,13 @@ impl App {
         if here.as_deref() != Some(path.as_path()) {
             return;
         }
-        // The room the reader can actually see, which is short of what the
-        // editor draws: a compact list is drawn *over* the foot of it.
-        // Centring in the whole of it would put the place under the list.
-        let covered = ui::picker::region(picker, self.editor_area).height;
-        let whole = self.text_area();
-        let area = TextArea {
-            height: whole.height.saturating_sub(covered).max(1),
-            ..whole
-        };
+        // The room the reader can actually see, which the editor has been
+        // given rather than having to be worked out here: a list sitting on
+        // the status bar shortens the editor's region rather than covering
+        // it, so this is the same area everything else measures with.
+        let area = self.text_area();
         let line = crate::coordinates::LineNumber::new(line);
-        let (Some(id), Some(buffer)) = (self.current, self.current_buffer_mut()) else {
+        let Some(buffer) = self.current_buffer_mut() else {
             return;
         };
         // Nothing at all for somewhere already on screen, which is the same
@@ -145,12 +141,7 @@ impl App {
         if buffer.is_on_screen(line, area) {
             return;
         }
-        // Remembered the first time and not after, because after that the
-        // view is somewhere this put it: saving again would remember a
-        // look rather than the place the reader was looking from.
-        let from = buffer.viewport();
         buffer.look_at(line, area);
-        self.looked_from.get_or_insert((id, from));
     }
 
     /// Puts the view back where the reader was looking before a list showed

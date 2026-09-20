@@ -1570,7 +1570,7 @@ impl App {
     /// is allowed: it is arithmetic over sizes, not work.
     pub fn draw_into(&mut self, cells: &mut CellBuffer, area: Rect) -> Option<Position> {
         self.screen_area = area;
-        self.prepare(ui::regions(area).editor);
+        self.prepare(ui::editor_room(area, self));
         ui::draw(cells, area, self);
         ui::cursor_position(area, self)
     }
