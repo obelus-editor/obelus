@@ -17,8 +17,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use obelus_app::event::Event;
 use obelus_lsp::{
+    Message,
     action,
     action::SymbolAction,
     client::{Client, Reply},
@@ -40,7 +40,7 @@ fn root() -> std::path::PathBuf {
 /// Pumps messages into the client until `done` says so, or the deadline.
 fn pump<F>(
     client: &mut Client,
-    events: &Receiver<Event>,
+    events: &Receiver<Message>,
     limit: Duration,
     mut done: F,
 ) -> Option<Reply>
@@ -56,26 +56,25 @@ where
             panic!("the server said nothing useful within {limit:?}");
         };
         match events.recv_timeout(remaining) {
-            Ok(Event::Lsp(obelus_lsp::Message { message, .. })) => {
+            Ok(Message { message, .. }) => {
                 if let Some(reply) = client.on_message(&message)
                     && done(client, Some(&reply))
                 {
                     return Some(reply);
                 }
             }
-            Ok(_) => {}
             Err(RecvTimeoutError::Timeout) => panic!("the server went quiet"),
             Err(RecvTimeoutError::Disconnected) => panic!("the server ended"),
         }
     }
 }
 
-fn start() -> Option<(Client, Receiver<Event>)> {
+fn start() -> Option<(Client, Receiver<Message>)> {
     if !usable() {
         eprintln!("skipped: there is no rust-analyzer here that answers");
         return None;
     }
-    let (sender, events) = obelus_app::event::channel();
+    let (sender, events) = std::sync::mpsc::channel::<Message>();
     let server = obelus_lsp::server_for(LanguageId::Rust).expect("a server for Rust");
     let client =
         Client::start(LanguageId::Rust, server, &root(), sender).expect("starting rust-analyzer");

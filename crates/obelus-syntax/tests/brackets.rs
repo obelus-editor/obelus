@@ -4,8 +4,6 @@
 //! gets wrong: nesting, an unclosed bracket, and a bracket that is not
 //! syntax at all because it is inside a string or a comment.
 
-mod support;
-
 use obelus_syntax::{LanguageId, brackets, highlight::Highlights, parse::SyntaxState};
 use obelus_text::{Text, coordinates::ByteOffset};
 
