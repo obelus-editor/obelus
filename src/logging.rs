@@ -240,10 +240,26 @@ fn newest_log(directory: &Path, prefix: &str) -> Option<PathBuf> {
 /// reader who deleted all of this would lose nothing they wrote and nothing
 /// they chose. The logs are here, and what obelus remembers about the
 /// conversations it has had.
+///
+/// `None` is a session that keeps none of it -- no log, and no conversation
+/// to come back to -- which is what a Windows machine got, because the only
+/// answers here were an XDG variable and `HOME`. Where `dirs` is asked at
+/// all it is asked for the *local* data directory rather than the roaming
+/// one the settings use: this is what obelus worked out about this machine,
+/// and following a reader to another machine is the one thing it must not
+/// do.
 #[must_use]
 pub fn state_directory() -> Option<PathBuf> {
+    // Said by name, wherever it is said. A reader who sets this has told
+    // every program they run where its state goes, and obelus is one.
     if let Some(state) = std::env::var_os("XDG_STATE_HOME") {
         return Some(PathBuf::from(state).join("obelus"));
+    }
+    // `HOME` is not asked on Windows. It is set there by whichever
+    // unix-shaped thing was installed last -- git, most often -- and that
+    // is that installer talking, not the reader.
+    if cfg!(windows) {
+        return Some(dirs::data_local_dir()?.join("obelus"));
     }
     let home = std::env::var_os("HOME")?;
     Some(PathBuf::from(home).join(".local/state/obelus"))
@@ -256,6 +272,39 @@ fn log_directory() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    /// There is somewhere to keep what obelus works out, and on Windows it
+    /// is somewhere that platform keeps such things.
+    ///
+    /// Both halves, because the first one alone passes for the wrong
+    /// reason. `None` is a session with no log and no conversation kept --
+    /// which is what a Windows machine got -- and the log is the only thing
+    /// a reader has to send back when obelus does something they cannot
+    /// describe. But `HOME` *is* set on the Windows machine this was
+    /// written on, by git's installer, so asking only whether there is an
+    /// answer would have found one there and none on a machine without git.
+    ///
+    /// Broken deliberately by reading `HOME` on every platform, which is
+    /// what this did: the answer came back under a dot-directory in the
+    /// reader's profile, which is not where anything on that platform
+    /// looks.
+    #[test]
+    fn there_is_somewhere_to_keep_what_obelus_works_out() {
+        let Some(kept_in) = super::state_directory() else {
+            panic!("this machine has nowhere for a log, so there will not be one");
+        };
+        // Unless the reader has said where, in which case that is the
+        // answer and there is nothing else to ask about it.
+        if cfg!(windows) && std::env::var_os("XDG_STATE_HOME").is_none() {
+            let local = dirs::data_local_dir().expect("somewhere of this machine's own");
+            assert!(
+                kept_in.starts_with(&local),
+                "{} is not under {}",
+                kept_in.display(),
+                local.display()
+            );
+        }
+    }
+
     /// Every line says which obelus wrote it.
     ///
     /// Several of them share the log, because several of them on one

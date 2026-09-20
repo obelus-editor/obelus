@@ -897,7 +897,12 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, Value, from_toml, known, save_to, to_toml};
+    // Both of the tests that save a file are unix's: one makes a symbolic
+    // link and the other reads an inode. Imported beside them so a Windows
+    // build is not warned about a name nothing there uses.
+    #[cfg(unix)]
+    use super::save_to;
+    use super::{Config, Value, from_toml, known, to_toml};
 
     /// A path that is a link is written *through*, not over.
     ///

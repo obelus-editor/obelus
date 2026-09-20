@@ -199,16 +199,28 @@ mod tests {
             }}
         }))
         .expect("capabilities");
-        assert!(asked_before(&capabilities, Path::new("/p/src/a.ts"), false));
-        assert!(asked_before(&capabilities, Path::new("/p/src/a.ts"), true));
+        assert!(asked_before(
+            &capabilities,
+            &crate::lsp::fake::path("/p/src/a.ts"),
+            false
+        ));
+        assert!(asked_before(
+            &capabilities,
+            &crate::lsp::fake::path("/p/src/a.ts"),
+            true
+        ));
     }
 
     #[test]
     fn the_message_names_both_places() {
-        let params = params(Path::new("/p/a.rs"), Path::new("/p/b.rs")).expect("two uris");
+        let (from, to) = (
+            crate::lsp::fake::path("/p/a.rs"),
+            crate::lsp::fake::path("/p/b.rs"),
+        );
+        let params = params(&from, &to).expect("two uris");
         let files = params["files"].as_array().expect("a list of one");
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0]["oldUri"], "file:///p/a.rs");
-        assert_eq!(files[0]["newUri"], "file:///p/b.rs");
+        assert_eq!(files[0]["oldUri"], crate::lsp::fake::uri("/p/a.rs"));
+        assert_eq!(files[0]["newUri"], crate::lsp::fake::uri("/p/b.rs"));
     }
 }

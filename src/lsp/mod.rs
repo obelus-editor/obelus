@@ -178,27 +178,47 @@ pub fn watched_change(path: &Path) -> Option<serde_json::Value> {
 }
 
 /// Whether a command can be found.
+///
+/// [`crate::program::on_path`] does the work: what counts as being on the
+/// path is a fact about the machine rather than about language servers, and
+/// the agents ask it too.
 #[must_use]
 pub fn on_path(command: &str) -> bool {
-    let Some(path) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&path).any(|directory| {
-        let candidate = directory.join(command);
-        candidate.is_file() && is_executable(&candidate)
-    })
+    crate::program::on_path(command)
 }
 
-#[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt as _;
-    path.metadata()
-        .is_ok_and(|data| data.permissions().mode() & 0o111 != 0)
-}
+/// Made-up paths and URIs for the tests here, made up in this platform's own
+/// language.
+///
+/// The tests below name files like `/p/a.rs`. That is an absolute path on one
+/// platform and an ordinary relative name on another, and a URI built from it
+/// there names nothing at all: `file:///p/a.rs` carries no drive, so nothing
+/// reads it back as a path and every row made from one is dropped. `C:\p.rs`
+/// is the same fiction told locally.
+///
+/// The URI comes from [`client::uri_for`] rather than from a `format!` beside
+/// the test. A test that writes its own is a test that agrees with itself and
+/// with nothing else -- which is how these passed on one platform for as long
+/// as obelus was only ever run on it.
+#[cfg(test)]
+pub(crate) mod fake {
+    use super::PathBuf;
 
-#[cfg(not(unix))]
-fn is_executable(_path: &Path) -> bool {
-    true
+    /// A made-up absolute path, written the unix way and read the local way.
+    pub(crate) fn path(unixish: &str) -> PathBuf {
+        match cfg!(windows) {
+            true => PathBuf::from(format!("C:{}", unixish.replace('/', "\\"))),
+            false => PathBuf::from(unixish),
+        }
+    }
+
+    /// And the URI a server would name it by.
+    pub(crate) fn uri(unixish: &str) -> String {
+        super::client::uri_for(&path(unixish))
+            .expect("a uri")
+            .as_str()
+            .to_string()
+    }
 }
 
 #[cfg(test)]
@@ -254,14 +274,25 @@ mod tests {
         assert_eq!(command_for(LanguageId::Toml), None);
     }
 
-    /// The probe has to reject a directory and a non-executable file, or
-    /// obelus tries to spawn something that cannot run and reports it as the
-    /// server failing rather than as never having been there.
+    /// Every server in the table is asked for by a name the probe can look
+    /// for.
+    ///
+    /// What the probe *does* with a name is `program`'s, and tested there.
+    /// What is here is the table's half of it: a row whose command carries
+    /// a directory, or the ending of a file, is a row asking a question
+    /// about `PATH` that `PATH` cannot answer.
     #[test]
-    fn the_probe_finds_a_real_command_and_nothing_else() {
-        assert!(on_path("sh"), "sh should be on PATH");
-        assert!(!on_path("obelus-not-a-real-command"));
-        // A directory that exists on PATH-like paths must not count.
-        assert!(!on_path("."));
+    fn every_server_is_named_the_way_the_path_is_searched() {
+        for language in LanguageId::ALL.iter().copied() {
+            let Some(server) = server_for(language) else {
+                continue;
+            };
+            assert!(
+                !server.command.contains(['/', '\\', '.']),
+                "{} names its server {}, which is not a name on the path",
+                language.name(),
+                server.command
+            );
+        }
     }
 }

@@ -301,7 +301,7 @@ mod outcomes {
 
     fn location(path: &str, line: u32) -> serde_json::Value {
         json!({
-            "uri": format!("file://{path}"),
+            "uri": crate::lsp::fake::uri(path),
             "range": {
                 "start": { "line": line, "character": 4 },
                 "end": { "line": line, "character": 9 },
@@ -364,7 +364,7 @@ mod outcomes {
         assert_eq!(
             single,
             Outcome::Places(vec![Place {
-                path: "/a/b.rs".into(),
+                path: crate::lsp::fake::path("/a/b.rs"),
                 line: 7,
                 character: 4,
                 end_line: 7,
@@ -382,7 +382,7 @@ mod outcomes {
 
         let links = outcome_of(
             Ok(json!([{
-                "targetUri": "file:///a/b.rs",
+                "targetUri": crate::lsp::fake::uri("/a/b.rs"),
                 "targetRange": {
                     "start": {"line": 5, "character": 0},
                     "end": {"line": 5, "character": 3},
@@ -399,7 +399,7 @@ mod outcomes {
         assert_eq!(
             links,
             Outcome::Places(vec![Place {
-                path: "/a/b.rs".into(),
+                path: crate::lsp::fake::path("/a/b.rs"),
                 line: 5,
                 character: 0,
                 end_line: 5,
@@ -412,8 +412,8 @@ mod outcomes {
     /// trip, or the answer names a different file — or no file at all.
     #[test]
     fn a_path_with_reserved_characters_survives() {
-        let awkward = "/tmp/a dir/\u{4f60}\u{597d}#1.rs";
-        let uri = crate::lsp::client::uri_for(std::path::Path::new(awkward)).expect("a uri");
+        let awkward = crate::lsp::fake::path("/tmp/a dir/\u{4f60}\u{597d}#1.rs");
+        let uri = crate::lsp::client::uri_for(&awkward).expect("a uri");
         let outcome = outcome_of(
             Ok(json!({
                 "uri": uri.as_str(),
@@ -429,7 +429,7 @@ mod outcomes {
         assert_eq!(
             outcome,
             Outcome::Places(vec![Place {
-                path: awkward.into(),
+                path: awkward,
                 line: 0,
                 character: 0,
                 end_line: 0,

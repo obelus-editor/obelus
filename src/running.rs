@@ -145,9 +145,10 @@ impl Runs {
         // Inside the runtime, because a child's pipes register with it --
         // the same reason a language server is started this way.
         let _inside = crate::runtime::handle().enter();
-        let mut process = Command::new(shell());
+        let (shell, said_with) = shell();
+        let mut process = Command::new(shell);
         process
-            .arg("-c")
+            .arg(said_with)
             .arg(&said)
             .current_dir(cwd.unwrap_or(root))
             // Nothing to type into. The protocol has no way to send a
@@ -332,13 +333,29 @@ fn read_into(stream: Stream, into: Arc<Mutex<Output>>) {
     });
 }
 
-/// The shell to run a command line with.
+/// The shell to run a command line with, and the flag that hands it one.
 ///
 /// The reader's own, because the command an agent writes is the command
 /// they would have typed -- their aliases are not here, but their shell's
-/// syntax is what the agent was writing in.
-fn shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+/// syntax is what the agent was writing in. `SHELL` is where that is said,
+/// on Windows as well: nothing sets it there except a POSIX shell the
+/// reader installed, and one they installed is one they meant to use.
+///
+/// The fallback is the part that has to differ. `/bin/sh` is not a file on
+/// a Windows machine, so a run failed at the spawn -- before the command
+/// was read, with nothing on the page about it -- where what that machine
+/// has is named by `COMSPEC`, and calls `-c` `/C`.
+fn shell() -> (String, &'static str) {
+    if let Ok(named) = std::env::var("SHELL") {
+        return (named, "-c");
+    }
+    match cfg!(windows) {
+        true => (
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string()),
+            "/C",
+        ),
+        false => ("/bin/sh".to_string(), "-c"),
+    }
 }
 
 /// How a process ended, as the protocol says it.
@@ -360,6 +377,11 @@ fn ended_as(status: &std::process::ExitStatus) -> Ended {
 }
 
 /// The name of a signal, for the few a command is stopped by.
+///
+/// Beside the one arm that calls it: a platform with no signals to report
+/// has no use for their names, and an uncalled function there is a warning
+/// in a build that is meant to have none.
+#[cfg(unix)]
 const fn named(signal: i32) -> &'static str {
     match signal {
         2 => "INT",

@@ -231,8 +231,8 @@ mod workspace_tests {
     use crate::theme::SyntaxKind;
 
     /// The tree these replies are about.
-    fn root() -> &'static std::path::Path {
-        std::path::Path::new("/p")
+    fn root() -> std::path::PathBuf {
+        crate::lsp::fake::path("/p")
     }
 
     /// The shape every server that answers this question at all uses: a
@@ -244,7 +244,7 @@ mod workspace_tests {
                 "name": "Picker",
                 "kind": 23,
                 "location": {
-                    "uri": "file:///p/src/component/picker/mod.rs",
+                    "uri": crate::lsp::fake::uri("/p/src/component/picker/mod.rs"),
                     "range": {
                         "start": { "line": 41, "character": 11 },
                         "end": { "line": 41, "character": 17 }
@@ -252,13 +252,13 @@ mod workspace_tests {
                 }
             }
         ]);
-        let found = found_in(Ok(reply), Some(root()));
+        let found = found_in(Ok(reply), Some(&root()));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "Picker");
         assert_eq!(found[0].kind, SyntaxKind::Type);
         assert_eq!(
             found[0].path,
-            std::path::Path::new("/p/src/component/picker/mod.rs")
+            crate::lsp::fake::path("/p/src/component/picker/mod.rs")
         );
         assert_eq!((found[0].line, found[0].character), (41, 11));
         assert_eq!(found[0].end_character, 17);
@@ -271,9 +271,9 @@ mod workspace_tests {
     #[test]
     fn a_symbol_with_no_range_is_not_a_row() {
         let reply = json!([
-            { "name": "far_away", "kind": 12, "location": { "uri": "file:///p/a.rs" } }
+            { "name": "far_away", "kind": 12, "location": { "uri": crate::lsp::fake::uri("/p/a.rs") } }
         ]);
-        assert!(found_in(Ok(reply), Some(root())).is_empty());
+        assert!(found_in(Ok(reply), Some(&root())).is_empty());
     }
 
     /// An error, a null and a shape obelus does not know all mean the same
@@ -281,9 +281,9 @@ mod workspace_tests {
     /// answers null.
     #[test]
     fn nothing_usable_means_no_rows() {
-        assert!(found_in(Err("no".to_string()), Some(root())).is_empty());
-        assert!(found_in(Ok(json!(null)), Some(root())).is_empty());
-        assert!(found_in(Ok(json!({ "unexpected": true })), Some(root())).is_empty());
+        assert!(found_in(Err("no".to_string()), Some(&root())).is_empty());
+        assert!(found_in(Ok(json!(null)), Some(&root())).is_empty());
+        assert!(found_in(Ok(json!({ "unexpected": true })), Some(&root())).is_empty());
     }
 
     /// A search offers the reader's own tree and nothing else.
@@ -300,7 +300,7 @@ mod workspace_tests {
                 "name": "new",
                 "kind": 12,
                 "location": {
-                    "uri": format!("file://{path}"),
+                    "uri": crate::lsp::fake::uri(path),
                     "range": { "start": { "line": 3, "character": 7 },
                                "end": { "line": 3, "character": 10 } }
                 }
@@ -315,14 +315,14 @@ mod workspace_tests {
             at("/p-notes/scratch.rs"),
         ]);
 
-        let kept = found_in(Ok(reply.clone()), Some(root()));
+        let kept = found_in(Ok(reply.clone()), Some(&root()));
         assert_eq!(
             kept.iter()
                 .map(|symbol| symbol.path.clone())
                 .collect::<Vec<_>>(),
             [
-                std::path::PathBuf::from("/p/src/main.rs"),
-                std::path::PathBuf::from("/p/src/deep/inside.rs"),
+                crate::lsp::fake::path("/p/src/main.rs"),
+                crate::lsp::fake::path("/p/src/deep/inside.rs"),
             ],
             "the list is not the reader's own tree"
         );
@@ -330,7 +330,7 @@ mod workspace_tests {
         // Every one of those rows is readable: what dropped two of them is
         // the root, not a shape the reply could not be read in.
         assert_eq!(
-            found_in(Ok(reply), Some(std::path::Path::new("/"))).len(),
+            found_in(Ok(reply), Some(&crate::lsp::fake::path("/"))).len(),
             4,
             "not every symbol was read"
         );
@@ -343,9 +343,9 @@ mod workspace_tests {
                 at("/p/src/main.rs"),
                 at("/home/reader/.cargo/registry/src/serde/lib.rs"),
                 { "name": "later", "kind": 12,
-                  "location": { "uri": "file:///p/src/lazy.rs" } },
+                  "location": { "uri": crate::lsp::fake::uri("/p/src/lazy.rs") } },
             ])),
-            Some(root()),
+            Some(&root()),
         );
         assert_eq!(
             newer

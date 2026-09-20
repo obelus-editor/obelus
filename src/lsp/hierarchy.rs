@@ -211,7 +211,7 @@ mod tests {
         serde_json::json!({
             "name": name,
             "kind": 12,
-            "uri": "file:///tmp/one.rs",
+            "uri": crate::lsp::fake::uri("/tmp/one.rs"),
             "range": { "start": { "line": line, "character": 0 },
                        "end": { "line": line + 3, "character": 1 } },
             // The name itself, which is what a callee's row marks.

@@ -136,6 +136,25 @@ imara-diff = "0.2"
 # platform and one it is not worth being wrong about: a file the reader
 # cannot find is a setting that does not exist.
 dirs = "7"
+
+# Whether a program is installed, which is the same kind of question and the
+# same kind of wrong to answer by hand. `rust-analyzer` is `rust-analyzer.exe`
+# on Windows and the list of endings that count is the reader's own `PATHEXT`;
+# the search starts at the application's directory and the working directory
+# before it reaches `PATH` at all; and a name with a separator in it is not a
+# search. Written out here, the first of those was missed and every language
+# obelus has a server for reported that the server was not installed.
+# `either` and `home`, which it brings, were in the tree already.
+which = "8"
+
+# `file://` URIs, which are not paths with a scheme in front. A Windows path
+# starts at a drive letter rather than a `/`, so it needs one put in front of
+# it, and the `\` between its parts means nothing to a URI -- escaped rather
+# than converted, `C:\src\main.rs` arrives at a language server as one long
+# word in the place a URI keeps the *host*. Already in the tree by way of
+# `reqwest` and `tower-http`, so this states a dependency obelus was
+# compiling anyway.
+url = "2"
 # The file's format. Hand-rolling a parser for something that looks like toml
 # invites the question "why doesn't a section work", and the answer to
 # "is this valid" is not obelus's to own.

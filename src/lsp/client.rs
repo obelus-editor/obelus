@@ -555,44 +555,50 @@ impl Client {
 
 /// The `file://` URI for a path.
 ///
-/// Built by hand because the protocol's own type will parse one but not make
-/// one out of a path. Anything a URI reserves has to be escaped, or a path
-/// with a space or a `#` in it names a different file — or no file at all.
+/// `url` rather than an escaping written out here, and the protocol's own type
+/// parsed from what it produced: `Uri` will read a URI and not make one, and
+/// the two halves of making one are exactly the halves that were wrong.
+///
+/// A URI is not a path with a scheme in front of it. Its parts are separated
+/// by `/` where Windows writes `\`, and its path begins with one where a
+/// Windows path begins at a drive letter -- so `C:\src\main.rs`, escaped
+/// character by character, arrived as `file://C%3A%5Csrc%5Cmain.rs`: one long
+/// word in the place a URI keeps the *host*. Every server obelus spoke to on
+/// that platform was told about a file on a machine that does not exist.
+///
+/// Made absolute first, because `Url::from_file_path` will not take anything
+/// else and is right not to: `ob src/main.rs` opens a buffer called what the
+/// reader typed, and `file://src/main.rs` reads `src` as a host the same way.
+/// `std::path::absolute` rather than `canonicalize`, which would touch the
+/// disk and hand back the file a link points at -- a different path from the
+/// one every other part of obelus knows this buffer by.
 pub fn uri_for(path: &Path) -> Result<Uri> {
     use std::str::FromStr as _;
 
-    let mut text = String::from("file://");
-    for byte in path.to_string_lossy().bytes() {
-        match byte {
-            b'/' | b'-' | b'_' | b'.' | b'~' => text.push(char::from(byte)),
-            _ if byte.is_ascii_alphanumeric() => text.push(char::from(byte)),
-            _ => text.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    Uri::from_str(&text).with_context(|| format!("building a uri from {}", path.display()))
+    let whole =
+        std::path::absolute(path).with_context(|| format!("making {} absolute", path.display()))?;
+    let url = url::Url::from_file_path(&whole)
+        .map_err(|()| anyhow::anyhow!("no uri names {}", whole.display()))?;
+    Uri::from_str(url.as_str()).with_context(|| format!("building a uri from {}", path.display()))
 }
 
 /// The path a `file://` URI names.
 ///
 /// The inverse of [`uri_for`], and next to it: an escaping and an unescaping
 /// that disagree name a different file, and the two are only correct together.
+/// Which is the other reason both are `url`'s now -- one crate holding both
+/// halves cannot disagree with itself.
+///
+/// `None` for a URI that names no file on this machine: another scheme, or a
+/// host, which is somebody else's disk.
+///
+/// What comes back is a path this platform would have written itself --
+/// `C:\src\main.rs` rather than `/C:/src/main.rs`. These are compared against
+/// paths a walk of the tree found and drawn on the rows beside them, and a
+/// second spelling of one file is a file obelus opens twice.
 #[must_use]
 pub fn path_of(uri: &str) -> Option<std::path::PathBuf> {
-    let encoded = uri.strip_prefix("file://")?;
-    let bytes = encoded.as_bytes();
-    let mut path = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).ok()?;
-            path.push(u8::from_str_radix(hex, 16).ok()?);
-            index += 3;
-        } else {
-            path.push(bytes[index]);
-            index += 1;
-        }
-    }
-    Some(std::path::PathBuf::from(String::from_utf8(path).ok()?))
+    url::Url::parse(uri).ok()?.to_file_path().ok()
 }
 
 /// Reads messages and puts them on the one channel the loop reads.
@@ -1052,4 +1058,48 @@ fn standard_token_types() -> Vec<SemanticTokenType> {
         SemanticTokenType::OPERATOR,
         SemanticTokenType::DECORATOR,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{path_of, uri_for};
+
+    /// A path spelled the way this platform spells one survives being said
+    /// to a server and read back.
+    ///
+    /// Built from the directory obelus is running in rather than written
+    /// out, because a written-out path is a unix path and a unix path is
+    /// exactly the case that was never broken: on Windows every file obelus
+    /// named arrived as one escaped word where the host goes, and every
+    /// server answered about a file it could not find.
+    ///
+    /// Broken deliberately, once for each half. Leaving `\` between the
+    /// parts escapes it to `%5C`, and the URI stops saying `/src/lsp/` --
+    /// the parts of a path a server has to be able to see. Leaving the
+    /// leading `/` off puts the drive in the authority, and the URI stops
+    /// starting `file:///`. Either one alone still round-trips, which is
+    /// why neither is checked by the round trip.
+    #[test]
+    fn a_path_of_this_platform_survives_being_a_uri() {
+        let here = std::env::current_dir()
+            .expect("a working directory")
+            .join("src")
+            .join("lsp")
+            .join("client.rs");
+
+        let uri = uri_for(&here).expect("a uri");
+        assert!(
+            uri.as_str().starts_with("file:///"),
+            "the path went where a URI keeps the host: {uri:?}"
+        );
+        assert!(
+            uri.as_str().ends_with("/src/lsp/client.rs"),
+            "the parts are not separated the way a URI separates them: {uri:?}"
+        );
+        assert_eq!(
+            path_of(uri.as_str()).as_deref(),
+            Some(here.as_path()),
+            "the path that came back is not the one that went out"
+        );
+    }
 }

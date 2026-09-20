@@ -278,10 +278,14 @@ mod tests {
                               "cmd": "./amp-acp", "sha256": "abc" },
             "linux-aarch64": { "archive": "https://example.invalid/amp-linux-aarch64.tar.gz",
                                "cmd": "./amp-acp", "sha256": "def" },
-            "darwin-aarch64": { "archive": "https://example.invalid/amp-darwin.tar.gz",
-                                "cmd": "./amp-acp", "sha256": "ghi" },
-            "windows-x86_64": { "archive": "https://example.invalid/amp-windows.zip",
-                                "cmd": "amp-acp.exe" }
+            "darwin-x86_64": { "archive": "https://example.invalid/amp-darwin-x86_64.tar.gz",
+                               "cmd": "./amp-acp", "sha256": "ghi" },
+            "darwin-aarch64": { "archive": "https://example.invalid/amp-darwin-aarch64.tar.gz",
+                                "cmd": "./amp-acp", "sha256": "jkl" },
+            "windows-x86_64": { "archive": "https://example.invalid/amp-windows-x86_64.zip",
+                                "cmd": "amp-acp.exe" },
+            "windows-aarch64": { "archive": "https://example.invalid/amp-windows-aarch64.zip",
+                                 "cmd": "amp-acp.exe" }
           } }
         },
         { "id": "nothing", "name": "Nothing", "distribution": {} }
@@ -326,6 +330,12 @@ mod tests {
         ));
         // The archive for *this* machine, not the first one in the table: a
         // row offering a Windows build on Linux cannot be pressed.
+        //
+        // Every target the table above offers is one [`target`] can name,
+        // and each archive is named after its own. Two of them were not:
+        // the Windows build was `amp-windows.zip` and the Apple Silicon one
+        // `amp-darwin.tar.gz`, so this said the entry was not that machine's
+        // -- on those two machines, and nowhere the suite was usually run.
         let Distribution::Archive { archive, .. } = &agents[3].distribution else {
             panic!("not an archive: {:?}", agents[3].distribution);
         };

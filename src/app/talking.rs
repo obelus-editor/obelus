@@ -1917,6 +1917,24 @@ impl App {
         futures::executor::block_on(answered).unwrap_or(false)
     }
 
+    /// The tree, spelled the way `canonicalize` spells a path.
+    ///
+    /// Both sides of the fence have to be spelled the same way or it is not
+    /// a comparison. On Windows `canonicalize` hands back a verbatim path --
+    /// `\\?\E:\work\obelus\...` -- where the working directory is an
+    /// ordinary one, so `starts_with` was asking whether a `\\?\E:` prefix
+    /// begins with an `E:` one. It does not, ever: every file an agent asked
+    /// to read was outside the tree, the tree's own included, and what the
+    /// reader saw was an agent reading nothing and being refused everything.
+    ///
+    /// The working directory unresolved where it will not resolve, which is
+    /// what the comparison had before and is never worse than it.
+    fn fenced(&self) -> PathBuf {
+        self.working_directory
+            .canonicalize()
+            .unwrap_or_else(|_| self.working_directory.clone())
+    }
+
     fn write_for_agent(&mut self, path: &Path, text: &str, answer: acp::Answer<bool>) {
         let full = match path.is_absolute() {
             true => path.to_path_buf(),
@@ -1931,7 +1949,7 @@ impl App {
                     .map(std::path::Path::canonicalize)
                     .unwrap_or_else(|| Err(std::io::ErrorKind::NotFound.into()))
             })
-            .is_ok_and(|full| full.starts_with(&self.working_directory));
+            .is_ok_and(|full| full.starts_with(self.fenced()));
         if !inside {
             tracing::info!(path = %full.display(), "the agent asked to write outside the tree");
             let _ = answer.send(false);
@@ -1998,7 +2016,7 @@ impl App {
         let inside = full
             .canonicalize()
             .ok()
-            .is_some_and(|full| full.starts_with(&self.working_directory));
+            .is_some_and(|full| full.starts_with(self.fenced()));
         let text = if inside {
             self.documents
                 .iter()

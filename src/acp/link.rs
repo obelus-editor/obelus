@@ -845,7 +845,12 @@ pub fn start(
     events: Sender<Event>,
 ) -> mpsc::UnboundedSender<Ask> {
     let (asks, taken) = mpsc::unbounded();
-    let config = AcpAgentConfig::new(command).args(arguments.iter().cloned());
+    // Not always the file that was installed: what npm writes on Windows is
+    // a `.cmd`, which is started by being handed to the command processor
+    // rather than by being run. [`crate::program::as_started_here`] is the
+    // one place that knows the difference.
+    let (program, arguments) = crate::program::as_started_here(command, arguments);
+    let config = AcpAgentConfig::new(&program).args(arguments.iter().cloned());
     let root = root.to_path_buf();
     let told = events.clone();
     // A task on the one runtime, which is what it was already: a thread

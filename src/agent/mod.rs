@@ -15,7 +15,7 @@ pub mod icon;
 pub mod install;
 pub mod registry;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// One agent, as the registry describes it.
 ///
@@ -337,8 +337,8 @@ pub fn command_for(agent: &Agent, root: &std::path::Path) -> Option<(PathBuf, Ve
             let text = std::fs::read_to_string(manifest).ok()?;
             let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
             let binary = binary_name(&manifest, &name)?;
-            let command = home.join("node_modules").join(".bin").join(binary);
-            command.exists().then(|| (command, arguments.clone()))
+            let command = shim(&home.join("node_modules").join(".bin"), &binary)?;
+            Some((command, arguments.clone()))
         }
         // `uvx` fetches on demand and caches for itself, so the command is
         // the same whether or not anything has been installed.
@@ -353,6 +353,28 @@ pub fn command_for(agent: &Agent, root: &std::path::Path) -> Option<(PathBuf, Ve
             let path = home(&agent.id, root)?.join(command.trim_start_matches("./"));
             path.exists().then(|| (path, arguments.clone()))
         }
+    }
+}
+
+/// The file npm left in `.bin` that this machine can start.
+///
+/// One file on unix, named after the program. On Windows npm writes three --
+/// a shell script under the bare name, a `.cmd` and a `.ps1` -- and the bare
+/// one is the one nothing there can start: it is read as an executable, its
+/// `#!` line is not machine code, and the answer is that the file is not a
+/// valid application. So the `.cmd` is asked for first.
+///
+/// The bare name is still the answer where there is nothing else, because
+/// that is every other platform and because an install obelus has not seen
+/// before is better started and found wanting than not tried.
+fn shim(beside: &Path, binary: &str) -> Option<PathBuf> {
+    let named = |ending: &str| {
+        let path = beside.join(format!("{binary}{ending}"));
+        path.exists().then_some(path)
+    };
+    match cfg!(windows) {
+        true => named(".cmd").or_else(|| named("")),
+        false => named(""),
     }
 }
 
@@ -614,5 +636,50 @@ mod tests {
         assert_eq!(binary_name(&several, "@scope/thing").as_deref(), Some("a"));
         // And a package with no executable at all is not startable.
         assert_eq!(binary_name(&serde_json::json!({}), "thing"), None);
+    }
+
+    /// And the file in `.bin` is the one this machine can start.
+    ///
+    /// npm writes one file on unix and three on Windows, and the bare name
+    /// -- the one that is there on both -- is the one Windows cannot run:
+    /// it holds `#!/bin/sh`, which is read there as machine code. Both are
+    /// written here, so the answer says which was preferred rather than
+    /// which happened to exist.
+    ///
+    /// Broken deliberately by asking for the bare name first: the shell
+    /// script comes back, and every agent npm installed fails to start
+    /// with "not a valid application".
+    #[test]
+    fn the_shim_is_the_one_this_machine_can_start() {
+        let beside = std::env::temp_dir().join(format!("obelus-bin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&beside);
+        std::fs::create_dir_all(&beside).expect("a directory");
+        std::fs::write(
+            beside.join("agent"),
+            "#!/bin/sh
+",
+        )
+        .expect("the script");
+        std::fs::write(
+            beside.join("agent.cmd"),
+            "@echo off
+",
+        )
+        .expect("the shim");
+
+        let wanted = match cfg!(windows) {
+            true => "agent.cmd",
+            false => "agent",
+        };
+        assert_eq!(
+            super::shim(&beside, "agent"),
+            Some(beside.join(wanted)),
+            "the shim chosen is not one this machine can start"
+        );
+        // And nothing where npm wrote nothing, which is what says an
+        // install did not finish.
+        assert_eq!(super::shim(&beside, "other"), None);
+
+        let _ = std::fs::remove_dir_all(&beside);
     }
 }

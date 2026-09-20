@@ -191,7 +191,16 @@ async fn node(package: &str, home: &Path) -> Result<(), String> {
 /// The same, where it is allowed to block.
 fn node_now(package: &str, home: &Path) -> Result<(), String> {
     std::fs::create_dir_all(home).map_err(|error| format!("{home:?}: {error}"))?;
-    let outcome = std::process::Command::new("npm")
+    // Looked up rather than named, because on Windows `npm` is `npm.cmd` --
+    // a file for the command processor, which `Command` will not find under
+    // the bare name and could not start under the right one. Both halves of
+    // that are `program`'s to know.
+    let Some(npm) = crate::program::found("npm") else {
+        return Err("There is no npm on the path".to_string());
+    };
+    let (npm, first) = crate::program::as_started_here(&npm, &[]);
+    let outcome = std::process::Command::new(npm)
+        .args(first)
         .arg("install")
         .arg("--prefix")
         .arg(home)
