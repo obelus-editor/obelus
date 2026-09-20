@@ -476,7 +476,7 @@ fn quoted(text: &str) -> String {
 /// The line was written against the file as one commit had it, and the file
 /// has been moving ever since. Git is what knows how: the file as that
 /// commit had it, against the file as it is, is a diff, and a diff is a map
-/// between the two line numberings -- which is [`Changes::working_line`],
+/// between the two line numberings -- which is `Changes::working_line`,
 /// the same arithmetic the blame already walks the other way.
 ///
 /// Without a commit there is nothing to check the number against, so it is

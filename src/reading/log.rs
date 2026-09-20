@@ -5,7 +5,7 @@
 //! reader wants is those parts in *columns* -- the levels down one edge and
 //! the messages starting at the same place, so a screenful can be skimmed
 //! instead of read. That is a reading of the bytes, like markdown's, so it
-//! is a [`Mode::Preview`](crate::buffer::Mode::Preview) rather than a
+//! is a buffer's `Mode::Preview` rather than a
 //! colouring of the text.
 //!
 //! Four formats, tried in order, because a log file does not say which it

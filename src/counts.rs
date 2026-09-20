@@ -60,7 +60,7 @@ pub struct Language {
     /// One extension it is written with, for the glyph to be looked up by.
     ///
     /// An extension rather than the glyph itself: what a `.rs` file looks
-    /// like is [`crate::icons`]'s business, and a model that carried a
+    /// like is the icons' business, and a model that carried a
     /// codepoint would be the second place that decides it.
     pub extension: Option<&'static str>,
     /// Its own lines, not counting what is embedded in it.

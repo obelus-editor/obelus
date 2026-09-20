@@ -1,6 +1,6 @@
 //! Keys to commands.
 //!
-//! The table is data on [`App`](crate::app::App), not a `static`. That is the
+//! The table is data on the application, not a `static`. That is the
 //! whole mechanism behind "the user can rebind keys": loading a table from a
 //! file later replaces a constructor, not the lookup path.
 //!
@@ -387,7 +387,7 @@ impl Keymap {
                 //
                 // `f1` is also the key that opens the list of what the keys
                 // are, in every view that has one -- see
-                // [`crate::ui::keys_chord`]. Two meanings, and deliberately:
+                // the renderer's `keys_chord`. Two meanings, and deliberately:
                 // a view is a [`Context::Dialog`], which binds nothing, so
                 // the two can never both be reachable. Deliberately this way
                 // round, too: the file is what a reader wants from the page

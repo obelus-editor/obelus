@@ -12,7 +12,7 @@
 //! started. Missing one has to mean "the screen is a moment out of date",
 //! never "somebody's work was written over": the question of whether a save
 //! would go over somebody else's change is asked of disk at the moment of
-//! saving, in [`crate::buffer::Buffer::conflicted`].
+//! saving, in a buffer's `conflicted`.
 
 use std::{
     collections::{HashMap, HashSet},

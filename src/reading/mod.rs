@@ -2,7 +2,7 @@
 //!
 //! A reading is what a file is *for*: markdown laid out as prose, a log put
 //! in columns. Which one a file has is the file's own business -- that is
-//! what keeps [`Mode`](crate::buffer::Mode) down to two -- and this is where
+//! what keeps a buffer's `Mode` down to two -- and this is where
 //! that question is answered and where the answer is turned into rows.
 //!
 //! One row type for every reading, which is the point. What markdown holds
@@ -13,7 +13,7 @@
 
 /// A log file, read as the entries it is made of.
 ///
-/// Not [`crate::logging`], which is the log obelus *writes* about itself.
+/// Not obelus's own logging, which is the log it *writes* about itself.
 /// This one is a file somebody opens.
 pub mod log;
 /// Markdown, rendered rather than shown as its own source.

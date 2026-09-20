@@ -6,8 +6,9 @@
 //! going somewhere else rather than closing it: what was said is still there
 //! when the reader comes back to that row.
 //!
-//! What arrives from the agent is an [`Event::Agent`](crate::event::Event::Agent) like every other
-//! background source, so nothing here waits on anything.
+//! What arrives from the agent is an
+//! [`Event::Agent`](crate::event::Event::Agent) like every other background
+//! source, so nothing here waits on anything.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 

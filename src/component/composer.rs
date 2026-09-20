@@ -138,7 +138,8 @@ impl Composer {
     }
 
     /// One step, answering for what it did rather than only for whether the
-    /// caret moved. The same answer [`crate::editing::Holding::handle_key`]
+    /// caret moved. The same answer
+    /// [`Editing::handle_key`](crate::editing::Editing::handle_key)
     /// gives, because it is the same question.
     fn moved(&mut self, motion: crate::editing::Motion, width: u16) -> bool {
         let held = self.writing.has_selection();

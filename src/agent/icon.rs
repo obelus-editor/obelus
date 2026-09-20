@@ -7,7 +7,7 @@
 //! have gone.
 //!
 //! This module only moves the file. What turns it into pixels is
-//! [`crate::ui::image`], because the size to draw it at and the colour to
+//! the renderer's images, because the size to draw it at and the colour to
 //! ink it in are the view's business and are not known here.
 //!
 //! Fetched one at a time on one thread, and cached by id. Forty files of

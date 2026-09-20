@@ -51,7 +51,7 @@ pub enum Command {
     /// those is about the name under the caret, and this is about the
     /// selection -- or the whole line where there is none. The two were
     /// told apart by nothing but which of them a reader happened to mean,
-    /// and [`crate::app::App::symbol_actions`] is the other thing that was
+    /// and the application's `symbol_actions` is the other thing that was
     /// called this.
     CodeActions,
     /// Call the symbol under the cursor something else, everywhere.
