@@ -57,7 +57,7 @@ where
             panic!("the server said nothing useful within {limit:?}");
         };
         match events.recv_timeout(remaining) {
-            Ok(Event::Lsp { message, .. }) => {
+            Ok(Event::Lsp(obelus::lsp::Message { message, .. })) => {
                 if let Some(reply) = client.on_message(&message)
                     && done(client, Some(&reply))
                 {

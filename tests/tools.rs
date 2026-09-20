@@ -20,12 +20,12 @@ fn listening(name: &str) -> (support::Scratch, String) {
     )
     .expect("the notes");
 
-    let (sender, events) = channel();
+    let (sender, events) = channel::<obelus::event::Event>();
     // Held for the life of the test: a server whose main loop has gone
     // answers a tool that asks the reader with "nobody is there", which is
     // not what these are about.
     std::mem::forget(events);
-    let url = obelus::mcp::serve(scratch.path(), sender).expect("a socket");
+    let url = obelus::mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
     (scratch, url)
 }
 
@@ -153,8 +153,8 @@ fn what_an_agent_writes_down_is_in_the_file() {
     )
     .expect("the notes");
 
-    let (sender, events) = channel();
-    let url = obelus::mcp::serve(scratch.path(), sender).expect("a socket");
+    let (sender, events) = channel::<obelus::event::Event>();
+    let url = obelus::mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
 
@@ -235,9 +235,9 @@ fn a_note_of_several_lines_is_one_entry() {
     )
     .expect("the notes");
 
-    let (sender, events) = channel();
+    let (sender, events) = channel::<obelus::event::Event>();
     std::mem::forget(events);
-    let url = obelus::mcp::serve(scratch.path(), sender).expect("a socket");
+    let url = obelus::mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
     let (_, session) = ask(
         &url,
         None,
@@ -319,8 +319,8 @@ fn a_depth_nothing_could_hang_at_is_brought_up_before_it_is_written() {
     )
     .expect("the notes");
 
-    let (sender, events) = channel();
-    let url = obelus::mcp::serve(scratch.path(), sender).expect("a socket");
+    let (sender, events) = channel::<obelus::event::Event>();
+    let url = obelus::mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
 

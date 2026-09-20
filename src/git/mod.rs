@@ -41,6 +41,48 @@ use std::{
 };
 
 pub use blame::Blamed;
+
+/// Something a walk of the history found out.
+#[derive(Debug)]
+pub enum Event {
+    /// A batch of commits from a walk of the history.
+    ///
+    /// The walk is unbounded -- a file's history is every commit that ever
+    /// touched it, and finding that out costs a tree lookup per commit of
+    /// the whole project -- so the list fills while the reader reads it
+    /// rather than making them wait for the end of it.
+    Logged {
+        /// Which walk these came from, so a history the reader has already
+        /// moved off -- another tab, another file, a closed list -- can be
+        /// dropped rather than shown under whatever is there now.
+        generation: u64,
+        /// The commits, newest first, continuing where the last batch left
+        /// off.
+        commits: Vec<history::Commit>,
+        /// How many commits the walk has looked at, which is what says it is
+        /// still going and how far it has got. A walk over a file nobody
+        /// touched has nothing else to report for seconds at a time.
+        walked: usize,
+        /// Whether this is the last batch. An empty list that is still
+        /// filling and one that is finished are different facts, and only
+        /// the walk knows which is true.
+        done: bool,
+    },
+    /// Who last changed each line of a file.
+    Blamed {
+        /// Which file it is about: a blame is a walk of history, and the
+        /// reader may be looking at something else by the time it lands.
+        path: std::path::PathBuf,
+        /// Which version of it: a commit's, or the one the last commit has.
+        /// A file and that file as some commit had it share a path and have
+        /// different answers, so the answer has to say which it is.
+        at: Option<gix::ObjectId>,
+        /// One entry per line of the file as that version has it, from its
+        /// first. `None` for a line no commit accounts for.
+        lines: Vec<Option<Blamed>>,
+    },
+}
+
 pub use change::{Changes, Hunk};
 
 /// Where a file sits inside its repository, which is how git addresses it.

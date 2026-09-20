@@ -9,13 +9,12 @@ use std::{
     collections::HashSet,
     ops::Range,
     path::{Path, PathBuf},
-    sync::mpsc::Sender,
 };
 
 use ignore::WalkBuilder;
 use regex::Regex;
 
-use crate::{cancel, event::Event};
+use crate::{cancel, sink::Sink};
 
 /// How far a search reaches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -277,6 +276,37 @@ const BIGGEST_FILE: u64 = 2 * 1024 * 1024;
 /// `ignored` searches the files the tree has said to ignore as well, which
 /// is the reader's `ignored_files` and not a question of this walk's own: a
 /// file list that offers `target` beside a search that cannot see into it
+/// Something a walk of the tree found.
+#[derive(Debug)]
+pub enum Event {
+    /// A batch of paths from the file walk.
+    FilesFound {
+        /// Which walk these came from, so batches from a walk whose picker has
+        /// already closed can be dropped.
+        generation: u64,
+        /// The paths, relative to the walk's root.
+        paths: Vec<PathBuf>,
+        /// Whether these are files the tree said it does not keep.
+        ///
+        /// Their own batches rather than a flag per path: a walk sends one
+        /// kind or the other and never a mixture, because it is two walks
+        /// -- one that obeys the ignore rules and one that does not.
+        ignored: bool,
+    },
+    /// A batch of matching lines from a search of the tree.
+    Matches {
+        /// Which search these came from, so answers to a query the reader
+        /// has already typed past can be dropped.
+        generation: u64,
+        /// The matches, in the order the walk found them.
+        hits: Vec<Hit>,
+        /// Whether this is the last batch. With a query typed and nothing
+        /// found, "still looking" and "not there" are different facts, and
+        /// only the scan knows which one to show.
+        done: bool,
+    },
+}
+
 /// How many paths to send at a time.
 ///
 /// One message per file would wake the loop once per file and redraw a list
@@ -300,7 +330,7 @@ const WALK_BATCH: usize = 512;
 ///
 /// A thread because `WalkBuilder` is a blocking API, and the walk of a large
 /// tree is long enough that the picker has to be usable while it runs.
-pub fn spawn_walk(root: &Path, wanted: cancel::Wanted, ignored: bool, sender: Sender<Event>) {
+pub fn spawn_walk(root: &Path, wanted: cancel::Wanted, ignored: bool, sender: impl Sink<Event>) {
     let root = root.to_path_buf();
     crate::runtime::handle().spawn_blocking(move || {
         // The files the tree keeps, first and on their own: they are what
@@ -331,7 +361,7 @@ fn walk(
     root: &Path,
     obeying: bool,
     wanted: &cancel::Wanted,
-    sender: &Sender<Event>,
+    sender: &impl Sink<Event>,
     sent: &mut HashSet<PathBuf>,
 ) -> bool {
     let mut batch: Vec<PathBuf> = Vec::with_capacity(WALK_BATCH);
@@ -409,7 +439,7 @@ pub fn spawn_scan(
     needle: &Needle,
     wanted: cancel::Wanted,
     ignored: bool,
-    sender: Sender<Event>,
+    sender: impl Sink<Event> + Clone,
 ) {
     let root = root.to_path_buf();
     let needle = needle.clone();

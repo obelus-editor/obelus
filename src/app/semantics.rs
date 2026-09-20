@@ -1023,12 +1023,12 @@ impl App {
         // application acts on -- it is when the files already open can
         // first be asked about -- and a test that reached past it would be
         // testing a path obelus does not have.
-        self.handle(crate::event::Event::Lsp {
+        self.handle(crate::event::Event::Lsp(crate::lsp::Message {
             language,
             message: serde_json::json!({
                 "id": 0, "result": { "capabilities": capabilities },
             }),
-        });
+        }));
     }
 
     /// Why the server for a file cannot be asked anything, if it cannot.

@@ -1851,7 +1851,9 @@ fn a_question_goes_when_the_agent_does() {
 
     // The agent's thread says the conversation ended, which is the one way
     // obelus hears about it however the agent went.
-    app.handle(Event::Acp(obelus::acp::Incoming::Gone(None)));
+    app.handle(Event::Agent(obelus::agent::Event::Acp(
+        obelus::acp::Incoming::Gone(None),
+    )));
     assert!(app.card().is_none(), "the card outlived the agent");
     assert!(
         !app.is_asking(),
@@ -2603,26 +2605,28 @@ fn a_note_can_be_offered_in_a_conversation_about_nothing() {
 
     // The same question `todo_add` puts, arriving the same way.
     let (answer, answered) = futures::channel::oneshot::channel();
-    app.handle(Event::Acp(obelus::acp::Incoming::Ask {
-        message: "worth writing down?".to_string(),
-        fields: vec![obelus::acp::Field {
-            name: "notes".to_string(),
-            title: "keep which of these".to_string(),
-            about: None,
-            takes: obelus::acp::Takes::Some {
-                values: vec![obelus::acp::Value {
-                    id: "0".to_string(),
-                    name: "the cache is wrong".to_string(),
-                    about: None,
-                }],
-                least: Some(0),
-                most: None,
-                chosen: Vec::new(),
-            },
-            required: false,
-        }],
-        answer,
-    }));
+    app.handle(Event::Agent(obelus::agent::Event::Acp(
+        obelus::acp::Incoming::Ask {
+            message: "worth writing down?".to_string(),
+            fields: vec![obelus::acp::Field {
+                name: "notes".to_string(),
+                title: "keep which of these".to_string(),
+                about: None,
+                takes: obelus::acp::Takes::Some {
+                    values: vec![obelus::acp::Value {
+                        id: "0".to_string(),
+                        name: "the cache is wrong".to_string(),
+                        about: None,
+                    }],
+                    least: Some(0),
+                    most: None,
+                    chosen: Vec::new(),
+                },
+                required: false,
+            }],
+            answer,
+        },
+    )));
     support::lay_out(&mut app, WIDTH, HEIGHT);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(

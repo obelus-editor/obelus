@@ -38,6 +38,7 @@ pub mod reading;
 pub mod running;
 pub mod runtime;
 pub mod search;
+pub mod sink;
 pub mod syntax;
 pub mod text;
 pub mod theme;

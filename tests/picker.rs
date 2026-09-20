@@ -207,7 +207,7 @@ fn the_matched_characters_of_every_visible_row_are_coloured() {
 
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec![
             "src/one/alpha.rs".into(),
@@ -216,7 +216,7 @@ fn the_matched_characters_of_every_visible_row_are_coloured() {
             "src/four/delta.rs".into(),
         ],
         ignored: false,
-    });
+    }));
     type_text(&mut app, "src");
 
     let dump = support::render(&mut app, 60, 24);
@@ -238,13 +238,13 @@ fn the_matched_characters_of_every_visible_row_are_coloured() {
     // And the rows at the far end of a list long enough to scroll. The
     // positions are worked out for the window being drawn, so a window that
     // has moved has to have moved them with it.
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: (0..40)
             .map(|number| format!("src/dir_{number:02}/file.rs").into())
             .collect(),
         ignored: false,
-    });
+    }));
     support::press_control_key(&mut app, KeyCode::End);
 
     let dump = support::render(&mut app, 60, 22);
@@ -373,11 +373,11 @@ fn paths_from_a_superseded_walk_are_dropped() {
     press_function(&mut app, 1);
 
     // Generation one belongs to the first open; the second bumped it.
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["stale/from/the/first/walk.rs".into()],
         ignored: false,
-    });
+    }));
 
     let dump = support::render(&mut app, 60, 12);
     assert!(
@@ -390,11 +390,11 @@ fn paths_from_a_superseded_walk_are_dropped() {
 fn paths_from_the_current_walk_are_listed() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["src/somewhere.rs".into()],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against.
     type_text(&mut app, "somewhere");
 
@@ -612,13 +612,13 @@ fn a_page_is_the_number_of_rows_on_screen() {
 fn the_list_moves_only_when_the_cursor_reaches_an_edge() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: (0..40)
             .map(|index| format!("file-{index:03}.rs").into())
             .collect(),
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "file");
@@ -902,7 +902,8 @@ fn the_walk_offers_the_ignored_files_only_when_asked() {
         }
         obelus::search::spawn_walk(scratch.path(), latest.claim(generation), ignored, sender);
         let mut names = Vec::new();
-        while let Ok(Event::FilesFound { paths, .. }) = events.recv() {
+        while let Ok(Event::Search(obelus::search::Event::FilesFound { paths, .. })) = events.recv()
+        {
             names.extend(paths.into_iter().map(|path| path.display().to_string()));
         }
         names.sort();
@@ -920,13 +921,13 @@ fn the_walk_offers_the_ignored_files_only_when_asked() {
 fn paging_scrolls_the_window() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: (0..40)
             .map(|index| format!("file-{index:03}.rs").into())
             .collect(),
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "file");
@@ -988,7 +989,7 @@ fn control_home_and_end_do_not_panic_on_an_empty_list() {
 fn the_file_picker_shows_a_glyph_for_each_file() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec![
             "src/app.rs".into(),
@@ -996,7 +997,7 @@ fn the_file_picker_shows_a_glyph_for_each_file() {
             "mystery.qqq".into(),
         ],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "r");
@@ -1081,11 +1082,11 @@ fn a_glyph_is_the_colour_of_the_name_beside_it() {
 fn a_query_matches_the_name_and_not_the_glyph() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["src/app.rs".into()],
         ignored: false,
-    });
+    }));
 
     type_text(&mut app, "app");
     let dump = support::render(&mut app, 40, 8);
@@ -1131,11 +1132,11 @@ fn the_command_palette_has_no_glyphs() {
 fn a_long_path_keeps_its_end_and_marks_the_cut() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says they know what they want.
     type_text(&mut app, "e");
@@ -1162,11 +1163,11 @@ fn a_long_path_keeps_its_end_and_marks_the_cut() {
 fn a_truncated_row_keeps_the_padding_on_its_right() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says they know what they want.
     type_text(&mut app, "e");
@@ -1208,11 +1209,11 @@ fn a_truncated_row_keeps_the_padding_on_its_right() {
 fn truncation_does_not_move_the_matched_characters() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["a/very/deep/directory/tree/leading/to/the_file.rs".into()],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says they know what they want.
     type_text(&mut app, "e");
@@ -1233,11 +1234,11 @@ fn truncation_does_not_move_the_matched_characters() {
 fn a_match_in_the_cut_away_head_colours_nothing() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["averydeepdirectory/tree/leading/to/x.rs".into()],
         ignored: false,
-    });
+    }));
 
     type_text(&mut app, "averydeep");
     let dump = support::render(&mut app, 24, 6);
@@ -1895,14 +1896,14 @@ fn the_menu_refuses_a_cursor_that_is_not_on_a_name() {
 fn the_file_picker_previews_the_selected_file() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec![
             "tests/fixtures/sample.rs".into(),
             "tests/fixtures/long.rs".into(),
         ],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "fixtures");
@@ -1916,14 +1917,14 @@ fn the_file_picker_previews_the_selected_file() {
 fn the_preview_follows_the_selection() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec![
             "tests/fixtures/sample.rs".into(),
             "tests/fixtures/long.rs".into(),
         ],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "fixtures");
@@ -1992,11 +1993,11 @@ fn the_palette_has_an_edge_above_it_and_no_preview_below() {
 fn a_short_screen_gets_the_list_and_no_preview() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/sample.rs".into()],
         ignored: false,
-    });
+    }));
 
     let dump = support::render(&mut app, 60, 10);
     let text = support::text_block(&dump);
@@ -2020,14 +2021,14 @@ fn a_file_is_previewed_from_its_first_line() {
     press_function(&mut app, 1);
     // Neither of these is the file being read, so the row that starts
     // selected is the first one rather than the one the picker opens on.
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec![
             "tests/fixtures/long.rs".into(),
             "tests/fixtures/indented.rs".into(),
         ],
         ignored: false,
-    });
+    }));
     // The flat listing rather than the tree, which is what a query asks
     // for. Both of these match it, in the order they were given.
     type_text(&mut app, "fixtures");
@@ -2201,11 +2202,11 @@ fn a_list_with_tabs_still_walks_ten_rows() {
     press_function(&mut app, 1);
     let mut paths: Vec<std::path::PathBuf> = vec!["tests/fixtures/many_lines.rs".into()];
     paths.extend((1..=30).map(|number| format!("src/other{number:02}.rs").into()));
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths,
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "rs");
@@ -2273,11 +2274,11 @@ fn a_list_with_tabs_still_walks_ten_rows() {
 fn paging_scrolls_the_preview_and_not_the_list() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/many_lines.rs".into()],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "many");
@@ -2349,11 +2350,11 @@ fn a_list_with_no_preview_still_pages_itself() {
 fn the_preview_stops_at_the_top_of_the_file() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/many_lines.rs".into()],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "many");
@@ -2648,11 +2649,11 @@ fn the_file_picker_opens_on_the_file_being_read() {
 fn a_late_batch_does_not_move_a_selection_the_reader_has_touched() {
     let mut app = app();
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["src/one.rs".into(), "src/two.rs".into()],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "rs");
@@ -2664,11 +2665,11 @@ fn a_late_batch_does_not_move_a_selection_the_reader_has_touched() {
         .map(|item| item.label.clone())
         .expect("a row is selected");
 
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/sample.rs".into()],
         ignored: false,
-    });
+    }));
     assert_eq!(
         app.picker()
             .and_then(|picker| picker.selected_item())
@@ -3312,11 +3313,11 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
 
     // Somewhere else, through the file picker.
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["tests/fixtures/long.rs".into()],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "long");
@@ -3338,11 +3339,11 @@ fn opening_a_file_is_somewhere_to_come_back_from() {
     // The file picker choosing a file that is *already* open is the same
     // leap by a different route, and goes through a different branch.
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 2,
         paths: vec!["tests/fixtures/long.rs".into()],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "long");
@@ -3549,22 +3550,22 @@ fn a_walk_in_flight_does_not_land_in_the_changed_listing() {
     support::lay_out(&mut app, 60, 12);
     press_function(&mut app, 1);
     // The walk that opening the list started is the first one.
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["src/walked.rs".into()],
         ignored: false,
-    });
+    }));
     // The flat listing, which is what a query is asked against: a file
     // list is a tree until the reader says what they are after.
     type_text(&mut app, "rs");
     assert_eq!(app.picker().expect("the file list").match_count(), 1);
 
     press(&mut app, KeyCode::Tab);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec!["src/late.rs".into()],
         ignored: false,
-    });
+    }));
     let rows: Vec<String> = app
         .picker()
         .expect("the file list")
@@ -3667,14 +3668,14 @@ fn the_file_list_previews_an_open_file_where_it_is_being_read() {
 
     // The file list, with the open file among the rows the walk found.
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: vec![
             "tests/fixtures/many_lines.rs".into(),
             "tests/fixtures/sample.rs".into(),
         ],
         ignored: false,
-    });
+    }));
     support::type_text(&mut app, "many");
     let dump = support::render(&mut app, 60, 30);
     let text = support::text_block(&dump);
@@ -3736,13 +3737,13 @@ fn every_bar_on_the_screen_is_in_the_same_column() {
     // And with a list over it, long enough to scroll, previewing a file
     // long enough to scroll as well.
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: std::iter::once("tests/fixtures/many_lines.rs".into())
             .chain((0..40).map(|number| format!("src/dir_{number:02}/file.rs").into()))
             .collect(),
         ignored: false,
-    });
+    }));
     let dump = support::render(&mut app, 60, 22);
     let listed = bars(&dump);
     // The rule between the two has no bar on it, so a gap in the rows is
@@ -3779,13 +3780,13 @@ fn a_rule_is_a_rule_over_whatever_is_under_it() {
     app.statuses_for_test(std::collections::HashMap::new());
     support::lay_out(&mut app, 60, 22);
     press_function(&mut app, 1);
-    app.handle(Event::FilesFound {
+    app.handle(Event::Search(obelus::search::Event::FilesFound {
         generation: 1,
         paths: std::iter::once("tests/fixtures/boxes.txt".into())
             .chain((0..40).map(|number| format!("src/dir_{number:02}/file.rs").into()))
             .collect(),
         ignored: false,
-    });
+    }));
     let dump = support::render(&mut app, 60, 22);
 
     let rules: Vec<&str> = support::text_block(&dump)
@@ -3832,7 +3833,7 @@ fn a_walk_nobody_wants_stops() {
     latest.next();
 
     let mut found = 0;
-    while let Ok(Event::FilesFound { paths, .. }) = events.recv() {
+    while let Ok(Event::Search(obelus::search::Event::FilesFound { paths, .. })) = events.recv() {
         found += paths.len();
     }
     assert!(

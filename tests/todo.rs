@@ -907,7 +907,9 @@ fn a_note_added_from_outside_survives_the_next_save() {
         format!("{theirs}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"),
     )
     .expect("their write");
-    app.handle(Event::FileChanged { path: file.clone() });
+    app.handle(Event::Watched(obelus::watch::Changed {
+        path: file.clone(),
+    }));
 
     // And now the reader does something that saves: leaving does.
     press(&mut app, KeyCode::Esc);
@@ -942,7 +944,9 @@ fn a_note_being_written_survives_someone_else_saving() {
         format!("{theirs}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"),
     )
     .expect("their write");
-    app.handle(Event::FileChanged { path: file.clone() });
+    app.handle(Event::Watched(obelus::watch::Changed {
+        path: file.clone(),
+    }));
 
     press(&mut app, KeyCode::Esc);
 
@@ -1504,7 +1508,9 @@ fn a_note_that_outlives_its_parent_is_written_at_a_depth_it_reads_back_at() {
         "[[todo]]\nsaid = \"only this\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    app.handle(Event::FileChanged { path: file.clone() });
+    app.handle(Event::Watched(obelus::watch::Changed {
+        path: file.clone(),
+    }));
     press(&mut app, KeyCode::Esc);
 
     let raw = std::fs::read_to_string(&file).expect("the notes");
@@ -1590,7 +1596,7 @@ fn what_was_pasted_stays_on_the_page_when_the_file_is_read_again() {
         format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"),
     )
     .expect("the notes");
-    app.handle(Event::FileChanged { path });
+    app.handle(Event::Watched(obelus::watch::Changed { path }));
 
     let dump = support::render(&mut app, 76, 18);
     assert!(
@@ -1775,7 +1781,7 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
         format!("{written}\n[[todo]]\nsaid = \"theirs\"\ndone = false\n"),
     )
     .expect("the notes");
-    app.handle(Event::FileChanged { path });
+    app.handle(Event::Watched(obelus::watch::Changed { path }));
 
     for letter in "mine".chars() {
         press(&mut app, KeyCode::Char(letter));

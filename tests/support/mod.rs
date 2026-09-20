@@ -738,7 +738,7 @@ pub fn heard_requests(
             break;
         };
         match heard.recv_timeout(left) {
-            Ok(obelus::event::Event::Lsp { message, .. })
+            Ok(obelus::event::Event::Lsp(obelus::lsp::Message { message, .. }))
                 if message.get("method").and_then(serde_json::Value::as_str) == Some(method) =>
             {
                 seen.push(message);

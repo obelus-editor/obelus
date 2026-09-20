@@ -161,13 +161,13 @@ fn an_edit_from_the_server_walks_the_whole_way_in() {
         app.stand_in_server_for_test(LanguageId::Rust, "cat"),
         "the stand-in server would not start"
     );
-    app.handle(Event::Lsp {
+    app.handle(Event::Lsp(obelus::lsp::Message {
         language: LanguageId::Rust,
         message: json!({
             "jsonrpc": "2.0", "id": 3, "method": "workspace/applyEdit",
             "params": { "edit": renaming(&open, &closed) }
         }),
-    });
+    }));
     assert_eq!(
         open_text(&app),
         "fn widget() {}\n\nfn main() {\n    widget();\n}\n",

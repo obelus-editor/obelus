@@ -11,15 +11,12 @@
 //! newer registry should show the entries it understands rather than
 //! refusing the whole document because one entry has something new in it.
 
-use std::{
-    path::{Path, PathBuf},
-    sync::mpsc::Sender,
-};
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
 use super::{Agent, Distribution};
-use crate::event::Event;
+use crate::{agent::Event, sink::Sink};
 
 /// Where the registry lives.
 const URL: &str = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
@@ -185,7 +182,7 @@ pub fn cached() -> Vec<Agent> {
 ///
 /// A failure comes back as one. The page has the cached list or an empty
 /// one, and a page that says "fetching the list" for ever is lying by then.
-pub fn spawn_fetch(sender: Sender<Event>) {
+pub fn spawn_fetch(sender: impl Sink<Event>) {
     crate::runtime::handle().spawn(async move {
         let cached = cached();
         if !cached.is_empty()

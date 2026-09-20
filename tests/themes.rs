@@ -218,7 +218,7 @@ fn a_theme_rewritten_on_disk_arrives_here() {
     // Somebody else writes it: another obelus, the reader's own editor, or
     // the thing that themes everything on their desktop.
     std::fs::write(&file, "base = \"dark\"\nbackground = \"#241f31\"\n").expect("rewriting");
-    app.handle(Event::FileChanged { path: file });
+    app.handle(Event::Watched(obelus::watch::Changed { path: file }));
     assert_eq!(
         app.theme().background,
         written::hex("#241f31").expect("a colour"),
@@ -267,7 +267,7 @@ fn a_theme_whose_directory_is_replaced_arrives_here() {
     std::fs::remove_dir_all(state.join("current/theme")).expect("the old one");
     std::fs::rename(state.join("next-theme"), state.join("current/theme")).expect("the swap");
 
-    app.handle(Event::FileChanged { path: real });
+    app.handle(Event::Watched(obelus::watch::Changed { path: real }));
     assert_eq!(
         app.theme().background,
         written::hex("#241f31").expect("a colour"),

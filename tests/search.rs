@@ -369,7 +369,9 @@ fn the_search_reaches_what_the_file_list_offers() {
             sender,
         );
         let mut names = Vec::new();
-        while let Ok(Event::Matches { hits, done, .. }) = events.recv() {
+        while let Ok(Event::Search(obelus::search::Event::Matches { hits, done, .. })) =
+            events.recv()
+        {
             names.extend(hits.into_iter().map(|hit| hit.path.display().to_string()));
             if done {
                 break;
@@ -506,7 +508,7 @@ fn the_rows_are_coloured_like_the_code_they_are() {
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 6);
     support::type_text(&mut app, "greeting");
-    app.handle(Event::Matches {
+    app.handle(Event::Search(obelus::search::Event::Matches {
         generation: app.search_generation(),
         hits: vec![Hit {
             path: std::path::PathBuf::from("tests/fixtures/sample.rs"),
@@ -514,7 +516,7 @@ fn the_rows_are_coloured_like_the_code_they_are() {
             text: "let greeting = \"\u{4f60}\u{597d}\";".to_string(),
         }],
         done: true,
-    });
+    }));
     let dump = support::render(&mut app, 60, 16);
     assert_eq!(
         cell(&dump, "let greeting", "let"),
@@ -551,7 +553,7 @@ fn only_the_rows_on_screen_cost_anything() {
     support::lay_out(&mut app, 60, 16);
     support::press_function(&mut app, 6);
     support::type_text(&mut app, "use");
-    app.handle(Event::Matches {
+    app.handle(Event::Search(obelus::search::Event::Matches {
         generation: app.search_generation(),
         hits: paths
             .iter()
@@ -562,7 +564,7 @@ fn only_the_rows_on_screen_cost_anything() {
             })
             .collect(),
         done: true,
-    });
+    }));
     let dump = support::render(&mut app, 60, 16);
     let visible = support::text_block(&dump)
         .lines()
@@ -717,7 +719,7 @@ fn a_scan_that_has_been_typed_past_stops() {
     let mut found = 0;
     loop {
         match events.recv_timeout(std::time::Duration::from_secs(10)) {
-            Ok(Event::Matches { hits, done, .. }) => {
+            Ok(Event::Search(obelus::search::Event::Matches { hits, done, .. })) => {
                 found += hits.len();
                 if done {
                     break;
@@ -748,22 +750,22 @@ fn matches_for_an_older_query_are_dropped() {
         line: 3,
         text: "let greeting = elsewhere();".to_string(),
     };
-    app.handle(Event::Matches {
+    app.handle(Event::Search(obelus::search::Event::Matches {
         generation: app.search_generation() - 1,
         hits: vec![hit.clone()],
         done: true,
-    });
+    }));
     assert_eq!(
         app.picker().expect("the search").match_count(),
         0,
         "a stale answer landed in the list"
     );
 
-    app.handle(Event::Matches {
+    app.handle(Event::Search(obelus::search::Event::Matches {
         generation: app.search_generation(),
         hits: vec![hit],
         done: false,
-    });
+    }));
     let picker = app.picker().expect("the search");
     assert_eq!(picker.match_count(), 1, "the current answer was dropped");
     let row = picker.matches().next().expect("a row");
@@ -794,11 +796,11 @@ fn matches_do_not_land_in_a_list_that_did_not_ask() {
     support::type_text(&mut app, "greeting");
     let generation = app.search_generation();
     support::press(&mut app, KeyCode::BackTab);
-    app.handle(Event::Matches {
+    app.handle(Event::Search(obelus::search::Event::Matches {
         generation,
         hits: vec![hit.clone()],
         done: false,
-    });
+    }));
     let labels: Vec<String> = app
         .picker()
         .expect("the search")
@@ -818,11 +820,11 @@ fn matches_do_not_land_in_a_list_that_did_not_ask() {
     let generation = app.search_generation();
     support::press(&mut app, KeyCode::Esc);
     support::press_control(&mut app, 'p');
-    app.handle(Event::Matches {
+    app.handle(Event::Search(obelus::search::Event::Matches {
         generation,
         hits: vec![hit.clone()],
         done: false,
-    });
+    }));
     assert!(
         app.picker()
             .expect("the palette")
@@ -841,11 +843,11 @@ fn a_finished_walk_that_found_nothing_says_so() {
     support::press_function(&mut app, 6);
     support::type_text(&mut app, "greeting");
 
-    app.handle(Event::Matches {
+    app.handle(Event::Search(obelus::search::Event::Matches {
         generation: app.search_generation(),
         hits: Vec::new(),
         done: true,
-    });
+    }));
     assert_eq!(
         app.picker().expect("the search").nothing_to_show(),
         Some("No match in the project")
@@ -1022,11 +1024,11 @@ fn scan(root: &std::path::Path, query: &str) -> Vec<Hit> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while std::time::Instant::now() < deadline {
         match events.recv_timeout(std::time::Duration::from_secs(5)) {
-            Ok(Event::Matches {
+            Ok(Event::Search(obelus::search::Event::Matches {
                 generation,
                 hits: batch,
                 done,
-            }) => {
+            })) => {
                 assert_eq!(generation, 7, "a batch from another search");
                 hits.extend(batch);
                 if done {

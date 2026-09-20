@@ -13,12 +13,9 @@
 //! main thread -- counting a tree is a walk of every file in it, and the one
 //! place that must never happen is the draw path.
 
-use std::{
-    path::{Path, PathBuf},
-    sync::mpsc::Sender,
-};
+use std::path::{Path, PathBuf};
 
-use crate::event::Event;
+use crate::sink::Sink;
 
 /// Lines of one thing, split the three ways every counter splits them.
 ///
@@ -239,7 +236,7 @@ fn extension_of(kind: tokei::LanguageType) -> Option<&'static str> {
 /// go stale under a reader who keeps typing -- and a count that arrives after
 /// the view has closed is dropped by the handler, which is what every other
 /// late answer here does.
-pub fn spawn_count(root: &Path, sender: Sender<Event>) {
+pub fn spawn_count(root: &Path, sender: impl Sink<Box<Counted>>) {
     let root = root.to_path_buf();
     crate::runtime::handle().spawn_blocking(move || {
         let mut languages = tokei::Languages::new();
@@ -256,7 +253,7 @@ pub fn spawn_count(root: &Path, sender: Sender<Event>) {
             "counted the tree"
         );
         // The receiver is gone, which means the loop has ended.
-        let _ = sender.send(Event::Counted(Box::new(counted)));
+        let _ = sender.send(Box::new(counted));
     });
 }
 

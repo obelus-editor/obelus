@@ -737,9 +737,9 @@ mod against_a_real_server {
         );
 
         let before = app.told_servers_for_test();
-        app.handle(Event::FileChanged {
+        app.handle(Event::Watched(obelus::watch::Changed {
             path: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
-        });
+        }));
         assert_eq!(
             app.told_servers_for_test(),
             before + 1,

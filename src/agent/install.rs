@@ -29,14 +29,13 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::mpsc::Sender,
     time::{Duration, Instant},
 };
 
 use sha2::{Digest, Sha256};
 
 use super::{Agent, Distribution};
-use crate::event::Event;
+use crate::{agent::Event, sink::Sink};
 
 /// How often to report progress.
 ///
@@ -97,7 +96,7 @@ impl Progress {
 /// finishing, not something to be attempted later: an install that cannot
 /// say how to start the thing it installed has failed, and says so where a
 /// reader is looking.
-pub fn spawn(agent: &Agent, root: &Path, sender: Sender<Event>) {
+pub fn spawn(agent: &Agent, root: &Path, sender: impl Sink<Event>) {
     let agent = agent.clone();
     let root = root.to_path_buf();
     crate::runtime::handle().spawn(async move {
@@ -126,7 +125,7 @@ async fn install(
     agent: &Agent,
     root: &Path,
     started: Instant,
-    sender: &Sender<Event>,
+    sender: &impl Sink<Event>,
 ) -> Result<(), String> {
     // Said first, so that a second obelus asked for the same agent stops
     // here rather than running a second `npm` into the same directory.
@@ -236,7 +235,7 @@ async fn download(
     into: &Path,
     started: Instant,
     id: &str,
-    sender: &Sender<Event>,
+    sender: &impl Sink<Event>,
 ) -> Result<(), String> {
     // The one part of an install that only waits, so it is the one part
     // that is awaited: the bytes arrive in chunks, and a chunk is a chance
@@ -423,7 +422,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(5))
             .expect("the install to say something");
         assert!(
-            matches!(&event, crate::event::Event::Installed { id, failure: None } if id == "py-agent"),
+            matches!(&event, crate::agent::Event::Installed { id, failure: None } if id == "py-agent"),
             "not a finished install: {event:?}"
         );
 
@@ -463,7 +462,7 @@ mod tests {
         // The other obelus, holding the claim for as long as this is held.
         let theirs = crate::agent::claim(&agent.id, &root).expect("their claim");
 
-        let (sender, _events) = std::sync::mpsc::channel();
+        let (sender, _events) = std::sync::mpsc::channel::<crate::agent::Event>();
         let outcome = super::install(&agent, &root, std::time::Instant::now(), &sender).await;
         assert!(
             outcome.is_err_and(|why| why.contains("another obelus")),
@@ -514,7 +513,7 @@ mod tests {
         assert!(
             matches!(
                 &event,
-                crate::event::Event::Installed {
+                crate::agent::Event::Installed {
                     failure: Some(_),
                     ..
                 }

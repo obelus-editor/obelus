@@ -493,7 +493,7 @@ fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
     // the repository's own file, rewritten, and the watcher reporting that
     // path rather than the link's.
     std::fs::write(&real, "theme = \"light\"\n").expect("the file");
-    app.handle(Event::FileChanged { path: real });
+    app.handle(Event::Watched(obelus::watch::Changed { path: real }));
     assert_eq!(
         app.theme_name(),
         "light",
@@ -912,7 +912,7 @@ fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
     let path = root.join(".obelus").join("config.toml");
     std::fs::create_dir_all(root.join(".obelus")).expect("the directory");
     std::fs::write(&path, "wrap = true\n").expect("the file");
-    app.handle(Event::FileChanged { path });
+    app.handle(Event::Watched(obelus::watch::Changed { path }));
 
     assert!(
         app.config().wrap,
@@ -1160,10 +1160,10 @@ fn the_agents_page_is_a_list_of_cards() {
             },
         })
         .collect();
-    app.handle(Event::Registry {
+    app.handle(Event::Agent(obelus::agent::Event::Registry {
         agents,
         failure: None,
-    });
+    }));
 
     let dump = support::render(&mut app, 76, 16);
     let text = support::text_block(&dump);
@@ -1239,10 +1239,10 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
 
     // It failed, and there was nothing cached: the page says that instead,
     // because "fetching" would be a lie by now.
-    app.handle(Event::Registry {
+    app.handle(Event::Agent(obelus::agent::Event::Registry {
         agents: Vec::new(),
         failure: Some("dns error: no such host".to_string()),
-    });
+    }));
     let dump = support::render(&mut app, 70, 12);
     assert!(
         support::text_block(&dump).contains("could not fetch"),
@@ -1277,14 +1277,14 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
             arguments: Vec::new(),
         },
     };
-    app.handle(Event::Registry {
+    app.handle(Event::Agent(obelus::agent::Event::Registry {
         agents: vec![one.clone()],
         failure: None,
-    });
-    app.handle(Event::Registry {
+    }));
+    app.handle(Event::Agent(obelus::agent::Event::Registry {
         agents: Vec::new(),
         failure: None,
-    });
+    }));
     let dump = support::render(&mut app, 70, 12);
     assert!(
         support::text_block(&dump).contains("The One"),
@@ -1292,10 +1292,10 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
     );
 
     // And the list arriving later clears it, whichever visit fetched it.
-    app.handle(Event::Registry {
+    app.handle(Event::Agent(obelus::agent::Event::Registry {
         agents: vec![one],
         failure: None,
-    });
+    }));
     assert_eq!(app.registry_failure(), None);
     let dump = support::render(&mut app, 70, 12);
     assert!(
@@ -1335,10 +1335,10 @@ fn the_cards_scroll_only_at_an_edge() {
             },
         })
         .collect();
-    app.handle(Event::Registry {
+    app.handle(Event::Agent(obelus::agent::Event::Registry {
         agents,
         failure: None,
-    });
+    }));
 
     // A step, then the frame it produces: the window is settled against the
     // room the page has, which only a frame knows.
@@ -1429,10 +1429,10 @@ fn the_first_agent_installed_is_the_one_in_use() {
             },
         })
         .collect();
-    app.handle(Event::Registry {
+    app.handle(Event::Agent(obelus::agent::Event::Registry {
         agents,
         failure: None,
-    });
+    }));
     assert_eq!(
         app.config().agent,
         None,
@@ -1441,20 +1441,20 @@ fn the_first_agent_installed_is_the_one_in_use() {
 
     // An install that failed activates nothing. There is nothing to talk
     // to, and a card that says both "Failed" and "active" says nothing.
-    app.handle(Event::Installed {
+    app.handle(Event::Agent(obelus::agent::Event::Installed {
         id: "agent-0".to_string(),
         failure: Some("npm is not on the path".to_string()),
-    });
+    }));
     assert_eq!(app.config().agent, None, "a failed install was activated");
 
     // Nor does one that says it worked and left no record behind. The
     // record is the proof, and this is the state a reader was stuck in
     // once: the settings named an agent, the card said "active", and
     // nothing could be started.
-    app.handle(Event::Installed {
+    app.handle(Event::Agent(obelus::agent::Event::Installed {
         id: "agent-0".to_string(),
         failure: None,
-    });
+    }));
     assert_eq!(
         app.config().agent,
         None,
@@ -1464,10 +1464,10 @@ fn the_first_agent_installed_is_the_one_in_use() {
     // The first one that works becomes the one in use, and the file says so
     // -- a choice that is gone tomorrow was a preview rather than a choice.
     installed(&root, "agent-0", "1.0.0");
-    app.handle(Event::Installed {
+    app.handle(Event::Agent(obelus::agent::Event::Installed {
         id: "agent-0".to_string(),
         failure: None,
-    });
+    }));
     assert_eq!(app.config().agent.as_deref(), Some("agent-0"));
     assert_eq!(
         config::from_toml(&std::fs::read_to_string(&file).expect("the file"))
@@ -1478,10 +1478,10 @@ fn the_first_agent_installed_is_the_one_in_use() {
 
     // And the next one does not take over.
     installed(&root, "agent-1", "1.0.0");
-    app.handle(Event::Installed {
+    app.handle(Event::Agent(obelus::agent::Event::Installed {
         id: "agent-1".to_string(),
         failure: None,
-    });
+    }));
     assert_eq!(
         app.config().agent.as_deref(),
         Some("agent-0"),
@@ -1536,7 +1536,7 @@ fn an_agent_that_is_not_installed_is_not_in_use() {
     std::fs::write(binaries.join("agent-0"), "").expect("a program");
 
     support::press(&mut app, KeyCode::BackTab);
-    app.handle(Event::Registry {
+    app.handle(Event::Agent(obelus::agent::Event::Registry {
         agents: vec![obelus::agent::Agent {
             id: "agent-0".to_string(),
             name: "Agent 0".to_string(),
@@ -1552,7 +1552,7 @@ fn an_agent_that_is_not_installed_is_not_in_use() {
             },
         }],
         failure: None,
-    });
+    }));
 
     let dump = support::render(&mut app, 76, 16);
     let text = support::text_block(&dump);
@@ -1824,7 +1824,7 @@ fn a_setting_changed_by_another_obelus_arrives_here() {
     // Another obelus writes the file. Nothing else says so: the watcher
     // hands over a path, and everything about what changed is in the file.
     std::fs::write(&file, "theme = \"dark\"\n").expect("the other window");
-    app.handle(Event::FileChanged { path: file });
+    app.handle(Event::Watched(obelus::watch::Changed { path: file }));
     assert_eq!(
         app.theme_name(),
         "dark",
@@ -1851,7 +1851,9 @@ fn a_settings_file_that_will_not_read_is_not_written_over() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(file.clone());
     support::lay_out(&mut app, 66, 12);
-    app.handle(Event::FileChanged { path: file.clone() });
+    app.handle(Event::Watched(obelus::watch::Changed {
+        path: file.clone(),
+    }));
 
     // A change made here is not saved, and the reader is told why rather
     // than finding out later that their settings went.
@@ -1870,7 +1872,9 @@ fn a_settings_file_that_will_not_read_is_not_written_over() {
 
     // Fixed in the other window, it reads again and saves again.
     std::fs::write(&file, "theme = \"light\"\n").expect("the other window");
-    app.handle(Event::FileChanged { path: file.clone() });
+    app.handle(Event::Watched(obelus::watch::Changed {
+        path: file.clone(),
+    }));
     dispatch::dispatch(&mut app, Command::ThemeSelect);
     support::press(&mut app, KeyCode::Enter);
     assert_ne!(

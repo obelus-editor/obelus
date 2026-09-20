@@ -25,11 +25,13 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
-    sync::mpsc::Sender,
     time::{Duration, Instant},
 };
 
-use crate::{event::Event, git::FileStatus};
+use crate::{
+    git::{Event, FileStatus},
+    sink::Sink,
+};
 
 /// One commit, as a row of a list.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,7 +102,7 @@ pub fn spawn_log(
     within: &Path,
     only: Option<&Path>,
     wanted: crate::cancel::Wanted,
-    sender: Sender<Event>,
+    sender: impl Sink<Event>,
 ) {
     let within = within.to_path_buf();
     let only = only.map(Path::to_path_buf);

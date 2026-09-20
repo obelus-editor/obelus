@@ -17,6 +17,61 @@ pub mod registry;
 
 use std::path::{Path, PathBuf};
 
+/// Something obelus found out about an agent, or heard from one.
+///
+/// Not `Clone`, and it may not become so: a question from an agent carries
+/// the one channel its answer goes back through, and there is one answer.
+/// Nothing clones one anyway -- what a producer clones is the sink.
+#[derive(Debug)]
+pub enum Event {
+    /// The agent registry, from the disk or from the network.
+    ///
+    /// Twice per fetch, ordinarily: what was cached from a previous session
+    /// arrives first so the page has something to show, and the fetched
+    /// list replaces it when it lands.
+    Registry {
+        /// Every agent it lists that obelus can make sense of.
+        agents: Vec<Agent>,
+        /// Why nothing was fetched, when nothing was. A page that says
+        /// "fetching" for ever is a page that is lying by then.
+        failure: Option<String>,
+    },
+    /// How far an install has got.
+    Installing {
+        /// Which agent, by the registry's own name for it.
+        id: String,
+        /// What is known about how far along it is.
+        progress: install::Progress,
+    },
+    /// One agent's mark, from the disk or from the network.
+    ///
+    /// Its own event per agent rather than a batch: forty small drawings
+    /// arriving one at a time is forty cheap frames, and a page whose marks
+    /// all appear at once is a page that had none until the slowest one
+    /// landed.
+    Icon {
+        /// Which agent, by the registry's own name for it.
+        id: String,
+        /// The drawing, still as SVG. What size to draw it at and what
+        /// colour to ink it in belong to the view.
+        svg: String,
+    },
+    /// An install finished, one way or the other.
+    Installed {
+        /// Which agent.
+        id: String,
+        /// Why it did not work, or `None` because it did.
+        failure: Option<String>,
+    },
+    /// Something from the agent obelus is talking to.
+    ///
+    /// Typed, unlike the language server's messages: the protocol's own
+    /// crate does the reading, so what arrives here is what it means. Some
+    /// of it carries a channel to answer through -- an agent asking
+    /// permission has stopped and is waiting for a keystroke.
+    Acp(crate::acp::Incoming),
+}
+
 /// One row of the agents page: what the registry says, and what obelus
 /// knows about it here.
 ///

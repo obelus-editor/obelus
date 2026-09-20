@@ -27,9 +27,9 @@
 //! its lines must be carried back through the changes, while a commit's
 //! version *is* what was blamed and its lines line up.
 
-use std::{collections::HashMap, path::Path, sync::mpsc::Sender, time::SystemTime};
+use std::{collections::HashMap, path::Path, time::SystemTime};
 
-use crate::event::Event;
+use crate::{git::Event, sink::Sink};
 
 /// Who introduced a line, and when.
 ///
@@ -85,7 +85,7 @@ pub fn line_of(
 ///
 /// The answer arrives as an event like a language server's would, and says
 /// what it is about, because the reader may be somewhere else by then.
-pub fn spawn_blame(path: &Path, at: Option<gix::ObjectId>, sender: Sender<Event>) {
+pub fn spawn_blame(path: &Path, at: Option<gix::ObjectId>, sender: impl Sink<Event>) {
     let path = path.to_path_buf();
     crate::runtime::handle().spawn_blocking(move || {
         let lines = lines_of(&path, at).unwrap_or_default();

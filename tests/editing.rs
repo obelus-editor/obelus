@@ -829,7 +829,9 @@ mod saving {
         support::type_text(&mut app, "x");
 
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
-        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path: path.clone(),
+        }));
 
         let buffer = app.current_buffer().expect("a buffer");
         assert_eq!(
@@ -850,7 +852,9 @@ mod saving {
     fn a_file_that_moves_under_no_edit_still_comes_back() {
         let (_scratch, mut app, path) = reading("save-clean", "mine\n");
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
-        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path: path.clone(),
+        }));
 
         assert_eq!(
             app.current_buffer()
@@ -868,7 +872,9 @@ mod saving {
         let (_scratch, mut app, path) = reading("save-overwrite", "mine\n");
         support::type_text(&mut app, "x");
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
-        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path: path.clone(),
+        }));
 
         // It stops and asks, rather than writing over somebody else's file.
         dispatch::dispatch(&mut app, Command::FileSave);
@@ -928,7 +934,9 @@ mod saving {
         support::lay_out(&mut app, 70, 12);
         support::type_text(&mut app, "x");
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
-        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path: path.clone(),
+        }));
 
         dispatch::dispatch(&mut app, Command::FileSave);
         let dump = support::render(&mut app, 70, 12);
@@ -948,7 +956,9 @@ mod saving {
         let (_scratch, mut app, path) = reading("save-deleted", "mine\n");
         support::type_text(&mut app, "x");
         std::fs::remove_file(&path).expect("deleting it");
-        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path: path.clone(),
+        }));
 
         dispatch::dispatch(&mut app, Command::FileSave);
         let dump = support::render(&mut app, 70, 12);
@@ -1015,7 +1025,9 @@ mod saving {
         // What a formatter that found nothing to change does, and what a
         // checkout of the commit the file was already on does.
         std::fs::write(&path, "mine\n").expect("rewriting it with what it had");
-        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path: path.clone(),
+        }));
 
         dispatch::dispatch(&mut app, Command::FileSave);
         assert_eq!(
@@ -1031,7 +1043,9 @@ mod saving {
         let (_scratch, mut app, path) = reading("save-theirs", "mine\n");
         support::type_text(&mut app, "x");
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
-        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path: path.clone(),
+        }));
 
         dispatch::dispatch(&mut app, Command::FileSave);
         support::answer(&mut app, "Take what is on disk");
@@ -1057,7 +1071,9 @@ mod saving {
         let (_scratch, mut app, path) = reading("save-theirs-undo", "mine\n");
         support::type_text(&mut app, "x");
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
-        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path: path.clone(),
+        }));
 
         dispatch::dispatch(&mut app, Command::FileSave);
         support::answer(&mut app, "Take what is on disk");
@@ -1085,7 +1101,9 @@ mod saving {
         let (_scratch, mut app, path) = reading("save-cancel", "mine\n");
         support::type_text(&mut app, "x");
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
-        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path: path.clone(),
+        }));
 
         dispatch::dispatch(&mut app, Command::FileSave);
         support::answer(&mut app, "cancel");
@@ -1116,7 +1134,9 @@ mod saving {
         let (_scratch, mut app, path) = reading("save-reload", "mine\n");
         support::type_text(&mut app, "x");
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
-        app.handle(obelus::event::Event::FileChanged { path: path.clone() });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path: path.clone(),
+        }));
 
         dispatch::dispatch(&mut app, Command::FileReload);
         let buffer = app.current_buffer().expect("a buffer");
@@ -1203,7 +1223,9 @@ mod saying {
         let (_scratch, mut app, path) = reading("say-moved", "mine\n");
         support::type_text(&mut app, "x");
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
-        app.handle(obelus::event::Event::FileChanged { path });
+        app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
+            path,
+        }));
 
         let dump = support::render(&mut app, 70, 12);
         assert!(

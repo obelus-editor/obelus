@@ -843,7 +843,7 @@ impl App {
         // What obelus offers an agent back. Started with the loop rather
         // than with the first agent, because the address is what an agent is
         // told and telling two of them two addresses would be two servers.
-        match crate::mcp::serve(&self.working_directory, sender.clone()) {
+        match crate::mcp::serve(&self.working_directory, std::sync::Arc::new(sender.clone())) {
             // Said, because the silent half of this is the half nobody can
             // ask about: whether an agent was offered anything, and whether
             // it took it, were both questions obelus had no answer to.
@@ -1629,7 +1629,7 @@ impl App {
             // Redrawing is unconditional after every event, so a resize needs
             // no handling of its own beyond waking the loop.
             Event::Resize => {}
-            Event::FileChanged { path } => {
+            Event::Watched(crate::watch::Changed { path }) => {
                 // The settings, by either of their names: the watcher
                 // reports whichever path the change arrived on, and a
                 // change that came from a repository arrives on the file
@@ -1675,7 +1675,7 @@ impl App {
                 // is otherwise answering about a file nobody has.
                 self.told_servers_about(&path);
             }
-            Event::Lsp { language, message } => {
+            Event::Lsp(crate::lsp::Message { language, message }) => {
                 let Some(client) = self.servers.get_mut(&language) else {
                     return;
                 };
@@ -1743,20 +1743,26 @@ impl App {
                 // stopped talking.
                 self.rename_without_them();
             }
-            Event::Matches {
+            Event::Search(crate::search::Event::Matches {
                 generation,
                 hits,
                 done,
-            } => self.on_matches(generation, hits, done),
-            Event::Acp(message) => self.on_acp(message),
-            Event::Notes { doing, answer } => {
+            }) => self.on_matches(generation, hits, done),
+            Event::Agent(crate::agent::Event::Acp(message)) => self.on_acp(message),
+            Event::Notes(crate::mcp::Asked { doing, answer }) => {
                 let _ = answer.send(self.change_the_notes(doing));
             }
-            Event::Registry { agents, failure } => self.on_registry(agents, failure),
-            Event::Icon { id, svg } => self.on_icon(id, svg),
-            Event::Installing { id, progress } => self.on_installing(id, progress),
-            Event::Installed { id, failure } => self.on_installed(id, failure),
-            Event::Blamed { path, at, lines } => {
+            Event::Agent(crate::agent::Event::Registry { agents, failure }) => {
+                self.on_registry(agents, failure)
+            }
+            Event::Agent(crate::agent::Event::Icon { id, svg }) => self.on_icon(id, svg),
+            Event::Agent(crate::agent::Event::Installing { id, progress }) => {
+                self.on_installing(id, progress)
+            }
+            Event::Agent(crate::agent::Event::Installed { id, failure }) => {
+                self.on_installed(id, failure)
+            }
+            Event::Git(crate::git::Event::Blamed { path, at, lines }) => {
                 // Kept whether or not the reader is still looking at that
                 // file: they walked away from it while a walk of its history
                 // was running, and they will walk back.
@@ -1770,23 +1776,23 @@ impl App {
                     self.open_line_commit_at(line);
                 }
             }
-            Event::Logged {
+            Event::Git(crate::git::Event::Logged {
                 generation,
                 commits,
                 walked,
                 done,
-            } => {
+            }) => {
                 // A batch from a walk whose list is gone, or from one
                 // superseded by another tab, another file, another key.
                 if self.history_generation.is_current(generation) {
                     self.on_logged(commits, walked, done);
                 }
             }
-            Event::FilesFound {
+            Event::Search(crate::search::Event::FilesFound {
                 generation,
                 paths,
                 ignored,
-            } => {
+            }) => {
                 // A batch from a walk whose picker is gone, or from one
                 // superseded by a later open.
                 if !self.walk_generation.is_current(generation) {

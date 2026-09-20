@@ -69,7 +69,7 @@
 //! agent says the far end happened with `elicitation/complete`, which is a
 //! notification because nothing is owed back.
 
-use std::{path::PathBuf, sync::mpsc::Sender};
+use std::path::PathBuf;
 
 use agent_client_protocol::{
     AcpAgentConfig, Client, ConnectionTo,
@@ -106,7 +106,7 @@ use futures::{
     channel::{mpsc, oneshot},
 };
 
-use crate::event::Event;
+use crate::{agent::Event, sink::Sink};
 
 /// What obelus asks the agent to do.
 ///
@@ -474,9 +474,9 @@ pub enum Update {
         /// The call itself.
         ///
         /// Boxed: a call carries six fields of its own and this enum
-        /// travels inside [`crate::event::Event`], where every other
+        /// travels on the one channel the loop reads, where every other
         /// variant is a key or a path -- one fat arm makes every event on
-        /// the channel that size.
+        /// that channel this size.
         call: Box<Call>,
         /// `pending`, `in_progress`, `completed` or `failed`. Empty on an
         /// update that did not say, which means it has not changed.
@@ -842,7 +842,7 @@ pub fn start(
     arguments: &[String],
     root: &std::path::Path,
     tools: Option<String>,
-    events: Sender<Event>,
+    events: impl Sink<Event> + Clone,
 ) -> mpsc::UnboundedSender<Ask> {
     let (asks, taken) = mpsc::unbounded();
     // Not always the file that was installed: what npm writes on Windows is
@@ -947,7 +947,7 @@ async fn open_session(
     connection: &ConnectionTo<agent_client_protocol::Agent>,
     root: &std::path::Path,
     tools: Option<&McpServer>,
-    events: &Sender<Event>,
+    events: &impl Sink<Event>,
     stopped: &mut std::collections::HashMap<
         SessionId,
         std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -988,7 +988,7 @@ async fn talk(
     config: AcpAgentConfig,
     root: PathBuf,
     tools: Option<String>,
-    events: Sender<Event>,
+    events: impl Sink<Event> + Clone,
     mut asks: mpsc::UnboundedReceiver<Ask>,
 ) -> Option<String> {
     // The transport *is* the agent: connecting spawns the process and

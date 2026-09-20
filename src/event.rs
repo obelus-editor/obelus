@@ -19,7 +19,6 @@
 //! does it without touching a future at all.
 
 use std::{
-    path::PathBuf,
     sync::mpsc::{self, Receiver, Sender},
     time::Duration,
 };
@@ -28,145 +27,20 @@ use crossterm::event::{Event as TerminalEvent, KeyEvent};
 
 /// One thing the application has to react to.
 ///
+/// Six of these are the terminal's, and the rest are one worker's each.
+/// The workers do not know this type: each names what it produces, and the
+/// `From` impls below are where the application -- the only part of obelus
+/// that has heard of all of them -- says they are the same inbox.
+///
 /// Not `Clone`: an agent's question carries the channel its answer goes
 /// back through, and there is one answer. Nothing clones an event anyway --
-/// what the producers clone is the sender.
+/// what the producers clone is the sink.
 #[derive(Debug)]
 pub enum Event {
     /// A key was pressed.
     Key(KeyEvent),
     /// The terminal was resized.
     Resize,
-    /// A batch of paths from the file walk.
-    FilesFound {
-        /// Which walk these came from, so batches from a walk whose picker has
-        /// already closed can be dropped.
-        generation: u64,
-        /// The paths, relative to the walk's root.
-        paths: Vec<PathBuf>,
-        /// Whether these are files the tree said it does not keep.
-        ///
-        /// Their own batches rather than a flag per path: a walk sends one
-        /// kind or the other and never a mixture, because it is two walks
-        /// -- one that obeys the ignore rules and one that does not.
-        ignored: bool,
-    },
-    /// A batch of matching lines from a search of the tree.
-    Matches {
-        /// Which search these came from, so answers to a query the reader
-        /// has already typed past can be dropped.
-        generation: u64,
-        /// The matches, in the order the walk found them.
-        hits: Vec<crate::search::Hit>,
-        /// Whether this is the last batch. With a query typed and nothing
-        /// found, "still looking" and "not there" are different facts, and
-        /// only the scan knows which one to show.
-        done: bool,
-    },
-    /// A batch of commits from a walk of the history.
-    ///
-    /// The walk is unbounded -- a file's history is every commit that ever
-    /// touched it, and finding that out costs a tree lookup per commit of
-    /// the whole project -- so the list fills while the reader reads it
-    /// rather than making them wait for the end of it.
-    Logged {
-        /// Which walk these came from, so a history the reader has already
-        /// moved off -- another tab, another file, a closed list -- can be
-        /// dropped rather than shown under whatever is there now.
-        generation: u64,
-        /// The commits, newest first, continuing where the last batch left
-        /// off.
-        commits: Vec<crate::git::history::Commit>,
-        /// How many commits the walk has looked at, which is what says it is
-        /// still going and how far it has got. A walk over a file nobody
-        /// touched has nothing else to report for seconds at a time.
-        walked: usize,
-        /// Whether this is the last batch. An empty list that is still
-        /// filling and one that is finished are different facts, and only
-        /// the walk knows which is true.
-        done: bool,
-    },
-    /// Who last changed each line of a file.
-    Blamed {
-        /// Which file it is about: a blame is a walk of history, and the
-        /// reader may be looking at something else by the time it lands.
-        path: std::path::PathBuf,
-        /// Which version of it: a commit's, or the one the last commit has.
-        /// A file and that file as some commit had it share a path and have
-        /// different answers, so the answer has to say which it is.
-        at: Option<gix::ObjectId>,
-        /// One entry per line of the file as that version has it, from its
-        /// first. `None` for a line no commit accounts for.
-        lines: Vec<Option<crate::git::Blamed>>,
-    },
-    /// The agent registry, from the disk or from the network.
-    ///
-    /// Twice per fetch, ordinarily: what was cached from a previous session
-    /// arrives first so the page has something to show, and the fetched
-    /// list replaces it when it lands.
-    Registry {
-        /// Every agent it lists that obelus can make sense of.
-        agents: Vec<crate::agent::Agent>,
-        /// Why nothing was fetched, when nothing was. A page that says
-        /// "fetching" for ever is a page that is lying by then.
-        failure: Option<String>,
-    },
-    /// How far an install has got.
-    Installing {
-        /// Which agent, by the registry's own name for it.
-        id: String,
-        /// What is known about how far along it is.
-        progress: crate::agent::install::Progress,
-    },
-    /// One agent's mark, from the disk or from the network.
-    ///
-    /// Its own event per agent rather than a batch: forty small drawings
-    /// arriving one at a time is forty cheap frames, and a page whose marks
-    /// all appear at once is a page that had none until the slowest one
-    /// landed.
-    Icon {
-        /// Which agent, by the registry's own name for it.
-        id: String,
-        /// The drawing, still as SVG. What size to draw it at and what
-        /// colour to ink it in belong to the view.
-        svg: String,
-    },
-    /// An install finished, one way or the other.
-    Installed {
-        /// Which agent.
-        id: String,
-        /// Why it did not work, or `None` because it did.
-        failure: Option<String>,
-    },
-    /// Something from the agent obelus is talking to.
-    ///
-    /// Typed, unlike the language server's messages: the protocol's own
-    /// crate does the reading, so what arrives here is what it means. Some
-    /// of it carries a channel to answer through -- an agent asking
-    /// permission has stopped and is waiting for a keystroke.
-    Acp(crate::acp::Incoming),
-    /// An agent asked obelus to change the notes.
-    ///
-    /// Through the loop rather than written from the server's own thread,
-    /// because the loop is the one writer: the file is read, changed and
-    /// written whole, and two threads doing that is one of them losing a
-    /// change it never saw. The answer goes back so the tool can say what
-    /// happened -- a wait on obelus itself, over in microseconds, and not
-    /// the sort a person is at the other end of.
-    Notes {
-        /// What to do to them.
-        doing: crate::todo::Doing,
-        /// What obelus did, or why it did not.
-        answer: crate::acp::Answer<String>,
-    },
-    /// A message from a language server.
-    Lsp {
-        /// Which server it came from.
-        language: crate::syntax::LanguageId,
-        /// The message, still as JSON: what it means depends on what was
-        /// asked for, and that is not the transport's business.
-        message: serde_json::Value,
-    },
     /// The wheel turned, by this many rows. Negative is up the file.
     ///
     /// A wheel is not an arrow key: it moves the *view*, and the place the
@@ -209,21 +83,48 @@ pub enum Event {
     /// a redraw a reader did not ask for is a redraw that can only get in the
     /// way.
     Tick,
+    /// A walk of the tree found something.
+    Search(crate::search::Event),
+    /// A walk of the history found something out.
+    Git(crate::git::Event),
+    /// Something about an agent, or from one.
+    Agent(crate::agent::Event),
+    /// A message from a language server.
+    Lsp(crate::lsp::Message),
+    /// An agent asked obelus to change the notes.
+    Notes(crate::mcp::Asked),
     /// A tree, counted.
     ///
     /// Boxed because it is much the largest thing an event carries -- two
     /// lists as long as the project is -- and every other variant would be
-    /// sized to it.
+    /// sized to it. Boxed by the counting rather than here, so the box is
+    /// made once and does not travel this whole way by value first.
     Counted(Box<crate::counts::Counted>),
     /// A file on disk changed.
-    ///
-    /// Reported for everything in a watched directory, since the watch is on
-    /// the directory. Whoever handles it decides whether the path is one of
-    /// its own.
-    FileChanged {
-        /// Which file.
-        path: PathBuf,
-    },
+    Watched(crate::watch::Changed),
+}
+
+macro_rules! from_worker {
+    ($($from:ty => $variant:ident),* $(,)?) => {
+        $(impl From<$from> for Event {
+            fn from(event: $from) -> Self {
+                Self::$variant(event)
+            }
+        })*
+    };
+}
+
+// What joins a worker's own events to the one channel the loop reads. The
+// blanket impl in `crate::sink` turns each of these into a `Sink` the
+// worker can be handed, without the worker naming this enum.
+from_worker! {
+    crate::search::Event => Search,
+    crate::git::Event => Git,
+    crate::agent::Event => Agent,
+    crate::lsp::Message => Lsp,
+    crate::mcp::Asked => Notes,
+    Box<crate::counts::Counted> => Counted,
+    crate::watch::Changed => Watched,
 }
 
 /// What the pointer's button did.

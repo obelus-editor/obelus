@@ -15,9 +15,9 @@
 //! when an agent changes its logo, which is not on the scale a reader
 //! notices.
 
-use std::{path::PathBuf, sync::mpsc::Sender, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
-use crate::event::Event;
+use crate::{agent::Event, sink::Sink};
 
 /// How long to wait for one icon.
 ///
@@ -69,7 +69,7 @@ pub fn cached(id: &str) -> Option<String> {
 /// draws whatever it had while the rest arrive. Each one is its own event:
 /// forty small drawings landing one by one is forty cheap frames, and the
 /// alternative is a page with no marks on it until the last one lands.
-pub fn spawn_fetch(wanted: Vec<(String, String)>, sender: Sender<Event>) {
+pub fn spawn_fetch(wanted: Vec<(String, String)>, sender: impl Sink<Event>) {
     if wanted.is_empty() {
         return;
     }

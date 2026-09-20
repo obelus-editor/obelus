@@ -5,7 +5,7 @@
 //! that is the caller's, because the answer arrives after the world has moved
 //! on and only the caller can say whether it still means anything.
 
-use std::{collections::HashMap, path::Path, process::Stdio, sync::mpsc::Sender};
+use std::{collections::HashMap, path::Path, process::Stdio};
 
 use anyhow::{Context as _, Result};
 use lsp_types::{
@@ -29,7 +29,11 @@ use lsp_types::{
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::{event::Event, lsp::transport, syntax::LanguageId};
+use crate::{
+    lsp::{Message, transport},
+    sink::Sink,
+    syntax::LanguageId,
+};
 
 /// The id obelus uses for its `initialize` request.
 ///
@@ -132,7 +136,7 @@ impl Client {
         language: LanguageId,
         server: crate::lsp::Server,
         root: &Path,
-        sender: Sender<Event>,
+        sender: impl Sink<Message> + Clone,
     ) -> Result<Self> {
         let command = server.command;
         // Inside the runtime, because a child's pipes register with it.
@@ -609,7 +613,11 @@ pub fn path_of(uri: &str) -> Option<std::path::PathBuf> {
 /// -- and doing it on the runtime would stall the agent's connection, the
 /// clock behind an animation and every other server behind it, which is
 /// exactly what separate threads never did.
-fn spawn_reader(language: LanguageId, stdout: tokio::process::ChildStdout, sender: Sender<Event>) {
+fn spawn_reader(
+    language: LanguageId,
+    stdout: tokio::process::ChildStdout,
+    sender: impl Sink<Message>,
+) {
     crate::runtime::handle().spawn(async move {
         let mut reader = tokio::io::BufReader::new(stdout);
         loop {
@@ -638,7 +646,7 @@ fn spawn_reader(language: LanguageId, stdout: tokio::process::ChildStdout, sende
                     return;
                 }
             };
-            if sender.send(Event::Lsp { language, message }).is_err() {
+            if sender.send(Message { language, message }).is_err() {
                 return;
             }
         }

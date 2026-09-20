@@ -23,6 +23,16 @@ use std::path::{Path, PathBuf};
 
 use crate::syntax::LanguageId;
 
+/// A message from a language server.
+#[derive(Debug)]
+pub struct Message {
+    /// Which server it came from.
+    pub language: LanguageId,
+    /// The message, still as JSON: what it means depends on what was
+    /// asked for, and that is not the transport's business.
+    pub message: serde_json::Value,
+}
+
 /// What a language server is doing, as far as the status bar is concerned.
 ///
 /// Three states rather than a boolean, because the two that are not "ready"

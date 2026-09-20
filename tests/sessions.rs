@@ -61,7 +61,8 @@ fn pump(
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         assert!(!left.is_zero(), "gave up waiting for {what}");
-        let Ok(Event::Acp(incoming)) = events.recv_timeout(left) else {
+        let Ok(Event::Agent(obelus::agent::Event::Acp(incoming))) = events.recv_timeout(left)
+        else {
             continue;
         };
         let seen = talk.on(incoming);

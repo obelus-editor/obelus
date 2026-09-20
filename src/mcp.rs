@@ -37,7 +37,7 @@
 //! are two things, and changing one and forgetting the other is a mistake
 //! the compiler cannot see. Readability against a bug that really happens.
 
-use std::sync::{Arc, mpsc::Sender};
+use std::sync::Arc;
 
 use rmcp::{
     ErrorData, ServerHandler,
@@ -47,7 +47,23 @@ use rmcp::{
 };
 use serde::Deserialize;
 
-use crate::{event::Event, todo};
+use crate::{sink::Sink, todo};
+
+/// An agent asked obelus to change the notes.
+///
+/// Through the loop rather than written from the server's own thread,
+/// because the loop is the one writer: the file is read, changed and
+/// written whole, and two threads doing that is one of them losing a
+/// change it never saw. The answer goes back so the tool can say what
+/// happened -- a wait on obelus itself, over in microseconds, and not
+/// the sort a person is at the other end of.
+#[derive(Debug)]
+pub struct Asked {
+    /// What to do to them.
+    pub doing: crate::todo::Doing,
+    /// What obelus did, or why it did not.
+    pub answer: futures::channel::oneshot::Sender<String>,
+}
 
 /// obelus, as an agent can reach it.
 #[derive(Clone)]
@@ -55,7 +71,13 @@ pub struct Obelus {
     /// The tree the notes belong to.
     root: std::path::PathBuf,
     /// How to reach the main loop, which is the only thing that may draw.
-    events: Sender<Event>,
+    ///
+    /// Behind a pointer rather than as a type parameter: this struct has to
+    /// be `Clone`, and the two impls that make it a server are written by
+    /// `#[tool_router]` and `#[tool_handler]` on a plain `impl Obelus`. A
+    /// parameter here would have to appear in a macro expansion obelus does
+    /// not write.
+    events: Arc<dyn Sink<Asked>>,
     /// The tools, as `#[tool_router]` built them from the signatures below.
     ///
     /// Read by the macro-generated dispatch rather than by anything here,
@@ -104,7 +126,7 @@ pub struct Offered {
 impl Obelus {
     /// A server on this tree, answering to this main loop.
     #[must_use]
-    pub fn new(root: &std::path::Path, events: Sender<Event>) -> Self {
+    pub fn new(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> Self {
         // One line per connection to the tools, which is the thing that
         // could not be found out before: obelus offering them and an agent
         // taking them up looked exactly alike from outside, and both looked
@@ -256,7 +278,7 @@ impl Obelus {
     /// speaking.
     async fn told(&self, doing: todo::Doing) -> Option<String> {
         let (answer, answered) = futures::channel::oneshot::channel();
-        self.events.send(Event::Notes { doing, answer }).ok()?;
+        self.events.send(Asked { doing, answer }).ok()?;
         answered.await.ok()
     }
 }
@@ -305,7 +327,7 @@ impl ServerHandler for Obelus {
 ///
 /// Where the socket cannot be taken, which is a machine with no loopback --
 /// obelus goes on without the tools and says so.
-pub fn serve(root: &std::path::Path, events: Sender<Event>) -> std::io::Result<String> {
+pub fn serve(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> std::io::Result<String> {
     use rmcp::transport::streamable_http_server::{
         StreamableHttpService, session::local::LocalSessionManager,
     };

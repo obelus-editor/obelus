@@ -14,11 +14,9 @@
 //! What that crate is built around is `async`, and obelus's main loop is a
 //! thread blocked on a channel. [`link`] is the join: one thread runs a
 //! tokio runtime with the connection in it, what obelus wants becomes an
-//! [`Ask`] sent to that thread, and everything the agent says becomes an
-//! [`Event`] on the loop's own channel like the keyboard and the file
-//! walk.
-//!
-//! [`Event`]: crate::event::Event
+//! [`Ask`] sent to that thread, and everything the agent says goes into a
+//! [`crate::agent::Event`], which reaches the loop's own channel like the
+//! keyboard and the file walk do.
 //!
 //! What obelus tells an agent about itself is the shape of the product: it
 //! will read a file out -- from a buffer, so an agent sees what the reader
@@ -56,6 +54,8 @@ pub use link::{
     Answer, Ask, Call, Category, Change, Choice, Chosen, Cost, Field, Incoming, Kind, Order, Place,
     Reply, Setting, Step, Takes, Update, Usage, Value,
 };
+
+use crate::sink::Sink;
 
 /// One running agent: how to ask it things, and what it has said about
 /// itself.
@@ -219,7 +219,7 @@ impl Talk {
         arguments: &[String],
         root: &Path,
         tools: Option<String>,
-        events: std::sync::mpsc::Sender<crate::event::Event>,
+        events: impl Sink<crate::agent::Event> + Clone,
     ) -> Self {
         Self {
             id: id.to_string(),

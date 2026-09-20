@@ -1777,7 +1777,7 @@ fn the_blame_sits_at_the_end_of_the_cursor_line() {
     );
 
     let long_ago = 1;
-    app.handle(Event::Blamed {
+    app.handle(Event::Git(obelus::git::Event::Blamed {
         at: None,
         path,
         lines: vec![
@@ -1789,7 +1789,7 @@ fn the_blame_sits_at_the_end_of_the_cursor_line() {
             }),
             None,
         ],
-    });
+    }));
     let dump = support::render(&mut app, 44, 8);
     let rows: Vec<&str> = support::text_block(&dump)
         .lines()
@@ -1871,11 +1871,11 @@ fn a_line_the_reader_changed_has_no_name() {
             when: 1,
         })
     };
-    app.handle(Event::Blamed {
+    app.handle(Event::Git(obelus::git::Event::Blamed {
         at: None,
         path,
         lines: vec![who("Ada"), who("Bob"), who("Cai")],
-    });
+    }));
 
     // The cursor walks down, because the note is only ever on its line.
     let note = |app: &mut App| {
@@ -1919,7 +1919,7 @@ fn a_line_too_long_for_a_note_keeps_its_code() {
     let path = buffer.path().to_path_buf();
     let mut app = App::new(vec![buffer]);
     support::lay_out(&mut app, 44, 8);
-    app.handle(Event::Blamed {
+    app.handle(Event::Git(obelus::git::Event::Blamed {
         at: None,
         path,
         lines: vec![Some(Blamed {
@@ -1928,7 +1928,7 @@ fn a_line_too_long_for_a_note_keeps_its_code() {
             who: "Ada".to_string(),
             when: 1,
         })],
-    });
+    }));
 
     let dump = support::render(&mut app, 44, 8);
     let text = support::text_block(&dump);
@@ -1965,7 +1965,7 @@ fn the_names_can_be_turned_off() {
     let path = buffer.path().to_path_buf();
     let mut app = App::new(vec![buffer]);
     support::lay_out(&mut app, 44, 8);
-    app.handle(Event::Blamed {
+    app.handle(Event::Git(obelus::git::Event::Blamed {
         at: None,
         path,
         lines: vec![Some(Blamed {
@@ -1974,7 +1974,7 @@ fn the_names_can_be_turned_off() {
             who: "Ada".to_string(),
             when: 1,
         })],
-    });
+    }));
     assert!(support::text_block(&support::render(&mut app, 44, 8)).contains("Ada"));
 
     app.configure(
@@ -2060,9 +2060,9 @@ fn a_commit_from_somewhere_else_empties_the_margin() {
     // Committed from somewhere else, with nothing touching the file: the
     // line is no longer new, and the only thing that says so is git.
     repository.commit("the fourth line");
-    app.handle(Event::FileChanged {
+    app.handle(Event::Watched(obelus::watch::Changed {
         path: repository.directory.join(".git").join("HEAD"),
-    });
+    }));
     support::lay_out(&mut app, 40, 10);
     assert!(
         app.changes().is_none_or(Changes::is_empty),
@@ -3087,9 +3087,9 @@ fn a_commits_version_is_not_the_file_at_that_path() {
     // The file changes on disk and is re-read: the commit's version is not
     // touched, because those bytes are what that commit said.
     repository.write("third\n");
-    app.handle(obelus::event::Event::FileChanged {
+    app.handle(obelus::event::Event::Watched(obelus::watch::Changed {
         path: repository.path(),
-    });
+    }));
     assert_eq!(
         app.current_buffer()
             .expect("a file")
@@ -3182,7 +3182,7 @@ fn a_commits_version_is_marked_against_the_commit_before_it() {
     // today -- a confident answer about the wrong lines. The answer is put
     // in by hand, because it is worked out on a thread and this is not a
     // test about that.
-    app.handle(obelus::event::Event::Blamed {
+    app.handle(obelus::event::Event::Git(obelus::git::Event::Blamed {
         at: None,
         path: repository.path(),
         lines: vec![
@@ -3194,7 +3194,7 @@ fn a_commits_version_is_marked_against_the_commit_before_it() {
             });
             3
         ],
-    });
+    }));
     assert!(
         app.blame().is_none(),
         "a commit's version was blamed as if it were the file"
@@ -3850,7 +3850,7 @@ fn a_batch_landing_does_not_move_the_reader_off_their_row() {
 
     // More of the history arrives, as it does for the two seconds a large
     // project takes to walk.
-    app.handle(Event::Logged {
+    app.handle(Event::Git(obelus::git::Event::Logged {
         generation: app.history_walk_for_test(),
         commits: vec![Commit {
             id: gix::ObjectId::null(gix::hash::Kind::Sha1),
@@ -3861,7 +3861,7 @@ fn a_batch_landing_does_not_move_the_reader_off_their_row() {
         }],
         walked: 900,
         done: false,
-    });
+    }));
 
     let picker = app.picker().expect("the history");
     assert_eq!(picker.match_count(), 4, "the batch did not reach the list");
@@ -3904,9 +3904,9 @@ fn a_history_on_screen_notices_the_repository_moving() {
     // The index moves without a commit behind it, which is what `git add`
     // does every time it is used.
     let git = repository.directory().join(".git");
-    app.handle(Event::FileChanged {
+    app.handle(Event::Watched(obelus::watch::Changed {
         path: git.join("index"),
-    });
+    }));
     assert!(
         app.picker().expect("the history").is_filling().is_none(),
         "the list was thrown away and read again for a staged file"
@@ -3915,9 +3915,9 @@ fn a_history_on_screen_notices_the_repository_moving() {
     // And then a commit in another window.
     repository.write("four\n");
     repository.commit("the fourth");
-    app.handle(Event::FileChanged {
+    app.handle(Event::Watched(obelus::watch::Changed {
         path: git.join("HEAD"),
-    });
+    }));
     support::read_history(&mut app, &events);
 
     let picker = app.picker().expect("the history");

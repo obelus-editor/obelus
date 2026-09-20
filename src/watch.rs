@@ -17,14 +17,24 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::mpsc::Sender,
     time::{Duration, Instant},
 };
 
 use anyhow::{Context as _, Result};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 
-use crate::event::Event;
+use crate::sink::Sink;
+
+/// A file on disk changed.
+///
+/// Reported for everything in a watched directory, since the watch is on
+/// the directory. Whoever handles it decides whether the path is one of
+/// its own.
+#[derive(Clone, Debug)]
+pub struct Changed {
+    /// Which file.
+    pub path: PathBuf,
+}
 
 /// How long to gather changes before reporting them.
 ///
@@ -57,7 +67,7 @@ impl std::fmt::Debug for Watcher {
 
 impl Watcher {
     /// Starts watching, reporting changes on `sender`.
-    pub fn new(sender: Sender<Event>) -> Result<Self> {
+    pub fn new(sender: impl Sink<Changed>) -> Result<Self> {
         let (raw_sender, raw_receiver) = tokio::sync::mpsc::unbounded_channel::<PathBuf>();
 
         let inner = RecommendedWatcher::new(
@@ -174,7 +184,10 @@ fn directory_of(path: &Path) -> Option<PathBuf> {
 /// The deadline is set by the *first* change in a burst, not refreshed by each
 /// one: a file being written continuously would otherwise never be reported at
 /// all.
-fn spawn_debouncer(mut raw: tokio::sync::mpsc::UnboundedReceiver<PathBuf>, sender: Sender<Event>) {
+fn spawn_debouncer(
+    mut raw: tokio::sync::mpsc::UnboundedReceiver<PathBuf>,
+    sender: impl Sink<Changed>,
+) {
     crate::runtime::handle().spawn(async move {
         let mut pending: HashSet<PathBuf> = HashSet::new();
         let mut deadline: Option<Instant> = None;
@@ -199,7 +212,7 @@ fn spawn_debouncer(mut raw: tokio::sync::mpsc::UnboundedReceiver<PathBuf>, sende
                         Err(_) => {
                             deadline = None;
                             for path in pending.drain() {
-                                if sender.send(Event::FileChanged { path }).is_err() {
+                                if sender.send(Changed { path }).is_err() {
                                     return;
                                 }
                             }

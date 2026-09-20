@@ -410,7 +410,9 @@ fn a_real_server_draws_a_type_nobody_wrote_down() {
             "nothing a server worked out was ever drawn"
         );
         match events.recv_timeout(Duration::from_secs(5)) {
-            Ok(Event::Lsp { language, message }) => app.handle(Event::Lsp { language, message }),
+            Ok(Event::Lsp(obelus::lsp::Message { language, message })) => {
+                app.handle(Event::Lsp(obelus::lsp::Message { language, message }))
+            }
             Ok(_) => {}
             Err(_) => {}
         }
@@ -481,10 +483,10 @@ fn probe_how_long_until_they_come_back() {
     let pump = |app: &mut App, until: Duration| {
         let deadline = Instant::now() + until;
         while Instant::now() < deadline {
-            if let Ok(Event::Lsp { language, message }) =
+            if let Ok(Event::Lsp(obelus::lsp::Message { language, message })) =
                 events.recv_timeout(Duration::from_millis(200))
             {
-                app.handle(Event::Lsp { language, message });
+                app.handle(Event::Lsp(obelus::lsp::Message { language, message }));
             }
             if app.hints_for_test_count() > 0 {
                 return Some(deadline - Instant::now());

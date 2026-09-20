@@ -67,7 +67,9 @@ fn wait_for(events: &Receiver<Event>, path: &Path) -> bool {
     let deadline = Instant::now() + DEADLINE;
     while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
         match events.recv_timeout(remaining) {
-            Ok(Event::FileChanged { path: changed }) if changed == path => return true,
+            Ok(Event::Watched(obelus::watch::Changed { path: changed })) if changed == path => {
+                return true;
+            }
             Ok(_) => {}
             Err(_) => return false,
         }
@@ -81,7 +83,7 @@ fn collect(events: &Receiver<Event>, window: Duration) -> Vec<PathBuf> {
     let mut seen = Vec::new();
     while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
         match events.recv_timeout(remaining) {
-            Ok(Event::FileChanged { path }) => seen.push(path),
+            Ok(Event::Watched(obelus::watch::Changed { path })) => seen.push(path),
             Ok(_) => {}
             Err(_) => break,
         }
