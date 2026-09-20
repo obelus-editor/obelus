@@ -55,6 +55,10 @@ pub enum Command {
     SymbolRename,
     /// Everything the language server says is wrong with this file.
     SymbolTroubles,
+    /// Go to the problem above the cursor.
+    SymbolTroublePrevious,
+    /// Go to the problem below the cursor.
+    SymbolTroubleNext,
     /// Every symbol this file defines, to jump to.
     SymbolOutline,
     /// Where the symbol under the cursor is defined.
@@ -262,6 +266,14 @@ pub enum Requires {
     /// `go-back` and `go-forward` are two: a reader at the last change in a
     /// file should not be offered a row that answers "no more changes".
     AHunkAfter,
+    /// The file has to have a problem above the cursor.
+    ATroubleBefore,
+    /// The file has to have a problem below the cursor.
+    ///
+    /// Two conditions, by the same argument the hunks have two: a reader on
+    /// the last problem in a file should not be offered a row whose whole
+    /// answer is "no more problems".
+    ATroubleAfter,
     /// Something has to be selected.
     ASelection,
     /// The history has to have somewhere behind the reader.
@@ -402,6 +414,16 @@ pub const ALL: &[CommandSpec] = &[
         command: Command::SymbolTroubles,
         name: "show-problems",
         title: "What is wrong with this file",
+    },
+    CommandSpec {
+        command: Command::SymbolTroublePrevious,
+        name: "go-to-previous-problem",
+        title: "Go to the previous problem",
+    },
+    CommandSpec {
+        command: Command::SymbolTroubleNext,
+        name: "go-to-next-problem",
+        title: "Go to the next problem",
     },
     CommandSpec {
         command: Command::SymbolOutline,
@@ -663,6 +685,8 @@ impl Command {
             | Self::SymbolHover
             | Self::SymbolComplete
             | Self::SymbolTroubles
+            | Self::SymbolTroublePrevious
+            | Self::SymbolTroubleNext
             | Self::SymbolOutline
             | Self::SymbolDefinition
             | Self::SymbolTypeDefinition
@@ -740,6 +764,8 @@ impl Command {
             // Not a running server: a file with nothing wrong with it is
             // the answer this gives, and it is worth giving.
             Self::SymbolTroubles => Requires::AFileOpen,
+            Self::SymbolTroublePrevious => Requires::ATroubleBefore,
+            Self::SymbolTroubleNext => Requires::ATroubleAfter,
             // A note is made *about* a line, so there has to be one.
             Self::TodoAdd => Requires::AFileOpen,
             Self::TodoOpen => Requires::Nothing,
@@ -923,6 +949,8 @@ mod tests {
             Command::CommandPalette,
             Command::SymbolMenu,
             Command::SymbolOutline,
+            Command::SymbolTroublePrevious,
+            Command::SymbolTroubleNext,
             Command::SymbolDefinition,
             Command::SymbolTypeDefinition,
             Command::SymbolImplementation,

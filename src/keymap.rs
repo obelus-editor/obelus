@@ -699,6 +699,32 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('n'), KeyModifiers::ALT),
                 },
+                // `alt+[` and `alt+]` for the previous and next problem.
+                //
+                // A second pair of previous-and-next keys, in a different
+                // idiom from the first, which is worth saying out loud. The
+                // letters are spoken for -- `alt+p` is the previous change
+                // and `alt+n` the next one -- and the bracket pair is what
+                // every editor with two of these reaches for second: Vim's
+                // unimpaired bindings, VS Code's `alt+[`/`alt+]` on the
+                // Mac. The alternative was giving the brackets to the
+                // changes and the letters to the problems, which moves a
+                // key readers already have for no gain.
+                //
+                // Not `f8` and `shift+f8`, which is where VS Code puts
+                // these: a function key here is bare or it is two keys on
+                // the next terminal, so only half of that pair can be had,
+                // and half a pair is worse than neither.
+                Binding {
+                    command: Command::SymbolTroublePrevious,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('['), KeyModifiers::ALT),
+                },
+                Binding {
+                    command: Command::SymbolTroubleNext,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char(']'), KeyModifiers::ALT),
+                },
                 // Not `ctrl+alt+arrow`, which GNOME and KDE take for
                 // switching workspaces: a key the desktop eats before the
                 // terminal sees it looks like a broken program.

@@ -299,3 +299,67 @@ fn what_is_wrong_with_the_last_line_is_opened_under_it() {
         "the complaint about the last line opened above it:\n{dump}"
     );
 }
+
+/// Walking from one problem to the next, without reading the list.
+///
+/// The list is the map and this is the walk: a reader working through what
+/// a server said wants the caret on the line, the complaint under it and
+/// the file still around it, and going back to a list between every two is
+/// the thing that makes a reader stop after the first.
+///
+/// No wrapping, like the changes: a reader who steps past the last one and
+/// lands back at the top has lost their place to a key that looked like it
+/// did nothing.
+///
+/// Broken deliberately by taking the direction out of `trouble_from` -- by
+/// always looking forward, or by letting it wrap -- and either way the
+/// walk ends up somewhere this names.
+#[test]
+fn the_caret_walks_from_one_problem_to_the_next() {
+    let mut file = String::new();
+    for _ in 0..8 {
+        file.push_str("    let _ = 1;\n");
+    }
+    let (_scratch, mut app, path) = editing("trouble-walk", &file);
+    let one = |line: u32| {
+        json!({
+            "range": { "start": { "line": line, "character": 4 },
+                       "end": { "line": line, "character": 8 } },
+            "severity": 1,
+            "source": "rustc",
+            "message": "cannot find value `nmae` in this scope"
+        })
+    };
+    app.publish_for_test(json!({
+        "uri": format!("file://{}", path.display()),
+        "diagnostics": [one(2), one(5)]
+    }));
+
+    let at = |app: &App| {
+        app.current_buffer()
+            .map(|buffer| buffer.cursor().line.get())
+            .expect("a file")
+    };
+    assert_eq!(at(&app), 0, "the caret did not start at the top");
+
+    support::press_alt(&mut app, ']');
+    assert_eq!(at(&app), 2, "forward did not reach the first problem");
+    support::press_alt(&mut app, ']');
+    assert_eq!(at(&app), 5, "forward did not reach the second");
+    support::press_alt(&mut app, ']');
+    assert_eq!(at(&app), 5, "forward wrapped round past the last problem");
+
+    support::press_alt(&mut app, '[');
+    assert_eq!(at(&app), 2, "back did not reach the first problem");
+    support::press_alt(&mut app, '[');
+    assert_eq!(at(&app), 2, "back wrapped round past the first problem");
+
+    // A leap across the file, so `go-back` comes back from it: the same
+    // promise typing a line number makes.
+    support::press_alt_key(&mut app, crossterm::event::KeyCode::Left);
+    assert_eq!(
+        at(&app),
+        5,
+        "the walk left nothing for go-back to return to"
+    );
+}

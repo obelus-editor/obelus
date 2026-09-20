@@ -1709,6 +1709,58 @@ impl App {
         self.on_published(language, &params);
     }
 
+    /// The line of the nearest problem one way or the other.
+    ///
+    /// By line number rather than by the order the server sent them: they
+    /// arrive in file order from every server obelus talks to, and a walk
+    /// that trusts that would step backwards the day one does not. Several
+    /// on a line are one stop, because the complaint under the caret says
+    /// how many are there.
+    #[must_use]
+    pub fn trouble_from(&self, line: LineNumber, forward: bool) -> Option<LineNumber> {
+        let at = self.troubles().iter().map(|trouble| trouble.span.line);
+        if forward {
+            at.filter(|at| *at > line).min()
+        } else {
+            at.filter(|at| *at < line).max()
+        }
+    }
+
+    /// Moves the cursor to the problem above it.
+    pub fn go_to_previous_trouble(&mut self) {
+        self.go_to_trouble(false);
+    }
+
+    /// Moves the cursor to the problem below it.
+    pub fn go_to_next_trouble(&mut self) {
+        self.go_to_trouble(true);
+    }
+
+    /// Moves the cursor to the nearest problem one way or the other.
+    ///
+    /// No wrapping, and nothing said on the way out: the same walk as
+    /// [`App::go_to_previous_change`], for the same reasons, and a reader
+    /// who cannot tell the two apart is right not to be able to.
+    fn go_to_trouble(&mut self, forward: bool) {
+        let Some(line) = self.current_buffer().map(|buffer| buffer.cursor().line) else {
+            return;
+        };
+        let Some(target) = self.trouble_from(line, forward) else {
+            return;
+        };
+        let from = self.here();
+        let area = self.text_area();
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.place_cursor(target, CharColumn::new(0));
+            if buffer.cursor_screen_cell(area).is_none() {
+                buffer.center_on_cursor(area);
+            }
+        }
+        if let Some(from) = from {
+            self.jumps.push(from);
+        }
+    }
+
     /// Lists what the server says is wrong with this file.
     pub fn open_troubles(&mut self) {
         let troubles = self.troubles().to_vec();

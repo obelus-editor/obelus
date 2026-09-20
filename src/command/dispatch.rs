@@ -45,6 +45,8 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::FoldAll => app.fold_all(),
         Command::UnfoldAll => app.unfold_all(),
         Command::GitHunk => app.toggle_hunk(),
+        Command::SymbolTroublePrevious => app.go_to_previous_trouble(),
+        Command::SymbolTroubleNext => app.go_to_next_trouble(),
         Command::GitPrevious => app.go_to_previous_change(),
         Command::GitNext => app.go_to_next_change(),
         Command::SelectionCopy => app.copy_selection(),

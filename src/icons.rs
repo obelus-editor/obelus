@@ -278,6 +278,12 @@ pub fn for_command(command: crate::command::Command) -> char {
         Command::SymbolHover => '\u{f0523}',
         // `md-alert_circle_outline`: what is wrong with the file.
         Command::SymbolTroubles => '\u{f05d6}',
+        // `md-arrow_up` and `md-arrow_down`: plain arrows, where the
+        // changes step with chevrons. Two pairs that both mean previous
+        // and next need telling apart on a row, and every command here
+        // has its own glyph.
+        Command::SymbolTroublePrevious => '\u{f005d}',
+        Command::SymbolTroubleNext => '\u{f0045}',
         // A list of what is in something, which is what an outline is.
         Command::SymbolOutline => '\u{f0279}',
         Command::SymbolDefinition => '\u{f04fe}',

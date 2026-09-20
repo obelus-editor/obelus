@@ -209,6 +209,11 @@ impl App {
                     .and_then(|changes| changes.hunk_after(buffer.cursor().line))
                     .is_some()
             }),
+            Requires::ATroubleBefore => buffer
+                .is_some_and(|buffer| self.trouble_from(buffer.cursor().line, false).is_some()),
+            Requires::ATroubleAfter => {
+                buffer.is_some_and(|buffer| self.trouble_from(buffer.cursor().line, true).is_some())
+            }
             Requires::SomewhereBack => self.jumps.can_go_back(),
             Requires::SomewhereForward => self.jumps.can_go_forward(),
             Requires::ARunningServer => buffer
