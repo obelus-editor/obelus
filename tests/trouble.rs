@@ -61,7 +61,11 @@ fn what_is_wrong_is_underlined_where_it_is_wrong() {
         .expect("the line");
     let row = rows[at];
     let text = &row[row.find('|').expect("a divider") + 1..];
-    let column = u16::try_from(text.find("nmae").expect("the word")).expect("a column");
+    // Counted in characters, not in bytes: what comes before the text is a
+    // half-block glyph three bytes wide, so a byte offset is two columns
+    // out the moment the margin has anything in it.
+    let before = text.find("nmae").expect("the word");
+    let column = u16::try_from(text[..before].chars().count()).expect("a column");
     let y = u16::try_from(at).expect("a row");
     let underlined = |x: u16| {
         cells
@@ -361,5 +365,56 @@ fn the_caret_walks_from_one_problem_to_the_next() {
         at(&app),
         5,
         "the walk left nothing for go-back to return to"
+    );
+}
+
+/// A file outside a repository is marked too.
+///
+/// The two columns used to be reserved for one reason -- being in a
+/// repository -- and a file that was not in one had nowhere to carry a
+/// mark, so the only news that something was wrong was an underline on the
+/// line the reader was already looking at. They are reserved for a second
+/// reason now: the language having a server in obelus's table.
+///
+/// On the language rather than on anything anyone has said, and this file
+/// is the case that shows why: there is no repository, no server installed
+/// in the test's environment and nothing has started -- and the columns are
+/// there all the same, because a width that arrived with an answer would
+/// rewrap every line under the reader the moment a server spoke.
+///
+/// Broken deliberately by putting `marks` back to the changes alone: both
+/// columns go, and with them everything this asserts.
+#[test]
+fn a_file_with_no_repository_still_says_where_the_problems_are() {
+    let (_scratch, mut app, path) = editing("trouble-nowhere", "fn main() {\n    nmae;\n}\n");
+    assert!(
+        app.changes().is_none(),
+        "the scratch directory turned out to be a repository, so this proves nothing"
+    );
+    app.publish_for_test(published(&path, 1, 4, 8, 1));
+
+    let cells = support::cells_of(&mut app, 60, 16);
+    let dump = support::render(&mut app, 60, 16);
+    let at = |x: u16, y: u16| cells.cell((x, y)).expect("a cell").clone();
+
+    // The margin is the first column, and the line with something wrong
+    // with it is the second row.
+    assert_eq!(
+        at(0, 1).symbol(),
+        "\u{258c}",
+        "the margin does not mark the line, or is not there at all:\n{dump}"
+    );
+    assert_ne!(
+        at(0, 1).fg,
+        at(0, 0).fg,
+        "the mark is the colour of a cell with nothing in it:\n{dump}"
+    );
+    // And the map, in the column before the bar.
+    let marked = (0..14)
+        .filter(|y| at(58, *y).symbol() == "\u{2590}")
+        .count();
+    assert_eq!(
+        marked, 1,
+        "the map does not have the one problem on it:\n{dump}"
     );
 }

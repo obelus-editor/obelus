@@ -159,6 +159,31 @@ pub const FOLD_WIDTH: u16 = 1;
 /// row is a summary, not two lines pretending to be one.
 const ELIDED: &str = "\u{2026}";
 
+/// Whether the two columns that mark a file's lines are reserved for it.
+///
+/// Both of them or neither: the margin and the map are one answer at two
+/// scales -- what happened to this line, and where else in the file to look
+/// -- and each cell of each is split between what changed and what is
+/// wrong. A file given one of the two columns would have half a picture.
+///
+/// Two reasons, and both are facts about *which file is open* rather than
+/// about what is in it or what anyone has said about it. Being in a
+/// repository is the older one. The newer one is the language having a
+/// server in [`crate::lsp::server_for`]'s table -- reserved whether or not
+/// that server is installed, whether or not it has started, and whether or
+/// not it has found anything, for exactly the reason the repository's
+/// column is reserved for a file nobody has changed: a width that arrived
+/// with an answer would rewrap every line under the reader the moment a
+/// server spoke.
+///
+/// `wrongs` is the language of a view that shows what is wrong with the
+/// file, and `None` for one that does not. A preview is a look at somewhere
+/// else and never carries a complaint, so it has only the older reason.
+#[must_use]
+pub fn marks(changes: bool, wrongs: Option<crate::syntax::LanguageId>) -> bool {
+    changes || wrongs.is_some_and(|language| crate::lsp::server_for(language).is_some())
+}
+
 /// How many columns come before the text: the change margin, the gutter,
 /// then the fold marks.
 ///
@@ -167,9 +192,13 @@ const ELIDED: &str = "\u{2026}";
 /// so on every file in a repository the caret sat one cell to the left of
 /// the character it was on -- which is what choosing a search match looks
 /// like when the match is the thing you are staring at.
+///
+/// `marks` is [`marks`], which every caller asks rather than working out
+/// for itself: two of them answering it differently is the same defect this
+/// function was written to end, one column further left.
 #[must_use]
-pub fn text_offset(lines: usize, changes: bool, folds: bool) -> u16 {
-    let margin = if changes { MARGIN_WIDTH } else { 0 };
+pub fn text_offset(lines: usize, marks: bool, folds: bool) -> u16 {
+    let margin = if marks { MARGIN_WIDTH } else { 0 };
     let folding = if folds { FOLD_WIDTH } else { 0 };
     margin
         .saturating_add(gutter_width(lines))
@@ -383,6 +412,19 @@ impl EditorView<'_> {
         }
     }
 
+    /// The language whose complaints this view shows, if it shows any.
+    ///
+    /// `None` for a preview, which is a look at somewhere else: what is
+    /// wrong with the file the reader is in is not about it, which is why
+    /// its troubles are empty -- and a column reserved for marks that can
+    /// never arrive is a column spent on nothing.
+    fn wrongs(&self, buffer: &Buffer) -> Option<crate::syntax::LanguageId> {
+        match self.editing {
+            Editing::Allowed => buffer.language(),
+            Editing::Refused => None,
+        }
+    }
+
     /// The colour of the worst thing the server says about a line.
     ///
     /// The worst where there are several, which is the rule the underline
@@ -528,7 +570,8 @@ impl Widget for EditorView<'_> {
         // The margin is leftmost because it is about the line as a whole and
         // the line number is about where it is: a mark inside the numbers
         // would read as part of one.
-        let margin = if self.changes.is_some() {
+        let marking = marks(self.changes.is_some(), self.wrongs(buffer));
+        let margin = if marking {
             MARGIN_WIDTH.min(area.width)
         } else {
             0
@@ -540,14 +583,14 @@ impl Widget for EditorView<'_> {
         // the two would disagree about is a caret neither of them puts on
         // the screen.
         let folding = !buffer.folds().is_empty();
-        let before = text_offset(text.line_count(), self.changes.is_some(), folding);
+        let before = text_offset(text.line_count(), marking, folding);
         let gutter = gutter_width(text.line_count()).min(area.width - margin);
         let folds = if folding {
             FOLD_WIDTH.min(area.width - margin - gutter)
         } else {
             0
         };
-        let map = if self.changes.is_some() {
+        let map = if marking {
             CHANGE_MAP_WIDTH.min(area.width - margin - gutter - folds)
         } else {
             0
