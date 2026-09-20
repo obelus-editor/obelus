@@ -437,10 +437,16 @@ impl App {
                 // it changed the name for: the move happened once, and
                 // saying so on every row below would be saying it about
                 // commits that did not do it.
+                //
+                // An arrow rather than a word, pointing back the way the
+                // list runs -- older is downwards, and what the name was is
+                // behind this row. It is the glyph the key table uses for
+                // the left arrow key, which is a different thing in a
+                // different place and never beside this one.
                 detail: commit
                     .was
                     .as_ref()
-                    .map(|was| format!("was {}", was.display())),
+                    .map(|was| format!("\u{2190} {}", was.display())),
                 // Both on the right, where the width is taken out of the
                 // subject's before it is truncated: a subject is long and a
                 // row is narrow, so the one thing that must survive the cut
@@ -482,7 +488,7 @@ impl App {
                         detail: touched
                             .was
                             .as_ref()
-                            .map(|was| format!("was {}", was.display())),
+                            .map(|was| format!("\u{2190} {}", was.display())),
                         trailing: None,
                         changed: None,
                         value: PickerValue::CommitFile {
