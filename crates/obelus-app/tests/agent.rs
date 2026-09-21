@@ -2486,6 +2486,214 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
     });
 }
 
+/// A question that arrives while the reader is elsewhere waits for them.
+///
+/// Not dropped, which is what happened: everything about a conversation was
+/// routed to the conversation *on screen* or nowhere, so walking away
+/// mid-turn threw the rest of it out -- the words, the calls, and the
+/// question, which the agent then heard as a refusal it was never given.
+/// Nor does it drag them back: they are reading. It waits on the
+/// conversation it is about, wearing the mark the list of open documents
+/// puts on a conversation with something waiting in it, and the whole turn
+/// is there when they go.
+///
+/// Broken deliberately by routing on the screen again -- keeping only the
+/// conversation being read -- after which nothing arrives at all and the
+/// wait for the question times out.
+#[test]
+fn a_question_that_arrives_while_the_reader_is_away_waits_in_its_own_conversation() {
+    let scratch = support::Scratch::new("agent-question-away");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"0123456M\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // Asked for, and walked away from before a word of the answer has been
+    // taken in: what the agent sends next arrives while the reader is on
+    // the notes.
+    support::type_text(&mut app, "/twice");
+    support::press(&mut app, KeyCode::Enter);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    assert!(
+        app.chat().is_none(),
+        "the reader is still in the conversation"
+    );
+    pump(&mut app, &events, "the question", App::anything_waiting);
+
+    // Nothing reached across the screen to ask it.
+    assert!(
+        app.card().is_none(),
+        "the question took a screen the reader was reading"
+    );
+    // The list of what is open says where it is waiting.
+    app.open_document_picker();
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump)
+            .iter()
+            .any(|row| row.contains(obelus_icons::ui::READER)),
+        "nothing says a conversation is waiting on an answer:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+
+    // And the whole turn is there when they go: the call it is asking
+    // about, and the question under it.
+    support::press_alt(&mut app, 'a');
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(app.card().is_some(), "the question is not there:\n{dump}");
+    assert!(
+        rows(&dump)
+            .iter()
+            .any(|row| row.contains("List crates and app crate sources")),
+        "the call the question is about was dropped while they were away:\n{dump}"
+    );
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("/twice")),
+        "what the reader said was dropped while they were away:\n{dump}"
+    );
+}
+
+/// An agent that stops takes its questions with it, wherever they were.
+///
+/// One agent is behind every conversation, so when it goes every question
+/// it asked stops being one. Only the conversation on screen was cleared,
+/// which left the rest holding a card nobody was waiting for and wearing
+/// the mark that says there is something in them to answer -- a reader sent
+/// across the list of what is open to answer into nothing. And the page
+/// says what became of it, because a card that went while they were
+/// somewhere else would otherwise leave no trace of having been asked.
+///
+/// Broken deliberately twice, because it makes two claims: clearing only
+/// the conversation being read leaves one still waiting, and dropping the
+/// note leaves a question that went with no reason on the page.
+#[test]
+fn an_agent_that_stops_takes_the_questions_in_every_conversation_with_it() {
+    let scratch = support::Scratch::new("agent-question-stopped");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"0123456N\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // A question waiting in a conversation the reader has left.
+    support::type_text(&mut app, "/twice");
+    support::press(&mut app, KeyCode::Enter);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    pump(&mut app, &events, "the question", App::anything_waiting);
+
+    // And the agent goes while they are still away.
+    app.handle(Event::Agent(obelus_agent::Event::Acp(
+        obelus_agent::acp::Incoming::Gone(None),
+    )));
+    assert!(
+        !app.anything_waiting(),
+        "a conversation is still waiting on an answer nobody wants"
+    );
+
+    // What is left in it is the reason, rather than a question that went
+    // without one.
+    support::press_alt(&mut app, 'a');
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(app.card().is_none(), "the question is still there:\n{dump}");
+    assert!(
+        rows(&dump)
+            .iter()
+            .any(|row| row.contains("It stopped waiting for an answer")),
+        "the question went with no reason on the page:\n{dump}"
+    );
+}
+
+/// A question about a conversation is asked in that conversation.
+///
+/// It went to the conversation about nothing in particular whichever one it
+/// was about, because the path that shows a question was the key's own --
+/// and that path goes there, and makes one where there is none. A reader
+/// whose conversation was about a note was taken out of it and asked on a
+/// page they had never typed in: one tool call on it, "starting" under that
+/// because the page had no session of its own, and the turn they were
+/// actually having left behind in the document they came from.
+///
+/// Broken deliberately by putting `open_agent` back at the head of
+/// `show_the_question`, which empties the screen of everything the reader
+/// said and leaves the one tool call on a page that is still starting.
+#[test]
+fn a_question_about_a_notes_conversation_is_asked_in_it() {
+    let scratch = support::Scratch::new("agent-note-question");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"0123456L\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    // Into the notes and on to the one note's conversation.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    support::type_text(&mut app, "/twice");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", |app| {
+        app.card().is_some()
+    });
+
+    // The reader's own words are still above the question, which is what
+    // says it was asked where they were.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("/twice")),
+        "the question was asked on a page the reader had never been on:\n{dump}"
+    );
+    // And the conversation it is in is the one with the session: an empty
+    // one opened to hold the card would say it was starting.
+    assert_ne!(
+        app.talking(),
+        obelus_agent::Talking::Starting,
+        "the question is in a conversation with no session of its own:\n{dump}"
+    );
+}
+
 /// A conversation about nothing in particular says nothing.
 ///
 /// obelus does not put words in the reader's mouth where it has no fact of
@@ -2633,6 +2841,66 @@ fn a_note_can_be_offered_in_a_conversation_about_nothing() {
         "the card did not come up in a loose conversation:\n{dump}"
     );
     drop(answered);
+}
+
+/// A call that says nothing but its own title again says it once, and the
+/// card is what asks the question.
+///
+/// An agent may send the tool's description as both the call's title and
+/// the call's content, and claude-agent-acp does it for every command it
+/// runs. obelus drew both: the title on the row, the copy folded open
+/// under it because a call that is the question opens itself, and nothing
+/// at all on the card, on the grounds that the row above was carrying it.
+/// Three rows for one line -- and the answers, at the foot of a region
+/// with the rest of the turn and an empty half-screen above them, with no
+/// subject.
+///
+/// Broken deliberately by letting the row keep words that are its title
+/// again, which puts the line back under the row and makes three of them.
+#[test]
+fn a_call_that_only_repeats_its_title_says_it_once_and_the_card_asks_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/twice");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", |app| {
+        app.card().is_some()
+    });
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    let echoed = "List crates and app crate sources";
+    // Twice: the row it is asking about, and the card asking it. Not a
+    // third time under the row, which is where the copy used to go.
+    assert_eq!(
+        screen.iter().filter(|row| row.contains(echoed)).count(),
+        2,
+        "the one line is not on screen exactly twice:\n{dump}"
+    );
+    let asking = screen
+        .iter()
+        .rposition(|row| row.contains(echoed))
+        .expect("nothing on screen says what is being asked");
+    let answers = screen
+        .iter()
+        .position(|row| row.contains("Yes"))
+        .unwrap_or_else(|| panic!("no answers on screen:\n{dump}"));
+    assert!(
+        asking < answers,
+        "the question is not above the answers:\n{dump}"
+    );
+    // And the row is one row: nothing folds it, because there is nothing
+    // behind it to fold away.
+    let row = screen
+        .iter()
+        .position(|row| row.contains(echoed))
+        .expect("the call is not in the transcript");
+    assert!(
+        !screen[row + 1].contains(echoed),
+        "the row still says it under itself:\n{dump}"
+    );
 }
 
 /// A plan an agent asks leave to act on is read in the transcript.

@@ -338,6 +338,23 @@ pub enum Focus {
     Settings(usize),
 }
 
+/// The words of a call that are not its own title over again.
+///
+/// An agent may send the line it put in the title as the call's content --
+/// claude-agent-acp does it for every command it runs, because the tool's
+/// description is what it sends as both -- and a copy is not a second thing
+/// to read.
+///
+/// Two places have to know it and they have to agree. The row folds open on
+/// what a call carries, and a call whose content is its heading again was
+/// three rows saying one line. The card a question is asked on says nothing
+/// while the row is carrying the question, and "carrying" cannot mean
+/// "carrying anything" or a row with nothing on it but its title leaves the
+/// card with no subject. One rule, asked here, so the two cannot drift.
+pub fn its_own_words<'a>(title: &'a str, words: &'a [String]) -> impl Iterator<Item = &'a String> {
+    words.iter().filter(move |said| said.trim() != title.trim())
+}
+
 /// A conversation.
 ///
 /// `Default` is `new` rather than derived, because the two differed and the
@@ -893,14 +910,22 @@ impl Chat {
         //
         // The words first: they are the account of the change, and an
         // account after the thing it accounts for is a footnote.
-        if said.speaker == Speaker::Tool && (!said.words.is_empty() || !said.change.is_empty()) {
+        // What the call carries that is not its own title over again --
+        // dropped here rather than where the rows are drawn, because what
+        // is wrong is the row: a fold is a promise of something behind it,
+        // and behind a copy of the heading there is nothing. Nothing is
+        // assumed about what an agent means by it: a call whose words say
+        // something of their own keeps every row it had, and one that
+        // starts saying something gets them back in the update that does.
+        let carried: Vec<&String> = its_own_words(&said.text, &said.words).collect();
+        if said.speaker == Speaker::Tool && (!carried.is_empty() || !said.change.is_empty()) {
             let mut rows = vec![Row {
                 changed: (!said.change.is_empty())
                     .then(|| obelus_git::change::counted(&said.change)),
                 ..self.opening(said, said.text.clone(), depth, Some(at))
             }];
             if self.is_open(at) {
-                rows.extend(said.words.iter().flat_map(|words| {
+                rows.extend(carried.iter().flat_map(|words| {
                     obelus_text::wrapped(words, inside)
                         .into_iter()
                         .map(|text| Self::under(said, text, depth + 1))

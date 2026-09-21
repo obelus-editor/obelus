@@ -400,6 +400,23 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"p1","title":"Approve Plan","kind":"switch_mode","status":"pending","content":[{"type":"content","content":{"type":"text","text":"%s"}}]}}}\n' "$session" "$plan"
             printf '{"jsonrpc":"2.0","id":908,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"p1","title":"Approve Plan","kind":"switch_mode","content":[{"type":"content","content":{"type":"text","text":"%s"}}]},"options":[{"optionId":"go","name":"Yes, go ahead","kind":"allow_once"},{"optionId":"keep","name":"No, keep planning","kind":"reject_once"}]}}\n' "$session" "$plan"
             ;;
+        *'"method":"session/prompt"'*'/twice'*)
+            # A command put to the reader by an agent that sends the tool's
+            # description as the call's title *and* as the call's content.
+            # claude-agent-acp does this for every command it runs, so it is
+            # what a reader of obelus actually meets: the one line arrives
+            # twice, and the thing being allowed -- the command -- arrives in
+            # neither, because it is in `rawInput`, the agent's own arguments
+            # in the agent's own shape.
+            set_turn "$session" "$(id_of "$line")"
+            echoed="List crates and app crate sources"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"e1","title":"%s","kind":"execute","status":"pending","content":[{"type":"content","content":{"type":"text","text":"%s"}}],"rawInput":{"command":"ls crates","description":"%s"}}}}\n' "$session" "$echoed" "$echoed" "$echoed"
+            printf '{"jsonrpc":"2.0","id":909,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"e1","title":"%s","kind":"execute","content":[{"type":"content","content":{"type":"text","text":"%s"}}],"rawInput":{"command":"ls crates","description":"%s"}},"options":[{"optionId":"yes","name":"Yes","kind":"allow_once"},{"optionId":"no","name":"No","kind":"reject_once"}]}}\n' "$session" "$echoed" "$echoed" "$echoed"
+            ;;
+        *'"id":909'*)
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call_update","toolCallId":"e1","status":"completed"}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"id":908'*)
             # What became of the asking, on the same call: it says so in
             # words too, and both belong to that one row.

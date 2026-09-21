@@ -20,6 +20,22 @@ use obelus_component::{
 use super::*;
 use crate::conversation::{Asking, Topic};
 
+/// Which conversation a message from the agent is for.
+///
+/// Its own type rather than an `Option<DocumentId>` because the two cases
+/// are not "one or none": a message about a session belongs to the document
+/// that opened it and nowhere else, and a message the protocol puts no
+/// session on belongs to whoever the reader is with. An `Option` would have
+/// read the second as "no conversation".
+#[derive(Clone, Copy, Debug)]
+enum Whose {
+    /// The conversation that opened the session it names.
+    One(DocumentId),
+    /// Whichever one the reader is in, for the two the protocol names no
+    /// session on: an elicitation, and somewhere to go.
+    Whoever,
+}
+
 impl App {
     /// Goes to the conversation, opening one if there is none.
     ///
@@ -526,15 +542,35 @@ impl App {
     /// and dropping the channel is what tells the other side so. The card
     /// goes with them, because a question on screen that nobody is waiting
     /// for is a question the reader would answer into nothing.
+    ///
+    /// In every conversation rather than the one being read. One agent is
+    /// behind all of them, and both callers put that agent down -- one
+    /// because the reader said so, one because it died -- so every question
+    /// it had asked stops being a question at the same moment. Clearing
+    /// only the one on screen left the rest holding a card nobody was
+    /// waiting for, and wearing the mark the list of open documents puts on
+    /// a conversation with a question in it: a reader sent across the list
+    /// to answer something that had already stopped being asked.
+    ///
+    /// And says so where there was one, because otherwise the question
+    /// leaves nothing behind at all -- the card gone, the mark gone, and no
+    /// reason on the page for either. Which is the whole of what a reader
+    /// who was somewhere else would have to go on.
     fn forget_the_question(&mut self) {
-        if let Some(talk) = self.conversation_mut() {
+        for document in self.documents.iter_mut().flatten() {
+            let Some(talk) = Document::chat_mut(document) else {
+                continue;
+            };
+            // The card rather than the channels: it is what the reader
+            // could see, so it is what their page has to account for.
+            let asked = talk.card.is_some();
             talk.permission = None;
-        }
-        if let Some(talk) = self.conversation_mut() {
             talk.asking = None;
-        }
-        if let Some(talk) = self.conversation_mut() {
+            talk.going = None;
             talk.card = None;
+            if asked {
+                talk.chat.note("It stopped waiting for an answer");
+            }
         }
     }
 
@@ -706,6 +742,24 @@ impl App {
         self.conversation().and_then(|talk| talk.card.as_ref())
     }
 
+    /// Whether any conversation is waiting on an answer from the reader.
+    ///
+    /// Any of them, not the one being read: a question about a conversation
+    /// goes to that conversation whether or not it is on screen, so "is
+    /// there one" and "is there one here" are two questions now. This is
+    /// the first, which is what anything telling the reader there is
+    /// somewhere to go back to has to ask -- the list of open documents
+    /// answers the same thing a row at a time, by the mark it puts on a
+    /// conversation with a card in it.
+    #[must_use]
+    pub fn anything_waiting(&self) -> bool {
+        self.documents
+            .iter()
+            .flatten()
+            .filter_map(Document::chat)
+            .any(|talk| talk.card.is_some())
+    }
+
     /// Offers a key to the conversation, and says whether it took it.
     ///
     /// Two things in one, because the reader sees one: the agent's own
@@ -872,17 +926,27 @@ impl App {
     /// questions land on whichever conversation the reader is in, which is
     /// the same "one of them, for now" this file says elsewhere. That is
     /// why this is here and why no test drives it.
-    fn show_the_question(&mut self) {
-        // To the conversation, because the card is inside it: a question
-        // asked while the reader is in a file would be a card nobody can
-        // see, taking their keys and holding up an agent waiting for an
-        // answer they were never shown.
-        self.open_agent();
+    fn show_the_question(&mut self, whose: Whose) {
+        // The clearing is for the screen, so it happens only where the
+        // question is going onto it. A question waiting in a conversation
+        // the reader is not in has nothing to clear and no business
+        // closing what is in front of them.
+        if self.is_here(whose) {
+            self.make_room(Room::Region);
+        }
+        // The one case left that has nowhere to be asked: a question the
+        // protocol puts no session on, arriving while the reader is in a
+        // file. Those are for whoever is here and there is nobody here, so
+        // this is the conversation being opened -- the only thing left of
+        // what this used to do to every question that came.
+        if matches!(whose, Whose::Whoever) && self.conversation().is_none() {
+            self.open_agent();
+        }
         // And nothing of the reader's own over it. The list of the agent's
         // commands follows what is being typed in the box, and the box is
         // what the card covers: left open it would be a list over a
         // question, about words the keys are no longer going to.
-        if let Some(talk) = self.conversation_mut() {
+        if let Some(talk) = self.talk_mut(whose) {
             talk.slash = None;
             // Dropped rather than answered: a channel that goes away is
             // what the agent hears as a cancellation, which is the truth
@@ -899,7 +963,7 @@ impl App {
         fields: Vec<acp::Field>,
         answer: acp::Answer<Option<Vec<(String, acp::Reply)>>>,
     ) {
-        self.show_the_question();
+        self.show_the_question(Whose::Whoever);
         if let Some(talk) = self.conversation_mut() {
             talk.asking = Some(Asking {
                 message: message.to_string(),
@@ -919,7 +983,7 @@ impl App {
     /// rows as it takes, because a URL cut short is a URL nobody can use
     /// and this is the one thing on screen a reader may have to read out.
     fn send_the_reader(&mut self, message: &str, url: &str, id: &str, answer: acp::Answer<bool>) {
-        self.show_the_question();
+        self.show_the_question(Whose::Whoever);
         if let Some(talk) = self.conversation_mut() {
             talk.going = Some(crate::conversation::Going {
                 message: message.to_string(),
@@ -1311,20 +1375,30 @@ impl App {
         self.conversation()?.session.clone()
     }
 
-    /// Whether a message from the agent belongs to the conversation on
-    /// screen.
+    /// Which conversation a message from the agent belongs in.
     ///
-    /// The routing, in one place. Most of what arrives names the
-    /// conversation it is about, and a message that names one obelus is not
-    /// looking at must not put its words in the one it is.
+    /// The routing, in one place. What names a conversation goes in that
+    /// one -- the document that opened the session, whether or not the
+    /// reader is looking at it.
+    ///
+    /// It used to be the conversation *on screen* or nowhere, and that made
+    /// walking away from a turn a way of throwing it out: every word, every
+    /// call, every plan and every question the agent sent while the reader
+    /// was in a file or in another conversation was dropped where it
+    /// arrived, and what they came back to was a transcript with a hole in
+    /// it where the turn had been. A conversation is a document, and a
+    /// document does not stop existing when it stops being drawn.
+    ///
+    /// `None` for a session nothing open has, which is the one case with
+    /// nowhere to put anything.
     ///
     /// The two that name none are the two the protocol does not put a
     /// session on: an elicitation, and a request for a file. Those go to
     /// whoever is here, which is right while one conversation is waiting on
     /// the agent and is a guess when two are. The protocol is where that has
     /// to be fixed, so this is where it is written down.
-    fn is_this_conversation(&self, incoming: &acp::Incoming) -> bool {
-        let whose = match incoming {
+    fn whose(&self, incoming: &acp::Incoming) -> Option<Whose> {
+        let named = match incoming {
             acp::Incoming::Update { session, .. }
             | acp::Incoming::Ended { session, .. }
             | acp::Incoming::Remembered { session }
@@ -1348,7 +1422,53 @@ impl App {
             | acp::Incoming::Stop { .. }
             | acp::Incoming::Forget { .. } => None,
         };
-        whose.is_none_or(|session| self.session_now().as_ref() == Some(session))
+        let Some(session) = named else {
+            return Some(Whose::Whoever);
+        };
+        self.conversation_at(|talk| talk.session.as_ref() == Some(session))
+            .map(|at| Whose::One(DocumentId::new(at)))
+    }
+
+    /// Where the first conversation this is true of sits among the
+    /// documents.
+    ///
+    /// Which conversation asked for a session, which has none yet, which
+    /// opened the one a message names: three questions that were three
+    /// copies of the same walk with a different line in the middle.
+    fn conversation_at(
+        &self,
+        is: impl Fn(&crate::conversation::Conversation) -> bool,
+    ) -> Option<usize> {
+        self.documents
+            .iter()
+            .position(|document| document.as_ref().and_then(Document::chat).is_some_and(&is))
+    }
+
+    /// Whether what `whose` names is what the reader is looking at.
+    fn is_here(&self, whose: Whose) -> bool {
+        match whose {
+            Whose::Whoever => true,
+            Whose::One(id) => self.current == Some(id),
+        }
+    }
+
+    /// The conversation `whose` names, to change.
+    fn talk_mut(&mut self, whose: Whose) -> Option<&mut crate::conversation::Conversation> {
+        match whose {
+            Whose::Whoever => self.conversation_mut(),
+            Whose::One(id) => self.document_mut(id).and_then(Document::chat_mut),
+        }
+    }
+
+    /// Writes in the transcript of the conversation `whose` names.
+    ///
+    /// The counterpart of [`Self::in_transcript`], which writes in the one
+    /// on screen: what the agent sends belongs to the conversation it was
+    /// sent about, and that is not always the one being read.
+    fn in_talk(&mut self, whose: Whose, what: impl FnOnce(&mut obelus_component::chat::Chat)) {
+        if let Some(talk) = self.talk_mut(whose) {
+            what(&mut talk.chat);
+        }
     }
 
     /// Whether any command obelus was asked to run is still going.
@@ -1466,12 +1586,7 @@ impl App {
         // the conversation is about, because the words that told it the
         // first time went with the session.
         if let acp::Incoming::Lost { session, why } = &incoming {
-            let at = self.documents.iter().position(|document| {
-                document
-                    .as_ref()
-                    .and_then(Document::chat)
-                    .is_some_and(|talk| talk.asked_for.as_ref() == Some(session))
-            });
+            let at = self.conversation_at(|talk| talk.asked_for.as_ref() == Some(session));
             let opening = at.and_then(|at| self.opening_for(at));
             if let Some(talk) = at
                 .and_then(|at| self.documents.get_mut(at))
@@ -1498,21 +1613,9 @@ impl App {
             // apart by nothing, the second answer would go to whichever
             // happened to be first in the list.
             let asked = self
-                .documents
-                .iter()
-                .position(|document| {
-                    document
-                        .as_ref()
-                        .and_then(Document::chat)
-                        .is_some_and(|talk| talk.asked_for.as_ref() == Some(&session))
-                })
+                .conversation_at(|talk| talk.asked_for.as_ref() == Some(&session))
                 .or_else(|| {
-                    self.documents.iter().position(|document| {
-                        document
-                            .as_ref()
-                            .and_then(Document::chat)
-                            .is_some_and(|talk| talk.session.is_none() && talk.asked_for.is_none())
-                    })
+                    self.conversation_at(|talk| talk.session.is_none() && talk.asked_for.is_none())
                 });
             let mine = asked.and_then(|at| {
                 self.documents
@@ -1527,33 +1630,33 @@ impl App {
             self.remember_the_conversations();
             return;
         }
-        // And everything else goes to the conversation it names. One of
-        // them, for now -- but asking is what stops a second one's words
-        // landing in the first.
-        if !self.is_this_conversation(&incoming) {
+        // And everything else goes to the conversation it names, which is
+        // a document rather than whatever is on screen: a reader who walks
+        // off mid-turn comes back to the whole of it.
+        let Some(whose) = self.whose(&incoming) else {
             return;
-        }
+        };
         match incoming {
             acp::Incoming::Update { update, .. } => match update {
                 acp::Update::Said(text) => {
-                    self.in_transcript(|chat| chat.chunk(Speaker::Agent, &text))
+                    self.in_talk(whose, |chat| chat.chunk(Speaker::Agent, &text))
                 }
                 acp::Update::Thought(text) => {
-                    self.in_transcript(|chat| chat.chunk(Speaker::Thought, &text))
+                    self.in_talk(whose, |chat| chat.chunk(Speaker::Thought, &text))
                 }
                 // The reader's own words, as the agent has them. What this
                 // is for is a conversation taken up again after obelus was
                 // shut: the transcript is the agent's, and this is the half
                 // of it obelus cannot write itself.
-                acp::Update::Heard(text) => self.in_transcript(|chat| chat.heard(&text)),
+                acp::Update::Heard(text) => self.in_talk(whose, |chat| chat.heard(&text)),
                 acp::Update::Tool { call, status } => {
-                    self.in_transcript(|chat| chat.tool(&call, &status))
+                    self.in_talk(whose, |chat| chat.tool(&call, &status))
                 }
                 // What it means to do about this turn. Not a thing said --
                 // it never goes in the transcript -- so it is handed to the
                 // row that says what is happening now, which is where a
                 // state belongs and where one cannot be left behind.
-                acp::Update::Plan(steps) => self.in_transcript(|chat| chat.planning(steps)),
+                acp::Update::Plan(steps) => self.in_talk(whose, |chat| chat.planning(steps)),
                 // What the agent calls this conversation, which is the
                 // name it goes by in the list of open documents -- so it is
                 // written down rather than only shown.
@@ -1572,12 +1675,12 @@ impl App {
                 // every answer is noise.
                 match reason.as_str() {
                     "end_turn" => {}
-                    "cancelled" => self.in_transcript(|chat| chat.note("Stopped")),
-                    "refusal" => self.in_transcript(|chat| chat.note("It declined to answer")),
+                    "cancelled" => self.in_talk(whose, |chat| chat.note("Stopped")),
+                    "refusal" => self.in_talk(whose, |chat| chat.note("It declined to answer")),
                     "max_tokens" => {
-                        self.in_transcript(|chat| chat.note("It ran out of room to answer in"));
+                        self.in_talk(whose, |chat| chat.note("It ran out of room to answer in"));
                     }
-                    other => self.in_transcript(|chat| chat.note(other)),
+                    other => self.in_talk(whose, |chat| chat.note(other)),
                 }
             }
             acp::Incoming::Failed(what, why) => {
@@ -1594,7 +1697,7 @@ impl App {
             // that appears to have nothing in it, and starts explaining it
             // all again to something that already knows.
             acp::Incoming::Remembered { .. } => {
-                self.in_transcript(|chat| {
+                self.in_talk(whose, |chat| {
                     chat.note(
                         "Taken up where you left it; this agent cannot send back what was said",
                     );
@@ -1606,7 +1709,7 @@ impl App {
                 options,
                 answer,
                 ..
-            } => self.ask_permission(&call, reason.as_deref(), &options, answer),
+            } => self.ask_permission(whose, &call, reason.as_deref(), &options, answer),
             acp::Incoming::Ask {
                 message,
                 fields,
@@ -1686,10 +1789,10 @@ impl App {
                 // and talking to it again is what starts the next one.
                 self.forget_the_question();
                 match why {
-                    Some(why) => {
-                        self.in_transcript(|chat| chat.note(&format!("The agent stopped: {why}")))
-                    }
-                    None => self.in_transcript(|chat| chat.note("The agent stopped")),
+                    Some(why) => self.in_talk(whose, |chat| {
+                        chat.note(&format!("The agent stopped: {why}"))
+                    }),
+                    None => self.in_talk(whose, |chat| chat.note("The agent stopped")),
                 }
             }
             // Folded into the handle above, or -- for a conversation
@@ -1772,12 +1875,13 @@ impl App {
     /// takes one of its own options and nothing else.
     fn ask_permission(
         &mut self,
+        whose: Whose,
         call: &acp::Call,
         reason: Option<&str>,
         options: &[acp::Choice],
         answer: acp::Answer<Option<String>>,
     ) {
-        self.show_the_question();
+        self.show_the_question(whose);
         // The call goes in the transcript, where every call goes, waiting
         // -- which is what says the agent is asking about it. obelus used
         // to write a line of its own here ("asking to run the tests"), and
@@ -1789,9 +1893,7 @@ impl App {
         // file nor the last commit, so this is the only place they exist.
         // After the answer they stay, which is how a reader finds out later
         // what they agreed to.
-        if let Some(talk) = self.conversation_mut() {
-            talk.chat.tool(call, "pending");
-        }
+        self.in_talk(whose, |chat| chat.tool(call, "pending"));
         let choices = options
             .iter()
             .map(|choice| Choice {
@@ -1807,27 +1909,43 @@ impl App {
         // What it is actually about to do, above the answers: "allow" and
         // "refuse" are answers to a question, and the question is which
         // command on which file rather than the line the title fits in.
-        // Nothing at all where it said nothing -- what it is asking about
-        // is the row above the card, and an empty block is a rule around
-        // silence.
         //
-        // And nothing where the call said it in words either, for the same
-        // reason the line obelus used to write here was deleted: those
-        // words are on the row above now, whole and foldable and still
-        // there after the answer. A card is five rows tall, so a copy here
-        // is the first fifth of something the reader can already see all
-        // of -- and for a plan, which is what the longest of these are, the
-        // first fifth is the heading.
-        if let Some(reason) = reason
+        // Nothing where the row above is carrying the question itself, for
+        // the reason the line obelus used to write here was deleted: those
+        // words are on the row, whole and foldable and still there after
+        // the answer, and they are the reader's to scroll rather than the
+        // card's to quote. A card is five rows tall, so a copy here is the
+        // first fifth of something the reader can already see all of --
+        // and for a plan, which is what the longest of these are, the
+        // first fifth is the heading. It costs the transcript the rows it
+        // takes, too, which for a plan is the rows the last step was on.
+        //
+        // And otherwise the reason, or the call's title where there is no
+        // reason, which is the least this can say and still have asked
+        // something. Nothing at all was the rule for that case as well,
+        // on the grounds that what it is asking about is the row above the
+        // card -- but the row is at the head of the region and the card is
+        // at the foot of it, with the rest of the turn and an empty
+        // half-screen in between. What that left on screen was a Yes and a
+        // No with no subject: a reader who looked away came back to two
+        // words and nothing saying what they answered.
+        //
+        // "Already said it" is words of the call's own, not merely words:
+        // an agent may send the title back as the call's content, which is
+        // the row saying the one line twice and the card still saying
+        // nothing. The row reads it by the same rule, from the same place,
+        // because the two drifting apart is a card with no subject.
+        let said_its_own = obelus_component::chat::its_own_words(&call.title, &call.said)
+            .next()
+            .is_some();
+        let about = reason
             .filter(|reason| !reason.trim().is_empty())
-            .filter(|_| call.said.is_empty())
-        {
-            card.about(reason);
+            .unwrap_or(call.title.as_str());
+        if !said_its_own && !about.trim().is_empty() {
+            card.about(about);
         }
-        if let Some(talk) = self.conversation_mut() {
+        if let Some(talk) = self.talk_mut(whose) {
             talk.permission = Some(answer);
-        }
-        if let Some(talk) = self.conversation_mut() {
             talk.card = Some(card);
         }
     }
