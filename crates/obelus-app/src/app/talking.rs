@@ -36,6 +36,23 @@ enum Whose {
     Whoever,
 }
 
+/// What obelus has to tell an agent about the note a conversation is about.
+///
+/// Three things rather than one string, because telling it is three things
+/// at once: the block that goes in front of the reader's own words, the
+/// line the transcript shows so that a reader can see obelus spoke in
+/// their name, and what the note says now -- written down beside the
+/// conversation, so that tomorrow's obelus can tell whether the agent is
+/// out of date.
+struct Telling {
+    /// The block, first of the prompt's own.
+    words: String,
+    /// What the note says now, for writing down.
+    now: String,
+    /// What the transcript says obelus did.
+    said: &'static str,
+}
+
 impl App {
     /// Goes to the conversation, opening one if there is none.
     ///
@@ -88,7 +105,7 @@ impl App {
         });
         let at = at.unwrap_or_else(|| {
             let talk = crate::conversation::Conversation {
-                opening: self.about_the_note(note),
+                told: self.remembered_telling(note),
                 topic: wanted,
                 ..crate::conversation::Conversation::default()
             };
@@ -156,43 +173,73 @@ impl App {
         }
     }
 
-    /// What obelus tells an agent a conversation about a note is about.
+    /// What obelus has to tell an agent about the note, given what it has
+    /// been told already.
     ///
     /// The whole of what the note says rather than its first line: the first
-    /// line is what the reader called it and the rest is what they meant,
-    /// and this is the one time the agent is told any of it. Its name goes
-    /// with it, because `todo_finish` takes a name and an agent that had to
-    /// guess which of the notes it was looking at would rather not call it
-    /// at all.
+    /// line is what the reader called it and the rest is what they meant.
+    /// Its name goes with it, because `todo_finish` takes a name and an
+    /// agent that had to guess which of the notes it was looking at would
+    /// rather not call it at all.
     ///
-    /// Read from the file, like everything else that asks what a note says:
-    /// the reader may have rewritten it in their own editor since.
-    fn about_the_note(&self, note: &obelus_git::todo::NoteId) -> Option<String> {
+    /// Read from the file every time, because the note is the reader's and
+    /// they rewrite it -- in obelus, in their own editor, between two
+    /// messages. So this answers "what does this agent not know" rather
+    /// than "has it been told yet": once for a conversation that is new,
+    /// again whenever the note has changed under one that is not, and
+    /// nothing at all in between. A conversation about a note that has
+    /// since been deleted is the one case with nothing to say: there is no
+    /// note to quote, and the agent finds out the way anybody does, by
+    /// `todo_finish` answering that no note has that name.
+    fn telling(&self, note: &obelus_git::todo::NoteId, told: Option<&str>) -> Option<Telling> {
         let about = obelus_git::todo::Todo::read(&self.working_directory)
             .notes
             .into_iter()
             .find(|other| other.id == *note)?;
+        // What can change, in the note's own data and none of obelus's
+        // words: rewording the paragraph below is not the note being
+        // rewritten and must not read as it.
+        let now = match &about.at {
+            Some(at) => format!(
+                "{}\n{}:{}",
+                about.said,
+                at.path.display(),
+                at.line.get() + 1
+            ),
+            None => about.said.clone(),
+        };
+        if told == Some(now.as_str()) {
+            return None;
+        }
         let at = about.at.as_ref().map_or_else(String::new, |at| {
             format!("\nIt is about {}:{}.", at.path.display(), at.line.get() + 1)
         });
-        Some(format!(
-            "This conversation is about one of obelus's notes, which says:\n\n\
-             {}\n\n\
-             Its name is {}.{at}\n\n\
-             When its work is done, tick it off with `todo_finish` and that \
-             name. Work this turns up that belongs to it goes under it: \
-             `todo_add` with `under` set to that name. Both write the \
-             reader's file and neither asks for you, so ask them first.",
-            about.said, about.id,
-        ))
-    }
-
-    /// The same, for a conversation by where it is in the list.
-    fn opening_for(&self, at: usize) -> Option<String> {
-        let Topic::Note(note) = &self.documents.get(at)?.as_ref()?.chat()?.topic else {
-            return None;
+        let (words, said) = match told {
+            None => (
+                format!(
+                    "This conversation is about one of obelus's notes, which says:\n\n\
+                     {}\n\n\
+                     Its name is {}.{at}\n\n\
+                     When its work is done, tick it off with `todo_finish` and that \
+                     name. Work this turns up that belongs to it goes under it: \
+                     `todo_add` with `under` set to that name. Both write the \
+                     reader's file and neither asks for you, so ask them first.",
+                    about.said, about.id,
+                ),
+                "Told the agent what this conversation is about",
+            ),
+            // Its name and the tools are not said again: neither has
+            // changed, and what the agent needs is the difference.
+            Some(_) => (
+                format!(
+                    "The note this conversation is about has been rewritten. It now \
+                     says:\n\n{}\n{at}",
+                    about.said,
+                ),
+                "Told the agent the note has been rewritten",
+            ),
         };
-        self.about_the_note(&note.clone())
+        Some(Telling { words, now, said })
     }
 
     /// The conversation obelus had about this note with the agent that is
@@ -201,6 +248,13 @@ impl App {
         let agent = self.talker.as_ref()?.id();
         let kept = obelus_agent::acp::sessions::read(&self.working_directory);
         Some(kept.get(note, agent)?.session.clone())
+    }
+
+    /// What the note said when obelus last told this agent about it.
+    fn remembered_telling(&self, note: &obelus_git::todo::NoteId) -> Option<String> {
+        let agent = self.talker.as_ref()?.id();
+        let kept = obelus_agent::acp::sessions::read(&self.working_directory);
+        kept.get(note, agent)?.told.clone()
     }
 
     /// Whether each note has a conversation about it, in the order the
@@ -326,6 +380,7 @@ impl App {
                         title: talker
                             .and_then(|talker| talker.title(Some(session)))
                             .map(str::to_string),
+                        told: talk.told.clone(),
                     },
                 ))
             })
@@ -584,22 +639,34 @@ impl App {
 
     /// Sends what the reader typed.
     pub(super) fn send_to_agent(&mut self, text: &str) {
-        // What obelus has to say about this conversation, if it has not said
-        // it yet. Taken, not read: gone is what "already said" looks like,
-        // and the transcript carries a line saying obelus said it -- what
-        // obelus sends in the reader's name is the reader's to see.
-        let opening = self.conversation_mut().and_then(|talk| talk.opening.take());
+        // What this agent does not know about the note, if anything: it has
+        // never been told, or the reader has rewritten it since. Worked out
+        // here rather than kept, because the note is a file they can change
+        // between any two messages.
+        let about = match self.conversation().map(|talk| &talk.topic) {
+            Some(Topic::Note(note)) => Some(note.clone()),
+            _ => None,
+        };
+        let told = self.conversation().and_then(|talk| talk.told.clone());
+        let telling = about.and_then(|note| self.telling(&note, told.as_deref()));
         if let Some(talk) = self.conversation_mut() {
             // A new turn starts with no plan: an agent that made one last
             // turn and makes none this turn would otherwise have the old
             // one shown against the new work.
             talk.chat.plan_forgotten();
-            if opening.is_some() {
-                talk.chat
-                    .note("Told the agent what this conversation is about");
+            if let Some(telling) = &telling {
+                // Written down as told before the agent has answered,
+                // because it is the prompt that carries it and the prompt
+                // has gone. An agent that never answers has still been
+                // told.
+                talk.told = Some(telling.now.clone());
+                // What obelus sends in the reader's name is the reader's
+                // to see.
+                talk.chat.note(telling.said);
             }
             talk.chat.asked(text);
         }
+        let opening = telling.map(|telling| telling.words);
         // There is something to come back to now, which is the moment a
         // conversation becomes worth writing down against its note. The
         // other moment is the session arriving, and both are needed: a
@@ -1769,7 +1836,6 @@ impl App {
         // first time went with the session.
         if let acp::Incoming::Lost { session, why } = &incoming {
             let at = self.conversation_at(|talk| talk.asked_for.as_ref() == Some(session));
-            let opening = at.and_then(|at| self.opening_for(at));
             // And the name goes with it. The agent has said it has no
             // such conversation, which is as certain as this gets, and a
             // name left in the file is one obelus asks for again on the
@@ -1789,7 +1855,7 @@ impl App {
                 .and_then(Document::chat_mut)
             {
                 talk.asked_for = None;
-                talk.opening = opening;
+                talk.told = None;
                 talk.chat.note(&format!("Starting again, because {why}"));
             }
             if let Some(note) = note {

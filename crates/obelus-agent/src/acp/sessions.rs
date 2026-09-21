@@ -37,6 +37,24 @@ pub struct Kept {
     /// title is the document's name, so a reader coming back to a list of
     /// conversations with no names would be looking at a list of nothing.
     pub title: Option<String>,
+    /// What the note said when obelus last told the agent about it.
+    ///
+    /// Kept so that obelus can tell whether the agent is out of date. The
+    /// note is the reader's file and they rewrite it -- overnight, between
+    /// two messages -- and an agent told what it said on Monday has no way
+    /// to find out that it says something else on Tuesday: the protocol
+    /// gives a client no channel to a conversation but the next prompt, so
+    /// what is not said in one is not said at all.
+    ///
+    /// The note's own words and where it points, which are the two things
+    /// about it that obelus tells an agent. Not the paragraph obelus wraps
+    /// them in: rewording that is not the note being rewritten and must
+    /// not read as it.
+    ///
+    /// `None` for a conversation from before this was written down, which
+    /// is read as "it has been told nothing" -- one repeated telling on
+    /// the way past, rather than a silence that lasts.
+    pub told: Option<String>,
 }
 
 /// Which conversation is about which note, for one tree.
@@ -158,6 +176,7 @@ pub fn read(root: &Path) -> Remembered {
             Kept {
                 session: session.to_string(),
                 title: text("title").map(str::to_string),
+                told: text("told").map(str::to_string),
             },
         );
     }
@@ -204,6 +223,9 @@ fn to_toml(remembered: &Remembered) -> String {
         if let Some(title) = &kept.title {
             out.push_str(&format!("title = {}\n", quoted(title)));
         }
+        if let Some(told) = &kept.told {
+            out.push_str(&format!("told = {}\n", quoted(told)));
+        }
         out.push('\n');
     }
     out
@@ -244,6 +266,9 @@ mod tests {
             Kept {
                 session: "s-1".to_string(),
                 title: Some("quotes \" and \\ backslashes".to_string()),
+                // A note is allowed to be a paragraph, so this is the one
+                // field that routinely has newlines in it.
+                told: Some("what it said\n\nand the rest of it".to_string()),
             },
         );
         // The same note with a second agent, which is a second conversation:
@@ -254,6 +279,7 @@ mod tests {
             Kept {
                 session: "other".to_string(),
                 title: None,
+                told: None,
             },
         );
 
@@ -273,6 +299,18 @@ mod tests {
             remembered.get(&note("ABCDEFGH"), "claude-acp"),
             "two agents were given one conversation between them"
         );
+        // What the agent was told, through the file and back: a paragraph
+        // written as it stands would end the string on its first newline,
+        // and a note is allowed to be a paragraph.
+        let told = written
+            .and_then(|rows| {
+                rows.iter().find(|row| {
+                    row.get("agent").and_then(toml::Value::as_str) == Some("claude-acp")
+                })
+            })
+            .and_then(|row| row.get("told"))
+            .and_then(toml::Value::as_str);
+        assert_eq!(told, Some("what it said\n\nand the rest of it"));
     }
 
     /// A conversation whose note has gone is forgotten.
@@ -286,6 +324,7 @@ mod tests {
                 Kept {
                     session: name.to_lowercase(),
                     title: None,
+                    told: None,
                 },
             );
         }
@@ -311,6 +350,7 @@ mod tests {
             Kept {
                 session: "s-1".into(),
                 title: None,
+                told: None,
             },
         );
         remembered.put(
@@ -319,6 +359,7 @@ mod tests {
             Kept {
                 session: "s-2".into(),
                 title: None,
+                told: None,
             },
         );
         // A second agent's, which this one's answer says nothing about.
@@ -328,6 +369,7 @@ mod tests {
             Kept {
                 session: "x-9".into(),
                 title: None,
+                told: None,
             },
         );
 

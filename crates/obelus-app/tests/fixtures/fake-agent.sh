@@ -482,6 +482,7 @@ while IFS= read -r line; do
             esac
             case "$line" in
                 *'"text":"This conversation is about'*'"text":"/blocks'*) first=obelus ;;
+                *'"text":"The note this conversation is about has been rewritten'*'"text":"/blocks'*) first=rewritten ;;
                 *'"text":"/blocks'*) first=reader ;;
                 *) first=neither ;;
             esac

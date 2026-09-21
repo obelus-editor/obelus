@@ -2887,6 +2887,14 @@ fn a_loose_conversation_carries_no_opening() {
 /// arriving next belongs to nobody and every word the reader types is held
 /// for a session that is never coming. What told the agent about the note
 /// goes with the old session, so it is said again.
+///
+/// Which is the other half of
+/// `an_agent_is_told_what_the_note_says_only_when_it_does_not_know_it`:
+/// obelus tells an agent what it does not know, and an agent that has lost
+/// the conversation knows nothing about the note again -- the words that
+/// told it went with the session. Broken deliberately by leaving what was
+/// told standing when the session is refused, which hands the fresh
+/// conversation to an agent obelus thinks has already read the note.
 #[test]
 fn a_conversation_the_agent_has_forgotten_is_started_again() {
     let scratch = support::Scratch::new("agent-forgotten");
@@ -2897,7 +2905,10 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
         format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
     )
     .expect("the notes");
-    // Written down against a name the agent will refuse.
+    // Written down against a name the agent will refuse, and with what the
+    // note said when the agent was told about it: a conversation held
+    // yesterday is one the agent was told, which is the state the clearing
+    // below has to undo.
     let id = obelus_git::todo::NoteId::read(note).expect("a name");
     obelus_agent::acp::sessions::change(scratch.path(), std::slice::from_ref(&id), |remembered| {
         remembered.put(
@@ -2906,6 +2917,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
             obelus_agent::acp::sessions::Kept {
                 session: "s-gone".to_string(),
                 title: None,
+                told: Some("a note".to_string()),
             },
         );
     });
@@ -3668,6 +3680,10 @@ fn an_agent_that_echoes_the_prompt_does_not_say_it_twice() {
 /// up, which is the only way to reach a reopen: obelus asks for one it had
 /// before when the note it is about has a name written down beside it.
 ///
+/// What the note said when the agent was told about it goes down with the
+/// session's name, because that is what a conversation held yesterday
+/// looks like: the agent was told, and what it was told still matches.
+///
 /// The name must be one the fake agent never mints for itself -- it numbers
 /// its own `s-1`, `s-2` -- or the session it opens on the way up is taken
 /// for the one that was asked for.
@@ -3692,6 +3708,7 @@ fn remembering(
             obelus_agent::acp::sessions::Kept {
                 session: session.to_string(),
                 title: None,
+                told: Some("a note".to_string()),
             },
         );
     });
@@ -3749,6 +3766,7 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
             obelus_agent::acp::sessions::Kept {
                 session: "s-old".to_string(),
                 title: None,
+                told: None,
             },
         );
     });
@@ -3847,6 +3865,7 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
             obelus_agent::acp::sessions::Kept {
                 session: "s-old".to_string(),
                 title: None,
+                told: None,
             },
         );
     });
@@ -4477,5 +4496,131 @@ fn a_drag_held_past_the_bottom_of_a_transcript_keeps_selecting() {
         "the copy stopped at {stopped} rows while the pointer was held past the edge, \
          reaching only {carried}:\n{}",
         support::render(&mut app, WIDTH, HEIGHT)
+    );
+}
+
+/// An agent is told what the note says when it does not know it, and not
+/// otherwise.
+///
+/// One rule for three cases that used to be three rules. The paragraph
+/// obelus sends is the whole of what the note says, where it points, its
+/// name, and what to call when its work is done; it goes in front of the
+/// reader's own words, and what obelus told the agent is written down
+/// beside the session's name. So the question asked before every message
+/// is "does this agent know what the note says now", and the answer is
+/// worked out from the note's own file, which is the reader's to rewrite
+/// whenever they like.
+///
+/// A conversation taken up again is told nothing: obelus asked for it by
+/// name because the agent kept every word of it, and telling it again put
+/// a page of instructions about a note it had read in front of the first
+/// thing the reader said on coming back, every morning.
+///
+/// A note rewritten since gets the difference and nothing else -- not its
+/// name and not the tools, neither of which has changed. The reader
+/// rewrites a note because they thought better of it overnight, and the
+/// protocol gives a client no channel to a conversation but the next
+/// prompt: what is not said in one is not said at all.
+///
+/// And once. What the agent was told is written down as the prompt goes,
+/// so the message after carries nothing.
+///
+/// The fourth case is the same rule read the other way and is held up by
+/// `a_conversation_the_agent_has_forgotten_is_started_again`: a session
+/// the agent refuses has been told nothing, because the words that told it
+/// went with the session.
+///
+/// Broken deliberately two ways. Taking out the check for "what it was
+/// told is what the note says now" sends the whole paragraph with every
+/// message, to an agent that has it. And not writing down what was told as
+/// it goes tells it the note has been rewritten again and again, once per
+/// message, for one rewrite.
+#[test]
+fn an_agent_is_told_what_the_note_says_only_when_it_does_not_know_it() {
+    let (scratch, mut app, events) = remembering("agent-resume-opening", "0123456S", "s-old", &[]);
+    // The conversation the agent kept, back on the page: what it replays is
+    // proof it has the words that told it about the note.
+    pump(&mut app, &events, "the conversation", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("where we were"))
+        })
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks="))
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("blocks=1") && text.contains("first=reader"),
+        "the agent was told about the note again:\n{text}"
+    );
+    // And the reader is not told obelus spoke in their name, because it
+    // did not.
+    assert!(
+        !text.contains("Told the agent what this conversation is about"),
+        "the transcript says obelus said something it did not:\n{text}"
+    );
+
+    // Then the reader rewrites the note, which is a file of theirs and
+    // theirs to rewrite -- in obelus, in their own editor, between any two
+    // messages. Now the agent is out of date, and the next thing said
+    // carries the difference.
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"0123456S\"\nsaid = \"a note, thought better of\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    support::type_text(&mut app, "/blocks after");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("first=rewritten"))
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("blocks=2") && text.contains("first=rewritten"),
+        "the agent was not told the note had changed:\n{text}"
+    );
+    assert!(
+        text.contains("Told the agent the note has been rewritten"),
+        "nothing on the page says obelus spoke in the reader's name:\n{text}"
+    );
+
+    // Once. What it was told is written down as it goes, so the message
+    // after it carries nothing again.
+    //
+    // Counted rather than looked for: the answer to the first message says
+    // `first=reader` too, so finding one on the page says nothing at all
+    // about the third.
+    let answers = |app: &App| -> Vec<String> {
+        app.chat()
+            .expect("a conversation")
+            .rows(WIDTH)
+            .iter()
+            .map(|row| row.text())
+            .filter(|text| text.contains("blocks="))
+            .collect()
+    };
+    support::type_text(&mut app, "/blocks once more");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the third answer", |app| {
+        answers(app).len() == 3
+    });
+    let all = answers(&app);
+    assert_eq!(
+        all[2].trim(),
+        "blocks=1 first=reader",
+        "the agent was told the note had been rewritten a second time: {all:?}"
     );
 }
