@@ -67,6 +67,7 @@ impl App {
         if self.talker.is_none() {
             self.start_agent();
         }
+        self.ask_for_a_session(None);
     }
 
     /// Goes to the conversation about one note, opening one if there is
@@ -110,20 +111,37 @@ impl App {
         if self.talker.is_none() {
             self.start_agent();
         }
-        if self
+        self.ask_for_a_session(Some(note));
+    }
+
+    /// Asks the agent for the conversation the one on screen wants.
+    ///
+    /// The one place a session is asked for, and nothing is opened behind
+    /// a conversation's back. The connection used to mint one the moment
+    /// it came up -- and a view that opens on a note already naming a
+    /// conversation then had a second, empty one to go with it, which the
+    /// agent does not keep and obelus could still write down against the
+    /// note in place of the one the reader had been talking in.
+    ///
+    /// The one it had before where obelus wrote the name down: the agent
+    /// kept every word of it, which is why obelus keeps none. A new one
+    /// otherwise -- one agent, several conversations, because an agent
+    /// holds a project's worth of context and a second process would pay
+    /// for all of it twice.
+    ///
+    /// Nothing at all where this conversation has a session, or has asked
+    /// for one and not been answered yet. The key that opens a
+    /// conversation is a key a reader can press twice, and an agent takes
+    /// a moment to answer: without the second half of that, the second
+    /// press opened a conversation the first press was already opening.
+    fn ask_for_a_session(&mut self, note: Option<&obelus_git::todo::NoteId>) {
+        let settled = self
             .conversation()
-            .is_some_and(|talk| talk.session.is_some())
-        {
+            .is_some_and(|talk| talk.session.is_some() || talk.asked_for.is_some());
+        if settled {
             return;
         }
-        // The process is up and this conversation has no session of its own
-        // yet: one agent, several conversations, because an agent holds a
-        // project's worth of context and a second process would pay for all
-        // of it twice.
-        //
-        // Or one it had before, if obelus wrote the name down: the agent
-        // kept every word of it, which is why obelus keeps none.
-        let had = self.remembered_session(note);
+        let had = note.and_then(|note| self.remembered_session(note));
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
@@ -236,6 +254,28 @@ impl App {
             .collect()
     }
 
+    /// Forgets the conversation written down against one note.
+    ///
+    /// For the one case where obelus knows there is nothing to come back
+    /// to: the agent was asked for it by name and said it has no such
+    /// thing. Left in the file, that name is asked for again on the next
+    /// start and refused again, and the note goes on saying there is a
+    /// conversation in it.
+    fn forget_the_conversation(&self, note: &obelus_git::todo::NoteId) {
+        let Some(agent) = self.talker.as_ref().map(|talker| talker.id().to_string()) else {
+            return;
+        };
+        let notes: Vec<obelus_git::todo::NoteId> =
+            obelus_git::todo::Todo::read(&self.working_directory)
+                .notes
+                .into_iter()
+                .map(|note| note.id)
+                .collect();
+        obelus_agent::acp::sessions::change(&self.working_directory, &notes, |kept| {
+            kept.forget(note, &agent);
+        });
+    }
+
     /// Writes down which conversation is about which note.
     ///
     /// Every time one is named or renamed, because the moment obelus does
@@ -257,6 +297,28 @@ impl App {
                     return None;
                 };
                 let session = talk.session.as_ref()?;
+                // Nothing said in it yet, so there is nothing to come
+                // back to -- and writing it down would take the place of
+                // a conversation there *is* something to come back to.
+                //
+                // An agent does not keep a session nobody said anything
+                // in: claude-agent-acp writes a conversation's file on
+                // the first turn, so a name minted and never used is a
+                // name that will not be there tomorrow. Written down the
+                // moment it was minted, it displaced the note's real
+                // conversation, and the next morning obelus asked for it,
+                // was told there is no such thing, opened another empty
+                // one and wrote *that* down. The reader's conversation
+                // went in the first round of it and every round after was
+                // the same round again.
+                //
+                // Anything *said*, rather than anything on the page:
+                // obelus writes in a conversation of its own accord, and
+                // a page holding nothing but "starting again, because"
+                // is a page with nothing to come back to.
+                if !talk.chat.anything_said() {
+                    return None;
+                }
                 Some((
                     note.clone(),
                     obelus_agent::acp::sessions::Kept {
@@ -538,6 +600,13 @@ impl App {
             }
             talk.chat.asked(text);
         }
+        // There is something to come back to now, which is the moment a
+        // conversation becomes worth writing down against its note. The
+        // other moment is the session arriving, and both are needed: a
+        // session is handed out before a word is said, and a word can be
+        // said before the session arrives -- whichever happens second is
+        // the one that finds a conversation with both.
+        self.remember_the_conversations();
         // An agent that has stopped is started again by talking to it,
         // which is what the view tells the reader to do. The handle of the
         // one that ended is dropped first: it is still a handle, so a
@@ -550,6 +619,21 @@ impl App {
         {
             self.stop_agent();
             self.start_agent();
+            // The session went with the process that held it, so this
+            // conversation asks for its own again -- the one written down
+            // against its note where there is one, which is how a
+            // conversation survives the agent dying under it. Left as it
+            // was, it names a conversation the new process never heard
+            // of; and nothing opens one behind its back any more.
+            let note = match self.conversation().map(|talk| &talk.topic) {
+                Some(Topic::Note(note)) => Some(note.clone()),
+                _ => None,
+            };
+            if let Some(talk) = self.conversation_mut() {
+                talk.session = None;
+                talk.asked_for = None;
+            }
+            self.ask_for_a_session(note.as_ref());
         }
         let session = self.session_now();
         let Some(talker) = self.talker.as_mut() else {
@@ -1666,6 +1750,19 @@ impl App {
         if let acp::Incoming::Lost { session, why } = &incoming {
             let at = self.conversation_at(|talk| talk.asked_for.as_ref() == Some(session));
             let opening = at.and_then(|at| self.opening_for(at));
+            // And the name goes with it. The agent has said it has no
+            // such conversation, which is as certain as this gets, and a
+            // name left in the file is one obelus asks for again on the
+            // next start -- the same refusal, the same fresh start, every
+            // morning, with the note's row saying all the while that
+            // there is something to come back to.
+            let note = match at.and_then(|at| self.documents.get(at)?.as_ref()?.chat()) {
+                Some(talk) => match &talk.topic {
+                    Topic::Note(note) => Some(note.clone()),
+                    Topic::Loose => None,
+                },
+                None => None,
+            };
             if let Some(talk) = at
                 .and_then(|at| self.documents.get_mut(at))
                 .and_then(Option::as_mut)
@@ -1674,6 +1771,9 @@ impl App {
                 talk.asked_for = None;
                 talk.opening = opening;
                 talk.chat.note(&format!("Starting again, because {why}"));
+            }
+            if let Some(note) = note {
+                self.forget_the_conversation(&note);
             }
             return;
         }

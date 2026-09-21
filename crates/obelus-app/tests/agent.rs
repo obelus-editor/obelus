@@ -3894,6 +3894,80 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
     );
 }
 
+/// A conversation the agent has not got is forgotten, and an empty one is
+/// never written down in its place.
+///
+/// This pair is what destroyed a reader's conversation, one morning at a
+/// time. An agent does not keep a session nobody said anything in --
+/// claude-agent-acp writes a conversation's file on its first turn -- so a
+/// name minted and written down before the reader spoke was a name that
+/// would not be there tomorrow. And it was written down over the note's
+/// real conversation. The next start asked for it, was told there is no
+/// such thing, opened another empty one and wrote *that* down. The
+/// conversation went in the first round and every round after was the same
+/// round again, each one looking like a fresh start rather than a loss.
+///
+/// So a name the agent has denied is taken out of the file, and a
+/// conversation with nothing in it is not put in: there is nothing to come
+/// back to, and saying there is takes the place of something there might
+/// have been.
+///
+/// Broken deliberately twice. Leaving the dead name in the file keeps it
+/// there to be asked for again. And writing a conversation down whatever
+/// is in it puts the fresh empty one in its place, which is the same file
+/// with a different name in it -- either way the note ends up pointing at
+/// a conversation that is not there.
+#[test]
+fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
+    let (scratch, mut app, events) = remembering("agent-forgets-dead", "0123456S", "s-gone", &[]);
+    pump(
+        &mut app,
+        &events,
+        "what became of the old conversation",
+        settled,
+    );
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Starting again"),
+        "the agent was not asked for the conversation that is gone:\n{text}"
+    );
+
+    // With the conversation it was started again with in hand, so that
+    // "nothing is written down" is a fact about what obelus decided and
+    // not about what has arrived yet.
+    pump(&mut app, &events, "the conversation it started", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // Nothing is written down against the note: the name that was there
+    // is gone, because the agent said it has no such thing, and the one
+    // opened in its place has nothing said in it to come back to.
+    let id = obelus_git::todo::NoteId::read("0123456S").expect("a name");
+    let kept = obelus_agent::acp::sessions::read(scratch.path());
+    assert_eq!(
+        kept.get(&id, "fake").map(|kept| kept.session.clone()),
+        None,
+        "the note still points at a conversation nobody can reach"
+    );
+
+    // And once there is something in it, it is written down -- that is
+    // what the file is for.
+    support::type_text(&mut app, "/echo hello");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("hello"))
+        })
+    });
+    let kept = obelus_agent::acp::sessions::read(scratch.path());
+    assert!(
+        kept.get(&id, "fake").is_some(),
+        "a conversation with something in it was not written down"
+    );
+}
+
 /// An agent that keeps a conversation but cannot replay it is asked for the
 /// one it can do, and the reader is told why the page is empty.
 ///

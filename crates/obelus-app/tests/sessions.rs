@@ -30,7 +30,7 @@ const PATIENCE: Duration = Duration::from_secs(10);
 /// The fake agent, running, with the channel its words arrive on.
 fn talking() -> (Talk, Receiver<Event>) {
     let (sender, events) = channel();
-    let talk = Talk::start(
+    let mut talk = Talk::start(
         "fake",
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
@@ -41,6 +41,10 @@ fn talking() -> (Talk, Receiver<Event>) {
         None,
         sender,
     );
+    // Asked for, because nothing is opened on the way up any more: a
+    // conversation minted before anybody said what they wanted is one the
+    // agent does not keep and nobody owns.
+    talk.open();
     (talk, events)
 }
 
@@ -82,6 +86,68 @@ fn opened(talk: &mut Talk, events: &Receiver<Event>) -> SessionId {
         false
     });
     which.expect("the conversation that opened")
+}
+
+/// Nothing is opened that nobody asked for.
+///
+/// One was, the moment the connection came up, on the grounds that the
+/// reader opening the view is a request to talk. A view can open on a note
+/// that already names a conversation now, and then that first session is
+/// one nobody wants: empty, so the agent never writes it down and it is
+/// gone by the next start -- and obelus wrote it against the note in place
+/// of the conversation the reader had actually been having, asked for it
+/// the next morning, was told there was no such thing, and opened another
+/// empty one to replace it. The reader's conversation went in the first
+/// round and every round after was the same round again.
+///
+/// Broken deliberately by opening one on the way up again: a conversation
+/// arrives before anything has asked for one, and the first half of this
+/// goes red.
+#[test]
+fn a_conversation_is_opened_only_when_one_is_asked_for() {
+    let (sender, events) = channel();
+    let mut talk = Talk::start(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        Path::new("."),
+        None,
+        sender,
+    );
+    // Up and talking -- the handshake has landed, which is what the name
+    // says -- and still nothing open. Its own loop, because the handshake
+    // is folded into the handle rather than handed on, so there is no
+    // message to wait for: what is waited for is the handle knowing its name.
+    let deadline = Instant::now() + PATIENCE;
+    let mut shaken = false;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        assert!(!left.is_zero(), "gave up waiting for the agent");
+        // Once the handshake has landed, a moment longer: an agent that
+        // opens one on the way up sends it in the same breath, and a loop
+        // that stopped at the handshake would be waiting for a message
+        // that had not been sent yet and calling that proof.
+        let wait = match shaken {
+            true => Duration::from_millis(500),
+            false => left,
+        };
+        let Ok(Event::Agent(obelus_agent::Event::Acp(incoming))) = events.recv_timeout(wait) else {
+            if shaken {
+                break;
+            }
+            continue;
+        };
+        assert!(
+            !matches!(incoming, Incoming::Started { .. }),
+            "a conversation was opened before anything asked for one"
+        );
+        talk.on(incoming);
+        shaken |= talk.info().is_some();
+    }
+
+    // And one when one is asked for.
+    talk.open();
+    let _ = opened(&mut talk, &events);
 }
 
 /// One process, two conversations, and each is told apart from the other.

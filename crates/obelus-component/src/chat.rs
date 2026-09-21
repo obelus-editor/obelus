@@ -532,6 +532,18 @@ impl Chat {
         self.said.is_empty()
     }
 
+    /// Whether anybody but obelus has said anything in it.
+    ///
+    /// Which is not "is it empty": obelus writes in a conversation of its
+    /// own accord -- why the agent stopped, why the old one could not be
+    /// taken up -- and a page holding nothing but that is a page with
+    /// nothing to come back to. The difference matters where something is
+    /// deciding whether this conversation is worth keeping a name for.
+    #[must_use]
+    pub fn anything_said(&self) -> bool {
+        self.said.iter().any(|said| said.speaker != Speaker::Note)
+    }
+
     /// Puts pasted text in the box, wherever the caret is.
     ///
     /// Into the box and nowhere else: a transcript is what was said, and the

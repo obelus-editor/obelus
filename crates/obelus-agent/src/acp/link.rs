@@ -1371,10 +1371,16 @@ async fn talk(
                     std::sync::Arc<std::sync::atomic::AtomicBool>,
                 > = std::collections::HashMap::new();
 
-                // The first one, opened without being asked for: the reader
-                // opened the view, which is a request to talk.
-                open_session(&connection, &root, offered.as_ref(), &events, &mut stopped).await?;
-
+                // Nothing is opened here. One was, on the grounds that the
+                // reader opening the view is a request to talk -- which
+                // was true while opening the view was the only way to get
+                // a conversation. A view can open on a note that already
+                // names one now, and then the session minted on the way up
+                // is a conversation nobody asked for: empty, so the agent
+                // never keeps it, and yet a name obelus could write down
+                // against the note in place of the one the reader had been
+                // talking in. Whoever opens a conversation says what it
+                // wants, and waits the one round trip that costs.
                 while let Some(ask) = asks.next().await {
                     match ask {
                         Ask::Open => {
