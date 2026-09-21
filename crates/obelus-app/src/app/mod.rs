@@ -2065,6 +2065,7 @@ impl App {
             .conversation()
             .and_then(|talk| obelus_ui::chat::ChatView::place_at(area, &talk.chat, carded, x, y))
         else {
+            self.pointer_in_transcript(kind, x, y);
             return;
         };
         let clicks = match kind {
@@ -2072,12 +2073,16 @@ impl App {
             _ => 0,
         };
         let width = obelus_ui::chat::writing_width(area);
+        let mut held = false;
         self.in_transcript(|chat| {
             let writing = chat.writing_mut();
             match kind {
                 Pointer::Moved | Pointer::Released => {}
                 Pointer::Dragged => writing.place_at_cell(at.0, at.1, width, true),
                 Pointer::Pressed => {
+                    // One selection between the two halves, and this is
+                    // the other half taking hold.
+                    held = true;
                     writing.place_at_cell(at.0, at.1, width, false);
                     match clicks {
                         2 => writing.hold_word(width),
@@ -2087,6 +2092,54 @@ impl App {
                 }
             }
         });
+        if held {
+            self.in_transcript(obelus_component::chat::Chat::let_go);
+        }
+    }
+
+    /// What the pointer did to what has been said.
+    ///
+    /// Which is the half of a conversation with no caret in it: there is
+    /// nothing to type there, and the only thing a pointer does is take
+    /// hold of some of it.
+    ///
+    /// One selection between the two halves, so taking hold here lets the
+    /// box go. A reader dragging across an answer means that answer, and a
+    /// second selection still lit in the box would leave `ctrl+c` with two
+    /// things to copy and no way to say which.
+    fn pointer_in_transcript(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
+        use crate::event::Pointer;
+
+        let area = self.editor_area;
+        let spot = self.conversation().and_then(|talk| {
+            obelus_ui::chat::ChatView::place_in_transcript(
+                area,
+                &talk.chat,
+                talk.card.as_ref(),
+                x,
+                y,
+            )
+        });
+        let Some(talk) = self.conversation_mut() else {
+            return;
+        };
+        match kind {
+            Pointer::Moved | Pointer::Released => {}
+            Pointer::Pressed => {
+                talk.chat.writing_mut().let_go();
+                match spot {
+                    Some(spot) => talk.chat.hold_from(spot),
+                    // A press on nothing lets go, the way a press on the
+                    // page does everywhere else.
+                    None => talk.chat.let_go(),
+                }
+            }
+            Pointer::Dragged => {
+                if let Some(spot) = spot {
+                    talk.chat.hold_to(spot);
+                }
+            }
+        }
     }
 
     /// Puts the caret of whichever box is on the status row.

@@ -383,6 +383,69 @@ impl<'a> ChatView<'a> {
         })
     }
 
+    /// Where in the transcript a point on the screen is, if it is in one
+    /// at all.
+    ///
+    /// A place in what was said rather than the row and column it was
+    /// pointed at with, because that is what a selection keeps -- and this
+    /// is the only piece of obelus that knows both, the rows having just
+    /// been laid out at the width the screen has.
+    ///
+    /// A point in a row the reading drew rather than read -- a blank, the
+    /// heading over a folded run, the row that says what is happening now
+    /// -- is the place just after the last word above it. A drag has to go
+    /// somewhere while it crosses one, and the words either side of it are
+    /// what the reader is dragging between.
+    #[must_use]
+    pub fn place_in_transcript(
+        area: Rect,
+        chat: &Chat,
+        card: Option<&Card>,
+        x: u16,
+        y: u16,
+    ) -> Option<obelus_component::chat::Spot> {
+        use obelus_component::chat::Spot;
+
+        let band = bands(area, chat, card).transcript;
+        if y < band.y || y >= band.bottom() || x < area.x || x >= area.right() {
+            return None;
+        }
+        let rows = chat.rows(reading_width(area));
+        let at = chat.top() + usize::from(y - band.y);
+        let row = rows.get(at)?;
+        let (said, source) = row.from?;
+
+        let mut column = area.x + MARGIN + INDENT + u16::from(row.depth) * DEEPER;
+        let mut after: Option<Spot> = None;
+        for span in &row.spans {
+            let bytes = span.from.clone();
+            for (offset, character) in span.text.char_indices() {
+                let wide = u16::try_from(text_width(&character.to_string()))
+                    .unwrap_or(1)
+                    .max(1);
+                match bytes.as_ref() {
+                    Some(bytes) => {
+                        let at = bytes.start + offset;
+                        if x < column + wide {
+                            return Some(Spot { said, source, at });
+                        }
+                        after = Some(Spot {
+                            said,
+                            source,
+                            at: at + character.len_utf8(),
+                        });
+                    }
+                    // A mark the reading drew. Pointing at one is pointing
+                    // between the words around it.
+                    None if x < column + wide => return after,
+                    None => {}
+                }
+                column += wide;
+            }
+        }
+        after
+    }
+
     /// Where the terminal should put its caret: in the box, where the
     /// writing is.
     #[must_use]
@@ -678,9 +741,12 @@ impl ChatView<'_> {
                 words,
                 y,
                 &row.spans,
-                style,
-                self.theme,
-                area.right(),
+                &crate::reading::Drawn {
+                    base: style,
+                    theme: self.theme,
+                    stop: area.right(),
+                    held: row.held.as_ref(),
+                },
             );
             // Where it said it was working, after the title. The path is
             // its own affordance: obelus opens files, so a row that names

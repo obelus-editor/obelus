@@ -73,11 +73,36 @@ pub fn draw(
             area.x,
             y,
             &row.spans,
-            Style::new().fg(theme.foreground).bg(ground),
-            theme,
-            area.x + width,
+            &Drawn {
+                base: Style::new().fg(theme.foreground).bg(ground),
+                theme,
+                stop: area.x + width,
+                // A reading on its own page is not held: what holds
+                // anything is a conversation, and this draws a file's
+                // preview and a server's answer as well.
+                held: None,
+            },
         );
     }
+}
+
+/// How a laid-out row's runs are to be drawn.
+///
+/// Together because they are one answer: what a run with no opinion of its
+/// own looks like, what the colours are, where the room stops, and which of
+/// it the reader has hold of.
+#[derive(Clone, Copy)]
+pub struct Drawn<'a> {
+    /// The style a run the reading had no opinion about keeps, which
+    /// carries the ground and the colour of whoever is speaking.
+    pub base: Style,
+    /// The colours the inks are drawn in.
+    pub theme: &'a Theme,
+    /// The column to stop at, so a row inside a list does not draw over
+    /// whatever the list is on top of.
+    pub stop: u16,
+    /// Which of the row's characters are held, if any are.
+    pub held: Option<&'a std::ops::Range<usize>>,
 }
 
 /// Writes a laid-out row's runs, and says the column they ended in.
@@ -98,18 +123,32 @@ pub fn write_spans(
     x: u16,
     y: u16,
     spans: &[obelus_reading::Span],
-    base: Style,
-    theme: &Theme,
-    stop: u16,
+    drawn: &Drawn<'_>,
 ) -> u16 {
+    let Drawn {
+        base,
+        theme,
+        stop,
+        held,
+    } = *drawn;
     let mut column = x;
+    let mut at = 0usize;
     for span in spans {
         let style = style_of(span.ink, span.bold, span.italic, theme, base);
         for character in span.text.chars() {
             if column >= stop {
                 return column;
             }
+            // What the reader has hold of, in the colour every list in
+            // obelus marks a run of itself with: a ground under whatever
+            // colour the characters already carry, which is why the ink
+            // above is worked out first and only the ground is replaced.
+            let style = match held.is_some_and(|held| held.contains(&at)) {
+                true => style.bg(theme.selection_background),
+                false => style,
+            };
             column = column.saturating_add(put(cells, column, y, character, style));
+            at += 1;
         }
     }
     column

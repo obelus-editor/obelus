@@ -283,7 +283,8 @@ impl App {
             self.copied(&text, what);
             return;
         }
-        if let Some((text, what)) = self.chat().map(obelus_component::chat::Chat::copied) {
+        let width = obelus_ui::chat::reading_width(self.editor_area);
+        if let Some((text, what)) = self.chat().map(|chat| chat.copied(width)) {
             self.copied(&text, what);
             return;
         }

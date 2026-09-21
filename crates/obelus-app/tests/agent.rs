@@ -3968,6 +3968,63 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
     );
 }
 
+/// The pointer takes hold of what was said, and a copy takes what is held.
+///
+/// A conversation is the half of obelus a reader cannot type into, and
+/// until this it was the half they could not take a copy out of either:
+/// the pointer served the box alone, and everything the agent said was
+/// behind an obelus that had taken the terminal's own selection away.
+///
+/// What comes out is what is on the screen. The reader dragged across
+/// rows, and rows are what a width made of what was said -- so the copy is
+/// read back off them, marks and blank lines and all.
+///
+/// Broken deliberately by handing the press to the box's own mapping,
+/// which answers for nothing outside it and so takes hold of nothing; or
+/// by copying out of the box first, which is empty here and copies an
+/// empty message over what the reader was pointing at.
+#[test]
+fn the_pointer_takes_hold_of_what_was_said() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH - 5)
+                .iter()
+                .any(|row| row.text().contains("heard you"))
+        })
+    });
+
+    // The row the agent's words are on, and the columns its own text
+    // occupies: the transcript draws a glyph and an indent before them.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let at = row_of(&dump, "heard you");
+    let start = support::column_of(rows(&dump)[usize::from(at)], "heard you");
+    let Ok(start) = u16::try_from(start) else {
+        panic!("the answer is off the screen:\n{dump}");
+    };
+
+    // Dragged across the first word of it.
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: start,
+        y: at,
+    });
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Dragged,
+        x: start + 5,
+        y: at,
+    });
+
+    let (text, what) = app.chat().expect("a conversation").copied(WIDTH - 5);
+    assert_eq!(what, "selection", "the copy did not take what was held");
+    assert_eq!(text, "heard", "the copy is not what was dragged across");
+}
+
 /// A transcript scrolled away from its end says how to get back, and what
 /// arrived while the reader was not looking.
 ///

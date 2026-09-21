@@ -1759,13 +1759,22 @@ impl Chat {
         }
     }
 
-    /// What a copy takes out of the box: what is held, or the whole of
-    /// what has been written.
+    /// What a copy takes out of a conversation: what is held in the
+    /// transcript, or what is held in the box, or the whole of what has
+    /// been written.
     ///
-    /// The rule the file follows with its line and the notes follow with
-    /// their note: copying nothing is not something a key can usefully do.
+    /// The transcript first, because taking hold of it is the plainest way
+    /// a reader has of saying *this* -- and because only one of the two is
+    /// ever held: taking hold of either lets the other go.
+    ///
+    /// And the box's own rule after it, which is the rule the file follows
+    /// with its line and the notes follow with their note: copying nothing
+    /// is not something a key can usefully do.
     #[must_use]
-    pub fn copied(&self) -> (String, &'static str) {
+    pub fn copied(&self, width: u16) -> (String, &'static str) {
+        if let Some(held) = self.held_text(width) {
+            return (held, "selection");
+        }
         match self.input.selected() {
             Some(held) => (held, "selection"),
             None => (self.input.text(), "message"),

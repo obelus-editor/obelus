@@ -194,6 +194,15 @@ impl Composer {
         self.laid(width).into_iter().map(|row| row.said).collect()
     }
 
+    /// Lets go of whatever is held, leaving the caret where it is.
+    ///
+    /// For the one selection rule: a reader takes hold of the transcript
+    /// or of the box, never both, so whichever is taking hold says the
+    /// other has let go.
+    pub const fn let_go(&mut self) {
+        self.writing.clear_selection();
+    }
+
     /// What the reader has hold of, if they have hold of anything.
     #[must_use]
     pub fn selected(&self) -> Option<String> {
