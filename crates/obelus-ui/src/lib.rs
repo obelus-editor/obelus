@@ -818,7 +818,7 @@ pub fn fill(cells: &mut CellBuffer, area: Rect, style: Style) {
 pub fn put(cells: &mut CellBuffer, x: u16, y: u16, character: char, style: Style) -> u16 {
     let width = u16::try_from(character.width().unwrap_or(0)).unwrap_or(0);
     if let Some(cell) = cells.cell_mut((x, y)) {
-        cell.set_char(character);
+        cell.set_char(shown(character));
         cell.set_style(style);
     }
     for extra in 1..width {
@@ -828,6 +828,35 @@ pub fn put(cells: &mut CellBuffer, x: u16, y: u16, character: char, style: Style
         }
     }
     width.max(1)
+}
+
+/// What a character looks like in a cell.
+///
+/// Itself, unless it is a control character, which is a space. A terminal
+/// cell holds something that is drawn, and a control character is an
+/// instruction rather than a glyph: written into one it is not drawn wrong,
+/// it takes the whole frame down, because what puts a frame on the screen
+/// asks every cell how wide it is and a control character has no answer.
+///
+/// This is not obelus's own text. It is whatever an agent said, whatever a
+/// tool put in its output, whatever is in a file somebody opened -- and a
+/// reader of code meets a tab in all three. None of them is a reason for
+/// obelus to stop.
+///
+/// One cell, which is what `put` already counted a control character as, so
+/// nothing that walks a row in step with it has to learn a new rule. A tab
+/// is therefore one space rather than a jump to the next stop: the place
+/// that could do better than that is where the words become rows, and it
+/// cannot be done here without the screen and every piece of arithmetic
+/// about it disagreeing.
+///
+/// What is copied is untouched, because a copy is what was said rather than
+/// what a terminal could show of it.
+const fn shown(character: char) -> char {
+    match character.is_control() {
+        true => ' ',
+        false => character,
+    }
 }
 
 /// Writes a string, returning the column after it.
@@ -1744,6 +1773,52 @@ pub(crate) fn glyphs_held() -> std::sync::MutexGuard<'static, ()> {
 #[cfg(test)]
 mod tests {
     use super::{drop_from_left, drop_from_right, tick, truncate_from_left, truncate_from_right};
+
+    /// A control character in what is drawn does not take obelus down.
+    ///
+    /// A tab in a tool call's output, a stray escape in what an agent said,
+    /// a `\r` in a file somebody opened: obelus put each of them straight
+    /// into a cell, and the frame died -- not where it was written, but
+    /// later, when what puts a frame on the screen walked the cells asking
+    /// each how wide it was. A control character has no answer to that, and
+    /// the whole of obelus went with the question.
+    ///
+    /// Which is why this draws a real frame. Every golden test in obelus
+    /// reads the cells straight out of the buffer, and the buffer was
+    /// perfectly happy: nothing between writing a cell and a terminal
+    /// receiving it ever asked.
+    ///
+    /// Broken deliberately by putting the character in the cell as it
+    /// stands, which is what it did.
+    #[test]
+    fn a_control_character_does_not_take_the_frame_down() {
+        use ratatui::{
+            Terminal, backend::TestBackend, buffer::Buffer as CellBuffer, layout::Rect,
+            style::Style, widgets::Widget,
+        };
+
+        struct Odd;
+
+        impl Widget for Odd {
+            fn render(self, _area: Rect, cells: &mut CellBuffer) {
+                let mut column = 0;
+                for character in "a\tb\u{1b}c\rd".chars() {
+                    column += super::put(cells, column, 0, character, Style::new());
+                }
+            }
+        }
+
+        let mut terminal = Terminal::new(TestBackend::new(20, 2)).expect("a terminal");
+        terminal
+            .draw(|frame| frame.render_widget(Odd, frame.area()))
+            .expect("the frame went down on a control character");
+        // And what is there is the words, with a cell each where the
+        // control characters were rather than a hole or a shunted row.
+        let drawn: String = (0..7)
+            .map(|x| terminal.backend().buffer()[(x, 0)].symbol().to_string())
+            .collect();
+        assert_eq!(drawn, "a b c d", "the words were not drawn around them");
+    }
 
     /// A box says which way it is set by being a different box.
     ///
