@@ -230,6 +230,22 @@ pub struct Row {
     /// How deep the row sits: the members of an opened run are drawn under
     /// their own heading, so that a run reads as one thing.
     pub depth: u8,
+    /// Which text of which thing said this row was laid out from.
+    ///
+    /// `None` for the rows obelus makes up rather than lays out: the blank
+    /// between two things said, the heading over a folded run, the row
+    /// that says what is happening now, a step of a plan. Those are not
+    /// anybody's words and there is nothing in them to take a copy of --
+    /// the same answer the notes give for the row that says where a note
+    /// points.
+    pub from: Option<(usize, Source)>,
+    /// Which of this row's characters the reader has hold of.
+    ///
+    /// Counted in characters of this row rather than in bytes of what was
+    /// said, because a row is what gets drawn and marked: a selection
+    /// given in the source would have to be worked out again by whoever
+    /// draws it, at the width they happen to be drawing at.
+    pub held: Option<std::ops::Range<usize>>,
 }
 
 /// Where a call says it was, which for a change is the file it changes.
@@ -366,6 +382,43 @@ pub fn its_own_words<'a>(title: &'a str, words: &'a [String]) -> impl Iterator<I
     words.iter().filter(move |said| said.trim() != title.trim())
 }
 
+/// Which of the texts of a thing said a row was laid out from.
+///
+/// A thing said is not one text. A tool call has a title, the words it
+/// carries and the lines of the change it is making, and all three are
+/// laid out into rows of the same transcript -- so a place in the
+/// transcript has to say which of them it is in before it says where.
+///
+/// The order is the order they are drawn in, which is what lets two
+/// places be compared: a point in the title comes before a point in the
+/// words, whatever the widths and whatever is folded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Source {
+    /// What it says: a message in the agent's or the reader's own words,
+    /// or a tool call's title.
+    Text,
+    /// One of the things a call carries.
+    Words(usize),
+    /// One line of a change it is making.
+    Change(usize),
+}
+
+/// A place in the transcript, as the transcript itself holds it.
+///
+/// Not a row and a column. Rows are what a width makes of what was said,
+/// and they are made again every frame: a place kept as one moves when the
+/// window is resized, and vanishes when something above it is folded away.
+/// Bytes of what was actually said do neither.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Spot {
+    /// Which of the things said.
+    pub said: usize,
+    /// Which of its texts.
+    pub source: Source,
+    /// How many bytes into that text.
+    pub at: usize,
+}
+
 /// A conversation.
 ///
 /// `Default` is `new` rather than derived, because the two differed and the
@@ -410,6 +463,14 @@ pub struct Chat {
     window: Window,
     /// Which of the two things on this screen the keys are moving.
     focus: Focus,
+    /// The two ends of what the reader has hold of, while they have hold
+    /// of anything.
+    ///
+    /// The anchor and then the other end, in the order they were made
+    /// rather than in the order they come: keeping the anchor is what lets
+    /// a drag turn back on itself and shrink, and pass through where it
+    /// started, without the two ends swapping meaning underneath it.
+    held: Option<(Spot, Spot)>,
     /// How much had been said when the reader last left the end of it.
     ///
     /// `None` while they are at the end, which is where a transcript sits
@@ -459,6 +520,38 @@ const fn reads_as_markdown(speaker: Speaker) -> bool {
     matches!(speaker, Speaker::Agent | Speaker::Thought)
 }
 
+/// Which characters of a row fall between two places in what it was laid
+/// out from.
+///
+/// The runs of a row carry the bytes they were laid out from, so this is
+/// where those bytes fall inside the window and what that is in characters
+/// of the row. The runs that carry nothing -- what the reading drew rather
+/// than read -- are counted past rather than held: whether they are inside
+/// is a question about the rows around them, and [`Chat::mark_held`] is
+/// where that is answered.
+fn row_held(row: &Row, from: usize, to: usize) -> Option<std::ops::Range<usize>> {
+    let mut held: Option<std::ops::Range<usize>> = None;
+    let mut column = 0usize;
+    for span in &row.spans {
+        let bytes = span.from.clone();
+        for (offset, character) in span.text.char_indices() {
+            if let Some(bytes) = bytes.as_ref() {
+                let byte = bytes.start + offset;
+                if byte >= from && byte < to {
+                    let next = column..column + 1;
+                    held = Some(match held {
+                        Some(had) => had.start..next.end,
+                        None => next,
+                    });
+                }
+            }
+            let _ = character;
+            column += 1;
+        }
+    }
+    held
+}
+
 /// One run of a row, in the colour the words themselves have nothing to
 /// say about.
 #[must_use]
@@ -482,9 +575,9 @@ fn plain(text: String) -> Vec<Span> {
 /// second line is indented under its first.
 fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<Vec<Span>> {
     if !markdown {
-        return obelus_text::wrapped(text, width)
+        return obelus_text::wrapped_from(text, width)
             .into_iter()
-            .map(plain)
+            .map(|(said, from)| vec![Span::from_source(said, Ink::Plain, from)])
             .collect();
     }
     obelus_reading::markdown::render(text, width)
@@ -514,6 +607,7 @@ impl Chat {
             input: Composer::new(),
             window: Window::following(),
             focus: Focus::Writing,
+            held: None,
             left_at: None,
         }
     }
@@ -903,6 +997,8 @@ impl Chat {
                 kind: String::new(),
                 place: None,
                 away: None,
+                from: None,
+                held: None,
                 // Anchored one past the end of what was said, which is the
                 // one index that can never name a [`Said`]: a plan is not a
                 // thing that was said, and giving it an index into the
@@ -921,6 +1017,8 @@ impl Chat {
                         .map(|(line, text)| Row {
                             speaker: Speaker::Step,
                             spans: plain(text),
+                            from: None,
+                            held: None,
                             first: false,
                             // On the first row of a step only, so a step
                             // that wraps is one step with one mark.
@@ -937,6 +1035,11 @@ impl Chat {
                 }));
             }
         }
+        // And what the reader has hold of, once there are rows to hold:
+        // the two ends of a selection are places in what was said, and
+        // which characters of which rows that is depends on the width
+        // these were just laid out at.
+        self.mark_held(&mut rows);
         rows
     }
 
@@ -990,6 +1093,8 @@ impl Chat {
         let mut rows = vec![Row {
             speaker: Speaker::Tool,
             spans: plain(format!("{count} {what}")),
+            from: None,
+            held: None,
             first: true,
             state: state.map(str::to_string),
             kind: said.kind.clone(),
@@ -1036,12 +1141,26 @@ impl Chat {
         // assumed about what an agent means by it: a call whose words say
         // something of their own keeps every row it had, and one that
         // starts saying something gets them back in the update that does.
-        let carried: Vec<&String> = its_own_words(&said.text, &said.words).collect();
+        // Kept with which of the words each is, because a place in the
+        // transcript has to say which text of a thing said it is in and
+        // the filtering above loses the count.
+        let carried: Vec<(usize, &String)> = said
+            .words
+            .iter()
+            .enumerate()
+            .filter(|(_, words)| words.trim() != said.text.trim())
+            .collect();
         if said.speaker == Speaker::Tool && (!carried.is_empty() || !said.change.is_empty()) {
             let mut rows = vec![Row {
                 changed: (!said.change.is_empty())
                     .then(|| obelus_git::change::counted(&said.change)),
-                ..self.opening(said, plain(said.text.clone()), depth, Some(at))
+                ..self.opening(
+                    said,
+                    plain(said.text.clone()),
+                    depth,
+                    Some(at),
+                    Some((at, Source::Text)),
+                )
             }];
             if self.is_open(at) {
                 // Markdown, unless obelus is running a command for this
@@ -1051,20 +1170,22 @@ impl Chat {
                 // between the command and its output -- one newline is a
                 // soft break -- which is a call saying it ran something
                 // that it never ran.
-                rows.extend(carried.iter().flat_map(|words| {
+                rows.extend(carried.iter().flat_map(|(which, words)| {
                     laid_out(words, inside, said.ran.is_none())
                         .into_iter()
-                        .map(|spans| Self::under(said, spans, depth + 1))
+                        .map(|spans| {
+                            Self::under(said, spans, depth + 1, Some((at, Source::Words(*which))))
+                        })
                 }));
                 // A diff's own markers, which words do not get: "it is
                 // changing this" and "it is saying this" are different
                 // news, and the markers are where a reader takes that in.
-                rows.extend(said.change.iter().flat_map(|line| {
+                rows.extend(said.change.iter().enumerate().flat_map(|(which, line)| {
                     laid_out(&line.text, inside, false)
                         .into_iter()
-                        .map(|spans| Row {
+                        .map(move |spans| Row {
                             marker: line.marker,
-                            ..Self::under(said, spans, depth + 1)
+                            ..Self::under(said, spans, depth + 1, Some((at, Source::Change(which))))
                         })
                 }));
             }
@@ -1083,17 +1204,20 @@ impl Chat {
                 .into_iter()
                 .enumerate()
                 .map(|(row, spans)| match row {
-                    0 => self.opening(said, spans, depth, None),
-                    _ => Self::under(said, spans, depth),
+                    0 => self.opening(said, spans, depth, None, Some((at, Source::Text))),
+                    _ => Self::under(said, spans, depth, Some((at, Source::Text))),
                 })
                 .collect();
         }
-        let mut rows = vec![self.opening(said, plain("thought".to_string()), depth, Some(at))];
+        // The heading is obelus's word for what is behind it, not the
+        // agent's: there is nothing in it to take a copy of.
+        let mut rows =
+            vec![self.opening(said, plain("thought".to_string()), depth, Some(at), None)];
         if self.is_open(at) {
             rows.extend(
                 laid_out(&said.text, inside, true)
                     .into_iter()
-                    .map(|spans| Self::under(said, spans, depth + 1)),
+                    .map(|spans| Self::under(said, spans, depth + 1, Some((at, Source::Text)))),
             );
         }
         rows
@@ -1104,10 +1228,19 @@ impl Chat {
     /// It carries the glyph and everything that is true of the whole of it:
     /// where it has got to, the file it names, and whether there is more
     /// behind it than it is showing.
-    fn opening(&self, said: &Said, spans: Vec<Span>, depth: u8, folds: Option<usize>) -> Row {
+    fn opening(
+        &self,
+        said: &Said,
+        spans: Vec<Span>,
+        depth: u8,
+        folds: Option<usize>,
+        from: Option<(usize, Source)>,
+    ) -> Row {
         Row {
             speaker: said.speaker,
             spans,
+            from,
+            held: None,
             first: true,
             state: said.state.clone(),
             kind: said.kind.clone(),
@@ -1131,10 +1264,12 @@ impl Chat {
     }
 
     /// A row that continues something already begun.
-    fn under(said: &Said, spans: Vec<Span>, depth: u8) -> Row {
+    fn under(said: &Said, spans: Vec<Span>, depth: u8, from: Option<(usize, Source)>) -> Row {
         Row {
             speaker: said.speaker,
             spans,
+            from,
+            held: None,
             first: false,
             state: None,
             kind: said.kind.clone(),
@@ -1153,6 +1288,9 @@ impl Chat {
         Row {
             speaker: self.said.get(at).map_or(Speaker::Note, |said| said.speaker),
             spans: Vec::new(),
+            // A blank is not a word of anybody's.
+            from: None,
+            held: None,
             first: false,
             state: None,
             kind: String::new(),
@@ -1237,6 +1375,111 @@ impl Chat {
             false => {
                 self.left_at.get_or_insert(self.said.len());
             }
+        }
+    }
+
+    /// Takes hold of a place in the transcript, letting go of anything
+    /// else.
+    pub fn hold_from(&mut self, spot: Spot) {
+        self.held = Some((spot, spot));
+    }
+
+    /// Drags the far end of it to another place.
+    ///
+    /// The anchor stays where it was put, which is what lets a drag turn
+    /// back on itself: the two ends are compared when they are used, not
+    /// stored in order.
+    pub fn hold_to(&mut self, spot: Spot) {
+        if let Some((_, other)) = self.held.as_mut() {
+            *other = spot;
+        }
+    }
+
+    /// Lets go of whatever was held.
+    pub const fn let_go(&mut self) {
+        self.held = None;
+    }
+
+    /// Whether anything in the transcript is held.
+    #[must_use]
+    pub const fn holding(&self) -> bool {
+        self.held.is_some()
+    }
+
+    /// What is held, as it is drawn.
+    ///
+    /// Which is the whole of the promise: a reader takes a copy of what is
+    /// on the screen in front of them. So it is read off the rows -- a
+    /// fold that has put something away has put it out of this too, and
+    /// the marks a reading draws between held words come with them.
+    #[must_use]
+    pub fn held_text(&self, width: u16) -> Option<String> {
+        self.held?;
+        let said: Vec<String> = self
+            .rows(width)
+            .into_iter()
+            .filter_map(|row| {
+                let held = row.held.clone()?;
+                Some(row.text().chars().take(held.end).skip(held.start).collect())
+            })
+            .collect();
+        (!said.is_empty()).then(|| said.join("\n"))
+    }
+
+    /// Marks the rows the reader has hold of.
+    ///
+    /// In two passes, because what a middle row holds cannot be worked out
+    /// from the row alone. The ends of the selection are places in what was
+    /// said; everything between them is held whole -- including the rows
+    /// that came from nothing anybody wrote, the blank between two things
+    /// said and the bullet in front of a list item. Those are on the screen
+    /// between the words that are held, so they are part of what the reader
+    /// is pointing at, and leaving them out would copy something other than
+    /// what is in front of them.
+    fn mark_held(&self, rows: &mut [Row]) {
+        let Some((anchor, other)) = self.held else {
+            return;
+        };
+        let (first, last) = match anchor <= other {
+            true => (anchor, other),
+            false => (other, anchor),
+        };
+        let mut ends: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+        for (index, row) in rows.iter().enumerate() {
+            let Some((said, source)) = row.from else {
+                continue;
+            };
+            let here = (said, source);
+            if here < (first.said, first.source) || here > (last.said, last.source) {
+                continue;
+            }
+            let from = match here == (first.said, first.source) {
+                true => first.at,
+                false => 0,
+            };
+            let to = match here == (last.said, last.source) {
+                true => last.at,
+                false => usize::MAX,
+            };
+            if let Some(held) = row_held(row, from, to) {
+                ends.push((index, held));
+            }
+        }
+        let (Some((top, first_held)), Some((foot, last_held))) = (ends.first(), ends.last()) else {
+            return;
+        };
+        let (top, foot) = (*top, *foot);
+        for (index, row) in rows.iter_mut().enumerate() {
+            if index < top || index > foot {
+                continue;
+            }
+            let whole = row.text().chars().count();
+            row.held = Some(match (index == top, index == foot) {
+                (true, true) => first_held.start..last_held.end,
+                (true, false) => first_held.start..whole,
+                (false, true) => 0..last_held.end,
+                (false, false) => 0..whole,
+            });
         }
     }
 
@@ -1718,6 +1961,76 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
+
+    /// What is held is the same words however wide the window is.
+    ///
+    /// The whole reason a selection is kept as places in what was said
+    /// rather than as rows and columns. Rows are what a width makes of a
+    /// conversation and they are made again every frame, so a selection
+    /// kept as one would slide across the words the moment the terminal
+    /// changed size -- and a reader who copied after that would get
+    /// something they never pointed at.
+    ///
+    /// Broken deliberately by marking a middle row from its own runs
+    /// rather than whole: the blank between two things said carries no
+    /// runs of anybody's, so it goes, and the copy loses the line that was
+    /// on the screen between them.
+    ///
+    /// The other half -- holding a row and a column instead of a place in
+    /// what was said -- is not a break this can perform, because there is
+    /// nowhere in the model to put one. What holds that up is the widths
+    /// above: a selection that moved with the rows would give different
+    /// words at each of them.
+    #[test]
+    fn what_is_held_is_the_same_words_at_any_width() {
+        let mut chat = Chat::new();
+        chat.chunk(
+            Speaker::Agent,
+            "the first thing it said, which is long enough that it has to wrap somewhere",
+        );
+        chat.chunk(Speaker::Reader, "and what I said back to it afterwards");
+        chat.hold_from(Spot {
+            said: 0,
+            source: Source::Text,
+            at: 4,
+        });
+        chat.hold_to(Spot {
+            said: 1,
+            source: Source::Text,
+            at: 8,
+        });
+
+        let words = |width: u16| {
+            chat.held_text(width)
+                .expect("something held")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let wide = words(70);
+        assert!(
+            wide.starts_with("first thing it said"),
+            "it did not begin where it was taken hold of: {wide:?}"
+        );
+        assert!(
+            wide.ends_with("and what"),
+            "it did not end where it was dragged to: {wide:?}"
+        );
+        // And the blank between the two comes with them: it is on the
+        // screen between words that are held, so it is part of what the
+        // reader is pointing at.
+        assert!(
+            chat.held_text(70).expect("something held").contains("\n\n"),
+            "the blank between the two things said was left out"
+        );
+        for width in [24, 40, 55] {
+            assert_eq!(
+                words(width),
+                wide,
+                "held at 70 and at {width} are not the same words"
+            );
+        }
+    }
 
     /// A later update about a tool call carries only what changed.
     ///

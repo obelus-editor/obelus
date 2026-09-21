@@ -902,23 +902,56 @@ impl Text {
 /// drawing them once, not a document keeping them.
 #[must_use]
 pub fn wrapped(prose: &str, width: u16) -> Vec<String> {
+    wrapped_from(prose, width)
+        .into_iter()
+        .map(|(row, _)| row)
+        .collect()
+}
+
+/// The same, and where in the prose each row came from.
+///
+/// For anything that has to remember a place in laid-out text across being
+/// laid out again: the rows are different at every width and the bytes are
+/// not, so a place kept as a row and a column moves when the window does
+/// and a place kept as bytes does not.
+///
+/// The range is what the row *says*, so it stops where the row stops: the
+/// spaces a break ate are nobody's, and a row that claimed them would
+/// claim characters it does not draw.
+#[must_use]
+pub fn wrapped_from(prose: &str, width: u16) -> Vec<(String, std::ops::Range<usize>)> {
     let width = width.max(1);
     let mut rows = Vec::new();
+    let mut at = 0usize;
     for paragraph in prose.split('\n') {
+        let start = at;
+        // The newline that split them is a byte of the prose too.
+        at += paragraph.len() + 1;
         if paragraph.is_empty() {
-            rows.push(String::new());
+            rows.push((String::new(), start..start));
             continue;
         }
         let text = Text::from_string(paragraph);
         let line = LineNumber::new(0);
         let characters: Vec<char> = text.line(line).chars().collect();
+        // Where each character of the paragraph begins, so a row's ends can
+        // be said in the bytes the caller holds rather than in characters.
+        let mut bytes = Vec::with_capacity(characters.len() + 1);
+        let mut byte = 0usize;
+        for character in &characters {
+            bytes.push(byte);
+            byte += character.len_utf8();
+        }
+        bytes.push(byte);
         for row in text.wrap_rows(line, width) {
             let words: String = characters
                 .iter()
                 .take(row.end.get())
                 .skip(row.first.get())
                 .collect();
-            rows.push(words.trim_end().to_string());
+            let said = words.trim_end().to_string();
+            let from = start + bytes.get(row.first.get()).copied().unwrap_or(byte);
+            rows.push((said.clone(), from..from + said.len()));
         }
     }
     rows
