@@ -40,6 +40,11 @@ fn main() -> Result<()> {
     // run is being read, or that a run happened at all.
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
+        // And which build, because the version does not move between
+        // releases and a day's work is a hundred builds of `0.1.0`. The
+        // commit, with a `+` where the tree it was built from had
+        // something uncommitted in it.
+        built = env!("OBELUS_BUILD"),
         directory = ?std::env::current_dir().ok(),
         // And the tree obelus settled on, which the arguments may have
         // moved: every path in the rest of the log is relative to it.
