@@ -71,6 +71,20 @@ pub struct Span {
     pub bold: bool,
     /// Whether they are emphasised the other way.
     pub italic: bool,
+    /// Where in the source these characters came from, in bytes.
+    ///
+    /// `None` for the runs a reading adds rather than reads: a bullet, a
+    /// quotation's bar, the border round a fenced block, the padding that
+    /// holds a table's columns open. Those are the layout's own marks and
+    /// point at nothing anybody wrote.
+    ///
+    /// What it is for is anything that has to survive being laid out
+    /// again. A reading is rows at a width, and every width gives
+    /// different rows -- so a place in a reading that is remembered as a
+    /// row and a column is a place that moves when the window does. Kept
+    /// as where it came from, it does not: the source is the same
+    /// whatever the window is doing.
+    pub from: Option<std::ops::Range<usize>>,
 }
 
 impl Span {
@@ -82,6 +96,16 @@ impl Span {
             ink,
             bold: false,
             italic: false,
+            from: None,
+        }
+    }
+
+    /// A run that came from somewhere in the source.
+    #[must_use]
+    pub fn from_source(text: impl Into<String>, ink: Ink, from: std::ops::Range<usize>) -> Self {
+        Self {
+            from: Some(from),
+            ..Self::new(text, ink)
         }
     }
 }

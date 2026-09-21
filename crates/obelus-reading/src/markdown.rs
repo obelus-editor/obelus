@@ -30,8 +30,10 @@ pub fn render(source: &str, width: u16) -> Vec<Row> {
     let mut rows = Vec::new();
     for piece in pieces(source) {
         match piece {
-            Piece::Prose(text) => rows.extend(prose(&text, width)),
-            Piece::Fenced { language, body } => rows.extend(fenced(&language, &body, width)),
+            Piece::Prose(at) => rows.extend(prose(&source[at.clone()], at.start, width)),
+            Piece::Fenced { language, body } => {
+                rows.extend(fenced(&language, &source[body.clone()], body.start, width));
+            }
         }
     }
     rows
@@ -39,14 +41,14 @@ pub fn render(source: &str, width: u16) -> Vec<Row> {
 
 /// What a markdown source is made of, for the purpose of laying it out.
 enum Piece {
-    /// Everything that is not inside a fence.
-    Prose(String),
+    /// Everything that is not inside a fence, by where it is in the source.
+    Prose(std::ops::Range<usize>),
     /// One fenced block, without its fences.
     Fenced {
         /// What the opening fence called it, which may name nothing.
         language: String,
-        /// The lines between the fences, as they were written.
-        body: String,
+        /// The lines between the fences, by where they are in the source.
+        body: std::ops::Range<usize>,
     },
 }
 
@@ -70,13 +72,20 @@ fn pieces(source: &str) -> Vec<Piece> {
         (length >= 3).then(|| (marker, length, trimmed[length..].trim().to_string()))
     };
 
+    // Where each piece is rather than a copy of it, so that a run of a row
+    // can still say which bytes of the source it was laid out from. A copy
+    // loses that on the way in, before anything has been laid out at all.
     let mut pieces = Vec::new();
-    let mut prose = String::new();
-    let mut fence: Option<(char, usize, String, String)> = None;
-    for line in source.lines() {
+    let mut prose: Option<std::ops::Range<usize>> = None;
+    let mut fence: Option<(char, usize, String, std::ops::Range<usize>)> = None;
+    let mut at = 0usize;
+    for whole in source.split_inclusive('\n') {
+        let start = at;
+        at += whole.len();
+        let line = whole.strip_suffix('\n').unwrap_or(whole);
+        let line = line.strip_suffix('\r').unwrap_or(line);
         match fence.take() {
-            Some((marker, length, language, mut body)) => {
-                // The closing fence: the same character, at least as many.
+            Some((marker, length, language, body)) => {
                 let closes = opening(line).is_some_and(|(mark, count, rest)| {
                     mark == marker && count >= length && rest.is_empty()
                 });
@@ -84,20 +93,19 @@ fn pieces(source: &str) -> Vec<Piece> {
                     pieces.push(Piece::Fenced { language, body });
                     continue;
                 }
-                body.push_str(line);
-                body.push('\n');
-                fence = Some((marker, length, language, body));
+                fence = Some((marker, length, language, body.start..at));
             }
             None => match opening(line) {
                 Some((marker, length, language)) => {
-                    if !prose.is_empty() {
-                        pieces.push(Piece::Prose(std::mem::take(&mut prose)));
+                    if let Some(prose) = prose.take() {
+                        pieces.push(Piece::Prose(prose));
                     }
-                    fence = Some((marker, length, language, String::new()));
+                    // The body begins after the fence, and is empty until
+                    // a line of it has been read.
+                    fence = Some((marker, length, language, at..at));
                 }
                 None => {
-                    prose.push_str(line);
-                    prose.push('\n');
+                    prose = Some(prose.map_or(start..at, |had| had.start..at));
                 }
             },
         }
@@ -105,7 +113,7 @@ fn pieces(source: &str) -> Vec<Piece> {
     if let Some((_, _, language, body)) = fence {
         pieces.push(Piece::Fenced { language, body });
     }
-    if !prose.is_empty() {
+    if let Some(prose) = prose {
         pieces.push(Piece::Prose(prose));
     }
     pieces
@@ -125,7 +133,7 @@ fn pieces(source: &str) -> Vec<Piece> {
 /// A box round it, the whole width of the reading: a block of code set
 /// into prose is a thing on the page rather than part of it, and where it
 /// begins and ends is worth a line rather than a guess.
-fn fenced(language: &str, body: &str, width: u16) -> Vec<Row> {
+fn fenced(language: &str, body: &str, base: usize, width: u16) -> Vec<Row> {
     // The room the code has, which is the width less the side of the box
     // at each end.
     let inside = usize::from(width).saturating_sub(2).max(1);
@@ -136,14 +144,14 @@ fn fenced(language: &str, body: &str, width: u16) -> Vec<Row> {
         let mut taken = 0usize;
         loop {
             let rest: String = line.chars().skip(taken).take(inside).collect();
+            let from = at + offset_of(line, taken);
             let spans = match kinds.as_ref() {
-                Some(kinds) => coloured(&rest, at + offset_of(line, taken), kinds),
-                None => vec![Span {
-                    text: rest.clone(),
-                    ink: Ink::Code,
-                    bold: false,
-                    italic: false,
-                }],
+                Some(kinds) => coloured(&rest, from, base, kinds),
+                None => vec![Span::from_source(
+                    rest.clone(),
+                    Ink::Code,
+                    base + from..base + from + rest.len(),
+                )],
             };
             // The cells the code does not reach, so that the far side of
             // the box lands where the corners above it are.
@@ -180,24 +188,17 @@ fn across(inside: usize, top: bool) -> Row {
 
 /// One piece of the box a block of code is drawn in.
 fn side(text: &str) -> Span {
-    Span {
-        text: text.to_string(),
-        ink: Ink::Mark,
-        bold: false,
-        italic: false,
-    }
+    Span::new(text.to_string(), Ink::Mark)
 }
 
 /// Room: the cells inside the box that the code does not reach.
 fn blank(cells: usize) -> Span {
-    Span {
-        text: " ".repeat(cells),
+    Span::new(
+        " ".repeat(cells),
         // Blank, so it is room and nothing else: an ink here would be a
         // colour for a space.
-        ink: Ink::Plain,
-        bold: false,
-        italic: false,
-    }
+        Ink::Plain,
+    )
 }
 
 /// What each byte of a block is, if its language is one obelus parses.
@@ -223,26 +224,31 @@ fn offset_of(line: &str, characters: usize) -> usize {
 }
 
 /// One row of a block, split into runs of a single kind.
-fn coloured(text: &str, at: usize, kinds: &Highlights) -> Vec<Span> {
+fn coloured(text: &str, at: usize, base: usize, kinds: &Highlights) -> Vec<Span> {
     let mut spans: Vec<Span> = Vec::new();
     for (offset, character) in text.char_indices() {
         let kind = kinds.kind_at(obelus_text::coordinates::ByteOffset::new(at + offset));
         let ink = kind.map_or(Ink::Plain, Ink::Syntax);
+        let from = base + at + offset;
         match spans.last_mut() {
-            Some(last) if last.ink == ink => last.text.push(character),
-            _ => spans.push(Span {
-                text: character.to_string(),
+            Some(last) if last.ink == ink => {
+                last.text.push(character);
+                if let Some(had) = last.from.as_mut() {
+                    had.end = from + character.len_utf8();
+                }
+            }
+            _ => spans.push(Span::from_source(
+                character.to_string(),
                 ink,
-                bold: false,
-                italic: false,
-            }),
+                from..from + character.len_utf8(),
+            )),
         }
     }
     spans
 }
 
 /// Lays prose out, which is what termimad is borrowed for.
-fn prose(source: &str, width: u16) -> Vec<Row> {
+fn prose(source: &str, base: usize, width: u16) -> Vec<Row> {
     // Joined first. The renderer below is line-oriented -- one source line,
     // one row -- and markdown is not: a single newline inside a paragraph is
     // a *soft* break, and the text either side of it is one paragraph that
@@ -254,13 +260,13 @@ fn prose(source: &str, width: u16) -> Vec<Row> {
     // The default skin, for its *measurements*: bullet characters, table
     // borders, the widths it lays out to. Its colours are never read.
     let skin = MadSkin::default();
-    let text = FmtText::from(&skin, &joined, Some(usize::from(width.max(1))));
+    let text = FmtText::from(&skin, &joined.text, Some(usize::from(width.max(1))));
 
     text.lines
         .iter()
         .map(|line| match line {
             FmtLine::Normal(composite) => Row {
-                spans: spans_of(composite),
+                spans: spans_of(composite, &joined, base),
                 rule: false,
             },
             FmtLine::HorizontalRule => Row {
@@ -273,16 +279,11 @@ fn prose(source: &str, width: u16) -> Vec<Row> {
             // and the rules have to be built from the same widths, with
             // corners and crossings rather than a plain line.
             FmtLine::TableRow(row) => Row {
-                spans: table_row(row),
+                spans: table_row(row, &joined, base),
                 rule: false,
             },
             FmtLine::TableRule(rule) => Row {
-                spans: vec![Span {
-                    text: table_rule(rule),
-                    ink: Ink::Mark,
-                    bold: false,
-                    italic: false,
-                }],
+                spans: vec![Span::new(table_rule(rule), Ink::Mark)],
                 rule: false,
             },
         })
@@ -290,7 +291,7 @@ fn prose(source: &str, width: u16) -> Vec<Row> {
 }
 
 /// The runs of one composite, with whatever the composite's own kind adds.
-fn spans_of(composite: &termimad::FmtComposite<'_>) -> Vec<Span> {
+fn spans_of(composite: &termimad::FmtComposite<'_>, joined: &Reflowed, base: usize) -> Vec<Span> {
     use termimad::CompositeKind;
 
     let ink = match composite.kind {
@@ -328,49 +329,72 @@ fn spans_of(composite: &termimad::FmtComposite<'_>) -> Vec<Span> {
 
     let mut spans: Vec<Span> = Vec::new();
     if let Some(bullet) = bullet {
-        spans.push(Span {
-            text: bullet,
-            ink: Ink::Mark,
-            bold: false,
-            italic: false,
-        });
+        spans.push(Span::new(bullet, Ink::Mark));
     }
     spans.extend(
         composite
             .compounds
             .iter()
-            .map(|compound| span_of(compound, ink)),
+            .flat_map(|compound| span_of(compound, ink, joined, base)),
     );
     spans
 }
 
 /// One compound, which is a run of text with the same emphasis throughout.
-fn span_of(compound: &Compound<'_>, ink: Ink) -> Span {
-    Span {
-        text: compound.src.to_string(),
-        // A code span inside a paragraph: the compound knows, and it is more
-        // specific than the line it is on.
-        ink: if compound.code { Ink::Code } else { ink },
-        bold: compound.bold,
-        italic: compound.italic,
+fn span_of(compound: &Compound<'_>, ink: Ink, joined: &Reflowed, base: usize) -> Vec<Span> {
+    // A code span inside a paragraph: the compound knows, and it is more
+    // specific than the line it is on.
+    let ink = if compound.code { Ink::Code } else { ink };
+    let at = offset_in(&joined.text, compound.src);
+
+    // Broken where the source is: a paragraph written over two lines is
+    // one compound and two runs of somebody's file, joined here by a space
+    // that is nobody's. One span cannot say that -- its bytes would have
+    // to be two places at once -- so it becomes one span per run, with the
+    // join a span of its own that came from nowhere.
+    //
+    // Which costs nothing on screen: the characters, their ink and their
+    // emphasis are the same either way, and a row is drawn run by run.
+    let mut spans: Vec<Span> = Vec::new();
+    for (offset, character) in compound.src.char_indices() {
+        let from = joined.source_of(at + offset).map(|from| {
+            let from = base + from;
+            from..from + character.len_utf8()
+        });
+        let carries_on = spans.last().is_some_and(|last| match (&last.from, &from) {
+            (Some(last), Some(next)) => last.end == next.start,
+            (None, None) => true,
+            _ => false,
+        });
+        match spans.last_mut() {
+            Some(last) if carries_on => {
+                last.text.push(character);
+                if let (Some(last), Some(next)) = (last.from.as_mut(), from) {
+                    last.end = next.end;
+                }
+            }
+            _ => spans.push(Span {
+                text: character.to_string(),
+                ink,
+                bold: compound.bold,
+                italic: compound.italic,
+                from,
+            }),
+        }
     }
+    spans
 }
 
 /// One row of a table, padded to its columns and bordered.
-fn table_row(row: &termimad::FmtTableRow<'_>) -> Vec<Span> {
-    let border = |text: &str| Span {
-        text: text.to_string(),
-        ink: Ink::Mark,
-        bold: false,
-        italic: false,
-    };
+fn table_row(row: &termimad::FmtTableRow<'_>, joined: &Reflowed, base: usize) -> Vec<Span> {
+    let border = |text: &str| Span::new(text.to_string(), Ink::Mark);
 
     let mut spans = vec![border("\u{2502}")];
     for cell in &row.cells {
         let width = cell
             .spacing
             .map_or(cell.visible_length, |spacing| spacing.width);
-        spans.extend(spans_of(cell));
+        spans.extend(spans_of(cell, joined, base));
         // The padding termimad would have written itself. Its own renderer
         // pads while painting; obelus needs the cell to *be* the width, so
         // the border after it lands where the rule says it should.
@@ -419,8 +443,9 @@ fn table_rule(rule: &termimad::FmtTableRule) -> String {
 /// the newline at the end of a line survives, and gets the answer from the
 /// *next* line's first characters.
 #[must_use]
-pub fn reflow(source: &str) -> String {
+pub fn reflow(source: &str) -> Reflowed {
     let mut out = String::with_capacity(source.len());
+    let mut runs: Vec<(usize, usize, usize)> = Vec::new();
     let mut fenced = false;
     // Whether the previous line was prose that a following line could
     // continue.
@@ -437,12 +462,12 @@ pub fn reflow(source: &str) -> String {
         if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             fenced = !fenced;
             finish(&mut out, &mut open);
-            out.push_str(line);
+            copy(&mut out, &mut runs, source, line);
             out.push('\n');
             continue;
         }
         if fenced {
-            out.push_str(line);
+            copy(&mut out, &mut runs, source, line);
             out.push('\n');
             continue;
         }
@@ -461,7 +486,7 @@ pub fn reflow(source: &str) -> String {
             let rest = trimmed.trim_start_matches('>').trim_start();
             if !rest.is_empty() {
                 out.push(' ');
-                out.push_str(rest);
+                copy(&mut out, &mut runs, source, rest);
                 continue;
             }
         }
@@ -471,7 +496,7 @@ pub fn reflow(source: &str) -> String {
             // means, and the leading whitespace of a wrapped line is the
             // author's wrapping rather than their text.
             out.push(' ');
-            out.push_str(trimmed);
+            copy(&mut out, &mut runs, source, trimmed);
             continue;
         }
 
@@ -480,12 +505,17 @@ pub fn reflow(source: &str) -> String {
         // author asked for the newline, so nothing may continue it -- and
         // the marker is the request, not the text, so it goes.
         if hard_break(line) {
-            out.push_str(line.trim_end_matches([' ', '\\']));
+            copy(
+                &mut out,
+                &mut runs,
+                source,
+                line.trim_end_matches([' ', '\\']),
+            );
             out.push('\n');
             quoted = false;
             continue;
         }
-        out.push_str(line);
+        copy(&mut out, &mut runs, source, line);
         // Whether a following line could continue *this* one. A heading is
         // one line by definition, and so are a rule and a table row: prose
         // written under a heading is prose, not part of the heading.
@@ -496,10 +526,61 @@ pub fn reflow(source: &str) -> String {
         }
     }
     finish(&mut out, &mut open);
-    out
+    Reflowed { text: out, runs }
 }
 
 /// Ends whatever line is being built.
+/// Markdown with its soft breaks joined, and where every run of it came
+/// from.
+///
+/// The joining is what makes a paragraph a paragraph: a single newline
+/// inside one is a *soft* break, and the text either side of it is one
+/// thing to lay out. But it is also what loses the source -- the text
+/// handed to the layout is not the text somebody wrote -- and the layout
+/// hands back runs of *that*. So the two are kept together, and anything
+/// that wants to know where a run really came from asks here.
+pub struct Reflowed {
+    /// The joined text, which is what gets laid out.
+    pub text: String,
+    /// The runs copied out of the source: where each begins in [`Self::text`],
+    /// where it began in the source, and how many bytes it is.
+    ///
+    /// In order, and never overlapping, because they are pushed as the
+    /// text is built. What is not in one of them is a space or a newline
+    /// this put there, which came from nobody's writing.
+    runs: Vec<(usize, usize, usize)>,
+}
+
+impl Reflowed {
+    /// Where in the source the byte at `at` came from, if it came from
+    /// anywhere.
+    #[must_use]
+    pub fn source_of(&self, at: usize) -> Option<usize> {
+        // The last run that begins at or before it, which is the only one
+        // that can contain it: they are in order and do not overlap.
+        let next = self.runs.partition_point(|(out, _, _)| *out <= at);
+        let (out, from, length) = *self.runs.get(next.checked_sub(1)?)?;
+        (at < out + length).then_some(from + (at - out))
+    }
+}
+
+/// Where a part of a string begins in it, in bytes.
+///
+/// For a part that is a slice *of* that string and not a copy of one --
+/// which is what a layout hands back, and what this file's own joining
+/// pushes. Two addresses in one allocation, subtracted: no pointer is
+/// followed, and a part from somewhere else would give an answer this
+/// cannot use, so every caller has to know its part is a slice.
+fn offset_in(whole: &str, part: &str) -> usize {
+    (part.as_ptr() as usize).saturating_sub(whole.as_ptr() as usize)
+}
+
+/// Copies a run of the source, remembering where it came from.
+fn copy(text: &mut String, runs: &mut Vec<(usize, usize, usize)>, source: &str, part: &str) {
+    runs.push((text.len(), offset_in(source, part), part.len()));
+    text.push_str(part);
+}
+
 fn finish(out: &mut String, open: &mut bool) {
     if *open {
         out.push('\n');

@@ -595,3 +595,88 @@ fn a_block_of_code_is_drawn_in_a_box() {
         "the box is not drawn as the reading's own furniture:\n{dump}"
     );
 }
+
+/// Every run that says where it came from came from there.
+///
+/// One property, and it covers the lot: a heading with its hashes taken
+/// off, emphasis with its stars taken off, a code span with its backticks
+/// taken off, a list item, a table cell, a line of a fenced block. If the
+/// bytes a run points at are not the bytes it is drawing, the pointing is
+/// wrong somewhere, and it is wrong in a way nothing on screen would show
+/// -- a selection that copies the wrong words.
+///
+/// The runs a reading adds rather than reads -- the bullet, the quotation
+/// bar, the box round a fenced block, a table's borders and padding --
+/// point at nothing, which is the other half of the same property.
+///
+/// Broken deliberately by handing `prose` the wrong base -- every run of
+/// every piece after the first then points somewhere else.
+///
+/// It does *not* catch a run mapped by its start alone rather than broken
+/// where the source is. That was tried: the layout never seems to hand
+/// back a run spanning a join, so the two ways agree on everything here.
+/// The breaking is kept because it is what makes the claim true whatever
+/// the layout does, and it is written down here that no test holds it up.
+#[test]
+fn a_run_that_says_where_it_came_from_came_from_there() {
+    let source = "## What I would do\n\n\
+        The **cheap** part is moving `closer_for` out of the way, and\n\
+        a second line of the same paragraph that has to be joined to it.\n\n\
+        - it is a pure function\n\
+        - it has nothing to do with `App`\n\n\
+        > a quotation, which is marked\n\n\
+        ```rust\nfn closer_for(open: char) -> char {\n```\n\n\
+        | a | b |\n|---|---|\n| 1 | 2 |\n";
+    for width in [30, 48, 76] {
+        let rows = render(source, width);
+        let mut checked = 0;
+        for row in &rows {
+            for span in &row.spans {
+                let Some(from) = span.from.clone() else {
+                    continue;
+                };
+                checked += 1;
+                assert!(
+                    from.end <= source.len(),
+                    "a run points past the end of the source: {span:?}"
+                );
+                assert_eq!(
+                    &source[from.clone()],
+                    span.text,
+                    "at width {width}, a run says it came from {from:?} and it did not"
+                );
+            }
+        }
+        assert!(
+            checked > 10,
+            "at width {width}, hardly anything says where it came from: {checked}"
+        );
+    }
+}
+
+/// The marks a reading adds itself point at nothing.
+///
+/// Broken deliberately by giving the bullet a range of its own: the bytes
+/// it would claim say something else entirely, and a selection over it
+/// would copy them.
+#[test]
+fn what_the_reading_adds_points_at_nothing() {
+    let source = "- a bullet\n\n> a quotation\n\n```\ncode\n```\n";
+    let rows = render(source, 40);
+    for row in &rows {
+        for span in &row.spans {
+            let adds = span.text.contains('\u{2022}')
+                || span.text.contains('\u{2503}')
+                || span
+                    .text
+                    .chars()
+                    .all(|mark| "\u{2502}\u{2500}\u{250c}\u{2510}\u{2514}\u{2518} ".contains(mark));
+            if adds && !span.text.is_empty() {
+                assert!(
+                    span.from.is_none(),
+                    "a mark the reading drew claims to come from the source: {span:?}"
+                );
+            }
+        }
+    }
+}
