@@ -252,7 +252,18 @@ impl Talk {
     /// Whether a turn is in flight in this one.
     #[must_use]
     pub fn is_thinking(&self, session: Option<&SessionId>) -> bool {
-        self.session(session).is_some_and(|open| open.thinking)
+        // A prompt with nowhere to go yet counts. The reader pressed
+        // enter and their words are on the page, so something is under
+        // way from where they sit -- and the conversation it is waiting
+        // for is the one being opened, of which there is only ever one.
+        //
+        // Which is not a corner. An agent replaying a conversation sends
+        // every word of it before it answers the request that asked for
+        // it, so the page fills and *then* the session arrives: a reader
+        // looking at a conversation that is plainly all there types into
+        // it, and until this that turn went out with nothing on screen
+        // saying anything was happening.
+        self.held.is_some() || self.session(session).is_some_and(|open| open.thinking)
     }
 
     /// One conversation, by the name the agent gave it.

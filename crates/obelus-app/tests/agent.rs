@@ -3968,6 +3968,36 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
     );
 }
 
+/// A conversation taken up again says it is thinking when it is.
+///
+/// The row that says what is happening now is read off the handle, by the
+/// session the conversation on screen is in -- so it is only ever right if
+/// that conversation really holds the session the agent answered about.
+#[test]
+fn a_conversation_taken_up_again_says_it_is_thinking() {
+    let (_scratch, mut app, events) = remembering("agent-thinks-again", "0123456T", "s-old", &[]);
+    pump(&mut app, &events, "the old conversation", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("where we were"))
+        })
+    });
+
+    // A turn the agent takes its time over, so it is still in flight when
+    // the screen is looked at.
+    support::type_text(&mut app, "take it slowly");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to start", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("thinking")),
+        "the conversation does not say it is thinking:\n{dump}"
+    );
+}
+
 /// An agent that keeps a conversation but cannot replay it is asked for the
 /// one it can do, and the reader is told why the page is empty.
 ///

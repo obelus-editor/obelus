@@ -655,13 +655,13 @@ while IFS= read -r line; do
             # one getting it wrong, and it was the agent every test used to
             # decide whether the client had it right.
             loaded="$(session_of "$line")"
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             # Both halves, in the order they were said. The reader's own
             # comes back as `user_message_chunk` -- a client that dropped
             # those would take up a conversation of answers with no
             # questions above them.
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"what did we settle on"}}}}\n' "$loaded"
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"where we were"}}}}\n' "$loaded"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             ;;
         *'"method":"session/resume"'*)
             # Taken up with its context and not a word of it sent back,

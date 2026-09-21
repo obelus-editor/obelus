@@ -88,6 +88,49 @@ fn opened(talk: &mut Talk, events: &Receiver<Event>) -> SessionId {
     which.expect("the conversation that opened")
 }
 
+/// A prompt with nowhere to go yet says something is happening.
+///
+/// The reader pressed enter and their words are on the page, so from where
+/// they sit a turn is under way -- and it is, it is waiting for somewhere
+/// to go. Nothing on screen said so.
+///
+/// Which is not a corner anybody has to go looking for. An agent replaying
+/// a conversation sends every word of it *before* it answers the request
+/// that asked for it, so the page fills and the session arrives after: a
+/// reader looking at a conversation that is plainly all there types into
+/// it, and that prompt is held. The turn went out when the session landed
+/// and the answer came back in its own time, with the whole wait spent
+/// looking at a page that said nothing was happening.
+///
+/// Broken deliberately by asking only the session: a prompt held has no
+/// session to ask about, so the answer is no and this goes red.
+#[test]
+fn a_prompt_waiting_for_a_conversation_says_it_is_thinking() {
+    let (sender, _events): (_, Receiver<Event>) = channel();
+    let mut talk = Talk::start(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        Path::new("."),
+        None,
+        sender,
+    );
+    assert!(
+        !talk.is_thinking(None),
+        "it says something is happening before anything was said"
+    );
+    // Nowhere to send it: there is no session, and there cannot be one
+    // yet -- the process has only just been started.
+    assert!(
+        !talk.say(None, "hello", None),
+        "a prompt went somewhere when there was nowhere to send it"
+    );
+    assert!(
+        talk.is_thinking(None),
+        "a prompt waiting to be sent says nothing is happening"
+    );
+}
+
 /// Nothing is opened that nobody asked for.
 ///
 /// One was, the moment the connection came up, on the grounds that the
