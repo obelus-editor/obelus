@@ -403,12 +403,23 @@ impl Talk {
             .filter(|id| self.sessions.contains_key(*id))
             .cloned()
         else {
+            // Written down because the three ways out of here look the
+            // same on screen: the reader's words are on the page whichever
+            // it was. Which one it went is the first thing anybody asks
+            // when a conversation goes quiet, and it is the one thing the
+            // reader cannot see.
+            tracing::info!(
+                asked_in = ?session.map(|id| id.0.to_string()),
+                open = self.sessions.len(),
+                "a prompt is held: there is no conversation open to send it in"
+            );
             // Held with its opening: the opening belongs to the first thing
             // said in a conversation, and the first thing said is exactly
             // what gets held while the session is still opening.
             self.held = Some((words.to_string(), opening.map(str::to_string)));
             return false;
         };
+        let named = id.0.to_string();
         let sent = self
             .asks
             .unbounded_send(Ask::Say {
@@ -417,6 +428,13 @@ impl Talk {
                 opening: opening.map(str::to_string),
             })
             .is_ok();
+        match sent {
+            true => tracing::info!(session = %named, "a prompt is on its way"),
+            false => tracing::warn!(
+                session = %named,
+                "a prompt went nowhere: the connection to the agent has ended"
+            ),
+        }
         if let Some(open) = self.session_mut(session) {
             open.thinking = sent;
         }

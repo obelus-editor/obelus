@@ -676,6 +676,17 @@ impl Chat {
     /// state rather than remembered, so there is no way for it to be left
     /// behind.
     pub fn doing(&mut self, what: Option<&str>) {
+        // Written down when it moves. This is the row a reader watches to
+        // know whether anything is happening at all, and when it says
+        // nothing there is nothing else on screen to say why -- so a
+        // report that it stayed blank is a report with no evidence in it,
+        // and the log is where obelus keeps what a reader cannot show.
+        //
+        // On the change and not the frame: this is called twelve times a
+        // second with the same answer.
+        if self.doing.as_deref() != what {
+            tracing::info!(was = ?self.doing, now = ?what, "what is happening now");
+        }
         self.doing = what.map(str::to_string);
     }
 
