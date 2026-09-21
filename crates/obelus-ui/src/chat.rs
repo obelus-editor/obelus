@@ -404,8 +404,6 @@ impl<'a> ChatView<'a> {
         x: u16,
         y: u16,
     ) -> Option<obelus_component::chat::Spot> {
-        use obelus_component::chat::Spot;
-
         let band = bands(area, chat, card).transcript;
         if y < band.y || y >= band.bottom() || x < area.x || x >= area.right() {
             return None;
@@ -413,41 +411,16 @@ impl<'a> ChatView<'a> {
         let rows = chat.rows(reading_width(area));
         let at = chat.top() + usize::from(y - band.y);
         let row = rows.get(at)?;
-        let (said, source) = row.from?;
-
-        let mut column = area.x + MARGIN + INDENT + u16::from(row.depth) * DEEPER;
-        let mut after: Option<Spot> = None;
-        for span in &row.spans {
-            let bytes = span.from.clone();
-            for (offset, character) in span.text.char_indices() {
-                let wide = u16::try_from(text_width(&character.to_string()))
-                    .unwrap_or(1)
-                    .max(1);
-                match bytes.as_ref() {
-                    Some(bytes) => {
-                        let at = bytes.start + offset;
-                        if x < column + wide {
-                            return Some(Spot { said, source, at });
-                        }
-                        after = Some(Spot {
-                            said,
-                            source,
-                            at: at + character.len_utf8(),
-                        });
-                    }
-                    // A mark the reading drew. Pointing at one is pointing
-                    // between the words around it.
-                    None if x < column + wide => return after,
-                    None => {}
-                }
-                column += wide;
-            }
-        }
-        after
+        // Cells to characters here, characters to a place in the words
+        // there: a cell is this drawing's own business -- a wide glyph is
+        // two of them and an indent is several -- and what a character of a
+        // row came from is the row's. Two halves of one seam, so that the
+        // pointer and the cursor cross it by the same arithmetic.
+        row.spot_at(characters_at(row, x, area))
     }
 
-    /// Where the terminal should put its caret: in the box, where the
-    /// writing is.
+    /// Where the terminal should put its caret: in the box, or in the
+    /// transcript while the reader is reading it.
     #[must_use]
     pub fn caret(
         area: Rect,
@@ -459,12 +432,20 @@ impl<'a> ChatView<'a> {
         if let Some(card) = card {
             return super::card::caret(area, card);
         }
-        // Nowhere, while the keys are walking the row of settings: a caret
-        // left blinking in the box would say that what is typed goes
-        // there, and it does not. What says where the keys are going is
-        // the selected background on the row, the same as in every list.
-        if chat.focus() != Focus::Writing {
-            return None;
+        match chat.focus() {
+            Focus::Writing => {}
+            // In the transcript, where the cursor is. What it is on is a
+            // reading rather than something to type in, so what the caret
+            // says there is "you are here" and nothing about where words
+            // would go -- which is the same thing a caret says in a file
+            // obelus is reading.
+            Focus::Transcript(place) => return in_transcript(area, chat, card, place),
+            // Nowhere, while the keys are walking the row of settings: a
+            // caret left blinking in the box would say that what is typed
+            // goes there, and it does not. What says where the keys are
+            // going is the selected background on the row, the same as in
+            // every list.
+            Focus::Settings(_) => return None,
         }
         let width = writing_width(area);
         let rows = chat.writing().rows(width);
@@ -518,6 +499,87 @@ impl<'a> ChatView<'a> {
         let row = first + usize::from(y - regions.writing.y);
         Some((u16::try_from(row).unwrap_or(u16::MAX), x - box_x))
     }
+}
+
+/// Where the caret goes while the cursor is in the transcript.
+///
+/// Nothing where the row it is on has been scrolled off the screen: the
+/// cursor is still there and comes back when the reader scrolls back, but a
+/// caret drawn at the edge of a band it is not in would be pointing at
+/// somebody else's row.
+fn in_transcript(
+    area: Rect,
+    chat: &Chat,
+    card: Option<&Card>,
+    place: obelus_component::chat::Place,
+) -> Option<ratatui::layout::Position> {
+    let band = bands(area, chat, card).transcript;
+    let rows = chat.rows(reading_width(area));
+    let row = rows.get(place.row)?;
+    let offset = place.row.checked_sub(chat.top())?;
+    let y = band.y + u16::try_from(offset).ok()?;
+    if y >= band.bottom() {
+        return None;
+    }
+    Some(ratatui::layout::Position {
+        x: cell_at(row, place.character, area).min(area.right().saturating_sub(1)),
+        y,
+    })
+}
+
+/// Which character of a row a cell of the screen is on.
+///
+/// The drawing's own half of the seam: a wide glyph is two cells and the
+/// mark and indent in front of the words are several, so what column a
+/// character of a row is drawn at is known here and nowhere else. Past the
+/// end of the row is the row's length, which is the place after its last
+/// character.
+fn characters_at(row: &Row, x: u16, area: Rect) -> usize {
+    let mut column = words_begin(row, area);
+    let mut seen = 0usize;
+    for span in &row.spans {
+        for character in span.text.chars() {
+            if x < column + wide(character) {
+                return seen;
+            }
+            column += wide(character);
+            seen += 1;
+        }
+    }
+    seen
+}
+
+/// The cell a character of a row is drawn at.
+///
+/// The way back across the seam [`characters_at`] crosses the other way,
+/// for putting the terminal's caret where the cursor is. Past the end of
+/// the row is the cell after its last character, which is where a caret at
+/// the end of a line belongs.
+fn cell_at(row: &Row, characters: usize, area: Rect) -> u16 {
+    let mut column = words_begin(row, area);
+    let mut seen = 0usize;
+    for span in &row.spans {
+        for character in span.text.chars() {
+            if seen == characters {
+                return column;
+            }
+            column += wide(character);
+            seen += 1;
+        }
+    }
+    column
+}
+
+/// The cell a row's own words start at.
+fn words_begin(row: &Row, area: Rect) -> u16 {
+    area.x + MARGIN + INDENT + u16::from(row.depth) * DEEPER
+}
+
+/// How many cells a character takes, never fewer than one.
+fn wide(character: char) -> u16 {
+    u16::try_from(text_width(&character.to_string()))
+        .unwrap_or(1)
+        .max(1)
 }
 
 impl Widget for ChatView<'_> {
@@ -644,11 +706,18 @@ impl ChatView<'_> {
             // so that a run reads as one thing rather than as a stretch of
             // rows that happen to look alike.
             let words = words + u16::from(row.depth) * DEEPER;
-            // The row the reader is standing on, marked the way every list
-            // in obelus marks one. Only rows that do something are ever
-            // stood on, so the mark is the promise: what is lit is what
-            // enter opens.
-            let here = self.focus == Focus::Transcript(first + usize::from(offset));
+            // The row the cursor is on, lit the way every list in obelus
+            // lights one -- but only where the row does something, because
+            // that is what the light promises: what is lit is what enter
+            // opens.
+            //
+            // Where the cursor is is said by the caret instead. The cursor
+            // can stand anywhere now, so a light that followed it would be
+            // a promise kept on one row in twenty; two marks saying two
+            // different things is the honest way round.
+            let at = first + usize::from(offset);
+            let here =
+                row.acts() && matches!(self.focus, Focus::Transcript(place) if place.row == at);
             let (glyph, style) = self.voice(row, plain, dim);
             // A line of a change is drawn the way an opened hunk is drawn
             // in a file: tinted its whole width, with the marker's own bar

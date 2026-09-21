@@ -1880,11 +1880,14 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
         app.talking() == obelus_agent::Talking::Ready
     });
 
-    // Up from the box, which is empty: the caret cannot move in it, so the
-    // key goes to the nearest row of the transcript worth standing on --
-    // the command it asked about -- and again to the file it read.
+    // Up from the box, which is empty: the caret cannot move in it, so it
+    // carries on into the transcript. Then shift and tab twice, which is
+    // what goes to the rows that do something -- the command it asked
+    // about, and then the file it read. The arrows walk the words now, so
+    // reaching a tool call at the top of a turn is its own key.
     support::press(&mut app, KeyCode::Up);
-    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::BackTab);
+    support::press(&mut app, KeyCode::BackTab);
     assert!(
         matches!(
             app.chat().map(obelus_component::chat::Chat::focus),
@@ -1922,22 +1925,22 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
     );
 }
 
-/// A conversation of nothing but words scrolls the way it always has.
+/// A conversation with nothing said in it keeps the caret in the box.
 ///
-/// The arrows move the nearest thing that can still move: a row to stand on
-/// where there is one, and the view itself where there is not. Most
-/// conversations have nothing to stand on at all, and they must not have
-/// lost a key for it.
+/// The arrows move the nearest thing that can still move. In a conversation
+/// with words in it that is the cursor, which walks them; in one with no
+/// words at all there is nowhere for a cursor to be, and the key must not
+/// leave the caret pointing into an empty band.
 #[test]
-fn the_arrows_still_scroll_a_transcript_with_nowhere_to_stand() {
+fn the_arrows_leave_an_empty_transcript_alone() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
     let chat = app.chat().expect("the conversation");
     assert!(
-        chat.rows(60).iter().all(|row| !row.acts()),
-        "this conversation has somewhere to stand after all"
+        chat.rows(60).is_empty(),
+        "this conversation has something in it after all"
     );
 
     support::press(&mut app, KeyCode::Up);
@@ -1946,7 +1949,7 @@ fn the_arrows_still_scroll_a_transcript_with_nowhere_to_stand() {
             app.chat().map(obelus_component::chat::Chat::focus),
             Some(obelus_component::chat::Focus::Writing)
         ),
-        "the cursor went somewhere there was nothing to stand on"
+        "the cursor went into a transcript with nothing in it"
     );
 }
 
@@ -1981,10 +1984,11 @@ fn a_run_of_tool_calls_folds_into_one_row() {
         "the call that is not a read was folded in with them:\n{text}"
     );
 
-    // Up from the box walks past the failed call to the run's heading, and
-    // enter opens it where it is.
+    // Into the transcript, then shift and tab back to the run's heading --
+    // past the failed call, which names nothing and so is not a row enter
+    // opens -- and enter opens it where it is.
     support::press(&mut app, KeyCode::Up);
-    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::BackTab);
     support::press(&mut app, KeyCode::Enter);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     support::check(&format!("folded_{WIDTH}x{HEIGHT}"), &dump);
