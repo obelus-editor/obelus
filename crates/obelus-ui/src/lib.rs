@@ -603,7 +603,7 @@ pub fn spinning(phase: u32) -> char {
 /// is typing into to find the list.
 fn room_for_a_list(app: &impl Screen, editor: Rect) -> Rect {
     app.chat()
-        .map_or(editor, |chat| chat::above_writing(editor, chat))
+        .map_or(editor, |chat| chat::above_writing(editor, chat, app.card()))
 }
 
 /// Draws a list over whatever is behind it, with its edge and its preview.

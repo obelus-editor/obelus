@@ -2634,6 +2634,53 @@ fn an_agent_that_stops_takes_the_questions_in_every_conversation_with_it() {
     );
 }
 
+/// A list opened over a question is given the room above it.
+///
+/// A reader who has been asked something and wants to go and look before
+/// they answer reaches for the list of open documents, and the list is
+/// drawn over the conversation. It was given everything above the box a
+/// message is written in -- and a card is taller than a box, so the rows it
+/// was handed were rows the card had already been drawn in. It painted over
+/// the top of the card, which is the half that says what is being asked:
+/// the question went on the way to going and looking it up.
+///
+/// Broken deliberately by working the box's rows out in `above_writing`
+/// again instead of asking `bands`, which puts the list back over the top
+/// of the card and takes the question off the screen.
+#[test]
+fn a_list_over_a_question_does_not_paint_over_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // Somewhere else to be, so the list has two rows and is worth opening.
+    app.open_for_test(Path::new("src/lib.rs"));
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    support::type_text(&mut app, "/twice");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", |app| {
+        app.card().is_some()
+    });
+
+    let asked = "List crates and app crate sources";
+    let before = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&before).iter().any(|row| row.contains(asked)),
+        "the card is not asking anything to begin with:\n{before}"
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    // The list is there, and so is the question it was opened in front of.
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("A conversation")),
+        "the list of open documents did not open:\n{dump}"
+    );
+    assert!(
+        rows(&dump).iter().any(|row| row.contains(asked)),
+        "the list painted over what the card was asking:\n{dump}"
+    );
+}
+
 /// A question about a conversation is asked in that conversation.
 ///
 /// It went to the conversation about nothing in particular whichever one it

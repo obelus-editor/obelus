@@ -136,15 +136,22 @@ pub fn reading_width(area: Rect) -> u16 {
 
 /// The room a list opened over the conversation has.
 ///
-/// Everything above the box and the rule over it. A compact list draws
-/// against the foot of whatever it is given, and the foot of the whole
-/// region is what is being written -- which for the list of commands is
-/// the one row that must stay visible, because the list is a list of what
-/// is being typed there.
+/// Everything above whatever is at the foot of it, and the rule over that.
+/// A compact list draws against the foot of what it is given, and the foot
+/// of the whole region is what is being written -- which for the list of
+/// commands is the one row that must stay visible, because the list is a
+/// list of what is being typed there.
+///
+/// Through [`bands`], which is the one answer to where that boundary is.
+/// This worked the box's rows out for itself, and a card is taller than a
+/// box: a list over a conversation waiting on an answer was given rows the
+/// card was already drawn in and painted over the top of it, which is the
+/// half of a card that says what is being asked. A reader who went to the
+/// list of open documents to go and look something up lost the question on
+/// the way.
 #[must_use]
-pub fn above_writing(area: Rect, chat: &Chat) -> Rect {
-    let rows = chat.writing().rows(writing_width(area)).len();
-    let writing = regions(area, rows).writing;
+pub fn above_writing(area: Rect, chat: &Chat, card: Option<&Card>) -> Rect {
+    let writing = bands(area, chat, card).writing;
     Rect {
         height: writing.y.saturating_sub(area.y + 1),
         ..area

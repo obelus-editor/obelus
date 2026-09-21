@@ -1108,7 +1108,7 @@ impl App {
     /// laying one out.
     fn picker_area(&self) -> Rect {
         match self.chat() {
-            Some(chat) => obelus_ui::chat::above_writing(self.editor_area, chat),
+            Some(chat) => obelus_ui::chat::above_writing(self.editor_area, chat, self.card()),
             None => self.editor_area,
         }
     }

@@ -667,7 +667,7 @@ impl App {
             .map(|(slash, chat)| {
                 obelus_ui::picker::rows_drawn(
                     slash,
-                    obelus_ui::chat::above_writing(self.editor_area, chat),
+                    obelus_ui::chat::above_writing(self.editor_area, chat, self.card()),
                 )
             });
         if let (Some(rows), Some(slash)) = (
