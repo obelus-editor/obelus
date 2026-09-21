@@ -614,7 +614,20 @@ impl ChatView<'_> {
                     write(cells, at, y, mark(row.speaker), style);
                 }
             }
-            let mut ended = write(cells, words, y, &row.text, style);
+            // The runs, in the colours the markdown said they are, over
+            // the style the row is drawn in: the voice's colour is what a
+            // run with no opinion of its own keeps, and the background --
+            // a selected row, a line of a change -- is the row's either
+            // way. Clipped at the edge like every other row here.
+            let mut ended = crate::reading::write_spans(
+                cells,
+                words,
+                y,
+                &row.spans,
+                style,
+                self.theme,
+                area.right(),
+            );
             // Where it said it was working, after the title. The path is
             // its own affordance: obelus opens files, so a row that names
             // one is a row that goes there.

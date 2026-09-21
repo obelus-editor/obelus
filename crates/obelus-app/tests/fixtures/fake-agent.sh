@@ -411,6 +411,17 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"p1","title":"Approve Plan","kind":"switch_mode","status":"pending","content":[{"type":"content","content":{"type":"text","text":"%s"}}]}}}\n' "$session" "$plan"
             printf '{"jsonrpc":"2.0","id":908,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"p1","title":"Approve Plan","kind":"switch_mode","content":[{"type":"content","content":{"type":"text","text":"%s"}}]},"options":[{"optionId":"go","name":"Yes, go ahead","kind":"allow_once"},{"optionId":"keep","name":"No, keep planning","kind":"reject_once"}]}}\n' "$session" "$plan"
             ;;
+        *'"method":"session/prompt"'*'/markdown'*)
+            # What an agent actually sends: markdown. The protocol says so
+            # in as many words -- "Text content. May be plain text or
+            # formatted with Markdown. Clients SHOULD render this text as
+            # Markdown" -- and every agent worth talking to takes it at its
+            # word. A heading, emphasis, a code span and a fenced block.
+            set_turn "$session" "$(id_of "$line")"
+            said='## What I would do\n\nThe **cheap** part is moving `closer_for` out to `obelus-editing`:\n\n```rust\nfn closer_for(open: char) -> char {\n```\n\n- it is a pure function\n- it has nothing to do with `App`\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$session" "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'/twice'*)
             # A command put to the reader by an agent that sends the tool's
             # description as the call's title *and* as the call's content.

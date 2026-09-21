@@ -68,17 +68,51 @@ pub fn draw(
             continue;
         }
 
-        let mut column = 0u16;
-        for span in &row.spans {
-            let style = style_of(span.ink, span.bold, span.italic, theme, ground);
-            for character in span.text.chars() {
-                if column >= width {
-                    break;
-                }
-                column = column.saturating_add(put(cells, area.x + column, y, character, style));
+        write_spans(
+            cells,
+            area.x,
+            y,
+            &row.spans,
+            Style::new().fg(theme.foreground).bg(ground),
+            theme,
+            area.x + width,
+        );
+    }
+}
+
+/// Writes a laid-out row's runs, and says the column they ended in.
+///
+/// The one place an ink becomes a colour on a screen. Two callers: a
+/// reading drawn on a page of its own, and a conversation -- where what an
+/// agent said is markdown by the protocol's own word for it, and the row it
+/// goes on already has a speaker's mark in front of it, an indent, and
+/// sometimes a background saying the reader is standing on it.
+///
+/// So the look is put *over* a base rather than built from nothing. The
+/// base carries the row's ground and the colour of whatever is speaking,
+/// and a run the markdown had no opinion about -- [`Ink::Plain`], which is
+/// most of any sentence -- is left in it. A reading of its own passes the
+/// page's foreground and gets back what it always had.
+pub fn write_spans(
+    cells: &mut CellBuffer,
+    x: u16,
+    y: u16,
+    spans: &[obelus_reading::Span],
+    base: Style,
+    theme: &Theme,
+    stop: u16,
+) -> u16 {
+    let mut column = x;
+    for span in spans {
+        let style = style_of(span.ink, span.bold, span.italic, theme, base);
+        for character in span.text.chars() {
+            if column >= stop {
+                return column;
             }
+            column = column.saturating_add(put(cells, column, y, character, style));
         }
     }
+    column
 }
 
 /// The look of one run.
@@ -88,16 +122,13 @@ pub fn draw(
 /// quote or a timestamp the colour of a comment. That mapping is the same
 /// one the *highlighting* uses, so the reading and the bytes of one file are
 /// recognizably the same file.
-fn style_of(
-    ink: Ink,
-    bold: bool,
-    italic: bool,
-    theme: &Theme,
-    ground: ratatui::style::Color,
-) -> Style {
-    let mut style = Style::new().bg(ground);
-    style = match ink {
-        Ink::Plain => style.fg(theme.foreground),
+fn style_of(ink: Ink, bold: bool, italic: bool, theme: &Theme, base: Style) -> Style {
+    let style = base;
+    let mut style = match ink {
+        // Left as it came: a run markdown had no opinion about is most of
+        // any sentence, and what colour that is belongs to whoever is
+        // drawing the row.
+        Ink::Plain => style,
         Ink::Heading(_) => style.fg(theme.syntax.keyword).add_modifier(Modifier::BOLD),
         Ink::Code => style.fg(theme.syntax.string),
         Ink::Syntax(kind) => style.fg(theme.syntax.colour(kind)),

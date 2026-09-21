@@ -63,6 +63,7 @@
 //! under somebody who is reading it.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use obelus_reading::{Ink, Span};
 
 use crate::{composer::Composer, window::Window};
 
@@ -183,8 +184,18 @@ pub struct Said {
 pub struct Row {
     /// Who is speaking on this row.
     pub speaker: Speaker,
-    /// The words.
-    pub text: String,
+    /// The words, in runs, each saying how it is drawn.
+    ///
+    /// Runs rather than one string because what an agent says is markdown
+    /// -- the protocol says so in as many words: "Text content. May be
+    /// plain text or formatted with Markdown. Clients SHOULD render this
+    /// text as Markdown." A heading, a fenced block and a `name` in the
+    /// middle of a sentence are three different things on one row, and a
+    /// row with one look could only ever draw them as the same thing.
+    ///
+    /// Most rows are still one run of [`Ink::Plain`], which is left in
+    /// whatever colour the voice speaking it is drawn in.
+    pub spans: Vec<Span>,
     /// Whether it is the first row of what they said, which is the row that
     /// gets the mark saying who is speaking.
     pub first: bool,
@@ -405,6 +416,78 @@ impl Default for Chat {
     fn default() -> Self {
         Self::new()
     }
+}
+
+impl Row {
+    /// What the row says, with nothing about how it is drawn.
+    ///
+    /// Derived from the runs rather than kept beside them: a row that
+    /// carried both would be two answers to "what does this say", and the
+    /// one that is drawn is the runs.
+    #[must_use]
+    pub fn text(&self) -> String {
+        self.spans.iter().map(|span| span.text.as_str()).collect()
+    }
+}
+
+/// Whether what this voice says arrives as the protocol's own text
+/// content, which is the thing it asks clients to read as markdown.
+///
+/// The agent's answer and its thinking do. The reader's own message does
+/// not -- obelus has it as they typed it, and reflowing somebody's words
+/// back at them is obelus deciding what they meant. Nor do the rows obelus
+/// makes up itself: a note, a state, a step of a plan, a run's heading.
+///
+/// Nor a tool call, which is not one voice: what it carries is the
+/// agent's text content and is read as markdown where the row is built,
+/// and its title is a line the protocol calls human-readable rather than
+/// markdown. Both are decided there, where which of the two is in hand is
+/// known.
+const fn reads_as_markdown(speaker: Speaker) -> bool {
+    matches!(speaker, Speaker::Agent | Speaker::Thought)
+}
+
+/// One run of a row, in the colour the words themselves have nothing to
+/// say about.
+#[must_use]
+fn plain(text: String) -> Vec<Span> {
+    vec![Span::new(text, Ink::Plain)]
+}
+
+/// A thing said, laid out for a width, as the runs of each row.
+///
+/// Markdown where the protocol says the text is markdown, and plain
+/// wrapping everywhere else. What an agent said, what it was thinking and
+/// what a tool call carries all arrive as `ContentBlock::Text`, which is
+/// the one the protocol writes "Clients SHOULD render this text as
+/// Markdown" about. A tool call's *title* is not one of those, nor are the
+/// lines of a change, nor the reader's own message -- obelus has that as
+/// they typed it and has no business reflowing it -- nor anything obelus
+/// says in its own voice.
+///
+/// The wrapping is markdown's own, because that is where the difficulty
+/// lives: a fenced block does not wrap like a paragraph and a bullet's
+/// second line is indented under its first.
+fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<Vec<Span>> {
+    if !markdown {
+        return obelus_text::wrapped(text, width)
+            .into_iter()
+            .map(plain)
+            .collect();
+    }
+    obelus_reading::markdown::render(text, width)
+        .into_iter()
+        .map(|row| match row.rule {
+            // A rule has no words of its own, and the transcript has no
+            // room for a view that draws one: it is a row like the others,
+            // so it is drawn as what it is.
+            true => vec![Span::new(
+                "\u{2500}".repeat(usize::from(width.max(1))),
+                Ink::Mark,
+            )],
+            false => row.spans,
+        })
+        .collect()
 }
 
 impl Chat {
@@ -775,10 +858,10 @@ impl Chat {
             let planning = !self.plan.is_empty();
             rows.push(Row {
                 speaker: Speaker::Doing,
-                text: match planning {
+                spans: plain(match planning {
                     true => self.step_now(),
                     false => doing.to_string(),
-                },
+                }),
                 first: true,
                 state: None,
                 kind: String::new(),
@@ -801,7 +884,7 @@ impl Chat {
                         .enumerate()
                         .map(|(line, text)| Row {
                             speaker: Speaker::Step,
-                            text,
+                            spans: plain(text),
                             first: false,
                             // On the first row of a step only, so a step
                             // that wraps is one step with one mark.
@@ -870,7 +953,7 @@ impl Chat {
         let open = self.is_open(run.start);
         let mut rows = vec![Row {
             speaker: Speaker::Tool,
-            text: format!("{count} {what}"),
+            spans: plain(format!("{count} {what}")),
             first: true,
             state: state.map(str::to_string),
             kind: said.kind.clone(),
@@ -922,30 +1005,37 @@ impl Chat {
             let mut rows = vec![Row {
                 changed: (!said.change.is_empty())
                     .then(|| obelus_git::change::counted(&said.change)),
-                ..self.opening(said, said.text.clone(), depth, Some(at))
+                ..self.opening(said, plain(said.text.clone()), depth, Some(at))
             }];
             if self.is_open(at) {
+                // Markdown, unless obelus is running a command for this
+                // call: then these words are the command and what it has
+                // printed, put here by [`Chat::running`], and a terminal's
+                // bytes are not prose. Read as markdown they lose the line
+                // between the command and its output -- one newline is a
+                // soft break -- which is a call saying it ran something
+                // that it never ran.
                 rows.extend(carried.iter().flat_map(|words| {
-                    obelus_text::wrapped(words, inside)
+                    laid_out(words, inside, said.ran.is_none())
                         .into_iter()
-                        .map(|text| Self::under(said, text, depth + 1))
+                        .map(|spans| Self::under(said, spans, depth + 1))
                 }));
                 // A diff's own markers, which words do not get: "it is
                 // changing this" and "it is saying this" are different
                 // news, and the markers are where a reader takes that in.
                 rows.extend(said.change.iter().flat_map(|line| {
-                    obelus_text::wrapped(&line.text, inside)
+                    laid_out(&line.text, inside, false)
                         .into_iter()
-                        .map(|text| Row {
+                        .map(|spans| Row {
                             marker: line.marker,
-                            ..Self::under(said, text, depth + 1)
+                            ..Self::under(said, spans, depth + 1)
                         })
                 }));
             }
             return rows;
         }
 
-        let words = obelus_text::wrapped(&said.text, room);
+        let words = laid_out(&said.text, room, reads_as_markdown(said.speaker));
         // Thinking long enough to be worth putting away gets a heading of
         // its own, which is what folds it. obelus does not fold it away by
         // itself -- an agent's reasoning about the code is often the most
@@ -956,18 +1046,18 @@ impl Chat {
             return words
                 .into_iter()
                 .enumerate()
-                .map(|(row, text)| match row {
-                    0 => self.opening(said, text, depth, None),
-                    _ => Self::under(said, text, depth),
+                .map(|(row, spans)| match row {
+                    0 => self.opening(said, spans, depth, None),
+                    _ => Self::under(said, spans, depth),
                 })
                 .collect();
         }
-        let mut rows = vec![self.opening(said, "thought".to_string(), depth, Some(at))];
+        let mut rows = vec![self.opening(said, plain("thought".to_string()), depth, Some(at))];
         if self.is_open(at) {
             rows.extend(
-                obelus_text::wrapped(&said.text, inside)
+                laid_out(&said.text, inside, true)
                     .into_iter()
-                    .map(|text| Self::under(said, text, depth + 1)),
+                    .map(|spans| Self::under(said, spans, depth + 1)),
             );
         }
         rows
@@ -978,10 +1068,10 @@ impl Chat {
     /// It carries the glyph and everything that is true of the whole of it:
     /// where it has got to, the file it names, and whether there is more
     /// behind it than it is showing.
-    fn opening(&self, said: &Said, text: String, depth: u8, folds: Option<usize>) -> Row {
+    fn opening(&self, said: &Said, spans: Vec<Span>, depth: u8, folds: Option<usize>) -> Row {
         Row {
             speaker: said.speaker,
-            text,
+            spans,
             first: true,
             state: said.state.clone(),
             kind: said.kind.clone(),
@@ -1005,10 +1095,10 @@ impl Chat {
     }
 
     /// A row that continues something already begun.
-    fn under(said: &Said, text: String, depth: u8) -> Row {
+    fn under(said: &Said, spans: Vec<Span>, depth: u8) -> Row {
         Row {
             speaker: said.speaker,
-            text,
+            spans,
             first: false,
             state: None,
             kind: said.kind.clone(),
@@ -1026,7 +1116,7 @@ impl Chat {
     fn blank(&self, at: usize) -> Row {
         Row {
             speaker: self.said.get(at).map_or(Speaker::Note, |said| said.speaker),
-            text: String::new(),
+            spans: Vec::new(),
             first: false,
             state: None,
             kind: String::new(),
@@ -1559,7 +1649,7 @@ mod tests {
 
         let rows = chat.rows(60);
         let row = rows.first().expect("the tool call");
-        assert_eq!(row.text, "Read the file", "the title was lost");
+        assert_eq!(row.text(), "Read the file", "the title was lost");
         assert_eq!(row.kind, "read", "the kind was lost");
         assert_eq!(row.place, Some((place, 0)), "where it was, was lost");
         assert_eq!(row.state.as_deref(), Some("completed"), "the state is old");
@@ -1719,7 +1809,7 @@ mod tests {
         read(&mut chat, "t3", "completed");
         let rows = chat.rows(ROOM.reading);
         assert_eq!(rows.len(), 1, "a run of three is not one row: {rows:?}");
-        assert_eq!(rows[0].text, "3 Files");
+        assert_eq!(rows[0].text(), "3 Files");
         assert!(rows[0].folds.is_some() && !rows[0].open);
 
         // One of them failed, so it is open without anybody asking.
@@ -1754,7 +1844,7 @@ mod tests {
         let said: Vec<String> = chat
             .rows(ROOM.reading)
             .iter()
-            .map(|row| row.text.clone())
+            .map(|row| row.text())
             .collect();
         assert!(
             said.iter().any(|text| text == "Approve Plan"),
@@ -1795,7 +1885,7 @@ mod tests {
         let said: Vec<String> = chat
             .rows(ROOM.reading)
             .iter()
-            .map(|row| row.text.clone())
+            .map(|row| row.text())
             .collect();
         assert!(
             said.iter().any(|text| text == "because the cache is wrong"),
@@ -1827,7 +1917,7 @@ mod tests {
             chat.tool(&saying("c1", "Approve Plan", &["the plan itself"]), state);
             chat.rows(ROOM.reading)
                 .iter()
-                .any(|row| row.text == "the plan itself")
+                .any(|row| row.text() == "the plan itself")
         };
         assert!(open("pending"), "a call waiting on the reader hid it");
         assert!(open("in_progress"), "a call still working hid it");
@@ -1858,7 +1948,7 @@ mod tests {
              stop being the same number, which is why the caret jumped.",
         );
         let rows = chat.rows(ROOM.reading);
-        assert_eq!(rows[0].text, "thought", "long thinking has no heading");
+        assert_eq!(rows[0].text(), "thought", "long thinking has no heading");
         assert!(rows[0].open, "obelus closed the thinking by itself");
         assert!(rows.len() > 1, "the thinking is not under its heading");
 
@@ -1901,10 +1991,10 @@ mod tests {
         for row in &rows {
             let room = usize::from(ROOM.reading.saturating_sub(u16::from(row.depth) * DEEPER));
             assert!(
-                obelus_text::text_width(&row.text) <= room,
+                obelus_text::text_width(&row.text()) <= room,
                 "{:?} is {} cells wide with {room} to write in",
-                row.text,
-                obelus_text::text_width(&row.text)
+                row.text(),
+                obelus_text::text_width(&row.text())
             );
         }
     }
@@ -1922,7 +2012,7 @@ mod tests {
         chat.doing(Some("thinking\u{2026}"));
         let rows = chat.rows(ROOM.reading);
         assert_eq!(rows.len(), 1, "the states piled up: {rows:?}");
-        assert_eq!(rows[0].text, "thinking\u{2026}");
+        assert_eq!(rows[0].text(), "thinking\u{2026}");
         assert_eq!(rows[0].speaker, Speaker::Doing);
         assert!(
             !rows[0].acts(),
@@ -2025,10 +2115,10 @@ mod tests {
         chat.chunk(Speaker::Agent, "in fact");
 
         let rows = chat.rows(40);
-        let words: Vec<&str> = rows
+        let words: Vec<String> = rows
             .iter()
-            .filter(|row| !row.text.is_empty())
-            .map(|row| row.text.as_str())
+            .map(Row::text)
+            .filter(|text| !text.is_empty())
             .collect();
         assert_eq!(
             words,
@@ -2064,16 +2154,16 @@ mod tests {
         chat.tool(&call("t1", "", "", Vec::new()), "completed");
 
         let rows = chat.rows(40);
-        let calls: Vec<(&str, Option<&str>)> = rows
+        let calls: Vec<(String, Option<&str>)> = rows
             .iter()
             .filter(|row| row.speaker == Speaker::Tool && row.first)
-            .map(|row| (row.text.as_str(), row.state.as_deref()))
+            .map(|row| (row.text(), row.state.as_deref()))
             .collect();
         assert_eq!(
             calls,
             [
-                ("Read the file", Some("completed")),
-                ("Run the tests", Some("pending")),
+                ("Read the file".to_string(), Some("completed")),
+                ("Run the tests".to_string(), Some("pending")),
             ]
         );
     }

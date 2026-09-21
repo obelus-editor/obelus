@@ -2455,7 +2455,7 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("blocks="))
+                .any(|row| row.text().contains("blocks="))
         })
     });
     let text = screen(&mut app);
@@ -2481,7 +2481,7 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("blocks=1"))
+                .any(|row| row.text().contains("blocks=1"))
         })
     });
 }
@@ -2632,6 +2632,60 @@ fn an_agent_that_stops_takes_the_questions_in_every_conversation_with_it() {
             .any(|row| row.contains("It stopped waiting for an answer")),
         "the question went with no reason on the page:\n{dump}"
     );
+}
+
+/// What an agent says is read as markdown, because it is markdown.
+///
+/// The protocol says so where it defines the block every one of these
+/// arrives in: "Text content. May be plain text or formatted with
+/// Markdown. Clients SHOULD render this text as Markdown." obelus drew the
+/// characters, so an agent laying its answer out -- a heading, a list, a
+/// fenced block, a name in backticks -- was sending punctuation to a reader
+/// who had to do the rendering in their head.
+///
+/// Broken deliberately by taking `Speaker::Agent` out of `reads_as_markdown`,
+/// after which the hashes and the backticks are on the screen as
+/// characters and the fence is a row of its own saying "```rust".
+#[test]
+fn what_an_agent_says_is_read_as_markdown() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/markdown");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("pure function"))
+        })
+    });
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    // The words are all there.
+    for words in [
+        "What I would do",
+        "cheap",
+        "closer_for",
+        "fn closer_for(open: char)",
+    ] {
+        assert!(
+            screen.iter().any(|row| row.contains(words)),
+            "{words:?} is not on the page:\n{dump}"
+        );
+    }
+    // And the marks that said how to draw them are not: they were drawn.
+    for mark in ["##", "**", "```"] {
+        assert!(
+            !screen.iter().any(|row| row.contains(mark)),
+            "the markdown {mark:?} is on screen as characters:\n{dump}"
+        );
+    }
+    // The whole of it, drawn: the heading in a heading's colour, the code
+    // in code's, the rest in the voice that said it.
+    support::check(&format!("markdown_{WIDTH}x{HEIGHT}"), &dump);
 }
 
 /// What an answer means is written out under it, wrapped, never cut.
@@ -2814,7 +2868,7 @@ fn a_loose_conversation_carries_no_opening() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("blocks="))
+                .any(|row| row.text().contains("blocks="))
         })
     });
     let text = screen(&mut app);
@@ -2884,7 +2938,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("blocks="))
+                .any(|row| row.text().contains("blocks="))
         })
     });
     let text = screen(&mut app);
@@ -3035,9 +3089,17 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
     };
     // The whole of it, not the first fifth: the last step is as visible as
     // the heading.
+    //
+    // And the heading is a heading rather than a hash and four words: what
+    // an agent sends is markdown by the protocol's own word for it, so a
+    // plan is read the way its author wrote it.
     let call = at("Approve Plan");
-    let heading = at("# The plan");
+    let heading = at("The plan");
     let last = at("5. Stop");
+    assert!(
+        !screen.iter().any(|row| row.contains("# The plan")),
+        "the plan's markdown is on screen as characters:\n{dump}"
+    );
     assert!(call < heading, "the plan is not under its call:\n{dump}");
     assert!(heading < last, "the plan is out of order:\n{dump}");
     assert!(
@@ -3047,10 +3109,7 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
     // And once, because the card does not print what the reader can
     // already read above it.
     assert_eq!(
-        screen
-            .iter()
-            .filter(|row| row.contains("# The plan"))
-            .count(),
+        screen.iter().filter(|row| row.contains("The plan")).count(),
         1,
         "the plan is on the screen twice:\n{dump}"
     );
@@ -3094,7 +3153,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("Step 2 of 3"))
+                .any(|row| row.text().contains("Step 2 of 3"))
         })
     });
 
@@ -3155,7 +3214,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
     let said = app.chat().expect("A conversation").rows(WIDTH);
     assert!(
         said.iter()
-            .filter(|row| row.text.contains("write the test"))
+            .filter(|row| row.text().contains("write the test"))
             .all(|row| matches!(row.speaker, Speaker::Doing | Speaker::Step)),
         "the list was written into the transcript as something said"
     );
@@ -3347,7 +3406,7 @@ fn somewhere_to_go_is_put_on_a_card_and_opened() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("you went"))
+                .any(|row| row.text().contains("you went"))
         })
     });
 }
@@ -3424,7 +3483,7 @@ fn where_the_reader_was_sent_stays_on_the_page_until_it_is_done() {
         app.chat().and_then(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .find(|row| row.text.contains("sign in to continue"))
+                .find(|row| row.text().contains("sign in to continue"))
                 .map(|row| row.state.clone())
         })
     };
@@ -3438,7 +3497,7 @@ fn where_the_reader_was_sent_stays_on_the_page_until_it_is_done() {
     pump(&mut app, &events, "the far end", |app| {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH).iter().any(|row| {
-                row.text.contains("sign in to continue")
+                row.text().contains("sign in to continue")
                     && row.state.as_deref() == Some("completed")
             })
         })
@@ -3549,7 +3608,7 @@ fn the_readers_own_words_come_back_from_the_agent() {
         .expect("the conversation")
         .rows(WIDTH)
         .iter()
-        .find(|row| row.text.contains("what did we settle on"))
+        .find(|row| row.text().contains("what did we settle on"))
         .map(|row| row.speaker);
     assert_eq!(
         said,
@@ -3581,7 +3640,7 @@ fn an_agent_that_echoes_the_prompt_does_not_say_it_twice() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("heard you"))
+                .any(|row| row.text().contains("heard you"))
         })
     });
 
@@ -3593,7 +3652,7 @@ fn an_agent_that_echoes_the_prompt_does_not_say_it_twice() {
         .rows(WIDTH)
         .iter()
         .filter(|row| row.speaker == obelus_component::chat::Speaker::Reader)
-        .map(|row| row.text.clone())
+        .map(|row| row.text())
         .collect();
     assert_eq!(
         said.matches("/echo").count(),
@@ -3767,7 +3826,7 @@ fn a_command_the_agent_asks_for_is_run() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("it said"))
+                .any(|row| row.text().contains("it said"))
         })
     });
 
@@ -3778,7 +3837,7 @@ fn a_command_the_agent_asks_for_is_run() {
         .expect("the conversation")
         .rows(WIDTH)
         .iter()
-        .map(|row| row.text.clone())
+        .map(|row| row.text())
         .collect::<String>();
     assert!(
         said.contains("it said obelus-ran-this and ended 3"),
@@ -3809,7 +3868,7 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
     pump(&mut app, &events, "the command to finish", |app| {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH).iter().any(|row| {
-                row.text.contains("Run the tests") && row.state.as_deref() == Some("failed")
+                row.text().contains("Run the tests") && row.state.as_deref() == Some("failed")
             })
         })
     });
@@ -3837,7 +3896,7 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
         .expect("the conversation")
         .rows(WIDTH)
         .iter()
-        .find(|row| row.text.contains("Run the tests"))
+        .find(|row| row.text().contains("Run the tests"))
         .and_then(|row| row.state.clone());
     assert_eq!(
         state,
@@ -3867,7 +3926,7 @@ fn the_key_that_stops_the_agent_stops_what_it_is_running() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text.contains("sleep 300"))
+                .any(|row| row.text().contains("sleep 300"))
         })
     });
     assert!(
