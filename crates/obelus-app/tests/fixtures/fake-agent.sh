@@ -240,6 +240,17 @@ while IFS= read -r line; do
             set_turn "$session" "$(id_of "$line")"
             printf '{"jsonrpc":"2.0","id":904,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"what would you like to do","requestedSchema":{"type":"object","properties":{"task":{"type":"string","title":"Task","oneOf":[{"const":"report","title":"Write the weekly report","description":"Gather the git changes of the week and write them up"},{"const":"review","title":"Review the code","description":"Read the current diff for bugs and simplifications"},{"const":"build","title":"Carry on with obelus","description":"Write code in this repository"},{"const":"survey","title":"Survey the repository","description":"Read the recent commits and describe where things stand"}]},"other":{"type":"string","title":"Other","description":"Type your own answer instead of choosing one above"}},"required":["task"]}}}\n'
             ;;
+        *'"method":"session/prompt"'*'"text":"/wordy'*)
+            # The same form with one answer whose line about itself is
+            # longer than a card is wide. What an agent writes there is a
+            # sentence about what choosing it would do, and the answers to
+            # one question are told apart by exactly those sentences.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":931,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"which way","requestedSchema":{"type":"object","properties":{"way":{"type":"string","title":"Way","oneOf":[{"const":"sink","title":"Sink the free functions","description":"Move the few hundred lines of pure functions that have nothing to do with the application out to the crates they belong in, which is nearly free and takes very little off the top"},{"const":"gather","title":"Gather the state","description":"Move methods onto the types that already exist"}]}},"required":["way"]}}}\n'
+            ;;
+        *'"id":931'*)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"id":904'*)
             # The form's response is an object: a choice must use the
             # option's id, and leaving "Other" empty must omit its key.

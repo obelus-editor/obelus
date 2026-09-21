@@ -9,11 +9,11 @@
 //! a size of its own -- what is written grows, the row that sends it does
 //! not -- so the answers take what is left, and scroll inside it.
 
-use obelus_component::card::{Card, On};
+use obelus_component::card::{Card, On, UNDER};
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
 
-use super::{chat, fill, put, rule, truncate_from_right, write};
+use super::{chat, fill, put, rule, write};
 
 /// The margin every row of the conversation is drawn in.
 const MARGIN: u16 = 1;
@@ -158,33 +158,37 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
 
     // The named answers, with the one the reader is on marked the way
     // every list in obelus marks it.
-    let shown = card.visible(parts.choices.height);
-    for (offset, index) in shown.clone().enumerate() {
-        let Ok(offset) = u16::try_from(offset) else {
-            break;
-        };
-        if offset >= parts.choices.height {
-            break;
-        }
+    //
+    // Two rows and not one: the name, and under it what the agent said
+    // choosing it would do, wrapped to the card rather than cut. Those
+    // sentences are what tell one answer from another -- they are the
+    // reason the agent wrote them -- and an ellipsis through the middle of
+    // every one of them is a question that has hidden its own answers.
+    let width = width_of(area);
+    let mut y = parts.choices.y;
+    for index in card.visible(parts.choices.height, width) {
         let Some(choice) = card.choices().get(index) else {
             break;
         };
+        if y >= parts.choices.bottom() {
+            break;
+        }
         let focused = card.on() == On::Choice(index);
         let background = match focused {
             true => theme.selected_row_background,
             false => theme.background,
         };
         let style = plain.bg(background);
-        let y = parts.choices.y + offset;
-        fill(
-            cells,
-            Rect {
-                y,
-                height: 1,
-                ..parts.choices
-            },
-            style,
-        );
+        // The whole answer wears the mark, not its first row: what is lit
+        // is what enter takes, and half an answer lit is half an answer
+        // that looks like it belongs to the one below.
+        let tall = u16::try_from(card.choice_rows(index, width)).unwrap_or(1);
+        let block = Rect {
+            y,
+            height: tall.min(parts.choices.bottom() - y),
+            ..parts.choices
+        };
+        fill(cells, block, style);
         let mut x = area.x + MARGIN;
         if card.several() {
             x = crate::ticked(cells, x, y, choice.chosen, style);
@@ -195,20 +199,27 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
             // list in obelus makes for the same glyphs.
             x += put(cells, x, y, icon, style) + 1;
         }
-        let ended = write(cells, x, y, &choice.name, style);
+        write(cells, x, y, &choice.name, style);
         if let Some(about) = choice.about.as_deref() {
-            // Cut with a mark rather than at the edge: a line that stops
-            // mid-word where the screen happens to end reads as a line
-            // that was written that way.
-            let room = area.right().saturating_sub(ended + MARGIN * 2);
-            write(
-                cells,
-                ended + 2,
-                y,
-                &truncate_from_right(about, usize::from(room)),
-                style.fg(theme.gutter),
-            );
+            // Under the name, at the column the name starts in, so the
+            // sentence reads as belonging to it rather than as another
+            // answer. The same step the rows were measured against.
+            let room = width.saturating_sub(UNDER).max(1);
+            for words in obelus_text::wrapped(about, room) {
+                y += 1;
+                if y >= block.bottom() {
+                    break;
+                }
+                write(
+                    cells,
+                    area.x + MARGIN + UNDER,
+                    y,
+                    &words,
+                    style.fg(theme.gutter),
+                );
+            }
         }
+        y = block.bottom();
     }
 
     // The row that says whether the reader is writing an answer of their

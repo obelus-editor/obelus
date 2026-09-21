@@ -2634,6 +2634,63 @@ fn an_agent_that_stops_takes_the_questions_in_every_conversation_with_it() {
     );
 }
 
+/// What an answer means is written out under it, wrapped, never cut.
+///
+/// A card's answers used to be one row each: the name, and as much of the
+/// line the agent wrote about it as fitted after it, ending in an ellipsis.
+/// Those lines are the reason the agent wrote them -- they are what tells
+/// one answer from another -- and cutting every one of them at the same
+/// column is a question that has hidden its own answers. So the name gets
+/// a row, what it means gets as many as it needs under it, and the answer
+/// the reader is on is marked over the whole block.
+///
+/// Broken deliberately by putting the line back on the name's row through
+/// `truncate_from_right`, after which the tail of the sentence is off the
+/// screen and the ellipsis is on it.
+#[test]
+fn what_an_answer_means_is_written_out_under_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/wordy");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", |app| {
+        app.card().is_some()
+    });
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    // The whole sentence, in pieces, each piece on the screen somewhere
+    // under the name it belongs to.
+    let name = at_row(&screen, "Sink the free functions", &dump);
+    for piece in [
+        "Move the few hundred lines",
+        "out to the crates they belong in",
+        "takes very little off the top",
+    ] {
+        assert!(
+            at_row(&screen, piece, &dump) > name,
+            "{piece:?} is not under the answer it belongs to:\n{dump}"
+        );
+    }
+    // And nothing was cut to make it fit.
+    assert!(
+        !screen
+            .iter()
+            .any(|row| row.contains("\u{2026}") && row.contains("Move the few hundred")),
+        "the line about the answer was cut short:\n{dump}"
+    );
+}
+
+/// Where a needle is on screen, or a panic naming it.
+fn at_row(screen: &[&str], needle: &str, dump: &str) -> usize {
+    screen
+        .iter()
+        .position(|row| row.contains(needle))
+        .unwrap_or_else(|| panic!("no {needle:?} on screen:\n{dump}"))
+}
+
 /// A list opened over a question is given the room above it.
 ///
 /// A reader who has been asked something and wants to go and look before

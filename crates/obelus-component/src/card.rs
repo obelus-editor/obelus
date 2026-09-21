@@ -44,6 +44,15 @@ use obelus_text::coordinates::DisplayColumn;
 
 use super::composer::Composer;
 
+/// How far under an answer's name what it means is drawn.
+///
+/// A fixed step rather than the column the name happens to start in: the
+/// tick and the icon are two cells and a card has one or the other, so this
+/// is where the name begins either way -- and a card that measured its rows
+/// against one column and drew them in another would lay out rows it then
+/// does not draw.
+pub const UNDER: u16 = 2;
+
 /// How many rows of prose the question gets before its answers.
 ///
 /// A card is where an answer is given, not where a long thing is read. What
@@ -251,26 +260,70 @@ impl Card {
         self.on
     }
 
+    /// How many rows one answer takes: its name, and under it what the
+    /// agent said it means, wrapped.
+    ///
+    /// Not cut short. What an agent writes here is a sentence about what
+    /// choosing this would do, and the answers to one question are told
+    /// apart by exactly those sentences -- an ellipsis through the middle
+    /// of them is a card that has asked something and then covered up the
+    /// difference between its answers.
+    #[must_use]
+    pub fn choice_rows(&self, at: usize, width: u16) -> usize {
+        let Some(choice) = self.choices.get(at) else {
+            return 0;
+        };
+        let under = match choice.about.as_deref() {
+            Some(about) => obelus_text::wrapped(about, width.saturating_sub(UNDER).max(1)).len(),
+            None => 0,
+        };
+        1 + under
+    }
+
     /// Which named answers are on screen, given the room they have.
     ///
     /// Worked out from where the reader is rather than remembered: a card's
     /// answers are few, and a window that keeps its own place would be one
     /// more thing that can be wrong about a list nobody scrolls.
+    ///
+    /// Whole answers only. An answer is a name and the sentence under it
+    /// saying what it means, and half of that is a row of prose with
+    /// nothing above it saying which answer it belongs to -- so the list
+    /// scrolls by answers even though it is measured in rows. The one
+    /// exception is an answer taller than the whole band, which is shown
+    /// and clipped: something has to be on screen.
     #[must_use]
-    pub fn visible(&self, height: u16) -> std::ops::Range<usize> {
+    pub fn visible(&self, height: u16, width: u16) -> std::ops::Range<usize> {
         let height = usize::from(height).max(1);
         let count = self.choices.len();
-        if count <= height {
+        if count == 0 {
+            return 0..0;
+        }
+        let tall: Vec<usize> = (0..count).map(|at| self.choice_rows(at, width)).collect();
+        if tall.iter().sum::<usize>() <= height {
             return 0..count;
         }
         let at = match self.on {
-            On::Choice(at) => at,
+            On::Choice(at) => at.min(count - 1),
             // Below them, so what is on screen is the end of the list --
             // which is what the rows under it are attached to.
             On::Tick | On::Words | On::Submit => count - 1,
         };
-        let top = at.saturating_sub(height - 1).min(count - height);
-        top..top + height
+        // Up from the one the reader is on, so walking down the list moves
+        // it to the foot of the band rather than to the head of it, and
+        // then down into whatever is left.
+        let mut used = tall[at];
+        let mut top = at;
+        while top > 0 && used + tall[top - 1] <= height {
+            used += tall[top - 1];
+            top -= 1;
+        }
+        let mut bottom = at + 1;
+        while bottom < count && used + tall[bottom] <= height {
+            used += tall[bottom];
+            bottom += 1;
+        }
+        top..bottom
     }
 
     /// Whether the card has a row saying the reader is writing their own
@@ -372,7 +425,9 @@ impl Card {
     #[must_use]
     pub fn rows(&self, width: u16) -> usize {
         self.about_rows(width)
-            + self.choices.len()
+            + (0..self.choices.len())
+                .map(|at| self.choice_rows(at, width))
+                .sum::<usize>()
             + usize::from(self.has_tick())
             + self.written_rows(width)
             + if self.has_submit() { 2 } else { 0 }
