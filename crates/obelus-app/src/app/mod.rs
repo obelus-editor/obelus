@@ -2531,6 +2531,9 @@ impl Screen for App {
     fn note(&self) -> Option<&str> {
         App::note(self)
     }
+    fn talked_about(&self) -> Vec<obelus_component::todo::Talked> {
+        App::talked_about(self)
+    }
     fn notes(&self) -> Option<&TodoView> {
         App::notes(self)
     }

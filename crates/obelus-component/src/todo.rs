@@ -61,6 +61,29 @@ pub struct Row {
     pub held: Option<Range<usize>>,
 }
 
+/// Whether a note has a conversation about it, and whether that
+/// conversation wants something.
+///
+/// Which a list of notes has to say, because the answer outlives the
+/// session: obelus writes down which conversation is about which note, so
+/// a note talked over yesterday is one the agent still has every word of
+/// -- and until this, the only way to find out was to open it and see
+/// whether anything came back.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Talked {
+    /// Nobody has talked about it.
+    #[default]
+    Not,
+    /// There is a conversation: open now, or written down against this
+    /// note and waiting to be taken up again.
+    Yes,
+    /// And it is waiting on an answer. The same thing the list of open
+    /// documents says about a conversation with a question in it, said
+    /// here too: a reader who walked away from one is more likely to come
+    /// back through the note than through the list.
+    Waiting,
+}
+
 /// What a key did.
 #[derive(Debug)]
 pub enum TodoOutcome {

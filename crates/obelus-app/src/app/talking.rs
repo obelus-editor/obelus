@@ -95,9 +95,20 @@ impl App {
             self.documents.len() - 1
         });
         self.go_to_document(DocumentId::new(at));
+        // Started where nothing is running, and then asked about *this*
+        // conversation just the same. Returning here is what the reader
+        // met every morning: the first note they opened after obelus
+        // started did the starting and stopped, before the line below
+        // that looks up the name written down beside the note. So it
+        // asked for nothing, the session the agent opens on its way up
+        // was handed to it as the first one wanting one, and a
+        // conversation the agent still had every word of came back blank.
+        // Only the first, because the second found the agent running.
+        //
+        // Nothing to wait for: the handle is made here and the asks go
+        // down a channel the connection reads when it is up.
         if self.talker.is_none() {
             self.start_agent();
-            return;
         }
         if self
             .conversation()
@@ -172,6 +183,57 @@ impl App {
         let agent = self.talker.as_ref()?.id();
         let kept = obelus_agent::acp::sessions::read(&self.working_directory);
         Some(kept.get(note, agent)?.session.clone())
+    }
+
+    /// Whether each note has a conversation about it, in the order the
+    /// notes are in -- which is what a row of the notes names.
+    ///
+    /// Two places count. A conversation open right now is one, and a name
+    /// written down against the note is the other: obelus keeps those so
+    /// that a note talked over yesterday can be taken up again, and a list
+    /// that only knew about open ones would say "nobody has talked about
+    /// this" to a reader whose agent still holds every word of it.
+    ///
+    /// Against the agent the reader is set up to talk to rather than any
+    /// agent that ever was. A conversation held with one they have since
+    /// switched away from is not one they can reach, and saying there is
+    /// one would send them to a note that opens an empty page.
+    ///
+    /// Worked out each time rather than kept. The file is a few lines and
+    /// it is read only while the notes are on screen, and the thing a
+    /// cache would buy here is the one thing this must not have: an answer
+    /// that goes on saying a note has a conversation after it has not.
+    #[must_use]
+    pub fn talked_about(&self) -> Vec<obelus_component::todo::Talked> {
+        use obelus_component::todo::Talked;
+
+        let Some(notes) = self.notes() else {
+            return Vec::new();
+        };
+        let kept = obelus_agent::acp::sessions::read(&self.working_directory);
+        let agent = self.settled.config.agent.clone().unwrap_or_default();
+        notes
+            .as_written()
+            .notes
+            .iter()
+            .map(|note| {
+                let open = self
+                    .documents
+                    .iter()
+                    .flatten()
+                    .filter_map(Document::chat)
+                    .find(|talk| matches!(&talk.topic, Topic::Note(id) if *id == note.id));
+
+                if open.is_some_and(|talk| talk.card.is_some()) {
+                    return Talked::Waiting;
+                }
+                let written = !agent.is_empty() && kept.get(&note.id, &agent).is_some();
+                match open.is_some() || written {
+                    true => Talked::Yes,
+                    false => Talked::Not,
+                }
+            })
+            .collect()
     }
 
     /// Writes down which conversation is about which note.
@@ -1425,8 +1487,23 @@ impl App {
         let Some(session) = named else {
             return Some(Whose::Whoever);
         };
-        self.conversation_at(|talk| talk.session.as_ref() == Some(session))
-            .map(|at| Whose::One(DocumentId::new(at)))
+        // The one that has it, or the one that asked for it by name and
+        // has not been told yet. Both are the same conversation: a
+        // conversation asks for a session it had before, and the moment
+        // the agent answers it owns that name.
+        //
+        // The second is not a nicety. An agent replaying a conversation
+        // sends the words as notifications while it is still answering
+        // the request that asked for them, so they arrive *before* the
+        // answer that says which conversation the name belongs to. On the
+        // name alone there was nothing here that had it, and the whole
+        // replay went on the floor -- a conversation taken up again with
+        // every word of it dropped on the way in, which from a reader's
+        // side is indistinguishable from not having been taken up at all.
+        self.conversation_at(|talk| {
+            talk.session.as_ref() == Some(session) || talk.asked_for.as_ref() == Some(session)
+        })
+        .map(|at| Whose::One(DocumentId::new(at)))
     }
 
     /// Where the first conversation this is true of sits among the
@@ -1577,6 +1654,7 @@ impl App {
         let Some(incoming) = talker.on(incoming) else {
             return;
         };
+
         // A conversation that could not be picked up where it was left. The
         // agent has forgotten it -- a session it swept up, a version of it
         // that keeps them differently -- and a fresh one is already on its

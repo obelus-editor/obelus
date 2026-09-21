@@ -744,15 +744,24 @@ fn a_long_note_wraps_when_the_reader_wraps() {
 
     let wrapped = showing(true);
     assert!(
-        wrapped[1].contains("of a narrow terminal"),
+        wrapped[1].contains("narrow terminal"),
         "it did not wrap:\n{}",
         wrapped.join("\n")
     );
     // The continuation starts under the first row's words rather than under
     // the box, so a note reads as one thing.
+    //
+    // Measured as where each row's words begin rather than by naming a
+    // word of them: which words land on the second row is a fact about how
+    // wide the column is, and this is not a test about that.
+    let words_at = |row: &str| {
+        row.chars()
+            .position(char::is_alphanumeric)
+            .unwrap_or_else(|| panic!("no words on {row:?}"))
+    };
     assert_eq!(
-        support::column_of(&wrapped[1], "of a narrow"),
-        support::column_of(&wrapped[0], "a note"),
+        words_at(&wrapped[1]),
+        words_at(&wrapped[0]),
         "the second row is not under the first"
     );
 
@@ -1429,14 +1438,22 @@ fn a_deep_notes_words_are_wrapped_to_fit_where_they_are_drawn() {
 
     // And both notes broke into rows of one width, which is the other half
     // of it: the indented one is not wrapped tighter than the note above.
-    let widths: Vec<usize> = said
-        .iter()
-        .map(|row| row.chars().count())
-        .filter(|width| *width > 1)
-        .collect();
-    assert!(
-        widths.windows(2).all(|pair| pair[0] == pair[1]),
-        "the notes wrapped in different columns: {widths:?}\n{dump}"
+    //
+    // By the widest row of each rather than by every row being the same
+    // width, which held only while the letters happened to divide evenly
+    // into the column: the last row of a note is whatever is left over and
+    // says nothing about where the note wraps.
+    let widest = |letter: char| {
+        said.iter()
+            .filter(|row| row.starts_with(letter))
+            .map(|row| row.chars().count())
+            .max()
+            .unwrap_or_else(|| panic!("no rows of {letter:?}:\n{dump}"))
+    };
+    assert_eq!(
+        widest('a'),
+        widest('b'),
+        "the notes wrapped in different columns:\n{dump}"
     );
 }
 

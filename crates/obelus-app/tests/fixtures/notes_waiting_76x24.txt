@@ -1,0 +1,60 @@
+screen 76x24  editor 76x22  status 76x1
+-- text --
+ 0|▐󰚩 󰄱 talked about                                                           
+ 1|   󰄱 never mentioned                                                        
+ 2|                                                                            
+ 3|                                                                            
+ 4|                                                                            
+ 5|                                                                            
+ 6|                                                                            
+ 7|                                                                            
+ 8|                                                                            
+ 9|                                                                            
+10|                                                                            
+11|                                                                            
+12|                                                                            
+13|                                                                            
+14|                                                                            
+15|                                                                            
+16|                                                                            
+17|                                                                            
+18|                                                                            
+19|                                                                            
+20|────────────────────────────────────────────────────────────────────────────
+21|   󰌑  Another    󰘵 󱁐  Done    󰘵 a  Talk    󰘵 󰌍  Drop    󰘵 ↑ 󰘵 ↓  Move       
+22|────────────────────────────────────────────────────────────────────────────
+23| 󰡖  Todo                                                  2 to come back to 
+-- style --
+ 0|abcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 2|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 4|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+13|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+14|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+19|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+20|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+21|cceeecdddddddccceeeeecddddccceeeeecddddccceeeeecddddccceeeeeeeeecddddccccccc
+22|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+23|ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+-- legend --
+a fg=#18181b bg=#312e81
+b fg=#f87171 bg=#18181b
+c fg=#e4e4e7 bg=#18181b
+d fg=#52525b bg=#18181b
+e fg=#a1a1aa bg=#27272a
+f fg=#d4d4d8 bg=#18181b
+-- cursor --
+none

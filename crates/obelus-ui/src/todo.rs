@@ -9,7 +9,7 @@
 //! changed file's counts are: a place hung off the ragged end of a sentence
 //! is a place a reader has to find again on every row.
 
-use obelus_component::todo::{Row, TodoView as Notes};
+use obelus_component::todo::{Row, Talked, TodoView as Notes};
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
@@ -190,12 +190,50 @@ const HALF: char = '\u{2590}';
 /// drawn from here and the caret is put here. They did not, once, and the
 /// caret sat one cell right of the letter it was about to put down -- which
 /// is a caret that is lying about the only thing it says.
-const MARGIN: u16 = 3;
+/// Where a note's own words begin, counted from the edge of the list.
+///
+/// The half-cell that says the keys are here, the column that says whether
+/// the note has a conversation, the box, and the space after it. One
+/// answer, because the caret, the pointer and the wrapping all ask it: the
+/// column below was added by hand at the two places that draw and the
+/// pointer went on landing two cells off, which is a selection that starts
+/// where the reader did not put it.
+const MARGIN: u16 = 1 + TALKED + 2;
+
+/// The column that says whether a note has been talked about.
+///
+/// Always there, whether or not anything is in it, and in front of the box
+/// rather than after the words. A mark that appears and disappears moves
+/// every note beside it, so a reader glancing down the list sees the text
+/// step in and out; and one hung off the end of the words lands in a
+/// different column on every row, which is not a column anybody can read
+/// down. Two cells, because that is what one of these glyphs measures.
+const TALKED: u16 = 2;
+
+/// What goes in that column.
+///
+/// The glyph a conversation wears everywhere else, or the plainest mark
+/// there is where a terminal has no font for it -- and nothing at all for
+/// a note nobody has talked about, because an empty column is what says
+/// so. Which of the two states it is in is the colour rather than the
+/// glyph: they are the same thing, one of them wanting something.
+fn talked_mark(talked: Talked) -> Option<String> {
+    let said = match obelus_icons::enabled() {
+        true => obelus_icons::ui::AGENT.to_string(),
+        false => "*".to_string(),
+    };
+    match talked {
+        Talked::Not => None,
+        Talked::Yes | Talked::Waiting => Some(said),
+    }
+}
 
 /// The notes, over the whole editor region.
 pub struct TodoUi<'a> {
     notes: &'a Notes,
     theme: &'a Theme,
+    /// Which notes have a conversation, in the notes' own order.
+    talked: Vec<Talked>,
 }
 
 impl<'a> TodoUi<'a> {
@@ -205,6 +243,7 @@ impl<'a> TodoUi<'a> {
         Some(Self {
             notes: app.notes()?,
             theme: app.theme(),
+            talked: app.talked_about(),
         })
     }
 }
@@ -341,9 +380,44 @@ impl TodoUi<'_> {
         // edge: the box is the note's own mark, and a column of them all
         // hard left with the text stepping away from them reads as one flat
         // list with ragged words.
+        // Whether anybody has talked about this note, in the column
+        // before the box. On the note's own row only, like the box: a
+        // line of a body is part of the note above it and is not
+        // separately talked about.
+        //
+        // Before the box and not the words, so it sits in one column at
+        // every depth -- the box steps in with the note and this does
+        // not, because what it says is about the note rather than part of
+        // it. The same glyph the list of open documents puts on a
+        // conversation, and the same colour it puts on one with a
+        // question waiting in it: a reader who learnt it there should not
+        // have to learn it again here.
+        if row.head {
+            let talked = self.talked.get(row.note).copied().unwrap_or_default();
+            if let Some(mark) = talked_mark(talked) {
+                let mark = mark.as_str();
+                let ink = match talked {
+                    Talked::Waiting => self.theme.status_stale,
+                    _ => self.theme.gutter,
+                };
+                crate::write(
+                    cells,
+                    area.x + 1,
+                    y,
+                    mark,
+                    Style::new().fg(ink).bg(background),
+                );
+            }
+        }
         let step = row.depth * obelus_git::todo::INDENT;
         if row.head {
-            put(cells, area.x + 1 + step, y, crate::tick(row.done), style);
+            put(
+                cells,
+                area.x + 1 + TALKED + step,
+                y,
+                crate::tick(row.done),
+                style,
+            );
         }
         let x = area.x + MARGIN + step;
 

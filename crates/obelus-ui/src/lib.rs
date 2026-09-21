@@ -160,6 +160,9 @@ pub trait Screen {
     fn note(&self) -> Option<&str>;
     /// The notes, while the reader is in them.
     fn notes(&self) -> Option<&TodoView>;
+    /// Whether each note has a conversation, by the note's place in the
+    /// list -- which is what a row of the notes names.
+    fn talked_about(&self) -> Vec<obelus_component::todo::Talked>;
     /// The hunk the reader has opened in place, if any.
     fn opened_hunks(&self) -> Vec<LineNumber>;
     /// How far along the welcome screen's colours have travelled, in ticks.

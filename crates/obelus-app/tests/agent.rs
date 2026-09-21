@@ -3718,6 +3718,182 @@ fn settled(app: &App) -> bool {
     })
 }
 
+/// A note says whether anybody has talked about it.
+///
+/// Which conversation is about which note is written down and outlives the
+/// session, and there was nowhere on screen that said so: the only way to
+/// find out whether a note already had one was to open it and see whether
+/// anything came back. The mark goes in a column of its own in front of
+/// the box, so it is in the same place at every depth and a note nobody
+/// has talked about leaves it empty rather than moving the words.
+///
+/// It makes two claims and was broken deliberately twice. Answering
+/// `Talked::Not` for a note with a name written down against it takes the
+/// mark off a note that has a conversation. And answering `Talked::Yes`
+/// where a card is up leaves the mark in the colour that says "there is
+/// one" on a conversation that is waiting to be answered.
+#[test]
+fn a_note_says_whether_anybody_has_talked_about_it() {
+    let scratch = support::Scratch::new("agent-note-marks");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"0123456Q\"\nsaid = \"talked about\"\ndone = false\ndepth = 0\n\n         [[todo]]\nid = \"0123456R\"\nsaid = \"never mentioned\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let id = obelus_git::todo::NoteId::read("0123456Q").expect("a name");
+    obelus_agent::acp::sessions::change(scratch.path(), std::slice::from_ref(&id), |remembered| {
+        remembered.put(
+            &id,
+            "fake",
+            obelus_agent::acp::sessions::Kept {
+                session: "s-old".to_string(),
+                title: None,
+            },
+        );
+    });
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let root = scratch.join("agents");
+    obelus_agent::remember(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        "0.1",
+        &root,
+    )
+    .expect("writing what was installed");
+    app.agents_root_for_test(root);
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
+    app.config_file_for_test(file);
+
+    // Nothing running yet: the mark is about what is written down, which
+    // is the half a restart has to survive.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let marked = |dump: &str, said: &str| {
+        rows(dump)
+            .iter()
+            .find(|row| row.contains(said))
+            .unwrap_or_else(|| panic!("no note saying {said:?}:\n{dump}"))
+            .contains(MARK)
+    };
+    assert!(
+        marked(&dump, "talked about"),
+        "a note with a conversation written down says nothing about it:\n{dump}"
+    );
+    assert!(
+        !marked(&dump, "never mentioned"),
+        "a note nobody has talked about is marked as though they had:\n{dump}"
+    );
+
+    // And once that conversation is waiting on an answer, the mark says
+    // so -- in the colour the list of open documents uses for the same
+    // thing, which is what the whole frame is checked for.
+    support::press_alt(&mut app, 'a');
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/twice");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::anything_waiting);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    let waiting = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        marked(&waiting, "talked about"),
+        "the note lost its mark while its conversation was waiting:\n{waiting}"
+    );
+    support::check(&format!("notes_waiting_{WIDTH}x{HEIGHT}"), &waiting);
+}
+
+/// The glyph a note wears when there is a conversation about it.
+const MARK: char = obelus_icons::ui::AGENT;
+
+/// The first conversation opened after obelus starts is taken up too.
+///
+/// Which note goes with which conversation is written down and survives a
+/// restart -- and the first one the reader opened never got the benefit.
+/// Going to a note's conversation starts the agent where none is running,
+/// and that did the starting and then returned, before the line that looks
+/// up the name written down beside the note. So the conversation asked for
+/// nothing, the session the agent opens on its way up was handed to it as
+/// the first one wanting one, and the reader got a blank page and an agent
+/// that had forgotten the whole thing. Every restart, and only the first
+/// note opened: the second found the agent already running and was taken
+/// up correctly, which is why no test had ever seen it.
+///
+/// It makes two claims and was broken deliberately twice. Putting the
+/// `return` back after `start_agent` asks for nothing, so nothing is
+/// replayed and the page is a new conversation. And routing on the session
+/// a conversation *has* rather than the one it asked for drops the replay:
+/// an agent sends those words while it is still answering the request that
+/// asked for them, so they arrive before the answer saying whose they are.
+#[test]
+fn the_first_conversation_opened_after_a_restart_is_taken_up() {
+    let scratch = support::Scratch::new("agent-note-first");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"0123456P\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let id = obelus_git::todo::NoteId::read("0123456P").expect("a name");
+    obelus_agent::acp::sessions::change(scratch.path(), std::slice::from_ref(&id), |remembered| {
+        remembered.put(
+            &id,
+            "fake",
+            obelus_agent::acp::sessions::Kept {
+                session: "s-old".to_string(),
+                title: None,
+            },
+        );
+    });
+
+    // Started the way a reader's morning is: nothing running, an agent
+    // named in the settings, and the conversation reached from the note.
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let root = scratch.join("agents");
+    obelus_agent::remember(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        "0.1",
+        &root,
+    )
+    .expect("writing what was installed");
+    app.agents_root_for_test(root);
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
+    app.config_file_for_test(file);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    // What the agent replays, which is what says it was asked for the
+    // conversation written down rather than handed a new one. A load that
+    // worked writes no note -- there is nothing to explain, the words are
+    // simply back -- so the words are what to wait for.
+    pump(&mut app, &events, "the old conversation", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("where we were"))
+        })
+    });
+
+    let text = screen(&mut app);
+    assert!(
+        text.contains("what did we settle on"),
+        "the reader's half of the old conversation did not come back:\n{text}"
+    );
+    assert!(
+        !text.contains("Starting again"),
+        "the conversation was thrown away rather than taken up:\n{text}"
+    );
+}
+
 /// An agent that keeps a conversation but cannot replay it is asked for the
 /// one it can do, and the reader is told why the page is empty.
 ///
