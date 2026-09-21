@@ -3968,6 +3968,79 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
     );
 }
 
+/// A transcript scrolled away from its end says how to get back, and what
+/// arrived while the reader was not looking.
+///
+/// The scrollbar beside it can only say how much there is. What somebody
+/// who has scrolled up actually wants to know is whether the agent has
+/// answered them yet -- and there was nothing on screen that said so, nor
+/// anything naming the key that goes back.
+///
+/// The agent's own words and nothing else are counted: a turn is a dozen
+/// tool calls and a paragraph, and how much machinery went past is not
+/// news. Nor are obelus's own notes, which are obelus talking about the
+/// conversation rather than anything said in it.
+///
+/// Broken deliberately three ways. Drawing the way back whatever the
+/// window is doing leaves it sitting at the end of a conversation nobody
+/// has scrolled. Counting every kind of thing said turns one answer into
+/// "4 new messages" the moment it uses a tool. And putting the guard on
+/// `Chat::handle_key` back the way it was -- shift or nothing -- makes
+/// `ctrl+home` and `ctrl+end` do nothing at all, which is what they did:
+/// the guard turned them away before the arms that were waiting for them,
+/// and a conversation has no file for the editor to take them instead.
+#[test]
+fn a_transcript_scrolled_up_says_how_to_get_back() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // At the end, which is where it sits: nothing to say.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !rows(&dump).iter().any(|row| row.contains("ctrl+end")),
+        "a conversation nobody has scrolled offers a way back:\n{dump}"
+    );
+
+    // Something to scroll, and scrolled away from the end of it.
+    support::type_text(&mut app, "/filler");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "something to scroll", |app| {
+        app.chat()
+            .is_some_and(|chat| chat.rows(WIDTH - 5).len() > usize::from(HEIGHT))
+    });
+    support::press_control_key(&mut app, KeyCode::Home);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("To the end")),
+        "nothing says how to get back:\n{dump}"
+    );
+
+    // And the agent says something while they are up there.
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH - 5)
+                .iter()
+                .any(|row| row.text().contains("heard you"))
+        })
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("1 new message")),
+        "nothing says the agent has answered:\n{dump}"
+    );
+
+    // Back to the end, and there is nothing left to say.
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !rows(&dump).iter().any(|row| row.contains("ctrl+end")),
+        "the way back is still offered at the end:\n{dump}"
+    );
+}
+
 /// A long conversation still says when the agent is working.
 ///
 /// The row that says what is happening now is the last row of the

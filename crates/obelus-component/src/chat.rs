@@ -410,6 +410,18 @@ pub struct Chat {
     window: Window,
     /// Which of the two things on this screen the keys are moving.
     focus: Focus,
+    /// How much had been said when the reader last left the end of it.
+    ///
+    /// `None` while they are at the end, which is where a transcript sits
+    /// until they scroll up. What it is for is the one question somebody
+    /// who has scrolled up actually has -- has it answered me yet -- and
+    /// the answer is what arrived after they stopped looking.
+    ///
+    /// Taken and dropped by [`Chat::settle`] rather than by whatever
+    /// scrolls, because there are four ways to leave the end and one of
+    /// them is the list growing under a window that is not following. One
+    /// place that asks "are we at the end now" cannot miss any of them.
+    left_at: Option<usize>,
 }
 
 impl Default for Chat {
@@ -502,6 +514,7 @@ impl Chat {
             input: Composer::new(),
             window: Window::following(),
             focus: Focus::Writing,
+            left_at: None,
         }
     }
 
@@ -1216,6 +1229,48 @@ impl Chat {
     pub fn settle(&mut self, rows: usize, room: u16) {
         self.window.set_count(rows);
         self.window.settle(room);
+        // Where the reader left, so that what has arrived since can be
+        // counted. Taken on the first frame they are away and dropped the
+        // moment they are back.
+        match self.window.at_the_end() {
+            true => self.left_at = None,
+            false => {
+                self.left_at.get_or_insert(self.said.len());
+            }
+        }
+    }
+
+    /// Whether the transcript is showing its own end.
+    ///
+    /// Which is where it sits until the reader scrolls up: everything
+    /// arrives at the end, so the end is where they are unless they said
+    /// otherwise.
+    #[must_use]
+    pub const fn at_the_end(&self) -> bool {
+        self.window.at_the_end()
+    }
+
+    /// How many times the agent has spoken since the reader left the end.
+    ///
+    /// The agent's own words and nothing else. A turn is a dozen tool
+    /// calls and a paragraph, and what somebody who has scrolled up wants
+    /// to know is whether it has answered them -- not how much machinery
+    /// went past. obelus's own notes are not news either: they are obelus
+    /// talking about the conversation rather than anything said in it.
+    ///
+    /// A streaming answer is one of these and stays one: chunks are
+    /// appended to what the agent was already saying, so the count does
+    /// not climb while a single answer is being written.
+    #[must_use]
+    pub fn said_since(&self) -> usize {
+        let Some(left_at) = self.left_at else {
+            return 0;
+        };
+        self.said
+            .iter()
+            .skip(left_at)
+            .filter(|said| said.speaker == Speaker::Agent)
+            .count()
     }
 
     /// Scrolls the transcript, for the wheel.
@@ -1252,7 +1307,22 @@ impl Chat {
             self.input.newline();
             return ChatOutcome::Consumed;
         }
-        if modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT {
+        // Everything else with a modifier on it is the application's:
+        // a conversation is a document rather than something over one, so
+        // `ctrl+q` leaves and `f2` lists what is open from inside it. A
+        // conversation that swallowed those would be one a reader cannot
+        // use obelus from.
+        //
+        // Except the two ends of the transcript, which are nobody else's.
+        // The arms below already share Home and End between the box and
+        // the transcript -- bare is the box's, with a modifier is the
+        // transcript's -- and the modifier a reader reaches for to jump to
+        // the end of a long document is control. It reached nothing: the
+        // guard turned it away before the arm that was waiting for it, and
+        // in a conversation there is no file for the editor to take it
+        // instead, so the key did nothing at all.
+        let ends = matches!(key.code, KeyCode::Home | KeyCode::End);
+        if !ends && modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT {
             return ChatOutcome::Ignored;
         }
         let bare = modifiers == KeyModifiers::NONE;

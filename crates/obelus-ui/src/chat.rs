@@ -488,6 +488,22 @@ impl Widget for ChatView<'_> {
         }
 
         self.transcript(cells, regions.transcript, plain, dim);
+        // The way back, on the rule over the box, while the reader is not
+        // at the end.
+        //
+        // On the rule because the rule is the one row on this screen that
+        // carries nothing: a label there covers no word of the
+        // conversation, and it sits exactly on the boundary between what
+        // was said and what is being written, which is the boundary the
+        // reader has scrolled away from.
+        //
+        // The key is spelled out rather than taken from the key table,
+        // which is where every other hint in obelus gets its spelling.
+        // This one cannot be: `ctrl+end` is on the list of chords the
+        // table refuses, because the editor takes it before the table is
+        // reached -- so the one key obelus will not let a reader rebind is
+        // the one it has to name here.
+        self.the_way_back(cells, regions.writing.y - 1, area);
         // The card where the box would be: while the agent is waiting on
         // an answer there is no message to send, so the row the reader
         // would type it in is the room the question needs.
@@ -499,6 +515,44 @@ impl Widget for ChatView<'_> {
 }
 
 impl ChatView<'_> {
+    /// Says how to get back to the end, where the reader has left it.
+    ///
+    /// And what has arrived since, where the agent has said anything: the
+    /// question somebody who scrolled up actually has is whether it has
+    /// answered them yet, and the scrollbar beside them can only say how
+    /// much there is -- never whether any of it is new.
+    fn the_way_back(&self, cells: &mut CellBuffer, y: u16, area: Rect) {
+        if self.chat.at_the_end() {
+            return;
+        }
+        let since = self.chat.said_since();
+        let said = match since {
+            0 => "To the end".to_string(),
+            1 => "1 new message".to_string(),
+            many => format!("{many} new messages"),
+        };
+        let label = format!("  {said}  ctrl+end \u{2193}  ");
+        let width = text_width(&label);
+        let Ok(width) = u16::try_from(width) else {
+            return;
+        };
+        if width >= area.width {
+            return;
+        }
+        // Centred, which is where a thing that belongs to the whole width
+        // goes -- and where the eye is already, the box being under it.
+        let x = area.x + (area.width - width) / 2;
+        write(
+            cells,
+            x,
+            y,
+            &label,
+            Style::new()
+                .fg(self.theme.foreground)
+                .bg(self.theme.background),
+        );
+    }
+
     /// What has been said, and the commands being completed over it.
     fn transcript(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
         let words = area.x + MARGIN + INDENT;
