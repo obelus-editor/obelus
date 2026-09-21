@@ -1717,6 +1717,30 @@ pub fn truncate_from_left(contents: &str, cells: usize) -> String {
     result
 }
 
+/// Held while a test changes, or reads, the one switch that says whether
+/// glyphs are drawn.
+///
+/// The switch is a single atomic for the whole process and cargo runs a
+/// crate's tests at once, so a test that flips it and a test that reads it
+/// are two tests sharing a variable. The reader saw a flip land between
+/// its two looks and compared a badge drawn with glyphs against the mark
+/// for a terminal without them -- a failure that appeared about one run in
+/// three and only under a full workspace build, which is the shape of
+/// thing that gets rerun rather than read.
+///
+/// A lock and not a rule about which tests may touch it: the two are in
+/// different modules and nothing would have stopped a third.
+#[cfg(test)]
+pub(crate) fn glyphs_held() -> std::sync::MutexGuard<'static, ()> {
+    static GLYPHS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // A test that panicked while holding it has poisoned it and has
+    // already failed; the next one wants the lock, not a second failure
+    // about the first.
+    GLYPHS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{drop_from_left, drop_from_right, tick, truncate_from_left, truncate_from_right};
@@ -1736,6 +1760,7 @@ mod tests {
     /// each pair.
     #[test]
     fn a_box_is_not_the_same_box_when_it_is_marked() {
+        let _held = super::glyphs_held();
         for glyphs in [true, false] {
             obelus_icons::use_glyphs(glyphs);
             assert_ne!(

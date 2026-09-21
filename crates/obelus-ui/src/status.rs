@@ -581,6 +581,7 @@ mod tests {
     /// server that was never started would be the opposite of the point.
     #[test]
     fn a_badge_says_which_server_and_which_state() {
+        let _held = crate::glyphs_held();
         assert_eq!(server_badge(None), "");
         // Whichever way the glyphs are switched, the badge names the server
         // and marks the state, and the two are told apart by the first

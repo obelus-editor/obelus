@@ -516,14 +516,34 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, Standing> {
         let Ok(path) = gix::path::try_from_bstring(path) else {
             continue;
         };
-        // The first answer wins: a file can be reported twice -- staged and
-        // then modified again -- and the first says the more surprising
-        // thing, which is what a reader scanning the list is looking for.
-        statuses
-            .entry(work_dir.join(path))
-            .or_insert_with(|| standing.clone());
+        fold(&mut statuses, work_dir.join(path), standing);
     }
     statuses
+}
+
+/// Puts one of git's answers about a file in with whatever it has already
+/// said about it.
+///
+/// The first answer wins: a file is reported twice when it was staged and
+/// then changed again, and the first says the more surprising thing, which
+/// is what a reader scanning the list is looking for.
+///
+/// Every part of it but the name it had, which is merged in whichever
+/// answer carries it. Only one of them does -- a rename is a change
+/// between two of the three states git compares, and the other answer is
+/// about the third -- and which arrives first is not obelus's to decide:
+/// gix reports the index against the working tree and the head against the
+/// index as one stream, and a file that was moved and then edited came
+/// back a move or an ordinary change depending on which finished first. A
+/// move that reads as a move on some runs and not others is worse than one
+/// that never did, because nothing about the tree says which the reader is
+/// looking at.
+fn fold(statuses: &mut HashMap<PathBuf, Standing>, path: PathBuf, standing: Standing) {
+    let was = standing.was.clone();
+    let standing = statuses.entry(path).or_insert(standing);
+    if standing.was.is_none() {
+        standing.was = was;
+    }
 }
 
 /// How much each of these files has changed since the last commit.
@@ -634,5 +654,44 @@ fn as_checked_out(repository: &gix::Repository, data: &[u8], relative: &Path) ->
     match std::io::Read::read_to_end(&mut { converted }, &mut out) {
         Ok(_) => String::from_utf8_lossy(&out).into_owned(),
         Err(_) => text(),
+    }
+}
+
+#[cfg(test)]
+mod folding {
+    use super::{FileStatus, Standing, fold};
+
+    /// A file git reports twice keeps the name it had, whichever answer
+    /// carried it.
+    ///
+    /// gix reports the index against the working tree and the head against
+    /// the index as one stream, and a file moved and then edited comes back
+    /// in both halves: the move carries the old name, the edit does not.
+    /// The order they arrive in is gix's and changes with the load on the
+    /// machine, so a rule that took the first answer whole made a move show
+    /// as a move on some runs and as an ordinary change on others -- which
+    /// is what it did, about one workspace run in three.
+    ///
+    /// Broken deliberately by dropping the merge and keeping the first
+    /// answer whole: the second order below then loses the name.
+    #[test]
+    fn a_file_reported_twice_keeps_the_name_it_had() {
+        let moved = || Standing {
+            status: FileStatus::Changed,
+            submodule: false,
+            was: Some(std::path::PathBuf::from("file.rs")),
+        };
+        let edited = || Standing::changed();
+        for (first, second) in [(moved(), edited()), (edited(), moved())] {
+            let mut statuses = std::collections::HashMap::new();
+            let path = std::path::PathBuf::from("deep/moved.rs");
+            fold(&mut statuses, path.clone(), first);
+            fold(&mut statuses, path.clone(), second);
+            assert_eq!(
+                statuses.get(&path).and_then(|it| it.was.clone()),
+                Some(std::path::PathBuf::from("file.rs")),
+                "the name it had went with the order the answers arrived in"
+            );
+        }
     }
 }
