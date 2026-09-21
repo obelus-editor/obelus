@@ -1499,10 +1499,30 @@ impl App {
         let Some(talk) = self.conversation() else {
             return;
         };
-        let width = obelus_ui::chat::writing_width(editor_area);
-        let needed = talk.chat.writing().rows(width).len();
-        let region = obelus_ui::chat::regions(editor_area, needed).transcript;
-        let rows = talk.chat.rows(region.width.saturating_sub(4)).len();
+        // The width the rows are laid out at, and the band they are drawn
+        // in, asked of the two functions the view asks -- not worked out
+        // again here.
+        //
+        // This had its own arithmetic for both, and the width was one
+        // column out. Wrapping at a column wider than the view's makes
+        // fewer rows than the view then draws, so the window was told the
+        // transcript was shorter than it is; following the end of a list
+        // that is longer than you think leaves its last rows below the
+        // band. The last row is the one that says whether anything is
+        // happening at all -- so on a long conversation, and only on a
+        // long one, an agent could work for half a minute with nothing on
+        // screen saying so. A short one has nothing wrapped and the two
+        // counts agree, which is why it took a real day's conversation to
+        // show.
+        //
+        // And the band was worked out as though the foot of the region
+        // were the box a message is written in. While a question is up it
+        // is the card, which is taller.
+        let region = obelus_ui::chat::bands(editor_area, &talk.chat, talk.card.as_ref()).transcript;
+        let rows = talk
+            .chat
+            .rows(obelus_ui::chat::reading_width(editor_area))
+            .len();
         if let Some(talk) = self.conversation_mut() {
             talk.chat.settle(rows, region.height);
         }

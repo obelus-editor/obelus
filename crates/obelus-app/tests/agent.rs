@@ -3968,6 +3968,58 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
     );
 }
 
+/// A long conversation still says when the agent is working.
+///
+/// The row that says what is happening now is the last row of the
+/// transcript, and the transcript follows its own end -- so it is only
+/// ever on screen if the window agrees with the view about where the end
+/// is. It did not: the following was settled against a width one column
+/// wider than the one the rows are drawn at, and prose wrapped a column
+/// wider makes fewer rows than the view then lays out. The window was
+/// told the transcript was shorter than it is and followed the end of
+/// something else, leaving the real last rows below the band.
+///
+/// Only on a long one. A short conversation has nothing wrapped, the two
+/// counts agree, and everything is where it should be -- which is why
+/// this hid behind every test and every quick try, and showed up on a
+/// day's conversation taken up again: an agent working for half a minute
+/// with nothing on screen saying so.
+///
+/// Broken deliberately by settling against `region.width - 4` again, the
+/// view's own width being `width - 5`: the page then says nothing while
+/// the agent works, which is the report this came from. The prose here is
+/// lines of exactly the wider width -- seven words of eight and one of
+/// nine -- because ordinary prose only lands on that column by luck, and
+/// the first go at this test wrapped the same at both widths and passed
+/// with the thing it covers broken.
+#[test]
+fn a_long_conversation_still_says_when_the_agent_is_working() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // A day's worth of it, in paragraphs that wrap.
+    support::type_text(&mut app, "/filler");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "something to scroll", |app| {
+        app.chat()
+            .is_some_and(|chat| chat.rows(WIDTH - 5).len() > usize::from(HEIGHT))
+    });
+
+    // And a turn the agent takes its time over, with the reader left at
+    // the end of the transcript where the answer will appear.
+    support::type_text(&mut app, "take it slowly");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to start", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("thinking")),
+        "the agent is working and the page does not say so:\n{dump}"
+    );
+}
+
 /// A conversation taken up again says it is thinking when it is.
 ///
 /// The row that says what is happening now is read off the handle, by the

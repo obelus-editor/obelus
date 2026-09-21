@@ -422,6 +422,26 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$session" "$said"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
+        *'"method":"session/prompt"'*'/filler'*)
+            # A day's conversation rather than a line of one: enough prose,
+            # in enough paragraphs, that where it wraps depends on the
+            # column it is wrapped at. A transcript of one short answer
+            # wraps the same at any width, and the thing this is for only
+            # shows where the two disagree.
+            set_turn "$session" "$(id_of "$line")"
+            # Lines that are exactly 72 cells: seven words of eight and one
+            # of nine, with the spaces between them. A column wider and the
+            # eighth word stays on the row; a column narrower and it does
+            # not -- which is the whole of what this is for, and what
+            # ordinary prose only does by luck.
+            group="aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa aaaaaaaa bbbbbbbbb"
+            said=""
+            for round in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+                said="$said$group\\n\\n"
+            done
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$session" "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'/twice'*)
             # A command put to the reader by an agent that sends the tool's
             # description as the call's title *and* as the call's content.
