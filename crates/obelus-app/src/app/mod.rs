@@ -138,6 +138,25 @@ pub(crate) struct Committed {
     pub(crate) text: Option<String>,
 }
 
+/// A drag held against the edge of what it is selecting in.
+///
+/// What is kept is where the pointer is and how far past the edge, not
+/// which end of what: the scrolling goes through the same one function a
+/// notch of the wheel does, so it reaches whatever the reader is dragging
+/// in without this having to know which that is.
+#[derive(Clone, Copy, Debug)]
+struct Dragging {
+    /// How far past the edge, in rows. Below is positive and above is
+    /// negative, and the further past, the faster -- which is the only
+    /// speed a pointer held still can ask for.
+    past: i16,
+    /// Where the pointer is, so the far end of the selection can be put
+    /// there again once the rows underneath it have moved.
+    x: u16,
+    /// The same.
+    y: u16,
+}
+
 /// Everything obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
@@ -357,6 +376,15 @@ pub struct App {
     /// loop's channel, and the decision is the thing worth seeing -- an
     /// application with no loop behind it still makes it.
     waking: bool,
+    /// A drag being held against the edge of what it is selecting in.
+    ///
+    /// The one thing on this screen that moves because of the reader's
+    /// hand rather than because something is happening on its own -- and
+    /// it has to, because a terminal says nothing at all while a held
+    /// pointer is still. Without a tick behind it a reader who dragged to
+    /// the edge and waited would wait for ever: the selection they are
+    /// making stops where the screen does.
+    dragging: Option<Dragging>,
     /// What git says about the files in the tree, while a list of them is
     /// open.
     ///
@@ -614,6 +642,7 @@ impl App {
             phase: 0,
             ticker: None,
             waking: false,
+            dragging: None,
             prompt: None,
             changes: None,
             statuses: std::collections::HashMap::new(),
@@ -1136,6 +1165,13 @@ impl App {
             // a mark that does not turn is a mark saying nothing is
             // happening.
             || self.calls_turning()
+            // And a drag held against an edge, which is the one of these
+            // that is waiting on the reader's hand rather than on
+            // something happening by itself. It is here for the same
+            // reason as the rest: without a tick it stops, and a
+            // selection that stops at the edge of the screen is a
+            // selection of what fits on it.
+            || self.dragging.is_some()
     }
 
     /// Whether an agent is at work in any conversation at all.
@@ -1739,6 +1775,7 @@ impl App {
             Event::Paste(text) => self.paste_text(&text),
             Event::Tick => {
                 self.phase = self.phase.wrapping_add(1);
+                self.drag_on();
                 // The pause the slow grammars are waiting for. A tick that
                 // lands mid-word settles the tree that word began in, which
                 // is one parse for a burst of typing rather than one per
@@ -1865,6 +1902,11 @@ impl App {
         // Whatever obelus had to say has been read by now, or was not going to
         // be.
         self.note = None;
+        // And a drag is over. Mostly it ended with the button coming up,
+        // but a pointer that leaves the terminal takes its release with
+        // it, and a drag nothing ever ended would go on scrolling under
+        // whatever the reader did next.
+        self.dragging = None;
 
         // Except the paging keys, while a preview is on screen: a screenful
         // is what the thing being *read* is moved by, and the list above it
@@ -2142,6 +2184,59 @@ impl App {
         }
     }
 
+    /// How far past the edge of what a drag is selecting in a row is, if
+    /// it is past it at all.
+    ///
+    /// The band it asks about is the one the reader is dragging in: the
+    /// transcript of a conversation, which has the box under it, and
+    /// otherwise the whole region a file is read in.
+    fn past_the_edge(&self, y: u16) -> Option<i16> {
+        let area = self.editor_area;
+        let band = match self.chat() {
+            Some(chat) => obelus_ui::chat::bands(area, chat, self.card()).transcript,
+            None => area,
+        };
+        let row = i32::from(y);
+        let past = match (row < i32::from(band.y), row >= i32::from(band.bottom())) {
+            (true, _) => row - i32::from(band.y),
+            (_, true) => row - i32::from(band.bottom()) + 1,
+            _ => return None,
+        };
+        i16::try_from(past).ok().filter(|past| *past != 0)
+    }
+
+    /// Keeps a drag held against an edge moving.
+    ///
+    /// Through the same one function a notch of the wheel goes through, so
+    /// it reaches whatever the reader is dragging in -- and then the far
+    /// end of the selection is put where the pointer is again, against the
+    /// edge, because the rows under it have moved.
+    fn drag_on(&mut self) {
+        let Some(drag) = self.dragging else {
+            return;
+        };
+        let past = i32::from(drag.past);
+        // The further past the edge, the faster: a pointer held still has
+        // no other way to ask for more, and one row a tick is a minute to
+        // cross a morning's conversation.
+        let rows = past.signum() * (1 + past.abs().min(4));
+        self.scroll(isize::try_from(rows).unwrap_or(0));
+        // Against the edge rather than where the pointer really is, which
+        // is off the band: what is being asked is "carry on to here", and
+        // here is as far as the band goes.
+        let area = self.editor_area;
+        let band = match self.chat() {
+            Some(chat) => obelus_ui::chat::bands(area, chat, self.card()).transcript,
+            None => area,
+        };
+        let y = drag.y.clamp(band.y, band.bottom().saturating_sub(1));
+        self.on_pointer(crate::event::Pointer::Dragged, drag.x, y);
+        // Which said the drag had come back inside the band, it having
+        // been handed a row that is. It has not: the reader is still
+        // holding it out there.
+        self.dragging = Some(drag);
+    }
+
     /// Puts the caret of whichever box is on the status row.
     fn place_on_status(&mut self, cell: u16, extend: bool) {
         if let Some(prompt) = self.prompt.as_mut() {
@@ -2172,6 +2267,18 @@ impl App {
     /// nobody can see.
     fn on_pointer(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
         use crate::event::Pointer;
+
+        // Whether the pointer is being held past the edge of what it is
+        // selecting in, which nothing else will say again until it moves:
+        // a terminal reports a drag when it happens and says nothing at
+        // all while a held pointer is still.
+        match kind {
+            Pointer::Dragged => {
+                self.dragging = self.past_the_edge(y).map(|past| Dragging { past, x, y });
+            }
+            Pointer::Pressed | Pointer::Released => self.dragging = None,
+            Pointer::Moved => {}
+        }
 
         // The boxes on the status row first: a question, a list's query, a
         // page's filter. All three are one row, so one piece of arithmetic

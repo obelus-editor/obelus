@@ -4402,3 +4402,80 @@ fn the_key_that_stops_the_agent_stops_what_it_is_running() {
         "a command the reader asked to stop is still running"
     );
 }
+
+/// A drag held past the bottom of a transcript keeps going.
+///
+/// A terminal reports a drag when the pointer moves and says nothing at
+/// all while a held pointer is still, so a reader selecting their way down
+/// a morning's conversation used to stop where the screen did: the rows
+/// they wanted were below the edge, and leaning on the edge did nothing
+/// because the pointer was no longer moving. What is remembered is that
+/// the drag is out there, and every tick carries the conversation up under
+/// it.
+///
+/// It goes through the same one function a notch of the wheel goes
+/// through, which is why one piece of code serves the transcript and the
+/// file both.
+///
+/// Broken deliberately by taking `drag_on` out of the tick, which leaves
+/// the copy ending on the last row that was on screen when the pointer
+/// reached the edge; or by measuring the edge against the whole region
+/// rather than the transcript's own band, which puts the edge under the
+/// writing box and never reports a drag past it at all.
+#[test]
+fn a_drag_held_past_the_bottom_of_a_transcript_keeps_selecting() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/filler");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "something to scroll", |app| {
+        app.chat()
+            .is_some_and(|chat| chat.rows(WIDTH - 5).len() > usize::from(HEIGHT) * 2)
+    });
+    support::press_control_key(&mut app, KeyCode::Home);
+
+    // From the first row of the answer, down past the bottom of the
+    // screen: the reader has run out of room and is leaning on the edge.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let at = row_of(&dump, "aaaaaaaa");
+    let start = support::column_of(rows(&dump)[usize::from(at)], "aaaaaaaa");
+    let Ok(start) = u16::try_from(start) else {
+        panic!("the answer is off the screen:\n{dump}");
+    };
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: start,
+        y: at,
+    });
+    // Onto the writing box, which is where a reader dragging down the
+    // transcript actually runs out of transcript: the screen goes on below
+    // it, so an edge measured against the whole region is never reached.
+    let below = row_of(&dump, "To the end") + 1;
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Dragged,
+        x: start,
+        y: below,
+    });
+    let held = |app: &App| {
+        app.chat()
+            .expect("a conversation")
+            .copied(WIDTH - 5)
+            .0
+            .lines()
+            .count()
+    };
+    let stopped = held(&app);
+
+    for _ in 0..5 {
+        app.handle(Event::Tick);
+    }
+    let carried = held(&app);
+    assert!(
+        carried > stopped + 5,
+        "the copy stopped at {stopped} rows while the pointer was held past the edge, \
+         reaching only {carried}:\n{}",
+        support::render(&mut app, WIDTH, HEIGHT)
+    );
+}

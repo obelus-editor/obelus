@@ -194,3 +194,72 @@ fn a_click_does_nothing_over_a_reading() {
     // And the keys still do what they did.
     support::press(&mut app, KeyCode::Down);
 }
+
+/// A drag held past the bottom of the text keeps going.
+///
+/// A terminal reports a drag when the pointer moves and says nothing at
+/// all while a held pointer is still, so a reader who runs out of screen
+/// halfway through a selection used to be stuck: the rows they wanted were
+/// below the edge, and pushing the pointer into the edge did nothing
+/// because the pointer was not moving any more. What is remembered is that
+/// the drag is out there, and every tick carries the text up under it.
+///
+/// Broken deliberately by taking `drag_on` out of the tick, which leaves
+/// the selection stopped on the last row that was on screen when the
+/// pointer reached the edge.
+#[test]
+fn a_drag_held_past_the_bottom_keeps_selecting() {
+    let many: String = (1..=200).map(|line| format!("line {line}\n")).collect();
+    let (_scratch, mut app) = editing("pointer-autoscroll", &many);
+
+    let (x, y) = cell_of(&mut app, "line 1");
+    press_at(&mut app, x, y);
+    // Past the bottom of the screen, which is past the bottom of the text:
+    // the reader has run out of room and is leaning on the edge.
+    drag_to(&mut app, x, 40);
+    let stopped = caret(&app).0;
+
+    for _ in 0..5 {
+        app.handle(Event::Tick);
+    }
+    let carried = caret(&app).0;
+    assert!(
+        carried > stopped + 5,
+        "the selection stayed at line {stopped} while the pointer was held past the edge, \
+         reaching only line {carried}"
+    );
+
+    // And letting go stops it: nothing more arrives from a pointer that is
+    // no longer down, and a terminal that swallowed the release -- the
+    // pointer left the window -- still has the next key to end it on.
+    app.handle(Event::Pointer {
+        kind: Pointer::Released,
+        x,
+        y: 10,
+    });
+    let let_go = caret(&app).0;
+    for _ in 0..5 {
+        app.handle(Event::Tick);
+    }
+    assert_eq!(
+        caret(&app).0,
+        let_go,
+        "the selection carried on after the button came up"
+    );
+
+    // And a drag whose release never arrives ends on the next key. A
+    // pointer that leaves the terminal takes its release with it, and a
+    // drag nothing ever ended would go on scrolling under whatever the
+    // reader did next.
+    drag_to(&mut app, x, 40);
+    support::press(&mut app, KeyCode::Left);
+    let after = caret(&app).0;
+    for _ in 0..5 {
+        app.handle(Event::Tick);
+    }
+    assert_eq!(
+        caret(&app).0,
+        after,
+        "the selection carried on after the reader went back to the keyboard"
+    );
+}
