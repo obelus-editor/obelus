@@ -478,11 +478,15 @@ impl App {
         Some(&self.conversation()?.chat)
     }
 
-    /// What obelus is doing about an agent.
+    /// What obelus is doing about an agent, in the conversation being read.
+    ///
+    /// Past the state of the process itself, every rung is about *this*
+    /// conversation rather than about the agent: both readers of this ask
+    /// it while they are drawing one or taking a key in one, and what they
+    /// want to know is whether the page in front of them is waiting on
+    /// something.
     #[must_use]
     pub fn talking(&self) -> Talking {
-        let held = self.session_now();
-        let session = held.as_ref();
         let Some(talker) = self.talker.as_ref() else {
             return match self.settled.config.agent.as_deref() {
                 None | Some("") => Talking::Nobody,
@@ -490,8 +494,26 @@ impl App {
             };
         };
         if talker.has_exited() {
-            Talking::Gone
-        } else if talker.is_thinking(session) {
+            return Talking::Gone;
+        }
+        // With no conversation being read there is no session for the two
+        // questions below to be about, and they answered anyway: `None` is
+        // not a session the agent has, so `is_started` said no and this
+        // said "starting..." for as long as an agent was up.
+        //
+        // Nobody ever saw it -- the row that says it lives in a
+        // transcript, and there is no transcript here. The ticker did: a
+        // frame asks whether anything is moving, "starting..." is a word
+        // with a turning mark beside it, and so obelus woke twelve times a
+        // second behind every file, every list and the notes, for a turn
+        // that was not running. An agent that is up and being asked
+        // nothing is ready, which is what this now says.
+        if self.conversation().is_none() {
+            return Talking::Ready;
+        }
+        let held = self.session_now();
+        let session = held.as_ref();
+        if talker.is_thinking(session) {
             Talking::Thinking
         } else if talker.is_started(session) {
             Talking::Ready

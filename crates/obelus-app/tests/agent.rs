@@ -4031,6 +4031,54 @@ fn a_note_whose_agent_is_working_turns_beside_it() {
     );
 }
 
+/// The clock stops when the reader leaves the conversation.
+///
+/// What obelus is doing about an agent is a question about the
+/// conversation being read, and with none being read there is no session
+/// for it to be about. It answered anyway: no session is not a session
+/// the agent has, so it said "starting..." for as long as an agent was
+/// up. Nobody saw the word -- it is drawn in a transcript, and there is
+/// no transcript on a file or on the notes -- but the frame asks whether
+/// anything is moving, and a turning mark is something moving. So opening
+/// an agent once put obelus on a twelve-a-second clock behind everything
+/// else it drew, for a turn that was not running.
+///
+/// Broken deliberately by answering about the session again where there
+/// is no conversation, which is the state this is about.
+#[test]
+fn the_clock_stops_when_the_reader_leaves_the_conversation() {
+    let (_scratch, mut app, events) = remembering("agent-clock-stops", "0123456V", "s-old", &[]);
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // The notes, which are a document and not a conversation -- and have
+    // nothing of their own to animate, because nobody is working in the
+    // one this note has.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Ready,
+        "an agent being asked nothing says it is starting"
+    );
+
+    // Whatever was already on its way, and then the listening. Bounded:
+    // a clock that has not stopped would keep this draining for ever, and
+    // a test that hangs says less than one that fails.
+    for _ in 0..50 {
+        let Ok(event) = events.recv_timeout(Duration::from_millis(100)) else {
+            break;
+        };
+        app.handle(event);
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    assert!(
+        events.recv_timeout(Duration::from_millis(400)).is_err(),
+        "the clock is still running with nothing to animate"
+    );
+}
+
 /// The glyph a note wears when there is a conversation about it.
 const MARK: char = obelus_icons::ui::AGENT;
 

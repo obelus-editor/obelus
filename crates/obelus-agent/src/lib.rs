@@ -89,7 +89,11 @@ pub enum Talking {
     Idle,
     /// Starting, or opening a session.
     Starting,
-    /// There is a session, and it is waiting to be asked something.
+    /// The agent is up and is being asked nothing: there is a session
+    /// waiting for a prompt, or the reader is not in a conversation at
+    /// all. One state rather than two, because the two are the same
+    /// answer to the only question anybody asks this -- whether the page
+    /// in front of the reader is waiting on the agent.
     Ready,
     /// It is working on a prompt.
     Thinking,
