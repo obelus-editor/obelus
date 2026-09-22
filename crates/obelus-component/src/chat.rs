@@ -1613,37 +1613,46 @@ impl Chat {
         // make it, and what it is asking about is the lines. Once it is
         // made the file itself has them, and obelus draws a file's changes
         // in the margin beside them -- so the block folds away and the row
-        // that opens it stays.
+        // that opens it stays. A command still running is the same case:
+        // what it is printing is the thing being waited on.
         //
-        // And open once it has finished badly: what a change said is in
-        // the file afterwards, and what a command printed is nowhere at
-        // all. A reader whose tests have just failed is looking for the
-        // failure, and folding it away hands them a row and a glyph. The
-        // same rule a run of calls has, for the same reason.
-        matches!(
-            said.state.as_deref(),
-            Some("pending" | "in_progress" | "failed")
-        )
+        // Having failed is not on this list, and was. The reasoning was
+        // that a reader whose tests have just failed is looking for the
+        // failure -- true, and not obelus's to act on, because "failed" is
+        // a word from the agent and a great many commands say it without
+        // anything being wrong. `grep` exits 1 with nothing to report,
+        // `diff` exits 1 on a difference, `test` exits 1 for false: an
+        // agent asking a question with a command gets a non-zero answer
+        // and marks the call failed, and obelus was throwing the output of
+        // every one of those open and holding it open. What is left is the
+        // mark, which says where to look, and the key, which is one press.
+        matches!(said.state.as_deref(), Some("pending" | "in_progress"))
     }
 
     /// Whether the run of calls beginning at `at` is open.
     ///
-    /// What the reader said about the run, and otherwise what obelus makes
-    /// of it: a run folds itself, unless one of its calls failed -- a
-    /// failure is the one thing in a turn nobody may have to go looking
-    /// for.
+    /// What the reader said about it, and otherwise shut. A run is a log:
+    /// obelus makes one out of a stretch of calls of a kind exactly
+    /// because nobody reads a log line by line, and a run that decides for
+    /// itself when to be a log again is a run the reader cannot keep shut.
+    ///
+    /// It used to open itself when any of its calls had failed, and that
+    /// is what this is about. One call in eight says failed -- which an
+    /// agent says of a `grep` that matched nothing as readily as of a
+    /// build that fell over -- and eight calls came open, with a cross on
+    /// the heading over them. Seven of them had nothing to say. The
+    /// heading still carries the worst state of what is inside it, so
+    /// nothing is hidden: what has gone is a shut thing opening itself.
     ///
     /// Asked of the run rather than of the call it begins at, which is what
     /// it used to be. A run is named by that call and so they shared an
     /// answer: opening the run set the call's `opened`, the call's own mark
     /// read it back, and enter on the first call of a run shut the run.
     fn is_run_open(&self, at: usize) -> bool {
-        if let Some(open) = self.said.get(at).and_then(|said| said.run_opened) {
-            return open;
-        }
-        self.said[self.run_from(at)]
-            .iter()
-            .any(|said| said.state.as_deref() == Some("failed"))
+        self.said
+            .get(at)
+            .and_then(|said| said.run_opened)
+            .unwrap_or(false)
     }
 
     /// Opens what is closed and closes what is open.
@@ -2508,6 +2517,69 @@ mod tests {
 
     use super::*;
 
+    /// One call that failed does not throw the run it is in open.
+    ///
+    /// A run is a log: obelus makes one out of a stretch of calls of a kind
+    /// exactly because nobody reads a log line by line. It opened itself
+    /// whenever any call in it had failed, and "failed" is a word from the
+    /// agent, said of a `grep` that matched nothing as readily as of a
+    /// build that fell over -- so one call in eight threw all eight open,
+    /// with every line of their output, over a cross on the heading. Seven
+    /// of them had nothing to say.
+    ///
+    /// The heading still carries the worst state of what is under it, which
+    /// is the whole of what a shut run owes the reader: something in here
+    /// failed, and here is the key.
+    ///
+    /// It makes three claims and was broken deliberately three times.
+    /// Opening a run whose calls include a failure is the fault itself.
+    /// Opening the failed call on its own is the same fault one row down.
+    /// And dropping the worst state from the heading leaves a shut run
+    /// saying everything went well.
+    #[test]
+    fn one_call_that_failed_does_not_throw_the_run_open() {
+        let mut chat = Chat::new();
+        for (index, state) in ["completed", "failed", "completed"].iter().enumerate() {
+            let mut one = call(
+                &format!("t{index}"),
+                &format!("command {index}"),
+                "execute",
+                vec![],
+            );
+            one.said = vec![format!("output {index}")];
+            chat.tool(&one, state);
+        }
+
+        let rows = chat.rows(ROOM.reading);
+        assert_eq!(
+            rows.len(),
+            1,
+            "one call that failed threw the whole run open: {:?}",
+            rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            rows[0].state.as_deref(),
+            Some("failed"),
+            "a shut run says nothing about the failure inside it"
+        );
+
+        // And the failed call, once the run is open, is shut like the rest
+        // of them until the reader says otherwise.
+        chat.fold(rows[0].folds.expect("the run folds"));
+        let rows = chat.rows(ROOM.reading);
+        assert_eq!(
+            rows.len(),
+            4,
+            "the members are not one row each: {:?}",
+            rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+        assert!(
+            !rows.iter().any(|row| row.text() == "output 1"),
+            "the call that failed opened itself: {:?}",
+            rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+    }
+
     /// A run and the first call in it fold separately.
     ///
     /// A run is named by the call it begins at -- there is nothing else to
@@ -3284,13 +3356,14 @@ mod tests {
         );
     }
 
-    /// A run folds itself, and a failure in it opens it again.
+    /// A run folds itself, and only the reader opens it.
     ///
-    /// A failure is the one thing in a turn nobody should have to go
-    /// looking for. What the reader says about it outlasts both: a run they
-    /// closed stays closed, whatever is in it.
+    /// Calls of one kind stop being a story and become a log once there are
+    /// enough of them, and a log is read by going to it. Nothing but the
+    /// reader's own word opens one -- a failure inside used to, which is
+    /// what [`one_call_that_failed_does_not_throw_the_run_open`] is about.
     #[test]
-    fn a_run_folds_itself_unless_something_in_it_failed() {
+    fn a_run_folds_itself_and_the_reader_opens_it() {
         let read = |chat: &mut Chat, id: &str, state: &str| {
             chat.tool(
                 &call(id, "Read a file", "read", vec![place("/a.rs", 1)]),
@@ -3311,18 +3384,17 @@ mod tests {
         assert_eq!(rows[0].text(), "3 Files");
         assert!(rows[0].folds.is_some() && !rows[0].open);
 
-        // One of them failed, so it is open without anybody asking.
-        read(&mut chat, "t3", "failed");
+        // Opened, its members are under it; closed again, they are not.
+        // The reader's word is the whole of what decides it.
+        chat.fold(Folds::Run(0));
         let rows = chat.rows(ROOM.reading);
-        assert!(rows[0].open, "a run with a failure in it stayed folded");
         assert_eq!(rows.len(), 4, "its members are not under it: {rows:?}");
-
-        // And the reader's word beats both ways of deciding.
         chat.fold(Folds::Run(0));
-        let rows = chat.rows(ROOM.reading);
-        assert_eq!(rows.len(), 1, "the reader closed it and it opened itself");
-        chat.fold(Folds::Run(0));
-        assert_eq!(chat.rows(ROOM.reading).len(), 4);
+        assert_eq!(
+            chat.rows(ROOM.reading).len(),
+            1,
+            "the reader closed it and it stayed open"
+        );
     }
 
     /// The words a call carries are under it, and a later update replaces

@@ -4736,15 +4736,22 @@ fn a_command_the_agent_asks_for_is_run() {
     );
 }
 
-/// A command is on the page while it runs, in the words it was run in.
+/// A command obelus ran is on the page in the words it was run in.
 ///
 /// The half obelus owes for not asking before it runs one. The agent
 /// decides whether to ask; obelus decides that once it runs, the reader
 /// sees the command line itself -- not the agent's title for it -- and
-/// everything it printed, and that the call's own state says how it ended.
+/// everything it printed.
 ///
-/// Broken deliberately by leaving `Chat::running` uncalled: the row
-/// carries the agent's title and nothing else, and this goes red.
+/// Opened here, because a command that has ended folds away like
+/// everything else a call carries: while it runs the call is open and the
+/// output arrives under it, and afterwards it is a row and a key. What the
+/// reader must be able to reach is what this is about.
+///
+/// It makes two claims and was broken deliberately twice. Leaving
+/// `Chat::running` uncalled carries the agent's title and nothing else.
+/// And answering the fold with the reader's own word ignored keeps the
+/// call shut when they have just opened it.
 #[test]
 fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
     let (mut app, events) = talking();
@@ -4764,6 +4771,36 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
         })
     });
 
+    // The call says it failed, because the command did -- and it is shut,
+    // because it is over.
+    let state = app
+        .chat()
+        .expect("the conversation")
+        .rows(WIDTH)
+        .iter()
+        .find(|row| row.text().contains("Run the tests"))
+        .and_then(|row| row.state.clone());
+    assert_eq!(
+        state,
+        Some("failed".to_string()),
+        "a call whose command exited 3 does not say it failed"
+    );
+
+    // Opened by a press on its row, which is what a reader has.
+    let shut = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !rows(&shut)
+            .iter()
+            .any(|row| row.contains("$ sleep 0.3;")),
+        "a command that is over is still holding the page open:\n{shut}"
+    );
+    let y = row_of(&shut, "Run the tests");
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: app.editor_area_for_test().x + 6,
+        y,
+    });
+
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
     assert!(
@@ -4780,19 +4817,6 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
             .filter_map(|row| row.split_once('|'))
             .any(|(_, said)| said.trim() == "obelus-ran-this"),
         "what the command printed is not on the page:\n{dump}"
-    );
-    // And the call says it failed, because the command did.
-    let state = app
-        .chat()
-        .expect("the conversation")
-        .rows(WIDTH)
-        .iter()
-        .find(|row| row.text().contains("Run the tests"))
-        .and_then(|row| row.state.clone());
-    assert_eq!(
-        state,
-        Some("failed".to_string()),
-        "a call whose command exited 3 does not say it failed"
     );
 }
 
