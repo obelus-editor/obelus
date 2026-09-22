@@ -385,6 +385,14 @@ pub struct App {
     /// the edge and waited would wait for ever: the selection they are
     /// making stops where the screen does.
     dragging: Option<Dragging>,
+    /// Which build this is, as whatever started obelus was told at compile
+    /// time.
+    ///
+    /// Held rather than worked out, because obelus cannot work it out: the
+    /// commit is known to the one crate with a build script, which is the
+    /// binary's own, and everything under it takes it as a string like any
+    /// other fact about how obelus was started.
+    built: &'static str,
     /// What git says about the files in the tree, while a list of them is
     /// open.
     ///
@@ -643,6 +651,7 @@ impl App {
             ticker: None,
             waking: false,
             dragging: None,
+            built: "",
             prompt: None,
             changes: None,
             statuses: std::collections::HashMap::new(),
@@ -783,6 +792,11 @@ impl App {
     /// reader's at the end, so this only has to have happened by then.
     pub fn work_in(&mut self, root: PathBuf) {
         self.working_directory = root;
+    }
+
+    /// Says which build this is, which only the binary knows.
+    pub const fn built_at(&mut self, said: &'static str) {
+        self.built = said;
     }
 
     /// Says to open on the file list rather than on a file.
@@ -2642,6 +2656,9 @@ impl Screen for App {
     }
     fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]> {
         App::blame(self)
+    }
+    fn built(&self) -> &str {
+        self.built
     }
     fn card(&self) -> Option<&Card> {
         App::card(self)

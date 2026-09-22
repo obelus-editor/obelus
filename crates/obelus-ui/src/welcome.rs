@@ -103,35 +103,51 @@ const RAMP_STEPS: u16 = 8;
 /// flashing, and a whole number of steps so the cycle has no seam.
 const CYCLE: u32 = RAMP_STEPS as u32 * 2;
 
-/// The version, set into the plate's own edge.
+/// What is set into the plate's own edge: the version, and which build.
 ///
-/// In the frame rather than on a row of its own: it is a fact about the
-/// thing the plate names, and a line under the plate holding one short word
-/// is a row of screen spent on punctuation.
-fn version() -> String {
-    concat!(" v", env!("CARGO_PKG_VERSION"), " ").to_string()
+/// In the frame rather than on a row of its own: both are facts about the
+/// thing the plate names, and a line under the plate holding two short
+/// words is a row of screen spent on punctuation.
+///
+/// The build is beside the version because the version does not answer the
+/// question anybody actually has. It has said `0.1.0` since the first
+/// commit and will until a release changes it, so "was the fix in the thing
+/// I am looking at" has to be answered by the commit -- and the log is not
+/// where a reader looks, this screen is.
+fn label(built: &str) -> String {
+    match built.is_empty() {
+        true => concat!(" v", env!("CARGO_PKG_VERSION"), " ").to_string(),
+        false => format!(" v{} {built} ", env!("CARGO_PKG_VERSION")),
+    }
 }
 
-/// The plate's foot with the version set into it.
+/// The plate's foot with that set into it.
 ///
-/// Composed here rather than written into [`WORDMARK`], because the version
-/// is not obelus's to spell: it comes from the manifest, and a copy in a
-/// string here is a copy that goes stale the moment it is bumped.
-fn foot() -> String {
+/// Composed here rather than written into [`WORDMARK`], because neither is
+/// obelus's to spell: the version comes from the manifest and the build from
+/// whatever started obelus, and a copy in a string here is a copy that goes
+/// stale the moment either moves.
+///
+/// An edge with no room for both falls back to the version, and then to
+/// nothing: what the plate is for is the way in, and a frame broken open to
+/// fit a commit into it is worse than a frame that does not say one.
+fn foot(built: &str) -> String {
     let Some(edge) = WORDMARK.last() else {
         return String::new();
     };
-    let version = version();
     let width = edge.chars().count();
-    let set = version.chars().count();
-    if width < set + 4 {
+    let set = [label(built), label("")]
+        .into_iter()
+        .find(|said| width >= said.chars().count() + 4);
+    let Some(set) = set else {
         return (*edge).to_string();
-    }
-    let at = (width - set) / 2;
+    };
+    let taken = set.chars().count();
+    let at = (width - taken) / 2;
     edge.chars()
         .take(at)
-        .chain(version.chars())
-        .chain(edge.chars().skip(at + set))
+        .chain(set.chars())
+        .chain(edge.chars().skip(at + taken))
         .collect()
 }
 
@@ -139,6 +155,8 @@ fn foot() -> String {
 pub struct WelcomeView<'a> {
     keymap: &'a Keymap,
     theme: &'a Theme,
+    /// Which build this is, for the plate's edge.
+    built: &'a str,
     /// How far the ramp has travelled, in ticks.
     ///
     /// Zero unless something is ticking, and nothing ticks once a file is
@@ -154,6 +172,7 @@ impl<'a> WelcomeView<'a> {
         Self {
             keymap: app.keymap(),
             theme: app.theme(),
+            built: app.built(),
             phase: app.phase(),
         }
     }
@@ -206,7 +225,7 @@ impl WelcomeView<'_> {
         // thing that has stopped.
         let from = self.theme.syntax.keyword;
         let to = self.theme.syntax.function;
-        let foot = foot();
+        let foot = foot(self.built);
         let last = WORDMARK.len().saturating_sub(1);
         for (at, row) in WORDMARK.iter().enumerate() {
             let row = if at == last { foot.as_str() } else { *row };
@@ -274,16 +293,23 @@ impl WelcomeView<'_> {
             "obelus",
             Style::new().fg(self.theme.foreground),
         );
-        // The version at the other end of the same row, which is where the
-        // plate carries it when there is room for a plate.
-        let version = version();
-        let version = version.trim();
-        if let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(version.width())) {
+        // The version and the build at the other end of the same row, which
+        // is where the plate carries them when there is room for a plate.
+        // The widest of them that fits beside the name, and nothing where
+        // neither does: this layout is what a screen too small for the
+        // plate gets, and the name is the part of it worth the room.
+        let room = usize::from(width).saturating_sub("obelus".width() + 1);
+        if let Some(said) = [label(self.built), label("")]
+            .into_iter()
+            .map(|said| said.trim().to_string())
+            .find(|said| said.width() <= room)
+            && let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(said.width()))
+        {
             write(
                 cells,
                 left + offset,
                 y,
-                version,
+                &said,
                 Style::new().fg(self.theme.gutter),
             );
         }

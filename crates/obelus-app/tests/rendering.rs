@@ -124,6 +124,73 @@ fn starting_with_nothing_open_shows_a_welcome_screen() {
     support::check("welcome_64x20", &support::render(&mut app, 64, 20));
 }
 
+/// The welcome screen says which build this is.
+///
+/// The version cannot answer the question anybody has. It has said `0.1.0`
+/// since the first commit and will until a release changes it, so "was the
+/// fix in the thing I am looking at" is answered by the commit -- and the
+/// log, which already carried it, is not where a reader looks. This screen
+/// is: it is what obelus shows before anything is open.
+///
+/// It goes into the plate's own edge beside the version. Only the binary
+/// knows it, so it arrives as a string like everything else whatever started
+/// obelus had to say -- which is why nothing said is the ordinary state
+/// here, and why the golden fixtures show the version alone: a commit in one
+/// would be a fixture rewritten every time anybody commits anything.
+///
+/// Not on the screen too small for a plate. There the name and the version
+/// already fill the row the hints are as wide as, and a commit squeezed in
+/// beside them would run into the name -- the same reason that layout drops
+/// the wordmark rather than wrapping it.
+///
+/// Broken deliberately by leaving the plate's edge saying the version
+/// alone, which is what it said; or by putting the build on the narrow
+/// layout whether it fits or not, which writes it over the name.
+#[test]
+fn the_welcome_screen_says_which_build_this_is() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.built_at("abc1234");
+    let dump = support::render(&mut app, 64, 20);
+    assert!(
+        support::text_block(&dump).contains("abc1234"),
+        "the welcome does not say which build it is:\n{dump}"
+    );
+
+    // And the narrow one says the version and keeps the name, rather than
+    // taking the commit and running the two together.
+    let dump = support::render(&mut app, 34, 10);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("obelus"))
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        row.contains(concat!("v", env!("CARGO_PKG_VERSION"))) && !row.contains("abc1234"),
+        "the narrow welcome does not read {row:?} as expected:\n{dump}"
+    );
+
+    // And with nothing said, which is every other test, the version stands
+    // alone rather than the screen carrying an empty gap where a commit
+    // would have been.
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    let dump = support::render(&mut app, 64, 20);
+    let edge = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains('\u{255a}'))
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        edge.contains(concat!(
+            "\u{2550} v",
+            env!("CARGO_PKG_VERSION"),
+            " \u{2550}"
+        )),
+        "the plate's edge is not closed up around the version: {edge:?}\n{dump}"
+    );
+}
+
 /// A screen with no room for the wordmark still gets the keys.
 #[test]
 fn a_narrow_screen_gets_the_keys_without_the_wordmark() {

@@ -108,6 +108,9 @@ fn main() -> Result<()> {
     // rather than whatever the machine it runs on has in `~/.config`.
     app.load_config();
     app.use_images(images);
+    // The welcome screen says it too, because the log is not where a reader
+    // looks when they want to know what they are looking at.
+    app.built_at(env!("OBELUS_BUILD"));
     let outcome = app::run(&mut terminal, &mut app);
     // The other end of the first line, said before the terminal is put
     // back: a log that stops without one of these ended in a panic or a

@@ -125,6 +125,13 @@ pub trait Screen {
     /// Who last changed each line of the file being read, if the answer has
     /// arrived and the reader wants to see it.
     fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]>;
+    /// Which build this is, where whatever started obelus has said.
+    ///
+    /// Empty where nothing has, which is every test: the welcome screen
+    /// then says the version alone, the way it always did. A commit in a
+    /// golden fixture would be a fixture that has to be written again
+    /// every time anybody commits anything.
+    fn built(&self) -> &str;
     /// The card an agent's question is on, while one is up.
     fn card(&self) -> Option<&Card>;
     /// What has changed in the current file, if obelus can tell.
