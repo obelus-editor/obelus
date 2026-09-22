@@ -126,6 +126,101 @@ pub fn hints(settings: &Settings) -> Vec<Hint> {
     ]
 }
 
+/// Where one row of the page is drawn.
+struct Placed {
+    /// Which of the rows it is.
+    at: usize,
+    /// The rows it takes: its name, and what its description needs.
+    area: Rect,
+}
+
+/// The region the rows are drawn in: under the tabs, above the foot.
+///
+/// Named so that a pointer can ask where the rows are rather than working
+/// it out again from the two things that take room off the page.
+#[must_use]
+pub fn rows_region(area: Rect, settings: &Settings) -> Rect {
+    let under = crate::footed(area, &hints(settings));
+    Rect {
+        y: under.y + 2,
+        height: under.height.saturating_sub(2),
+        ..under
+    }
+}
+
+/// Where each row of the page is drawn, walked once.
+///
+/// An entry is as tall as what it has to say -- a name, the rows its
+/// description takes, and a blank so that the next name is not read as part
+/// of it -- and a group's heading takes two more above the first row in it.
+/// So which row is at a given height is a walk rather than a division, and
+/// a walk written twice is two answers about where a row is. The drawing
+/// goes down this and so does the pointer.
+fn placed(region: Rect, rows: &[Row], window: &obelus_component::window::Window) -> Vec<Placed> {
+    let mut placed = Vec::new();
+    let mut y = region.y;
+    for (at, row) in rows
+        .iter()
+        .enumerate()
+        .skip(window.top().min(window.focus()))
+    {
+        if y >= region.bottom() {
+            break;
+        }
+        let heading = row.opens.is_some();
+        if heading {
+            y += 2;
+            if y >= region.bottom() {
+                break;
+            }
+        }
+        let tall = u16::try_from(row.body.len()).unwrap_or(0) + 1;
+        placed.push(Placed {
+            at,
+            area: Rect {
+                y,
+                height: tall.min(region.bottom().saturating_sub(y)),
+                ..region
+            },
+        });
+        y += tall + u16::from(!row.body.is_empty());
+    }
+    placed
+}
+
+impl SettingsView<'_> {
+    /// Which row of the page a point on screen is on, and whether it is on
+    /// that row's switch.
+    ///
+    /// A method rather than a function beside the others, because how tall
+    /// a row is depends on the rows the *view* makes: a description is
+    /// wrapped to the room there is, and the wrapping is this view's own
+    /// arithmetic. Whoever wants to know where a press landed builds the
+    /// view and asks it, the way the conversation is asked.
+    ///
+    /// `None` for a point outside the rows, on a group's heading, or past
+    /// the last of them. The switch is the right-hand column, which is
+    /// where a row draws what it is set to.
+    #[must_use]
+    pub fn row_at(&self, area: Rect, x: u16, y: u16) -> Option<(usize, bool)> {
+        let region = rows_region(area, self.settings);
+        if x < region.x || x >= region.right() {
+            return None;
+        }
+        let rows = self.rows(region);
+        let window = self.settings.window();
+        let found = placed(region, &rows, window)
+            .into_iter()
+            .find(|placed| y >= placed.area.y && y < placed.area.y + placed.area.height)?;
+        let room = match window.scrollable(region.height) {
+            true => region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
+            false => region.width,
+        };
+        let aside = region.x + room.saturating_sub(CONTROL_WIDTH + 1);
+        Some((found.at, x >= aside && x < region.x + room))
+    }
+}
+
 impl Widget for SettingsView<'_> {
     fn render(self, area: Rect, cells: &mut CellBuffer) {
         fill(
@@ -258,8 +353,23 @@ impl Widget for SettingsView<'_> {
             return;
         }
 
+        let rows = self.rows(region);
+        self.column(cells, region, &rows, "No setting by that name");
+        self.keys_card(cells, area, &hints);
+    }
+}
+
+impl SettingsView<'_> {
+    /// The rows of the settings page, as the drawing and the pointer both
+    /// need them.
+    ///
+    /// Made here rather than in the component because how tall one is
+    /// belongs to the drawing: a description is wrapped to the room there
+    /// is, and the number of rows that takes is what says where the next
+    /// name sits.
+    fn rows(&self, region: Rect) -> Vec<Row> {
         let settings = self.settings.rows();
-        let rows: Vec<Row> = settings
+        settings
             .iter()
             .map(|shown| Row {
                 opens: shown.opens,
@@ -293,9 +403,7 @@ impl Widget for SettingsView<'_> {
                 // comes from -- the project's own included.
                 scope: self.settings.on_tree().then(|| self.scope(shown.setting)),
             })
-            .collect();
-        self.column(cells, region, &rows, "No setting by that name");
-        self.keys_card(cells, area, &hints);
+            .collect()
     }
 }
 
@@ -430,12 +538,14 @@ impl SettingsView<'_> {
         // a blank so that the next name is not read as part of it. Every
         // height here is one on the pages whose rows are one row each, which
         // is the same walk it always was.
-        let first = window.top().min(window.focus());
-        let mut y = region.y;
-        for (index, row) in rows.iter().enumerate().skip(first) {
-            if y >= region.bottom() {
-                break;
-            }
+        //
+        // Walked once, in `placed`, because a pointer has to land on the
+        // row it looks like it landed on: the drawing going one way and the
+        // pointing going the other down two copies of this would be two
+        // answers about where a row is.
+        for at in placed(region, rows, window) {
+            let (index, row) = (at.at, &rows[at.at]);
+            let y = at.area.y;
             let focused = index == self.settings.focus();
             let background = if focused {
                 self.theme.selected_row_background
@@ -454,23 +564,16 @@ impl SettingsView<'_> {
                 self.heading(
                     cells,
                     Rect {
-                        y,
+                        y: y.saturating_sub(2),
                         height: 2,
                         ..region
                     },
                     group,
                 );
-                y += 2;
-                if y >= region.bottom() {
-                    break;
-                }
             }
-            let tall = u16::try_from(row.body.len()).unwrap_or(0) + 1;
             let area = Rect {
-                y,
-                height: tall.min(region.bottom().saturating_sub(y)),
                 width: room,
-                ..region
+                ..at.area
             };
             fill(cells, area, plain.bg(background));
             let area = Rect { height: 1, ..area };
@@ -624,7 +727,6 @@ impl SettingsView<'_> {
 
             // And a blank before the next one, which is the whole of what
             // makes an entry an entry.
-            y += tall + u16::from(!row.body.is_empty());
         }
     }
 

@@ -2186,6 +2186,22 @@ impl App {
         if kind != Pointer::Pressed {
             return;
         }
+        // Whichever is nearest the reader, which is the one drawn over the
+        // others: the same order a key is offered in.
+        let Some(layer) = self.layers().nearest_first().next() else {
+            return;
+        };
+        match layer {
+            // The status row, which was asked before this.
+            obelus_component::layers::Layer::Prompt => {}
+            obelus_component::layers::Layer::Picker => self.press_in_picker(x, y),
+            obelus_component::layers::Layer::Counts => self.press_in_counts(x, y),
+            obelus_component::layers::Layer::Settings => self.press_in_settings(x, y),
+        }
+    }
+
+    /// A press in a list of rows to choose from.
+    fn press_in_picker(&mut self, x: u16, y: u16) {
         let area = self.picker_area();
         let Some((at, arrow)) = self
             .picker
@@ -2202,10 +2218,46 @@ impl App {
             // opener of its own: what enter does to the row under the
             // arrow is what the arrow is a picture of, and two of them
             // would be two answers to keep alike.
-            self.picker_key(&crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Enter,
-                crossterm::event::KeyModifiers::NONE,
-            ));
+            self.picker_key(&enter());
+        }
+    }
+
+    /// A press in the table of what this project is made of.
+    fn press_in_counts(&mut self, x: u16, y: u16) {
+        let area = self.editor_area;
+        let Some((at, mark)) = self
+            .counts
+            .as_ref()
+            .and_then(|counts| obelus_ui::counts::row_at(area, counts, x, y))
+        else {
+            return;
+        };
+        if let Some(counts) = self.counts.as_mut() {
+            counts.select_row(at);
+        }
+        if mark {
+            self.counts_key(&enter());
+        }
+    }
+
+    /// What the pointer did to the page of settings.
+    ///
+    /// Nothing folds there, so there is no arrow. What a press reaches is
+    /// the switch: a box with a tick in it or without, which is the one
+    /// thing on the page that says by its shape that pressing it changes
+    /// it.
+    fn press_in_settings(&mut self, x: u16, y: u16) {
+        let area = self.editor_area;
+        let Some((at, switch)) =
+            obelus_ui::settings::SettingsView::new(self).and_then(|view| view.row_at(area, x, y))
+        else {
+            return;
+        };
+        if let Some(settings) = self.settings.as_mut() {
+            settings.select_row(at);
+        }
+        if switch {
+            self.settings_key(&enter());
         }
     }
 
@@ -2526,6 +2578,18 @@ impl App {
         self.clicked = Some((x, y, now, count));
         count
     }
+}
+
+/// A bare `enter`, for a press that means what that key means.
+///
+/// A press that opens a row goes down the key's own path rather than having
+/// an opener of its own: the mark under the pointer is a picture of the
+/// key, and two answers about one row are two answers to keep alike.
+fn enter() -> crossterm::event::KeyEvent {
+    crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    )
 }
 
 /// The pointer, standing still.

@@ -68,6 +68,38 @@ pub fn list_region(area: Rect, counts: &Counts) -> Rect {
     }
 }
 
+/// Which row of the table a point on screen is on, and whether it is on
+/// that row's fold mark.
+///
+/// The way back out of the arithmetic the drawing goes in by: the rows sit
+/// below the furniture and above the foot, the window says which of them is
+/// first, and a row's own columns begin one in and two more for every
+/// branch drawn in front of it. Read here from the same places the drawing
+/// takes it, because a pointer that landed on a different row than the one
+/// it looks like it landed on is worse than a pointer that does nothing.
+///
+/// `None` for a point outside the rows, or past the last of them.
+#[must_use]
+pub fn row_at(area: Rect, counts: &Counts, x: u16, y: u16) -> Option<(usize, bool)> {
+    let body = list_region(area, counts);
+    if y < body.y || y >= body.bottom() || x < body.x || x >= body.right() {
+        return None;
+    }
+    let rows = counts.rows();
+    let at = counts
+        .window()
+        .visible(body.height)
+        .nth(usize::from(y - body.y))?;
+    let row = rows.get(at)?;
+    // One to stand clear of the edge, and two for every branch glyph in
+    // front of the name. The mark is spent at all only on a page where
+    // something folds.
+    let branches = u16::try_from(branches(rows, at).len()).unwrap_or(0);
+    let mark = body.x + 1 + branches * 2;
+    let on_the_mark = counts.folds() && row.open.is_some() && x == mark;
+    Some((at, on_the_mark))
+}
+
 /// What the keys do here, and which of them do anything at the moment.
 ///
 /// The arrows are not among them: they walk the tabs and say so on the tab

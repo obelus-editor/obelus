@@ -465,3 +465,81 @@ fn the_counts_say_what_their_keys_do() {
     press(&mut app, KeyCode::Esc);
     assert!(app.counts().is_some(), "escape left the view, not the card");
 }
+
+/// A press moves the selection, and a press on a row's fold mark opens it.
+///
+/// The counted table is drawn over the whole screen, and until now a press
+/// anywhere in it did nothing: one line turned the pointer away before every
+/// view drawn over a file. The wheel always reached it -- the wheel is its
+/// own event -- which is the shape of the omission.
+///
+/// Moving the selection and nothing else, because a row here is a file to
+/// open or a language to look inside, and a mis-aimed press that *chose*
+/// one would take the reader off this page. Choosing stays on the keyboard.
+///
+/// Except the fold mark, which says the row opens. Pressing it does what
+/// pressing an arrow means everywhere, and cannot take the reader anywhere:
+/// the mark is on the rows that open and on no others.
+///
+/// Broken deliberately by handing the press back to nothing, which leaves
+/// the selection where it was; or by opening on a press anywhere in the
+/// row, which turns a press meant to look at a directory into one that
+/// walks into it.
+#[test]
+fn a_press_moves_the_selection_and_the_fold_mark_opens_a_row() {
+    let mut app = open(76, 24);
+    // The files page, which is the one with anything to fold.
+    press(&mut app, KeyCode::Tab);
+    let _ = support::render(&mut app, 76, 24);
+
+    let rows: Vec<(Option<bool>, u16)> = app
+        .counts()
+        .expect("the table")
+        .rows()
+        .iter()
+        .map(|row| (row.open, row.depth))
+        .collect();
+    let directory = rows
+        .iter()
+        .position(|(open, _)| *open == Some(false))
+        .expect("a row that is shut");
+    let other = rows
+        .iter()
+        .position(|(open, _)| open.is_none())
+        .expect("a row that opens nothing");
+
+    let area = app.editor_area_for_test();
+    let top = obelus_ui::counts::list_region(area, app.counts().expect("the table")).y;
+    let press_at = |app: &mut App, row: usize, x: u16| {
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x,
+            y: top + u16::try_from(row).expect("a row"),
+        });
+    };
+
+    // A press on the words of a row moves the selection there and leaves
+    // the page alone.
+    let before = app.counts().expect("the table").rows().len();
+    press_at(&mut app, other, area.x + 30);
+    assert_eq!(
+        app.counts().expect("the table").window().focus(),
+        other,
+        "the press did not move the selection"
+    );
+    assert_eq!(
+        app.counts().expect("the table").rows().len(),
+        before,
+        "the press on the words of a row opened something"
+    );
+
+    // And a press on the mark of a row that is shut opens it. One column in
+    // and two more for every branch drawn in front of it, which is where
+    // the table draws the mark.
+    let mark = 1 + rows[directory].1 * 2;
+    press_at(&mut app, directory, area.x + mark);
+    assert!(
+        app.counts().expect("the table").rows().len() > before,
+        "the press on the mark did not open the row"
+    );
+}

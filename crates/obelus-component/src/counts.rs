@@ -446,6 +446,15 @@ impl Counts {
         }
     }
 
+    /// Puts the selection on one of the rows.
+    ///
+    /// For a pointer: the keys move it a step at a time and have no use for
+    /// naming a row outright, and a press names one.
+    pub fn select_row(&mut self, row: usize) {
+        self.window
+            .set_focus(row.min(self.rows.len().saturating_sub(1)));
+    }
+
     /// Whether any row on the page folds, and so whether every row leaves a
     /// column in front of its glyph for the mark.
     ///

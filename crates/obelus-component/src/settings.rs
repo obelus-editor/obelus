@@ -417,6 +417,15 @@ impl Settings {
         taken
     }
 
+    /// Puts the focus on one of the rows.
+    ///
+    /// For a pointer: the keys move it a step at a time and have no use for
+    /// naming a row outright, and a press names one.
+    pub fn select_row(&mut self, row: usize) {
+        self.window
+            .set_focus(row.min(self.row_count().saturating_sub(1)));
+    }
+
     /// Which row has the focus.
     #[must_use]
     pub const fn focus(&self) -> usize {

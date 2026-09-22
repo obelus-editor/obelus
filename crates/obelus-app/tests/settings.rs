@@ -2037,3 +2037,74 @@ fn the_time_a_rest_takes_is_the_readers() {
     );
     assert_eq!(app.config().hover_delay, 800, "obelus is not using it");
 }
+
+/// A press on a switch flips it, and a press on the row it is on does not.
+///
+/// The settings are drawn over the file being read, and until now a press
+/// anywhere in them did nothing at all: one line turned the pointer away
+/// before every view drawn over a file. The wheel always reached them, which
+/// is the shape of the omission.
+///
+/// Nothing on this page folds, so there is no arrow. What a press reaches
+/// is the switch -- a box with a tick in it or without, which is the one
+/// thing here that says by its shape that pressing it changes it. A press
+/// on the name beside it moves the selection and no more: a setting is not
+/// something to change by aiming badly.
+///
+/// Broken deliberately by handing the press back to nothing, which leaves
+/// the switch as it was; or by flipping on a press anywhere in the row,
+/// which changes a setting the reader only meant to read.
+#[test]
+fn a_press_on_a_switch_flips_it() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("switch-press");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    let _ = support::render(&mut app, 66, 12);
+
+    // The row the switch is on, found by the words beside it. Every row of
+    // the dump says which of the screen's rows it is, which is the number
+    // this wants: the block has a line of its own in front of them.
+    let dump = support::render(&mut app, 66, 12);
+    let y: u16 = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Nerd Font"))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse().ok())
+        .expect("the row with the switch on it");
+    let area = app.editor_area_for_test();
+    assert!(
+        y >= area.y && y < area.bottom(),
+        "the switch is not in the region the settings are drawn in"
+    );
+
+    // A press on the name moves the selection there and leaves the setting
+    // alone.
+    let was = app.config().icons;
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: area.x + 4,
+        y,
+    });
+    assert_eq!(
+        app.config().icons,
+        was,
+        "a press on the name flipped the switch"
+    );
+
+    // And a press on the switch itself flips it.
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: area.right() - 4,
+        y,
+    });
+    assert_ne!(
+        app.config().icons,
+        was,
+        "a press on the switch did not flip it"
+    );
+
+    obelus_icons::use_glyphs(true);
+}
