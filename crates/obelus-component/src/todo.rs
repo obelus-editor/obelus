@@ -928,7 +928,13 @@ impl TodoView {
                 Some((place.path.clone(), (*self.where_now.get(at)?)?))
             }) {
                 Some((path, line)) => {
-                    self.keep();
+                    // Written down and stayed in, not left: the reader is
+                    // leaving the page rather than the note, and the page
+                    // is one they come back to -- by the key that opens
+                    // the notes, which goes back to this view as they left
+                    // it. Left by `keep`, they came back to a page with no
+                    // box in it and no key that could open one.
+                    self.settle();
                     TodoOutcome::Go(path, line)
                 }
                 None => TodoOutcome::Consumed,
@@ -941,7 +947,10 @@ impl TodoView {
             KeyCode::Char('a') if alt => match self.selected_note() {
                 Some(note) => {
                     let id = note.id.clone();
-                    self.keep();
+                    // The same: a conversation about a note is somewhere
+                    // the reader goes *from* this page and comes back to
+                    // it, so the box stays where they left it.
+                    self.settle();
                     TodoOutcome::Talk(id)
                 }
                 None => TodoOutcome::Consumed,

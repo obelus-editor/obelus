@@ -57,4 +57,4 @@ d fg=#52525b bg=#18181b
 e fg=#a1a1aa bg=#27272a
 f fg=#d4d4d8 bg=#18181b
 -- cursor --
-none
+5,0

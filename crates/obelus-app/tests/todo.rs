@@ -2260,3 +2260,75 @@ fn escape_writes_the_note_down_and_leaves_the_caret_in_it() {
         "the note with nothing in it was written down"
     );
 }
+
+/// Leaving the notes for somewhere and coming back leaves the caret in
+/// them.
+///
+/// Two keys go somewhere from a note: one opens the conversation about it,
+/// one goes to the place it is about. Neither closes the page. Both say so
+/// -- the notes stay open, because a document they came from is a document
+/// they come back to -- and the key that comes back goes to this view as
+/// the reader left it, on purpose, because reading the file again would
+/// lose their place in the list.
+///
+/// So both wrote the note down the way *leaving a note* writes it down,
+/// which takes the box away because leaving a note is what finishes it.
+/// Coming back, there was no box: the caret was gone, and no key in the box
+/// could bring it back -- not home, not end, not an arrow, because those
+/// are the box's own keys and there was no box for them to move in. Only
+/// walking to another note opened one, which is the reader arriving at
+/// their notes and being sent to a different one to get a caret at all.
+///
+/// Broken deliberately by writing the note down the way leaving it does, at
+/// either of the two keys: the route out is fine and the route back has no
+/// caret in it.
+#[test]
+fn leaving_the_notes_and_coming_back_leaves_the_caret_in_them() {
+    let scratch = tree("come-back", THREE);
+    let caret = |app: &mut App| {
+        let dump = support::render(app, 76, 18);
+        dump.split("-- cursor --")
+            .nth(1)
+            .unwrap_or("?")
+            .trim()
+            .to_string()
+    };
+
+    // Away to the conversation about the note, and back by the key the
+    // conversation names.
+    let mut app = open(&scratch, 76, 18);
+    let in_a_note = caret(&mut app);
+    assert_ne!(in_a_note, "none", "the notes opened with no caret");
+    app.handle(alt(KeyCode::Char('a')));
+    assert!(app.chat().is_some(), "alt+a did not open the conversation");
+    app.handle(alt(KeyCode::Char('t')));
+    assert!(
+        app.notes().is_some(),
+        "alt+t did not come back to the notes"
+    );
+    assert_eq!(
+        caret(&mut app),
+        in_a_note,
+        "coming back from the conversation left the notes with no caret"
+    );
+    // Which is to say the box is there: its own keys move in it.
+    press(&mut app, KeyCode::End);
+    assert_ne!(caret(&mut app), "none", "there is no box to move in");
+
+    // And away to the place a note is about, which is the other way out.
+    // The note that points somewhere is the second, and it has to point at
+    // a file that is there.
+    std::fs::write(scratch.path().join("sample.rs"), "one\ntwo\nthree\n").expect("the file");
+    let mut app = open(&scratch, 76, 18);
+    press(&mut app, KeyCode::Down);
+    let in_a_note = caret(&mut app);
+    app.handle(alt(KeyCode::Enter));
+    assert!(app.notes().is_none(), "alt+enter did not go to the file");
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+    assert!(app.notes().is_some(), "the notes did not come back");
+    assert_eq!(
+        caret(&mut app),
+        in_a_note,
+        "coming back from the file left the notes with no caret"
+    );
+}
