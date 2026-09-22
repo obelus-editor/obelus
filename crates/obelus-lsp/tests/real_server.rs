@@ -1090,69 +1090,6 @@ fn a_real_server_works_out_what_the_file_does_not_say() {
     client.shutdown();
 }
 
-/// A probe: what a real server asks to have changed when a file moves.
-#[test]
-#[ignore = "a measurement"]
-fn probe_what_a_move_changes() {
-    let Some((mut client, events)) = start() else {
-        return;
-    };
-    pump(&mut client, &events, HANDSHAKE, |client, _| {
-        client.is_ready()
-    });
-    let capabilities = client.capabilities().expect("ready");
-    eprintln!(
-        "MEASURE declares {}",
-        serde_json::to_string(&capabilities.workspace).unwrap_or_default()
-    );
-
-    let from = root().join("crates/obelus-lsp/src/hint.rs");
-    let to = root().join("crates/obelus-lsp/src/hints.rs");
-    let deadline = Instant::now() + INDEXED;
-    loop {
-        assert!(Instant::now() < deadline, "nothing came back");
-        let id = client
-            .request(
-                "workspace/willRenameFiles",
-                &serde_json::json!({
-                    "files": [{
-                        "oldUri": obelus_lsp::client::uri_for(&from).expect("a uri"),
-                        "newUri": obelus_lsp::client::uri_for(&to).expect("a uri"),
-                    }]
-                }),
-            )
-            .expect("asking");
-        let reply = pump(&mut client, &events, INDEXED, |_, reply| {
-            reply.is_some_and(|reply| reply.id == id)
-        })
-        .expect("An answer");
-        match &reply.result {
-            Ok(value) if !value.is_null() => {
-                eprintln!(
-                    "MEASURE answer {}",
-                    serde_json::to_string(value)
-                        .unwrap_or_default()
-                        .chars()
-                        .take(600)
-                        .collect::<String>()
-                );
-                let wanted = obelus_lsp::edits::wanted_in(value);
-                eprintln!(
-                    "MEASURE {} changes, refused {:?}",
-                    wanted.changes.len(),
-                    wanted.refused
-                );
-                break;
-            }
-            other => {
-                eprintln!("MEASURE not yet: {other:?}");
-                std::thread::sleep(Duration::from_millis(500));
-            }
-        }
-    }
-    client.shutdown();
-}
-
 /// A file that moves takes its meaning with it, and the server says which
 /// paths it wants to hear about before that happens.
 ///
