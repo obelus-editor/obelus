@@ -144,10 +144,6 @@ fn enable_keyboard() -> bool {
     true
 }
 
-/// Turns on mouse reporting, and says whether it worked.
-///
-/// Best effort: a terminal that will not report the mouse is a terminal where
-/// the wheel keeps sending arrow keys, which is how obelus behaved before it
 /// Asks the terminal to wrap what it pastes.
 ///
 /// Without it a pasted function arrives as somebody typing very fast, and
@@ -164,6 +160,10 @@ fn enable_paste() {
     }
 }
 
+/// Turns on mouse reporting, and says whether it worked.
+///
+/// Best effort: a terminal that will not report the mouse is a terminal where
+/// the wheel keeps sending arrow keys, which is how obelus behaved before it
 /// asked. Not a reason to refuse to start.
 fn enable_mouse() -> bool {
     match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
