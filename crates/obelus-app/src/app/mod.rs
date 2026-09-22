@@ -1159,10 +1159,23 @@ impl App {
     /// a view declares it takes, and this is the rectangle that comes out of
     /// laying one out.
     fn picker_area(&self) -> Rect {
+        let editor = self.drawn_in();
         match self.chat() {
-            Some(chat) => obelus_ui::chat::above_writing(self.editor_area, chat, self.card()),
-            None => self.editor_area,
+            Some(chat) => obelus_ui::chat::above_writing(editor, chat, self.card()),
+            None => editor,
         }
+    }
+
+    /// The region a view drawn over the file is drawn in.
+    ///
+    /// Worked out from the screen, the way the drawing works it out, rather
+    /// than read from [`Self::editor_area`] -- which is what the *document*
+    /// has, and a compact list takes room off it. Asked against that, a
+    /// press in the command palette was measured from a rect ten rows above
+    /// the one the palette had drawn itself in: its tabs answered nothing,
+    /// and its rows answered about the wrong ones.
+    fn drawn_in(&self) -> Rect {
+        obelus_ui::regions(self.screen_area).editor
     }
 
     /// Whether anything on screen is moving.
@@ -2263,7 +2276,14 @@ impl App {
 
     /// A press in a list of rows to choose from.
     fn press_in_picker(&mut self, x: u16, y: u16) {
-        let area = self.picker_area();
+        // Where the list drew itself, not the room it was given: a compact
+        // one takes as many rows as it needs against the foot of that room,
+        // so the two are ten rows apart for a palette on a tall screen.
+        let room = self.picker_area();
+        let area = self
+            .picker
+            .as_ref()
+            .map_or(room, |picker| obelus_ui::picker::region(picker, room));
         // The tabs, which are above the rows: pressing one is the only
         // thing a tab is for, so there is nothing else a press there could
         // have meant.
@@ -2299,7 +2319,7 @@ impl App {
 
     /// A press in the table of what this project is made of.
     fn press_in_counts(&mut self, x: u16, y: u16) {
-        let area = self.editor_area;
+        let area = self.drawn_in();
         // The tabs are the table's first row.
         let tab = self.counts.as_ref().and_then(|counts| {
             let names = counts.tabs();
@@ -2334,7 +2354,7 @@ impl App {
     /// thing on the page that says by its shape that pressing it changes
     /// it.
     fn press_in_settings(&mut self, x: u16, y: u16) {
-        let area = self.editor_area;
+        let area = self.drawn_in();
         // The tabs are the page's first row.
         let tab = self.settings.as_ref().and_then(|settings| {
             let names = obelus_component::settings::Settings::tabs();

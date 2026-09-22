@@ -3974,3 +3974,110 @@ fn a_list_on_the_status_bar_takes_its_rows_from_the_editor() {
         "the editor did not get its rows back:\n{dump}"
     );
 }
+
+/// A press reaches a list that draws itself against the foot of the region.
+///
+/// A compact list -- the command palette, an agent's commands, a setting's
+/// values -- is given the whole region and draws itself in as many rows as
+/// it needs at the bottom of it. So where a press landed has to be measured
+/// against the rows it drew, not against the room it was given: measured
+/// against the room, every press in the palette was read as a press however
+/// many rows above the list, which for a short list is off the end of it and
+/// for a long one is the wrong row.
+///
+/// Broken deliberately by measuring against the room the list was given,
+/// which is what it did: nothing in the palette answers a press, its tabs
+/// included.
+#[test]
+fn a_press_reaches_a_list_drawn_against_the_foot() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 80, 24);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::CommandPalette);
+    // Filtered down to a few, so the list is plainly shorter than the room
+    // and draws itself against the foot of it.
+    type_text(&mut app, "fold");
+    let dump = support::render(&mut app, 80, 24);
+
+    let picker = app.picker().expect("the palette");
+    // The region the *drawing* gives the list, which is worked out from the
+    // screen: what the document has is smaller, because a compact list has
+    // taken room off it.
+    let region = obelus_ui::picker::region(
+        picker,
+        obelus_ui::regions(ratatui::layout::Rect::new(0, 0, 80, 24)).editor,
+    );
+    let rows = obelus_ui::picker::rows_region(picker, region);
+    let drawn = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Files") && row.contains("Code"))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse::<u16>().ok());
+    let guess = obelus_ui::picker::tab_row(app.picker().expect("the palette"), region);
+    // The row the tabs were *drawn* on is the answer the press has to
+    // agree with: the geometry guessing one row and the drawing spending
+    // another is a press that lands where it does not look.
+    assert_eq!(
+        guess.map(|row| row.y),
+        drawn,
+        "the tabs are not where the press thinks they are"
+    );
+
+    // A press on the second row of the list selects whatever is drawn
+    // there. Read off the screen rather than counted, because what the
+    // press has to agree with is the drawing.
+    let on = support::text_block(&dump)
+        .lines()
+        .find(|row| {
+            row.split_once('|')
+                .and_then(|(at, _)| at.trim().parse::<u16>().ok())
+                == Some(rows.y + 1)
+        })
+        .expect("the second row of the list")
+        .to_string();
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: rows.x + 4,
+        y: rows.y + 1,
+    });
+    let chosen = app
+        .picker()
+        .expect("the palette")
+        .selected_item()
+        .map(|item| item.label.clone())
+        .expect("a row under the press");
+    assert!(
+        on.contains(&chosen),
+        "the press selected {chosen:?}, which is not what is drawn there: {on:?}"
+    );
+
+    // And a press on a tab goes to it.
+    let names: Vec<String> = app
+        .picker()
+        .expect("the palette")
+        .tabs()
+        .iter()
+        .map(|tab| (*tab).to_string())
+        .collect();
+    assert!(names.len() > 1, "the palette has no tabs to press");
+    // Where the second tab's word is drawn, read off the screen.
+    let tab_row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains(&names[0]) && row.contains(&names[1]))
+        .expect("the tab row")
+        .to_string();
+    let y: u16 = tab_row
+        .split_once('|')
+        .and_then(|(at, _)| at.trim().parse().ok())
+        .expect("the tab row's number");
+    let x = support::column_of(&tab_row, &names[1]);
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: u16::try_from(x).expect("a column"),
+        y,
+    });
+    assert_eq!(
+        app.picker().expect("the palette").tab(),
+        1,
+        "the press did not go to the tab"
+    );
+}
