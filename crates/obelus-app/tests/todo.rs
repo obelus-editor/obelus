@@ -2099,3 +2099,84 @@ fn the_status_row_says_it_is_the_notes_and_what_is_left() {
         "the row does not say how much is left:\n{dump}"
     );
 }
+
+/// A note an agent writes while the reader is talking to it is not put back.
+///
+/// The notes are a document, and a document can be open without being the
+/// one on screen. An agent writes notes at exactly that moment: the reader
+/// is in the conversation, so the notes are one of the other documents.
+///
+/// A note lives nowhere but the file, and the page writes the whole file
+/// from the copy it holds -- on the reader's next keystroke in it, on its
+/// being closed, on obelus leaving. So a page that never heard about the
+/// write held the file as it was before, and put it back. The agent ticked
+/// a note off, said so, and was telling the truth; by the time the reader
+/// went to look, obelus had undone it.
+///
+/// Obelus watches the file and re-reads it when anybody writes it, its own
+/// writes included, and that was not the half that was broken: the
+/// re-reading asked for "the notes" and got the notes *on screen*, so with
+/// the conversation in front it returned at once. The watch was alive and
+/// its answer was to do nothing.
+///
+/// Going back to the notes is what makes this bite rather than a second
+/// reading saving it: asking for them again goes back to the page as the
+/// reader left it, on purpose, because reading the file again would lose
+/// their place in the list.
+///
+/// Broken deliberately by re-reading only the page on screen, which is what
+/// it did: the file is written correctly and then put back the way it was.
+#[test]
+fn a_note_an_agent_writes_behind_the_conversation_is_not_put_back() {
+    let scratch = support::Scratch::new("todo-agent-behind");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"0123456W\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    // A file open, the notes opened over it, and then the file in front
+    // again -- which is the shape a reader talking to an agent is in.
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+    let _ = support::render(&mut app, 76, 18);
+    dispatch::dispatch(&mut app, Command::DocumentList);
+    press(&mut app, KeyCode::Up);
+    press(&mut app, KeyCode::Enter);
+    let _ = support::render(&mut app, 76, 18);
+    assert!(
+        app.notes().is_none(),
+        "the notes are still the page on screen, so this proves nothing"
+    );
+
+    // And the agent ticks the note off, the way its tools do.
+    let id = obelus_git::todo::NoteId::read("0123456W").expect("a name");
+    let (answer, mut said) = futures::channel::oneshot::channel();
+    app.handle(obelus_app::event::Event::Notes(obelus_mcp::Asked {
+        doing: obelus_git::todo::Doing::Finish(id),
+        answer,
+    }));
+    assert_eq!(
+        said.try_recv().ok().flatten().as_deref(),
+        Some("ticked off"),
+        "the tool did not tick it off"
+    );
+    assert!(
+        obelus_git::todo::Todo::read(scratch.path()).notes[0].done,
+        "the file does not say the note is done"
+    );
+
+    // Then the reader goes back to their notes -- which goes back to the
+    // page, not to the file -- and it is written down, the way closing it
+    // and leaving obelus both write it down.
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+    let _ = support::render(&mut app, 76, 18);
+    assert!(app.notes().is_some(), "the notes are not back on screen");
+    dispatch::dispatch(&mut app, Command::DocumentClose);
+    assert!(
+        obelus_git::todo::Todo::read(scratch.path()).notes[0].done,
+        "the page put the note back the way it was before the agent touched it"
+    );
+}

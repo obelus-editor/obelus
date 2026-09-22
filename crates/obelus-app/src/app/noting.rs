@@ -166,18 +166,40 @@ impl App {
 
     /// Takes the file again, because somebody else wrote it.
     ///
-    /// Only while the page is showing: with it shut there is nothing to
-    /// keep in step, and the next open reads the file anyway.
+    /// Only while the page is open, which is not the same as its being on
+    /// screen. Shut, there is nothing to keep in step and the next open
+    /// reads the file anyway; open behind the conversation, there is a page
+    /// holding a copy of the file that it will write back.
     pub(super) fn reread_notes(&mut self) {
-        if self.notes().is_none() {
+        // The notes wherever they are open, not only where the reader is
+        // standing. An agent writes notes while the reader is talking to
+        // it, which is to say while the conversation is the document on
+        // screen and the notes are one of the others -- and `notes()`
+        // answers about the document on screen. So the page that had to
+        // hear about the write was the one page this could not reach, and
+        // it went on holding what the file said before.
+        //
+        // Holding it was the whole of the damage. A note lives nowhere but
+        // the file, so the page writes what it holds -- on the reader's
+        // next keystroke in it, on its being closed, on obelus leaving --
+        // and what it held was the file as it was before the agent touched
+        // it. The agent ticked a note off, said so, and was telling the
+        // truth; by the time the reader went to look, obelus had put the
+        // note back.
+        let Some(at) = self.notes_document() else {
             return;
-        }
+        };
         let todo = Todo::read(&self.working_directory);
         if todo.minted {
             self.save_notes(&todo);
         }
         let where_now = self.where_the_notes_point(&todo);
-        if let Some(notes) = self.notes_mut() {
+        if let Some(notes) = self
+            .documents
+            .get_mut(at.get())
+            .and_then(Option::as_mut)
+            .and_then(Document::notes_mut)
+        {
             notes.reread(todo, where_now);
         }
     }
@@ -326,11 +348,12 @@ impl App {
             }
         };
         self.save_notes(&todo);
-        // The page, where it is open: a reader looking at their notes while
-        // an agent writes one should watch it arrive.
-        if self.notes().is_some() {
-            self.reread_notes();
-        }
+        // And the page, wherever it is open. A reader looking at their
+        // notes while an agent writes one should watch it arrive -- and a
+        // reader who is talking to the agent instead, with the notes open
+        // behind the conversation, must not be left holding a page that
+        // will write the file back the way it was.
+        self.reread_notes();
         said
     }
 
