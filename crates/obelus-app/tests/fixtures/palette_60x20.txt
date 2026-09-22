@@ -6,7 +6,7 @@ screen 60x20  editor 60x18  status 60x1
  3|   4  }                                                     
  4|   5                                                        
  5|────────────────────────────────────────────────────────────
- 6|  All  Files  Code  obelus                              ⇤ ⇥ 
+ 6|  All  Files  Search  Code  Edit  Git  obelus           ⇤ ⇥ 
  7|────────────────────────────────────────────────────────────
  8| 󰈞 open-file  Open a file                                󱊫 █
  9| 󰣞 open-changed-file  Open a file that has changed       󱊭 █

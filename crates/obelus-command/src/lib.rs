@@ -162,30 +162,62 @@ pub enum Command {
 /// group per part of obelus would be nine of them, which is a worse way to
 /// find `open-file` than its name is.
 ///
-/// Split by what the reader is doing, not by what the code touches: reading
-/// files, following what the code means, and running obelus itself -- which
-/// is where restarting a server and opening the log both belong, being
-/// housekeeping rather than reading.
+/// Split by what the reader is doing, not by what the code touches. There
+/// were three of these, and one of them held two commands in every three:
+/// `Code` meant the language server, the searches, the ways about a file,
+/// git, folding and every edit at once -- which is six things a reader
+/// might be in the middle of, on one tab, and so no help in finding any of
+/// them. A tab nobody can predict the contents of is a tab nobody opens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Group {
-    /// Opening and re-reading files, and moving between the open ones.
+    /// Opening and re-reading files, and moving between the open ones --
+    /// with what this tree is made of and what it means to come back to,
+    /// both of which are questions about the files rather than about
+    /// obelus.
     Files,
-    /// Following the code: what a symbol is, and where you have been.
+    /// Finding somewhere and going there: the searches, a line, a bracket,
+    /// and the way back from wherever they led.
+    Search,
+    /// What the code means, as a server and the syntax answer it: what a
+    /// symbol is, where it is used, what is wrong with it, and what it is
+    /// made of -- which is why folding is here. A fold is a run of code the
+    /// syntax offered, and folding one is the same act as reading the
+    /// outline.
     Code,
+    /// Changing the text.
+    Edit,
+    /// What has changed and what it was: the hunks in this file, and the
+    /// commits behind it.
+    Git,
     /// obelus itself, its colours, its log, and its language servers.
     Obelus,
 }
 
 impl Group {
     /// Every group, in the order the tabs appear.
-    pub const ALL: &'static [Self] = &[Self::Files, Self::Code, Self::Obelus];
+    ///
+    /// Roughly the order of a morning: open something, find your way about
+    /// it, ask what it means, change it, see what you changed -- and
+    /// obelus's own housekeeping last, because it is the tab a reader wants
+    /// least often.
+    pub const ALL: &'static [Self] = &[
+        Self::Files,
+        Self::Search,
+        Self::Code,
+        Self::Edit,
+        Self::Git,
+        Self::Obelus,
+    ];
 
     /// The word on the tab.
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Files => "Files",
+            Self::Search => "Search",
             Self::Code => "Code",
+            Self::Edit => "Edit",
+            Self::Git => "Git",
             Self::Obelus => "obelus",
         }
     }
@@ -682,6 +714,15 @@ impl Command {
             | Self::CountLines
             | Self::TodoOpen
             | Self::TodoAdd => Group::Files,
+            Self::SearchFile
+            | Self::SearchProject
+            | Self::SearchSymbols
+            | Self::GoLine
+            | Self::GoBracket
+            // Where you have been, which is the way back from wherever a
+            // search or a definition took you.
+            | Self::GoBack
+            | Self::GoForward => Group::Search,
             Self::SymbolMenu
             | Self::CodeActions
             | Self::SymbolRename
@@ -696,33 +737,29 @@ impl Command {
             | Self::SymbolImplementation
             | Self::SymbolReferences
             | Self::SymbolCalls
-            | Self::SearchFile
-            | Self::SearchProject
-            | Self::SearchSymbols
-            | Self::GoLine
-            | Self::GoBracket
-            | Self::HistoryFile
-            | Self::HistoryProject
-            | Self::HistoryLine
+            // Folding is what the code is made of rather than what it says:
+            // a fold is a run the syntax offered, and folding one is the
+            // same act as reading the outline two lines above.
             | Self::Fold
             | Self::FoldAll
-            | Self::UnfoldAll
-            | Self::GitHunk
-            | Self::GitPrevious
-            | Self::GitNext
-            | Self::SelectionCopy
-            | Self::SelectionWiden
+            | Self::UnfoldAll => Group::Code,
+            Self::SelectionCopy
             | Self::SelectionCut
+            | Self::SelectionWiden
+            | Self::SelectionClear
+            | Self::SelectionAll
             | Self::LineUp
             | Self::LineDown
             | Self::CommentToggle
             | Self::Paste
             | Self::Undo
-            | Self::Redo
-            | Self::SelectionClear
-            | Self::SelectionAll
-            | Self::GoBack
-            | Self::GoForward => Group::Code,
+            | Self::Redo => Group::Edit,
+            Self::GitHunk
+            | Self::GitPrevious
+            | Self::GitNext
+            | Self::HistoryFile
+            | Self::HistoryProject
+            | Self::HistoryLine => Group::Git,
             Self::LspRestart
             | Self::LspStop
             | Self::AgentOpen
@@ -733,7 +770,7 @@ impl Command {
             | Self::LogServers
             | Self::ThemeSelect
             | Self::CommandPalette
-            | Self::Quit => Group::Obelus,
+            | Self::Quit => Group::Obelus
         }
     }
 
@@ -984,30 +1021,55 @@ mod tests {
         }
     }
 
-    /// Where the housekeeping goes. Restarting a language server and opening
-    /// the log are not *reading*, and neither of them is worth a tab: they
-    /// belong with obelus's own settings, which is where a reader looks when
-    /// the tool rather than the code is the problem.
+    /// Every command is somewhere a reader would look for it.
+    ///
+    /// Housekeeping is obelus's own: restarting a language server and
+    /// opening the log are not *reading*, and neither is worth a tab, so
+    /// they go with the settings -- which is where a reader looks when the
+    /// tool rather than the code is the problem.
+    ///
+    /// And no tab may hold more than a third of everything. There were
+    /// three tabs once, kept few on purpose because every tab is somewhere
+    /// a reader has to look before deciding to type the name instead. But
+    /// one of the three held two commands in every three -- the language
+    /// server, the searches, the ways about a file, git, folding and every
+    /// edit at once -- and a tab whose contents nobody can predict is not
+    /// cheaper to skip than six that can be. So the count is no longer the
+    /// thing held down; the share is, because the share is what went wrong.
     #[test]
-    fn housekeeping_is_grouped_with_obelus_itself() {
+    fn every_command_is_where_a_reader_would_look_for_it() {
         assert_eq!(Command::LogOpen.group(), Group::Obelus);
         assert_eq!(Command::LspRestart.group(), Group::Obelus);
         assert_eq!(Command::LspStop.group(), Group::Obelus);
         assert_eq!(Command::ThemeSelect.group(), Group::Obelus);
 
-        // And the two that are reading.
         assert_eq!(Command::DocumentClose.group(), Group::Files);
         assert_eq!(Command::SymbolOutline.group(), Group::Code);
-        assert_eq!(Command::GoBack.group(), Group::Code);
+        // A fold is a run of code the syntax offered, which is the outline
+        // again by another name.
+        assert_eq!(Command::Fold.group(), Group::Code);
+        // The way back from wherever a search led, which is the finding
+        // rather than the code.
+        assert_eq!(Command::GoBack.group(), Group::Search);
+        assert_eq!(Command::Undo.group(), Group::Edit);
+        assert_eq!(Command::HistoryFile.group(), Group::Git);
+        assert_eq!(Command::GitHunk.group(), Group::Git);
 
-        // Few enough to walk. Every tab is somewhere a reader has to look
-        // before deciding to type the name instead, so the count is the
-        // point and not an accident.
-        assert!(
-            Group::ALL.len() <= 3,
-            "the tabs have multiplied: {:?}",
-            Group::ALL
-        );
+        // Every command lands in a tab, and no tab takes the rest.
+        let most = ALL.len() / 3;
+        for group in Group::ALL {
+            let held = ALL
+                .iter()
+                .filter(|spec| spec.command.group() == *group)
+                .count();
+            assert!(held > 0, "{} has nothing in it", group.name());
+            assert!(
+                held <= most,
+                "{} holds {held} of {}, which is more than a tab's share",
+                group.name(),
+                ALL.len()
+            );
+        }
     }
 
     /// A name is what the command does, verb first, words joined by
