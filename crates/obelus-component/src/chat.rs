@@ -183,12 +183,40 @@ pub struct Said {
     pub words: Vec<String>,
     /// Whether the reader has opened or closed what this begins.
     ///
-    /// `None` means nobody has said, and obelus decides: a run of tool
-    /// calls of one kind folds itself once there are enough of them to be a
-    /// log rather than a story, and its thinking stays open because
-    /// thinking is prose somebody may want to read. Once the reader says
-    /// otherwise it stays the way they left it.
+    /// `None` means nobody has said, and obelus decides: a change under a
+    /// call folds itself once the change is made, and its thinking stays
+    /// open because thinking is prose somebody may want to read. Once the
+    /// reader says otherwise it stays the way they left it.
     pub opened: Option<bool>,
+    /// And whether they have opened or closed the *run* that begins here.
+    ///
+    /// Its own answer, because a run and the first call in it are two
+    /// rows and were one fold. A run is named by the call it starts at --
+    /// there is nothing else to name it by -- so the heading and that
+    /// call both asked [`Said::opened`], and enter on the first call of a
+    /// run shut the whole run instead of that call. Nothing in between
+    /// could have told them apart: they are the same index, and the
+    /// question is which of the two things beginning there the reader
+    /// meant.
+    pub run_opened: Option<bool>,
+}
+
+/// What the mark on a row opens and closes.
+///
+/// Three things fold in a transcript and they are three different things,
+/// which an index alone cannot say. A run is named by the call it begins
+/// at, so `Said(n)` and `Run(n)` are the same number meaning two rows;
+/// and the plan is not a thing that was said at all -- it used to borrow
+/// the one index that can never name one, which worked and explained
+/// nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Folds {
+    /// One thing said, by its place among them.
+    Said(usize),
+    /// A run of calls of one kind, by the first of them.
+    Run(usize),
+    /// What the agent means to do about this turn.
+    Plan,
 }
 
 /// One row of the transcript, wrapped to a width.
@@ -231,7 +259,7 @@ pub struct Row {
     /// A run of tool calls of one kind, or a piece of thinking: both are
     /// one row with a mark on it until the reader opens them, and both are
     /// opened by the same key on the same sort of row.
-    pub folds: Option<usize>,
+    pub folds: Option<Folds>,
     /// Whether what it folds is open, for the mark that says so.
     pub open: bool,
     /// What the row is, where it is a line of a change: gone, new, or the
@@ -1017,6 +1045,7 @@ impl Chat {
             // the address is what pressing the key on it does.
             words: vec![url.to_string()],
             opened: None,
+            run_opened: None,
         });
     }
 
@@ -1096,6 +1125,7 @@ impl Chat {
                 ran: call.ran.clone(),
                 words: call.said.clone(),
                 opened: None,
+                run_opened: None,
             });
             return;
         };
@@ -1223,7 +1253,7 @@ impl Chat {
                 // one index that can never name a [`Said`]: a plan is not a
                 // thing that was said, and giving it an index into the
                 // transcript would be filing it as one.
-                folds: planning.then_some(self.said.len()),
+                folds: planning.then_some(Folds::Plan),
                 open: self.plan_open,
                 marker: None,
                 changed: None,
@@ -1304,7 +1334,7 @@ impl Chat {
                 (Some("pending"), _) | (_, "pending") => Some("pending"),
                 (_, state) => Some(state),
             });
-        let open = self.is_open(run.start);
+        let open = self.is_run_open(run.start);
         let mut rows = vec![Row {
             speaker: Speaker::Tool,
             spans: plain(format!("{count} {what}")),
@@ -1315,7 +1345,7 @@ impl Chat {
             kind: said.kind.clone(),
             place: None,
             away: None,
-            folds: Some(run.start),
+            folds: Some(Folds::Run(run.start)),
             open,
             marker: None,
             changed: None,
@@ -1401,7 +1431,7 @@ impl Chat {
                     said,
                     title.next().unwrap_or_else(|| plain(String::new())),
                     depth,
-                    Some(at),
+                    Some(Folds::Said(at)),
                     Some((at, Source::Text)),
                 )
             }];
@@ -1457,8 +1487,13 @@ impl Chat {
         }
         // The heading is obelus's word for what is behind it, not the
         // agent's: there is nothing in it to take a copy of.
-        let mut rows =
-            vec![self.opening(said, plain("thought".to_string()), depth, Some(at), None)];
+        let mut rows = vec![self.opening(
+            said,
+            plain("thought".to_string()),
+            depth,
+            Some(Folds::Said(at)),
+            None,
+        )];
         if self.is_open(at) {
             rows.extend(
                 laid_out(&said.text, inside, true)
@@ -1479,7 +1514,7 @@ impl Chat {
         said: &Said,
         spans: Vec<Span>,
         depth: u8,
-        folds: Option<usize>,
+        folds: Option<Folds>,
         from: Option<(usize, Source)>,
     ) -> Row {
         Row {
@@ -1502,7 +1537,7 @@ impl Chat {
                 _ => None,
             },
             folds,
-            open: folds.is_some_and(|at| self.is_open(at)),
+            open: folds.is_some_and(|what| self.is_open_now(what)),
             marker: None,
             changed: None,
             depth,
@@ -1550,11 +1585,20 @@ impl Chat {
         }
     }
 
-    /// Whether what begins at `at` is open.
+    /// Whether the thing a mark folds is open.
     ///
-    /// What the reader said, and otherwise what obelus makes of it: a run
-    /// of tool calls folds itself, unless one of them failed -- a failure
-    /// is the one thing in a turn nobody may have to go looking for.
+    /// The one answer for all three, because the row that draws the mark
+    /// has to agree with the key that presses it: which of them a row is
+    /// about is now on the row, so neither has to guess from an index.
+    fn is_open_now(&self, what: Folds) -> bool {
+        match what {
+            Folds::Said(at) => self.is_open(at),
+            Folds::Run(at) => self.is_run_open(at),
+            Folds::Plan => self.plan_open,
+        }
+    }
+
+    /// Whether what one thing said begins is open.
     fn is_open(&self, at: usize) -> bool {
         let Some(said) = self.said.get(at) else {
             return false;
@@ -1571,17 +1615,31 @@ impl Chat {
         // in the margin beside them -- so the block folds away and the row
         // that opens it stays.
         //
-        // And open once it has finished badly, which that reason does not
-        // cover: what a change said is in the file afterwards, and what a
-        // command printed is nowhere at all. A reader whose tests have just
-        // failed is looking for the failure, and folding it away hands them
-        // a row and a glyph. The same rule the arm below has for a run of
-        // calls, which is where it was already written down.
-        if !said.change.is_empty() || !said.words.is_empty() {
-            return matches!(
-                said.state.as_deref(),
-                Some("pending" | "in_progress" | "failed")
-            );
+        // And open once it has finished badly: what a change said is in
+        // the file afterwards, and what a command printed is nowhere at
+        // all. A reader whose tests have just failed is looking for the
+        // failure, and folding it away hands them a row and a glyph. The
+        // same rule a run of calls has, for the same reason.
+        matches!(
+            said.state.as_deref(),
+            Some("pending" | "in_progress" | "failed")
+        )
+    }
+
+    /// Whether the run of calls beginning at `at` is open.
+    ///
+    /// What the reader said about the run, and otherwise what obelus makes
+    /// of it: a run folds itself, unless one of its calls failed -- a
+    /// failure is the one thing in a turn nobody may have to go looking
+    /// for.
+    ///
+    /// Asked of the run rather than of the call it begins at, which is what
+    /// it used to be. A run is named by that call and so they shared an
+    /// answer: opening the run set the call's `opened`, the call's own mark
+    /// read it back, and enter on the first call of a run shut the run.
+    fn is_run_open(&self, at: usize) -> bool {
+        if let Some(open) = self.said.get(at).and_then(|said| said.run_opened) {
+            return open;
         }
         self.said[self.run_from(at)]
             .iter()
@@ -1589,19 +1647,21 @@ impl Chat {
     }
 
     /// Opens what is closed and closes what is open.
-    pub fn fold(&mut self, at: usize) {
+    pub fn fold(&mut self, what: Folds) {
         self.forget_the_layout();
-        // One past the end is the plan, which is not a thing that was said
-        // and so has no index among them. It is the one index that can
-        // never name a [`Said`], which is what makes it safe to mean
-        // something else.
-        if at == self.said.len() {
-            self.plan_open = !self.plan_open;
-            return;
-        }
-        let open = self.is_open(at);
-        if let Some(said) = self.said.get_mut(at) {
-            said.opened = Some(!open);
+        let open = self.is_open_now(what);
+        match what {
+            Folds::Plan => self.plan_open = !open,
+            Folds::Said(at) => {
+                if let Some(said) = self.said.get_mut(at) {
+                    said.opened = Some(!open);
+                }
+            }
+            Folds::Run(at) => {
+                if let Some(said) = self.said.get_mut(at) {
+                    said.run_opened = Some(!open);
+                }
+            }
         }
     }
 
@@ -2110,6 +2170,7 @@ impl Chat {
             ran: None,
             words: Vec::new(),
             opened: None,
+            run_opened: None,
         });
     }
 
@@ -2447,6 +2508,70 @@ mod tests {
 
     use super::*;
 
+    /// A run and the first call in it fold separately.
+    ///
+    /// A run is named by the call it begins at -- there is nothing else to
+    /// name it by -- and for as long as a fold was only an index, the
+    /// heading and that call asked the same question and wrote the same
+    /// answer. So the first call of an opened run wore the run's arrow,
+    /// and enter on it shut the whole run: the one call in a run a reader
+    /// could not put away on its own was the first, which is the one they
+    /// reach first.
+    ///
+    /// It makes three claims and was broken deliberately three times.
+    /// Giving the run `Folds::Said(run.start)` puts them back on one
+    /// answer. Keeping a run's state in `opened` beside the call's does
+    /// the same through the other door. And folding the first call by the
+    /// run's key shuts the run instead of the call.
+    #[test]
+    fn a_run_and_the_first_call_in_it_fold_separately() {
+        let mut chat = Chat::new();
+        for index in 0..3 {
+            let mut one = call(
+                &format!("t{index}"),
+                &format!("command {index}"),
+                "execute",
+                vec![],
+            );
+            one.said = vec![format!("output {index}")];
+            chat.tool(&one, "completed");
+        }
+        // Three of a kind is a run, and a run arrives folded.
+        let rows = chat.rows(ROOM.reading);
+        assert_eq!(rows.len(), 1, "three calls are not a run: {rows:?}");
+        let heading = rows[0].folds.expect("the run's heading folds something");
+        assert_eq!(heading, Folds::Run(0), "the run is not named as a run");
+
+        // Opened, its first call is a row of its own -- and what that row
+        // folds is the call, not the run it begins.
+        chat.fold(heading);
+        let rows = chat.rows(ROOM.reading);
+        let first = rows[1].folds.expect("the first call folds something");
+        assert_eq!(first, Folds::Said(0), "the first call still folds the run");
+        assert_ne!(first, heading, "the run and its first call are one fold");
+
+        // And pressing it opens that call, leaving the run open.
+        chat.fold(first);
+        let rows = chat.rows(ROOM.reading);
+        assert!(
+            rows.len() > 4,
+            "opening the first call shut something else: {:?}",
+            rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+        assert_eq!(rows[0].text(), "3 Calls", "the run did not stay open");
+        assert!(
+            rows.iter().any(|row| row.text() == "output 0"),
+            "the first call did not open: {:?}",
+            rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+        // The others are untouched: one call's fold is one call's.
+        assert!(
+            !rows.iter().any(|row| row.text() == "output 1"),
+            "opening one call opened its neighbours: {:?}",
+            rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+    }
+
     /// A closed call is one row, however long its title.
     ///
     /// The rest of a wrapped title was drawn whatever the fold said, and
@@ -2479,7 +2604,7 @@ mod tests {
 
         // Opened, the whole of the title is there, and what it carries
         // under it.
-        chat.fold(0);
+        chat.fold(Folds::Said(0));
         let rows: Vec<String> = chat.rows(ROOM.reading).iter().map(Row::text).collect();
         for line in script.lines() {
             assert!(
@@ -2523,7 +2648,7 @@ mod tests {
             let mut chat = Chat::new();
             chat.tool(&saying("c1", long, carried), "completed");
             if !carried.is_empty() {
-                chat.fold(0);
+                chat.fold(Folds::Said(0));
             }
             chat.rows(ROOM.reading)
                 .into_iter()
@@ -3193,10 +3318,10 @@ mod tests {
         assert_eq!(rows.len(), 4, "its members are not under it: {rows:?}");
 
         // And the reader's word beats both ways of deciding.
-        chat.fold(0);
+        chat.fold(Folds::Run(0));
         let rows = chat.rows(ROOM.reading);
         assert_eq!(rows.len(), 1, "the reader closed it and it opened itself");
-        chat.fold(0);
+        chat.fold(Folds::Run(0));
         assert_eq!(chat.rows(ROOM.reading).len(), 4);
     }
 
@@ -3326,7 +3451,7 @@ mod tests {
         assert!(rows[0].open, "obelus closed the thinking by itself");
         assert!(rows.len() > 1, "the thinking is not under its heading");
 
-        chat.fold(0);
+        chat.fold(Folds::Said(0));
         assert_eq!(
             chat.rows(ROOM.reading).len(),
             1,
@@ -3355,7 +3480,7 @@ mod tests {
             );
         }
         // Opened: folded, its members are not drawn at all.
-        chat.fold(0);
+        chat.fold(Folds::Run(0));
 
         let rows = chat.rows(ROOM.reading);
         assert!(
@@ -3781,7 +3906,7 @@ mod remembering {
             );
         }
         let before = said(&folding);
-        folding.fold(0);
+        folding.fold(Folds::Run(0));
         assert_ne!(
             before,
             said(&folding),
