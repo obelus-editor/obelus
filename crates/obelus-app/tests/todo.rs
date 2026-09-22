@@ -2394,3 +2394,72 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
         "the press on the mark did not open the conversation"
     );
 }
+
+
+/// A list of notes longer than the screen scrolls under the caret.
+///
+/// The window over the rows was told how wide a note's words are and never
+/// how many rows the reader could see, so its top sat at zero for the life
+/// of the view. The selection walked off the bottom and the page stayed
+/// where it was: a reader pressing down went on typing into a note that was
+/// no longer drawn, with no caret anywhere on screen to say where they
+/// were. The scrollbar beside it was drawn the whole time, promising a view
+/// that moved.
+///
+/// It makes three claims and was broken deliberately three times. Leaving
+/// the window unsettled keeps the top at zero and walks the selection off
+/// the bottom. Settling it against the whole region rather than the list
+/// puts the last rows under the foot. And settling only on the way down
+/// leaves a reader who walks back up looking at the middle of the list with
+/// their caret above it.
+#[test]
+fn a_list_of_notes_taller_than_the_screen_scrolls_under_the_caret() {
+    let many: String = (0..40)
+        .map(|n| format!("[[todo]]\nsaid = \"note number {n}\"\ndone = false\ndepth = 0\n\n"))
+        .collect();
+    let scratch = tree("scrolling", &many);
+    let mut app = open(&scratch, 76, 18);
+    let _ = support::render(&mut app, 76, 18);
+    let area = app.editor_area_for_test();
+    let rows = obelus_ui::todo::list_region(
+        area,
+        &obelus_ui::todo::hints(app.notes().expect("the notes")),
+    )
+    .height;
+    assert!(
+        usize::from(rows) < app.notes().expect("the notes").rows().len(),
+        "the list fits on the screen, so this proves nothing"
+    );
+
+    // Down, well past the last row the screen can hold.
+    for _ in 0..20 {
+        press(&mut app, KeyCode::Down);
+    }
+    let down = support::render(&mut app, 76, 18);
+    let window = app.notes().expect("the notes").window();
+    assert!(
+        window.top() > 0,
+        "the page did not move under a selection that walked off it:\n{down}"
+    );
+    assert!(
+        window.focus() >= window.top() && window.focus() < window.top() + usize::from(rows),
+        "the row the keys are on is not one of the rows drawn:\n{down}"
+    );
+    assert!(
+        obelus_ui::todo::caret(area, app.notes().expect("the notes")).is_some(),
+        "the reader is typing into a note with no caret on the page:\n{down}"
+    );
+
+    // And back up to the top, which is the half a window that only ever
+    // scrolls one way fails.
+    for _ in 0..20 {
+        press(&mut app, KeyCode::Up);
+    }
+    let up = support::render(&mut app, 76, 18);
+    let window = app.notes().expect("the notes").window();
+    assert_eq!(
+        (window.top(), window.focus()),
+        (0, 0),
+        "walking back up left the page where it was:\n{up}"
+    );
+}

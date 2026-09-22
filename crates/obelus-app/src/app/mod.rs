@@ -1519,6 +1519,20 @@ impl App {
         if let Some(notes) = self.notes_mut() {
             notes.lay_out(laid.0, laid.1);
         }
+        // And the window against the rows that room leaves, which is the
+        // other half of the same question: the width says what the rows
+        // are and this says how many of them the reader can see. Asked
+        // after the laying out, because the rows have to exist before the
+        // window can be put over them, and from the region the list is
+        // really drawn in -- the foot under it is part of what decides how
+        // many rows there are, and it grows and shrinks with what the note
+        // under the caret can do.
+        let seen = self.notes().map(|notes| {
+            obelus_ui::todo::list_region(self.editor_area, &obelus_ui::todo::hints(notes)).height
+        });
+        if let (Some(seen), Some(notes)) = (seen, self.notes_mut()) {
+            notes.settle_window(seen);
+        }
         self.check_servers();
         self.check_runs();
         self.show_what_is_wrong();

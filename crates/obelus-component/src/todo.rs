@@ -317,6 +317,28 @@ impl TodoView {
         self.follow_caret();
     }
 
+    /// Puts the window where the row the caret is in is on screen.
+    ///
+    /// The other half of [`Self::lay_out`], and asked the same way: every
+    /// frame, from the room the list is actually drawn in. The width is
+    /// what a note's words are wrapped at and this is how many of the rows
+    /// they make the reader can see, and the second was never asked at
+    /// all -- the window's top sat at zero for the life of the view. A
+    /// list longer than the screen walked its selection off the bottom and
+    /// stayed where it was, so a reader pressing down went on typing into
+    /// a note that was no longer drawn, with no caret anywhere to say
+    /// where they were.
+    ///
+    /// Here rather than at the end of a key, which is where a list and the
+    /// counts settle theirs. Those views are drawn wherever they are put;
+    /// this one is a document, and the room it has changes without anybody
+    /// pressing anything -- a terminal resized, a foot that grows a row
+    /// because the note now under the caret has somewhere to go. A key is
+    /// followed by a frame either way, so asking here answers both.
+    pub fn settle_window(&mut self, rows: u16) {
+        self.window.settle(rows);
+    }
+
     /// How a note's text is laid out: its width, and whether it wraps.
     #[must_use]
     pub const fn laid(&self) -> (u16, bool) {
