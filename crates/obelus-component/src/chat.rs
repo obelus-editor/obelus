@@ -1613,6 +1613,14 @@ impl Chat {
         self.laid.get_mut().take();
     }
 
+    /// Puts the keys on one of the settings on the status row.
+    ///
+    /// For a pointer: the keys walk along the row and have no use for
+    /// naming one outright, and a press names one.
+    pub fn stand_on_setting(&mut self, at: usize) {
+        self.focus = Focus::Settings(at);
+    }
+
     /// Lets go of whatever was held.
     pub const fn let_go(&mut self) {
         self.held = None;

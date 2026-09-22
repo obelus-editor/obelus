@@ -1103,6 +1103,34 @@ where
     column
 }
 
+/// Which tab a point on screen is on.
+///
+/// The way back out of the arithmetic [`tabs`] goes in by: one column clear
+/// of the edge, then each name with a space at either side. Written beside
+/// it because every view that has tabs draws them with that one function,
+/// so every view that lets a reader press one asks this.
+///
+/// `None` for a point that is not on the tab row, or is past the last tab
+/// -- where the keys that walk them are drawn.
+#[must_use]
+pub fn tab_at<Name>(area: Rect, names: &[Name], x: u16, y: u16) -> Option<usize>
+where
+    Name: AsRef<str>,
+{
+    if y != area.y || x < area.x {
+        return None;
+    }
+    let mut column = area.x + 1;
+    for (index, name) in names.iter().enumerate() {
+        let wide = u16::try_from(text_width(&format!(" {} ", name.as_ref()))).unwrap_or(0);
+        if x >= column && x < column.saturating_add(wide) {
+            return Some(index);
+        }
+        column = column.saturating_add(wide);
+    }
+    None
+}
+
 /// One key, and what it does here.
 ///
 /// The word is optional because some keys are their own explanation. The

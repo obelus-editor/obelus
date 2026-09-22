@@ -170,6 +170,49 @@ pub fn place_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(u16, u16)>
     })
 }
 
+/// What a press in the list of notes landed on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Column {
+    /// The mark saying somebody has talked about this note.
+    Talked,
+    /// The box saying whether it is done.
+    Tick,
+    /// The words of the note.
+    Words,
+}
+
+/// Which row of the list a point on screen is on, and which of the row's
+/// columns.
+///
+/// Only the first row of a note carries its mark and its box -- the rest
+/// are the rest of what it says -- so a press lower down a note is a press
+/// on its words wherever across the row it landed.
+///
+/// Read from the same three numbers the drawing spends: one to stand clear
+/// of the edge, the column the mark has, and the box; and the note's own
+/// indent after them.
+///
+/// `None` for a point outside the list, or past the last row.
+#[must_use]
+pub fn row_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(usize, Column)> {
+    let list = list_region(area, &hints(notes));
+    if y < list.y || y >= list.bottom() || x < list.x || x >= list.right() {
+        return None;
+    }
+    let at = notes.window().top() + usize::from(y - list.y);
+    let row = notes.rows().get(at)?;
+    let step = row.depth * obelus_git::todo::INDENT;
+    let column = match row.head {
+        // A row that is not the head of its note has neither, whatever the
+        // press landed on.
+        false => Column::Words,
+        true if x > list.x && x < list.x + 1 + TALKED => Column::Talked,
+        true if x >= list.x + 1 + TALKED + step && x < list.x + MARGIN + step => Column::Tick,
+        true => Column::Words,
+    };
+    Some((at, column))
+}
+
 /// The glyph that leaves half a cell of ground showing.
 ///
 /// The colour is the cell's *background* and this is drawn over the half

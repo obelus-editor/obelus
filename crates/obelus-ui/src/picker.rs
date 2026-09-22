@@ -284,6 +284,19 @@ pub fn rows_region(picker: &Picker, region: Rect) -> Rect {
     }
 }
 
+/// The row the tabs are drawn on, where the list has any.
+///
+/// Below whatever the list says about itself, which is the same offset the
+/// drawing takes.
+#[must_use]
+pub fn tab_row(picker: &Picker, region: Rect) -> Option<Rect> {
+    (picker.tab_rows() > 0).then(|| Rect {
+        y: region.y + picker.about_rows(region.width),
+        height: 1,
+        ..region
+    })
+}
+
 /// Which row of the list a point on screen is on, and whether it is on
 /// that row's arrow.
 ///

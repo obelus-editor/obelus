@@ -2041,6 +2041,22 @@ impl App {
         if status.height == 0 || y != status.y || x < status.x || x >= status.right() {
             return false;
         }
+        // The agent's settings, which are what this row carries while a
+        // conversation is what the screen is showing. Each is a word saying
+        // what the session is set to, and each is one key away -- so a
+        // press on one goes to it and does what that key does: a switch
+        // flips, and one with a list behind it opens the list.
+        if kind == Pointer::Pressed
+            && !self.layers().any()
+            && let Some(view) = obelus_ui::chat::ChatView::new(self)
+            && let Some(at) = view.setting_at(status, x, y)
+        {
+            if let Some(talk) = self.conversation_mut() {
+                talk.chat.stand_on_setting(at);
+            }
+            self.chat_key(&enter());
+            return true;
+        }
         // Which box is showing, and how far in its text starts. The same
         // order the keys go in by, and the same insets the renderer draws
         // them at.
@@ -2088,6 +2104,14 @@ impl App {
         use crate::event::Pointer;
 
         let area = self.editor_area;
+        // The mark and the box first, which are the two things a row of the
+        // list draws that the reader can *do* something to: the box says
+        // whether the note is done, and the mark says somebody has talked
+        // about it. Both are one key away and both are a picture of that
+        // key, so a press on one does what the key does.
+        if kind == Pointer::Pressed && self.press_in_a_note(x, y) {
+            return;
+        }
         let Some(at) = self
             .notes()
             .and_then(|notes| obelus_ui::todo::place_at(area, notes, x, y))
@@ -2127,6 +2151,13 @@ impl App {
         // Worked out before the conversation is borrowed to change: the
         // card is the application's and the box is the conversation's.
         let carded = self.card().is_some();
+        // The card first, where one is up: it is what covers the box, and
+        // every row of it is a thing the reader answers with. What lands
+        // above it is still the transcript, so a question on screen does
+        // not stop the reader taking a copy of what led to it.
+        if carded && self.press_in_card(kind, x, y) {
+            return;
+        }
         let Some(at) = self
             .conversation()
             .and_then(|talk| obelus_ui::chat::ChatView::place_at(area, &talk.chat, carded, x, y))
@@ -2200,9 +2231,53 @@ impl App {
         }
     }
 
+    /// Walks to one of a view's tabs, by the shorter way round.
+    ///
+    /// The tabs wrap, so from where the reader is to where they pressed is
+    /// at most half the tabs away -- which for every list obelus has is one
+    /// step. Walked rather than jumped because what a tab *costs* is the
+    /// application's: a scope asks the search again, a radius walks the
+    /// history again, a direction turns the calls round. Going the short
+    /// way is what keeps a tab in between from being asked its question on
+    /// the way past.
+    fn walk_to_tab(
+        &mut self,
+        now: usize,
+        wanted: usize,
+        count: usize,
+        key: impl Fn(&mut Self, bool),
+    ) {
+        if count == 0 || wanted == now {
+            return;
+        }
+        let forward = (wanted + count - now) % count;
+        let backward = (now + count - wanted) % count;
+        let (steps, onwards) = match forward <= backward {
+            true => (forward, true),
+            false => (backward, false),
+        };
+        for _ in 0..steps {
+            key(self, onwards);
+        }
+    }
+
     /// A press in a list of rows to choose from.
     fn press_in_picker(&mut self, x: u16, y: u16) {
         let area = self.picker_area();
+        // The tabs, which are above the rows: pressing one is the only
+        // thing a tab is for, so there is nothing else a press there could
+        // have meant.
+        let tab = self.picker.as_ref().and_then(|picker| {
+            let row = obelus_ui::picker::tab_row(picker, area)?;
+            let at = obelus_ui::tab_at(row, picker.tabs(), x, y)?;
+            Some((picker.tab(), at, picker.tabs().len()))
+        });
+        if let Some((now, wanted, count)) = tab {
+            self.walk_to_tab(now, wanted, count, |app, onwards| {
+                app.picker_key(&stepping(onwards));
+            });
+            return;
+        }
         let Some((at, arrow)) = self
             .picker
             .as_ref()
@@ -2225,6 +2300,18 @@ impl App {
     /// A press in the table of what this project is made of.
     fn press_in_counts(&mut self, x: u16, y: u16) {
         let area = self.editor_area;
+        // The tabs are the table's first row.
+        let tab = self.counts.as_ref().and_then(|counts| {
+            let names = counts.tabs();
+            let at = obelus_ui::tab_at(Rect { height: 1, ..area }, &names, x, y)?;
+            Some((counts.tab(), at, names.len()))
+        });
+        if let Some((now, wanted, count)) = tab {
+            self.walk_to_tab(now, wanted, count, |app, onwards| {
+                app.counts_key(&stepping(onwards));
+            });
+            return;
+        }
         let Some((at, mark)) = self
             .counts
             .as_ref()
@@ -2248,6 +2335,18 @@ impl App {
     /// it.
     fn press_in_settings(&mut self, x: u16, y: u16) {
         let area = self.editor_area;
+        // The tabs are the page's first row.
+        let tab = self.settings.as_ref().and_then(|settings| {
+            let names = obelus_component::settings::Settings::tabs();
+            let at = obelus_ui::tab_at(Rect { height: 1, ..area }, &names, x, y)?;
+            Some((settings.tab(), at, names.len()))
+        });
+        if let Some((now, wanted, count)) = tab {
+            self.walk_to_tab(now, wanted, count, |app, onwards| {
+                app.settings_key(&stepping(onwards));
+            });
+            return;
+        }
         let Some((at, switch)) =
             obelus_ui::settings::SettingsView::new(self).and_then(|view| view.row_at(area, x, y))
         else {
@@ -2259,6 +2358,122 @@ impl App {
         if switch {
             self.settings_key(&enter());
         }
+    }
+
+    /// A press on one of the candidates a server offered.
+    ///
+    /// Choosing it outright, because that is what the list is for: it is
+    /// up only while the reader is in the middle of typing a word, it
+    /// covers the word it is about, and there is nothing in it to browse
+    /// past -- a press anywhere else puts it away.
+    ///
+    /// Answers whether the press was the list's, so that one beside it goes
+    /// on to the file.
+    fn press_in_completion(&mut self, x: u16, y: u16) -> bool {
+        let Some(panel) = obelus_ui::complete::layout(self, self.editor_area) else {
+            return false;
+        };
+        let Some(at) = self
+            .completion()
+            .and_then(|completion| obelus_ui::complete::row_at(panel, completion, x, y))
+        else {
+            return false;
+        };
+        if let Some(completion) = self.completion.as_mut() {
+            completion.choose_row(at);
+        }
+        // Down the key's own path, which is what takes the word and puts
+        // the list away.
+        self.completion_key(&enter());
+        true
+    }
+
+    /// A press on one of the two marks a note wears.
+    ///
+    /// Answers whether it was one of them, so that a press on the words
+    /// goes on to put the caret there.
+    fn press_in_a_note(&mut self, x: u16, y: u16) -> bool {
+        use obelus_ui::todo::Column;
+
+        let area = self.editor_area;
+        let Some((row, column)) = self
+            .notes()
+            .and_then(|notes| obelus_ui::todo::row_at(area, notes, x, y))
+        else {
+            return false;
+        };
+        if column == Column::Words {
+            return false;
+        }
+        // On to the note first: both keys ask about the note the caret is
+        // in, so the note under the pointer is the note they are about.
+        let note = self
+            .notes()
+            .and_then(|notes| notes.rows().get(row))
+            .map(|row| row.note);
+        if let (Some(note), Some(notes)) = (note, self.notes_mut()) {
+            notes.stand_on(note);
+        }
+        // Down the keys' own paths, rather than a second way to tick a
+        // note off and a second way to open its conversation.
+        match column {
+            Column::Tick => self.notes_key(&crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char(' '),
+                crossterm::event::KeyModifiers::ALT,
+            )),
+            _ => self.notes_key(&crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('a'),
+                crossterm::event::KeyModifiers::ALT,
+            )),
+        };
+        true
+    }
+
+    /// What the pointer did to a question on a card.
+    ///
+    /// A card is a question that has taken part of the screen and is
+    /// waiting, and every row of it is a thing the reader answers with --
+    /// so unlike a list drawn over a file there is nothing here to browse
+    /// past, and a press does what the key does on the row it landed on.
+    /// The words are the exception: they are a box, and a press in a box
+    /// puts the caret where it landed.
+    ///
+    /// Answers whether the press was the card's, so that one landing above
+    /// it falls through to the transcript.
+    fn press_in_card(&mut self, kind: crate::event::Pointer, x: u16, y: u16) -> bool {
+        use obelus_component::card::On;
+
+        let Some(card) = self.card() else {
+            return false;
+        };
+        let band = obelus_ui::chat::bands_for(self.editor_area, card).writing;
+        let Some(on) = obelus_ui::card::row_at(card, band, x, y) else {
+            return false;
+        };
+        if kind != crate::event::Pointer::Pressed {
+            // The card's, and nothing for a drag to do in it: said so
+            // rather than let through, or a drag begun on the card would
+            // take hold of the transcript behind it.
+            return true;
+        }
+        let width = obelus_ui::card::width_of(band);
+        let place = obelus_ui::card::place_at(card, band, x, y);
+
+        let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut()) else {
+            return true;
+        };
+        card.stand_on(on);
+        if on == On::Words {
+            if let Some((row, cell)) = place {
+                card.place_in_words(row, cell, width);
+            }
+            return true;
+        }
+        // Down the key's own path: what enter does to the row under the
+        // pointer is what that row is for, and a second answer about it
+        // would be a second answer to keep alike.
+        self.card_key(&enter());
+        true
     }
 
     /// What the pointer did to what has been said.
@@ -2426,6 +2641,14 @@ impl App {
             Pointer::Moved => {}
         }
 
+        // The list of what could be typed next, where one is up: it is
+        // drawn over the file at the caret, so it covers the very place a
+        // press would otherwise land -- and a press that went through it to
+        // the text would move the caret out from under the question the
+        // list is answering.
+        if kind == Pointer::Pressed && self.press_in_completion(x, y) {
+            return;
+        }
         // The boxes on the status row first: a question, a list's query, a
         // page's filter. All three are one row, so one piece of arithmetic
         // serves them -- and a reader who can select in a box with the
@@ -2577,6 +2800,20 @@ impl App {
         };
         self.clicked = Some((x, y, now, count));
         count
+    }
+}
+
+/// The key that walks to the next tab, or to the one before it.
+fn stepping(onwards: bool) -> crossterm::event::KeyEvent {
+    match onwards {
+        true => crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Tab,
+            crossterm::event::KeyModifiers::NONE,
+        ),
+        false => crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::BackTab,
+            crossterm::event::KeyModifiers::SHIFT,
+        ),
     }
 }
 

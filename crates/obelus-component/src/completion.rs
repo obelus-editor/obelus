@@ -246,6 +246,15 @@ impl Completion {
         self.matched.get(self.selected()).copied()
     }
 
+    /// Puts the choice on one of the candidates.
+    ///
+    /// For a pointer: the keys step through them and have no use for naming
+    /// one outright, and a press names one.
+    pub fn choose_row(&mut self, row: usize) {
+        self.window
+            .set_focus(row.min(self.count().saturating_sub(1)));
+    }
+
     /// Where the window starts.
     #[must_use]
     pub const fn top(&self) -> usize {

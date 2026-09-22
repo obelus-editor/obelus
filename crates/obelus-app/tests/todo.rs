@@ -2332,3 +2332,64 @@ fn leaving_the_notes_and_coming_back_leaves_the_caret_in_them() {
         "coming back from the file left the notes with no caret"
     );
 }
+
+/// A press on a note's box ticks it off, and a press on its mark opens the
+/// conversation about it.
+///
+/// A row of the notes draws two things beside the words that the reader can
+/// *do* something to: the box saying whether the note is done, and the mark
+/// saying somebody has talked about it. Both are one key away and both are
+/// a picture of that key -- and a press on either did nothing, because the
+/// only thing the pointer reached in this page was the note being written.
+///
+/// A press goes to the note first, because both keys ask about the note the
+/// caret is in, and then down the key's own path: not a second way to tick
+/// a note off and not a second way to open its conversation.
+///
+/// Broken deliberately by letting a press on either mark fall through to
+/// the words, which puts the caret in the note and leaves it as it was.
+#[test]
+fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
+    let scratch = tree(
+        "note-marks",
+        "[[todo]]\nid = \"0123456B\"\nsaid = \"the first\"\ndone = false\ndepth = 0\n\n[[todo]]\nid = \"0123456C\"\nsaid = \"the second\"\ndone = false\ndepth = 0\n",
+    );
+    let mut app = open(&scratch, 76, 18);
+    let _ = support::render(&mut app, 76, 18);
+
+    // The second note's row, so that the press has to move the caret to
+    // reach it: the caret opens in the first.
+    let rows = app.notes().expect("the notes").rows().len();
+    assert!(rows >= 2, "there is only one row, so this proves nothing");
+    let area = app.editor_area_for_test();
+    let top = obelus_ui::todo::list_region(area, &[]).y;
+    let press = |app: &mut obelus_app::app::App, row: u16, x: u16| {
+        app.handle(obelus_app::event::Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x,
+            y: top + row,
+        });
+    };
+
+    // The box, which is the third column: one clear of the edge and the
+    // two the mark has.
+    press(&mut app, 1, area.x + 3);
+    let written = obelus_git::todo::Todo::read(scratch.path());
+    assert!(
+        written.notes[1].done,
+        "the press on the box did not tick the note off"
+    );
+    assert!(
+        !written.notes[0].done,
+        "it ticked off a note the press was not on"
+    );
+
+    // And the mark, which opens the conversation about that note. There is
+    // no agent here, so what is asserted is that obelus went to a
+    // conversation rather than staying in the notes.
+    press(&mut app, 1, area.x + 1);
+    assert!(
+        app.chat().is_some(),
+        "the press on the mark did not open the conversation"
+    );
+}

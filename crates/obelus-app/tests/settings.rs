@@ -2108,3 +2108,63 @@ fn a_press_on_a_switch_flips_it() {
 
     obelus_icons::use_glyphs(true);
 }
+
+/// A press on a tab goes to it.
+///
+/// Every view with tabs draws them with one function, and none of them took
+/// a press: the rows of a list start below the tabs, so a press on one fell
+/// outside everything the pointer knew about. A tab is the most press-shaped
+/// thing on a screen and it is the only thing a tab is for -- there is
+/// nothing else a press there could have meant.
+///
+/// Walked rather than jumped, by the shorter way round. What a tab *costs*
+/// is the application's -- a scope asks the search again, a radius walks
+/// the history again -- so the press goes down the key's own path; and the
+/// tabs wrap, so the short way is at most one step for every list obelus
+/// has, which is what keeps a tab in between from being asked its question
+/// on the way past.
+///
+/// Broken deliberately by letting the press fall through, which leaves the
+/// page on the tab it was on.
+#[test]
+fn a_press_on_a_tab_goes_to_it() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("tab-press");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    let dump = support::render(&mut app, 66, 12);
+
+    // The tabs are the page's first row, and the third of them is two away
+    // -- which the shorter way round makes one step, because they wrap.
+    let names = obelus_component::settings::Settings::tabs();
+    assert_eq!(names.len(), 3, "the page does not have the three tabs");
+    assert_eq!(app.settings().expect("the page").tab(), 0);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains(names[2]))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse::<u16>().ok())
+        .expect("the tab row");
+    let x = support::column_of(
+        support::text_block(&dump)
+            .lines()
+            .find(|row| row.contains(names[2]))
+            .expect("the tab row"),
+        names[2],
+    );
+
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: u16::try_from(x).expect("a column"),
+        y: row,
+    });
+    assert_eq!(
+        app.settings().expect("the page").tab(),
+        2,
+        "the press did not go to the tab"
+    );
+
+    obelus_icons::use_glyphs(true);
+}

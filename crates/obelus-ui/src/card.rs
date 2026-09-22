@@ -53,6 +53,72 @@ pub struct Layout {
     pub complaint: Option<Rect>,
 }
 
+/// Which row and cell of the card's box a point on screen is.
+///
+/// The inverse of [`caret`], beside it for the reason that one gives
+/// itself: the row the caret is on and the row the words are drawn on have
+/// to be the same row.
+///
+/// `None` for a point that is not in the box.
+#[must_use]
+pub fn place_at(card: &Card, area: Rect, x: u16, y: u16) -> Option<(usize, u16)> {
+    let words = layout(card, area).words?;
+    if y < words.y || y >= words.y + words.height || x < words.x || x >= words.right() {
+        return None;
+    }
+    // The same scrolling the caret is placed under: what is written scrolls
+    // under the caret rather than the caret leaving the card.
+    let (row, _) = card.caret(width_of(words))?;
+    let height = usize::from(words.height).max(1);
+    let first = row.saturating_sub(height - 1);
+    Some((first + usize::from(y - words.y), x - words.x))
+}
+
+/// Which of the card's rows a point on screen is on.
+///
+/// The card is a question that has taken part of the screen and is waiting,
+/// and every row of it is a thing the reader answers with -- so unlike the
+/// lists drawn over a file, there is nothing here to browse past. A press
+/// names a row and the caller does to it what the key does.
+///
+/// The answers are walked rather than divided: an answer is as tall as its
+/// name and what it says about itself, and which of them are on screen is
+/// the card's own answer. Read here from the same two functions the drawing
+/// reads it from.
+///
+/// `None` for a point outside the card, or on its prose, or on the row that
+/// says what is missing -- none of which is anything to press.
+#[must_use]
+pub fn row_at(card: &Card, area: Rect, x: u16, y: u16) -> Option<On> {
+    let layout = layout(card, area);
+    if x < area.x || x >= area.right() {
+        return None;
+    }
+    let inside = |band: Rect| y >= band.y && y < band.y + band.height;
+    if inside(layout.choices) {
+        let width = width_of(area);
+        let mut top = layout.choices.y;
+        for at in card.visible(layout.choices.height, width) {
+            let tall = u16::try_from(card.choice_rows(at, width)).unwrap_or(1);
+            if y >= top && y < top + tall {
+                return Some(On::Choice(at));
+            }
+            top += tall;
+        }
+        return None;
+    }
+    if layout.tick.is_some_and(inside) {
+        return Some(On::Tick);
+    }
+    if layout.words.is_some_and(inside) {
+        return Some(On::Words);
+    }
+    if layout.submit.is_some_and(inside) {
+        return Some(On::Submit);
+    }
+    None
+}
+
 /// Lays the card out in the band it was given.
 #[must_use]
 pub fn layout(card: &Card, area: Rect) -> Layout {

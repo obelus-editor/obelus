@@ -4863,3 +4863,97 @@ fn the_key_from_a_conversation_to_the_notes_lands_the_caret_in_them() {
         "coming back to the notes left the reader with no caret"
     );
 }
+
+/// A press on a card's answer answers it.
+///
+/// A card is a question that has taken part of the screen and is waiting,
+/// and every row of it is a thing the reader answers with. Until now a
+/// press anywhere on one did nothing: the card covers the box, so the box
+/// said the press was not its own, and the transcript said the same because
+/// the card had taken that part of the band. A question with `Yes` and `No`
+/// on it and no way to press either.
+///
+/// So a press does what the key does on the row it landed on -- down the
+/// card's own path, rather than a second way to answer. Unlike a list drawn
+/// over a file there is nothing here to browse past: the rows *are* the
+/// answers.
+///
+/// Broken deliberately by handing the press back to the transcript, which
+/// leaves the question waiting.
+#[test]
+fn a_press_on_a_cards_answer_answers_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/twice");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking_permission);
+
+    // The row `Yes` is drawn on, and a press on it.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let y = row_of(&dump, "Yes");
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: 4,
+        y,
+    });
+    assert!(
+        !App::is_asking_permission(&app),
+        "the press did not answer the question:\n{}",
+        support::render(&mut app, WIDTH, HEIGHT)
+    );
+    // And the agent got it: it is waiting on the answer, so the turn ends
+    // only if one arrived. Waiting for that is the assertion.
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+}
+
+/// A press on a setting on the status row does what its key does.
+///
+/// While a conversation is what the screen is showing, the status row is
+/// the conversation's: a word for each of the agent's settings, saying what
+/// the session is set to. Each is one key away -- a switch flips, one with
+/// a list behind it opens the list -- and the row is the only thing on
+/// screen saying so. A press on one did nothing: the row's own handler
+/// knows about the three boxes a reader types in, and says a press is not
+/// its own when none of them is showing.
+///
+/// The press goes to the setting and then down the key's own path, so a
+/// switch on the row and the same switch on the settings page cannot come
+/// apart.
+///
+/// Broken deliberately by handing the press back, which leaves the session
+/// set as it was.
+#[test]
+fn a_press_on_a_setting_on_the_status_row_does_what_its_key_does() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.kind == obelus_agent::acp::Kind::Switch)
+    });
+    let switch = app
+        .agent_settings()
+        .iter()
+        .position(|setting| setting.kind == obelus_agent::acp::Kind::Switch)
+        .expect("a switch among the settings");
+    let was = app.agent_settings()[switch].current.clone();
+
+    // The word it is drawn as, and where on the row that is.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let status = rows(&dump)[usize::from(HEIGHT) - 1].to_string();
+    let name = app.agent_settings()[switch].name.clone();
+    let x = support::column_of(&status, &name);
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: u16::try_from(x).expect("a column"),
+        y: HEIGHT - 1,
+    });
+    pump(&mut app, &events, "the setting to change", |app| {
+        app.agent_settings()
+            .get(switch)
+            .is_some_and(|setting| setting.current != was)
+    });
+}

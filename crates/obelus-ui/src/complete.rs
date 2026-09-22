@@ -201,6 +201,33 @@ pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &impl Screen) {
     }
 }
 
+/// Which candidate a point on screen is on.
+///
+/// The list is one of the panel's two halves and its rows are one apiece,
+/// so this is the panel's own arithmetic read back: which half the list is
+/// depends on whether the panel sits above the caret and whether there is
+/// documentation beside it, and both are the panel's answers.
+///
+/// `None` for a point outside the list, or past the last candidate.
+#[must_use]
+pub fn row_at(panel: Panel, completion: &Completion, x: u16, y: u16) -> Option<usize> {
+    let room = crate::inside(panel.area);
+    let documented = panel.documentation > 0;
+    let list = Rect {
+        y: match (panel.above, documented) {
+            (true, true) => room.bottom() - panel.list,
+            _ => room.y,
+        },
+        height: panel.list,
+        ..room
+    };
+    if y < list.y || y >= list.y + list.height || x < list.x || x >= list.right() {
+        return None;
+    }
+    let at = completion.top() + usize::from(y - list.y);
+    (at < completion.count()).then_some(at)
+}
+
 /// The candidates, one to a row.
 fn rows(cells: &mut CellBuffer, area: Rect, completion: &Completion, theme: &Theme) {
     let scrolling = completion.count() > usize::from(area.height);

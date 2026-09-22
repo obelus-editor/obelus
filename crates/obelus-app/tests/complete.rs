@@ -963,3 +963,54 @@ mod signatures {
         );
     }
 }
+
+/// A press on a candidate takes it.
+///
+/// The panel is drawn over the file at the caret, which is the one place a
+/// press was sure to land -- and the press went straight through it to the
+/// text, moving the caret out from under the very word the panel is about.
+///
+/// Taking the candidate outright, because that is what the list is for: it
+/// is up only while the reader is in the middle of a word, it covers the
+/// word it is about, and there is nothing in it to browse past.
+///
+/// Broken deliberately by letting the press through to the file, which
+/// moves the caret and leaves the word half-typed.
+#[test]
+fn a_press_on_a_candidate_takes_it() {
+    let (_scratch, mut app) = editing("complete-press", "fn main() {\n    p\n}\n");
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    support::press(&mut app, crossterm::event::KeyCode::End);
+    app.complete_for_test(labels(&["parse", "pop"]));
+
+    // The row the second candidate is drawn on, read off the screen.
+    let dump = support::render(&mut app, 60, 16);
+    let y = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("pop"))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse::<u16>().ok())
+        .expect("the row the second candidate is on");
+    let x = support::column_of(
+        support::text_block(&dump)
+            .lines()
+            .find(|row| row.contains("pop"))
+            .expect("the row"),
+        "pop",
+    );
+
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: u16::try_from(x).expect("a column"),
+        y,
+    });
+    assert_eq!(
+        text(&app),
+        "fn main() {\n    pop\n}\n",
+        "the press did not take the candidate it landed on"
+    );
+    assert!(
+        app.completion().is_none(),
+        "the list is still up after taking one"
+    );
+}

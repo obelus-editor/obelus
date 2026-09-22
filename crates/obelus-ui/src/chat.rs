@@ -981,24 +981,7 @@ impl ChatView<'_> {
         //
         // Measured first, because the room the settings have is what is left
         // of the row.
-        let mut hints = Vec::new();
-        if self.about.is_some() {
-            hints.push(match obelus_icons::enabled() {
-                true => format!("{}t  the note", obelus_icons::key::ALT),
-                false => "alt+t  the note".to_string(),
-            });
-        }
-        if self.mode().is_some_and(|mode| mode.values.len() > 1) {
-            hints.push(match obelus_icons::enabled() {
-                true => format!(
-                    "{}{}  mode",
-                    obelus_icons::key::SHIFT,
-                    obelus_icons::key::TAB
-                ),
-                false => "shift+tab  mode".to_string(),
-            });
-        }
-        let hint = (!hints.is_empty()).then(|| hints.join("   "));
+        let hint = self.status_hint();
         if let Some(hint) = &hint
             && let Ok(offset) =
                 u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
@@ -1064,7 +1047,7 @@ impl ChatView<'_> {
             );
             return;
         }
-        self.settings(cells, area, room, plain);
+        self.settings(cells, area, self.status_room(area), plain);
     }
 
     /// The mode, if the agent offers one.
@@ -1107,63 +1090,29 @@ impl ChatView<'_> {
             Focus::Settings(at) => Some(at.min(self.settings.len() - 1)),
             Focus::Transcript(_) | Focus::Writing => None,
         };
-        let words: Vec<(String, bool)> = self
-            .settings
-            .iter()
-            .enumerate()
-            .map(|(index, setting)| {
-                let (mut word, on) = said(setting);
-                if Some(index) == chosen && setting.kind == acp::Kind::Select {
-                    word.push_str(&opens(false));
-                }
-                (word, on)
-            })
-            .collect();
-
-        // Which one to start at: as near the beginning as having the
-        // focused one on screen allows. A row is a window on a list like
-        // any other, and the one thing a window must not do is hide what
-        // the keys are moving.
-        let mut first = 0;
-        if let Some(chosen) = chosen {
-            let mut taken = 0;
-            for index in (0..=chosen).rev() {
-                taken += text_width(&words[index].0) + SEPARATOR_WIDTH;
-                if taken > room {
-                    first = index + 1;
-                    break;
-                }
-            }
-        }
+        let words = self.setting_words();
+        let first = self.first_setting(&words, room);
 
         let mut column = area.x + 1;
-        let mut left = room;
         // What was cut off the front, which is a setting the reader can
         // still walk back to.
         if first > 0 {
             column = write(cells, column, area.y, MORE, plain.fg(self.theme.gutter));
-            left = left.saturating_sub(text_width(MORE));
         }
-        for (index, (word, on)) in words.iter().enumerate().skip(first) {
+        let (placed, cut) = Self::settings_placed(&words, first, column, room);
+        for (index, x, _) in placed {
+            let (word, on) = &words[index];
             let separated = index > first || first > 0;
-            let wanted = text_width(word) + usize::from(separated) * SEPARATOR_WIDTH;
-            // No room for this one: the row says so rather than stopping
-            // silently, because a reader who cannot see a setting cannot
-            // know it is there to walk to.
-            if wanted > left {
-                write(cells, column, area.y, MORE, plain.fg(self.theme.gutter));
-                return;
-            }
-            left -= wanted;
             if separated {
-                column = write(
+                write(
                     cells,
-                    column,
+                    x.saturating_sub(u16::try_from(SEPARATOR_WIDTH).unwrap_or(0)),
                     area.y,
                     SEPARATOR,
                     plain.fg(self.theme.gutter),
                 );
             }
+            let column = x;
             // The focused one wears the background a selected row wears in
             // every list, which while the reader is up here is the only
             // thing on screen saying where the keys are going -- the caret
@@ -1178,8 +1127,170 @@ impl ChatView<'_> {
                 // the colour a row nobody can choose is drawn in.
                 false => self.theme.gutter,
             };
-            column = write(cells, column, area.y, word, plain.fg(ink).bg(ground));
+            write(cells, column, area.y, word, plain.fg(ink).bg(ground));
         }
+        // No room for the next one: the row says so rather than stopping
+        // silently, because a reader who cannot see a setting cannot know
+        // it is there to walk to.
+        if let Some(x) = cut {
+            write(cells, x, area.y, MORE, plain.fg(self.theme.gutter));
+        }
+    }
+
+    /// The settings as words, with whether each is on.
+    ///
+    /// The focused one carries the arrow obelus puts on everything with a
+    /// list behind it, so it is wider than the others by exactly that --
+    /// which is why the words are made before anything measures them.
+    fn setting_words(&self) -> Vec<(String, bool)> {
+        let chosen = self.chosen_setting();
+        self.settings
+            .iter()
+            .enumerate()
+            .map(|(index, setting)| {
+                let (mut word, on) = said(setting);
+                if Some(index) == chosen && setting.kind == acp::Kind::Select {
+                    word.push_str(&opens(false));
+                }
+                (word, on)
+            })
+            .collect()
+    }
+
+    /// Which setting the keys are on, if they are up here at all.
+    fn chosen_setting(&self) -> Option<usize> {
+        match self.focus {
+            Focus::Settings(at) => Some(at.min(self.settings.len().saturating_sub(1))),
+            Focus::Transcript(_) | Focus::Writing => None,
+        }
+    }
+
+    /// Which setting the row starts at.
+    ///
+    /// As near the beginning as having the focused one on screen allows. A
+    /// row is a window on a list like any other, and the one thing a window
+    /// must not do is hide what the keys are moving.
+    fn first_setting(&self, words: &[(String, bool)], room: usize) -> usize {
+        let Some(chosen) = self.chosen_setting() else {
+            return 0;
+        };
+        let mut taken = 0;
+        for index in (0..=chosen).rev() {
+            taken += text_width(&words[index].0) + SEPARATOR_WIDTH;
+            if taken > room {
+                return index + 1;
+            }
+        }
+        0
+    }
+
+    /// What a key does on the status row, on the right.
+    ///
+    /// Two of them at most, and the way back comes first: a conversation
+    /// about a note is reached from the notes page, and a way out that
+    /// nothing says exists is the same gap one level up -- which is why the
+    /// key was added at all.
+    ///
+    /// Asked before the settings are drawn, because the room they have is
+    /// what is left of the row once this is on it.
+    fn status_hint(&self) -> Option<String> {
+        let mut hints = Vec::new();
+        if self.about.is_some() {
+            hints.push(match obelus_icons::enabled() {
+                true => format!("{}t  the note", obelus_icons::key::ALT),
+                false => "alt+t  the note".to_string(),
+            });
+        }
+        if self.mode().is_some_and(|mode| mode.values.len() > 1) {
+            hints.push(match obelus_icons::enabled() {
+                true => format!(
+                    "{}{}  mode",
+                    obelus_icons::key::SHIFT,
+                    obelus_icons::key::TAB
+                ),
+                false => "shift+tab  mode".to_string(),
+            });
+        }
+        (!hints.is_empty()).then(|| hints.join("   "))
+    }
+
+    /// How much of the status row the settings have.
+    ///
+    /// What is left after the keys at one end and the agent's memory at the
+    /// other, both of which stay put. Asked by the drawing and by a press,
+    /// because a press has to be measured against the row that is there.
+    fn status_room(&self, area: Rect) -> usize {
+        let hint = self.status_hint();
+        let taken = hint.as_deref().map_or(0, |hint| text_width(hint) + 2);
+        let over = usize::from(area.width).saturating_sub(taken + 2);
+        let used = self
+            .usage
+            .and_then(used_up)
+            .filter(|(said, _)| over > text_width(said) + GAP + LEAST_SETTINGS);
+        over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP))
+    }
+
+    /// Which of the agent's settings a point on the status row is on.
+    ///
+    /// `None` for a point that is not on one of them: the keys at the end
+    /// of the row, the memory beside them, the marks that say there are
+    /// more in either direction.
+    #[must_use]
+    pub fn setting_at(&self, area: Rect, x: u16, y: u16) -> Option<usize> {
+        if y != area.y || self.settings.is_empty() {
+            return None;
+        }
+        let room = self.status_room(area);
+        let words = self.setting_words();
+        let first = self.first_setting(&words, room);
+        let mut column = area.x + 1;
+        if first > 0 {
+            column = column.saturating_add(u16::try_from(text_width(MORE)).unwrap_or(0));
+        }
+        let (placed, _) = Self::settings_placed(&words, first, column, room);
+        placed
+            .into_iter()
+            .find(|(_, at, wide)| x >= *at && x < at.saturating_add(*wide))
+            .map(|(index, _, _)| index)
+    }
+
+    /// Where each of the agent's settings is drawn along the status row,
+    /// and where the mark for "there are more" goes if one did not fit.
+    ///
+    /// One walk, because the row is a window on a list: the drawing goes
+    /// down it to put the words, and a press goes down it to find which
+    /// word it landed on. Two walks would be two answers about where a
+    /// setting is.
+    ///
+    /// Each is `(which setting, the cell its word starts at, how wide the
+    /// word is)`. The separator before a word is in the cells just behind
+    /// it, which is why the walk hands back where the word starts rather
+    /// than where its room does.
+    pub(crate) fn settings_placed(
+        words: &[(String, bool)],
+        first: usize,
+        from: u16,
+        room: usize,
+    ) -> (Vec<(usize, u16, u16)>, Option<u16>) {
+        let mut placed = Vec::new();
+        let mut column = from;
+        let mut left = match first > 0 {
+            true => room.saturating_sub(text_width(MORE)),
+            false => room,
+        };
+        for (index, (word, _)) in words.iter().enumerate().skip(first) {
+            let separated = index > first || first > 0;
+            let separator = usize::from(separated) * SEPARATOR_WIDTH;
+            let wide = text_width(word);
+            if wide + separator > left {
+                return (placed, Some(column));
+            }
+            left -= wide + separator;
+            column = column.saturating_add(u16::try_from(separator).unwrap_or(0));
+            placed.push((index, column, u16::try_from(wide).unwrap_or(0)));
+            column = column.saturating_add(u16::try_from(wide).unwrap_or(0));
+        }
+        (placed, None)
     }
 
     /// Who is being talked to, and what about.

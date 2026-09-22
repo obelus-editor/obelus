@@ -514,6 +514,14 @@ impl Card {
         self.on = on;
     }
 
+    /// Puts the focus on one of the card's rows.
+    ///
+    /// For a pointer: the keys step through the rows and have no use for
+    /// naming one outright, and a press names one.
+    pub const fn stand_on(&mut self, on: On) {
+        self.focus(on);
+    }
+
     /// Moves the focus by rows, stopping at the ends.
     fn step(&mut self, by: isize) {
         let rows = self.walk();
@@ -707,6 +715,22 @@ impl Card {
         self.focus(On::Words);
         self.write(|composer| composer.write_in(what, width));
         true
+    }
+
+    /// Puts the caret in the words at a row and a cell of the box.
+    ///
+    /// For a pointer. Where the box is on screen and how tall it is belong
+    /// to the drawing, so the caller hands in a place in the *box* rather
+    /// than a place on the screen.
+    pub fn place_in_words(&mut self, row: usize, cell: u16, width: u16) {
+        self.write(|composer| {
+            composer.place_at_cell(
+                u16::try_from(row).unwrap_or(u16::MAX),
+                cell,
+                width.max(1),
+                false,
+            );
+        });
     }
 
     fn write(&mut self, edit: impl FnOnce(&mut Composer)) {

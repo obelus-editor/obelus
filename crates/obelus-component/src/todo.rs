@@ -487,6 +487,16 @@ impl TodoView {
         }
     }
 
+    /// Puts the caret in one of the notes, by which note it is.
+    ///
+    /// For a pointer: the keys walk from note to note and have no use for
+    /// naming one outright, and a press names one. At its start, because a
+    /// press that was about the note rather than about a place in its words
+    /// has said nothing about where in them to stand.
+    pub fn stand_on(&mut self, note: usize) {
+        self.enter_note(note, false);
+    }
+
     /// Puts the caret in a note, keeping whatever the last one said.
     ///
     /// The commit happens here rather than on a key, because leaving a note
