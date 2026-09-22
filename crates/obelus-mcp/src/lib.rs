@@ -194,7 +194,8 @@ impl Obelus {
         where it points. A line beginning with a name starts a note and the \
         lines under it are the rest of what that one says. A note indented \
         under another hangs under it, and finishing the one above is about \
-        the whole of it. The name is what the other tools take."
+        the whole of it. The name is what the other tools take, and only \
+        them: nothing on the reader's screen shows it."
     )]
     fn todo_list(&self) -> Result<CallToolResult, ErrorData> {
         tracing::info!("an agent asked for the notes");
@@ -368,6 +369,12 @@ impl ServerHandler for Obelus {
              worth returning to, not summaries. Rewording replaces what they \
              wrote and nothing keeps it, so that one is asked with the words \
              themselves, both what it says and what it would say.\n\n\
+             A note's name is a handle for these tools and for nothing \
+             else. The reader has never seen one: their notes are drawn as \
+             the words they wrote, and no name appears anywhere on their \
+             screen. So say which note you mean in its own words -- naming \
+             one at them asks them to look up something they have no way to \
+             look up.\n\n\
              Work that belongs to a note goes under it: `todo_add` takes \
              `under`, a note's name, and puts them beneath it. A note's own \
              `depth` puts it beneath the note before it.\n\n\
