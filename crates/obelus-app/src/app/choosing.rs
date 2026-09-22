@@ -40,6 +40,7 @@ impl App {
                 colours: None,
                 status: None,
                 depth: 0,
+                opens: None,
                 kind: None,
                 tab: None,
             })
@@ -70,6 +71,7 @@ impl App {
                 colours: None,
                 status: None,
                 depth: 0,
+                opens: None,
                 kind: None,
                 label: spec.name.to_string(),
                 // The tab it lives under. One past its position in the list

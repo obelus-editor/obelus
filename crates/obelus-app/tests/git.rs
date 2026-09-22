@@ -2564,7 +2564,7 @@ fn the_history_opens_at_the_radius_its_key_names() {
     let picker = app.picker().expect("the history");
     assert_eq!(picker.tabs(), ["The project"]);
     assert!(
-        picker.matches().any(|item| item.marker.is_some()),
+        picker.matches().any(|item| item.opens.is_some()),
         "the project's rows do not say they open"
     );
     let rows: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();

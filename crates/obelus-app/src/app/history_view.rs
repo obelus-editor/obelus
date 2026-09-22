@@ -410,6 +410,7 @@ impl App {
                 changed: None,
                 value: PickerValue::Commit(reference.at.id),
                 depth: 0,
+                opens: None,
                 status: None,
                 enabled: true,
                 colours: None,
@@ -431,7 +432,8 @@ impl App {
                 // The mark, when this tab has anything to open: a reader
                 // cannot press a key on a row that never said it had
                 // something behind it.
-                marker: expands.then(|| (Marking::Aside, obelus_ui::opens(open).to_string())),
+                marker: None,
+                opens: expands.then_some(open),
                 label: commit.subject.clone(),
                 // The commit that moved the file says what it was called
                 // before. On this one row and not on the forty older ones
@@ -497,6 +499,7 @@ impl App {
                             path: path.clone(),
                         },
                         depth: 1,
+                        opens: None,
                         status: Some(touched.status),
                         enabled: true,
                         colours: None,

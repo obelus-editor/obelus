@@ -581,6 +581,7 @@ impl App {
                 colours: None,
                 status: None,
                 depth: 0,
+                opens: None,
                 kind: None,
                 tab: None,
             })
@@ -850,6 +851,7 @@ impl App {
                 colours: None,
                 status: None,
                 depth: 0,
+                opens: None,
                 kind: None,
                 tab: None,
             })

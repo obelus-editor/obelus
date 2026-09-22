@@ -262,6 +262,7 @@ impl App {
                     colours: None,
                     status: None,
                     depth: 0,
+                    opens: None,
                     kind: None,
                     tab: None,
                 }
@@ -1411,6 +1412,7 @@ impl App {
                     colours: None,
                     status: None,
                     depth: u16::try_from(symbol.depth).unwrap_or(u16::MAX),
+                    opens: None,
                     kind: Some(symbol.kind),
                     label: symbol.name.clone(),
                     detail: None,
@@ -1516,6 +1518,7 @@ impl App {
                 colours: None,
                 status: None,
                 depth: u16::try_from(symbol.depth).unwrap_or(u16::MAX),
+                opens: None,
                 kind: Some(symbol.kind),
                 label: symbol.name.clone(),
                 detail: None,
@@ -1698,6 +1701,7 @@ impl App {
                 colours: None,
                 status: None,
                 depth: 0,
+                opens: None,
                 kind: Some(symbol.kind),
                 label: symbol.name.clone(),
                 detail: None,
@@ -1902,6 +1906,7 @@ impl App {
                     }
                 },
                 depth: 0,
+                opens: None,
                 status: None,
                 enabled: true,
                 colours: None,
@@ -2258,6 +2263,7 @@ fn place_rows(places: &[obelus_lsp::action::Place], root: &Path) -> Vec<PickerIt
                 colours: None,
                 status: None,
                 depth: 0,
+                opens: None,
                 kind: None,
                 tab: None,
             }

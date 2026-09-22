@@ -54,6 +54,7 @@ impl App {
             colours: None,
             status: statuses.get(buffer.path()).map(|standing| standing.status),
             depth: 0,
+            opens: None,
             kind: None,
             tab: None,
         }
@@ -119,6 +120,7 @@ impl App {
             colours: None,
             status: None,
             depth: 0,
+            opens: None,
             kind: None,
             tab: None,
         }
@@ -154,6 +156,7 @@ impl App {
             colours: None,
             status: None,
             depth: 0,
+            opens: None,
             kind: None,
             tab: None,
         }
@@ -389,6 +392,7 @@ impl App {
                         .map(|standing| standing.status),
                 },
                 depth: 0,
+                opens: None,
                 kind: None,
                 tab: None,
             })
@@ -428,12 +432,12 @@ impl App {
                     true => obelus_icons::ui::DIRECTORY,
                     false => obelus_icons::for_path(&entry.path),
                 }),
+                marker: None,
                 // Only where opening it would show something. The mark is
                 // the only thing a row says about itself before it is
                 // pressed, and one that offers to open an empty directory
                 // is one nobody presses twice.
-                marker: (entry.directory && entry.holds)
-                    .then(|| (Marking::Aside, obelus_ui::opens(open).to_string())),
+                opens: (entry.directory && entry.holds).then_some(open),
                 label: name,
                 detail: None,
                 trailing: None,
@@ -619,6 +623,7 @@ impl App {
                         colours: None,
                         status: Some(standing.status),
                         depth: 0,
+                        opens: None,
                         kind: None,
                         label: name.clone(),
                         // What it was called before, where git says it was

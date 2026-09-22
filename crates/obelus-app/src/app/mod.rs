@@ -1907,6 +1907,7 @@ impl App {
                                     .map(|standing| standing.status),
                             },
                             depth: 0,
+                            opens: None,
                             kind: None,
                             tab: None,
                         }

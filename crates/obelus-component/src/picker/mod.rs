@@ -272,6 +272,19 @@ pub struct PickerItem {
     /// Not part of the label, so the query never matches the indentation and
     /// the score never depends on how deeply nested a symbol is.
     pub depth: u16,
+    /// Whether this row opens, and whether it is open.
+    ///
+    /// `None` for a row that opens nothing -- a file, a setting's value, a
+    /// commit with one file in it. `Some(false)` for one the reader can
+    /// open, `Some(true)` for one they have.
+    ///
+    /// Said here rather than read back out of [`Self::marker`], which is
+    /// where it used to live: the arrow was a marker like any other, so
+    /// "does this row open" could only be answered by comparing that
+    /// marker's characters against the arrow's. A pointer asking which rows
+    /// it may open would have been the second reader of that comparison,
+    /// and the first was already a guess about an incidental property.
+    pub opens: Option<bool>,
     /// What git says about the file the row names, if it says anything.
     ///
     /// Colours the row. A list of a project's files is mostly a list of
@@ -610,6 +623,7 @@ impl Picker {
             detail: about,
             trailing: None,
             changed: None,
+            opens: None,
             value: PickerValue::Answer(answer),
             enabled: true,
             colours: None,
@@ -1542,7 +1556,14 @@ impl Picker {
         // One more pass over a list this function already walks whole, and
         // the only place that knows about every row rather than the visible
         // ones.
-        self.marked = self.items.iter().any(|item| item.marker.is_some());
+        // A marker or an arrow: the column is kept for whichever of them a
+        // row has, because both are drawn in it and the names of a list
+        // have to line up whether the row beside them opens or is merely
+        // marked.
+        self.marked = self
+            .items
+            .iter()
+            .any(|item| item.marker.is_some() || item.opens.is_some());
 
         // The first tab is every row; any other one is its own. Scope tabs
         // do not filter at all -- every row in the list belongs to the scope
@@ -1715,6 +1736,7 @@ mod tests {
             colours: None,
             status: None,
             depth: 0,
+            opens: None,
             kind: None,
             tab: None,
         }
@@ -1746,6 +1768,7 @@ mod tests {
                 colours: None,
                 status: None,
                 depth: 0,
+                opens: None,
                 kind: None,
                 tab: None,
             })

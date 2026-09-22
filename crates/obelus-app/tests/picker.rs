@@ -33,6 +33,7 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
             colours: None,
             status: None,
             depth: 0,
+            opens: None,
             kind: None,
             tab: None,
         })
@@ -65,6 +66,7 @@ fn many(count: usize) -> Vec<PickerItem> {
             colours: None,
             status: None,
             depth: 0,
+            opens: None,
             kind: None,
             tab: None,
         })
@@ -2100,6 +2102,7 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
             colours: None,
             status: None,
             depth: 0,
+            opens: None,
             kind: None,
             tab: None,
         }],
@@ -2394,6 +2397,7 @@ fn moving_the_selection_forgets_the_scrolling() {
         colours: None,
         status: None,
         depth: 0,
+        opens: None,
         kind: None,
         tab: None,
     };
@@ -2487,6 +2491,7 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
             colours: None,
             status: None,
             depth: 0,
+            opens: None,
             kind: None,
             tab: None,
         }],

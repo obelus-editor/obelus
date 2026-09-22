@@ -521,6 +521,14 @@ impl PickerView<'_> {
         // it was pointed out. The rest do want to recede, and get it: a
         // fold arrow is the arrow the gutter and the transcript draw, and a
         // reader who learnt the mark there has to find it here.
+        // A row that opens wears the arrow, in the colour a mark beside a
+        // name wears. Drawn from what the row *says* about itself rather
+        // than from a marker that happens to hold an arrow: the same field
+        // the keys and the pointer ask, so the mark and what pressing it
+        // does cannot come apart.
+        let arrow = item
+            .opens
+            .map(|open| (self.theme.gutter, format!("{} ", crate::opens(open))));
         if let Some((marking, marker)) = item.marker.as_ref() {
             let colour = match marking {
                 Marking::Unwritten => self.theme.status_stale,
@@ -547,6 +555,16 @@ impl PickerView<'_> {
                 column,
                 y,
                 &marker,
+                style.fg(colour),
+                &Marked::plain(),
+            );
+        } else if let Some((colour, arrow)) = arrow {
+            column = at(
+                cells,
+                area,
+                column,
+                y,
+                &arrow,
                 style.fg(colour),
                 &Marked::plain(),
             );

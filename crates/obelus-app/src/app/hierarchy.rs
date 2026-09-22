@@ -648,6 +648,7 @@ impl App {
                     prose: false,
                     icon: obelus_icons::enabled().then(|| obelus_icons::for_kind(called.kind)),
                     marker: mark_of(rung),
+                    opens: opens_of(rung),
                     label: called.name.clone(),
                     detail: None,
                     trailing: Some(self.where_called(called)),
@@ -1068,10 +1069,17 @@ fn mark_of(rung: &Rung) -> Option<(Marking, String)> {
     if rung.looping {
         return Some((Marking::Aside, LOOPS.to_string()));
     }
+    None
+}
+
+/// Whether a rung opens, and whether it is open.
+///
+/// Said rather than drawn as a marker, so that whoever asks -- the view
+/// drawing the arrow, a pointer wondering what it may open -- asks the same
+/// question of the same field.
+fn opens_of(rung: &Rung) -> Option<bool> {
     match (rung.opened, rung.holds()) {
-        (true, _) | (false, Some(true)) => {
-            Some((Marking::Aside, obelus_ui::opens(rung.opened).to_string()))
-        }
+        (true, _) | (false, Some(true)) => Some(rung.opened),
         (false, _) => None,
     }
 }

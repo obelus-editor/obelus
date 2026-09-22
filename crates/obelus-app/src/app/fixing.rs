@@ -165,6 +165,7 @@ impl App {
                 changed: None,
                 value: PickerValue::Action(at),
                 depth: 0,
+                opens: None,
                 status: None,
                 enabled: !action.refused(),
                 colours: None,

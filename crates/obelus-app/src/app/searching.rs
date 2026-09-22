@@ -392,6 +392,7 @@ impl App {
                     colours: None,
                     status: None,
                     depth: 0,
+                    opens: None,
                     kind: None,
                     // Trimmed at the front: the indentation is the same on
                     // every row of a block, so showing it spends the width
@@ -497,6 +498,7 @@ impl App {
             colours: None,
             status: None,
             depth: 0,
+            opens: None,
             kind: None,
             label: hit.text,
             detail: None,
