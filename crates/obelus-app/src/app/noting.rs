@@ -74,14 +74,12 @@ impl App {
             Some(crate::conversation::Topic::Note(note)) => Some(note),
             Some(crate::conversation::Topic::Loose) | None => None,
         };
-        let todo = Todo::read(&self.working_directory);
-        // Names given to notes that had none go back to the file now, not
-        // the next time something happens to write it: a name minted and
-        // not written is a name minted again on the next open, and nothing
-        // could be keyed to one.
-        if todo.minted {
-            self.save_notes(&todo);
-        }
+        // Not opened at all where the file will not read: a page that
+        // cannot be written is a page that lies, and this one would invite
+        // the reader to type into a list that is not their list.
+        let Some(todo) = self.the_notes_now() else {
+            return;
+        };
         let where_now = self.where_the_notes_point(&todo);
         // How wide a note's text is here, and whether it wraps: the rows
         // depend on both, and the view has to be laid out before anything
@@ -102,9 +100,11 @@ impl App {
         let id = DocumentId::new(self.documents.len() - 1);
         self.go_to_document(id);
         // Heard about for as long as it is open, which as a document is
-        // until it is closed: obelus writes the whole file from what it
-        // holds, so a change made by somebody else while it is open is a
-        // change the next save would put back the way it was.
+        // until it is closed. What it buys is freshness and not safety: a
+        // change of the other window's is in the file whether this one hears
+        // about it or not, and what keeps it there is that every write goes
+        // back through the file -- see [`App::do_to_the_notes`]. This is so
+        // that the reader sees it before they next press anything.
         if let Some(watcher) = self.watcher.as_mut()
             && let Err(error) = watcher.watch(&obelus_git::todo::path(&self.working_directory))
         {
@@ -136,14 +136,158 @@ impl App {
     /// the pause is what makes the other two rare rather than what makes
     /// them unnecessary.
     pub(super) fn write_the_notes(&mut self) {
-        let Some(todo) = self
-            .notes()
-            .map(obelus_component::todo::TodoView::as_written)
+        let Some(changes) = self
+            .the_notes_page()
+            .map(obelus_component::todo::TodoView::take_changes)
         else {
             return;
         };
+        self.do_to_the_notes(changes);
+    }
+
+    /// Does what the page has been doing to the file as it is *now*, and
+    /// brings the page up to what came out.
+    ///
+    /// The one way anything the reader does reaches the disk. Not the page's
+    /// copy written whole: another obelus has this tree open -- that is what
+    /// a second window is for -- and a file written from a copy is that
+    /// window's last minute taken back out, with neither reader told. What
+    /// goes is the acts, done inside the lock to whatever the file says by
+    /// then.
+    ///
+    /// A change about a note that is no longer there is said out loud. It
+    /// means the other window took that note away while this page still
+    /// showed it, and the honest thing is neither to let the key look
+    /// broken nor to put the note back behind the reader's back.
+    pub(super) fn do_to_the_notes(&mut self, changes: Vec<obelus_git::todo::Change>) {
+        if !self.write_them_down(changes) {
+            return;
+        }
+        // One of them was about a note that has gone. The reread hands the
+        // reader back the note they had their hands on -- theirs to put in
+        // again, because they are the one here to be surprised -- and what
+        // is in it has still not reached the file. So it goes now: they
+        // pressed a key that means "write this down", and once is not twice.
+        //
+        // This cannot go round again. What comes back is a note the file
+        // does not have, which is put in rather than changed, and putting
+        // one in never fails.
+        let again = self
+            .the_notes_page()
+            .map(obelus_component::todo::TodoView::take_changes)
+            .unwrap_or_default();
+        self.write_them_down(again);
+    }
+
+    /// Does them, and says whether any was about a note that had gone.
+    fn write_them_down(&mut self, changes: Vec<obelus_git::todo::Change>) -> bool {
         self.notes_settling = None;
-        self.save_notes(&todo);
+        if changes.is_empty() {
+            return false;
+        }
+        match obelus_git::todo::change(&self.working_directory, |todo| {
+            changes
+                .iter()
+                .filter(|change| !todo.apply(change))
+                .cloned()
+                .collect::<Vec<obelus_git::todo::Change>>()
+        }) {
+            Ok((todo, missed)) => {
+                if !missed.is_empty() {
+                    self.note = Some("That note was taken away elsewhere".to_string());
+                }
+                // The names whose words were in that, so the page knows
+                // which of what it is holding is the only copy there is.
+                let unwritten: Vec<obelus_git::todo::NoteId> = missed
+                    .iter()
+                    .filter_map(obelus_git::todo::Change::words)
+                    .cloned()
+                    .collect();
+                let where_now = self.where_the_notes_point_again(&todo);
+                self.the_notes_are_now(todo, where_now, &unwritten);
+                !unwritten.is_empty()
+            }
+            Err(why) => {
+                self.the_notes_will_not(&why);
+                // Not lost with the attempt. Nothing was written, so these
+                // are still the only account there is of what the reader
+                // did, and they go with whatever writes next -- which for a
+                // file that will not read is the first key after they have
+                // fixed it.
+                if let Some(notes) = self.the_notes_page() {
+                    notes.put_back(changes);
+                }
+                false
+            }
+        }
+    }
+
+    /// The page the notes are on, wherever it is.
+    ///
+    /// By document rather than by what the reader is looking at: the notes
+    /// are written down by the clock, by an agent's tool, and by obelus
+    /// leaving, and at none of those moments is the page necessarily the one
+    /// on screen.
+    fn the_notes_page(&mut self) -> Option<&mut TodoView> {
+        self.notes_document()
+            .and_then(|at| self.documents.get_mut(at.get()))
+            .and_then(Option::as_mut)
+            .and_then(Document::notes_mut)
+    }
+
+    /// Says why the notes did not take a change, and in which of the two
+    /// ways it did not.
+    ///
+    /// Two sentences because they ask two different things of the reader.
+    /// One is theirs to fix and obelus is holding off until they do -- the
+    /// file is there and says something obelus cannot read, and writing over
+    /// it would be trading what they wrote for whatever this session happens
+    /// to be holding. The other is a disk, and nothing they type will help.
+    fn the_notes_will_not(&mut self, why: &obelus_git::todo::NotChanged) {
+        tracing::warn!(%why, "the notes were not written");
+        // Short, because the status row is one row: which file and what went
+        // wrong are in the log, where there is room for them.
+        self.note = Some(match why {
+            obelus_git::todo::NotChanged::Unreadable(_) => {
+                "The notes will not read, so none are written".to_string()
+            }
+            obelus_git::todo::NotChanged::Unwritable(_) => {
+                "The notes could not be written".to_string()
+            }
+        });
+    }
+
+    /// The file, with any name it was missing written back into it.
+    ///
+    /// Reading mints a name for a note that has none, and a name minted and
+    /// not written is a name minted again on the next open -- nothing could
+    /// be keyed to one. Through the same door as everything else, which
+    /// reads the file again inside the lock, so what comes back is the file
+    /// rather than this obelus's guess at it.
+    fn the_notes_now(&mut self) -> Option<Todo> {
+        let todo = match obelus_git::todo::read(&self.working_directory) {
+            obelus_git::todo::Reading::Nothing => return Some(Todo::default()),
+            obelus_git::todo::Reading::Notes(todo) => todo,
+            // Nothing is shown and nothing is written. An empty page is not
+            // what this file says -- it is what obelus can make of a file it
+            // cannot read -- and a reader who starts writing notes into it
+            // has begun replacing their own list one note at a time.
+            obelus_git::todo::Reading::Unreadable(why) => {
+                tracing::warn!(why, "the notes will not read");
+                self.note = Some("The notes will not read".to_string());
+                return None;
+            }
+        };
+        if !todo.minted {
+            return Some(todo);
+        }
+        match obelus_git::todo::change(&self.working_directory, |_| ()) {
+            Ok((todo, ())) => Some(todo),
+            Err(why) => {
+                self.the_notes_will_not(&why);
+                Some(todo)
+            }
+        }
     }
 
     /// Where each note points now, which is a question for git and the disk.
@@ -158,6 +302,33 @@ impl App {
             .collect()
     }
 
+    /// The same, asked only about the notes nobody has an answer for yet.
+    ///
+    /// Where a note points is the file as one commit had it against the file
+    /// as it is -- a walk of the history, per note. Asked again for every
+    /// note every time one is ticked off, that walk would be behind the
+    /// space bar. What makes those answers stale is the *file the note
+    /// points into* moving, which is the watcher's news and is where they
+    /// are all worked out again; a note being ticked off is not.
+    fn where_the_notes_point_again(&self, todo: &Todo) -> Vec<Option<LineNumber>> {
+        let known = self
+            .notes_document()
+            .and_then(|id| self.document(id))
+            .and_then(Document::notes)
+            .map(obelus_component::todo::TodoView::places)
+            .unwrap_or_default();
+        todo.notes
+            .iter()
+            .map(|note| match known.iter().find(|(id, _)| *id == note.id) {
+                Some((_, line)) => *line,
+                None => note
+                    .at
+                    .as_ref()
+                    .and_then(|at| obelus_git::todo::where_now(&self.working_directory, at)),
+            })
+            .collect()
+    }
+
     /// Whether a path that changed is the file the notes are kept in.
     #[must_use]
     pub(super) fn is_the_notes_file(&self, path: &std::path::Path) -> bool {
@@ -168,40 +339,67 @@ impl App {
     ///
     /// Only while the page is open, which is not the same as its being on
     /// screen. Shut, there is nothing to keep in step and the next open
-    /// reads the file anyway; open behind the conversation, there is a page
-    /// holding a copy of the file that it will write back.
+    /// reads the file anyway.
+    ///
+    /// Freshness, not safety. What the other window wrote is in the file
+    /// whether this one hears about it or not, and it stays there because
+    /// every write from here goes back through the file rather than over it
+    /// -- [`App::do_to_the_notes`]. This is so that the page in front of the
+    /// reader says what the file says before they press anything, rather
+    /// than on the keystroke after.
     pub(super) fn reread_notes(&mut self) {
         // The notes wherever they are open, not only where the reader is
         // standing. An agent writes notes while the reader is talking to
         // it, which is to say while the conversation is the document on
         // screen and the notes are one of the others -- and `notes()`
-        // answers about the document on screen. So the page that had to
-        // hear about the write was the one page this could not reach, and
-        // it went on holding what the file said before.
-        //
-        // Holding it was the whole of the damage. A note lives nowhere but
-        // the file, so the page writes what it holds -- on the reader's
-        // next keystroke in it, on its being closed, on obelus leaving --
-        // and what it held was the file as it was before the agent touched
-        // it. The agent ticked a note off, said so, and was telling the
-        // truth; by the time the reader went to look, obelus had put the
-        // note back.
-        let Some(at) = self.notes_document() else {
+        // answers about the document on screen, so the page that most has
+        // to hear about the write is the one page that could not reach.
+        if self.notes_document().is_none() {
+            return;
+        }
+        // The page keeps what it has where the file will not read. What is
+        // on it came out of the file and is still the best account of it
+        // there is; what must not happen is writing it back, and that is
+        // refused where it is done rather than guarded here.
+        let Some(todo) = self.the_notes_now() else {
             return;
         };
-        let todo = Todo::read(&self.working_directory);
-        if todo.minted {
-            self.save_notes(&todo);
-        }
+        // Every one of them worked out again, unlike a write of the notes'
+        // own: what arrives here is the file having moved, and the file
+        // moving is exactly what changes where a note points.
         let where_now = self.where_the_notes_point(&todo);
+        // Nothing of the reader's was lost on the way here: this is the
+        // file having moved under a page that has written down everything
+        // it was asked to.
+        self.the_notes_are_now(todo, where_now, &[]);
+    }
+
+    /// Puts the notes that were just written in front of the reader.
+    ///
+    /// The page wherever it is open, not only where the reader is standing:
+    /// an agent writes notes while the reader is talking to it, which is to
+    /// say while the conversation is the document on screen. And every
+    /// conversation whose note has gone, let go of -- from here rather than
+    /// from the key that deletes one, because a note can go several ways and
+    /// a rule that only fired for one of them is a rule that mostly does
+    /// not.
+    fn the_notes_are_now(
+        &mut self,
+        todo: Todo,
+        where_now: Vec<Option<LineNumber>>,
+        unwritten: &[obelus_git::todo::NoteId],
+    ) {
+        let left: Vec<obelus_git::todo::NoteId> =
+            todo.notes.iter().map(|note| note.id.clone()).collect();
         if let Some(notes) = self
-            .documents
-            .get_mut(at.get())
+            .notes_document()
+            .and_then(|at| self.documents.get_mut(at.get()))
             .and_then(Option::as_mut)
             .and_then(Document::notes_mut)
         {
-            notes.reread(todo, where_now);
+            notes.reread(todo, where_now, unwritten);
         }
+        self.let_go_of_notes_that_are_gone(&left);
     }
 
     /// Writes one down about the line being read.
@@ -287,8 +485,7 @@ impl App {
     /// use for a code and every use for "there is no note by that name any
     /// more".
     pub(super) fn change_the_notes(&mut self, doing: obelus_git::todo::Doing) -> String {
-        let mut todo = Todo::read(&self.working_directory);
-        let said = match doing {
+        let done = obelus_git::todo::change(&self.working_directory, |todo| match doing {
             obelus_git::todo::Doing::Add { notes, under } => {
                 let written: Vec<(String, u16)> = notes
                     .into_iter()
@@ -369,23 +566,36 @@ impl App {
                 // always what was asked for anyway.
                 "reworded".to_string()
             }
-        };
-        self.save_notes(&todo);
-        // And the page, wherever it is open. A reader looking at their
-        // notes while an agent writes one should watch it arrive -- and a
-        // reader who is talking to the agent instead, with the notes open
-        // behind the conversation, must not be left holding a page that
-        // will write the file back the way it was.
-        self.reread_notes();
-        said
-    }
-
-    pub(super) fn save_notes(&mut self, todo: &Todo) {
-        if let Err(error) = todo.write(&self.working_directory) {
-            tracing::warn!(%error, "the notes were not written");
-            self.note = Some("The notes could not be written".to_string());
+        });
+        match done {
+            Ok((todo, said)) => {
+                // And the page, wherever it is open. A reader looking at
+                // their notes while an agent writes one should watch it
+                // arrive -- and a reader who is talking to the agent
+                // instead, with the notes open behind the conversation,
+                // must not be left holding a page that says something else.
+                let where_now = self.where_the_notes_point_again(&todo);
+                self.the_notes_are_now(todo, where_now, &[]);
+                said
+            }
+            Err(why) => {
+                tracing::warn!(%why, "the notes were not written");
+                // Which of the two, because the agent can say it to the
+                // reader and one of them is the reader's to fix. An agent
+                // told only that it did not work will try again, and try
+                // again against the same unparseable file.
+                match why {
+                    obelus_git::todo::NotChanged::Unreadable(_) => {
+                        "the notes file will not read, so nothing was written down -- \
+                         it is the reader's to fix"
+                            .to_string()
+                    }
+                    obelus_git::todo::NotChanged::Unwritable(_) => {
+                        "the notes could not be written".to_string()
+                    }
+                }
+            }
         }
-        self.let_go_of_notes_that_are_gone(todo);
     }
 
     /// Lets go of every conversation whose note is no longer in the file.
@@ -398,9 +608,7 @@ impl App {
     /// The conversation itself is closed too. A document about a note that
     /// no longer exists is a document nothing can name, and its row in the
     /// list would be a row with nothing behind it.
-    fn let_go_of_notes_that_are_gone(&mut self, todo: &Todo) {
-        let left: Vec<obelus_git::todo::NoteId> =
-            todo.notes.iter().map(|note| note.id.clone()).collect();
+    fn let_go_of_notes_that_are_gone(&mut self, left: &[obelus_git::todo::NoteId]) {
         let orphaned: Vec<(
             obelus_buffer::DocumentId,
             Option<obelus_agent::acp::SessionId>,
@@ -453,11 +661,16 @@ impl App {
         // open to be typed in rather than of the key, because a key that
         // moved the caret inside one is a key that may have been part of
         // typing -- and one write after a pause costs nothing.
-        let typing = notes.writing().is_some();
+        //
+        // Or where a key has already changed something and said nothing
+        // about it -- walking out of a note writes what was in it down --
+        // because a change that reached the page and no disk is one crash
+        // from never having happened.
+        let waiting = notes.writing().is_some() || notes.waiting();
         match outcome {
             TodoOutcome::Ignored => false,
             TodoOutcome::Consumed => {
-                if typing {
+                if waiting {
                     self.notes_settling = Some(std::time::Instant::now());
                 }
                 true
@@ -470,9 +683,9 @@ impl App {
             }
             // A cut did change the page, so it is written down as well.
             TodoOutcome::Cut { text, what } => {
-                let todo = notes.as_written();
+                let changes = notes.take_changes();
                 self.cut_away(&text, what);
-                self.save_notes(&todo);
+                self.do_to_the_notes(changes);
                 true
             }
             TodoOutcome::Paste => {
@@ -483,9 +696,8 @@ impl App {
                 true
             }
             TodoOutcome::Changed => {
-                let todo = notes.as_written();
-                self.notes_settling = None;
-                self.save_notes(&todo);
+                let changes = notes.take_changes();
+                self.do_to_the_notes(changes);
                 true
             }
             // Leaving keeps what was being written, which is why both of
@@ -494,8 +706,8 @@ impl App {
             // Talk about one. The notes are written down first, because
             // leaving them *is* finishing them and this leaves them.
             TodoOutcome::Talk(note) => {
-                let todo = notes.as_written();
-                self.save_notes(&todo);
+                let changes = notes.take_changes();
+                self.do_to_the_notes(changes);
                 self.talk_about(&note);
                 true
             }
@@ -505,8 +717,8 @@ impl App {
             // write what has been typed, which is what leaving used to be
             // the moment for.
             TodoOutcome::Cancelled => {
-                let todo = notes.as_written();
-                self.save_notes(&todo);
+                let changes = notes.take_changes();
+                self.do_to_the_notes(changes);
                 true
             }
             TodoOutcome::Go(path, line) => {
@@ -515,8 +727,8 @@ impl App {
                 // and they are going somewhere else -- but a document they
                 // came from is a document they come back to, standing on
                 // the note that sent them.
-                let todo = notes.as_written();
-                self.save_notes(&todo);
+                let changes = notes.take_changes();
+                self.do_to_the_notes(changes);
                 self.go_to_note(&path, line);
                 true
             }

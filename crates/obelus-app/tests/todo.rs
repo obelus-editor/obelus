@@ -929,6 +929,226 @@ fn a_note_added_from_outside_survives_the_next_save() {
     assert!(after.contains("the first"), "obelus lost its own:\n{after}");
 }
 
+/// The notes do not open on a file obelus cannot read, and nothing is
+/// written over it.
+///
+/// An empty page is not what a file that will not parse says -- it is what
+/// obelus can make of one -- and a page that opens is a page the reader
+/// writes into. One note, and the list they had is replaced by it. So the
+/// key says why and goes nowhere, which leaves them somewhere they can fix
+/// it from.
+///
+/// Broken deliberately by reading a file that will not parse as an empty
+/// one: the page opens on nothing and the first note written replaces the
+/// file.
+#[test]
+fn the_notes_do_not_open_on_a_file_that_will_not_read() {
+    let half = "[[todo]]\nid = \"0123456B\"\nsaid = \"half a no";
+    let scratch = tree("half-written", half);
+    let file = scratch.path().join(".obelus").join("todo.toml");
+    let app = open(&scratch, 76, 24);
+
+    assert!(
+        app.notes().is_none(),
+        "the notes opened on a file obelus cannot read"
+    );
+    assert!(
+        app.note().unwrap_or_default().contains("will not read"),
+        "the reader was not told why nothing happened: {:?}",
+        app.note()
+    );
+    assert_eq!(
+        std::fs::read_to_string(&file).expect("the notes"),
+        half,
+        "the file obelus could not read was written over"
+    );
+}
+
+/// What the reader did while the file would not read is not lost: it goes
+/// in the moment the file reads again.
+///
+/// They broke the file in their own editor with the page open. obelus says
+/// so and writes nothing -- and what they do on the page in the meantime is
+/// still the only account of itself there is, so it waits rather than going
+/// with the attempt. Dropped instead, it sat on the page looking written
+/// down and vanished at the next reread, some minutes after the one line
+/// that said it had not been saved.
+///
+/// Broken deliberately by letting a change go with the write that could not
+/// happen: the tick is nowhere in the file and this goes red.
+#[test]
+fn what_was_done_while_the_file_would_not_read_lands_when_it_reads_again() {
+    let whole = "[[todo]]\nid = \"0123456C\"\nsaid = \"the first\"\ndone = false\ndepth = 0\n";
+    let scratch = tree("fixed-again", whole);
+    let file = scratch.path().join(".obelus").join("todo.toml");
+    let mut app = open(&scratch, 76, 24);
+
+    // Broken under a page that is already open, the way an editor in
+    // another window breaks it.
+    std::fs::write(&file, "[[todo]]\nsaid = \"half a no").expect("the half-written notes");
+    app.handle(Event::Watched(obelus_watch::Changed { path: file.clone() }));
+
+    // The reader ticks the note off anyway, and is told it went nowhere.
+    app.handle(alt(KeyCode::Char(' ')));
+    assert!(
+        app.note().unwrap_or_default().contains("will not read"),
+        "the reader was not told: {:?}",
+        app.note()
+    );
+    assert_eq!(
+        std::fs::read_to_string(&file).expect("the notes"),
+        "[[todo]]\nsaid = \"half a no",
+        "the file obelus could not read was written over"
+    );
+
+    // They fix it, and the next thing that writes takes the tick with it.
+    std::fs::write(&file, whole).expect("the notes");
+    app.handle(Event::Watched(obelus_watch::Changed { path: file.clone() }));
+    press(&mut app, KeyCode::Esc);
+
+    let after = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        after.contains("done = true"),
+        "what the reader did while the file would not read was lost:\n{after}"
+    );
+    assert!(after.contains("the first"), "their own note went:\n{after}");
+}
+
+/// Two windows on one tree, and neither of them loses the other's note.
+///
+/// The one this is all for. `split` is not obelus's answer to reading two
+/// things at once -- a second window is -- so two obeluses on one tree is
+/// the ordinary case and not the exotic one, and what a reader does in each
+/// of them has to survive the other. Nothing is told about anything here:
+/// no watcher event is handed to either, which is exactly what the watcher
+/// is allowed to do to them.
+///
+/// Broken deliberately by writing the file from the page's own copy again:
+/// whichever window wrote last takes the other's note out, neither reader is
+/// told, and this goes red.
+#[test]
+fn two_windows_on_one_tree_keep_both_their_notes() {
+    let scratch = tree(
+        "two-windows",
+        "[[todo]]\nsaid = \"the first\"\ndone = false\n",
+    );
+    let mut one = open(&scratch, 76, 24);
+    let mut two = open(&scratch, 76, 24);
+    let file = scratch.path().join(".obelus").join("todo.toml");
+
+    press(&mut one, KeyCode::Enter);
+    support::type_text(&mut one, "from the first window");
+    press(&mut one, KeyCode::Esc);
+
+    press(&mut two, KeyCode::Enter);
+    support::type_text(&mut two, "from the second window");
+    press(&mut two, KeyCode::Esc);
+
+    let after = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        after.contains("the first"),
+        "the note they opened on went:\n{after}"
+    );
+    assert!(
+        after.contains("from the first window"),
+        "the first window's note was written over:\n{after}"
+    );
+    assert!(
+        after.contains("from the second window"),
+        "the second window's note never arrived:\n{after}"
+    );
+}
+
+/// A note taken away in one window is not put back by the other one
+/// ticking it off.
+///
+/// What every change but "put this note of mine in" is for: it is about a
+/// note by name, and a name the file no longer has is a change that does
+/// not happen. The reader is told, because a key that appears to do nothing
+/// is the worst way to find out.
+///
+/// Broken deliberately by having a change insert what it cannot find: the
+/// note the other window deliberately took away comes back, and this goes
+/// red.
+#[test]
+fn ticking_off_a_note_another_window_took_away_does_not_put_it_back() {
+    let scratch = tree(
+        "taken-away",
+        "[[todo]]\nsaid = \"the first\"\ndone = false\n\n[[todo]]\nsaid = \"the second\"\ndone = false\n",
+    );
+    let mut one = open(&scratch, 76, 24);
+    let mut two = open(&scratch, 76, 24);
+    let file = scratch.path().join(".obelus").join("todo.toml");
+
+    // The second window takes the second note away.
+    press(&mut two, KeyCode::Down);
+    two.handle(alt(KeyCode::Backspace));
+
+    // The first still has it on the page, and ticks it off.
+    press(&mut one, KeyCode::Down);
+    one.handle(alt(KeyCode::Char(' ')));
+
+    let after = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        !after.contains("the second"),
+        "the note the other window took away came back:\n{after}"
+    );
+    assert!(
+        after.contains("the first"),
+        "the other note went too:\n{after}"
+    );
+    assert!(
+        one.note().unwrap_or_default().contains("taken away"),
+        "the reader was not told: {:?}",
+        one.note()
+    );
+}
+
+/// A note the reader is typing in when another window takes it away stays
+/// with them, and what they typed reaches the file.
+///
+/// The exception, and the only one: of the two readers, one of them has
+/// their hands on this note and is here to be surprised, and the other is
+/// not. Everything else the other window took away stays away -- a note the
+/// caret merely walked into goes, because there is nothing in it that is
+/// this reader's.
+///
+/// Broken deliberately by keeping every note the caret is standing in: the
+/// second half of this goes red, because ticking off a note the other window
+/// deleted puts it back.
+#[test]
+fn a_note_being_typed_in_stays_with_the_reader_who_is_typing() {
+    let scratch = tree(
+        "taken-under-them",
+        "[[todo]]\nsaid = \"the first\"\ndone = false\n\n[[todo]]\nsaid = \"the second\"\ndone = false\n",
+    );
+    let mut one = open(&scratch, 76, 24);
+    let mut two = open(&scratch, 76, 24);
+    let file = scratch.path().join(".obelus").join("todo.toml");
+
+    // The first window is typing in the second note.
+    press(&mut one, KeyCode::Down);
+    support::type_text(&mut one, "mine ");
+
+    // And the second window takes that note away.
+    press(&mut two, KeyCode::Down);
+    two.handle(alt(KeyCode::Backspace));
+
+    // Escape means "write this down", and it does -- once, not twice.
+    press(&mut one, KeyCode::Esc);
+
+    let after = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        after.contains("mine the second"),
+        "what the reader was typing was lost:\n{after}"
+    );
+    assert!(
+        one.note().unwrap_or_default().contains("taken away"),
+        "the reader was not told: {:?}",
+        one.note()
+    );
+}
+
 /// And what the reader is part-way through typing survives it too.
 ///
 /// The re-read swaps the notes underneath them, so the two things that are
@@ -1073,7 +1293,9 @@ depth = 0
 
 /// The depths of the notes as the file has them, after the view wrote back.
 fn depths(scratch: &support::Scratch) -> Vec<u16> {
-    obelus_git::todo::Todo::read(scratch.path())
+    obelus_git::todo::read(scratch.path())
+        .notes()
+        .expect("the notes")
         .notes
         .iter()
         .map(|note| note.depth)
@@ -1082,7 +1304,9 @@ fn depths(scratch: &support::Scratch) -> Vec<u16> {
 
 /// What each note says, in the order the file has them.
 fn titles(scratch: &support::Scratch) -> Vec<String> {
-    obelus_git::todo::Todo::read(scratch.path())
+    obelus_git::todo::read(scratch.path())
+        .notes()
+        .expect("the notes")
         .notes
         .iter()
         .map(|note| note.title().to_string())
@@ -2164,7 +2388,11 @@ fn a_note_an_agent_writes_behind_the_conversation_is_not_put_back() {
         "the tool did not tick it off"
     );
     assert!(
-        obelus_git::todo::Todo::read(scratch.path()).notes[0].done,
+        obelus_git::todo::read(scratch.path())
+            .notes()
+            .expect("the notes")
+            .notes[0]
+            .done,
         "the file does not say the note is done"
     );
 
@@ -2176,7 +2404,11 @@ fn a_note_an_agent_writes_behind_the_conversation_is_not_put_back() {
     assert!(app.notes().is_some(), "the notes are not back on screen");
     dispatch::dispatch(&mut app, Command::DocumentClose);
     assert!(
-        obelus_git::todo::Todo::read(scratch.path()).notes[0].done,
+        obelus_git::todo::read(scratch.path())
+            .notes()
+            .expect("the notes")
+            .notes[0]
+            .done,
         "the page put the note back the way it was before the agent touched it"
     );
 }
@@ -2236,7 +2468,11 @@ fn escape_writes_the_note_down_and_leaves_the_caret_in_it() {
     // And what was typed is in the file, which is the whole of what escape
     // is for here.
     assert_eq!(
-        obelus_git::todo::Todo::read(scratch.path()).notes[0].said,
+        obelus_git::todo::read(scratch.path())
+            .notes()
+            .expect("the notes")
+            .notes[0]
+            .said,
         "a note and more",
         "escape did not write the note down"
     );
@@ -2255,7 +2491,11 @@ fn escape_writes_the_note_down_and_leaves_the_caret_in_it() {
         "the caret went nowhere when the empty note did"
     );
     assert_eq!(
-        obelus_git::todo::Todo::read(scratch.path()).notes.len(),
+        obelus_git::todo::read(scratch.path())
+            .notes()
+            .expect("the notes")
+            .notes
+            .len(),
         1,
         "the note with nothing in it was written down"
     );
@@ -2375,7 +2615,9 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
     // that say what the conversation is doing, and the two that say there
     // is one.
     press(&mut app, 1, area.x + 5);
-    let written = obelus_git::todo::Todo::read(scratch.path());
+    let written = obelus_git::todo::read(scratch.path())
+        .notes()
+        .expect("the notes");
     assert!(
         written.notes[1].done,
         "the press on the box did not tick the note off"

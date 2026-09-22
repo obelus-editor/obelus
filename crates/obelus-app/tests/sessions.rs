@@ -316,7 +316,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     let root = scratch.path();
     let note = NoteId::read("ABCDEFGH").expect("a name");
 
-    sessions::change(root, std::slice::from_ref(&note), |kept| {
+    sessions::change(root, Some(std::slice::from_ref(&note)), |kept| {
         kept.put(
             &note,
             "fake",
@@ -337,7 +337,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     // first one wrote: read-modify-write, because a second obelus on one
     // tree is an ordinary thing to have running.
     let other = NoteId::read("JKMNPQRS").expect("a name");
-    sessions::change(root, &[note.clone(), other.clone()], |kept| {
+    sessions::change(root, Some(&[note.clone(), other.clone()]), |kept| {
         kept.put(
             &other,
             "fake",
@@ -358,7 +358,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     // A note that has gone takes its conversation with it, collected on the
     // way past rather than when the note was deleted -- because a note can
     // go without obelus watching.
-    sessions::change(root, std::slice::from_ref(&other), |_| {});
+    sessions::change(root, Some(std::slice::from_ref(&other)), |_| {});
     let back = sessions::read(root);
     assert!(
         back.get(&note, "fake").is_none(),

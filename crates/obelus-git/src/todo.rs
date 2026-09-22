@@ -236,6 +236,120 @@ pub enum Doing {
     },
 }
 
+/// One thing done to the notes, said so that it still means what it meant
+/// against a file somebody else has written since.
+///
+/// The page used to hand the notes over as it had them, and the file was
+/// written from that -- every note in it, including the ones it read ten
+/// minutes ago. A second obelus on the same tree writes this file too, and
+/// it is not an exotic thing to have running: reading two things at once is
+/// what a second window is *for*. A whole file written from a held copy is
+/// that other window's ten minutes taken back out, with nobody told.
+///
+/// So what travels to the file is not the notes, it is the act. It names
+/// the note it is about, and applying it to the file *as it is at the
+/// moment of writing* puts the reader's change in beside somebody else's
+/// rather than over it.
+///
+/// Every one of these but [`Change::Put`] is about a note that is already
+/// in the file, and does nothing at all where that note has gone. That is
+/// the whole of what keeps a deleted note deleted: a single change that
+/// both updated and inserted would bring a note the other window
+/// deliberately took away back from the dead, the moment the reader typed
+/// into the copy still on their own screen.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Change {
+    /// A note this obelus started, put in.
+    ///
+    /// The one change that may add, because the note is the reader's own
+    /// and has never been in anybody's file. Idempotent all the same: a
+    /// name the file already has is changed rather than doubled, so the
+    /// same `Put` arriving twice -- queued before a write and drained after
+    /// it -- leaves one note and not two.
+    ///
+    /// `after` is the note it goes behind, and behind the whole of what
+    /// hangs under that one: a note started from a parent is the next thing
+    /// at the parent's level, not the first of its children. `None`, or a
+    /// name the file no longer has, puts it at the end -- where a note with
+    /// nothing left to hang behind belongs.
+    Put {
+        /// The note itself, at the depth the page gave it.
+        note: Note,
+        /// What it goes behind.
+        after: Option<NoteId>,
+    },
+    /// What one that is already there says.
+    Said {
+        /// Which note.
+        id: NoteId,
+        /// The whole of what it says now.
+        said: String,
+    },
+    /// Whether one that is already there is done.
+    Done {
+        /// Which note.
+        id: NoteId,
+        /// Which way it was just put.
+        done: bool,
+    },
+    /// Take one away.
+    Remove {
+        /// Which note.
+        id: NoteId,
+        /// Whether what hangs under it goes with it.
+        ///
+        /// The key that takes a note away means the whole of it, children
+        /// and all: a note and what hangs under it are one thing on the
+        /// screen. A note that goes because the reader cleared its words
+        /// means only itself, and its children come up a level -- emptying
+        /// one note is not saying anything about another.
+        under: bool,
+    },
+    /// Move one, and what hangs under it, over the note beside it.
+    ///
+    /// Said as "over that one" rather than "to position four", because a
+    /// position is about a list that has not changed since and a name is
+    /// about the note. Where the neighbour it was to step over has itself
+    /// gone, the move does not apply: the reader was moving this note past
+    /// *that* one, and there is no honest second guess at what they meant.
+    Move {
+        /// Which note.
+        id: NoteId,
+        /// The one it steps over.
+        over: NoteId,
+        /// Which way, which is what "over" means: in front of that one, or
+        /// behind it and everything under it.
+        up: bool,
+    },
+    /// Take one, and what hangs under it, a level in or out.
+    Shift {
+        /// Which note.
+        id: NoteId,
+        /// Out towards the margin, rather than in under the note above.
+        out: bool,
+    },
+}
+
+impl Change {
+    /// The note this carries words for, where it carries any.
+    ///
+    /// What tells a change that was only ever going to be lost from one
+    /// that has something in it nobody else has. A tick or a move that did
+    /// not reach the file is a tick that did not happen; words that did not
+    /// reach the file are still on somebody's screen, and are the only copy
+    /// of themselves there is.
+    #[must_use]
+    pub const fn words(&self) -> Option<&NoteId> {
+        match self {
+            Self::Put { note, .. } => Some(&note.id),
+            Self::Said { id, .. } => Some(id),
+            Self::Done { .. } | Self::Remove { .. } | Self::Move { .. } | Self::Shift { .. } => {
+                None
+            }
+        }
+    }
+}
+
 /// How deep a note may sit.
 ///
 /// Four levels, counted from nothing. A list in a terminal is as wide as
@@ -263,28 +377,73 @@ pub struct Todo {
     pub minted: bool,
 }
 
-impl Todo {
-    /// What is in a tree's file, or nothing where there is no file.
+/// What reading a tree's notes found.
+///
+/// "There is no file" and "there is a file obelus cannot read" are different
+/// answers, and they were the same one. Both came back as no notes -- and no
+/// notes is a thing obelus will happily write down: the page opens empty,
+/// the reader writes one note in a list they cannot see is not their list,
+/// and the file they had is replaced by it. A comma in the wrong place was
+/// enough. What is remembered *beside* the notes went the same way: the
+/// table of which conversation is about which note is swept against the
+/// names the file has, and an empty list of names means every conversation
+/// in this tree is forgotten.
+///
+/// The same three answers the settings give, for the same reason and in the
+/// same shape -- `obelus_config::Reading`, which had this out first. A file
+/// obelus cannot read is the reader's file all the same, and the one thing
+/// it must never do is write over it.
+///
+/// This is about the file as a whole, not about what is in it. A file that
+/// *parses* is read as generously as ever: a note with no name is given one,
+/// a depth with nothing over it comes up to where it can hang, a note that
+/// says nothing is dropped. Those are a file somebody wrote by hand, which
+/// is a thing this file is for.
+#[derive(Clone, Debug)]
+pub enum Reading {
+    /// There is none yet, which is where every tree starts.
+    Nothing,
+    /// Here they are.
+    Notes(Todo),
+    /// There is one and it could not be read, with what went wrong.
+    Unreadable(String),
+}
+
+impl Reading {
+    /// The notes, where having none is an answer the caller can live with.
     ///
-    /// A file that will not parse is not a reason to stop: obelus goes on
-    /// with no notes and says so in the log, the same way a settings file
-    /// that will not read is handled. Losing the view over a typo somebody
-    /// made by hand would be the worse answer.
+    /// `None` for a file that would not read. Spelled out at every call
+    /// rather than folded in here, because `unwrap_or_default` on this is a
+    /// caller saying out loud that nothing is a fine answer -- true of a
+    /// count in a status row, and never true of anything that writes.
     #[must_use]
-    pub fn read(root: &Path) -> Self {
-        let path = path(root);
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            return Self::default();
-        };
-        match text.parse::<toml::Table>() {
-            Ok(table) => Self::from_table(&table),
-            Err(error) => {
-                tracing::warn!(%error, path = %path.display(), "not read, so there are no notes");
-                Self::default()
-            }
+    pub fn notes(self) -> Option<Todo> {
+        match self {
+            Self::Nothing => Some(Todo::default()),
+            Self::Notes(todo) => Some(todo),
+            Self::Unreadable(_) => None,
         }
     }
+}
 
+/// What is in a tree's file.
+#[must_use]
+pub fn read(root: &Path) -> Reading {
+    let path = path(root);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        // Not there yet is the ordinary case and not a failure: the file is
+        // written the first time a reader writes a note down.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Reading::Nothing,
+        Err(error) => return Reading::Unreadable(error.to_string()),
+    };
+    match text.parse::<toml::Table>() {
+        Ok(table) => Reading::Notes(Todo::from_table(&table)),
+        Err(error) => Reading::Unreadable(error.to_string()),
+    }
+}
+
+impl Todo {
     fn from_table(table: &toml::Table) -> Self {
         let mut notes = Vec::new();
         let mut minted = false;
@@ -400,17 +559,231 @@ impl Todo {
             .count()
     }
 
+    /// Where the note by this name is, if it is still here.
+    ///
+    /// The one way anything outside finds a note. A position is about a
+    /// list nobody has touched since; a name is about the note, which is
+    /// the only thing that still means what it meant after somebody else
+    /// wrote the file.
+    #[must_use]
+    pub fn find(&self, id: &NoteId) -> Option<usize> {
+        self.notes.iter().position(|note| note.id == *id)
+    }
+
+    /// How deep a note put at this place may be.
+    ///
+    /// One deeper than what is above it, which is the whole rule: a note
+    /// deeper than that hangs under nothing, and writing one would write a
+    /// file that reads back a level shallower -- the note moving on its own
+    /// between one open and the next.
+    #[must_use]
+    pub fn room_at(&self, at: usize) -> u16 {
+        self.notes
+            .get(at.wrapping_sub(1))
+            .map_or(0, |above| above.depth + 1)
+    }
+
+    /// Where the note before this one at the same depth starts.
+    ///
+    /// `None` where there is none: the first child of a note has nothing
+    /// above it at its own level, and neither has the first note of all.
+    /// Walked backwards rather than counted, because what ends the search is
+    /// the first note *shallower* than this one -- that is the parent, and
+    /// above it is somebody else's list.
+    #[must_use]
+    pub fn before_it(&self, at: usize) -> Option<usize> {
+        let depth = self.notes.get(at)?.depth;
+        for (index, note) in self.notes[..at].iter().enumerate().rev() {
+            if note.depth < depth {
+                return None;
+            }
+            if note.depth == depth {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    /// And where the note after this one at the same depth starts.
+    #[must_use]
+    pub fn after_it(&self, at: usize) -> Option<usize> {
+        let depth = self.notes.get(at)?.depth;
+        let next = at + 1 + self.under(at);
+        self.notes
+            .get(next)
+            .filter(|note| note.depth == depth)
+            .map(|_| next)
+    }
+
+    /// Whether the note at `at` has anywhere to go, in or out.
+    ///
+    /// The rules, in the one place they are written: the top, the note
+    /// above, and the deepest a note may be. Both the key that does it and
+    /// whatever says whether the key would do anything ask this, so a key
+    /// drawn lit is a key that moves something -- two copies of three rules
+    /// would be a hint that goes wrong on its own.
+    #[must_use]
+    pub fn can_shift(&self, at: usize, out: bool) -> bool {
+        let Some(depth) = self.notes.get(at).map(|note| note.depth) else {
+            return false;
+        };
+        if out {
+            return depth > 0;
+        }
+        let deepest = self
+            .notes
+            .iter()
+            .skip(at)
+            .take(1 + self.under(at))
+            .map(|note| note.depth)
+            .max()
+            .unwrap_or(depth);
+        depth < self.room_at(at) && deepest < DEEPEST
+    }
+
+    /// Does one change to these notes, and says whether the note it was
+    /// about was still there to do it to.
+    ///
+    /// `false` is the answer that matters: it means somebody else took that
+    /// note away between this obelus reading the file and writing to it, and
+    /// whoever asked has a reader to tell -- a key that appears to do
+    /// nothing is the worst way to find out. [`Change::Put`] is always
+    /// `true`, because it is about a note that is the reader's own.
+    ///
+    /// Depths are clamped on the way in, not checked: every caller of this
+    /// is a key or an agent working from a list that may have moved, and the
+    /// file has to come back out of [`Todo::read`] saying what was written
+    /// into it.
+    pub fn apply(&mut self, change: &Change) -> bool {
+        match change {
+            Change::Put { note, after } => {
+                // Already there, so this is the same note arriving a second
+                // time -- the change was queued before the last write and
+                // drained after it. Changed rather than added: two notes by
+                // one name is the one thing reading the file cannot repair.
+                if let Some(at) = self.find(&note.id) {
+                    let depth = note.depth.min(self.room_at(at)).min(DEEPEST);
+                    if let Some(there) = self.notes.get_mut(at) {
+                        there.said.clone_from(&note.said);
+                        there.done = note.done;
+                        there.at.clone_from(&note.at);
+                        there.depth = depth;
+                    }
+                    return true;
+                }
+                // Behind the whole of what hangs under it: the note was
+                // started from that one and is the next thing at its level.
+                // Between it and its children, it would have been adopted by
+                // it without the reader asking for a child at all -- and the
+                // children it would be adopted over may be ones this obelus
+                // has never seen, put there by the other window.
+                let at = after
+                    .as_ref()
+                    .and_then(|after| self.find(after))
+                    .map_or(self.notes.len(), |at| at + 1 + self.under(at));
+                let mut note = note.clone();
+                note.depth = note.depth.min(self.room_at(at)).min(DEEPEST);
+                self.notes.insert(at, note);
+                true
+            }
+            Change::Said { id, said } => match self.find(id) {
+                Some(at) => {
+                    if let Some(note) = self.notes.get_mut(at) {
+                        note.said.clone_from(said);
+                    }
+                    true
+                }
+                None => false,
+            },
+            Change::Done { id, done } => match self.find(id) {
+                Some(at) => {
+                    if let Some(note) = self.notes.get_mut(at) {
+                        note.done = *done;
+                    }
+                    true
+                }
+                None => false,
+            },
+            Change::Remove { id, under } => {
+                let Some(at) = self.find(id) else {
+                    return false;
+                };
+                let below = self.under(at);
+                match under {
+                    true => {
+                        self.notes.drain(at..at + 1 + below);
+                    }
+                    false => {
+                        self.notes.remove(at);
+                        // Up a level, because what they hung under has
+                        // gone: left where they were they would read as
+                        // children of whatever happens to be above now.
+                        for note in self.notes.iter_mut().skip(at).take(below) {
+                            note.depth = note.depth.saturating_sub(1);
+                        }
+                    }
+                }
+                true
+            }
+            Change::Move { id, over, up } => {
+                let (Some(at), Some(neighbour)) = (self.find(id), self.find(over)) else {
+                    return false;
+                };
+                let span = 1 + self.under(at);
+                // In front of it, or behind it and the whole of what hangs
+                // under it: stepping over one note at a time would put this
+                // one in the middle of somebody else's children.
+                let to = match up {
+                    true => neighbour,
+                    false => neighbour + 1 + self.under(neighbour),
+                };
+                let moved: Vec<Note> = self.notes.drain(at..at + span).collect();
+                // Past the hole the drain left, where it was after us.
+                let to = match to > at {
+                    true => to.saturating_sub(span),
+                    false => to,
+                };
+                self.notes.splice(to..to, moved);
+                true
+            }
+            Change::Shift { id, out } => {
+                let Some(at) = self.find(id) else {
+                    return false;
+                };
+                // Refusing is silent, and is not this answer: the note is
+                // there, it is simply already as far in as the one above it
+                // -- which is on the reader's screen, one row up.
+                if !self.can_shift(at, *out) {
+                    return true;
+                }
+                let below = self.under(at);
+                for note in self.notes.iter_mut().skip(at).take(1 + below) {
+                    note.depth = match out {
+                        true => note.depth.saturating_sub(1),
+                        false => note.depth + 1,
+                    };
+                }
+                true
+            }
+        }
+    }
+
     /// Writes them back, making the directory if it is not there.
     ///
-    /// The whole file every time. It is a handful of notes, obelus is the
-    /// only thing that writes it, and a merge of what somebody else might
-    /// have changed in the meantime would be a lot of machinery for a file
-    /// nobody edits from two places at once.
+    /// The whole file every time, which is only safe for notes that were
+    /// read a moment ago: anything that has been *held* must go through
+    /// [`change`] instead, which reads the file again under a lock and does
+    /// the reader's act to what it finds. This is what that falls back on
+    /// when the lock cannot be had.
     ///
     /// Through a name beside it and then a rename, the way the settings are
     /// written: a crash halfway through leaves the old file rather than half
     /// of the new one.
-    pub fn write(&self, root: &Path) -> std::io::Result<()> {
+    ///
+    /// Not public. Writing the notes from a copy is the bug this module
+    /// spent a while having, and an outside caller holding one is exactly
+    /// how it came back.
+    fn write(&self, root: &Path) -> std::io::Result<()> {
         let path = path(root);
         if let Some(directory) = path.parent() {
             std::fs::create_dir_all(directory)?;
@@ -455,6 +828,115 @@ impl Todo {
         out
     }
 }
+
+/// How long to wait for another obelus to finish writing.
+///
+/// Long enough that the wait is never the reason two windows collide --
+/// what is held across it is a read of a few notes, a parse and a write, so
+/// microseconds -- and short enough that a lock file left behind by an
+/// obelus that was killed costs a pause nobody times rather than a reader
+/// who cannot write notes any more.
+const WAIT_FOR_THE_OTHER: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Reads the notes, changes them, and writes them back, holding the file for
+/// the whole of it.
+///
+/// The one door every change goes through. Read-modify-write rather than
+/// writing a copy somebody has been holding, for the reason the
+/// conversations beside these are written the same way: a second obelus on
+/// the same tree is an ordinary thing to have running, and the one that
+/// wrote last would otherwise put the file back the way it was before the
+/// other one's note -- and neither of them would be told.
+///
+/// Answers with the notes as they were written, because that is what the
+/// page has to show from here on: what it had is what the file said before
+/// somebody else's last minute, and it must not go on holding it.
+///
+/// The lock is `todo.toml.lock`, made and then renamed over the file, which
+/// is the same shape as the name-beside-it this used to write through --
+/// with the difference that another obelus finds it in the way. Best effort:
+/// where the lock cannot be had the change is made anyway, because the lock
+/// is what makes the read and the write one act and not what makes the
+/// change safe. A stale lock must never be a reader who cannot write a note
+/// down.
+pub fn change<T>(root: &Path, what: impl FnOnce(&mut Todo) -> T) -> Result<(Todo, T), NotChanged> {
+    use std::io::Write as _;
+
+    let path = path(root);
+    if let Some(directory) = path.parent() {
+        std::fs::create_dir_all(directory).map_err(NotChanged::Unwritable)?;
+    }
+    let held = gix::lock::File::acquire_to_update_resource(
+        &path,
+        gix::lock::acquire::Fail::AfterDurationWithBackoff(WAIT_FOR_THE_OTHER),
+        None,
+    );
+    let held = match held {
+        Ok(held) => Some(held),
+        Err(error) => {
+            tracing::debug!(%error, "the notes are being written elsewhere, going ahead anyway");
+            None
+        }
+    };
+    // Inside the lock, so that what is changed is what the other obelus
+    // just finished writing rather than what was there before it started.
+    //
+    // And nothing at all where that read fails. Every other way of declining
+    // here leaves the file alone; this one would replace what obelus could
+    // not read with what it could -- which is the reader's notes traded for
+    // whatever this session happens to be holding, over a typo.
+    let mut todo = match read(root) {
+        Reading::Nothing => Todo::default(),
+        Reading::Notes(todo) => todo,
+        Reading::Unreadable(why) => return Err(NotChanged::Unreadable(why)),
+    };
+    let was = todo.clone();
+    let answer = what(&mut todo);
+    // A change that changed nothing does not touch the file. Half of what
+    // comes through here settles a note that says what it already said, or
+    // asks after a note that has gone -- and every write is heard by this
+    // obelus and the other one, both of which then read the file to find
+    // out that nothing happened. Names minted on the way in are a change:
+    // they are not in the file yet, which is the whole reason they have to
+    // be written.
+    if !todo.minted && todo == was {
+        return Ok((todo, answer));
+    }
+    match held {
+        Some(mut held) => {
+            held.write_all(todo.to_toml().as_bytes())
+                .and_then(|()| held.commit().map_err(|error| error.error))
+                .map_err(NotChanged::Unwritable)?;
+        }
+        None => todo.write(root).map_err(NotChanged::Unwritable)?,
+    }
+    Ok((todo, answer))
+}
+
+/// Why a change to the notes did not happen.
+///
+/// Two answers because they are two things to say to the reader and two
+/// things for them to do about it. A file that will not read is one they can
+/// fix, and until they do obelus is holding off *on purpose*; a file that
+/// will not write is a disk or a permission, and nothing they type will help.
+#[derive(Debug)]
+pub enum NotChanged {
+    /// The file is there and will not read, so nothing was written over it.
+    Unreadable(String),
+    /// It would not write.
+    Unwritable(std::io::Error),
+}
+
+impl std::fmt::Display for NotChanged {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreadable(why) => write!(out, "the notes will not read: {why}"),
+            Self::Unwritable(error) => write!(out, "the notes will not write: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for NotChanged {}
 
 /// What a note says, with the blank line off the end.
 ///
@@ -607,6 +1089,219 @@ mod tests {
             depth: 0,
         }]);
         assert!(todo.to_toml().contains("line = 412"), "{}", todo.to_toml());
+    }
+
+    /// A change is about a note by name, and a name the file no longer has
+    /// is a change that does not happen.
+    ///
+    /// The whole of what keeps a deleted note deleted. Broken deliberately
+    /// by having `apply` insert what it cannot find: the note the other
+    /// window took away comes back the moment this one ticks it off, and
+    /// this goes red.
+    #[test]
+    fn a_change_about_a_note_that_has_gone_does_nothing() {
+        let gone = NoteId::mint();
+        let mut todo = named(vec![note("the one that stayed")]);
+        let was = todo.clone();
+        for change in [
+            Change::Said {
+                id: gone.clone(),
+                said: "back from the dead".to_string(),
+            },
+            Change::Done {
+                id: gone.clone(),
+                done: true,
+            },
+            Change::Remove {
+                id: gone.clone(),
+                under: true,
+            },
+            Change::Shift {
+                id: gone.clone(),
+                out: false,
+            },
+            Change::Move {
+                id: gone.clone(),
+                over: todo.notes[0].id.clone(),
+                up: true,
+            },
+        ] {
+            assert!(!todo.apply(&change), "{change:?} said it had applied");
+        }
+        assert_eq!(todo, was, "a change about a note that has gone moved one");
+    }
+
+    /// The reader's own new note may go in, and only once.
+    ///
+    /// Idempotent because the same change can be handed over twice -- put in
+    /// the queue before a write and taken out of it after one -- and two
+    /// notes answering to one name is the one thing reading the file cannot
+    /// repair.
+    #[test]
+    fn a_note_put_in_twice_is_one_note() {
+        let mut todo = named(vec![note("the first")]);
+        let change = Change::Put {
+            note: note("the reader's new one"),
+            after: Some(todo.notes[0].id.clone()),
+        };
+        assert!(todo.apply(&change));
+        assert!(todo.apply(&change));
+        assert_eq!(todo.notes.len(), 2);
+        assert_eq!(todo.notes[1].said, "the reader's new one");
+    }
+
+    /// A new note goes behind the whole of what hangs under the note it
+    /// follows -- including children this obelus has never seen.
+    ///
+    /// The other window put them there while this one was holding the page.
+    /// Between the note and its children, this one would have been adopted
+    /// by it without the reader asking for a child at all.
+    #[test]
+    fn a_new_note_goes_behind_what_hangs_under_the_one_it_follows() {
+        let mut todo = named(vec![note("a parent"), note("theirs, a child")]);
+        todo.notes[1].depth = 1;
+        let change = Change::Put {
+            note: note("mine"),
+            after: Some(todo.notes[0].id.clone()),
+        };
+        assert!(todo.apply(&change));
+        let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
+        assert_eq!(said, ["a parent", "theirs, a child", "mine"]);
+        assert_eq!(todo.notes[2].depth, 0);
+    }
+
+    /// Taking a note away takes what hangs under it; emptying one's words
+    /// brings them up a level instead.
+    ///
+    /// Two doors, and the file has to be able to tell which one a note left
+    /// by: the key that takes a note away means the whole of it, and a note
+    /// the reader cleared the words out of was not saying anything about its
+    /// children.
+    #[test]
+    fn what_hangs_under_a_note_goes_with_it_or_comes_up_a_level() {
+        let parent = |todo: &Todo| todo.notes[0].id.clone();
+        let three = || {
+            let mut todo = named(vec![note("a parent"), note("a child"), note("after")]);
+            todo.notes[1].depth = 1;
+            todo
+        };
+
+        let mut todo = three();
+        assert!(todo.apply(&Change::Remove {
+            id: parent(&todo),
+            under: true,
+        }));
+        let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
+        assert_eq!(said, ["after"]);
+
+        let mut todo = three();
+        assert!(todo.apply(&Change::Remove {
+            id: parent(&todo),
+            under: false,
+        }));
+        let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
+        assert_eq!(said, ["a child", "after"]);
+        assert_eq!(
+            todo.notes[0].depth, 0,
+            "the child stayed indented under nothing"
+        );
+    }
+
+    /// Moving one steps over the whole of the neighbour, not one note of it.
+    #[test]
+    fn a_move_steps_over_the_whole_of_its_neighbour() {
+        let mut todo = named(vec![
+            note("a parent"),
+            note("a child"),
+            note("the one being moved"),
+        ]);
+        todo.notes[1].depth = 1;
+        assert!(todo.apply(&Change::Move {
+            id: todo.notes[2].id.clone(),
+            over: todo.notes[0].id.clone(),
+            up: true,
+        }));
+        let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
+        assert_eq!(said, ["the one being moved", "a parent", "a child"]);
+    }
+
+    /// "There is no file" and "there is a file that will not read" are
+    /// different answers.
+    ///
+    /// Both came back as no notes, and no notes is a thing obelus writes
+    /// down: the page opens empty, one note is written into a list the
+    /// reader cannot see is not their list, and what they had is replaced by
+    /// it. A comma in the wrong place was enough.
+    ///
+    /// Broken deliberately by reading a file that will not parse as an empty
+    /// one again: the last of these goes red.
+    #[test]
+    fn a_file_that_will_not_read_is_not_a_file_with_nothing_in_it() {
+        let scratch =
+            std::env::temp_dir().join(format!("obelus-todo-reading-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).expect("the directory");
+
+        assert!(
+            matches!(read(&scratch), Reading::Nothing),
+            "a tree with no notes file is not a tree that starts empty"
+        );
+
+        let path = path(&scratch);
+        std::fs::create_dir_all(path.parent().expect("the directory")).expect("the directory");
+        std::fs::write(&path, "[[todo]]\nsaid = \"a note\"\n").expect("the notes");
+        let Reading::Notes(todo) = read(&scratch) else {
+            panic!("a file that reads did not read");
+        };
+        assert_eq!(todo.notes.len(), 1);
+
+        std::fs::write(&path, "[[todo]]\nsaid = \"half a no").expect("the half-written notes");
+        assert!(
+            matches!(read(&scratch), Reading::Unreadable(_)),
+            "a file that will not parse read as a file with nothing in it"
+        );
+
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// And nothing is written over one.
+    ///
+    /// The one guard that covers every writer, because they all come through
+    /// here: what obelus could not read it does not replace with what it
+    /// could.
+    ///
+    /// Broken deliberately by letting `change` go on with the default where
+    /// the read failed: the file becomes one note long and this goes red.
+    #[test]
+    fn a_file_that_will_not_read_is_not_written_over() {
+        let scratch =
+            std::env::temp_dir().join(format!("obelus-todo-guard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let path = path(&scratch);
+        std::fs::create_dir_all(path.parent().expect("the directory")).expect("the directory");
+        let half = "[[todo]]\nid = \"0123456A\"\nsaid = \"half a no";
+        std::fs::write(&path, half).expect("the half-written notes");
+
+        let outcome = change(&scratch, |todo| {
+            todo.notes.push(Note {
+                id: NoteId::mint(),
+                said: "one this obelus made up".to_string(),
+                done: false,
+                at: None,
+                depth: 0,
+            });
+        });
+        assert!(
+            matches!(outcome, Err(NotChanged::Unreadable(_))),
+            "a change went ahead against a file that will not read"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("the notes"),
+            half,
+            "the reader's file was written over"
+        );
+
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     /// A note that says nothing is not a note.

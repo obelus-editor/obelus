@@ -192,7 +192,9 @@ impl App {
     /// note to quote, and the agent finds out the way anybody does, by
     /// `todo_finish` answering that no note has that name.
     fn telling(&self, note: &obelus_git::todo::NoteId, told: Option<&str>) -> Option<Telling> {
-        let about = obelus_git::todo::Todo::read(&self.working_directory)
+        let about = obelus_git::todo::read(&self.working_directory)
+            .notes()
+            .unwrap_or_default()
             .notes
             .into_iter()
             .find(|other| other.id == *note)?;
@@ -290,7 +292,7 @@ impl App {
         let kept = obelus_agent::acp::sessions::read(&self.working_directory);
         let agent = self.settled.config.agent.clone().unwrap_or_default();
         notes
-            .as_written()
+            .todo()
             .notes
             .iter()
             .map(|note| {
@@ -336,13 +338,16 @@ impl App {
         let Some(agent) = self.talker.as_ref().map(|talker| talker.id().to_string()) else {
             return;
         };
-        let notes: Vec<obelus_git::todo::NoteId> =
-            obelus_git::todo::Todo::read(&self.working_directory)
-                .notes
-                .into_iter()
-                .map(|note| note.id)
-                .collect();
-        obelus_agent::acp::sessions::change(&self.working_directory, &notes, |kept| {
+        // `None` where the file will not read, so that nothing is swept
+        // against a list obelus does not have: what is remembered here is
+        // keyed to notes, and an empty list of names would forget every
+        // conversation this tree has.
+        let notes: Option<Vec<obelus_git::todo::NoteId>> =
+            obelus_git::todo::read(&self.working_directory)
+                .notes()
+                .map(|todo| todo.notes.into_iter().map(|note| note.id).collect());
+        let notes = notes.as_deref();
+        obelus_agent::acp::sessions::change(&self.working_directory, notes, |kept| {
             kept.forget(note, &agent);
         });
     }
@@ -409,13 +414,16 @@ impl App {
         // somebody has taken away goes at the same time. A note can go
         // without obelus watching, so the collecting is done on the way past
         // rather than when one is deleted.
-        let notes: Vec<obelus_git::todo::NoteId> =
-            obelus_git::todo::Todo::read(&self.working_directory)
-                .notes
-                .into_iter()
-                .map(|note| note.id)
-                .collect();
-        obelus_agent::acp::sessions::change(&self.working_directory, &notes, |kept| {
+        // `None` where the file will not read, so that nothing is swept
+        // against a list obelus does not have: what is remembered here is
+        // keyed to notes, and an empty list of names would forget every
+        // conversation this tree has.
+        let notes: Option<Vec<obelus_git::todo::NoteId>> =
+            obelus_git::todo::read(&self.working_directory)
+                .notes()
+                .map(|todo| todo.notes.into_iter().map(|note| note.id).collect());
+        let notes = notes.as_deref();
+        obelus_agent::acp::sessions::change(&self.working_directory, notes, |kept| {
             for (note, what) in mine {
                 kept.put(&note, &agent, what);
             }
@@ -434,7 +442,9 @@ impl App {
         let Topic::Note(id) = &self.conversation()?.topic else {
             return None;
         };
-        obelus_git::todo::Todo::read(&self.working_directory)
+        obelus_git::todo::read(&self.working_directory)
+            .notes()
+            .unwrap_or_default()
             .notes
             .into_iter()
             .find(|note| note.id == *id)

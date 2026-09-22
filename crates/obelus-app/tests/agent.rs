@@ -2957,6 +2957,78 @@ fn a_loose_conversation_carries_no_opening() {
 
 /// A conversation the agent has forgotten starts a fresh one, in place.
 ///
+/// A `todo.toml` that will not read does not forget every conversation in
+/// the tree.
+///
+/// What is remembered about a conversation is keyed to a note, and the table
+/// is swept against the names the notes file has -- on the way past, because
+/// a note can go without obelus watching. Reading that file answered with an
+/// empty list for a file it could not read, so a half-finished hand edit and
+/// one message was every conversation in this tree gone: the agent still had
+/// them, and nothing here could name one again.
+///
+/// Broken deliberately by sweeping against an empty list where the notes
+/// could not be read: the conversation goes and this goes red.
+#[test]
+fn notes_that_will_not_read_do_not_forget_the_conversations() {
+    let scratch = support::Scratch::new("agent-notes-unreadable");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    let note = "0123456N";
+    let notes = scratch.path().join(".obelus").join("todo.toml");
+    std::fs::write(
+        &notes,
+        format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
+    )
+    .expect("the notes");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    pump(&mut app, &events, "a session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // Said once, so that there is a conversation written down to lose. The
+    // shape that answers and stops, because what is being watched here is
+    // the table beside the notes and not what the agent said.
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let id = obelus_git::todo::NoteId::read(note).expect("a name");
+    assert!(
+        obelus_agent::acp::sessions::read(scratch.path())
+            .get(&id, "fake")
+            .is_some(),
+        "the conversation was never written down, so this proves nothing"
+    );
+
+    // The reader is half-way through editing the file by hand.
+    std::fs::write(&notes, "[[todo]]\nsaid = \"unfinished").expect("the half-written notes");
+
+    // And says something else, which is one of the moments the table is
+    // written.
+    support::type_text(&mut app, "/echo again");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    assert!(
+        obelus_agent::acp::sessions::read(scratch.path())
+            .get(&id, "fake")
+            .is_some(),
+        "the conversation was forgotten because the notes would not read"
+    );
+}
+
 /// Agents sweep their conversations up, so a name obelus wrote down last
 /// week may mean nothing today. The reply to that is a new session -- which
 /// the protocol side already did -- and the conversation it belongs to has
@@ -2987,17 +3059,21 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
     // yesterday is one the agent was told, which is the state the clearing
     // below has to undo.
     let id = obelus_git::todo::NoteId::read(note).expect("a name");
-    obelus_agent::acp::sessions::change(scratch.path(), std::slice::from_ref(&id), |remembered| {
-        remembered.put(
-            &id,
-            "fake",
-            obelus_agent::acp::sessions::Kept {
-                session: "s-gone".to_string(),
-                title: None,
-                told: Some("a note".to_string()),
-            },
-        );
-    });
+    obelus_agent::acp::sessions::change(
+        scratch.path(),
+        Some(std::slice::from_ref(&id)),
+        |remembered| {
+            remembered.put(
+                &id,
+                "fake",
+                obelus_agent::acp::sessions::Kept {
+                    session: "s-gone".to_string(),
+                    title: None,
+                    told: Some("a note".to_string()),
+                },
+            );
+        },
+    );
 
     let (mut app, events) = wired();
     app.working_directory_for_test(scratch.path().to_path_buf());
@@ -3801,17 +3877,21 @@ fn remembering_how(
     )
     .expect("the notes");
     let id = obelus_git::todo::NoteId::read(note).expect("a name");
-    obelus_agent::acp::sessions::change(scratch.path(), std::slice::from_ref(&id), |remembered| {
-        remembered.put(
-            &id,
-            "fake",
-            obelus_agent::acp::sessions::Kept {
-                session: session.to_string(),
-                title: None,
-                told: Some("a note".to_string()),
-            },
-        );
-    });
+    obelus_agent::acp::sessions::change(
+        scratch.path(),
+        Some(std::slice::from_ref(&id)),
+        |remembered| {
+            remembered.put(
+                &id,
+                "fake",
+                obelus_agent::acp::sessions::Kept {
+                    session: session.to_string(),
+                    title: None,
+                    told: Some("a note".to_string()),
+                },
+            );
+        },
+    );
 
     let (mut app, events) = wired();
     app.working_directory_for_test(scratch.path().to_path_buf());
@@ -3866,17 +3946,21 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
     )
     .expect("the notes");
     let id = obelus_git::todo::NoteId::read("0123456Q").expect("a name");
-    obelus_agent::acp::sessions::change(scratch.path(), std::slice::from_ref(&id), |remembered| {
-        remembered.put(
-            &id,
-            "fake",
-            obelus_agent::acp::sessions::Kept {
-                session: "s-old".to_string(),
-                title: None,
-                told: None,
-            },
-        );
-    });
+    obelus_agent::acp::sessions::change(
+        scratch.path(),
+        Some(std::slice::from_ref(&id)),
+        |remembered| {
+            remembered.put(
+                &id,
+                "fake",
+                obelus_agent::acp::sessions::Kept {
+                    session: "s-old".to_string(),
+                    title: None,
+                    told: None,
+                },
+            );
+        },
+    );
 
     let (mut app, events) = wired();
     app.working_directory_for_test(scratch.path().to_path_buf());
@@ -4268,17 +4352,21 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
     )
     .expect("the notes");
     let id = obelus_git::todo::NoteId::read("0123456P").expect("a name");
-    obelus_agent::acp::sessions::change(scratch.path(), std::slice::from_ref(&id), |remembered| {
-        remembered.put(
-            &id,
-            "fake",
-            obelus_agent::acp::sessions::Kept {
-                session: "s-old".to_string(),
-                title: None,
-                told: None,
-            },
-        );
-    });
+    obelus_agent::acp::sessions::change(
+        scratch.path(),
+        Some(std::slice::from_ref(&id)),
+        |remembered| {
+            remembered.put(
+                &id,
+                "fake",
+                obelus_agent::acp::sessions::Kept {
+                    session: "s-old".to_string(),
+                    title: None,
+                    told: None,
+                },
+            );
+        },
+    );
 
     // Started the way a reader's morning is: nothing running, an agent
     // named in the settings, and the conversation reached from the note.

@@ -532,12 +532,7 @@ impl StatusView<'_> {
         };
         write(cells, area.x + 1, area.y, &name, style);
 
-        let left = notes
-            .as_written()
-            .notes
-            .iter()
-            .filter(|note| !note.done)
-            .count();
+        let left = notes.todo().notes.iter().filter(|note| !note.done).count();
         if left == 0 {
             return;
         }

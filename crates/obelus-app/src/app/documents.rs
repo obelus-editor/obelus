@@ -197,12 +197,7 @@ impl App {
     /// `alt+t` stands for, and what the file is called. The mark is the
     /// command's, so the row and the row that opened it wear the same one.
     fn notes_row(index: usize, notes: &obelus_component::todo::TodoView) -> PickerItem {
-        let left = notes
-            .as_written()
-            .notes
-            .iter()
-            .filter(|note| !note.done)
-            .count();
+        let left = notes.todo().notes.iter().filter(|note| !note.done).count();
         PickerItem {
             prose: false,
             marker: None,
@@ -747,7 +742,10 @@ impl App {
 
         let statuses = &self.statuses;
         let talker = self.talker.as_ref();
-        let notes = obelus_git::todo::Todo::read(&self.working_directory);
+        // A row's count, so having none is an answer this can live with.
+        let notes = obelus_git::todo::read(&self.working_directory)
+            .notes()
+            .unwrap_or_default();
         let items = open
             .map(|(index, document)| match document {
                 Document::Chat(talk) => self.conversation_row(index, talk, talker, &notes),
@@ -874,13 +872,14 @@ impl App {
             .document(id)
             .is_some_and(|document| document.notes().is_some())
         {
-            if let Some(todo) = self
-                .document(id)
-                .and_then(Document::notes)
-                .map(obelus_component::todo::TodoView::as_written)
+            if let Some(changes) = self
+                .documents
+                .get_mut(id.get())
+                .and_then(Option::as_mut)
+                .and_then(Document::notes_mut)
+                .map(obelus_component::todo::TodoView::take_changes)
             {
-                self.notes_settling = None;
-                self.save_notes(&todo);
+                self.do_to_the_notes(changes);
             }
             if let Some(watcher) = self.watcher.as_mut() {
                 watcher.unwatch(&obelus_git::todo::path(&self.working_directory));

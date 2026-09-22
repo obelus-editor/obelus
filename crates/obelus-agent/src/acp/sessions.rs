@@ -90,7 +90,17 @@ impl Remembered {
     /// deleted, because a note can go without obelus watching -- another
     /// obelus, the reader's own editor -- and a table that only shrank when
     /// obelus was looking would grow for ever.
-    pub fn forget_notes_that_are_gone(&mut self, notes: &[NoteId]) {
+    ///
+    /// `None` is "obelus does not know what notes there are", which is a
+    /// different thing from "there are none" and was the same thing:
+    /// `Todo::read` answered with an empty list for a file it could not
+    /// read, and an empty list here forgets every conversation in the tree.
+    /// A name that cannot be checked against anything is not a name that has
+    /// gone.
+    pub fn forget_notes_that_are_gone(&mut self, notes: Option<&[NoteId]>) {
+        let Some(notes) = notes else {
+            return;
+        };
         self.kept.retain(|(note, _), _| notes.contains(note));
     }
 
@@ -189,7 +199,7 @@ pub fn read(root: &Path) -> Remembered {
 /// the same tree is an ordinary thing to have running and the last one to
 /// write would otherwise put back the other's conversations as they were
 /// before it opened them.
-pub fn change(root: &Path, notes: &[NoteId], what: impl FnOnce(&mut Remembered)) {
+pub fn change(root: &Path, notes: Option<&[NoteId]>, what: impl FnOnce(&mut Remembered)) {
     let Some(path) = path(root) else { return };
     let mut remembered = read(root);
     what(&mut remembered);
@@ -328,11 +338,42 @@ mod tests {
                 },
             );
         }
-        remembered.forget_notes_that_are_gone(&[note("ABCDEFGH")]);
+        remembered.forget_notes_that_are_gone(Some(&[note("ABCDEFGH")]));
         assert!(remembered.get(&note("ABCDEFGH"), "claude-acp").is_some());
         assert!(
             remembered.get(&note("JKMNPQRS"), "claude-acp").is_none(),
             "a conversation outlived the note it was about"
+        );
+    }
+
+    /// And one whose notes obelus could not read is not forgotten at all.
+    ///
+    /// "There are no notes" and "obelus cannot tell what notes there are"
+    /// were one answer, and this table is swept against it: a `todo.toml`
+    /// somebody had left half-edited meant every conversation in the tree
+    /// went, on the next message anybody sent.
+    ///
+    /// Broken deliberately by sweeping against `None` as though it were an
+    /// empty list: both of these go.
+    #[test]
+    fn nothing_is_forgotten_against_notes_that_could_not_be_read() {
+        let mut remembered = Remembered::default();
+        for name in ["ABCDEFGH", "JKMNPQRS"] {
+            remembered.put(
+                &note(name),
+                "claude-acp",
+                Kept {
+                    session: name.to_lowercase(),
+                    title: None,
+                    told: None,
+                },
+            );
+        }
+        remembered.forget_notes_that_are_gone(None);
+        assert!(remembered.get(&note("ABCDEFGH"), "claude-acp").is_some());
+        assert!(
+            remembered.get(&note("JKMNPQRS"), "claude-acp").is_some(),
+            "a conversation was forgotten against a list obelus does not have"
         );
     }
 

@@ -198,7 +198,9 @@ fn what_an_agent_writes_down_is_in_the_file() {
     assert!(ticked.contains("ticked off"), "it did not say so: {ticked}");
 
     // And the file has them, which is the whole of what the tools are for.
-    let todo = obelus_git::todo::Todo::read(scratch.path());
+    let todo = obelus_git::todo::read(scratch.path())
+        .notes()
+        .expect("the notes");
     let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
     assert_eq!(
         said,
@@ -413,7 +415,9 @@ fn a_reworded_note_is_the_same_note() {
         "it did not say so: {answered}"
     );
 
-    let todo = obelus_git::todo::Todo::read(scratch.path());
+    let todo = obelus_git::todo::read(scratch.path())
+        .notes()
+        .expect("the notes");
     let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
     assert_eq!(
         said,
@@ -492,7 +496,9 @@ fn a_note_cannot_be_reworded_into_nothing() {
         "it did not say why it would not: {answered}"
     );
 
-    let todo = obelus_git::todo::Todo::read(scratch.path());
+    let todo = obelus_git::todo::read(scratch.path())
+        .notes()
+        .expect("the notes");
     assert_eq!(todo.notes.len(), 1, "the note went away");
     assert_eq!(todo.notes[0].said, "the one that was there");
 }

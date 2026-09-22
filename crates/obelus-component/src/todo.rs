@@ -14,10 +14,10 @@
 //! Nothing here reads or writes that file -- the application does, because
 //! it is the one that knows which tree this is.
 
-use std::{ops::Range, path::PathBuf};
+use std::{collections::HashSet, ops::Range, path::PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use obelus_git::todo::{INDENT, Note, Todo};
+use obelus_git::todo::{Change, INDENT, Note, NoteId, Todo};
 use obelus_text::coordinates::LineNumber;
 
 use crate::{
@@ -170,6 +170,44 @@ pub struct TodoView {
     /// The box a message to an agent is written in, because a note is the
     /// same shape: a paragraph, sometimes pasted, with a caret in it.
     writing: Option<(usize, Composer)>,
+
+    /// What has been done here and not written down yet.
+    ///
+    /// The page changes the copy it holds, so that the frame can show what
+    /// the reader just did, and says what it did here. The file is *not*
+    /// written from that copy: another obelus has this tree open too, and a
+    /// file written whole from a copy is that one's last minute taken back
+    /// out. What reaches the disk is these, done to the file as it is at the
+    /// moment of writing -- see [`obelus_git::todo::Change`].
+    pending: Vec<Change>,
+    /// The notes this page started that are not in the file yet.
+    ///
+    /// What tells "put this note in" from "change the one that is there",
+    /// which is the difference between a note the reader has just begun and
+    /// a note the file has. Without it, typing into a note another window
+    /// deleted while this page held it would write the note back -- this
+    /// reader's obelus undoing somebody's deliberate act, on a keystroke
+    /// that was about neither of those things.
+    unwritten: HashSet<NoteId>,
+}
+
+/// Where each note points, carried across a change of shape by name.
+///
+/// The marks sit in a list beside the notes, so anything that inserts,
+/// moves or takes one away has to move them the same way or they belong to
+/// the wrong notes. Rebuilt by name instead: a note carries its own, and a
+/// note nobody has an answer for yet -- one just started, one another window
+/// wrote -- has none until the next time they are worked out.
+fn places_by_name(todo: &Todo, known: &[(NoteId, Option<LineNumber>)]) -> Vec<Option<LineNumber>> {
+    todo.notes
+        .iter()
+        .map(|note| {
+            known
+                .iter()
+                .find(|(id, _)| *id == note.id)
+                .and_then(|(_, line)| *line)
+        })
+        .collect()
 }
 
 impl TodoView {
@@ -185,8 +223,17 @@ impl TodoView {
     /// A note being typed into that somebody else has deleted is kept, at
     /// the end. The reader is looking at it and has their hands on it; the
     /// other writer did not know that, and of the two of them only one is
-    /// here to be surprised.
-    pub fn reread(&mut self, todo: Todo, where_now: Vec<Option<LineNumber>>) {
+    /// here to be surprised. A note the caret had merely walked into goes
+    /// like all the rest: there is nothing in it that is this reader's, and
+    /// keeping it would be undoing a deliberate act on the strength of where
+    /// a caret happened to be standing.
+    ///
+    /// `unwritten` names the notes whose *words* did not reach the file --
+    /// the reader typed, and by the time it was written down the note had
+    /// gone. The page cannot work that out for itself once the words are in
+    /// its own copy of the note, and they are the only copy of themselves
+    /// there is.
+    pub fn reread(&mut self, todo: Todo, where_now: Vec<Option<LineNumber>>, unwritten: &[NoteId]) {
         // The box itself is what carries across, not what it would have
         // written: `keep` takes the box with it, and what it writes into is
         // a copy of the notes this is about to throw away. So the note is
@@ -197,43 +244,81 @@ impl TodoView {
             .take()
             .and_then(|(at, composer)| Some((at, self.todo.notes.get(at)?.clone(), composer)));
         let focused = self.selected_note().map(|note| note.id.clone());
+        let known: Vec<(NoteId, Option<LineNumber>)> = todo
+            .notes
+            .iter()
+            .map(|note| note.id.clone())
+            .zip(where_now)
+            .collect();
 
         self.todo = todo;
-        self.where_now = where_now;
+        // What this page has done and has not written down yet, put back on
+        // top of what the file says. They are going to the file at the next
+        // write, and a page that showed them undone until then would be
+        // showing the reader their own last keystroke being taken back by
+        // somebody else's unrelated one.
+        let pending = std::mem::take(&mut self.pending);
+        for change in &pending {
+            self.todo.apply(change);
+        }
+        self.pending = pending;
+        // Whatever the file has is written, whether this page wrote it or
+        // the other window did: a name that is in there now is not one this
+        // page may insert again.
+        let todo = &self.todo;
+        self.unwritten.retain(|id| todo.find(id).is_none());
 
-        let writing = writing.map(|(was, mut note, composer)| {
-            let at = self.todo.notes.iter().position(|other| other.id == note.id);
-            let at = at.unwrap_or_else(|| {
-                // A note that says nothing has never been in anybody's
-                // file: obelus does not write one down, so its not being
-                // there is not somebody having taken it away. It goes back
-                // where the reader had it -- put at the end instead, a
-                // note just started would walk to the bottom of the list
-                // the moment anything else wrote the file.
-                if note.said.trim().is_empty() {
-                    let at = was.min(self.todo.notes.len());
-                    note.depth = note
-                        .depth
-                        .min(self.room_at(at))
-                        .min(obelus_git::todo::DEEPEST);
-                    self.todo.notes.insert(at, note);
-                    self.where_now.insert(at, None);
-                    return at;
-                }
-                // At the end, so under whatever is last there rather than
-                // under the note it used to hang under -- that note is in
-                // somebody else's file now, and may not be in it at all. A
-                // depth deeper than the end can carry would be written to
-                // disk illegal and read back a level shallower, which is the
-                // note moving on its own between one open and the next.
-                let room = self.room_at(self.todo.notes.len());
-                note.depth = note.depth.min(room).min(obelus_git::todo::DEEPEST);
-                self.todo.notes.push(note);
-                self.where_now.push(None);
-                self.todo.notes.len() - 1
-            });
-            (at, composer)
+        let mut let_go_at = None;
+        let writing = writing.and_then(|(was, mut note, composer)| {
+            if let Some(at) = self.todo.find(&note.id) {
+                return Some((at, composer));
+            }
+            // A note that says nothing has never been in anybody's file:
+            // obelus does not write one down, so its not being there is not
+            // somebody having taken it away. It goes back where the reader
+            // had it -- put at the end instead, a note just started would
+            // walk to the bottom of the list the moment anything else wrote
+            // the file.
+            if note.said.trim().is_empty() {
+                let at = was.min(self.todo.notes.len());
+                note.depth = note
+                    .depth
+                    .min(self.todo.room_at(at))
+                    .min(obelus_git::todo::DEEPEST);
+                self.unwritten.insert(note.id.clone());
+                self.todo.notes.insert(at, note);
+                return Some((at, composer));
+            }
+            // Somebody else took it away, and the reader has nothing in it
+            // that is theirs: the box says what the note said, and no words
+            // of theirs were lost on the way to the file. They walked into
+            // it and no further, so it goes like every other note the other
+            // window took away.
+            if obelus_git::todo::trimmed(&composer.text()) == note.said
+                && !unwritten.contains(&note.id)
+            {
+                let_go_at = Some(was);
+                return None;
+            }
+            // They have typed into it, though, and of the two of them only
+            // one is here to be surprised. It stays on the page and it is
+            // theirs again: not in the file, and so this page's to put back
+            // rather than this page's to change, which is what unwritten
+            // means.
+            //
+            // At the end, so under whatever is last there rather than under
+            // the note it used to hang under -- that note is in somebody
+            // else's file now, and may not be in it at all. A depth deeper
+            // than the end can carry would be written to disk illegal and
+            // read back a level shallower, which is the note moving on its
+            // own between one open and the next.
+            let room = self.todo.room_at(self.todo.notes.len());
+            note.depth = note.depth.min(room).min(obelus_git::todo::DEEPEST);
+            self.unwritten.insert(note.id.clone());
+            self.todo.notes.push(note);
+            Some((self.todo.notes.len() - 1, composer))
         });
+        self.where_now = places_by_name(&self.todo, &known);
         // The box back before the rows are built, not after: a note the
         // caret is in is laid out from what is in the box, and rebuilding
         // without it laid that note out from the file instead. The words
@@ -243,6 +328,16 @@ impl TodoView {
         self.writing = writing;
         self.rebuild();
 
+        // The note the caret was in has gone, so the caret goes to whatever
+        // took its place: a list with notes in it and no caret anywhere is a
+        // list no key can reach.
+        if let Some(was) = let_go_at
+            && !self.todo.notes.is_empty()
+        {
+            self.enter_note(was.min(self.todo.notes.len() - 1), false);
+            self.follow_caret();
+            return;
+        }
         // The caret back where it was, by name. A note that has gone leaves
         // the reader at the top, which is where a list with nothing to
         // return to puts them.
@@ -252,17 +347,138 @@ impl TodoView {
         self.follow_caret();
     }
 
-    /// How deep a note put at this place may be.
+    /// Does one thing to the notes: to the copy on the page now, and to the
+    /// file when the page is next written down.
     ///
-    /// One deeper than what is above it, which is the whole rule: a note
-    /// deeper than that is a child of nothing, and writing one would be
-    /// writing a file that reads back a level shallower -- the note moving
-    /// on its own between one open and the next.
-    fn room_at(&self, at: usize) -> u16 {
-        self.todo
+    /// The one door. Everything a key does to the notes comes through here,
+    /// so there is one description of each act and the page and the file
+    /// cannot be told two different things -- and the act, rather than the
+    /// page's whole copy, is what the file gets.
+    ///
+    /// Says whether the note it was about was still on the page to do it
+    /// to, which is only ever `false` for a note another window took away
+    /// while this page held it.
+    fn change(&mut self, change: Change) -> bool {
+        if !self.only_here(&change) {
+            return false;
+        }
+        self.pending.push(change);
+        true
+    }
+
+    /// The same, to the copy alone.
+    ///
+    /// For a note that is in nobody's file: one the reader started and has
+    /// not written down. Telling the disk to take away a note it has never
+    /// had would be asking about a name that is not there, and being
+    /// answered -- rightly -- that somebody else took it away.
+    fn only_here(&mut self, change: &Change) -> bool {
+        let known: Vec<(NoteId, Option<LineNumber>)> = self
+            .todo
             .notes
-            .get(at.wrapping_sub(1))
-            .map_or(0, |above| above.depth + 1)
+            .iter()
+            .map(|note| note.id.clone())
+            .zip(self.where_now.iter().copied())
+            .collect();
+        if !self.todo.apply(change) {
+            return false;
+        }
+        self.where_now = places_by_name(&self.todo, &known);
+        true
+    }
+
+    /// Whether anything has been done here that the file has not been told.
+    ///
+    /// What the pause is armed by, along with the box: an act that reached
+    /// the page and no disk is an act that is one crash from never having
+    /// happened.
+    #[must_use]
+    pub fn waiting(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// What has been done here and not written down, and the box with it.
+    ///
+    /// Taken, not read: whoever asks for these is about to do them to the
+    /// file, and a change left behind would be done twice -- which for a
+    /// move is a note two places further down than the reader put it.
+    ///
+    /// The box comes too. What is being typed is part of what the notes say
+    /// long before the reader leaves the note, and the pause that brings us
+    /// here is exactly the moment a paragraph half typed is meant to reach
+    /// the file. An empty one is left alone: a note whose words have been
+    /// cleared goes when the reader leaves it, not while they are still
+    /// standing in it wondering what to write instead.
+    pub fn take_changes(&mut self) -> Vec<Change> {
+        if let Some((at, said)) = self
+            .writing
+            .as_ref()
+            .map(|(at, composer)| (*at, obelus_git::todo::trimmed(&composer.text())))
+            && !said.trim().is_empty()
+            && let Some(change) = self.written_down(at, &said)
+        {
+            self.change(change);
+        }
+        std::mem::take(&mut self.pending)
+    }
+
+    /// Takes back changes that could not be written down.
+    ///
+    /// Nothing was written, so these are still the only account of what the
+    /// reader did: they go back to the front of the queue and reach the file
+    /// the next time anything writes -- which, for the file that would not
+    /// read, is the first key after they fix it. Dropped instead, they stayed
+    /// on the page until the file was read again and then vanished, which is
+    /// the reader's own edit disappearing some minutes after they were told
+    /// it had not been saved.
+    pub fn put_back(&mut self, changes: Vec<Change>) {
+        let mut queue = changes;
+        queue.append(&mut self.pending);
+        self.pending = queue;
+    }
+
+    /// The change that writing a note down is, or nothing where it already
+    /// says that.
+    ///
+    /// The place the two kinds are told apart, and the only place: a note
+    /// this page started goes in whole and may be inserted, a note that came
+    /// out of the file is changed where it still is and nowhere otherwise.
+    fn written_down(&self, at: usize, said: &str) -> Option<Change> {
+        let note = self.todo.notes.get(at)?;
+        if self.unwritten.contains(&note.id) {
+            let mut note = note.clone();
+            note.said = said.to_string();
+            // What it goes behind, which is where it is on the page: the
+            // file may have gained children under that one since, and
+            // behind them is still where this note belongs.
+            let after = at
+                .checked_sub(1)
+                .and_then(|before| self.todo.notes.get(before))
+                .map(|before| before.id.clone());
+            return Some(Change::Put { note, after });
+        }
+        (note.said != said).then(|| Change::Said {
+            id: note.id.clone(),
+            said: said.to_string(),
+        })
+    }
+
+    /// Lets go of the note at `at`, which has nothing in it any more.
+    ///
+    /// Itself alone: what hung under it comes up a level. Emptying one
+    /// note's words is not asking for anything to happen to another.
+    fn let_the_note_go(&mut self, at: usize) -> bool {
+        let Some(id) = self.todo.notes.get(at).map(|note| note.id.clone()) else {
+            return false;
+        };
+        let change = Change::Remove {
+            id: id.clone(),
+            under: false,
+        };
+        match self.unwritten.remove(&id) {
+            true => self.only_here(&change),
+            false => self.change(change),
+        }
     }
 
     /// Puts the selection on the note with this name, if it is still there.
@@ -351,22 +567,20 @@ impl TodoView {
         &self.todo
     }
 
-    /// The notes as the reader has them, for whoever writes them down.
+    /// Each note's name and where it points now.
     ///
-    /// The words in the box are the note's: the box is where the reader
-    /// put them, and `keep` only moves them into the note when they leave
-    /// it. Every save used to ask for `todo` and so wrote the note as it
-    /// *stood* -- without whatever the reader could see in it -- and the
-    /// file was a keystroke behind the page for as long as a note was open.
+    /// For whoever is working those answers out again after the file moved:
+    /// where a note points is a question for git and the disk, and the
+    /// answers this page already has are still the answers for the notes it
+    /// already had.
     #[must_use]
-    pub fn as_written(&self) -> Todo {
-        let mut todo = self.todo.clone();
-        if let Some((at, composer)) = self.writing.as_ref()
-            && let Some(note) = todo.notes.get_mut(*at)
-        {
-            note.said = obelus_git::todo::trimmed(&composer.text());
-        }
-        todo
+    pub fn places(&self) -> Vec<(NoteId, Option<LineNumber>)> {
+        self.todo
+            .notes
+            .iter()
+            .map(|note| note.id.clone())
+            .zip(self.where_now.iter().copied())
+            .collect()
     }
 
     /// The rows as they stand.
@@ -403,7 +617,7 @@ impl TodoView {
     /// and only saved when it is kept.
     pub fn write_new(&mut self, at: Option<obelus_git::todo::At>) {
         self.keep();
-        self.todo.notes.push(Note {
+        let note = Note {
             id: obelus_git::todo::NoteId::mint(),
             said: String::new(),
             done: false,
@@ -411,7 +625,11 @@ impl TodoView {
             // At the end and under nothing: a note made about a line was
             // made somewhere else, and there is no note it was made beneath.
             depth: 0,
-        });
+        };
+        // In nobody's file until it says something: see
+        // [`Self::written_down`].
+        self.unwritten.insert(note.id.clone());
+        self.todo.notes.push(note);
         self.where_now.push(None);
         self.enter_note(self.todo.notes.len() - 1, true);
     }
@@ -504,19 +722,16 @@ impl TodoView {
         let (at, said) = (*at, obelus_git::todo::trimmed(&composer.text()));
         if said.trim().is_empty() {
             self.writing = None;
-            self.drop_note(at);
+            let did = self.let_the_note_go(at);
             self.rebuild();
             if !self.todo.notes.is_empty() {
                 self.enter_note(at.min(self.todo.notes.len() - 1), false);
             }
-            return true;
+            return did;
         }
-        match self.todo.notes.get_mut(at) {
-            Some(note) if note.said != said => {
-                note.said = said;
-                true
-            }
-            _ => false,
+        match self.written_down(at, &said) {
+            Some(change) => self.change(change),
+            None => false,
         }
     }
 
@@ -582,15 +797,11 @@ impl TodoView {
         // under a reader who had not touched it.
         let said = obelus_git::todo::trimmed(&composer.text());
         if said.trim().is_empty() {
-            self.drop_note(at);
-            return true;
+            return self.let_the_note_go(at);
         }
-        match self.todo.notes.get_mut(at) {
-            Some(note) if note.said != said => {
-                note.said = said;
-                true
-            }
-            _ => false,
+        match self.written_down(at, &said) {
+            Some(change) => self.change(change),
+            None => false,
         }
     }
 
@@ -622,7 +833,31 @@ impl TodoView {
             return false;
         };
         self.writing = None;
-        self.drop_subtree(at);
+        // By name, and one name at a time, because a run may hold a note the
+        // file has never had: the one the reader has just started. Each note
+        // the file *does* have goes by its own name and takes what hangs
+        // under it with it; the ones already gone that way are skipped, and
+        // a note the file never had leaves the page without the disk being
+        // asked about a name it could only answer "somebody else took that
+        // away" to.
+        let span = 1 + self.todo.under(at);
+        let run: Vec<NoteId> = self.todo.notes[at..at + span]
+            .iter()
+            .map(|note| note.id.clone())
+            .collect();
+        for id in run {
+            if self.todo.find(&id).is_none() {
+                continue;
+            }
+            match self.unwritten.remove(&id) {
+                true => {
+                    self.only_here(&Change::Remove { id, under: false });
+                }
+                false => {
+                    self.change(Change::Remove { id, under: true });
+                }
+            }
+        }
         self.rebuild();
         if !self.todo.notes.is_empty() {
             self.enter_note(at.min(self.todo.notes.len() - 1), false);
@@ -630,151 +865,35 @@ impl TodoView {
         true
     }
 
-    /// Takes a note away, and the marks that pointed past it with it.
-    ///
-    /// The note alone: what hung under it comes up a level rather than
-    /// going with it. This is the door a note leaves by when the reader
-    /// empties its text, and emptying one note's text is not asking for
-    /// anything to happen to another -- the note goes because a note with
-    /// nothing in it is not a note, and its children were never in
-    /// question. [`Self::drop_subtree`] is the other door, where they were.
-    fn drop_note(&mut self, at: usize) {
-        if at >= self.todo.notes.len() {
-            return;
-        }
-        let under = self.todo.under(at);
-        self.todo.notes.remove(at);
-        self.where_now.remove(at);
-        for below in self.todo.notes.iter_mut().skip(at).take(under) {
-            below.depth = below.depth.saturating_sub(1);
-        }
-    }
-
-    /// Takes a note away and everything hanging under it.
-    ///
-    /// What the key that means "take this note away" does: a note and what
-    /// hangs under it are one thing on the screen, and a key that left the
-    /// children behind would leave them under whatever happened to be
-    /// above -- a result the reader cannot see at the moment they press it.
-    fn drop_subtree(&mut self, at: usize) {
-        if at >= self.todo.notes.len() {
-            return;
-        }
-        let span = 1 + self.todo.under(at);
-        self.todo.notes.drain(at..at + span);
-        self.where_now.drain(at..at + span);
-    }
-
     /// Whether the selected note has anywhere to go, in or out.
     ///
-    /// The rules, in the one place they are written: the top, the note
-    /// above, and the deepest a note may be. Both the key that does it and
-    /// whatever says whether the key would do anything ask this, so a key
-    /// drawn lit is a key that moves something -- two copies of three rules
-    /// would be a hint that goes wrong on its own.
+    /// The rules are the notes' own -- the top, the note above, and the
+    /// deepest a note may be -- and this is the view asking them about the
+    /// note the caret is on. Both the key that does it and whatever says
+    /// whether the key would do anything ask this, so a key drawn lit is a
+    /// key that moves something.
     #[must_use]
     pub fn can_shift(&self, outwards: bool) -> bool {
-        let Some(at) = self.selected() else {
-            return false;
-        };
-        let Some(depth) = self.todo.notes.get(at).map(|note| note.depth) else {
-            return false;
-        };
-        if outwards {
-            return depth > 0;
-        }
-        let room = self
-            .todo
-            .notes
-            .get(at.wrapping_sub(1))
-            .map_or(0, |above| above.depth + 1);
-        let deepest = self
-            .todo
-            .notes
-            .iter()
-            .skip(at)
-            .take(1 + self.todo.under(at))
-            .map(|note| note.depth)
-            .max()
-            .unwrap_or(depth);
-        depth < room && deepest < obelus_git::todo::DEEPEST
+        self.selected()
+            .is_some_and(|at| self.todo.can_shift(at, outwards))
     }
 
-    /// Where the note before this one at the same depth starts.
-    ///
-    /// `None` where there is none: the first child of a note has nothing
-    /// above it at its own level, and neither has the first note of all.
-    /// Walked backwards rather than counted, because what ends the search
-    /// is the first note *shallower* than this one -- that is the parent,
-    /// and above it is somebody else's list.
-    fn before_it(&self, at: usize) -> Option<usize> {
-        let depth = self.todo.notes.get(at)?.depth;
-        for (index, note) in self.todo.notes[..at].iter().enumerate().rev() {
-            if note.depth < depth {
-                return None;
-            }
-            if note.depth == depth {
-                return Some(index);
-            }
-        }
-        None
-    }
-
-    /// And where the note after this one at the same depth starts.
-    fn after_it(&self, at: usize) -> Option<usize> {
-        let depth = self.todo.notes.get(at)?.depth;
-        let next = at + 1 + self.todo.under(at);
-        self.todo
-            .notes
-            .get(next)
-            .filter(|note| note.depth == depth)
-            .map(|_| next)
-    }
-
-    /// Moves a note and everything under it to where `to` starts.
-    ///
-    /// The whole run, because a note and its children are one thing to
-    /// move: swapping single notes would step a parent over its own first
-    /// child and leave the rest of them behind it. Depths are untouched --
-    /// moving is not what changes who a note hangs under.
-    fn move_subtree(&mut self, at: usize, to: usize) {
-        let span = 1 + self.todo.under(at);
-        let notes: Vec<_> = self.todo.notes.drain(at..at + span).collect();
-        let marks: Vec<_> = self.where_now.drain(at..at + span).collect();
-        // Past the hole the drain left, where it was after us.
-        let to = match to > at {
-            true => to - span,
-            false => to,
-        };
-        self.todo.notes.splice(to..to, notes);
-        self.where_now.splice(to..to, marks);
-        self.enter_note(to, false);
-    }
-
-    /// Takes a note and everything under it one level in or out.
+    /// Takes the selected note, and everything under it, a level in or out.
     ///
     /// Says whether it moved. The subtree keeps its shape: every note in it
     /// shifts by the same step, so a child that was two under its parent
     /// still is.
-    ///
-    /// Going in is bounded twice over -- by the note above, because a note
-    /// may only ever be one deeper than whatever it hangs under, and by the
-    /// deepest a note is allowed to be, which the run has to fit inside
-    /// whole. Going out is bounded by the top.
-    fn shift_subtree(&mut self, step: i16) -> bool {
-        if !self.can_shift(step < 0) {
-            return false;
-        }
+    fn shift(&mut self, out: bool) -> bool {
         let Some(at) = self.selected() else {
             return false;
         };
-        let under = self.todo.under(at);
-        for note in self.todo.notes.iter_mut().skip(at).take(1 + under) {
-            note.depth = match step > 0 {
-                true => note.depth + 1,
-                false => note.depth.saturating_sub(1),
-            };
+        if !self.todo.can_shift(at, out) {
+            return false;
         }
+        let Some(id) = self.todo.notes.get(at).map(|note| note.id.clone()) else {
+            return false;
+        };
+        self.change(Change::Shift { id, out });
         // Rebuilt and followed rather than entered again: the reader is
         // still in the note they were in, and what [`Self::enter_note`] does
         // on the way into another is put away the one being left -- which
@@ -786,6 +905,44 @@ impl TodoView {
         // gets deeper than it was, so what was one row may now be two.
         self.rebuild();
         self.follow_caret();
+        true
+    }
+
+    /// Moves the selected note, and everything under it, over its
+    /// neighbour.
+    ///
+    /// Says whether there was anywhere to go. The whole run, because a note
+    /// and its children are one thing to move: stepping over one note at a
+    /// time would put this one in the middle of somebody else's children.
+    /// The first of a parent's children has nobody above it at its level and
+    /// nowhere to go, which is what `shift+tab` is for.
+    fn move_over(&mut self, up: bool) -> bool {
+        let Some(at) = self.selected() else {
+            return false;
+        };
+        let neighbour = match up {
+            true => self.todo.before_it(at),
+            false => self.todo.after_it(at),
+        };
+        let (Some(id), Some(over)) = (
+            self.todo.notes.get(at).map(|note| note.id.clone()),
+            neighbour
+                .and_then(|it| self.todo.notes.get(it))
+                .map(|note| note.id.clone()),
+        ) else {
+            return false;
+        };
+        if !self.change(Change::Move {
+            id: id.clone(),
+            over,
+            up,
+        }) {
+            return false;
+        }
+        // The caret goes with the note, which is the whole point of the key.
+        if let Some(now) = self.todo.find(&id) {
+            self.enter_note(now, false);
+        }
         true
     }
 
@@ -860,11 +1017,11 @@ impl TodoView {
             // nothing moved, and a note that will not go further in is a
             // note already as far in as the one above it -- which is on the
             // screen, one row up.
-            KeyCode::Tab if bare => match self.shift_subtree(1) {
+            KeyCode::Tab if bare => match self.shift(false) {
                 true => TodoOutcome::Changed,
                 false => TodoOutcome::Consumed,
             },
-            KeyCode::BackTab => match self.shift_subtree(-1) {
+            KeyCode::BackTab => match self.shift(true) {
                 true => TodoOutcome::Changed,
                 false => TodoOutcome::Consumed,
             },
@@ -885,16 +1042,18 @@ impl TodoView {
                 self.keep();
                 // The note may have gone with the keep, if it said nothing.
                 let after = after.min(self.todo.notes.len());
-                self.todo.notes.insert(
-                    after,
-                    Note {
-                        id: obelus_git::todo::NoteId::mint(),
-                        said: String::new(),
-                        done: false,
-                        at: None,
-                        depth,
-                    },
-                );
+                let note = Note {
+                    id: obelus_git::todo::NoteId::mint(),
+                    said: String::new(),
+                    done: false,
+                    at: None,
+                    depth,
+                };
+                // In nobody's file until it says something, which is what
+                // makes it the page's to insert rather than the page's to
+                // change: see [`Self::written_down`].
+                self.unwritten.insert(note.id.clone());
+                self.todo.notes.insert(after, note);
                 self.where_now.insert(after, None);
                 self.enter_note(after, true);
                 // Typing, not a change: what was kept is what was being
@@ -954,11 +1113,13 @@ impl TodoView {
             }
 
             // Done, or not. On `alt` because space is a space here.
-            KeyCode::Char(' ') if alt => match self.selected() {
-                Some(at) => {
-                    if let Some(note) = self.todo.notes.get_mut(at) {
-                        note.done = !note.done;
-                    }
+            KeyCode::Char(' ') if alt => match self
+                .selected()
+                .and_then(|at| self.todo.notes.get(at))
+                .map(|note| (note.id.clone(), !note.done))
+            {
+                Some((id, done)) => {
+                    self.change(Change::Done { id, done });
                     self.rebuild();
                     TodoOutcome::Changed
                 }
@@ -1006,27 +1167,17 @@ impl TodoView {
             // reorders the list: ticking one leaves it where it is.
             KeyCode::Up | KeyCode::Down if alt => {
                 self.keep();
-                let Some(at) = self.selected() else {
+                // Over the neighbour at this note's own level, and over the
+                // whole of what hangs under *it*. Nowhere to go leaves the
+                // caret where it was: the first of a parent's children has
+                // nobody above it at its level, which is what `shift+tab`
+                // is for.
+                if !self.move_over(key.code == KeyCode::Up) {
+                    if let Some(at) = self.selected() {
+                        self.enter_note(at, false);
+                    }
                     return TodoOutcome::Consumed;
-                };
-                // Past the neighbour at this note's own level, and past the
-                // whole of what hangs under *it*: stepping over one note at
-                // a time would put this one in the middle of somebody
-                // else's children. The first of a parent's children has
-                // nobody above it at its level and nowhere to go, which is
-                // what `shift+tab` is for.
-                let to = match key.code {
-                    KeyCode::Up => self.before_it(at),
-                    KeyCode::Down => self
-                        .after_it(at)
-                        .map(|next| next + 1 + self.todo.under(next)),
-                    _ => None,
-                };
-                let Some(to) = to else {
-                    self.enter_note(at, false);
-                    return TodoOutcome::Consumed;
-                };
-                self.move_subtree(at, to);
+                }
                 TodoOutcome::Changed
             }
 

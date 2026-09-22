@@ -199,7 +199,14 @@ impl Obelus {
     )]
     fn todo_list(&self) -> Result<CallToolResult, ErrorData> {
         tracing::info!("an agent asked for the notes");
-        let todo = todo::Todo::read(&self.root);
+        // "There are none" is not the answer to "it will not read". An
+        // agent told the list is empty writes down what is already in it,
+        // and tells the reader their project has nothing to come back to.
+        let Some(todo) = todo::read(&self.root).notes() else {
+            return Ok(CallToolResult::success(vec![ContentBlock::text(
+                "the notes file will not read, so this is not the list".to_string(),
+            )]));
+        };
         let said: Vec<String> = todo
             .notes
             .iter()
