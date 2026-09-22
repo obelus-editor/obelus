@@ -4732,3 +4732,68 @@ fn an_agent_is_told_what_the_note_says_only_when_it_does_not_know_it() {
         "the agent was told the note had been rewritten a second time: {all:?}"
     );
 }
+
+/// The key that goes from a conversation to the notes lands the caret in
+/// them.
+///
+/// `alt+t` is the way across, and the conversation's own status row names
+/// it. What it reaches is the notes as the reader left them -- going back
+/// to an open page on purpose, because reading the file again would lose
+/// their place in the list -- so a page whose box had been taken away was
+/// one this key delivered the reader into and left them stuck in.
+///
+/// Which is how it was met: escape in the notes took the box, and then this
+/// key went back to the page that no longer had one. The fault was escape's
+/// and is fixed where escape is, but the route is worth holding down
+/// separately: it is the one the reader was on, and it crosses two
+/// documents and a view that deliberately does not read the file again.
+///
+/// Broken deliberately by having escape write the note down the way leaving
+/// it does, which takes the box: the caret is gone on the way back and no
+/// key here can return it.
+#[test]
+fn the_key_from_a_conversation_to_the_notes_lands_the_caret_in_them() {
+    let scratch = support::Scratch::new("agent-alt-t");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"0123456Y\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let (mut app, events) = talking();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let caret = |app: &mut App| {
+        let dump = support::render(app, WIDTH, HEIGHT);
+        dump.split("-- cursor --")
+            .nth(1)
+            .unwrap_or("?")
+            .trim()
+            .to_string()
+    };
+
+    // Across to the notes, which puts the caret in one of them.
+    support::press_alt(&mut app, 't');
+    assert!(app.notes().is_some(), "alt+t did not reach the notes");
+    let in_a_note = caret(&mut app);
+    assert_ne!(in_a_note, "none", "alt+t reached the notes with no caret");
+
+    // Escape, back to the conversation, and across again: the page is the
+    // one the reader left, so the caret has to still be in it.
+    support::press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        caret(&mut app),
+        in_a_note,
+        "escape took the caret out of the note"
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    assert!(app.chat().is_some(), "the conversation is not back");
+    support::press_alt(&mut app, 't');
+    assert_eq!(
+        caret(&mut app),
+        in_a_note,
+        "coming back to the notes left the reader with no caret"
+    );
+}
