@@ -19,7 +19,8 @@ cargo +nightly fmt              # NOT `cargo fmt`
 cargo clippy --all-features --all-targets
 cargo run -- src/app.rs
 UPDATE_FIXTURES=1 cargo test    # regenerate golden cell grids
-cargo test -- --ignored         # the slow real-server test
+cargo test -- --ignored         # the slow real-server tests
+OBELUS_REQUIRE_LSP=1 cargo test # a missing rust-analyzer fails rather than skips
 ```
 
 `.rustfmt.toml` uses five nightly-only options. Stable `cargo fmt` silently

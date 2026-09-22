@@ -11,6 +11,14 @@
 //! to run every time; waiting for a project to be indexed is not, so the round
 //! trip through a query is marked `ignore` and run with
 //! `cargo test -- --ignored`.
+//!
+//! Skipped, and saying so where nobody is listening: the test harness keeps
+//! what a passing test printed, so a machine with no rust-analyzer reports
+//! thirteen of these as passing and the reason goes nowhere. Which is right
+//! on a laptop and wrong on a machine whose job is to run them, and the two
+//! look identical from in here -- both have no rust-analyzer. So the
+//! difference is said rather than worked out: set `OBELUS_REQUIRE_LSP` and a
+//! server that is missing fails these instead of excusing them.
 
 use std::{
     sync::mpsc::{Receiver, RecvTimeoutError},
@@ -24,6 +32,15 @@ use obelus_lsp::{
 };
 use obelus_syntax::LanguageId;
 use unicode_width::UnicodeWidthStr;
+
+/// Says that a rust-analyzer which is not here is a failure rather than a
+/// reason to skip.
+///
+/// Whether one is installed is a question the machine can answer, and
+/// [`usable`] does. Whether this run was *meant* to reach a real server is
+/// not: a laptop without one and a CI machine that failed to install one
+/// look the same from here. So it is declared by whoever knows.
+const REQUIRED: &str = "OBELUS_REQUIRE_LSP";
 
 /// Long enough for a cold cargo metadata on a slow machine.
 const HANDSHAKE: Duration = Duration::from_secs(30);
@@ -70,6 +87,11 @@ where
 
 fn start() -> Option<(Client, Receiver<Message>)> {
     if !usable() {
+        assert!(
+            std::env::var_os(REQUIRED).is_none(),
+            "{REQUIRED} is set and there is no rust-analyzer here that answers.\n\
+             Install it, or unset {REQUIRED} to let these be skipped."
+        );
         eprintln!("skipped: there is no rust-analyzer here that answers");
         return None;
     }
