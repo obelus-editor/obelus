@@ -214,6 +214,21 @@ pub enum Marking {
     Waiting,
 }
 
+/// What [`Picker::remark`] has to say about one row.
+///
+/// Two answers rather than an `Option<Option<_>>`, which is what this
+/// first was and which nobody can read: the outer one meant "not my row"
+/// and the inner one meant "no mark", and those are opposite instructions
+/// wearing the same word.
+#[derive(Clone, Debug)]
+pub enum Remark {
+    /// Not a row the caller knows anything about: leave its mark as it is.
+    /// Every list but one is made of these.
+    Keep,
+    /// The mark this row should wear now, or none at all.
+    Now(Option<(Marking, String)>),
+}
+
 /// One row.
 #[derive(Clone, Debug)]
 pub struct PickerItem {
@@ -947,6 +962,40 @@ impl Picker {
         self.items = items;
         self.window.set_focus(0);
         self.refilter();
+    }
+
+    /// Puts fresh marks on the rows the caller claims, without rebuilding
+    /// them.
+    ///
+    /// For the one thing in a list that changes while the reader is looking
+    /// at it and is nobody's keystroke: what an agent is doing in a
+    /// conversation. The rows themselves are a snapshot on purpose --
+    /// building them walks the tree for git's opinion and reads the notes
+    /// off disk, which is not work a frame can do -- and the mark went with
+    /// them, so a conversation that started working while the list was up
+    /// never said so and one that finished went on turning. The frame of
+    /// the turning mark comes from the ticker, which is what made the
+    /// second so convincing.
+    ///
+    /// Only the mark. A row's label is what the query matched, and the
+    /// matched characters are offsets into it: changing the words here
+    /// would leave a list highlighting cells that are no longer the ones
+    /// that matched.
+    pub fn remark(&mut self, mut mark: impl FnMut(&PickerValue) -> Remark) {
+        for item in &mut self.items {
+            if let Remark::Now(now) = mark(&item.value) {
+                item.marker = now;
+            }
+        }
+        // The column is kept for whichever rows have one, and whether any
+        // row has one is what decides whether every row leaves room. Worked
+        // out again here for the same reason the marks are: a mark that
+        // appeared where the list had none would otherwise be drawn in a
+        // column nothing left room for.
+        self.marked = self
+            .items
+            .iter()
+            .any(|item| item.marker.is_some() || item.opens.is_some());
     }
 
     /// Puts new rows in the list without moving the reader off theirs.

@@ -62,7 +62,7 @@ use obelus_component::{
     layers::{self, Layer, Room},
     picker::{
         Colouring, Listing, Marking, Picker, PickerItem, PickerLayout, PickerOutcome, PickerValue,
-        files,
+        Remark, files,
     },
     prompt::{Prompt, PromptKind, PromptOutcome},
     settings::{Settings, SettingsOutcome},
@@ -1522,6 +1522,12 @@ impl App {
         self.check_servers();
         self.check_runs();
         self.show_what_is_wrong();
+        // The marks on a list of open documents, which say what an agent is
+        // doing in a conversation nobody is watching. Here rather than
+        // where the list is built, because that is the whole point: the
+        // rows are a snapshot and this is the part of them that is about
+        // now.
+        self.freshen_the_document_marks();
         // What the conversation says is happening, read off the state
         // rather than remembered: a row that is worked out every frame
         // cannot be left saying something that stopped being true.

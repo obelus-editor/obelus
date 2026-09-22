@@ -4079,6 +4079,77 @@ fn the_clock_stops_when_the_reader_leaves_the_conversation() {
     );
 }
 
+/// A list of open documents says what is happening now, not what was
+/// happening when it opened.
+///
+/// The rows are built once, and they have to be: building one asks git
+/// about the whole tree and reads the notes off disk, which is not work a
+/// frame can do. The mark that says an agent is at work was built with
+/// them and went stale with them -- and the staleness was invisible,
+/// because the turning frame comes from the ticker. A conversation whose
+/// turn had ended went on spinning for as long as the reader kept the list
+/// up, and one that started working while it was up never said a word.
+///
+/// Broken deliberately by taking the freshening out of the frame, which
+/// leaves the mark turning after the turn it is about is over.
+#[test]
+fn the_list_of_open_documents_says_what_is_happening_now() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // A turn that ends on its own, so it can end while the reader is
+    // looking at the list rather than at the conversation.
+    support::type_text(&mut app, "/run");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the command to start", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("Run the tests"))
+        })
+    });
+
+    // The mark while it is working, which is what the list is for.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    let working = support::render(&mut app, WIDTH, HEIGHT);
+    let row = |dump: &str| {
+        rows(dump)
+            .iter()
+            .find(|row| row.contains("A conversation"))
+            .unwrap_or_else(|| panic!("no row for the conversation:\n{dump}"))
+            .to_string()
+    };
+    assert!(
+        SPINNING.iter().any(|frame| row(&working).contains(*frame)),
+        "the list says nothing about the agent at work in it:\n{working}"
+    );
+
+    // And the turn ends under the reader, with the list still up.
+    let deadline = Instant::now() + PATIENCE;
+    while app.talking() == obelus_agent::Talking::Thinking {
+        assert!(Instant::now() < deadline, "the turn never ended");
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(200)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    let ended = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !SPINNING.iter().any(|frame| row(&ended).contains(*frame)),
+        "the list is still turning for a turn that is over:\n{ended}"
+    );
+}
+
+/// Every frame of the mark that turns.
+///
+/// Which frame is on screen depends on how many ticks have landed, and a
+/// test that pinned one would be a test about the machine it ran on.
+const SPINNING: [&str; 10] = [
+    "\u{280b}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283c}", "\u{2834}", "\u{2826}",
+    "\u{2827}", "\u{2807}", "\u{280f}",
+];
+
 /// The glyph a note wears when there is a conversation about it.
 const MARK: char = obelus_icons::ui::AGENT;
 

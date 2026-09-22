@@ -60,6 +60,81 @@ impl App {
         }
     }
 
+    /// What is happening in a conversation that the reader is not
+    /// watching.
+    ///
+    /// The reason a list of conversations animates at all: a mark that only
+    /// turns while you are looking at the conversation it is about is a mark
+    /// that never turns.
+    ///
+    /// Its own function because two callers need the same answer and they
+    /// ask at different times -- the row is built when the list opens, and
+    /// [`App::freshen_the_document_marks`] asks again on every frame the
+    /// list is up. Two copies of this `match` would be two lists: the one
+    /// that was true when the reader pressed the key, and the one in front
+    /// of them.
+    fn conversation_mark(
+        talk: &crate::conversation::Conversation,
+        talker: Option<&obelus_agent::acp::Talk>,
+    ) -> Option<(Marking, String)> {
+        match (
+            talk.card.is_some(),
+            talker.is_some_and(|talker| talker.is_thinking(talk.session.as_ref())),
+        ) {
+            (true, _) => Some((Marking::Waiting, obelus_icons::ui::READER.to_string())),
+            (_, true) => Some((Marking::Working, String::new())),
+            _ => None,
+        }
+    }
+
+    /// Puts today's marks back on a list of open documents.
+    ///
+    /// Asked every frame a list is up, because what an agent is doing is
+    /// the one thing in a list that moves without the reader touching
+    /// anything. The rows themselves are not rebuilt: building them asks
+    /// git about the whole tree and reads the notes off disk, which is not
+    /// work a frame can do -- and that is exactly why the mark went stale,
+    /// since the mark was built with them.
+    ///
+    /// What made it hard to see is that the stale mark still *moved*: the
+    /// turning frame comes from the ticker, so a conversation whose turn
+    /// had ended went on spinning, and one that started working while the
+    /// list was up sat blank however long the reader watched it.
+    ///
+    /// Only rows that name a conversation. A file's row keeps its own mark
+    /// -- there is no typing while a list is up, so nothing it says can
+    /// have changed -- and every other list is left alone entirely.
+    pub(super) fn freshen_the_document_marks(&mut self) {
+        if self.picker.is_none() {
+            return;
+        }
+        // Worked out before the list is borrowed to change, because both
+        // halves are this application's.
+        let talker = self.talker.as_ref();
+        let marks: Vec<(DocumentId, Option<(Marking, String)>)> = self
+            .documents
+            .iter()
+            .enumerate()
+            .filter_map(|(index, document)| {
+                let talk = document.as_ref()?.chat()?;
+                Some((
+                    DocumentId::new(index),
+                    Self::conversation_mark(talk, talker),
+                ))
+            })
+            .collect();
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        picker.remark(|value| match value {
+            PickerValue::Document(id) => marks
+                .iter()
+                .find(|(whose, _)| whose == id)
+                .map_or(Remark::Keep, |(_, mark)| Remark::Now(mark.clone())),
+            _ => Remark::Keep,
+        });
+    }
+
     /// One row for an open conversation.
     ///
     /// The agent's own name for it where it has given one, and the note's
@@ -89,18 +164,7 @@ impl App {
         let titled = talker.and_then(|talker| talker.title(talk.session.as_ref()));
         PickerItem {
             prose: true,
-            // What is happening in it that the reader is not watching. The
-            // reason a list of conversations animates at all: a mark that
-            // only turns while you are looking at the conversation it is
-            // about is a mark that never turns.
-            marker: match (
-                talk.card.is_some(),
-                talker.is_some_and(|talker| talker.is_thinking(talk.session.as_ref())),
-            ) {
-                (true, _) => Some((Marking::Waiting, obelus_icons::ui::READER.to_string())),
-                (_, true) => Some((Marking::Working, String::new())),
-                _ => None,
-            },
+            marker: Self::conversation_mark(talk, talker),
             icon: obelus_icons::enabled().then_some(obelus_icons::ui::AGENT),
             label: titled
                 .map(str::to_string)
