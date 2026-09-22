@@ -253,14 +253,20 @@ impl App {
     /// running, if it wrote one down.
     fn remembered_session(&self, note: &obelus_git::todo::NoteId) -> Option<String> {
         let agent = self.talker.as_ref()?.id();
-        let kept = obelus_agent::acp::sessions::read(&self.working_directory);
+        // Looking one up, so remembering none is an answer this can live
+        // with: the cost of it is the conversation being started again.
+        let kept = obelus_agent::acp::sessions::read(&self.working_directory)
+            .remembered()
+            .unwrap_or_default();
         Some(kept.get(note, agent)?.session.clone())
     }
 
     /// What the note said when obelus last told this agent about it.
     fn remembered_telling(&self, note: &obelus_git::todo::NoteId) -> Option<String> {
         let agent = self.talker.as_ref()?.id();
-        let kept = obelus_agent::acp::sessions::read(&self.working_directory);
+        let kept = obelus_agent::acp::sessions::read(&self.working_directory)
+            .remembered()
+            .unwrap_or_default();
         kept.get(note, agent)?.told.clone()
     }
 
@@ -289,7 +295,9 @@ impl App {
         let Some(notes) = self.notes() else {
             return Vec::new();
         };
-        let kept = obelus_agent::acp::sessions::read(&self.working_directory);
+        let kept = obelus_agent::acp::sessions::read(&self.working_directory)
+            .remembered()
+            .unwrap_or_default();
         let agent = self.settled.config.agent.clone().unwrap_or_default();
         notes
             .todo()

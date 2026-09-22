@@ -328,7 +328,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
         );
     });
 
-    let back = sessions::read(root);
+    let back = sessions::read(root).remembered().expect("the table");
     let kept = back.get(&note, "fake").expect("the conversation");
     assert_eq!(kept.session, "s-1");
     assert_eq!(kept.title.as_deref(), Some("why refilter drops rows"));
@@ -348,7 +348,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
             },
         );
     });
-    let back = sessions::read(root);
+    let back = sessions::read(root).remembered().expect("the table");
     assert!(
         back.get(&note, "fake").is_some(),
         "the second write put back what the first wrote"
@@ -359,7 +359,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     // way past rather than when the note was deleted -- because a note can
     // go without obelus watching.
     sessions::change(root, Some(std::slice::from_ref(&other)), |_| {});
-    let back = sessions::read(root);
+    let back = sessions::read(root).remembered().expect("the table");
     assert!(
         back.get(&note, "fake").is_none(),
         "a conversation outlived the note it was about"

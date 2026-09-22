@@ -144,29 +144,67 @@ pub fn path(root: &Path) -> Option<PathBuf> {
     )
 }
 
-/// What the file says, or nothing where there is no file.
+/// What reading a tree's table found.
 ///
-/// A file that will not parse is not a reason to stop, the way a settings
-/// file that will not read is not: obelus goes on with no conversations
-/// remembered, which costs the reader a replay and nothing else.
+/// Three answers and not two, for the reason the notes beside it give three
+/// and the settings gave three first: a file that will not read is not a
+/// file with nothing in it, and "nothing in it" is a thing [`change`] writes
+/// back. This table is read, changed and written whole, so one answer for
+/// both meant a file somebody's editor had left half-written was a file
+/// replaced by whatever this session happened to hold -- every conversation
+/// in the tree forgotten, while the agent still had every word of them.
+#[derive(Debug)]
+pub enum Reading {
+    /// There is none yet, which is where every tree starts. Also where this
+    /// system has nowhere to keep one, which comes to the same thing: there
+    /// is nothing to read and nothing will be written either.
+    Nothing,
+    /// Here they are.
+    Remembered(Remembered),
+    /// There is one and it could not be read, with what went wrong.
+    Unreadable(String),
+}
+
+impl Reading {
+    /// What is remembered, where remembering nothing is an answer the caller
+    /// can live with.
+    ///
+    /// `None` for a file that would not read. True of everything that only
+    /// looks something up -- the cost of an answer it does not have is a
+    /// conversation replayed -- and never true of anything that writes.
+    #[must_use]
+    pub fn remembered(self) -> Option<Remembered> {
+        match self {
+            Self::Nothing => Some(Remembered::default()),
+            Self::Remembered(remembered) => Some(remembered),
+            Self::Unreadable(_) => None,
+        }
+    }
+}
+
+/// What the file says.
 #[must_use]
-pub fn read(root: &Path) -> Remembered {
+pub fn read(root: &Path) -> Reading {
     let Some(path) = path(root) else {
-        return Remembered::default();
+        return Reading::Nothing;
     };
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return Remembered::default();
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        // Not there yet is the ordinary case: the file is written the first
+        // time a conversation is worth writing down.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Reading::Nothing,
+        Err(error) => return Reading::Unreadable(error.to_string()),
     };
     let table = match text.parse::<toml::Table>() {
         Ok(table) => table,
-        Err(error) => {
-            tracing::warn!(%error, path = %path.display(), "not read, so no conversation is remembered");
-            return Remembered::default();
-        }
+        Err(error) => return Reading::Unreadable(error.to_string()),
     };
     let mut kept = BTreeMap::new();
+    // A file that parses and has no table of conversations in it: read as
+    // generously as a note with no name is. This is about the file as a
+    // whole, not about what is in it.
     let Some(written) = table.get("talked").and_then(toml::Value::as_array) else {
-        return Remembered::default();
+        return Reading::Remembered(Remembered::default());
     };
     for value in written {
         let Some(row) = value.as_table() else {
@@ -190,7 +228,7 @@ pub fn read(root: &Path) -> Remembered {
             },
         );
     }
-    Remembered { kept }
+    Reading::Remembered(Remembered { kept })
 }
 
 /// Reads, changes, and writes back.
@@ -201,7 +239,19 @@ pub fn read(root: &Path) -> Remembered {
 /// before it opened them.
 pub fn change(root: &Path, notes: Option<&[NoteId]>, what: impl FnOnce(&mut Remembered)) {
     let Some(path) = path(root) else { return };
-    let mut remembered = read(root);
+    // Nothing at all where the file will not read. Every other way of
+    // declining here leaves it alone; going on would write what obelus can
+    // make of a file it cannot read over the file itself, which is every
+    // conversation in this tree traded for a parse error.
+    //
+    // Said to the log and not to the reader, unlike the notes: this file is
+    // obelus's own bookkeeping in its own state directory, and there is
+    // nothing for them to go and fix. What they see is a conversation that
+    // has to be started again.
+    let Some(mut remembered) = read(root).remembered() else {
+        tracing::warn!(path = %path.display(), "will not read, so nothing is remembered over it");
+        return;
+    };
     what(&mut remembered);
     remembered.forget_notes_that_are_gone(notes);
     if let Some(directory) = path.parent()
@@ -344,6 +394,54 @@ mod tests {
             remembered.get(&note("JKMNPQRS"), "claude-acp").is_none(),
             "a conversation outlived the note it was about"
         );
+    }
+
+    /// A file that will not read is not a file with nothing in it, and
+    /// nothing is written over one.
+    ///
+    /// This table is read, changed and written whole. Reading a file it
+    /// could not parse as an empty one meant the next thing to remember a
+    /// conversation wrote an almost-empty table over it -- every
+    /// conversation in the tree forgotten, while the agent still held every
+    /// word of them and nothing here could name one again.
+    ///
+    /// Broken deliberately by reading a file that will not parse as an empty
+    /// one: the write goes ahead and this goes red.
+    #[test]
+    fn a_file_that_will_not_read_is_not_written_over() {
+        let Some(state) = obelus_logging::state_directory() else {
+            return;
+        };
+        let root = state.join("sessions-unreadable-test");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("the directory");
+        let path = path(&root).expect("somewhere to keep it");
+        std::fs::create_dir_all(path.parent().expect("the directory")).expect("the directory");
+        let half = "[[talked]]\nnote = \"ABCDEFGH\"\nagent = \"half a no";
+        std::fs::write(&path, half).expect("the half-written table");
+
+        assert!(
+            matches!(read(&root), Reading::Unreadable(_)),
+            "a file that will not parse read as a file with nothing in it"
+        );
+        change(&root, None, |kept| {
+            kept.put(
+                &note("JKMNPQRS"),
+                "claude-acp",
+                Kept {
+                    session: "one this obelus made up".to_string(),
+                    title: None,
+                    told: None,
+                },
+            );
+        });
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("the table"),
+            half,
+            "the table obelus could not read was written over"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// And one whose notes obelus could not read is not forgotten at all.

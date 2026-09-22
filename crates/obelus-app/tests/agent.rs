@@ -3005,6 +3005,8 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
     let id = obelus_git::todo::NoteId::read(note).expect("a name");
     assert!(
         obelus_agent::acp::sessions::read(scratch.path())
+            .remembered()
+            .expect("the table")
             .get(&id, "fake")
             .is_some(),
         "the conversation was never written down, so this proves nothing"
@@ -3023,6 +3025,8 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
 
     assert!(
         obelus_agent::acp::sessions::read(scratch.path())
+            .remembered()
+            .expect("the table")
             .get(&id, "fake")
             .is_some(),
         "the conversation was forgotten because the notes would not read"
@@ -4460,7 +4464,9 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
     // is gone, because the agent said it has no such thing, and the one
     // opened in its place has nothing said in it to come back to.
     let id = obelus_git::todo::NoteId::read("0123456S").expect("a name");
-    let kept = obelus_agent::acp::sessions::read(scratch.path());
+    let kept = obelus_agent::acp::sessions::read(scratch.path())
+        .remembered()
+        .expect("the table");
     assert_eq!(
         kept.get(&id, "fake").map(|kept| kept.session.clone()),
         None,
@@ -4478,7 +4484,9 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
                 .any(|row| row.text().contains("hello"))
         })
     });
-    let kept = obelus_agent::acp::sessions::read(scratch.path());
+    let kept = obelus_agent::acp::sessions::read(scratch.path())
+        .remembered()
+        .expect("the table");
     assert!(
         kept.get(&id, "fake").is_some(),
         "a conversation with something in it was not written down"
