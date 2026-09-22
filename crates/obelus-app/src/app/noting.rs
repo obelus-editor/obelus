@@ -346,6 +346,29 @@ impl App {
                 note.done = true;
                 "ticked off".to_string()
             }
+            obelus_git::todo::Doing::Reword { note: id, said } => {
+                let Some(note) = todo.notes.iter_mut().find(|note| note.id == id) else {
+                    return "there is no note by that name any more".to_string();
+                };
+                let said = obelus_git::todo::trimmed(&said);
+                // A note that says nothing is one reading the file drops, so
+                // rewording to nothing is taking a note away through another
+                // door -- the one act that is the reader's.
+                if said.trim().is_empty() {
+                    return "a note cannot be made to say nothing".to_string();
+                }
+                // Its words and nothing else: the rest of what a note is
+                // was not what the agent was asked about.
+                note.said = said;
+                // The agent that asked for this is told the note has been
+                // rewritten on its next message, quoting words it wrote
+                // itself. Which is right, and not worth suppressing: the
+                // tools name no conversation -- the door they come through
+                // is the one the protocol puts no session on -- so obelus
+                // cannot tell which agent asked, and what landed is not
+                // always what was asked for anyway.
+                "reworded".to_string()
+            }
         };
         self.save_notes(&todo);
         // And the page, wherever it is open. A reader looking at their

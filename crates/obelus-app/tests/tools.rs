@@ -69,7 +69,7 @@ fn an_agent_is_told_what_obelus_can_do() {
         Some(&session),
         r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#,
     );
-    for tool in ["todo_list", "todo_finish", "todo_add"] {
+    for tool in ["todo_list", "todo_finish", "todo_add", "todo_reword"] {
         assert!(listed.contains(tool), "{tool} was not offered:\n{listed}");
     }
     // And the schema that came out of the signature, rather than one written
@@ -81,9 +81,9 @@ fn an_agent_is_told_what_obelus_can_do() {
 
     // The one that only looks says so, which is what spares the reader a
     // question about a tool whose whole act is to look something up. The
-    // two that write the notes say nothing of the sort, and a `readOnlyHint`
-    // on either of them would be obelus telling an agent something untrue
-    // about itself to buy a quieter turn.
+    // three that write the notes say nothing of the sort, and a
+    // `readOnlyHint` on any of them would be obelus telling an agent
+    // something untrue about itself to buy a quieter turn.
     // Cut at the names rather than at the word, because a tool's
     // description may name another tool -- `todo_finish` names `todo_list`
     // in its own, which is where looking for the word found it.
@@ -354,4 +354,145 @@ fn a_depth_nothing_could_hang_at_is_brought_up_before_it_is_written() {
         vec![0, 1],
         "what was written is not what reading it gives back:\n{raw}"
     );
+}
+
+/// What a rewording changes is the words, and the note is the same note.
+///
+/// The one act here that loses something, so what it must not lose as well
+/// is everything that is not words: its name -- which every conversation
+/// obelus has written down is keyed to -- where it points, whether it is
+/// ticked, and what hangs under it. Written as a remove and an insert this
+/// would pass a test that only read the text back, and the reader would
+/// find a note that had lost its place, its children and the conversation
+/// they had about it.
+///
+/// Broken deliberately by minting a fresh name in the rewording arm, which
+/// is what an insert would do: the text still reads back and the name
+/// assertion fails.
+#[test]
+fn a_reworded_note_is_the_same_note() {
+    use obelus_app::app::App;
+
+    let scratch = support::Scratch::new("tools-reworded");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    let file = scratch.path().join(".obelus").join("todo.toml");
+    std::fs::write(
+        &file,
+        "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"what it was written for\"\n\
+         done = true\ndepth = 0\nat = \"src/counts.rs\"\nline = 12\n\n\
+         [[todo]]\nid = \"JKMNPQRS\"\nsaid = \"the part under it\"\ndone = false\ndepth = 1\n\n\
+         [[todo]]\nid = \"TVWXYZ01\"\nsaid = \"somebody else's note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (sender, events) = channel::<obelus_app::event::Event>();
+    let url = obelus_mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+
+    let asking = std::thread::spawn(move || {
+        let (_, session) = ask(
+            &url,
+            None,
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+        );
+        let session = session.expect("a session of its own");
+        ask(
+            &url,
+            Some(&session),
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_reword","arguments":{"note":"ABCDEFGH","said":"what the work turned out to be about"}}}"#,
+        )
+    });
+    let event = events
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the server asked the loop for something");
+    app.handle(event);
+    let (answered, _) = asking.join().expect("the agent's side");
+    assert!(
+        answered.contains("reworded"),
+        "it did not say so: {answered}"
+    );
+
+    let todo = obelus_git::todo::Todo::read(scratch.path());
+    let said: Vec<&str> = todo.notes.iter().map(|note| note.said.as_str()).collect();
+    assert_eq!(
+        said,
+        vec![
+            "what the work turned out to be about",
+            "the part under it",
+            "somebody else's note"
+        ],
+        "the words are not what was asked for, or another note was touched"
+    );
+    // The same note, which is the half a rewording could quietly lose.
+    let names: Vec<String> = todo.notes.iter().map(|note| note.id.to_string()).collect();
+    assert_eq!(names, vec!["ABCDEFGH", "JKMNPQRS", "TVWXYZ01"]);
+    assert_eq!(
+        todo.notes.iter().map(|note| note.depth).collect::<Vec<_>>(),
+        vec![0, 1, 0],
+        "what hung under it does not hang under it any more"
+    );
+    assert!(
+        todo.notes[0].done,
+        "rewording a note unticked it, which nobody asked for"
+    );
+    let at = todo.notes[0].at.as_ref().expect("where it points");
+    assert_eq!(at.path, std::path::Path::new("src/counts.rs"));
+    assert_eq!(at.line.get(), 11, "the line it points at moved");
+}
+
+/// A note cannot be reworded into saying nothing.
+///
+/// Which would be a deletion through another door: reading the file drops a
+/// note with no words in it, so an empty rewording is the one act that is
+/// the reader's, spelled differently. It is refused and the note is left
+/// exactly as it was.
+///
+/// Broken deliberately by taking the emptiness check out of the rewording
+/// arm. It answers "reworded" and this fails on that first; the file left
+/// behind is empty, which is the note deleted and the reason the check is
+/// there.
+#[test]
+fn a_note_cannot_be_reworded_into_nothing() {
+    use obelus_app::app::App;
+
+    let scratch = support::Scratch::new("tools-reworded-empty");
+    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    std::fs::write(
+        scratch.path().join(".obelus").join("todo.toml"),
+        "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one that was there\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (sender, events) = channel::<obelus_app::event::Event>();
+    let url = obelus_mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+
+    let asking = std::thread::spawn(move || {
+        let (_, session) = ask(
+            &url,
+            None,
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+        );
+        let session = session.expect("a session of its own");
+        ask(
+            &url,
+            Some(&session),
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_reword","arguments":{"note":"ABCDEFGH","said":"   \n  "}}}"#,
+        )
+    });
+    let event = events
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the server asked the loop for something");
+    app.handle(event);
+    let (answered, _) = asking.join().expect("the agent's side");
+    assert!(
+        answered.contains("cannot be made to say nothing"),
+        "it did not say why it would not: {answered}"
+    );
+
+    let todo = obelus_git::todo::Todo::read(scratch.path());
+    assert_eq!(todo.notes.len(), 1, "the note went away");
+    assert_eq!(todo.notes[0].said, "the one that was there");
 }

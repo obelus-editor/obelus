@@ -191,10 +191,19 @@ impl Note {
 
 /// What an agent asked obelus to do to the notes.
 ///
-/// Two acts and not three: a note may be added and a note may be ticked,
-/// and neither loses anything. Taking one away is the reader's, because it
-/// is the one that cannot be undone -- and `done` is already how a list
-/// keeps what was decided against, so an agent has no need of it.
+/// Added, ticked, reworded. Taking one away is the reader's and stays
+/// theirs: `done` is already how a list keeps what was decided against, so
+/// an agent has no need of the one act that leaves nothing behind.
+///
+/// Rewording was kept out for a while on an argument that sounds like the
+/// same one: an agent should only do what loses nothing, and replacing what
+/// a reader wrote loses it. What that missed is that a note is the reader's
+/// *question*, and a question the work turns out not to be about is wrong
+/// on the one line they read. Hanging a correction under it leaves the list
+/// saying two things with the wrong one on top. So the words may be
+/// replaced -- and what pays for it is the asking, which is the agent's:
+/// the reader sees the new words and agrees to them before the tool is
+/// called at all.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Doing {
     /// Write these down, one note each.
@@ -213,6 +222,18 @@ pub enum Doing {
     },
     /// Tick this one off, by the name it answers to.
     Finish(NoteId),
+    /// Make this one say something else.
+    Reword {
+        /// The note, by the name it answers to. It is still that note
+        /// afterwards: where it points, whether it is done and what hangs
+        /// under it are facts about the note rather than about its words,
+        /// and an agent rewording one has said nothing about any of them.
+        note: NoteId,
+        /// The whole of what it says from now on, in place of what it
+        /// says. Not a line to add: `Add` with `under` is how something
+        /// gets added.
+        said: String,
+    },
 }
 
 /// How deep a note may sit.

@@ -222,8 +222,13 @@ impl App {
                      Its name is {}.{at}\n\n\
                      When its work is done, tick it off with `todo_finish` and that \
                      name. Work this turns up that belongs to it goes under it: \
-                     `todo_add` with `under` set to that name. Both write the \
-                     reader's file and neither asks for you, so ask them first.",
+                     `todo_add` with `under` set to that name. If what the work \
+                     is really about turns out not to be what the note says, say \
+                     so and offer to reword it with `todo_reword` -- the first \
+                     line is what the reader sees in the list, and a note left \
+                     naming the wrong thing is one they will read as the wrong \
+                     thing. All three write the reader's file and none of them \
+                     asks for you, so ask them first.",
                     about.said, about.id,
                 ),
                 "Told the agent what this conversation is about",

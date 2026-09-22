@@ -6,7 +6,7 @@
 //! "here are two more worth writing down". MCP is the door for that, and
 //! obelus is the server on the other side of it.
 //!
-//! None of them asks the reader anything. Two of them change the reader's
+//! None of them asks the reader anything. Three of them change the reader's
 //! notes, and the asking before that is the agent's to do -- through
 //! `elicitation/create`, the protocol it is already speaking, which obelus
 //! answers with the very card it used to raise itself.
@@ -26,9 +26,18 @@
 //! kept, against a stronger one bought by making a function wait on a
 //! person.
 //!
-//! Neither of them takes a note away. `done` is how a list keeps what was
+//! None of them takes a note away. `done` is how a list keeps what was
 //! decided against, so ticking loses nothing and an agent has no need of
-//! the one act that cannot be undone.
+//! the one act that leaves nothing behind.
+//!
+//! Rewording is the one that does lose something -- the words the reader
+//! wrote, out of a file git has never heard of and a page with no undo.
+//! It is here because a note whose subject has turned out to be something
+//! else is wrong on the one line the reader reads, and nothing hung under
+//! it fixes that line. See `todo::Doing` for the whole of that argument.
+//! What it costs is that its description spends most of its words on the
+//! asking, and says what the asking is for: the reader agrees to the new
+//! words, not to the idea of a change.
 //!
 //! The dispatch is behind rmcp's macros rather than written out, which is
 //! the one place in obelus where a decision is not on the page beside the
@@ -92,6 +101,20 @@ pub struct Obelus {
 pub struct About {
     /// The note's own name, as `todo_list` gave it.
     pub note: String,
+}
+
+/// A note, and what it should say instead.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct Reworded {
+    /// The note's own name, as `todo_list` gave it.
+    pub note: String,
+    /// The whole of what it says from now on.
+    ///
+    /// What it says now is replaced, not added to. A note may be a
+    /// paragraph, and its first line is the one the list shows -- so a
+    /// rewording that leaves that line alone has left the note looking
+    /// exactly as wrong as it did.
+    pub said: String,
 }
 
 /// What to write down.
@@ -270,6 +293,43 @@ impl Obelus {
         ))
     }
 
+    /// Makes a note say something else.
+    ///
+    /// The description asks for more than the other two do, because this is
+    /// the one act with nothing behind it: the notes are not in git and the
+    /// page has no undo, so the words it replaces are gone. Showing the
+    /// reader those words is therefore part of the asking rather than a
+    /// nicety -- "may I reword it" is a question nobody can answer.
+    #[tool(description = "\
+        Rewrite what a note says, keeping the note. Ask the reader first, \
+        and show them both what it says now and what it would say instead \
+        -- this writes their file, does not ask for you, and replaces words \
+        they wrote that nothing else keeps. For a note whose subject has \
+        turned out to be something other than what it was written for. \
+        Where the work has merely grown, `todo_add` with `under` hangs the \
+        new part beneath it and keeps what they wrote, which is the usual \
+        answer. `said` replaces the whole note, first line and all.")]
+    async fn todo_reword(
+        &self,
+        // `said` renamed on the way in: the answer goes back through a
+        // function of that name, and a binding here would shadow it.
+        Parameters(Reworded { note, said: words }): Parameters<Reworded>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::info!(note, "an agent is rewording a note");
+        let Some(id) = todo::NoteId::read(&note) else {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(
+                "that is not a note's name; `todo_list` gives them",
+            )]));
+        };
+        Ok(said(
+            self.told(todo::Doing::Reword {
+                note: id,
+                said: words,
+            })
+            .await,
+        ))
+    }
+
     /// Hands one of those to the main loop and waits for it to be done.
     ///
     /// A wait on obelus itself, which is over in the time a file takes to
@@ -301,10 +361,13 @@ impl ServerHandler for Obelus {
         info.instructions = Some(
             "obelus, the reader this conversation is happening inside. It \
              keeps this project's notes.\n\n\
-             `todo_finish` ticks a note off; `todo_add` writes notes down. \
-             Both change the reader's file and neither asks for them, so ask \
-             before calling either -- about finished work, not progress, and \
-             notes worth returning to, not summaries.\n\n\
+             `todo_finish` ticks a note off; `todo_add` writes notes down; \
+             `todo_reword` makes one say something else. All three change \
+             the reader's file and none of them asks for them, so ask before \
+             calling any -- about finished work, not progress, and notes \
+             worth returning to, not summaries. Rewording replaces what they \
+             wrote and nothing keeps it, so that one is asked with the words \
+             themselves, both what it says and what it would say.\n\n\
              Work that belongs to a note goes under it: `todo_add` takes \
              `under`, a note's name, and puts them beneath it. A note's own \
              `depth` puts it beneath the note before it.\n\n\
