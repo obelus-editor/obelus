@@ -547,6 +547,27 @@ pub struct Place {
 pub struct Chat {
     /// What has been said, oldest first.
     said: Vec<Said>,
+    /// The rows as they were last laid out, and the width they were laid
+    /// out at.
+    ///
+    /// Laying out a conversation means making rows of every word ever said
+    /// in it, at the width of the moment -- wrapping it, reading the
+    /// markdown, working out what folds. For a long morning that is tens of
+    /// milliseconds, and it is asked for several times over for a single
+    /// keypress: once by the keys, again to put the caret, again to draw.
+    /// Handing back a copy of what was worked out is a twentieth of the
+    /// cost of working it out again.
+    ///
+    /// What a reader has hold of is deliberately not in here. It is marked
+    /// on to the rows *after* they come out of this, so dragging a
+    /// selection across a morning's conversation does not lay it out again
+    /// on every report the terminal sends.
+    ///
+    /// Dropped by anything that changes what there is to lay out. A stale
+    /// one is a screen that has stopped saying what happened, so the rule
+    /// is to drop it wherever there is a doubt: laying out again costs
+    /// milliseconds and being wrong costs the reader their conversation.
+    laid: std::cell::RefCell<Option<(u16, Vec<Row>)>>,
     /// What is happening now, if anything is.
     ///
     /// One slot rather than a line of the transcript: a state has no
@@ -718,6 +739,7 @@ impl Chat {
     pub fn new() -> Self {
         Self {
             said: Vec::new(),
+            laid: std::cell::RefCell::new(None),
             doing: None,
             plan: Vec::new(),
             plan_open: false,
@@ -846,6 +868,7 @@ impl Chat {
     /// of what is already there is the agent's copy of it and not a second
     /// thing they said.
     pub fn heard(&mut self, text: &str) {
+        self.forget_the_layout();
         let echoed = self
             .said
             .last()
@@ -882,6 +905,7 @@ impl Chat {
     /// Replaced and not merged, because that is what the protocol says an
     /// update is: the whole list with every entry's status, every time.
     pub fn planning(&mut self, steps: Vec<obelus_agent::acp::Step>) {
+        self.forget_the_layout();
         self.plan = steps;
     }
 
@@ -890,6 +914,7 @@ impl Chat {
     /// An agent that sends a plan for one turn and none for the next would
     /// otherwise have the first one shown against the second's work.
     pub fn plan_forgotten(&mut self) {
+        self.forget_the_layout();
         self.plan.clear();
         self.plan_open = false;
     }
@@ -900,6 +925,7 @@ impl Chat {
     /// state rather than remembered, so there is no way for it to be left
     /// behind.
     pub fn doing(&mut self, what: Option<&str>) {
+        self.forget_the_layout();
         // Written down when it moves. This is the row a reader watches to
         // know whether anything is happening at all, and when it says
         // nothing there is nothing else on screen to say why -- so a
@@ -935,6 +961,7 @@ impl Chat {
     /// [`Chat::arrived`] finds it again: the agent watches the far end and
     /// names this when it sees it.
     pub fn away(&mut self, id: &str, message: &str, url: &str) {
+        self.forget_the_layout();
         self.said.push(Said {
             speaker: Speaker::Away,
             text: message.to_string(),
@@ -968,6 +995,7 @@ impl Chat {
     /// behind. Which command a row is about is the row's own `ran`, so a
     /// caller hands over one answer per command and this finds them.
     pub fn running(&mut self, what: &dyn Fn(&str) -> Option<Doing>) {
+        self.forget_the_layout();
         for said in &mut self.said {
             let Some(id) = said.ran.as_deref() else {
                 continue;
@@ -995,6 +1023,7 @@ impl Chat {
     /// listening to the same session -- and a row invented to mark it done
     /// would be a row about something the reader never did.
     pub fn arrived(&mut self, id: &str) {
+        self.forget_the_layout();
         if let Some(said) = self
             .said
             .iter_mut()
@@ -1007,6 +1036,7 @@ impl Chat {
 
     /// Takes news of a tool call: a new one, or the same one further along.
     pub fn tool(&mut self, call: &obelus_agent::acp::Call, status: &str) {
+        self.forget_the_layout();
         let existing = self
             .said
             .iter_mut()
@@ -1063,6 +1093,37 @@ impl Chat {
     /// space in it reads as one voice.
     #[must_use]
     pub fn rows(&self, width: u16) -> Vec<Row> {
+        let mut rows = self.laid_out(width);
+        // And what the reader has hold of, once there are rows to hold:
+        // the two ends of a selection are places in what was said, and
+        // which characters of which rows that is depends on the width
+        // these were just laid out at.
+        //
+        // Here rather than in what is kept, so that a drag across a long
+        // conversation does not lay the whole of it out again for every
+        // report the terminal sends.
+        self.mark_held(&mut rows);
+        rows
+    }
+
+    /// The rows, laid out or remembered from the last time they were.
+    fn laid_out(&self, width: u16) -> Vec<Row> {
+        if let Some(rows) = self
+            .laid
+            .borrow()
+            .as_ref()
+            .filter(|(at, _)| *at == width)
+            .map(|(_, rows)| rows.clone())
+        {
+            return rows;
+        }
+        let rows = self.lay_out(width);
+        *self.laid.borrow_mut() = Some((width, rows.clone()));
+        rows
+    }
+
+    /// Every row of the conversation, at a width.
+    fn lay_out(&self, width: u16) -> Vec<Row> {
         let mut rows = Vec::new();
         let mut at = 0;
         let mut first = true;
@@ -1152,11 +1213,6 @@ impl Chat {
                 }));
             }
         }
-        // And what the reader has hold of, once there are rows to hold:
-        // the two ends of a selection are places in what was said, and
-        // which characters of which rows that is depends on the width
-        // these were just laid out at.
-        self.mark_held(&mut rows);
         rows
     }
 
@@ -1461,6 +1517,7 @@ impl Chat {
 
     /// Opens what is closed and closes what is open.
     pub fn fold(&mut self, at: usize) {
+        self.forget_the_layout();
         // One past the end is the plan, which is not a thing that was said
         // and so has no index among them. It is the one index that can
         // never name a [`Said`], which is what makes it safe to mean
@@ -1510,6 +1567,22 @@ impl Chat {
         if let Some((_, other)) = self.held.as_mut() {
             *other = spot;
         }
+    }
+
+    /// Forgets the rows, because what they are made of has changed.
+    ///
+    /// Called by everything that changes what there is to lay out: by
+    /// [`Chat::push`], which is the one door for everything that adds
+    /// something said, and by each of the ones that reach into what is
+    /// already there -- a call's state, an address answered, a run opened,
+    /// the plan, what is happening now.
+    ///
+    /// The cost of calling it where it was not needed is one laying out.
+    /// The cost of not calling it where it was is a screen that has
+    /// stopped saying what happened, which is why the test that walks
+    /// every one of them is where the promise really lives.
+    fn forget_the_layout(&mut self) {
+        self.laid.get_mut().take();
     }
 
     /// Lets go of whatever was held.
@@ -1918,6 +1991,7 @@ impl Chat {
 
     /// Adds something said, and keeps the view at the end.
     fn push(&mut self, speaker: Speaker, text: &str, tag: Option<String>) {
+        self.forget_the_layout();
         self.said.push(Said {
             speaker,
             text: text.to_string(),
@@ -1937,27 +2011,22 @@ impl Chat {
         self.window.scroll(rows);
     }
 
-    /// The rows of the transcript a cursor can stand on.
-    fn stops(&self, width: u16) -> Vec<usize> {
-        self.rows(width)
-            .iter()
-            .enumerate()
-            .filter(|(_, row)| row.acts())
-            .map(|(at, _)| at)
-            .collect()
-    }
-
-    /// Which rows are on screen, given the room the transcript has.
-    fn in_view(&self, room: Room) -> std::ops::Range<usize> {
+    /// The same, for a caller holding the rows already.
+    fn in_view_of(&self, count: usize, room: Room) -> std::ops::Range<usize> {
         let top = self.window.top();
-        let count = self.rows(room.reading).len();
         top.min(count)..(top + usize::from(room.transcript)).min(count)
     }
 
     /// Puts a row of the transcript on screen, moving the window as little
     /// as it takes.
     fn show_row(&mut self, at: usize, room: Room) {
-        let view = self.in_view(room);
+        let count = self.rows(room.reading).len();
+        self.show_to(at, count, room);
+    }
+
+    /// The same, for a caller holding the rows already.
+    fn show_to(&mut self, at: usize, count: usize, room: Room) {
+        let view = self.in_view_of(count, room);
         if at < view.start {
             self.scroll_by(-isize::try_from(view.start - at).unwrap_or(1));
         } else if at >= view.end {
@@ -1980,13 +2049,16 @@ impl Chat {
         })
     }
 
-    /// The next row worth standing on above or below `at`, if there is one
-    /// that way.
-    fn next_stop(&self, at: usize, up: bool, room: Room) -> Option<usize> {
-        let stops = self.stops(room.reading);
+    /// The same, for a caller holding the rows already.
+    fn next_stop_in(at: usize, up: bool, laid: &[Row]) -> Option<usize> {
+        let mut stops = laid
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.acts())
+            .map(|(at, _)| at);
         match up {
-            true => stops.iter().rev().find(|stop| **stop < at).copied(),
-            false => stops.iter().find(|stop| **stop > at).copied(),
+            true => stops.take_while(|stop| *stop < at).last(),
+            false => stops.find(|stop| *stop > at),
         }
     }
 
@@ -1996,8 +2068,8 @@ impl Chat {
     /// blank, on a plan's step, on the heading over a folded run. A
     /// selection started from one of those has to begin somewhere, and the
     /// somewhere a reader means is the words they are next to.
-    fn spot_near(&self, place: Place, width: u16) -> Option<Spot> {
-        let rows = self.rows(width);
+    fn spot_near(place: Place, laid: &[Row]) -> Option<Spot> {
+        let rows = laid;
         if let Some(spot) = rows.get(place.row)?.spot_at(place.character) {
             return Some(spot);
         }
@@ -2015,22 +2087,16 @@ impl Chat {
             })
     }
 
-    /// How many characters a row of the transcript has.
-    fn row_characters(&self, row: usize, width: u16) -> usize {
-        self.rows(width)
-            .get(row)
-            .map_or(0, super::chat::Row::characters)
-    }
-
     /// Where a motion takes the cursor, or nothing where it runs out of
     /// transcript.
     ///
     /// All of it in rows and characters, because that is what the keys
     /// mean: a reader pressing the right arrow means the next character on
     /// the screen, wherever in the words it happens to come from.
-    fn walked(&self, place: Place, key: KeyCode, width: u16, room: Room) -> Option<Place> {
-        let rows = self.rows(width).len();
-        let here = self.row_characters(place.row, width);
+    fn walked(place: Place, key: KeyCode, laid: &[Row], room: Room) -> Option<Place> {
+        let characters = |row: usize| laid.get(row).map_or(0, Row::characters);
+        let rows = laid.len();
+        let here = characters(place.row);
         Some(match key {
             KeyCode::Right if place.character < here => Place {
                 character: place.character + 1,
@@ -2048,22 +2114,18 @@ impl Chat {
             },
             KeyCode::Left if place.row > 0 => Place {
                 row: place.row - 1,
-                character: self.row_characters(place.row - 1, width),
+                character: characters(place.row - 1),
             },
             // Up and down keep the column where they can, the way they do
             // in any text: a row too short for it takes the caret to its
             // end rather than refusing the key.
             KeyCode::Up if place.row > 0 => Place {
                 row: place.row - 1,
-                character: place
-                    .character
-                    .min(self.row_characters(place.row - 1, width)),
+                character: place.character.min(characters(place.row - 1)),
             },
             KeyCode::Down if place.row + 1 < rows => Place {
                 row: place.row + 1,
-                character: place
-                    .character
-                    .min(self.row_characters(place.row + 1, width)),
+                character: place.character.min(characters(place.row + 1)),
             },
             KeyCode::Home => Place {
                 character: 0,
@@ -2078,7 +2140,7 @@ impl Chat {
                 let row = place.row.saturating_sub(page);
                 Place {
                     row,
-                    character: place.character.min(self.row_characters(row, width)),
+                    character: place.character.min(characters(row)),
                 }
             }
             KeyCode::PageDown => {
@@ -2086,7 +2148,7 @@ impl Chat {
                 let row = (place.row + page).min(rows.saturating_sub(1));
                 Place {
                     row,
-                    character: place.character.min(self.row_characters(row, width)),
+                    character: place.character.min(characters(row)),
                 }
             }
             _ => return None,
@@ -2106,7 +2168,13 @@ impl Chat {
         at: Place,
         room: Room,
     ) -> Option<ChatOutcome> {
-        let width = room.reading;
+        // Laid out once, and everything below asks these rows rather than
+        // the conversation. A width makes rows out of every word ever said
+        // in it, which is real work -- tens of milliseconds for a long
+        // morning's conversation -- and a cursor that moves on every arrow
+        // pays it on every arrow. Asked five times over for one keypress,
+        // as this was, the caret crawls.
+        let laid = self.rows(room.reading);
         // Shift is the only modifier that reaches here, and what it means
         // on a motion is "and hold what I pass over".
         let holding = !bare;
@@ -2119,7 +2187,7 @@ impl Chat {
             | KeyCode::End
             | KeyCode::PageUp
             | KeyCode::PageDown => {
-                let moved = self.walked(at, key.code, width, room);
+                let moved = Self::walked(at, key.code, &laid, room);
                 // Down off the end of the transcript is the box, which is
                 // where a reader who has walked to the bottom is going
                 // next. Every other motion that runs out simply stops.
@@ -2138,14 +2206,14 @@ impl Chat {
                     // passed over.
                     true => {
                         if self.held.is_none()
-                            && let Some(from) = self.spot_near(at, width)
+                            && let Some(from) = Self::spot_near(at, &laid)
                         {
                             self.hold_from(from);
                             // One selection between the two halves, so
                             // taking hold here lets the box go.
                             self.input.let_go();
                         }
-                        if let Some(to) = self.spot_near(moved, width) {
+                        if let Some(to) = Self::spot_near(moved, &laid) {
                             self.hold_to(to);
                         }
                     }
@@ -2155,7 +2223,7 @@ impl Chat {
                     false => self.let_go(),
                 }
                 self.focus = Focus::Transcript(moved);
-                self.show_row(moved.row, room);
+                self.show_to(moved.row, laid.len(), room);
                 Some(ChatOutcome::Consumed)
             }
             // The next thing enter would open, which is what the arrows
@@ -2168,7 +2236,7 @@ impl Chat {
                 // steps the agent's way of working, and a reader who
                 // pressed it once too often while reading would have
                 // changed how the agent works without meaning to.
-                let Some(stop) = self.next_stop(at.row, up, room) else {
+                let Some(stop) = Self::next_stop_in(at.row, up, &laid) else {
                     return Some(ChatOutcome::Consumed);
                 };
                 self.let_go();
@@ -2176,7 +2244,7 @@ impl Chat {
                     row: stop,
                     character: 0,
                 });
-                self.show_row(stop, room);
+                self.show_to(stop, laid.len(), room);
                 Some(ChatOutcome::Consumed)
             }
             // Whatever the row is: a heading opens and closes what is
@@ -2185,14 +2253,14 @@ impl Chat {
             // everywhere else in obelus. On a row that is only words it
             // does nothing, because there is nothing there to do.
             KeyCode::Enter if bare => {
-                let row = self.rows(width).get(at.row).cloned();
+                let row = laid.get(at.row).cloned();
                 match row {
                     Some(row) => match (row.folds, row.place, row.away) {
                         (Some(begins), _, _) => {
                             self.fold(begins);
                             // The heading stays under the reader: what
                             // moved is what is below it.
-                            self.show_row(at.row, room);
+                            self.show_to(at.row, laid.len(), room);
                             Some(ChatOutcome::Consumed)
                         }
                         (None, Some((place, _)), _) => Some(ChatOutcome::GoTo(place)),
@@ -2348,7 +2416,7 @@ mod tests {
     };
 
     /// A tool call, as an agent sends one.
-    fn call(
+    pub(super) fn call(
         id: &str,
         title: &str,
         kind: &str,
@@ -2866,7 +2934,8 @@ mod tests {
             place.row
         );
         assert!(
-            chat.in_view(ROOM).contains(&place.row),
+            chat.in_view_of(chat.rows(ROOM.reading).len(), ROOM)
+                .contains(&place.row),
             "the page moved the view and left the cursor off it"
         );
 
@@ -3053,5 +3122,155 @@ mod tests {
             ChatOutcome::Ignored
         );
         assert_eq!(chat.writing().text(), "", "it typed the chord into the row");
+    }
+}
+
+#[cfg(test)]
+mod remembering {
+    use super::*;
+
+    /// One way of changing a conversation, for walking the list of them.
+    type Way = Box<dyn Fn(&mut Chat)>;
+
+    /// What is on the page is what was said, every time.
+    ///
+    /// The rows of a conversation are worked out from every word ever said
+    /// in it, at the width of the moment, and that is tens of milliseconds
+    /// for a long morning -- paid several times over for one keypress, by
+    /// the keys, by the caret and by the drawing. So they are kept, and a
+    /// copy is handed out: a twentieth of the cost.
+    ///
+    /// Which buys a way to be wrong that obelus did not have before. Rows
+    /// kept past the moment they stopped being true are a screen that has
+    /// stopped saying what happened -- an answer that never appears, a
+    /// tool call stuck on "pending", a run that will not open. So every
+    /// way of changing what there is to lay out is walked here, and each
+    /// one has to show on the page.
+    ///
+    /// What a reader has hold of is not among them on purpose: it is
+    /// marked on to the rows after they come out of what is kept, so that
+    /// dragging across a morning does not lay it out again for every
+    /// report the terminal sends. The last case checks that too -- from
+    /// the other side, that holding still reaches the page.
+    ///
+    /// Broken deliberately by taking the forgetting out of any one of the
+    /// methods below: that one line of the list goes quiet, and the page
+    /// goes on showing the conversation as it was before it.
+    #[test]
+    fn what_is_kept_never_outlives_what_it_was_made_of() {
+        const WIDTH: u16 = 40;
+
+        // The whole of each row rather than its words: some of these
+        // change what a row *is* without changing what it says -- the
+        // address a reader was sent to coming back answered, a call going
+        // from pending to done -- and a page that went on drawing the old
+        // glyph would be just as wrong.
+        let said = |chat: &Chat| -> Vec<String> {
+            chat.rows(WIDTH)
+                .iter()
+                .map(|row| format!("{row:?}"))
+                .collect()
+        };
+        // Each of them changes what there is to lay out, so each has to
+        // change what is on the page.
+        let ways: Vec<(&str, Way)> = vec![
+            (
+                "asked",
+                Box::new(|chat: &mut Chat| chat.asked("a question")),
+            ),
+            ("heard", Box::new(|chat: &mut Chat| chat.heard("an answer"))),
+            ("note", Box::new(|chat: &mut Chat| chat.note("a note"))),
+            (
+                "chunk",
+                Box::new(|chat: &mut Chat| chat.chunk(Speaker::Agent, "a piece of one")),
+            ),
+            (
+                "away",
+                Box::new(|chat: &mut Chat| chat.away("w1", "go and sign in", "https://example")),
+            ),
+            ("arrived", Box::new(|chat: &mut Chat| chat.arrived("w1"))),
+            (
+                "tool",
+                Box::new(|chat: &mut Chat| {
+                    chat.tool(
+                        &super::tests::call("t9", "Read a file", "read", Vec::new()),
+                        "pending",
+                    );
+                }),
+            ),
+            (
+                "tool again",
+                Box::new(|chat: &mut Chat| {
+                    chat.tool(
+                        &super::tests::call("t9", "Read a file", "read", Vec::new()),
+                        "completed",
+                    );
+                }),
+            ),
+            (
+                "doing",
+                Box::new(|chat: &mut Chat| chat.doing(Some("thinking…"))),
+            ),
+            (
+                "planning",
+                Box::new(|chat: &mut Chat| {
+                    chat.planning(vec![obelus_agent::acp::Step {
+                        said: "wire it up".to_string(),
+                        state: "pending".to_string(),
+                        priority: "medium".to_string(),
+                    }]);
+                }),
+            ),
+            ("plan_forgotten", Box::new(Chat::plan_forgotten)),
+            (
+                "doing nothing",
+                Box::new(|chat: &mut Chat| chat.doing(None)),
+            ),
+        ];
+
+        let mut chat = Chat::new();
+        let mut before = said(&chat);
+        for (what, change) in ways {
+            change(&mut chat);
+            let after = said(&chat);
+            assert_ne!(
+                before, after,
+                "the page did not change when the conversation did, at {what}"
+            );
+            before = after;
+        }
+
+        // Folding is the other kind: nothing new was said, and the rows
+        // are different anyway.
+        let mut folding = Chat::new();
+        for index in 0..4 {
+            folding.tool(
+                &super::tests::call(&format!("r{index}"), "Read a file", "read", Vec::new()),
+                "completed",
+            );
+        }
+        let before = said(&folding);
+        folding.fold(0);
+        assert_ne!(
+            before,
+            said(&folding),
+            "the page did not change when a run was opened"
+        );
+
+        // And what is held, which is not kept with the rows but marked on
+        // to them after: it still has to reach the page.
+        let mut holding = Chat::new();
+        holding.chunk(Speaker::Agent, "hello there");
+        let rows = holding.rows(WIDTH);
+        let spot = rows[0].spot_at(0).expect("a place in the words");
+        let to = rows[0].spot_at(5).expect("another");
+        assert!(holding.rows(WIDTH)[0].held.is_none());
+        holding.hold_from(spot);
+        holding.hold_to(to);
+        assert_eq!(
+            holding.rows(WIDTH)[0].held,
+            Some(0..5),
+            "what is held did not reach the page"
+        );
     }
 }
