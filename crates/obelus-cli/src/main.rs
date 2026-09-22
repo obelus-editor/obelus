@@ -1,11 +1,15 @@
-//! The `ob` binary.
+//! The `ob` binary: obelus drawn on a terminal.
+//!
+//! What is here is the terminal and nothing else -- asking it what it can
+//! draw, taking it over, handing it back. Everything that happens before
+//! there is a screen is [`obelus_app::startup`], which does not know there
+//! is a terminal at all.
 
 use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use obelus_app::{app, app::App};
-use obelus_buffer::Buffer;
+use obelus_app::{app, startup};
 
 /// A terminal code reader. It doesn't want you to type.
 #[derive(Parser)]
@@ -30,41 +34,20 @@ fn main() -> Result<()> {
     // Before anything that can panic, so a panic on the way up is in the
     // log as well.
     obelus_logging::catch_panics();
-    // What the paths mean: which tree, which files, and whether the
-    // question left over is "which file".
-    let opening = app::opening(&arguments.paths);
 
-    // The first line of every session, and the one a reader of the log
-    // needs before any other: which obelus this is, where it was run, and
-    // what the terminal said it was. Without it there is no telling which
-    // run is being read, or that a run happened at all.
+    // Opened before the terminal is taken over, so a bad path reports
+    // itself on a normal screen rather than flashing past inside an
+    // alternate one. The order inside is argued where it lives.
+    let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
+    // The terminal's half of the line `startup::start` just wrote: what was
+    // drawing obelus, which a log read a week later has no other way to
+    // learn, and which is the first thing to suspect when a key or a colour
+    // did not do what it should.
     tracing::info!(
-        version = env!("CARGO_PKG_VERSION"),
-        // And which build, because the version does not move between
-        // releases and a day's work is a hundred builds of `0.1.0`. The
-        // commit it was built at, and nothing about whether the tree had
-        // been edited since -- see the build script for why that cannot be
-        // answered from there.
-        built = env!("OBELUS_BUILD"),
-        directory = ?std::env::current_dir().ok(),
-        // And the tree obelus settled on, which the arguments may have
-        // moved: every path in the rest of the log is relative to it.
-        tree = ?opening.root,
-        paths = arguments.paths.len(),
-        opens = opening.files.len(),
-        list = opening.list,
         term = ?std::env::var("TERM").ok(),
         colours = ?std::env::var("COLORTERM").ok(),
-        "obelus starting"
+        "drawn on a terminal"
     );
-
-    // Opened before the terminal is taken over, so a bad path reports itself
-    // on a normal screen rather than flashing past inside an alternate one.
-    let buffers = opening
-        .files
-        .iter()
-        .map(|path| Buffer::open(path))
-        .collect::<Result<Vec<_>>>()?;
 
     // Asked before the alternate screen and before raw mode, because
     // asking means writing an escape sequence to the terminal and reading
@@ -95,30 +78,11 @@ fn main() -> Result<()> {
     // And the keyboard, for the one key obelus needs that a terminal
     // cannot otherwise report.
     let keyboard = enable_keyboard();
-    let mut app = App::new(buffers);
-    // Before the settings, because a tree has settings of its own and
-    // reading those means knowing which tree.
-    if let Some(root) = opening.root {
-        app.work_in(root);
-    }
-    if opening.list {
-        app.list_at_start();
-    }
-    // Read here rather than in `App::new`, so that a test gets the defaults
-    // rather than whatever the machine it runs on has in `~/.config`.
-    app.load_config();
     app.use_images(images);
-    // The welcome screen says it too, because the log is not where a reader
-    // looks when they want to know what they are looking at.
-    app.built_at(env!("OBELUS_BUILD"));
+
     let outcome = app::run(&mut terminal, &mut app);
-    // The other end of the first line, said before the terminal is put
-    // back: a log that stops without one of these ended in a panic or a
-    // kill, and putting the screen back is itself a thing that can fail.
-    match &outcome {
-        Ok(()) => tracing::info!("obelus leaving"),
-        Err(error) => tracing::error!(%error, "obelus stopping on an error"),
-    }
+    startup::finish(&outcome);
+
     if mouse {
         let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
     }

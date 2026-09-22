@@ -15,3 +15,4 @@ pub mod app;
 pub mod conversation;
 pub mod event;
 pub mod jump;
+pub mod startup;
