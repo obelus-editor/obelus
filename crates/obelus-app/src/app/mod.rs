@@ -1180,11 +1180,12 @@ impl App {
 
     /// Whether anything on screen is moving.
     ///
-    /// Three reasons, each said out loud. It was one question with a
+    /// Several reasons, each said out loud. It was one question with a
     /// `match` on whether the conversation was showing, and that stopped
     /// being true the moment a list of open documents could say an agent is
     /// working in one the reader is not looking at -- a mark that only
-    /// turns while you are watching it is a mark that never turns.
+    /// turns while you are watching it is a mark that never turns. The
+    /// notes say it too, about the conversation a note has.
     ///
     /// Asked every frame from what is true, rather than switched on and off
     /// from the half-dozen places that change any of it, which is how a
@@ -1196,6 +1197,13 @@ impl App {
             || working
             // Or in one that is not, while the list that says so is open.
             || (self.selected_document().is_some() && self.anything_working())
+            // Or while the notes are, which say the same thing about the
+            // conversation a note has: the mark beside a note turns for
+            // exactly as long as its agent is at work, and without this
+            // it would be woken only by the reader typing -- a mark that
+            // moves when you touch it and stands still while the work
+            // happens.
+            || (self.notes().is_some() && self.anything_working())
             // A row of a tree of calls waiting on a server. The same rule
             // as a conversation's: a mark that turns has to be woken, and
             // a mark that does not turn is a mark saying nothing is

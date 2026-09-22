@@ -2337,8 +2337,8 @@ fn leaving_the_notes_and_coming_back_leaves_the_caret_in_them() {
 /// conversation about it.
 ///
 /// A row of the notes draws two things beside the words that the reader can
-/// *do* something to: the box saying whether the note is done, and the mark
-/// saying somebody has talked about it. Both are one key away and both are
+/// *do* something to: the box saying whether the note is done, and the
+/// marks saying somebody has talked about it. Both are one key away and both are
 /// a picture of that key -- and a press on either did nothing, because the
 /// only thing the pointer reached in this page was the note being written.
 ///
@@ -2371,9 +2371,10 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
         });
     };
 
-    // The box, which is the third column: one clear of the edge and the
-    // two the mark has.
-    press(&mut app, 1, area.x + 3);
+    // The box, which is the fifth column: one clear of the edge, the two
+    // that say what the conversation is doing, and the two that say there
+    // is one.
+    press(&mut app, 1, area.x + 5);
     let written = obelus_git::todo::Todo::read(scratch.path());
     assert!(
         written.notes[1].done,

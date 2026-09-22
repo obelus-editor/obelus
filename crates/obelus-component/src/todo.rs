@@ -77,10 +77,21 @@ pub enum Talked {
     /// There is a conversation: open now, or written down against this
     /// note and waiting to be taken up again.
     Yes,
+    /// An agent is working in it right now.
+    ///
+    /// Said for the same reason the list of open documents says it: what
+    /// is happening in a conversation nobody is looking at is only
+    /// findable from somewhere else, and a reader who left a note with an
+    /// agent on it comes back through the note.
+    Working,
     /// And it is waiting on an answer. The same thing the list of open
     /// documents says about a conversation with a question in it, said
     /// here too: a reader who walked away from one is more likely to come
     /// back through the note than through the list.
+    ///
+    /// Ahead of [`Self::Working`] where both are true, because it is the
+    /// reader's to do something about: an agent thinking will go on
+    /// without them and a question will not.
     Waiting,
 }
 

@@ -173,7 +173,8 @@ pub fn place_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(u16, u16)>
 /// What a press in the list of notes landed on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Column {
-    /// The mark saying somebody has talked about this note.
+    /// Either of the two marks saying somebody has talked about this
+    /// note: what the conversation is doing, and that it is there.
     Talked,
     /// The box saying whether it is done.
     Tick,
@@ -188,9 +189,9 @@ pub enum Column {
 /// are the rest of what it says -- so a press lower down a note is a press
 /// on its words wherever across the row it landed.
 ///
-/// Read from the same three numbers the drawing spends: one to stand clear
-/// of the edge, the column the mark has, and the box; and the note's own
-/// indent after them.
+/// Read from the same four numbers the drawing spends: one to stand clear
+/// of the edge, the two columns the conversation has, and the box; and the
+/// note's own indent after them.
 ///
 /// `None` for a point outside the list, or past the last row.
 #[must_use]
@@ -206,8 +207,14 @@ pub fn row_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(usize, Colum
         // A row that is not the head of its note has neither, whatever the
         // press landed on.
         false => Column::Words,
-        true if x > list.x && x < list.x + 1 + TALKED => Column::Talked,
-        true if x >= list.x + 1 + TALKED + step && x < list.x + MARGIN + step => Column::Tick,
+        // Both of the conversation's columns, because they are one thing
+        // to press: what is happening in it and the mark saying it exists
+        // are two halves of the same claim, and a press on either is a
+        // reader asking to be taken there.
+        true if x > list.x && x < list.x + 1 + WORKING + TALKED => Column::Talked,
+        true if x >= list.x + 1 + WORKING + TALKED + step && x < list.x + MARGIN + step => {
+            Column::Tick
+        }
         true => Column::Words,
     };
     Some((at, column))
@@ -235,13 +242,27 @@ const HALF: char = '\u{2590}';
 /// is a caret that is lying about the only thing it says.
 /// Where a note's own words begin, counted from the edge of the list.
 ///
-/// The half-cell that says the keys are here, the column that says whether
-/// the note has a conversation, the box, and the space after it. One
-/// answer, because the caret, the pointer and the wrapping all ask it: the
-/// column below was added by hand at the two places that draw and the
-/// pointer went on landing two cells off, which is a selection that starts
-/// where the reader did not put it.
-const MARGIN: u16 = 1 + TALKED + 2;
+/// The half-cell that says the keys are here, the column that says what is
+/// happening in the note's conversation, the column that says it has one,
+/// the box, and the space after it. One answer, because the caret, the
+/// pointer and the wrapping all ask it: the column below was added by hand
+/// at the two places that draw and the pointer went on landing two cells
+/// off, which is a selection that starts where the reader did not put it.
+const MARGIN: u16 = 1 + WORKING + TALKED + 2;
+
+/// The column that says what is happening in a note's conversation.
+///
+/// Two columns rather than one mark doing both jobs, which is how the list
+/// of open documents says the same two things: a conversation is a picture
+/// of an agent, and what that agent is *doing* turns beside it. Said in
+/// one glyph -- an icon that meant "there is a conversation" and changed
+/// colour when it wanted something -- the difference between a note being
+/// worked on and a note wanting an answer was a shade of grey, which is
+/// not something a reader glancing down a list sees.
+///
+/// Before [`TALKED`] rather than after, so the pair reads the way that
+/// list reads it: what is happening, then what it is happening in.
+const WORKING: u16 = 2;
 
 /// The column that says whether a note has been talked about.
 ///
@@ -253,13 +274,33 @@ const MARGIN: u16 = 1 + TALKED + 2;
 /// down. Two cells, because that is what one of these glyphs measures.
 const TALKED: u16 = 2;
 
-/// What goes in that column.
+/// What goes in the first of those two columns.
+///
+/// A mark that turns while an agent is working, drawn from the ticker
+/// rather than from the note, because what it is saying is that time is
+/// passing somewhere the reader is not looking; the glyph a waiting
+/// question wears in the list of open documents where one is waiting; and
+/// nothing at all otherwise, because an empty column is what says nothing
+/// is happening.
+fn working_mark(talked: Talked, phase: u32) -> Option<String> {
+    match talked {
+        Talked::Not | Talked::Yes => None,
+        Talked::Working => Some(crate::spinning(phase).to_string()),
+        Talked::Waiting => Some(match obelus_icons::enabled() {
+            true => obelus_icons::ui::READER.to_string(),
+            false => "?".to_string(),
+        }),
+    }
+}
+
+/// What goes in the second of them.
 ///
 /// The glyph a conversation wears everywhere else, or the plainest mark
 /// there is where a terminal has no font for it -- and nothing at all for
 /// a note nobody has talked about, because an empty column is what says
-/// so. Which of the two states it is in is the colour rather than the
-/// glyph: they are the same thing, one of them wanting something.
+/// so. One glyph for every note that has one, whatever is going on in it:
+/// this column says the conversation exists, and the column before it says
+/// what it is doing.
 fn talked_mark(talked: Talked) -> Option<String> {
     let said = match obelus_icons::enabled() {
         true => obelus_icons::ui::AGENT.to_string(),
@@ -267,7 +308,7 @@ fn talked_mark(talked: Talked) -> Option<String> {
     };
     match talked {
         Talked::Not => None,
-        Talked::Yes | Talked::Waiting => Some(said),
+        Talked::Yes | Talked::Working | Talked::Waiting => Some(said),
     }
 }
 
@@ -277,6 +318,14 @@ pub struct TodoUi<'a> {
     theme: &'a Theme,
     /// Which notes have a conversation, in the notes' own order.
     talked: Vec<Talked>,
+    /// How far the ticker has got, for the mark that turns.
+    ///
+    /// The only thing here that changes without the reader doing
+    /// something, and it is here for the same reason the list of open
+    /// documents has it: a note whose agent is working says so from the
+    /// list, because that is where a reader who is not watching the
+    /// conversation would see it.
+    phase: u32,
 }
 
 impl<'a> TodoUi<'a> {
@@ -287,6 +336,7 @@ impl<'a> TodoUi<'a> {
             notes: app.notes()?,
             theme: app.theme(),
             talked: app.talked_about(),
+            phase: app.phase(),
         })
     }
 }
@@ -431,14 +481,17 @@ impl TodoUi<'_> {
         // Before the box and not the words, so it sits in one column at
         // every depth -- the box steps in with the note and this does
         // not, because what it says is about the note rather than part of
-        // it. The same glyph the list of open documents puts on a
-        // conversation, and the same colour it puts on one with a
-        // question waiting in it: a reader who learnt it there should not
-        // have to learn it again here.
+        // it. The same two columns the list of open documents gives a
+        // conversation, in the same order and the same colours: what is
+        // happening in it, then the glyph saying what it is. A reader who
+        // learnt them there should not have to learn them again here.
         if row.head {
             let talked = self.talked.get(row.note).copied().unwrap_or_default();
-            if let Some(mark) = talked_mark(talked) {
-                let mark = mark.as_str();
+            // What it is doing, in whichever colour that is. An agent at
+            // work recedes and a question does not: the second is the
+            // reader's to do something about, so it is the one that
+            // stands out -- which is the split that list draws.
+            if let Some(mark) = working_mark(talked, self.phase) {
                 let ink = match talked {
                     Talked::Waiting => self.theme.status_stale,
                     _ => self.theme.gutter,
@@ -447,8 +500,20 @@ impl TodoUi<'_> {
                     cells,
                     area.x + 1,
                     y,
-                    mark,
+                    mark.as_str(),
                     Style::new().fg(ink).bg(background),
+                );
+            }
+            // And that there is one at all, in the colour a mark beside a
+            // name wears: the column before it carries what is going on,
+            // so this one has nothing left to say with colour.
+            if let Some(mark) = talked_mark(talked) {
+                crate::write(
+                    cells,
+                    area.x + 1 + WORKING,
+                    y,
+                    mark.as_str(),
+                    Style::new().fg(self.theme.gutter).bg(background),
                 );
             }
         }
@@ -456,7 +521,7 @@ impl TodoUi<'_> {
         if row.head {
             put(
                 cells,
-                area.x + 1 + TALKED + step,
+                area.x + 1 + WORKING + TALKED + step,
                 y,
                 crate::tick(row.done),
                 style,

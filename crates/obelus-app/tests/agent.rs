@@ -3843,15 +3843,19 @@ fn settled(app: &App) -> bool {
 /// Which conversation is about which note is written down and outlives the
 /// session, and there was nowhere on screen that said so: the only way to
 /// find out whether a note already had one was to open it and see whether
-/// anything came back. The mark goes in a column of its own in front of
-/// the box, so it is in the same place at every depth and a note nobody
-/// has talked about leaves it empty rather than moving the words.
+/// anything came back. Two columns of their own in front of the box, the
+/// pair the list of open documents gives a conversation: what it is doing,
+/// and that it is there. Both are in the same place at every depth, and a
+/// note nobody has talked about leaves them empty rather than moving the
+/// words.
 ///
-/// It makes two claims and was broken deliberately twice. Answering
-/// `Talked::Not` for a note with a name written down against it takes the
-/// mark off a note that has a conversation. And answering `Talked::Yes`
-/// where a card is up leaves the mark in the colour that says "there is
-/// one" on a conversation that is waiting to be answered.
+/// It makes three claims and was broken deliberately three times.
+/// Answering `Talked::Not` for a note with a name written down against it
+/// takes the mark off a note that has a conversation. Answering
+/// `Talked::Yes` where a card is up leaves the column that says what is
+/// happening empty on a conversation that is waiting to be answered. And
+/// drawing the waiting glyph in the column the agent's own mark is in
+/// loses the mark that says there is a conversation at all.
 #[test]
 fn a_note_says_whether_anybody_has_talked_about_it() {
     let scratch = support::Scratch::new("agent-note-marks");
@@ -3926,11 +3930,114 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
         marked(&waiting, "talked about"),
         "the note lost its mark while its conversation was waiting:\n{waiting}"
     );
+    let asked = |dump: &str, said: &str| {
+        rows(dump)
+            .iter()
+            .find(|row| row.contains(said))
+            .unwrap_or_else(|| panic!("no note saying {said:?}:\n{dump}"))
+            .contains(WAITING)
+    };
+    assert!(
+        asked(&waiting, "talked about"),
+        "nothing on the note says its conversation is waiting:\n{waiting}"
+    );
+    assert!(
+        !asked(&waiting, "never mentioned"),
+        "a note with no conversation says one is waiting:\n{waiting}"
+    );
     support::check(&format!("notes_waiting_{WIDTH}x{HEIGHT}"), &waiting);
+}
+
+/// A note whose agent is at work says so with a mark that turns.
+///
+/// The two columns are what the list of open documents draws: a picture of
+/// an agent says there is a conversation, and only movement beside it says
+/// something is happening in it. Which is the half worth having here, and
+/// the half a reader cannot get any other way -- a conversation left with
+/// an agent in it is one they walked away from, and the note is what they
+/// come back through.
+///
+/// It makes three claims and was broken deliberately three times.
+/// Answering `Talked::Yes` for a conversation its agent is thinking in
+/// leaves the turning column empty, so the note says only that somebody
+/// once talked about it. Leaving the notes out of what wants animating
+/// stops the ticker, and a mark nothing wakes is a mark that stands still
+/// for exactly as long as the work takes. And drawing the mark from the
+/// note rather than from the ticker gives a frame that never changes,
+/// which is a picture of work rather than a sign of it.
+#[test]
+fn a_note_whose_agent_is_working_turns_beside_it() {
+    let (_scratch, mut app, events) = remembering("agent-note-working", "0123456S", "s-old", &[]);
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // A turn that never ends on its own, so the agent is still thinking
+    // when the reader has gone back to the notes -- which is the whole
+    // case: nobody is looking at the conversation.
+    support::type_text(&mut app, "slowly");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the agent to start", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+
+    // The ticker has to be running at all, which nothing else on this
+    // page would ask for: the conversation is not what is being read, so
+    // the only thing here with a reason to wake the screen is the mark
+    // beside the note. Waited for off the channel, the way the
+    // conversation's own turning mark is.
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        assert!(!left.is_zero(), "nothing is animating beside the note");
+        let Ok(event) = events.recv_timeout(left) else {
+            panic!("nothing is animating beside the note");
+        };
+        let ticked = matches!(event, Event::Tick);
+        app.handle(event);
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        if ticked {
+            break;
+        }
+    }
+
+    // The frame is the ticker's, so it is asked for at two of them: a
+    // mark drawn from anything else is the same character both times.
+    let frame = |app: &mut App, phase: u32| {
+        app.phase_for_test(phase);
+        let dump = support::render(app, WIDTH, HEIGHT);
+        let row = rows(&dump)
+            .iter()
+            .find(|row| row.contains("a note"))
+            .and_then(|row| row.split_once('|'))
+            .map(|(_, drawn)| drawn.to_string())
+            .unwrap_or_else(|| panic!("no row for the note:\n{dump}"));
+        assert!(
+            row.contains(MARK),
+            "the note lost the mark saying it has a conversation:\n{dump}"
+        );
+        assert!(
+            row.contains(obelus_ui::spinning(phase)),
+            "nothing beside the note says its agent is at work:\n{dump}"
+        );
+        row
+    };
+    let first = frame(&mut app, 0);
+    let next = frame(&mut app, 1);
+    assert_ne!(
+        first, next,
+        "the mark beside the note does not turn while its agent works"
+    );
 }
 
 /// The glyph a note wears when there is a conversation about it.
 const MARK: char = obelus_icons::ui::AGENT;
+
+/// And the one it wears beside that while the conversation is waiting on
+/// an answer -- the same glyph the list of open documents puts on a
+/// conversation with a question in it.
+const WAITING: char = obelus_icons::ui::READER;
 
 /// The first conversation opened after obelus starts is taken up too.
 ///
@@ -5074,3 +5181,4 @@ fn shift_and_home_hold_the_line_in_the_box() {
         "the box marks a hold differently from the transcript:\n{dump}"
     );
 }
+

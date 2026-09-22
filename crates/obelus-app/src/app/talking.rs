@@ -299,6 +299,18 @@ impl App {
                 if open.is_some_and(|talk| talk.card.is_some()) {
                     return Talked::Waiting;
                 }
+                // And an agent at work in it. Asked of the talker rather
+                // than of the conversation, because thinking is the
+                // agent's state and not the page's -- the same question
+                // the list of open documents asks about the same
+                // conversation.
+                if open.is_some_and(|talk| {
+                    self.talker
+                        .as_ref()
+                        .is_some_and(|talker| talker.is_thinking(talk.session.as_ref()))
+                }) {
+                    return Talked::Working;
+                }
                 let written = !agent.is_empty() && kept.get(&note.id, &agent).is_some();
                 match open.is_some() || written {
                     true => Talked::Yes,
