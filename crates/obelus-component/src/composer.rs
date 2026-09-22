@@ -181,6 +181,23 @@ impl Composer {
             .move_to(obelus_editing::Motion::LineEnd, &(), width.max(1));
     }
 
+    /// To the start of the row, holding what it passes over.
+    ///
+    /// Which is all shift ever means on a motion. A box is where a reader
+    /// reaches for it first -- to take back the line they have just
+    /// written -- and it was the one place in obelus where the pair did
+    /// something else entirely.
+    pub fn hold_home(&mut self, width: u16) {
+        self.writing
+            .extend_to(obelus_editing::Motion::LineStart, &(), width.max(1));
+    }
+
+    /// The same, to the end.
+    pub fn hold_end(&mut self, width: u16) {
+        self.writing
+            .extend_to(obelus_editing::Motion::LineEnd, &(), width.max(1));
+    }
+
     /// The rows it takes at a width, wrapped the way a file's lines are,
     /// with whatever the reader has hold of marked on each.
     #[must_use]

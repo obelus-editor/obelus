@@ -640,7 +640,10 @@ impl Widget for ChatView<'_> {
         }
 
         let width = writing_width(area);
-        let rows = self.chat.writing().rows(width);
+        // Laid rather than just the strings, because what the reader has
+        // hold of is marked on to these rows and the box has to draw it:
+        // a selection nothing shows is a key that looks broken.
+        let rows = self.chat.writing().laid(width);
         let regions = bands(area, self.chat, self.card);
 
         self.header(cells, regions.header, plain, dim);
@@ -934,7 +937,7 @@ impl ChatView<'_> {
         &self,
         cells: &mut CellBuffer,
         area: Rect,
-        rows: &[String],
+        rows: &[obelus_component::composer::Laid],
         plain: Style,
         dim: Style,
     ) {
@@ -954,7 +957,30 @@ impl ChatView<'_> {
                     false => write(cells, area.x + MARGIN, y, ">", dim),
                 };
             }
-            write(cells, area.x + MARGIN + INDENT, y, row, plain);
+            let x = area.x + MARGIN + INDENT;
+            write(cells, x, y, &row.said, plain);
+            // And what the reader has hold of, over the top -- the colour
+            // the file uses for the same fact, because it is the same
+            // fact. Counted in characters of the row, which is what the
+            // box counts a hold in.
+            if let Some(held) = &row.held {
+                let mut column = x;
+                let mut buffer = [0u8; 4];
+                for (at, character) in row.said.chars().enumerate() {
+                    let drawn = character.encode_utf8(&mut buffer);
+                    let wide = u16::try_from(text_width(drawn)).unwrap_or(1);
+                    if held.contains(&at) {
+                        write(
+                            cells,
+                            column,
+                            y,
+                            drawn,
+                            plain.bg(self.theme.selection_background),
+                        );
+                    }
+                    column += wide;
+                }
+            }
         }
     }
 

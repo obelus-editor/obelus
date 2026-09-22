@@ -42,6 +42,18 @@
 //! typing goes to the box wherever the cursor was, because a reader who starts
 //! typing means to type.
 //!
+//! Shift extends, and control goes to the ends. Shift and a motion holds
+//! what the motion passed over, in the box as in the transcript, because
+//! shift means one thing everywhere -- and the box was where it meant
+//! something else: `shift+home` threw the whole conversation to its
+//! beginning and held nothing, in the one place a reader reaches for the
+//! pair to take back the line they have just written. The two ends of the
+//! transcript are control's, which is what the rule over the box says in as
+//! many words, and they are the same key from either half: from the box
+//! they move the view, and from inside the transcript they take the cursor
+//! with them, because a view sent to the end with the cursor left behind is
+//! dragged back by the next arrow.
+//!
 //! A run of tool calls of one kind is one row until the reader opens it.
 //! Thirty calls in a turn is a log, and a reader looking for what the agent
 //! *did* should not have to scroll past the machine to find it. Three in a row
@@ -335,17 +347,30 @@ impl Row {
     /// marker's bar -- has no place in the words at all. Standing on one is
     /// standing between the words around it, which is the same answer the
     /// pointer gives for landing on one.
+    ///
+    /// At the *start* of a row there is no word before, so it is the word
+    /// after, on this row. Handing back nothing there was the markdown
+    /// selection bug: only markdown lays out runs nobody wrote -- a plain
+    /// wrapping gives one run carrying the whole row -- so a bullet or a
+    /// quote's bar was the only place this arose. [`Chat::spot_near`] read
+    /// the nothing as "this row has no words at all", went looking down
+    /// the transcript the way it does for a blank or a heading, and landed
+    /// past the row the cursor was on: `shift+home` on a bullet held the
+    /// rows *after* the cursor.
     #[must_use]
     pub fn spot_at(&self, characters: usize) -> Option<Spot> {
         let (said, source) = self.from?;
         let mut seen = 0usize;
         let mut after: Option<Spot> = None;
+        // Whether a drawn run at the start of the row is still waiting for
+        // the word that follows it.
+        let mut waiting = false;
         for span in &self.spans {
             let bytes = span.from.clone();
             for (offset, character) in span.text.char_indices() {
                 if let Some(bytes) = bytes.as_ref() {
                     let at = bytes.start + offset;
-                    if seen == characters {
+                    if seen == characters || waiting {
                         return Some(Spot { said, source, at });
                     }
                     after = Some(Spot {
@@ -354,7 +379,10 @@ impl Row {
                         at: at + character.len_utf8(),
                     });
                 } else if seen == characters {
-                    return after;
+                    match after {
+                        Some(spot) => return Some(spot),
+                        None => waiting = true,
+                    }
                 }
                 seen += 1;
             }
@@ -1789,13 +1817,13 @@ impl Chat {
         // use obelus from.
         //
         // Except the two ends of the transcript, which are nobody else's.
-        // The arms below already share Home and End between the box and
-        // the transcript -- bare is the box's, with a modifier is the
-        // transcript's -- and the modifier a reader reaches for to jump to
-        // the end of a long document is control. It reached nothing: the
-        // guard turned it away before the arm that was waiting for it, and
-        // in a conversation there is no file for the editor to take it
-        // instead, so the key did nothing at all.
+        // The arms below share Home and End three ways -- bare moves the
+        // caret, shift holds what it passes over, control goes to the end
+        // of the whole transcript -- and the modifier a reader reaches for
+        // to jump to the end of a long document is control. It reached
+        // nothing: the guard turned it away before the arm that was
+        // waiting for it, and in a conversation there is no file for the
+        // editor to take it instead, so the key did nothing at all.
         let ends = matches!(key.code, KeyCode::Home | KeyCode::End);
         if !ends && modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT {
             return ChatOutcome::Ignored;
@@ -1816,7 +1844,7 @@ impl Chat {
         // The transcript, while the reader is walking it. What it does not
         // take falls through to the box below, the same way.
         if let Focus::Transcript(at) = self.focus
-            && let Some(outcome) = self.on_transcript(key, bare, at, room)
+            && let Some(outcome) = self.on_transcript(key, modifiers, at, room)
         {
             return outcome;
         }
@@ -1914,15 +1942,35 @@ impl Chat {
                 self.input.home(room.writing);
                 ChatOutcome::Consumed
             }
-            // Shift and home is the transcript's, because the box's home is
-            // the row it is on: a reader who wants the top of a long answer
-            // has nowhere else to ask for it.
+            // Shift extends, here as everywhere. It used to be the
+            // transcript's -- the top of a long answer, on the grounds
+            // that the box had nowhere else to ask for it -- and then
+            // control was given the two ends, which is what the rule over
+            // the box names. So the reason was spent, and what was left
+            // was shift naming a command in the one place a reader reaches
+            // for it to hold a line: they pressed it to take back what
+            // they had just written, and the whole conversation flew to
+            // its beginning.
+            KeyCode::Home if modifiers == KeyModifiers::SHIFT => {
+                // One selection between the two halves, so taking hold in
+                // here lets the transcript go.
+                self.let_go();
+                self.input.hold_home(room.writing);
+                ChatOutcome::Consumed
+            }
+            // And control is the two ends of the transcript, from the box
+            // as from inside it.
             KeyCode::Home => {
                 self.window.home();
                 ChatOutcome::Consumed
             }
             KeyCode::End if bare => {
                 self.input.end(room.writing);
+                ChatOutcome::Consumed
+            }
+            KeyCode::End if modifiers == KeyModifiers::SHIFT => {
+                self.let_go();
+                self.input.hold_end(room.writing);
                 ChatOutcome::Consumed
             }
             KeyCode::End => {
@@ -2223,10 +2271,11 @@ impl Chat {
     fn on_transcript(
         &mut self,
         key: &KeyEvent,
-        bare: bool,
+        modifiers: KeyModifiers,
         at: Place,
         room: Room,
     ) -> Option<ChatOutcome> {
+        let bare = modifiers == KeyModifiers::NONE;
         // Laid out once, and everything below asks these rows rather than
         // the conversation. A width makes rows out of every word ever said
         // in it, which is real work -- tens of milliseconds for a long
@@ -2234,10 +2283,33 @@ impl Chat {
         // pays it on every arrow. Asked five times over for one keypress,
         // as this was, the caret crawls.
         let laid = self.rows(room.reading);
-        // Shift is the only modifier that reaches here, and what it means
-        // on a motion is "and hold what I pass over".
-        let holding = !bare;
+        // What shift means on a motion is "and hold what I pass over", and
+        // it is the only modifier that does: control reaches here too --
+        // the guard lets the two ends through -- and asking only whether
+        // the key was bare made `ctrl+end` hold the row it was on instead
+        // of going to the end, while the rule over the box went on naming
+        // it as the way back.
+        let holding = modifiers == KeyModifiers::SHIFT;
         match key.code {
+            // Which is that way back, with the cursor in here: the two ends
+            // of the transcript. They move the cursor and the view follows,
+            // because in here the keys move the cursor -- a view sent to
+            // the end with the cursor left behind is dragged back by the
+            // next arrow.
+            KeyCode::Home | KeyCode::End if modifiers == KeyModifiers::CONTROL => {
+                let last = laid.len().saturating_sub(1);
+                let (row, character) = match key.code {
+                    KeyCode::Home => (0, 0),
+                    _ => (last, laid.get(last).map_or(0, Row::characters)),
+                };
+                self.let_go();
+                self.focus = Focus::Transcript(Place { row, character });
+                match key.code {
+                    KeyCode::Home => self.window.home(),
+                    _ => self.window.end(),
+                }
+                Some(ChatOutcome::Consumed)
+            }
             KeyCode::Left
             | KeyCode::Right
             | KeyCode::Up
@@ -2516,6 +2588,12 @@ mod tests {
     /// pass over".
     fn shifted(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::SHIFT)
+    }
+
+    /// The same, with control down, which on Home and End means the two
+    /// ends of the whole transcript.
+    fn control(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::CONTROL)
     }
 
     /// A screen with ten rows of transcript and a box twenty cells wide.
@@ -2808,6 +2886,206 @@ mod tests {
         // And a bare motion lets go.
         chat.handle_key(&key(KeyCode::Left), false, ROOM, &[]);
         assert!(!chat.holding(), "a bare motion kept the selection");
+    }
+
+    /// Shift and home hold a line of the box, in the box.
+    ///
+    /// Shift extends and never names a command, which is one rule
+    /// everywhere -- and the box was the one place it named one: shift and
+    /// home threw the whole transcript to the beginning of the
+    /// conversation. A reader reaching for the pair means the line they
+    /// have just written, and the two ends of a long transcript are
+    /// control's, which is what the rule over the box names.
+    ///
+    /// Broken deliberately by putting `self.window.home()` back on the arm,
+    /// which holds nothing and leaves the conversation somewhere the reader
+    /// did not ask to be; or by leaving the transcript's own hold alone,
+    /// which leaves two selections on one screen and a copy that takes the
+    /// older of them.
+    #[test]
+    fn shift_and_home_hold_the_line_in_the_box() {
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, "hello there");
+        chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
+        chat.put("a message I typed");
+
+        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[]);
+        assert_eq!(
+            chat.copied(ROOM.reading),
+            ("a message I typed".to_string(), "selection"),
+            "shift and home did not hold the line in the box"
+        );
+        assert!(
+            chat.at_the_end(),
+            "shift and home moved the transcript instead of holding anything"
+        );
+
+        // And the other end. A bare motion lets go first, the way it does
+        // everywhere: shift and end straight after shift and home walks the
+        // caret back to where the hold was anchored, and holds nothing.
+        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::End), false, ROOM, &[]);
+        assert_eq!(
+            chat.copied(ROOM.reading),
+            ("a message I typed".to_string(), "selection"),
+            "shift and end did not hold the line in the box"
+        );
+        assert!(chat.at_the_end(), "shift and end moved the transcript");
+
+        // One selection between the two halves: taking hold in the box
+        // lets the transcript go. Up twice, because the first press is
+        // what lets go of what the box is holding.
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[]);
+        assert!(chat.holding(), "the transcript did not take hold");
+        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[]);
+        assert!(
+            !chat.holding(),
+            "the box took hold and the transcript kept its own"
+        );
+    }
+
+    /// The two ends of the transcript are control's, from either half.
+    ///
+    /// The rule over the box names `ctrl+end` as the way back, so the key
+    /// has to work wherever the reader is when they read it. With the
+    /// cursor in the transcript it did not: every modifier that reached
+    /// `on_transcript` was taken for shift, so the key held the row it was
+    /// standing on and the view never moved.
+    ///
+    /// Broken deliberately by asking `!bare` rather than shift on the
+    /// motion arm, which is what it did: `ctrl+end` then holds a row
+    /// instead of reaching the end. Or by sending the view to the end and
+    /// leaving the cursor behind, which the next arrow drags straight back.
+    #[test]
+    fn control_and_the_ends_reach_the_ends_from_either_half() {
+        let mut chat = Chat::new();
+        for turn in 0..8 {
+            chat.asked(&format!("question {turn}"));
+            chat.chunk(Speaker::Agent, &format!("answer {turn}"));
+        }
+        let short = Room {
+            transcript: 3,
+            ..ROOM
+        };
+        chat.settle(chat.rows(short.reading).len(), short.transcript);
+
+        // From the box, where there is no cursor in the transcript to move.
+        chat.handle_key(&control(KeyCode::Home), false, short, &[]);
+        assert_eq!(chat.focus(), Focus::Writing, "the box lost the keys");
+        assert!(!chat.at_the_end(), "control and home did not leave the end");
+
+        // And from inside it, where the cursor goes with the view.
+        chat.handle_key(&key(KeyCode::Up), false, short, &[]);
+        chat.handle_key(&control(KeyCode::End), false, short, &[]);
+        let rows = chat.rows(short.reading);
+        let last = rows.len() - 1;
+        assert_eq!(
+            chat.focus(),
+            Focus::Transcript(Place {
+                row: last,
+                character: rows[last].characters(),
+            }),
+            "control and end did not take the cursor to the last row"
+        );
+        assert!(chat.at_the_end(), "control and end did not reach the end");
+        assert!(!chat.holding(), "control and end held a row instead");
+
+        chat.handle_key(&control(KeyCode::Home), false, short, &[]);
+        assert_eq!(
+            chat.focus(),
+            Focus::Transcript(Place {
+                row: 0,
+                character: 0
+            }),
+            "control and home did not take the cursor to the first row"
+        );
+        assert!(!chat.holding(), "control and home held a row instead");
+    }
+
+    /// Shift and home hold what is before the cursor, on a row that starts
+    /// with something the reading drew.
+    ///
+    /// Only markdown lays out runs nobody wrote -- a bullet, a quote's bar
+    /// -- because a plain wrapping gives one run carrying the whole row. So
+    /// this was a fault nothing but an agent's own answer could reach, and
+    /// it did not look like an off-by-one: `spot_at` handed back nothing
+    /// for the start of such a row, `spot_near` read that as "no words on
+    /// this row at all" and went looking *down* the transcript the way it
+    /// does for a blank or a heading, and the selection ran forwards from
+    /// the cursor across the rows below it.
+    ///
+    /// Broken deliberately by returning `after` from the drawn-run arm of
+    /// `spot_at` rather than waiting for the word that follows it: the
+    /// first assertion below then holds the two rows after the cursor
+    /// instead of the words before it.
+    #[test]
+    fn shift_and_home_on_a_bullet_holds_what_is_before_the_cursor() {
+        let bulleted = "- alpha beta gamma\n- delta epsilon zeta\n\n> a quote here\n";
+        let laid = |chat: &Chat| chat.rows(ROOM.reading);
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, bulleted);
+        chat.settle(laid(&chat).len(), ROOM.transcript);
+
+        // The rows this is about: ones whose first run is obelus's own.
+        let rows = laid(&chat);
+        assert!(
+            rows[0]
+                .spans
+                .first()
+                .is_some_and(|span| span.from.is_none()),
+            "the first row does not start with a run the reading drew: {rows:?}"
+        );
+
+        // Into the transcript -- which lands at the end of the last row --
+        // and then up to the first bullet and along it with the arrows,
+        // because the cursor in here is only ever put somewhere by a key.
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        for _ in 0..3 {
+            chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        }
+        for _ in 0..9 {
+            chat.handle_key(&key(KeyCode::Right), false, ROOM, &[]);
+        }
+        assert_eq!(
+            chat.focus(),
+            Focus::Transcript(Place {
+                row: 0,
+                character: 9
+            }),
+            "the cursor is not in the middle of the first bullet"
+        );
+
+        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[]);
+        assert_eq!(
+            chat.copied(ROOM.reading),
+            ("alpha b".to_string(), "selection"),
+            "shift and home did not hold what is before the cursor"
+        );
+
+        // The same on a quote, whose bar is drawn the same way.
+        for _ in 0..3 {
+            chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+        }
+        for _ in 0..7 {
+            chat.handle_key(&key(KeyCode::Right), false, ROOM, &[]);
+        }
+        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[]);
+        assert_eq!(
+            chat.copied(ROOM.reading),
+            ("a quo".to_string(), "selection"),
+            "shift and home did not hold what is before the cursor, in a quote"
+        );
+
+        // And the start of such a row is the first word on it, not a place
+        // on some row below: the seam the whole fault came through.
+        assert_eq!(
+            rows[0].spot_at(0),
+            rows[0].spot_at(2),
+            "the start of the row is not where its words start"
+        );
     }
 
     /// A run folds itself, and a failure in it opens it again.

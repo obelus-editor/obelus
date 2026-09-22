@@ -131,6 +131,39 @@ fn screen(app: &mut App) -> String {
     support::text_block(&dump).to_string()
 }
 
+/// What is painted behind a run of words on the row they are on.
+///
+/// The whole legend entry, and one per distinct style: a test about a hold
+/// wants to know that every cell of it is marked the same way, and what
+/// that mark is.
+fn behind_words(dump: &str, needle: &str) -> Vec<String> {
+    let at = usize::from(row_of(dump, needle));
+    let row = rows(dump)
+        .into_iter()
+        .find(|row| row.contains(needle))
+        .expect("the row");
+    let from = support::column_of(row, needle);
+    let wide = obelus_text::text_width(needle);
+    let marks = support::style_block(dump)
+        .lines()
+        .find(|line| line.trim_start().starts_with(&format!("{at}|")))
+        .and_then(|line| line.split_once('|'))
+        .map(|(_, marks)| marks.to_string())
+        .unwrap_or_else(|| panic!("no styles for row {at}:\n{dump}"));
+    let mut seen: Vec<String> = Vec::new();
+    for letter in marks.chars().skip(from).take(wide) {
+        let entry = support::legend_of(dump, letter);
+        let ground = entry
+            .split_once("bg=")
+            .map(|(_, colour)| colour.trim().to_string())
+            .unwrap_or_default();
+        if !seen.contains(&ground) {
+            seen.push(ground);
+        }
+    }
+    seen
+}
+
 /// One whole turn: the handshake, a prompt, what comes back while it works,
 /// a file read through obelus, a permission request, and the end.
 #[test]
@@ -4956,4 +4989,88 @@ fn a_press_on_a_setting_on_the_status_row_does_what_its_key_does() {
             .get(switch)
             .is_some_and(|setting| setting.current != was)
     });
+}
+
+/// Shift and home hold the line the reader is writing, and the box draws it.
+///
+/// Shift extends and never names a command -- one rule, everywhere -- and
+/// the box was the one place in obelus where it named one: the pair sent
+/// the whole transcript to the beginning of the conversation and held
+/// nothing. The two ends of a long transcript are control's, which is what
+/// the rule over the box already says in as many words.
+///
+/// Drawn as well as held, because the box had never drawn a selection at
+/// all -- it was given the strings of its rows and not what was marked on
+/// them -- so even the one a drag makes was invisible. And drawn in the
+/// colour the file and the transcript use for the same fact, which is the
+/// point of asking one question in one place.
+///
+/// Broken deliberately three ways: by putting `window.home()` back on the
+/// arm, which moves the transcript and leaves the words unmarked; by
+/// handing `writing` the plain strings again, which holds the line and
+/// shows nothing; and by painting it in some other colour, which makes two
+/// answers to "what does held look like".
+#[test]
+fn shift_and_home_hold_the_line_in_the_box() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // A turn's worth of transcript, so that there is something in the
+    // other half to compare the mark against.
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "a message I typed");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+
+    support::press_shift(&mut app, KeyCode::Home);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+
+    // The conversation stayed where it was: the way back is only ever
+    // drawn once the reader has left the end of it.
+    assert!(
+        !dump.contains("To the end"),
+        "shift and home moved the transcript instead of holding a line:\n{dump}"
+    );
+    // And every cell of the line is marked, in one colour -- one that is
+    // not simply the row's own ground, which is what "nothing is drawn"
+    // looks like from here.
+    let held = behind_words(&dump, "a message I typed");
+    assert_eq!(
+        held.len(),
+        1,
+        "the held line is not marked all through: {held:?}\n{dump}"
+    );
+    assert_ne!(
+        held.first().map(String::as_str),
+        Some(behind(&dump, "a message I typed").as_str()),
+        "nothing is drawn behind the held line:\n{dump}"
+    );
+
+    // The same colour the transcript marks a hold in, because it is the
+    // same fact about the same screen. Up twice: the first press is what
+    // lets go of what the box is holding.
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Up);
+    for _ in 0..7 {
+        support::press_shift(&mut app, KeyCode::Left);
+    }
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let there = behind_words(&dump, "allowed");
+    assert_eq!(
+        there, held,
+        "the box marks a hold differently from the transcript:\n{dump}"
+    );
 }
