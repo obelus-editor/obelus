@@ -2395,7 +2395,6 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
     );
 }
 
-
 /// A list of notes longer than the screen scrolls under the caret.
 ///
 /// The window over the rows was told how wide a note's words are and never
