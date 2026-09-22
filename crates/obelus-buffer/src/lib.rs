@@ -594,7 +594,15 @@ pub struct Buffer {
     /// [`Editing`] the box a note is written in holds, which is why the
     /// keys that walk a word work the same in both.
     editing: Editing,
-    syntax: Option<SyntaxState>,
+    /// The parse, behind a pointer.
+    ///
+    /// The biggest thing a buffer holds, and the one a buffer most often
+    /// does not have: a plain-text file, the box a message is written in and
+    /// the box a note is written in are all buffers with no language. It is
+    /// a pointer here so that those do not carry the room for a parser, two
+    /// trees and everything hanging off them -- which is room the enum every
+    /// open document sits in has to reserve for all of its kinds.
+    syntax: Option<Box<SyntaxState>>,
     /// Whether the last attempt to re-read the file failed.
     ///
     /// Set when the file has been deleted, replaced by a directory, or made
@@ -690,8 +698,9 @@ impl Buffer {
         let contents =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let text = Text::from_string(&contents);
-        let syntax =
-            LanguageId::for_path(path).and_then(|language| SyntaxState::new(language, &text));
+        let syntax = LanguageId::for_path(path)
+            .and_then(|language| SyntaxState::new(language, &text))
+            .map(Box::new);
         // Made absolute here, once. A relative path is what a reader types,
         // and it is the wrong thing to keep: the protocol needs an absolute
         // URI, the watcher needs a directory, and deciding whether a file is
@@ -850,8 +859,9 @@ impl Buffer {
     /// A buffer holding text that did not come from the path it names.
     fn from_text(path: &Path, contents: &str) -> Self {
         let text = Text::from_string(contents);
-        let syntax =
-            LanguageId::for_path(path).and_then(|language| SyntaxState::new(language, &text));
+        let syntax = LanguageId::for_path(path)
+            .and_then(|language| SyntaxState::new(language, &text))
+            .map(Box::new);
         let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
         let mut folds = folds::Folds::default();
         folds.offer(folds::of(&text));
@@ -1341,13 +1351,13 @@ impl Buffer {
     /// server and the highlighting can never disagree about what a file is.
     #[must_use]
     pub fn language(&self) -> Option<LanguageId> {
-        self.syntax.as_ref().map(SyntaxState::language)
+        self.syntax.as_deref().map(SyntaxState::language)
     }
 
     /// The parse, if this is a language obelus knows.
     #[must_use]
-    pub const fn syntax(&self) -> Option<&SyntaxState> {
-        self.syntax.as_ref()
+    pub fn syntax(&self) -> Option<&SyntaxState> {
+        self.syntax.as_deref()
     }
 
     /// Replaces `span` with `with`, and keeps everything in step.
@@ -1572,7 +1582,7 @@ impl Buffer {
     /// Whether the tree is older than the text.
     #[must_use]
     pub fn syntax_is_behind(&self) -> bool {
-        self.syntax.as_ref().is_some_and(SyntaxState::is_behind)
+        self.syntax.as_deref().is_some_and(SyntaxState::is_behind)
     }
 
     /// Writes the document to the file it came from.
@@ -1692,7 +1702,7 @@ impl Buffer {
             // trimming above found no common region at all.
             (Some(state), None) => {
                 let language = state.language();
-                self.syntax = SyntaxState::new(language, self.editing.text());
+                self.syntax = SyntaxState::new(language, self.editing.text()).map(Box::new);
             }
             (None, _) => {}
         }
