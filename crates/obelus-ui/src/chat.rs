@@ -522,9 +522,30 @@ fn in_transcript(
         return None;
     }
     Some(ratatui::layout::Position {
-        x: cell_at(row, place.character, area).min(area.right().saturating_sub(1)),
+        x: cell_at(row, place.character, area).min(words_end(area)),
         y,
     })
+}
+
+/// The last cell a row's own words can be drawn in.
+///
+/// Not the last cell of the band. The column past the words belongs to the
+/// scrollbar -- [`reading_width`] leaves it out on purpose, so that a
+/// transcript saying how much of it there is costs the words nothing -- and
+/// a caret put there is a caret nobody can see, sitting under the bar.
+///
+/// Which is where it went. A row is wrapped to the words' full width, so
+/// the place after its last character is one past the last column the words
+/// have; on a row that fills the width, that is the scrollbar's column
+/// exactly. The reader pressed up, the caret went into the transcript, and
+/// as far as they could tell it had gone out.
+///
+/// So the end of a full row draws on its last character rather than after
+/// it. There is no cell after it to draw in, and the reader is at the end
+/// of that row either way.
+const fn words_end(area: Rect) -> u16 {
+    // The scrollbar's column, and then the last one before it.
+    area.right().saturating_sub(2)
 }
 
 /// Which character of a row a cell of the screen is on.
@@ -1296,5 +1317,67 @@ mod tests {
         for mark in marks {
             assert_eq!(mark.chars().count(), 1, "{mark:?} is not one column");
         }
+    }
+}
+
+#[cfg(test)]
+mod caret {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use obelus_component::chat::{Chat, Room, Speaker};
+    use ratatui::layout::Rect;
+
+    /// The caret stays where the words are, not on the scrollbar.
+    ///
+    /// The transcript leaves its last column to the bar that says how much
+    /// of the conversation there is: the rows are wrapped to what is left,
+    /// so the bar costs the words nothing. But the place after the last
+    /// character of a row that fills that width is one column past the
+    /// words -- which is the bar's column exactly.
+    ///
+    /// So on a long answer the reader pressed up and the caret vanished.
+    /// It was drawn, under the bar, in the one column of the transcript
+    /// nothing can be seen in.
+    ///
+    /// Broken deliberately by clamping the caret to the band's last column
+    /// rather than the words', which is what it did.
+    #[test]
+    fn the_caret_stays_off_the_scrollbar() {
+        let area = Rect::new(0, 0, 76, 24);
+        let width = super::reading_width(area);
+        let mut chat = Chat::new();
+        // Two rows of one long word, so the first of them is exactly as
+        // wide as the words are allowed to be.
+        chat.chunk(Speaker::Agent, &"a".repeat(usize::from(width) * 2));
+        let room = Room {
+            transcript: 20,
+            reading: width,
+            writing: super::writing_width(area),
+        };
+        chat.settle(chat.rows(width).len(), room.transcript);
+        assert!(
+            chat.rows(width)
+                .iter()
+                .all(|row| row.characters() == usize::from(width)),
+            "this answer does not fill the width, so it cannot show the fault"
+        );
+
+        // Up from the box, which puts the cursor after the last character
+        // of the last row.
+        chat.handle_key(
+            &KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
+            false,
+            room,
+            &[],
+        );
+        let caret = super::ChatView::caret(area, &chat, None).expect("a caret in the transcript");
+        assert!(
+            caret.x < area.right() - 1,
+            "the caret is on the scrollbar, in column {} of {}",
+            caret.x,
+            area.right() - 1
+        );
+        // And on the last character of the row, which is as near to after
+        // it as there is room for.
+        assert_eq!(caret.x, area.right() - 2);
     }
 }
