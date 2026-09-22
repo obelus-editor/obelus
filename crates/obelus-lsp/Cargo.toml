@@ -27,3 +27,12 @@ tokio.workspace = true
 tracing.workspace = true
 unicode-width.workspace = true
 url.workspace = true
+
+# Only for `tests/real_server.rs`, which asks the system whether a server
+# process is still there. One question, two ways of putting it, and neither
+# platform is made to carry the other's.
+[target.'cfg(unix)'.dev-dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys.workspace = true

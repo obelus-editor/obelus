@@ -948,14 +948,59 @@ fn a_real_server_says_who_calls_something() {
     client.shutdown();
 }
 
-/// Whether a process is still there, asked the way `kill -0` asks.
+/// Whether a process is still there, asked of the system.
+///
+/// Of the system and not of obelus: what these tests are about is that a
+/// server obelus let go of is gone, and [`Client::check_alive`] is obelus's
+/// own answer to that question -- the thing under test. A test that asked
+/// it would be asking the rule what it expects.
+///
+/// It ran `kill -0` until it was pointed out that the tests were meant to
+/// run on Windows too, where there is no such command. The `kill.exe` a
+/// POSIX shell ships there is worse than nothing: it counts in that
+/// shell's own process numbers and `pid` is the system's, so it would
+/// answer, and answer about somebody else.
 fn alive(pid: u32) -> bool {
-    std::process::Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+    #[cfg(unix)]
+    {
+        // Signal zero, which is what `kill -0` sent: it delivers nothing
+        // and reports whether the process is there. A process that has
+        // ended but not been waited for still answers to it -- which is
+        // the same answer the command gave, so these tests read as they
+        // always did, and they pass because obelus reaps what it kills.
+        let Ok(pid) = libc::pid_t::try_from(pid) else {
+            return false;
+        };
+        // Safety: `kill` reads nothing through a pointer and this signal
+        // writes nothing anywhere.
+        unsafe { libc::kill(pid, 0) == 0 }
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, WAIT_TIMEOUT},
+            System::Threading::{OpenProcess, SYNCHRONIZE, WaitForSingleObject},
+        };
+
+        // Safety: a handle is asked for, waited on for no time at all, and
+        // closed. Nothing is read through a pointer.
+        unsafe {
+            let process = OpenProcess(SYNCHRONIZE, 0, pid);
+            if process.is_null() {
+                // No such process -- or one this test may not look at,
+                // which for a server it started itself does not happen.
+                return false;
+            }
+            // Waiting no time at all: a process handle is signalled once
+            // the process has ended, so this says which it is without
+            // blocking. `GetExitCodeProcess` would be the other way and is
+            // the wrong one -- it reports 259 for "still running", and a
+            // process that exited *with* 259 is indistinguishable.
+            let waited = WaitForSingleObject(process, 0);
+            CloseHandle(process);
+            waited == WAIT_TIMEOUT
+        }
+    }
 }
 
 /// What a real server would have the reader know, on the wire.

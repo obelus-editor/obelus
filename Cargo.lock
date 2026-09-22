@@ -3649,6 +3649,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "globset",
+ "libc",
  "lsp-types",
  "obelus-command",
  "obelus-icons",
@@ -3664,6 +3665,7 @@ dependencies = [
  "tracing",
  "unicode-width 0.2.2",
  "url",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

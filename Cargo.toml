@@ -289,6 +289,17 @@ open = "5"
 # a test is a synchronous function and wants neither.
 ureq = "3.4.1"
 
+# Asking the system whether a process is still there, which one test does
+# from outside obelus on purpose: what it is checking is that a language
+# server obelus let go of is gone, and obelus's own answer to that is the
+# thing under test. Both are dev-dependencies of `obelus-lsp` alone, and
+# each only on the platform whose question it answers.
+libc = "0.2.189"
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+] }
+
 # Nothing but cargo's own defaults.
 #
 # Link-time optimisation and a single codegen unit were here, for a real
