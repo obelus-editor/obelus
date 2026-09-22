@@ -5,11 +5,20 @@
 //! a reader's report always turns on -- "was the fix in the thing you ran"
 //! -- and a version that has said `0.1.0` since the first commit cannot.
 //!
-//! So the commit, and whether the tree it was built from had anything
-//! uncommitted in it. The second half matters as much as the first: a
-//! `cargo run` from a working tree is not the commit it sits on and not
-//! anything else either, and a log that named only the commit would say
-//! something precise and wrong.
+//! So the commit, and only the commit.
+//!
+//! It used to say whether the tree had anything uncommitted in it too, with
+//! a `+`, and that was worth having: a `cargo run` from a working tree is
+//! not the commit it sits on and not anything else either. But it could not
+//! be known from here. This runs again only when the two files below change,
+//! and editing a file changes neither -- so the `+` stayed at whatever it
+//! was when the last commit was made, which is to say almost never set. The
+//! log then told a reader running edited code that their tree was clean,
+//! which is the one direction a line like this must not be wrong in.
+//!
+//! What is left is what the two files can answer. They change exactly when
+//! the commit does, so what is watched and what is reported are now the
+//! same thing.
 //!
 //! Nothing here fails a build. A tarball with no `.git`, a machine with no
 //! git, a checkout of a shallow clone: all of them say so and carry on,
@@ -38,13 +47,7 @@ fn main() {
             .map(|ran| String::from_utf8_lossy(&ran.stdout).trim().to_string())
     };
     let built = match said(&["rev-parse", "--short", "HEAD"]) {
-        Some(commit) if !commit.is_empty() => match said(&["status", "--porcelain"]) {
-            // Built from a working tree with something in it that is not
-            // in the commit. Which is most builds during a day's work, and
-            // the one case a bare commit would be a lie about.
-            Some(changes) if !changes.is_empty() => format!("{commit}+"),
-            _ => commit,
-        },
+        Some(commit) if !commit.is_empty() => commit,
         _ => "unknown".to_string(),
     };
     println!("cargo:rustc-env=OBELUS_BUILD={built}");
