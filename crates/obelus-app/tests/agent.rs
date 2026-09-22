@@ -5382,3 +5382,59 @@ fn shift_and_home_hold_the_line_in_the_box() {
     );
 }
 
+/// What a reader takes hold of in the transcript, `ctrl+c` copies.
+///
+/// It did not, and the way it did not is the interesting part: the key was
+/// found, the command was found, and the gate in front of it said no in
+/// silence. `copy-selection` asked for `ACaret` -- somewhere with a caret
+/// in it -- which a conversation answers only while the keys are in the
+/// box. Taking hold of the transcript moves them out of it, so selecting
+/// and copying were mutually exclusive, and nothing said so.
+///
+/// Broken deliberately by putting `Requires::ACaret` back on
+/// `SelectionCopy`: the selection is still made, `ctrl+c` still does
+/// nothing, and the note stays empty.
+#[test]
+fn what_is_held_in_the_transcript_is_copied() {
+    // The provider is one place for the whole process, so a test that
+    // takes neither the turn nor a provider reaches into the clipboard of
+    // whoever ran it.
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/many");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // Up leaves the box for the transcript, and shift holds what it passes
+    // over -- which is the only way there is to say "this", and the reason
+    // the keys are not in the box any more.
+    support::press(&mut app, KeyCode::Up);
+    for key in [KeyCode::Left, KeyCode::Left, KeyCode::Up] {
+        support::press_shift(&mut app, key);
+    }
+    let width = obelus_ui::chat::reading_width(app.editor_area_for_test());
+    let held = app
+        .chat()
+        .expect("the conversation")
+        .held_text(width)
+        .expect("something held in the transcript");
+
+    support::press_control(&mut app, 'c');
+    assert_eq!(
+        app.note(),
+        Some("Copied selection"),
+        "ctrl+c over a held transcript did nothing, and said nothing about it"
+    );
+    assert_eq!(
+        obelus_clipboard::paste().as_deref(),
+        Some(held.as_str()),
+        "something other than what was held went to the clipboard"
+    );
+}

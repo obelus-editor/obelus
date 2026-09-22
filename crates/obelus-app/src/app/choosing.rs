@@ -157,6 +157,19 @@ impl App {
             // what these keys need is that there is somewhere with a caret
             // in it, not which of them it is.
             Requires::ACaret => buffer.is_some() || self.somewhere_to_type(),
+            // And everywhere one of those is, plus the document being read
+            // where that is a conversation: a transcript is somewhere a
+            // reader can take hold of what was said and nowhere they can
+            // type, so the question above answers no for the one place the
+            // selection was taken in.
+            //
+            // `reading_nothing` rather than `conversation()`, because what
+            // is being asked is whether there is anything on the screen to
+            // take a copy of, and a file answers that through the buffer
+            // above.
+            Requires::SomethingToCopy => {
+                buffer.is_some() || self.somewhere_to_type() || !self.reading_nothing()
+            }
             // Not `current_buffer`, which is the point of the distinction: a
             // conversation is something open and is not a file.
             Requires::ADocumentOpen => !self.reading_nothing(),

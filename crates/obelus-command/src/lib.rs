@@ -255,6 +255,19 @@ pub enum Requires {
     /// opens on a list with no file behind it, and copying out of the box
     /// a reader is typing in has nothing to do with whether there is one.
     ACaret,
+    /// There has to be something a copy could take.
+    ///
+    /// Which is not the same question as [`Requires::ACaret`], and looked
+    /// like it until a conversation was a document: copying needs
+    /// something to take, not somewhere to put something. The transcript
+    /// is the place where the two come apart -- a reader can take hold of
+    /// what an agent said, and cannot type a word into it, so asking for a
+    /// caret refused the one key the selection was made for. Selecting and
+    /// copying were mutually exclusive, and the refusal is silent.
+    ///
+    /// Cut and paste keep asking for a caret, because they are the half of
+    /// this that does need somewhere to write.
+    SomethingToCopy,
     /// Something has to be open, whatever kind of thing it is.
     ///
     /// Which was the same question as a file being open while every document
@@ -895,7 +908,8 @@ impl Command {
             // "nothing". And wherever there is a caret rather than
             // wherever there is a file: what holds what they have hold of
             // may be a box.
-            Self::SelectionCopy | Self::SelectionCut | Self::Paste => Requires::ACaret,
+            Self::SelectionCopy => Requires::SomethingToCopy,
+            Self::SelectionCut | Self::Paste => Requires::ACaret,
             // Not "is there anything to paste": obelus's own store knows
             // without being asked, and an external clipboard has to be run
             // to find out. A requirement that cannot be answered cheaply
