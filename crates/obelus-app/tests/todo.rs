@@ -2338,8 +2338,8 @@ fn leaving_the_notes_and_coming_back_leaves_the_caret_in_them() {
 ///
 /// A row of the notes draws two things beside the words that the reader can
 /// *do* something to: the box saying whether the note is done, and the
-/// marks saying somebody has talked about it. Both are one key away and both are
-/// a picture of that key -- and a press on either did nothing, because the
+/// marks saying somebody has talked about it. Both are one key away and both
+/// are a picture of that key -- and a press on either did nothing, because the
 /// only thing the pointer reached in this page was the note being written.
 ///
 /// A press goes to the note first, because both keys ask about the note the

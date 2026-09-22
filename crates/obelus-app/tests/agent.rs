@@ -4227,8 +4227,8 @@ fn a_tool_call_that_is_still_running_turns_at_the_front_of_its_row() {
 /// Which frame is on screen depends on how many ticks have landed, and a
 /// test that pinned one would be a test about the machine it ran on.
 const SPINNING: [&str; 10] = [
-    "\u{280b}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283c}", "\u{2834}", "\u{2826}",
-    "\u{2827}", "\u{2807}", "\u{280f}",
+    "\u{280b}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283c}", "\u{2834}", "\u{2826}", "\u{2827}",
+    "\u{2807}", "\u{280f}",
 ];
 
 /// The glyph a note wears when there is a conversation about it.
