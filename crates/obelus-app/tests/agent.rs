@@ -2690,6 +2690,46 @@ fn what_an_agent_says_is_read_as_markdown() {
     // The whole of it, drawn: the heading in a heading's colour, the code
     // in code's, the rest in the voice that said it.
     support::check(&format!("markdown_{WIDTH}x{HEIGHT}"), &dump);
+
+    // And the cursor can walk on to the box the code is in, which is where
+    // the caret used to disappear.
+    //
+    // The rows of a fenced block are padded to the full width so that the
+    // far side of the box lines up under the corners above it. The place
+    // after the last character of a row like that is one column past the
+    // words -- the column the scrollbar has -- so the caret was drawn
+    // where nothing can be seen. `the_caret_stays_off_the_scrollbar` holds
+    // the arithmetic up; this holds up that a reader really can get there,
+    // over a conversation the agent actually sent.
+    //
+    // Broken deliberately by putting the caret back on the band's last
+    // column, which puts it under the bar.
+    support::press(&mut app, KeyCode::Up);
+    let width = obelus_ui::chat::reading_width(app.editor_area_for_test());
+    for _ in 0..20 {
+        let on = match app.chat().expect("a conversation").focus() {
+            obelus_component::chat::Focus::Transcript(place) => place,
+            other => panic!("the cursor left the transcript: {other:?}"),
+        };
+        let row = app.chat().expect("a conversation").rows(width)[on.row].text();
+        if row.starts_with('\u{2514}') {
+            break;
+        }
+        support::press(&mut app, KeyCode::Up);
+    }
+    support::press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let at = dump
+        .split("-- cursor --")
+        .nth(1)
+        .and_then(|rest| rest.trim().split_once(','))
+        .map(|(x, _)| x.to_string())
+        .expect("a caret in the transcript");
+    assert_eq!(
+        at,
+        (WIDTH - 2).to_string(),
+        "the caret is not on the last column the words have:\n{dump}"
+    );
 }
 
 /// What an answer means is written out under it, wrapped, never cut.

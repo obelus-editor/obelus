@@ -621,6 +621,19 @@ pub struct Chat {
     /// them is the list growing under a window that is not following. One
     /// place that asks "are we at the end now" cannot miss any of them.
     left_at: Option<usize>,
+    /// Where the cursor was when it last left the transcript.
+    ///
+    /// So that leaving and coming back is coming back. Down off the last
+    /// row goes to the box, and up from the box came back to the end of
+    /// that row rather than to the column the reader left from -- which
+    /// for anybody reading down a long answer meant the cursor jumping to
+    /// the far side of the page for no reason they could see.
+    ///
+    /// Forgotten when the wheel moves the view, because that is the reader
+    /// looking somewhere else: the keys go somewhere and the wheel looks
+    /// around, which is the difference the transcript already draws
+    /// everywhere else.
+    stood: Option<Place>,
 }
 
 impl Default for Chat {
@@ -748,6 +761,7 @@ impl Chat {
             focus: Focus::Writing,
             held: None,
             left_at: None,
+            stood: None,
         }
     }
 
@@ -1711,6 +1725,12 @@ impl Chat {
     /// Which is not a key: it moves the view and leaves the caret in the
     /// box where the reader put it.
     pub fn scroll(&mut self, rows: isize) {
+        // And wherever the cursor last stood is not where the reader is
+        // looking any more. The wheel looks around and the keys go
+        // somewhere, which is the difference the transcript draws
+        // everywhere else: coming in from the box after this goes to the
+        // words nearest the box, not back to wherever the page used to be.
+        self.stood = None;
         self.scroll_by(rows);
     }
 
@@ -1832,7 +1852,7 @@ impl Chat {
                 // at. Not the nearest row that *does* something, which is
                 // where this used to land: the cursor walks the words now,
                 // and tab is what goes to the next thing enter opens.
-                match self.last_place(room) {
+                match self.back_into_the_transcript(room) {
                     Some(place) => {
                         self.focus = Focus::Transcript(place);
                         self.show_row(place.row, room);
@@ -2034,14 +2054,30 @@ impl Chat {
         }
     }
 
-    /// The end of the last row of the transcript, which is where the
-    /// cursor comes in from the box.
+    /// Goes back to the box, remembering where in the transcript this was.
+    fn leave_the_transcript(&mut self, at: Place) {
+        self.stood = Some(at);
+        self.focus = Focus::Writing;
+    }
+
+    /// Where the cursor goes when it comes in from the box.
     ///
-    /// Nothing where there is no transcript to come into, and the key
-    /// scrolls instead -- which for an empty conversation is what it has
-    /// always done.
-    fn last_place(&self, room: Room) -> Option<Place> {
+    /// Where it left, if it has been in here and the row it left is still
+    /// there. Otherwise the end of the last row, which is the words
+    /// nearest the box and so the ones the reader was looking at.
+    fn back_into_the_transcript(&self, room: Room) -> Option<Place> {
         let rows = self.rows(room.reading);
+        if let Some(stood) = self.stood
+            && let Some(row) = rows.get(stood.row)
+        {
+            return Some(Place {
+                row: stood.row,
+                // The row may be a different length than it was: the
+                // window is resized, a run is opened, the agent says
+                // something that reflows what is above it.
+                character: stood.character.min(row.characters()),
+            });
+        }
         let row = rows.len().checked_sub(1)?;
         Some(Place {
             row,
@@ -2049,7 +2085,8 @@ impl Chat {
         })
     }
 
-    /// The same, for a caller holding the rows already.
+    /// The next row worth standing on above or below `at`, among rows the
+    /// caller is holding already.
     fn next_stop_in(at: usize, up: bool, laid: &[Row]) -> Option<usize> {
         let mut stops = laid
             .iter()
@@ -2194,7 +2231,7 @@ impl Chat {
                 let Some(moved) = moved else {
                     if key.code == KeyCode::Down && !holding {
                         self.let_go();
-                        self.focus = Focus::Writing;
+                        self.leave_the_transcript(at);
                         return Some(ChatOutcome::Consumed);
                     }
                     return Some(ChatOutcome::Consumed);
@@ -2278,14 +2315,14 @@ impl Chat {
             // one the reader has left behind.
             KeyCode::Esc if bare => {
                 self.let_go();
-                self.focus = Focus::Writing;
+                self.leave_the_transcript(at);
                 Some(ChatOutcome::Consumed)
             }
             // The box's own keys take the focus back with them, because a
             // reader who starts typing means to type.
             KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter => {
                 self.let_go();
-                self.focus = Focus::Writing;
+                self.leave_the_transcript(at);
                 None
             }
             _ => None,
@@ -2586,6 +2623,78 @@ mod tests {
         let outcome = chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]);
         assert_eq!(outcome, ChatOutcome::Consumed, "escape closed the view");
         assert_eq!(chat.focus(), Focus::Writing);
+    }
+
+    /// Leaving the transcript and coming back is coming back.
+    ///
+    /// Down off the last row goes to the box, which is the one key walking
+    /// whatever can still move. Up from the box came back to the *end* of
+    /// that row rather than to the column it was left from, so a reader
+    /// reading down a long answer, who stepped one row too far and pressed
+    /// up again, found the cursor on the far side of the page for no
+    /// reason they could see.
+    ///
+    /// The wheel is the exception, and on purpose: it moves the view and
+    /// leaves the cursor, because a reader spinning it is looking around
+    /// rather than going somewhere. So after it, coming in from the box
+    /// goes to the words nearest the box, not back to a page they have
+    /// scrolled away from.
+    ///
+    /// Broken deliberately two ways: by not remembering where the cursor
+    /// left, which is what it did; and by remembering it across the wheel,
+    /// which drags the view back to where the reader used to be the moment
+    /// they press a key.
+    #[test]
+    fn coming_back_into_the_transcript_comes_back_where_it_left() {
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, "hello there, this is the answer");
+        chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
+
+        // In at the end of the last row, then to the start of it, then
+        // down -- which is off the end of the transcript and into the box.
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[]);
+        let Focus::Transcript(left) = chat.focus() else {
+            panic!("the cursor is not in the transcript");
+        };
+        assert_eq!(left.character, 0, "home did not reach the start of the row");
+        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Writing, "down did not reach the box");
+
+        // And back up, to where it left rather than to the end of the row.
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        assert_eq!(
+            chat.focus(),
+            Focus::Transcript(left),
+            "coming back did not come back"
+        );
+
+        // Escape is the other way out, and it remembers the same way.
+        chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Transcript(left));
+
+        // But the wheel is looking around rather than going somewhere, so
+        // after it the cursor comes in where it always did: at the words
+        // nearest the box.
+        chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]);
+        chat.scroll(-1);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        let Focus::Transcript(back) = chat.focus() else {
+            panic!("the cursor is not in the transcript");
+        };
+        assert_ne!(
+            back, left,
+            "the wheel left the cursor pointing at where the reader used to be"
+        );
+        let rows = chat.rows(ROOM.reading);
+        assert_eq!(
+            back,
+            Place {
+                row: rows.len() - 1,
+                character: rows[rows.len() - 1].characters(),
+            }
+        );
     }
 
     /// Shift and a motion hold what the motion passed over.
