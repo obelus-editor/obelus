@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 obelus-text.workspace = true
 ropey.workspace = true
+tracing.workspace = true
 tree-sitter.workspace = true
 tree-sitter-bash.workspace = true
 tree-sitter-c.workspace = true

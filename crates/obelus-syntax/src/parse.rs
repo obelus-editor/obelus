@@ -7,19 +7,62 @@ use obelus_text::{
 use ropey::Rope;
 use tree_sitter::{InputEdit, Parser, Point, Tree};
 
-use crate::{LanguageId, grammar};
+use crate::{LanguageId, grammar, inject};
+
+/// How deep a language inside a language may go.
+///
+/// Markdown holds a fence of HTML, which holds a script, which holds a
+/// template string of HTML again -- and a grammar that injects itself, as
+/// Rust's macros do, would otherwise go down for ever. Three is past
+/// anything a reader meets and is a number rather than a proof.
+const DEEPEST: usize = 3;
 
 /// A parsed document, kept alongside its text.
 pub struct SyntaxState {
     language: LanguageId,
     parser: Parser,
     tree: Tree,
+    /// A second parser, for the runs written in some other language.
+    ///
+    /// Its own rather than the one above reconfigured, because the two are
+    /// asked in turn on every reparse: this one is set to a different
+    /// language and a different set of ranges for each injection, and the
+    /// one above would have to be set back to the file's own language after
+    /// every one of them.
+    injector: Parser,
+    /// The trees for the runs of this document written in another language,
+    /// outermost first.
+    injected: Vec<Injected>,
     /// Whether the tree has been told where the text moved but not what it
     /// means there.
     behind: bool,
     /// How long the last parse took, which is what decides whether the next
     /// one waits for a pause in the typing.
     took: std::time::Duration,
+}
+
+/// One run of a document in another language, parsed.
+pub struct Injected {
+    language: LanguageId,
+    tree: Tree,
+}
+
+impl Injected {
+    /// What this run is written in.
+    #[must_use]
+    pub const fn language(&self) -> LanguageId {
+        self.language
+    }
+
+    /// Its tree.
+    ///
+    /// Its nodes are at their places in the whole document, not in a copy of
+    /// the run: the parser was given the run as its included ranges rather
+    /// than as a string of its own.
+    #[must_use]
+    pub const fn tree(&self) -> &Tree {
+        &self.tree
+    }
 }
 
 impl std::fmt::Debug for SyntaxState {
@@ -46,17 +89,30 @@ impl SyntaxState {
             .expect("a grammar shipped with obelus should load");
         let started = std::time::Instant::now();
         let tree = parse(&mut parser, text.rope(), None)?;
-        Some(Self {
+        let mut state = Self {
             language,
             parser,
+            injector: Parser::new(),
             tree,
+            injected: Vec::new(),
             behind: false,
-            // The first parse is the only measurement there is to go on,
-            // and it is the honest one: a grammar that takes ten
-            // milliseconds over a file does not take one over the same file
-            // a character later.
-            took: started.elapsed(),
-        })
+            took: std::time::Duration::ZERO,
+        };
+        state.inject(text);
+        // The first parse is the only measurement there is to go on, and it
+        // is the honest one: a grammar that takes ten milliseconds over a
+        // file does not take one over the same file a character later. The
+        // languages inside this one are inside the measurement, because they
+        // are inside the wait: a reader typing does not care which of the
+        // parsers between their key and the colours was the slow one.
+        state.took = started.elapsed();
+        Some(state)
+    }
+
+    /// The runs of this document written in another language.
+    #[must_use]
+    pub fn injected(&self) -> &[Injected] {
+        &self.injected
     }
 
     /// The language this was parsed as.
@@ -131,7 +187,16 @@ impl SyntaxState {
     /// points at the wrong bytes. What it does not do is work out what the
     /// new bytes *mean*, which is the dear half.
     pub fn note(&mut self, edit: &Edit) {
-        self.tree.edit(&input_edit(edit));
+        let edit = input_edit(edit);
+        self.tree.edit(&edit);
+        // And every tree inside it. They are thrown away and parsed again
+        // when this settles, so this is not about reusing them -- it is
+        // about the frames in between, which are drawn from these trees
+        // exactly as they are drawn from the one above, and would otherwise
+        // paint a fence's colours where the fence no longer is.
+        for injected in &mut self.injected {
+            injected.tree.edit(&edit);
+        }
         self.behind = true;
     }
 
@@ -148,6 +213,7 @@ impl SyntaxState {
         if let Some(tree) = parse(&mut self.parser, text.rope(), Some(&self.tree)) {
             self.tree = tree;
         }
+        self.inject(text);
         self.took = started.elapsed();
         self.behind = false;
     }
@@ -175,6 +241,59 @@ impl SyntaxState {
     pub const fn is_quick(&self) -> bool {
         self.took.as_micros() < QUICK.as_micros()
     }
+
+    /// Parses the runs written in another language.
+    ///
+    /// From the tree that has just been parsed, every time, and from
+    /// scratch. Where the injections are is a fact about the document's
+    /// structure and an edit changes that structure -- a line typed above a
+    /// fence moves it, three backticks make a new one -- so the question has
+    /// to be asked again either way.
+    ///
+    /// Handing each parse the tree that run had a keystroke ago was tried
+    /// and is not here: on a fifty kilobyte markdown file it saved twelve
+    /// per cent of a cost that is nearly all in the parsing itself, and it
+    /// cost an offset that had to be moved by every edit and a tree that
+    /// could be matched to the wrong run. Two silent failures for a tenth of
+    /// the work is the wrong trade; the honest saving, if this ever needs
+    /// one, is not parsing the runs nobody is looking at.
+    fn inject(&mut self, text: &Text) {
+        self.injected.clear();
+        let mut found = inject::found(self.language, &self.tree, text);
+        for _ in 0..DEEPEST {
+            if found.is_empty() {
+                break;
+            }
+            let mut deeper = Vec::new();
+            for injection in found {
+                if self
+                    .injector
+                    .set_language(grammar(injection.language).language())
+                    .is_err()
+                {
+                    continue;
+                }
+                // Ranges rather than a slice of the text: this is what keeps
+                // every offset the inner tree reports a place in the whole
+                // document, so nothing downstream has to add a base back on.
+                // It refuses ranges out of order, which a query cannot
+                // produce and which would be worth hearing about if it did.
+                if let Err(error) = self.injector.set_included_ranges(&injection.ranges) {
+                    tracing::debug!(%error, "an injection whose ranges the parser refused");
+                    continue;
+                }
+                let Some(tree) = parse(&mut self.injector, text.rope(), None) else {
+                    continue;
+                };
+                deeper.extend(inject::found(injection.language, &tree, text));
+                self.injected.push(Injected {
+                    language: injection.language,
+                    tree,
+                });
+            }
+            found = deeper;
+        }
+    }
 }
 
 /// How long a reparse may take and still be worth doing between one
@@ -185,6 +304,15 @@ impl SyntaxState {
 /// whole section a heading opens, which in a document with a long one is
 /// six milliseconds a keystroke -- and a reader typing does not need the
 /// colours to have caught up, they need the letters to appear.
+///
+/// Markdown is further past it now that what is inside a paragraph is
+/// parsed as well: measured on this project's own `AGENTS.md`, fifty
+/// kilobytes of prose, six milliseconds became twenty-three, and a five
+/// kilobyte README crossed the line from one side to the other. That is
+/// what this threshold is for -- the reader carries on typing against the
+/// tree they had -- and it is the reason the injections are not parsed
+/// eagerly for ever: the saving left on the table is not parsing the runs
+/// nobody is looking at.
 const QUICK: std::time::Duration = std::time::Duration::from_millis(2);
 
 /// Runs the parser over a rope without flattening it into a `String`.

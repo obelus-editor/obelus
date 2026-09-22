@@ -8,10 +8,9 @@
 use std::ops::Range;
 
 use obelus_text::{Text, coordinates::ByteOffset, kind::SyntaxKind};
-use ropey::Rope;
-use tree_sitter::{Node, QueryCursor, StreamingIterator as _};
+use tree_sitter::{Node, QueryCursor, StreamingIterator as _, Tree};
 
-use crate::parse::SyntaxState;
+use crate::{Grammar, Paint, parse::SyntaxState, rope_chunks};
 
 /// The kind of every byte in one range of the document.
 ///
@@ -47,7 +46,21 @@ impl Highlights {
             return;
         }
 
-        let grammar = crate::grammar(state.language());
+        self.paint(crate::grammar(state.language()), state.tree(), text);
+        // Then the languages inside this one, outermost first -- which is
+        // the order they were found in, and the same rule as everywhere
+        // else here: what is inside wins. A run of Rust in a fence is drawn
+        // over the fence's own colour, and what the Rust query says nothing
+        // about is left plain by the `@none` the markdown query puts there.
+        for injected in state.injected() {
+            self.paint(crate::grammar(injected.language()), injected.tree(), text);
+        }
+    }
+
+    /// Writes what one tree's query says about the range already set up.
+    fn paint(&mut self, grammar: &Grammar, tree: &Tree, text: &Text) {
+        let start = self.start;
+        let end = start + self.kinds.len();
         let mut cursor = QueryCursor::new();
         cursor.set_byte_range(start..end);
 
@@ -58,12 +71,13 @@ impl Highlights {
         // whole set would need the whole set; the query already yields
         // captures in document order, and within one position tree-sitter
         // gives the outermost node first, which is the same order.
-        let mut captures =
-            cursor.captures(grammar.query(), state.tree().root_node(), &mut provider);
+        let mut captures = cursor.captures(grammar.query(), tree.root_node(), &mut provider);
         while let Some((matched, index)) = captures.next() {
             let capture = matched.captures()[*index];
-            let Some(kind) = grammar.kind(capture.index) else {
-                continue;
+            let kind = match grammar.paint(capture.index) {
+                Paint::As(kind) => Some(kind),
+                Paint::Plain => None,
+                Paint::Nothing => continue,
             };
             let node = capture.node.byte_range();
             // Clipped to what is on screen, and dropped if that leaves
@@ -76,7 +90,7 @@ impl Highlights {
                 continue;
             }
             for slot in &mut self.kinds[from..to] {
-                *slot = Some(kind);
+                *slot = kind;
             }
         }
     }
@@ -95,16 +109,4 @@ impl Highlights {
             .copied()
             .flatten()
     }
-}
-
-/// The bytes of a node, as the rope already stores them.
-///
-/// `use<'a>` because in edition 2024 an opaque return type captures every
-/// input lifetime by default, and capturing the node's would tie the iterator
-/// to a borrow that ends when the closure returns.
-fn rope_chunks<'a>(rope: &'a Rope, node: Node<'_>) -> impl Iterator<Item = &'a [u8]> + use<'a> {
-    let range = node.byte_range();
-    let end = range.end.min(rope.len_bytes());
-    let start = range.start.min(end);
-    rope.byte_slice(start..end).chunks().map(str::as_bytes)
 }

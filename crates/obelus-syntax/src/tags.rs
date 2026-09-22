@@ -234,6 +234,8 @@ fn tags_query(language: LanguageId) -> Option<&'static tree_sitter::Query> {
         // The block grammar has the nodes for it but ships no tags query, so
         // it would have to be written here -- which is a decision, not an
         // oversight.
-        | LanguageId::Markdown => None,
+        | LanguageId::Markdown
+        // And nothing defines anything inside a paragraph.
+        | LanguageId::MarkdownInline => None,
     }
 }

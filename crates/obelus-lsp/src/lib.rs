@@ -142,6 +142,9 @@ pub const fn server_for(language: LanguageId) -> Option<Server> {
         // taplo and the JSON server exist, and neither is installed often
         // enough to be worth a row that only ever fails to find them.
         LanguageId::Toml | LanguageId::Json | LanguageId::Markdown => None,
+        // No file is written in it: it is where the markdown grammar points
+        // for what is inside a paragraph, and a server is started for a file.
+        LanguageId::MarkdownInline => None,
     }
 }
 

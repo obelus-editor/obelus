@@ -3730,6 +3730,7 @@ version = "0.1.0"
 dependencies = [
  "obelus-text",
  "ropey",
+ "tracing",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",

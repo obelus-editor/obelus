@@ -2,13 +2,15 @@
 
 pub mod brackets;
 pub mod highlight;
+pub mod inject;
 pub mod parse;
 pub mod tags;
 
 use std::{path::Path, sync::OnceLock};
 
 use obelus_text::kind::SyntaxKind;
-use tree_sitter::{Language, Query};
+use ropey::Rope;
+use tree_sitter::{Language, Node, Query};
 
 /// A language obelus can highlight.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -43,6 +45,14 @@ pub enum LanguageId {
     Yaml,
     /// Markdown, block structure only.
     Markdown,
+    /// What is inside a markdown paragraph.
+    ///
+    /// Markdown is two grammars, and this is the second: the first parses the
+    /// structure of a document, and what is inside a paragraph -- emphasis, a
+    /// link, a code span -- is parsed from the ranges the first hands over.
+    /// Never a file's own language, which is why [`Self::for_name`] does not
+    /// answer with it and [`Self::for_injection`] does.
+    MarkdownInline,
 }
 
 impl LanguageId {
@@ -90,6 +100,22 @@ impl LanguageId {
         }
     }
 
+    /// The language an injection query names, if obelus has it.
+    ///
+    /// A different question from [`Self::for_name`], asked in a different
+    /// place: that one answers what a file is, and this one answers what is
+    /// written in one run of it. Nearly every name is the same word either
+    /// way, and the one that is not is the whole reason these are two
+    /// functions -- `markdown_inline` is somewhere a grammar points, not
+    /// something anybody opens, and a file extension must never reach it.
+    #[must_use]
+    pub fn for_injection(name: &str) -> Option<Self> {
+        match name {
+            "markdown_inline" => Some(Self::MarkdownInline),
+            _ => Self::for_name(name),
+        }
+    }
+
     /// What this language starts a line comment with, if it has one.
     ///
     /// A column of the same table `name` and `grammar` are columns of,
@@ -117,7 +143,7 @@ impl LanguageId {
             // Only block comments, or none at all: CSS and HTML have
             // `/* */` and `<!-- -->`, JSON has nothing, and markdown's
             // comment is an HTML one.
-            Self::Json | Self::Css | Self::Html | Self::Markdown => None,
+            Self::Json | Self::Css | Self::Html | Self::Markdown | Self::MarkdownInline => None,
         }
     }
 
@@ -140,6 +166,7 @@ impl LanguageId {
             Self::Html => "html",
             Self::Yaml => "yaml",
             Self::Markdown => "markdown",
+            Self::MarkdownInline => "markdown-inline",
         }
     }
 
@@ -164,35 +191,57 @@ impl LanguageId {
         Self::Html,
         Self::Yaml,
         Self::Markdown,
+        Self::MarkdownInline,
     ];
+}
+
+/// What a capture does to the bytes under it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Paint {
+    /// Draw them as this kind of thing.
+    As(SyntaxKind),
+    /// Draw them plain, whatever the capture around them said.
+    ///
+    /// `@none`, which a query uses to stop an enclosing pattern painting
+    /// something: markdown's puts it on the inside of a fence, where the
+    /// fence itself is a literal and the code in it is not. Not the same as
+    /// a capture obelus has no colour for -- that one leaves what is
+    /// already there alone, and this one takes it away.
+    Plain,
+    /// Nothing at all: a capture the theme has no opinion about.
+    Nothing,
 }
 
 /// A compiled grammar and query, built once and shared.
 pub struct Grammar {
     language: Language,
     query: Query,
-    /// The theme kind each capture in `query` resolves to, by capture index.
+    /// What each capture in `query` does, by capture index.
     ///
     /// Resolved here, once, rather than at render time. Two things follow: the
     /// per-frame work is an index into this rather than a string comparison,
     /// and switching theme needs no reparse and invalidates no cache, because
     /// what is cached is which kind of thing a byte is, not what colour it is.
-    kinds: Vec<Option<SyntaxKind>>,
+    paints: Vec<Paint>,
 }
 
 impl Grammar {
     fn new(language: Language, source: &str) -> Self {
         let query = Query::new(&language, source)
             .expect("a highlight query shipped with obelus should compile");
-        let kinds = query
+        let paints = query
             .capture_names()
             .iter()
-            .map(|name| SyntaxKind::for_capture(name))
+            .map(|name| match SyntaxKind::for_capture(name) {
+                Some(kind) => Paint::As(kind),
+                None if *name == "none" => Paint::Plain,
+                None => Paint::Nothing,
+            })
             .collect();
         Self {
             language,
             query,
-            kinds,
+            paints,
         }
     }
 
@@ -208,10 +257,22 @@ impl Grammar {
         &self.query
     }
 
+    /// What a capture does to the bytes it covers.
+    #[must_use]
+    pub fn paint(&self, capture: u32) -> Paint {
+        self.paints
+            .get(capture as usize)
+            .copied()
+            .unwrap_or(Paint::Nothing)
+    }
+
     /// What kind of thing a capture marks, if the theme has an opinion.
     #[must_use]
     pub fn kind(&self, capture: u32) -> Option<SyntaxKind> {
-        self.kinds.get(capture as usize).copied().flatten()
+        match self.paint(capture) {
+            Paint::As(kind) => Some(kind),
+            Paint::Plain | Paint::Nothing => None,
+        }
     }
 }
 
@@ -236,6 +297,7 @@ pub fn grammar(language: LanguageId) -> &'static Grammar {
     static HTML: OnceLock<Grammar> = OnceLock::new();
     static YAML: OnceLock<Grammar> = OnceLock::new();
     static MARKDOWN: OnceLock<Grammar> = OnceLock::new();
+    static MARKDOWN_INLINE: OnceLock<Grammar> = OnceLock::new();
 
     match language {
         LanguageId::Rust => RUST.get_or_init(|| {
@@ -342,19 +404,20 @@ pub fn grammar(language: LanguageId) -> &'static Grammar {
                 tree_sitter_yaml::HIGHLIGHTS_QUERY,
             )
         }),
-        // The *block* grammar only. Markdown is two grammars -- one for the
-        // structure of a document and one for what is inside a paragraph --
-        // and using the second means parsing the ranges the first hands over,
-        // which is the injection machinery obelus does not have yet.
-        //
-        // What that costs: emphasis, links and code spans inside a paragraph
-        // stay plain. What it buys: headings, fenced code, lists, block
-        // quotes and rules, which is what a reader skimming a README is
-        // looking at.
+        // The block grammar: the structure of a document. What is inside a
+        // paragraph is the other one below, reached the way every second
+        // language in a file is -- through the ranges this one's injection
+        // query hands over.
         LanguageId::Markdown => MARKDOWN.get_or_init(|| {
             Grammar::new(
                 tree_sitter_md::LANGUAGE.into(),
                 tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
+            )
+        }),
+        LanguageId::MarkdownInline => MARKDOWN_INLINE.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_md::INLINE_LANGUAGE.into(),
+                tree_sitter_md::HIGHLIGHT_QUERY_INLINE,
             )
         }),
     }
@@ -371,6 +434,21 @@ fn typescript_query() -> String {
         tree_sitter_javascript::HIGHLIGHT_QUERY,
         tree_sitter_typescript::HIGHLIGHTS_QUERY
     )
+}
+
+/// The bytes of a node, as the rope already stores them.
+///
+/// `use<'a>` because in edition 2024 an opaque return type captures every
+/// input lifetime by default, and capturing the node's would tie the iterator
+/// to a borrow that ends when the closure returns.
+pub(crate) fn rope_chunks<'a>(
+    rope: &'a Rope,
+    node: Node<'_>,
+) -> impl Iterator<Item = &'a [u8]> + use<'a> {
+    let range = node.byte_range();
+    let end = range.end.min(rope.len_bytes());
+    let start = range.start.min(end);
+    rope.byte_slice(start..end).chunks().map(str::as_bytes)
 }
 
 #[cfg(test)]
@@ -440,18 +518,22 @@ mod tests {
     /// is understood.
     #[test]
     fn the_theme_understands_what_the_queries_capture() {
+        // The two obelus leaves plain on purpose. They are a *style* rather
+        // than a kind of thing: the file says `*like this*`, the delimiters
+        // either side are already punctuation, and a colour for the words
+        // between them would be a colour obelus invented. A theme that grows
+        // bold and italic is where they would be answered, not here.
+        const PLAIN: &[&str] = &["text.emphasis", "text.strong"];
+
         for language in LanguageId::ALL.iter().copied() {
             let grammar = grammar(language);
             let names = grammar.query().capture_names();
             let unknown: Vec<&str> = names
                 .iter()
                 .enumerate()
-                .filter(|(index, _)| grammar.kind(*index as u32).is_none())
+                .filter(|(index, _)| grammar.paint(*index as u32) == Paint::Nothing)
                 .map(|(_, name)| *name)
-                // `@none` is the one capture that *means* no colour: the
-                // queries use it to stop an enclosing pattern from painting
-                // something, and a colour for it would be inventing one.
-                .filter(|name| *name != "none")
+                .filter(|name| !PLAIN.contains(name))
                 .collect();
             assert!(
                 unknown.is_empty(),

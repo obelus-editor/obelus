@@ -296,6 +296,13 @@ fn every_language_highlights_its_own_sample() {
             LanguageId::Markdown,
             "# Heading\n\nA paragraph.\n\n```rust\nfn main() {}\n```\n",
         ),
+        // What is inside a paragraph, which is never a file: it is where the
+        // block grammar points, and this is the sort of run it points at. No
+        // comment, for the reason JSON has none.
+        (
+            LanguageId::MarkdownInline,
+            "A *word*, a `span` and a [link](https://example.com).\n",
+        ),
     ];
 
     assert_eq!(
@@ -325,9 +332,9 @@ fn every_language_highlights_its_own_sample() {
             continue;
         }
 
-        // JSON has no comments, which is the one thing this list cannot ask
-        // of every language on it.
-        if *language != LanguageId::Json {
+        // JSON has no comments, and neither has the inside of a paragraph:
+        // the one thing this list cannot ask of every language on it.
+        if !matches!(language, LanguageId::Json | LanguageId::MarkdownInline) {
             assert!(
                 found.contains(&SyntaxKind::Comment),
                 "{} did not highlight its comment: {found:?}",
@@ -351,6 +358,152 @@ fn every_language_highlights_its_own_sample() {
             language.name()
         );
     }
+}
+
+/// The same again for a file with other languages inside it.
+///
+/// Every run in another language has a tree of its own, and where those runs
+/// *are* is a fact about the outer tree: a line typed above a fence moves
+/// it, three backticks make a new one, and a word typed into an info string
+/// changes what the fence is written in. Asking again after the outer tree
+/// has settled is the whole of keeping up, and not asking is silent -- the
+/// colours simply stay where the fences used to be.
+///
+/// Broken deliberately by not looking for the injections again in
+/// `SyntaxState::settle`: four of the five cases came back different from
+/// the same document parsed fresh.
+#[test]
+fn reparsing_a_file_with_languages_inside_it_agrees_with_parsing_from_scratch() {
+    const BEFORE: &str = "\
+# Title
+
+```rust
+fn main() {}
+```
+
+A paragraph with *emphasis*.
+
+```python
+x = 1
+```
+";
+    let cases: &[(&str, &str)] = &[
+        (
+            "editing inside a fence",
+            "# Title\n\n```rust\nfn main() { let s = \"hi\"; }\n```\n\nA paragraph with *emphasis*.\n\n```python\nx = 1\n```\n",
+        ),
+        (
+            "a line inserted above every fence, which moves them all",
+            "# Title\n\nFirst.\n\n```rust\nfn main() {}\n```\n\nA paragraph with *emphasis*.\n\n```python\nx = 1\n```\n",
+        ),
+        (
+            "a fence added between two others",
+            "# Title\n\n```rust\nfn main() {}\n```\n\n```go\nfunc main() {}\n```\n\nA paragraph with *emphasis*.\n\n```python\nx = 1\n```\n",
+        ),
+        (
+            "the language of a fence changed",
+            "# Title\n\n```python\nfn main() {}\n```\n\nA paragraph with *emphasis*.\n\n```python\nx = 1\n```\n",
+        ),
+        (
+            "a fence taken away",
+            "# Title\n\nA paragraph with *emphasis*.\n\n```python\nx = 1\n```\n",
+        ),
+    ];
+
+    for (what, after) in cases {
+        let before_text = Text::from_string(BEFORE);
+        let mut state = SyntaxState::new(LanguageId::Markdown, &before_text).expect("parsing");
+        let after_text = Text::from_string(after);
+
+        let edit = parse::edit_between(&before_text, &after_text)
+            .unwrap_or_else(|| panic!("{what}: the two versions differ, so there is an edit"));
+        state.reparse(&after_text, &edit);
+
+        let fresh_text = Text::from_string(after);
+        let fresh = SyntaxState::new(LanguageId::Markdown, &fresh_text).expect("parsing");
+        assert_eq!(
+            kinds(&after_text, &state),
+            kinds(&fresh_text, &fresh),
+            "{what}: reparsing gave different colours from parsing the same text from scratch"
+        );
+    }
+}
+
+/// A fenced block is drawn as whatever language its fence says it is.
+///
+/// The block grammar draws the fence as a literal and stops there -- the
+/// code inside it is not markdown and markdown does not pretend to know it.
+/// What reaches it is the injection: the block tree says which ranges are
+/// Rust, a second tree is parsed from exactly those ranges, and its captures
+/// land on the same bytes because the parser was given the ranges rather
+/// than a copy of the text between them.
+///
+/// Broken deliberately by not painting the injected trees in
+/// `Highlights::refresh`: `fn` came back a string, which is the colour of
+/// the fence around it, instead of a keyword.
+#[test]
+fn a_fenced_block_is_highlighted_as_the_language_it_names() {
+    let source = "# Heading\n\n```rust\nfn main() { let s = \"hi\"; }\n```\n";
+    let text = Text::from_string(source);
+    let state = SyntaxState::new(LanguageId::Markdown, &text).expect("parsing");
+    let kinds = kinds(&text, &state);
+    let at = |needle: &str| kinds[source.find(needle).expect("it is in the source")];
+
+    assert_eq!(at("fn "), Some(SyntaxKind::Keyword), "not Rust's keyword");
+    assert_eq!(at("main"), Some(SyntaxKind::Function));
+    assert_eq!(at("\"hi\""), Some(SyntaxKind::String));
+    // And the heading above it is still markdown's own.
+    assert_eq!(at("Heading"), Some(SyntaxKind::Keyword));
+}
+
+/// Inside the fence, what the inner language says nothing about is plain.
+///
+/// The fence is a literal to markdown, so every byte of it is painted the
+/// colour of a string before the Rust tree gets there -- and Rust captures
+/// tokens, not the spaces between them. Markdown's query marks the inside of
+/// the fence `@none` for exactly this, which has to *clear* what the fence
+/// painted rather than merely decline to paint it.
+///
+/// Broken deliberately by skipping `Paint::Plain` the way an unknown capture
+/// is skipped: the spaces between the tokens came back strings, and a fenced
+/// block read as code on a green background of nothing.
+#[test]
+fn what_the_inner_language_does_not_name_is_not_the_fence_colour() {
+    let source = "```rust\nfn main() {}\n```\n";
+    let text = Text::from_string(source);
+    let state = SyntaxState::new(LanguageId::Markdown, &text).expect("parsing");
+    let kinds = kinds(&text, &state);
+
+    let space = source.find("fn main").expect("the line") + 2;
+    assert_eq!(&source[space..=space], " ", "not the space this is about");
+    assert_eq!(
+        kinds[space], None,
+        "the space between two tokens kept the fence's own colour"
+    );
+}
+
+/// What is inside a paragraph is the second markdown grammar, reached the
+/// same way a fence's language is.
+///
+/// Markdown is two grammars -- the structure of a document, and what is
+/// inside a paragraph -- and the block one hands the second its ranges. The
+/// emphasis markers are the visible half of it: before this, a paragraph was
+/// one flat run of plain text.
+#[test]
+fn what_is_inside_a_paragraph_is_highlighted_too() {
+    let source = "A word with *emphasis* in it.\n";
+    let text = Text::from_string(source);
+    let state = SyntaxState::new(LanguageId::Markdown, &text).expect("parsing");
+    let kinds = kinds(&text, &state);
+
+    let star = source.find('*').expect("a marker");
+    assert_eq!(
+        kinds[star],
+        Some(SyntaxKind::Punctuation),
+        "the emphasis marker is not punctuation, so the inline grammar never ran"
+    );
+    // And the prose either side of it is prose.
+    assert_eq!(kinds[0], None, "the words of a paragraph were painted");
 }
 
 /// The outline a syntax tree gives, for the languages whose grammars ship a
