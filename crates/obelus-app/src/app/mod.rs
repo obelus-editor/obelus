@@ -2289,7 +2289,7 @@ impl App {
         // have meant.
         let tab = self.picker.as_ref().and_then(|picker| {
             let row = obelus_ui::picker::tab_row(picker, area)?;
-            let at = obelus_ui::tab_at(row, picker.tabs(), x, y)?;
+            let at = obelus_ui::tab_at(row, picker.tabs(), picker.tab(), x, y)?;
             Some((picker.tab(), at, picker.tabs().len()))
         });
         if let Some((now, wanted, count)) = tab {
@@ -2323,7 +2323,7 @@ impl App {
         // The tabs are the table's first row.
         let tab = self.counts.as_ref().and_then(|counts| {
             let names = counts.tabs();
-            let at = obelus_ui::tab_at(Rect { height: 1, ..area }, &names, x, y)?;
+            let at = obelus_ui::tab_at(Rect { height: 1, ..area }, &names, counts.tab(), x, y)?;
             Some((counts.tab(), at, names.len()))
         });
         if let Some((now, wanted, count)) = tab {
@@ -2358,7 +2358,7 @@ impl App {
         // The tabs are the page's first row.
         let tab = self.settings.as_ref().and_then(|settings| {
             let names = obelus_component::settings::Settings::tabs();
-            let at = obelus_ui::tab_at(Rect { height: 1, ..area }, &names, x, y)?;
+            let at = obelus_ui::tab_at(Rect { height: 1, ..area }, &names, settings.tab(), x, y)?;
             Some((settings.tab(), at, names.len()))
         });
         if let Some((now, wanted, count)) = tab {

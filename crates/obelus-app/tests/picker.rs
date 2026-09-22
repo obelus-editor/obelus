@@ -4081,3 +4081,109 @@ fn a_press_reaches_a_list_drawn_against_the_foot() {
         "the press did not go to the tab"
     );
 }
+
+/// A row of tabs too narrow for them all scrolls, and says so.
+///
+/// Seven tabs want about fifty columns. Under that the row used to draw
+/// them until it ran out and cut the last one off mid-word -- so a reader on
+/// a narrow terminal had a tab they could not read and tabs they could not
+/// know were there.
+///
+/// It is a window on a list now, the way the conversation's own row of
+/// settings is, with the same mark for the same fact: the tabs that fit,
+/// and `…` at either end where there are more. Walking to one off the row
+/// brings it on, because the one thing a window must not do is hide what
+/// the keys are moving.
+///
+/// And the mark can be pressed, which is the only thing on the row saying
+/// the window moves: it asks for the tab just off that end.
+///
+/// Broken deliberately by drawing every tab from the first -- the row fills
+/// and the last word is cut -- or by starting the window at nought whatever
+/// the reader is on, which hides the tab they walked to.
+#[test]
+fn a_narrow_row_of_tabs_scrolls_and_says_so() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 40, 16);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::CommandPalette);
+
+    let names: Vec<String> = app
+        .picker()
+        .expect("the palette")
+        .tabs()
+        .iter()
+        .map(|tab| (*tab).to_string())
+        .collect();
+    assert!(names.len() > 4, "too few tabs to run out of room");
+
+    // The row the tabs are on, found once: it does not move, and the words
+    // on it do -- which is the whole point.
+    let dump = support::render(&mut app, 40, 16);
+    let y: u16 = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains(&names[0]))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse().ok())
+        .expect("the tab row");
+    let row = move |app: &mut App| {
+        let dump = support::render(app, 40, 16);
+        support::text_block(&dump)
+            .lines()
+            .find(|row| {
+                row.split_once('|')
+                    .and_then(|(at, _)| at.trim().parse::<u16>().ok())
+                    == Some(y)
+            })
+            .expect("the tab row")
+            .to_string()
+    };
+
+    // At the first tab: the ones that fit, and a mark saying there are more.
+    let at_the_start = row(&mut app);
+    assert!(
+        at_the_start.contains('\u{2026}'),
+        "a row too narrow for the tabs does not say so: {at_the_start:?}"
+    );
+    let last = names.last().expect("a last tab");
+    assert!(
+        !at_the_start.contains(last.as_str()),
+        "the last tab is on a row with no room for it: {at_the_start:?}"
+    );
+    // And no tab is cut off: every word on the row is whole.
+    for name in &names {
+        let there = at_the_start.contains(name.as_str());
+        let part = name.len() > 2 && at_the_start.contains(&name[..name.len() - 1]);
+        assert!(
+            there || !part,
+            "{name:?} is on the row with its tail cut off: {at_the_start:?}"
+        );
+    }
+
+    // Walked to the end: the row has scrolled to show it.
+    for _ in 0..names.len() - 1 {
+        press(&mut app, KeyCode::Tab);
+    }
+    assert_eq!(app.picker().expect("the palette").tab(), names.len() - 1);
+    let at_the_end = row(&mut app);
+    assert!(
+        at_the_end.contains(last.as_str()),
+        "walking to the last tab did not bring it on to the row: {at_the_end:?}"
+    );
+    assert!(
+        !at_the_end.contains(names[0].as_str()),
+        "the row still shows the first tab as well: {at_the_end:?}"
+    );
+
+    // And the mark at the near end asks for the tab just behind the row.
+    let before = app.picker().expect("the palette").tab();
+    let x = support::column_of(&at_the_end, "\u{2026}");
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: u16::try_from(x).expect("a column"),
+        y,
+    });
+    assert!(
+        app.picker().expect("the palette").tab() < before,
+        "the press on the mark did not move the row"
+    );
+}
