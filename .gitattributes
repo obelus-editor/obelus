@@ -1,0 +1,27 @@
+# Line feeds in the working tree, on every machine.
+#
+# Git for Windows checks text out with CRLF by default, and three things
+# here read files rather than merely compiling them. None of the three says
+# "the line endings are wrong" when it happens; each says something else,
+# and the something else is what makes this worth stating rather than
+# leaving to whatever the reader's git was installed with.
+#
+#   The golden fixtures. `tests/support`'s `check` compares the cell grid
+#   it drew against `tests/fixtures/*.txt`, and `one_spelling` -- the one
+#   normalising it does -- only turns `\` into `/`. A fixture checked out
+#   with CRLF fails every one of them, and prints the two blocks under
+#   "--- fixture ---" and "--- rendered ---" where they look identical.
+#
+#   `tests/fixtures/fake-agent.sh`. A POSIX shell reading CRLF keeps the
+#   `\r` on the end of what it read, so the `case` arms stop matching and
+#   the JSON it prints carries a stray byte. What that looks like from
+#   obelus's end is an agent speaking the protocol badly.
+#
+#   The tree itself. `OBELUS_TREE` points a handful of tests at this
+#   repository, because the two readings of a fold have to agree on shapes
+#   nobody writes into a test and counting a tree is only worth asserting
+#   on a real one. Those count bytes and lines of these files.
+#
+# Everything in here is text -- there is not one binary file in the
+# repository -- so this is one rule with nothing to except from it.
+* text=auto eol=lf
