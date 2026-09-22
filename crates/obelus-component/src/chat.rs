@@ -1376,6 +1376,23 @@ impl Chat {
             // The first row is what opens and what folds; the rest are the
             // rest of the same words, at the same depth and from the same
             // text, so a place in the title is still a place in the title.
+            //
+            // And the rest go behind the fold with everything else. They
+            // were drawn whatever the fold said, which nobody noticed
+            // while a title was a handful of words: it wrapped to one row
+            // and there was no rest of it. A command is a title as long as
+            // the command, and an agent that writes a script into a
+            // heredoc sends the whole script as the title -- so a closed
+            // call sat there with twenty rows of shell under a mark saying
+            // it was shut, and the key that was supposed to put it away
+            // moved one row of output.
+            //
+            // A closed thing is one row, which is what it is everywhere
+            // else here: a run, a stretch of thinking, a block in a file.
+            // The rest of a long title is behind the same arrow as the
+            // rest of the call, because from the reader's side it is the
+            // same answer to the same question -- what is in here that I
+            // am not looking at.
             let mut title = laid_out(&said.text, room, reads_as_markdown(said.speaker)).into_iter();
             let mut rows = vec![Row {
                 changed: (!said.change.is_empty())
@@ -1388,10 +1405,10 @@ impl Chat {
                     Some((at, Source::Text)),
                 )
             }];
-            rows.extend(
-                title.map(|spans| Self::under(said, spans, depth, Some((at, Source::Text)))),
-            );
             if self.is_open(at) {
+                rows.extend(
+                    title.map(|spans| Self::under(said, spans, depth, Some((at, Source::Text)))),
+                );
                 // Markdown, unless obelus is running a command for this
                 // call: then these words are the command and what it has
                 // printed, put here by [`Chat::running`], and a terminal's
@@ -2430,6 +2447,52 @@ mod tests {
 
     use super::*;
 
+    /// A closed call is one row, however long its title.
+    ///
+    /// The rest of a wrapped title was drawn whatever the fold said, and
+    /// nobody noticed while a title was a handful of words -- it wrapped to
+    /// one row and there was no rest of it. Then an agent wrote a script
+    /// into a heredoc and sent the whole script as the call's title, and a
+    /// closed call sat there with twenty rows of shell under a mark saying
+    /// it was shut. The key that was supposed to put it away moved one row
+    /// of output.
+    ///
+    /// It makes two claims and was broken deliberately twice. Drawing the
+    /// rest of the title outside the fold leaves a closed call as tall as
+    /// its title. And drawing it nowhere at all loses the title from the
+    /// opened call, which is the half a reader opened it for.
+    #[test]
+    fn a_closed_call_is_one_row_however_long_its_title() {
+        let script = "python3 - <<'PY'\nimport pathlib\np = pathlib.Path('a.rs')\nPY";
+        let mut chat = Chat::new();
+        chat.tool(&saying("c1", script, &["what it printed"]), "completed");
+
+        // Closed, which is how a call that is over arrives.
+        let rows = chat.rows(ROOM.reading);
+        assert!(!rows[0].open, "a call that is over did not fold itself");
+        assert_eq!(
+            rows.len(),
+            1,
+            "a closed call is taller than the row that folds it: {:?}",
+            rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+
+        // Opened, the whole of the title is there, and what it carries
+        // under it.
+        chat.fold(0);
+        let rows: Vec<String> = chat.rows(ROOM.reading).iter().map(Row::text).collect();
+        for line in script.lines() {
+            assert!(
+                rows.iter().any(|row| row == line),
+                "opening it did not bring back {line:?}: {rows:?}"
+            );
+        }
+        assert!(
+            rows.iter().any(|row| row == "what it printed"),
+            "opening it did not bring back what the command printed: {rows:?}"
+        );
+    }
+
     /// A call's title is wrapped whether or not it carries anything.
     ///
     /// It was wrapped on a call carrying nothing and put down as one run,
@@ -2444,6 +2507,11 @@ mod tests {
     /// merely short enough: they are the same words at the same width, and
     /// a second way of laying them out is a second answer that can drift.
     ///
+    /// Opened, because the rest of a long title is behind the fold with
+    /// everything else the call carries -- a closed one is its first row
+    /// and nothing more, which is what
+    /// [`a_closed_call_is_one_row_however_long_its_title`] is about.
+    ///
     /// Broken deliberately by putting `plain(said.text.clone())` back as
     /// the opening row's runs: the whole title comes back as one row, far
     /// wider than it was laid out for.
@@ -2454,6 +2522,9 @@ mod tests {
         let opening = |carried: &[&str]| -> Vec<String> {
             let mut chat = Chat::new();
             chat.tool(&saying("c1", long, carried), "completed");
+            if !carried.is_empty() {
+                chat.fold(0);
+            }
             chat.rows(ROOM.reading)
                 .into_iter()
                 .map(|row| row.text())
