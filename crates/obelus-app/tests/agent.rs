@@ -4736,22 +4736,29 @@ fn a_command_the_agent_asks_for_is_run() {
     );
 }
 
-/// A command obelus ran is on the page in the words it was run in.
+/// A command obelus ran is on the page in the words it was run in, and
+/// says how it ended.
 ///
 /// The half obelus owes for not asking before it runs one. The agent
 /// decides whether to ask; obelus decides that once it runs, the reader
 /// sees the command line itself -- not the agent's title for it -- and
-/// everything it printed.
+/// everything it printed, and how it came out.
 ///
 /// Opened here, because a command that has ended folds away like
 /// everything else a call carries: while it runs the call is open and the
 /// output arrives under it, and afterwards it is a row and a key. What the
 /// reader must be able to reach is what this is about.
 ///
-/// It makes two claims and was broken deliberately twice. Leaving
+/// And the number, which was nowhere. obelus kept the exit code, handed it
+/// to the agent when it asked, and showed the reader a mark saying only
+/// that something had failed -- so `grep` matching nothing and a command
+/// that is not installed looked alike, and one of those is an answer.
+///
+/// It makes three claims and was broken deliberately three times. Leaving
 /// `Chat::running` uncalled carries the agent's title and nothing else.
-/// And answering the fold with the reader's own word ignored keeps the
-/// call shut when they have just opened it.
+/// Dropping the exit line loses how it came out. And answering the fold
+/// with the reader's own word ignored keeps the call shut when they have
+/// just opened it.
 #[test]
 fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
     let (mut app, events) = talking();
@@ -4817,6 +4824,11 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
             .filter_map(|row| row.split_once('|'))
             .any(|(_, said)| said.trim() == "obelus-ran-this"),
         "what the command printed is not on the page:\n{dump}"
+    );
+    // And the number it came out with, which the mark cannot say.
+    assert!(
+        screen.iter().any(|row| row.contains("and exited 3")),
+        "the page does not say what the command exited with:\n{dump}"
     );
 }
 

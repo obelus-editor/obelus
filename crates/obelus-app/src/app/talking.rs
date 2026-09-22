@@ -1799,6 +1799,29 @@ impl App {
                 if truncated {
                     words.push_str("\n\u{2026} and more, which obelus did not keep");
                 }
+                // How it ended, where that is not simply well. The mark on
+                // the row says a command failed and cannot say what a
+                // reader needs next, which is *how*: a `grep` that matched
+                // nothing exits 1 and a command that is not installed
+                // exits 127, and one of those is an answer and the other
+                // is a morning wasted. The number was nowhere on the page
+                // -- obelus kept it, told the agent when it asked, and
+                // showed the reader a glyph.
+                //
+                // Last, under the output, because that is where the
+                // command's own account ends.
+                match ended {
+                    Some(obelus_agent::running::Ended {
+                        signal: Some(signal),
+                        ..
+                    }) => words.push_str(&format!("\n\u{2026} and was stopped by {signal}")),
+                    Some(obelus_agent::running::Ended {
+                        code: Some(code), ..
+                    }) if code != 0 => {
+                        words.push_str(&format!("\n\u{2026} and exited {code}"));
+                    }
+                    _ => {}
+                }
                 // The call's state, not a second mark beside it: a call
                 // running a command that failed is a call that failed, and
                 // a reader scanning a turn reads one glyph.
