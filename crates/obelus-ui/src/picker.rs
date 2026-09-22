@@ -284,6 +284,41 @@ pub fn rows_region(picker: &Picker, region: Rect) -> Rect {
     }
 }
 
+/// Which row of the list a point on screen is on, and whether it is on
+/// that row's arrow.
+///
+/// The way back out of the arithmetic the drawing goes in by: the rows
+/// start below the tabs and whatever the list says about itself, the
+/// window decides which of them is first, and a row's own columns begin
+/// one in and two more for every level of depth. Each of those numbers is
+/// read here from the same place the drawing takes it, because a pointer
+/// that landed on a different row than the one it looks like it landed on
+/// is worse than a pointer that does nothing.
+///
+/// `None` for a point outside the rows, or past the last of them.
+#[must_use]
+pub fn row_at(picker: &Picker, region: Rect, x: u16, y: u16) -> Option<(usize, bool)> {
+    let list = rows_region(picker, region);
+    if y < list.y || y >= list.bottom() || x < list.x || x >= list.right() {
+        return None;
+    }
+    // The bar takes the last column, and a row never draws under it.
+    let rows = list.width.saturating_sub(SCROLLBAR_WIDTH);
+    if x >= list.x.saturating_add(rows) {
+        return None;
+    }
+    let first = picker.first_visible(list.height);
+    let at = first + usize::from(y - list.y);
+    let item = picker.matches().nth(at)?;
+    // The row's own columns, in the order the drawing spends them: one to
+    // stand clear of the edge, two for every level in, and then the arrow.
+    let indent = 1u16.saturating_add(item.depth.saturating_mul(2).min(rows / 3));
+    let on_the_arrow = item.opens.is_some()
+        && x >= list.x.saturating_add(indent)
+        && x < list.x.saturating_add(indent).saturating_add(MARKER_COLUMNS);
+    Some((at, on_the_arrow))
+}
+
 /// How many rows of the list a reader will actually see, given the room.
 ///
 /// The two above composed, which is the only question anybody outside this

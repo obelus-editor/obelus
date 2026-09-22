@@ -334,3 +334,94 @@ fn it_goes_back_to_the_row_and_not_to_the_name() {
         "it went back to a row with the right name and the wrong path"
     );
 }
+
+/// A press moves the selection, and a press on a row's arrow opens it.
+///
+/// The lists obelus draws over a file took no press at all. The wheel
+/// reached them -- it is its own event, and goes to whichever layer is
+/// nearest -- and the query box did too, because the box is on the status
+/// row and the status row is asked first. So the box was clickable and the
+/// list under it was not.
+///
+/// A press moves the selection and nothing else. These are drawn over
+/// something the reader was reading, and a mis-aimed press that *chose* a
+/// row would take them somewhere they never asked to go; choosing stays on
+/// the keyboard.
+///
+/// Except a row's own arrow, which says the row opens. Pressing that does
+/// what pressing an arrow means everywhere, and it cannot take the reader
+/// anywhere: the arrow is declared on the rows that open and on no others.
+///
+/// Broken deliberately by handing the press back to nothing, which leaves
+/// the selection where it was; or by opening on a press anywhere in the
+/// row, which turns a press meant to look at a directory into one that
+/// walks into it.
+#[test]
+fn a_press_moves_the_selection_and_the_arrow_opens_a_row() {
+    let (_scratch, mut app) = a_tree("tree-press");
+    let _ = support::render(&mut app, 60, 18);
+
+    // The rows: which of them say they open, and how far in each is drawn,
+    // because a row's arrow is drawn after its indent.
+    let rows: Vec<(Option<bool>, u16)> = app
+        .picker()
+        .expect("the tree")
+        .matches()
+        .map(|item| (item.opens, item.depth))
+        .collect();
+    let opens: Vec<Option<bool>> = rows.iter().map(|(opens, _)| *opens).collect();
+    // One that is shut, so that pressing it has to open: the tree starts
+    // open along the path to the file being read, and a press on one of
+    // those would be a press that shuts.
+    let directory = opens
+        .iter()
+        .position(|opens| *opens == Some(false))
+        .expect("a row that is shut");
+    // And a row that is a file, which is what a press must not choose: a
+    // row that opens nothing and is not a file -- a directory with nothing
+    // in it -- would take this press and do nothing either way.
+    let other = app
+        .picker()
+        .expect("the tree")
+        .matches()
+        .position(|item| matches!(item.value, obelus_component::picker::PickerValue::File(_)))
+        .expect("a file among the rows");
+    assert_ne!(directory, other, "every row opens, so this proves nothing");
+
+    let area = app.editor_area_for_test();
+    let top = obelus_ui::picker::rows_region(app.picker().expect("the tree"), area).y;
+    let press = |app: &mut obelus_app::app::App, row: usize, x: u16| {
+        app.handle(obelus_app::event::Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x,
+            y: top + u16::try_from(row).expect("a row"),
+        });
+    };
+
+    // A press on the words of a row moves the selection there, and does
+    // nothing else: the list is still the list.
+    let open_before = app.file_count_for_test();
+    press(&mut app, other, area.x + 20);
+    assert_eq!(
+        app.picker().expect("the tree").selected_row(),
+        Some(other),
+        "the press did not move the selection"
+    );
+    assert_eq!(
+        app.file_count_for_test(),
+        open_before,
+        "the press on the words of a file opened it"
+    );
+
+    // And a press on the arrow of a row that opens opens it. Two columns a
+    // level and one to stand clear of the edge, which is where the list
+    // draws it.
+    let arrow = 1 + rows[directory].1 * 2;
+    let before = app.picker().expect("the tree").matches().count();
+    press(&mut app, directory, area.x + arrow);
+    let after = app.picker().expect("the tree").matches().count();
+    assert!(
+        after > before,
+        "the press on the arrow did not open the row: {before} rows, then {after}"
+    );
+}

@@ -2163,6 +2163,52 @@ impl App {
         }
     }
 
+    /// What the pointer did to a view drawn over the file.
+    ///
+    /// Which for a long time was nothing at all: the wheel reached these --
+    /// it is its own event and goes to whichever layer is nearest -- and a
+    /// press did not, so a reader could scroll a list of files and not
+    /// point at one. The query box was the exception, and a telling one:
+    /// it is on the status row, which is asked before this, so the box was
+    /// clickable and the list under it was not.
+    ///
+    /// A press moves the selection and nothing else. What *chooses* a row
+    /// stays on the keyboard, because these lists are opened over a file
+    /// and drawn where a mis-aimed press would otherwise take the reader
+    /// somewhere they did not ask to go. The one exception is a row's own
+    /// arrow, which says the row opens: pressing that does what pressing
+    /// the arrow means everywhere, and cannot take the reader anywhere,
+    /// because the arrow is declared on the rows that open and on no
+    /// others.
+    fn pointer_in_a_layer(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
+        use crate::event::Pointer;
+
+        if kind != Pointer::Pressed {
+            return;
+        }
+        let area = self.picker_area();
+        let Some((at, arrow)) = self
+            .picker
+            .as_ref()
+            .and_then(|picker| obelus_ui::picker::row_at(picker, area, x, y))
+        else {
+            return;
+        };
+        if let Some(picker) = self.picker.as_mut() {
+            picker.select_row(at);
+        }
+        if arrow {
+            // Down the same path the key goes down, rather than a second
+            // opener of its own: what enter does to the row under the
+            // arrow is what the arrow is a picture of, and two of them
+            // would be two answers to keep alike.
+            self.picker_key(&crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Enter,
+                crossterm::event::KeyModifiers::NONE,
+            ));
+        }
+    }
+
     /// What the pointer did to what has been said.
     ///
     /// Which is the half of a conversation with no caret in it: there is
@@ -2346,6 +2392,7 @@ impl App {
         // leaves every line of the file where the reader can see it, and a
         // line they can see is a line they can point at.
         if self.layers().covering() {
+            self.pointer_in_a_layer(kind, x, y);
             return;
         }
         // A conversation is what is being read rather than something over
