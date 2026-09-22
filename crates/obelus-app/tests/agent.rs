@@ -3737,6 +3737,29 @@ fn remembering(
     session: &str,
     how: &[&str],
 ) -> (support::Scratch, App, Receiver<Event>) {
+    remembering_how(name, note, session, how, None)
+}
+
+/// The same, with obelus offering an agent its own tools.
+///
+/// The address rather than a server: what is being tested is what an agent
+/// is *told*, and a test that opened a port would be testing the machine.
+fn remembering_with_tools(
+    name: &str,
+    note: &str,
+    session: &str,
+    how: &[&str],
+) -> (support::Scratch, App, Receiver<Event>) {
+    remembering_how(name, note, session, how, Some("http://127.0.0.1:9/mcp"))
+}
+
+fn remembering_how(
+    name: &str,
+    note: &str,
+    session: &str,
+    how: &[&str],
+    tools: Option<&str>,
+) -> (support::Scratch, App, Receiver<Event>) {
     let scratch = support::Scratch::new(name);
     std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
     std::fs::write(
@@ -3759,6 +3782,9 @@ fn remembering(
 
     let (mut app, events) = wired();
     app.working_directory_for_test(scratch.path().to_path_buf());
+    if let Some(tools) = tools {
+        app.tools_url_for_test(tools);
+    }
     let mut arguments = vec!["tests/fixtures/fake-agent.sh".to_string()];
     arguments.extend(how.iter().map(|word| (*word).to_string()));
     app.talk_to("fake", Path::new("sh"), &arguments);
@@ -4540,6 +4566,44 @@ fn a_drag_held_past_the_bottom_of_a_transcript_keeps_selecting() {
         "the copy stopped at {stopped} rows while the pointer was held past the edge, \
          reaching only {carried}:\n{}",
         support::render(&mut app, WIDTH, HEIGHT)
+    );
+}
+
+/// A conversation taken up again is told where obelus's tools are.
+///
+/// Obelus serves its own tools -- the ones an agent finishes a note with --
+/// over HTTP on a port the machine hands out when the process starts, so the
+/// address is a different one every run. A conversation outlives the run it
+/// was started in: that is the whole point of asking for it again by name.
+///
+/// Told only at `session/new`, the agent went on calling the address it was
+/// given the first time, which died with the process that gave it. The notes
+/// worked all morning and then stopped, and from the agent's side the tools
+/// had simply gone -- it said so, and nothing on obelus's side had anything
+/// to say about it, because from here the server was still listening and
+/// nobody had called.
+///
+/// So the offer goes with every way of taking a conversation up, the same as
+/// it goes with opening one. The protocol carries it on all three -- new,
+/// load and resume.
+///
+/// Broken deliberately by taking the tools off the load request, which is
+/// what it did: the fixture then answers `tools=missing`.
+#[test]
+fn a_conversation_taken_up_again_is_told_where_the_tools_are() {
+    let (_scratch, mut app, events) =
+        remembering_with_tools("agent-resume-tools", "0123456V", "s-old", &[]);
+    pump(&mut app, &events, "the conversation", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("tools="))
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("tools=given"),
+        "the agent was not told where obelus's tools are:\n{text}"
     );
 }
 

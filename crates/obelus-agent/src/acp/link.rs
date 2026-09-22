@@ -1439,23 +1439,39 @@ async fn talk(
                             // things, and which was asked is the difference
                             // between a page with the conversation on it
                             // and a page with none.
+                            //
+                            // And obelus's own tools go with it, the same
+                            // as they go with a conversation being opened
+                            // for the first time. Where obelus offers
+                            // them is a port the machine handed out when
+                            // this process started, so it is a different
+                            // one every run -- and a conversation outlives
+                            // the run it was started in, which is the
+                            // whole reason this ask exists. Left unsaid,
+                            // the agent went on using the address it was
+                            // given the first time, which died with the
+                            // process that gave it: the notes worked all
+                            // morning and then stopped, and from the
+                            // agent's side the tools had simply gone.
+                            let mut loading =
+                                LoadSessionRequest::new(session.clone(), root.clone());
+                            let mut resuming =
+                                ResumeSessionRequest::new(session.clone(), root.clone());
+                            if let Some(offered) = offered.as_ref() {
+                                loading = loading.mcp_servers(vec![offered.clone()]);
+                                resuming = resuming.mcp_servers(vec![offered.clone()]);
+                            }
                             let taken = match again {
                                 Again::Replayed => Some(
                                     connection
-                                        .send_request(LoadSessionRequest::new(
-                                            session.clone(),
-                                            root.clone(),
-                                        ))
+                                        .send_request(loading)
                                         .block_task()
                                         .await
                                         .map(|it| (it.modes, it.config_options)),
                                 ),
                                 Again::Remembered => Some(
                                     connection
-                                        .send_request(ResumeSessionRequest::new(
-                                            session.clone(),
-                                            root.clone(),
-                                        ))
+                                        .send_request(resuming)
                                         .block_task()
                                         .await
                                         .map(|it| (it.modes, it.config_options)),

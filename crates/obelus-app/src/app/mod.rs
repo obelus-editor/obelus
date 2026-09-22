@@ -985,6 +985,15 @@ impl App {
             .count()
     }
 
+    /// Says where obelus's own tools are, without listening anywhere.
+    ///
+    /// The loop starts a server and puts its address here; a test wants the
+    /// address handed to an agent without a port being opened for it, which
+    /// is what an agent is told rather than what it finds at the other end.
+    pub fn tools_url_for_test(&mut self, url: &str) {
+        self.tools_url = Some(url.to_string());
+    }
+
     /// Puts the application on a tree of the test's choosing.
     ///
     /// The working directory is read from the process once, at startup, and

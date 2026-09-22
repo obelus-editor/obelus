@@ -190,11 +190,16 @@ while IFS= read -r line; do
                 *) terminals='' ;;
             esac
             case "$again" in
-                load) able='"loadSession":true' ;;
-                resume) able='"sessionCapabilities":{"resume":{}}' ;;
+                load) able='"loadSession":true,' ;;
+                resume) able='"sessionCapabilities":{"resume":{}},' ;;
                 *) able='' ;;
             esac
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{%s},"agentInfo":{"name":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$able" "$me"
+            # And that it takes tools over HTTP, which is what the real one
+            # says and what decides whether obelus offers it any: a client
+            # that hands an address to an agent which cannot fetch it has
+            # offered nothing, so a fixture that stayed quiet here could not
+            # tell a client that offers its tools from one that does not.
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{%s"mcpCapabilities":{"http":true}},"agentInfo":{"name":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$able" "$me"
             ;;
         *'"method":"session/new"'*)
             opened=$((opened + 1))
@@ -676,11 +681,23 @@ while IFS= read -r line; do
             # one getting it wrong, and it was the agent every test used to
             # decide whether the client had it right.
             loaded="$(session_of "$line")"
+            # And whether the client said where its own tools are. A real
+            # agent connects to them at the handshake and keeps what it was
+            # given; obelus offers them on a port the machine hands out
+            # afresh every run, so a conversation taken up in a later run
+            # has to be told the new one or the agent goes on calling a
+            # port that died with the process that named it. Said back, so
+            # a test can see it.
+            case "$line" in
+                *'"mcpServers"'*'"url"'*) tools=given ;;
+                *) tools=missing ;;
+            esac
             # Both halves, in the order they were said. The reader's own
             # comes back as `user_message_chunk` -- a client that dropped
             # those would take up a conversation of answers with no
             # questions above them.
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"what did we settle on"}}}}\n' "$loaded"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"tools=%s"}}}}\n' "$loaded" "$tools"
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"where we were"}}}}\n' "$loaded"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             ;;
