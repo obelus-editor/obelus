@@ -2180,3 +2180,83 @@ fn a_note_an_agent_writes_behind_the_conversation_is_not_put_back() {
         "the page put the note back the way it was before the agent touched it"
     );
 }
+
+/// Escape writes the note down and leaves the caret in it.
+///
+/// Escape everywhere in obelus leaves whatever is *over* what is being
+/// read, and nothing is over this: the notes are a document rather than a
+/// thing on top of one. So what it does here is the writing down -- which
+/// is what leaving a note used to be the only moment for.
+///
+/// It went through the same call that leaving a note goes through, and that
+/// one takes the box away, because leaving a note is what finishes it.
+/// Nothing put the box back. The only thing that opens one is walking to
+/// another note, so with one note in the list there was nothing to walk to:
+/// the caret went out on escape and no key could bring it back. Not an
+/// arrow, not a letter.
+///
+/// A note with nothing in it is still thrown away -- obelus does not write
+/// one down -- and then the caret goes to the nearest note there still is,
+/// because a list with notes in it and the caret nowhere is a list no key
+/// can reach.
+///
+/// Broken deliberately two ways: by writing the note down the way leaving
+/// it does, which takes the box and strands the reader; and by dropping the
+/// empty note without landing anywhere, which strands them on the one path
+/// where the box really does have to move.
+#[test]
+fn escape_writes_the_note_down_and_leaves_the_caret_in_it() {
+    let scratch = tree(
+        "esc-stays",
+        "[[todo]]\nid = \"0123456X\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    );
+    let mut app = open(&scratch, 76, 18);
+    let caret = |app: &mut App| {
+        let dump = support::render(app, 76, 18);
+        dump.split("-- cursor --")
+            .nth(1)
+            .unwrap_or("?")
+            .trim()
+            .to_string()
+    };
+
+    // Something typed at the end of it -- the caret opens at the start --
+    // and then escape.
+    press(&mut app, KeyCode::End);
+    for said in " and more".chars() {
+        press(&mut app, KeyCode::Char(said));
+    }
+    let before = caret(&mut app);
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        caret(&mut app),
+        before,
+        "escape took the caret out of the note"
+    );
+    // And what was typed is in the file, which is the whole of what escape
+    // is for here.
+    assert_eq!(
+        obelus_git::todo::Todo::read(scratch.path()).notes[0].said,
+        "a note and more",
+        "escape did not write the note down"
+    );
+    // The keys still reach it: a letter is a letter.
+    press(&mut app, KeyCode::Char('!'));
+    assert_ne!(caret(&mut app), before, "the caret is stuck after escape");
+
+    // And a note with nothing in it goes, with the caret landing on the
+    // one that is left rather than nowhere.
+    dispatch::dispatch(&mut app, Command::TodoAdd);
+    let _ = support::render(&mut app, 76, 18);
+    press(&mut app, KeyCode::Esc);
+    let after = caret(&mut app);
+    assert_ne!(
+        after, "none",
+        "the caret went nowhere when the empty note did"
+    );
+    assert_eq!(
+        obelus_git::todo::Todo::read(scratch.path()).notes.len(),
+        1,
+        "the note with nothing in it was written down"
+    );
+}

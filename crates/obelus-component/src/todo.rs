@@ -452,6 +452,41 @@ impl TodoView {
         self.window.set_count(self.rows.len());
     }
 
+    /// Writes what is being typed into its note, and leaves the caret in
+    /// it.
+    ///
+    /// Which is what [`Self::keep`] does except for the leaving: that one
+    /// takes the box, because it is called on the way *out* of a note and
+    /// leaving a note is what finishes it. This one is called by a key that
+    /// goes nowhere.
+    ///
+    /// A note with nothing in it is thrown away, the same as anywhere else
+    /// -- obelus does not write one down -- and then the caret goes to the
+    /// nearest note there still is, because a list with notes in it and no
+    /// caret anywhere is a list no key can reach.
+    fn settle(&mut self) -> bool {
+        let Some((at, composer)) = self.writing.as_ref() else {
+            return false;
+        };
+        let (at, said) = (*at, obelus_git::todo::trimmed(&composer.text()));
+        if said.trim().is_empty() {
+            self.writing = None;
+            self.drop_note(at);
+            self.rebuild();
+            if !self.todo.notes.is_empty() {
+                self.enter_note(at.min(self.todo.notes.len() - 1), false);
+            }
+            return true;
+        }
+        match self.todo.notes.get_mut(at) {
+            Some(note) if note.said != said => {
+                note.said = said;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Puts the caret in a note, keeping whatever the last one said.
     ///
     /// The commit happens here rather than on a key, because leaving a note
@@ -756,9 +791,18 @@ impl TodoView {
         let alt = key.modifiers == KeyModifiers::ALT;
         let control = key.modifiers == KeyModifiers::CONTROL;
         match key.code {
-            // The card first: a key that opens a thing closes that thing.
+            // Writes down what has been typed, and stays where it is.
+            //
+            // Escape leaves whatever is *over* what is being read, and
+            // nothing is over this: the notes are a document, not a thing
+            // on top of one. So what it does here is the writing down, and
+            // it must not move the caret -- it went through `keep`, which
+            // takes the box because leaving a note is what finishes it, and
+            // nothing put the box back. With one note in the list there was
+            // nothing to walk to and so nothing that could open a box
+            // again: the caret went out on escape and never returned.
             KeyCode::Esc if bare => {
-                self.keep();
+                self.settle();
                 self.rebuild();
                 TodoOutcome::Cancelled
             }
