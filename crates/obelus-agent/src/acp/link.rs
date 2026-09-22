@@ -894,10 +894,21 @@ const SAID_ABOUT: usize = 1200;
 fn said_about(request: &RequestPermissionRequest) {
     let said = serde_json::to_string(&request.tool_call)
         .unwrap_or_else(|error| format!("unreadable: {error}"));
+    // And what it offered, which the call itself does not say.
+    //
+    // The answers on the card are the agent's alone. The protocol has four
+    // kinds -- allowed once, allowed always, refused once, refused always
+    // -- and obelus shows every one it is given, so a card with two
+    // answers on it is an agent that sent two. Which made "why am I not
+    // offered `always`" a question about the agent that nothing here could
+    // answer: this line said what was asked and not what was on offer.
+    let offered = serde_json::to_string(&request.options)
+        .unwrap_or_else(|error| format!("unreadable: {error}"));
     tracing::info!(
         session = %request.session_id.0,
         asked = cut_to(&said, SAID_ABOUT),
         whole = said.len(),
+        offered = %offered,
         "an agent is asking permission"
     );
 }
