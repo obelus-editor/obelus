@@ -1338,17 +1338,31 @@ impl Chat {
             .filter(|(_, words)| words.trim() != said.text.trim())
             .collect();
         if said.speaker == Speaker::Tool && (!carried.is_empty() || !said.change.is_empty()) {
+            // Wrapped, like the title of a call that carries nothing --
+            // which is the same title and was the only one being wrapped.
+            // Put down as one run however long it was, the calls whose
+            // headings ran off the side were exactly the ones with
+            // something behind them to read, and a command obelus had run
+            // is a title as long as the command.
+            //
+            // The first row is what opens and what folds; the rest are the
+            // rest of the same words, at the same depth and from the same
+            // text, so a place in the title is still a place in the title.
+            let mut title = laid_out(&said.text, room, reads_as_markdown(said.speaker)).into_iter();
             let mut rows = vec![Row {
                 changed: (!said.change.is_empty())
                     .then(|| obelus_git::change::counted(&said.change)),
                 ..self.opening(
                     said,
-                    plain(said.text.clone()),
+                    title.next().unwrap_or_else(|| plain(String::new())),
                     depth,
                     Some(at),
                     Some((at, Source::Text)),
                 )
             }];
+            rows.extend(
+                title.map(|spans| Self::under(said, spans, depth, Some((at, Source::Text)))),
+            );
             if self.is_open(at) {
                 // Markdown, unless obelus is running a command for this
                 // call: then these words are the command and what it has
@@ -2335,6 +2349,57 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
+
+    /// A call's title is wrapped whether or not it carries anything.
+    ///
+    /// It was wrapped on a call carrying nothing and put down as one run,
+    /// however long, on a call carrying something -- which is backwards.
+    /// A call with something behind it is a call worth reading, so the
+    /// headings that ran off the side of the screen were exactly those.
+    /// And obelus runs commands for an agent, where the title *is* the
+    /// command: the longest titles there are belong to the calls that
+    /// always carry what the command printed.
+    ///
+    /// The rows a carrying call opens with have to be the same rows, not
+    /// merely short enough: they are the same words at the same width, and
+    /// a second way of laying them out is a second answer that can drift.
+    ///
+    /// Broken deliberately by putting `plain(said.text.clone())` back as
+    /// the opening row's runs: the whole title comes back as one row, far
+    /// wider than it was laid out for.
+    #[test]
+    fn a_call_wraps_its_title_whether_or_not_it_carries_anything() {
+        let long = "cd into the tree and grep every manifest in it for the \
+                    dependencies it names, then say whether any of them is a cycle";
+        let opening = |carried: &[&str]| -> Vec<String> {
+            let mut chat = Chat::new();
+            chat.tool(&saying("c1", long, carried), "completed");
+            chat.rows(ROOM.reading)
+                .into_iter()
+                .map(|row| row.text())
+                .collect()
+        };
+
+        let alone = opening(&[]);
+        assert!(
+            alone.len() > 1,
+            "the title does not wrap at this width, so nothing here can show the fault"
+        );
+        let carrying = opening(&["what the command printed"]);
+        assert_eq!(
+            carrying.get(..alone.len()),
+            Some(alone.as_slice()),
+            "a call carrying something laid its title out some other way: {carrying:?}"
+        );
+        for row in &carrying {
+            assert!(
+                obelus_text::text_width(row) <= usize::from(ROOM.reading),
+                "a row is {} wide where there is room for {}: {row:?}",
+                obelus_text::text_width(row),
+                ROOM.reading
+            );
+        }
+    }
 
     /// What is held is the same words however wide the window is.
     ///

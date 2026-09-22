@@ -46,7 +46,7 @@ use obelus_text::text_width;
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
-use crate::{Screen, fill, put, rule, write};
+use crate::{Screen, fill, put, rule, write, write_within};
 
 /// How far a speaker's mark is from the edge.
 ///
@@ -764,6 +764,10 @@ impl ChatView<'_> {
                     Rect {
                         y,
                         height: 1,
+                        // Up to the words' last column and no further: a
+                        // fill blanks what it covers, so a row tinted to
+                        // the edge of the band rubs out the scrollbar.
+                        width: (words_end(area) + 1).saturating_sub(area.x),
                         ..area
                     },
                     style,
@@ -780,7 +784,7 @@ impl ChatView<'_> {
                     Rect {
                         x: from,
                         y,
-                        width: area.right().saturating_sub(from),
+                        width: (words_end(area) + 1).saturating_sub(from),
                         height: 1,
                     },
                     style,
@@ -805,7 +809,7 @@ impl ChatView<'_> {
                 && let Some(state) = &row.state
             {
                 let at = area.x + MARGIN + u16::from(row.depth) * DEEPER;
-                self.state_of(cells, at, y, state, dim);
+                self.state_of(cells, at, y, state, dim, words_end(area) + 1);
             }
             if row.first {
                 let at = area.x + MARGIN + u16::from(row.depth) * DEEPER;
@@ -834,7 +838,10 @@ impl ChatView<'_> {
                 &crate::reading::Drawn {
                     base: style,
                     theme: self.theme,
-                    stop: area.right(),
+                    // The one answer to where a row's words end, which
+                    // `words_end` gives the caret as well: the column past
+                    // them belongs to the scrollbar.
+                    stop: words_end(area) + 1,
                     held: row.held.as_ref(),
                 },
             );
@@ -842,29 +849,38 @@ impl ChatView<'_> {
             // its own affordance: obelus opens files, so a row that names
             // one is a row that goes there.
             if let Some((place, more)) = &row.place {
-                ended = write(
+                ended = write_within(
                     cells,
                     ended + 2,
                     y,
                     &said_place(place, self.root, *more),
                     dim,
+                    words_end(area) + 1,
                 );
             }
             // What says there is more behind this row than it is showing:
             // the same mark a settings row and a card use for the same
             // promise, turned down when what it holds is open.
             if row.folds.is_some() {
-                ended = write(cells, ended + 1, y, &opens(row.open), dim);
+                ended = write_within(
+                    cells,
+                    ended + 1,
+                    y,
+                    &opens(row.open),
+                    dim,
+                    words_end(area) + 1,
+                );
             }
             // How much it changes, which is what a reader reads first: the
             // shape of the change before any of its lines.
             if let Some((added, removed)) = row.changed {
-                ended = write(
+                ended = write_within(
                     cells,
                     ended + 2,
                     y,
                     &format!("+{added} \u{2212}{removed}"),
                     dim,
+                    words_end(area) + 1,
                 );
             }
             // A tool call's state goes after its title rather than in front
@@ -873,7 +889,7 @@ impl ChatView<'_> {
             if let Some(state) = &row.state
                 && row.speaker != Speaker::Step
             {
-                self.state_of(cells, ended + 1, y, state, dim);
+                self.state_of(cells, ended + 1, y, state, dim, words_end(area) + 1);
             }
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
@@ -1224,7 +1240,7 @@ impl ChatView<'_> {
     }
 
     /// How far a tool call has got.
-    fn state_of(&self, cells: &mut CellBuffer, x: u16, y: u16, state: &str, dim: Style) {
+    fn state_of(&self, cells: &mut CellBuffer, x: u16, y: u16, state: &str, dim: Style, stop: u16) {
         let (glyph, word, colour) = match state {
             "pending" => (obelus_icons::ui::WAITING, "Waiting", self.theme.gutter),
             "in_progress" => (
@@ -1242,9 +1258,13 @@ impl ChatView<'_> {
         };
         let style = dim.fg(colour);
         if obelus_icons::enabled() {
-            put(cells, x, y, glyph, style);
+            // A glyph is one cell, and it is not drawn at all where that
+            // cell is the scrollbar's.
+            if x < stop {
+                put(cells, x, y, glyph, style);
+            }
         } else {
-            write(cells, x, y, word, style);
+            write_within(cells, x, y, word, style, stop);
         }
     }
 
@@ -1325,6 +1345,117 @@ mod caret {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use obelus_component::chat::{Chat, Room, Speaker};
     use ratatui::layout::Rect;
+
+    /// Nothing a row carries is written in the scrollbar's column.
+    ///
+    /// The transcript leaves its last column to the bar, and the rows are
+    /// wrapped to what is left -- but what a row puts down *after* its
+    /// words begins past the end of them, and on a row that fills the
+    /// width that is the bar's column exactly. The path a call names, the
+    /// mark that says it folds, how much it changed and how it went are
+    /// all written there, and every one of them used a writer with no
+    /// last column at all: it stops where the screen does.
+    ///
+    /// So the rows painted over the bar, which is drawn before them.
+    ///
+    /// Broken deliberately by writing the suffixes with `write` again, or
+    /// by putting the spans' `stop` back to `area.right()`.
+    #[test]
+    fn nothing_a_row_carries_is_written_on_the_scrollbar() {
+        let area = Rect::new(0, 0, 76, 24);
+        let width = super::reading_width(area);
+        // Three lengths and both kinds of call, because the marks are put
+        // down one after another and only one of them can land on the
+        // bar's column at a time: a title one short of the width puts the
+        // fold's mark there, two short puts the state there, and a call
+        // that is changing something tints its rows to the edge instead.
+        for short in 1..=3 {
+            for changing in [false, true] {
+                // Both, because which marks reach the bar depends on it: a
+                // call still going is open, so its change is on the screen
+                // and its rows are tinted, and one that is done is closed,
+                // so the only row is its title and what follows it.
+                for status in ["completed", "in_progress"] {
+                    let mut chat = Chat::new();
+                    // Long enough to scroll, so the bar is drawn at all: a band
+                    // with no bar in it has nothing for a row to paint over,
+                    // and a test set up that way cannot tell a bounded writer
+                    // from an unbounded one.
+                    for line in 0..40 {
+                        chat.chunk(Speaker::Agent, &format!("something said, line {line}\n\n"));
+                    }
+                    chat.tool(
+                        &obelus_agent::acp::Call {
+                            id: "c1".to_string(),
+                            title: "a".repeat(usize::from(width) - short),
+                            kind: "execute".to_string(),
+                            said: vec!["what the command printed".to_string()],
+                            places: Vec::new(),
+                            change: changing.then(|| obelus_agent::acp::Change {
+                                path: std::path::PathBuf::from("one.rs"),
+                                before: Some("before\n".to_string()),
+                                after: "after\n".to_string(),
+                            }),
+                            ran: None,
+                        },
+                        status,
+                    );
+
+                    // Settled before it is drawn, which is the order the loop
+                    // does it in: the window learns how many rows there are
+                    // here, and one that has not been told says no bar.
+                    let band = super::bands(area, &chat, None).transcript;
+                    chat.settle(chat.rows(width).len(), band.height);
+                    let last = chat.rows(width).len() - 1;
+                    assert!(
+                        chat.scrollable(band.height),
+                        "this conversation does not scroll, so there is no bar to paint over"
+                    );
+
+                    let view = super::ChatView {
+                        chat: &chat,
+                        theme: &obelus_theme::builtin::DARK,
+                        state: obelus_agent::Talking::Ready,
+                        name: None,
+                        settings: &[],
+                        // On a row of the call, so the tint behind a selected
+                        // row is drawn as well as the marks after it.
+                        focus: obelus_component::chat::Focus::Transcript(
+                            obelus_component::chat::Place {
+                                row: last,
+                                character: 0,
+                            },
+                        ),
+                        card: None,
+                        root: std::path::Path::new("/"),
+                        phase: 0,
+                        about: None,
+                        note: None,
+                        usage: None,
+                    };
+                    let mut cells = ratatui::buffer::Buffer::empty(area);
+                    ratatui::widgets::Widget::render(view, area, &mut cells);
+
+                    let bar = area.right() - 1;
+                    for y in band.y..band.bottom() {
+                        // Every row of a band that scrolls carries the bar, in
+                        // the thumb's colour or the track's. Anything else in
+                        // that column is a row written over it -- a blank
+                        // included, which is what the space in front of a
+                        // fold's mark leaves, and what a tint leaves behind it.
+                        assert_eq!(
+                            cells[(bar, y)].symbol(),
+                            "\u{2588}",
+                            "a {status} title {short} short of the width, {}changing anything: \
+                         row {y} wrote {:?} over the scrollbar in column {bar}",
+                            if changing { "" } else { "not " },
+                            cells[(bar, y)].symbol()
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     /// The caret stays where the words are, not on the scrollbar.
     ///

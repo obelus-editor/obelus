@@ -875,6 +875,43 @@ pub fn write(cells: &mut CellBuffer, x: u16, y: u16, contents: &str, style: Styl
     column
 }
 
+/// The same, stopping before a column it may not write in.
+///
+/// [`write`] has no such column: it writes until the cell buffer runs out,
+/// which is the whole screen. That is right wherever the caller has already
+/// worked out the room -- a row wrapped to its width cannot overrun -- and
+/// wrong wherever something is put down *after* such a row, because what
+/// follows a row that fills its width begins past the end of it. In the
+/// transcript that is a path, a fold's mark and a call's state, and the
+/// column they were running into is the scrollbar's.
+///
+/// `stop` is the first column that may not be written, the way a `Rect`'s
+/// right is. A wide glyph that would straddle it is not drawn at all: half
+/// of one is a cell the terminal advances over and obelus did not count.
+pub fn write_within(
+    cells: &mut CellBuffer,
+    x: u16,
+    y: u16,
+    contents: &str,
+    style: Style,
+    stop: u16,
+) -> u16 {
+    let mut column = x;
+    for character in contents.chars() {
+        // The width `put` will report, worked out before it is asked, so
+        // the decision is made before the cell is written rather than
+        // after.
+        let width = u16::try_from(character.width().unwrap_or(0))
+            .unwrap_or(0)
+            .max(1);
+        if column.saturating_add(width) > stop {
+            break;
+        }
+        column = column.saturating_add(put(cells, column, y, character, style));
+    }
+    column
+}
+
 /// Which characters of a row are marked out.
 ///
 /// Two shapes because the questions have two shapes: a fuzzy match lands on
