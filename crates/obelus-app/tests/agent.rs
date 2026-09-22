@@ -4569,6 +4569,72 @@ fn a_drag_held_past_the_bottom_of_a_transcript_keeps_selecting() {
     );
 }
 
+/// A heading the transcript folds under opens when it is clicked.
+///
+/// Three kinds of row fold: the heading over a run of tool calls, the one
+/// over a piece of thinking, and the one over the agent's plan. All three
+/// wear the mark that says so, and a mark like that is clicked everywhere a
+/// reader has met one.
+///
+/// It costs the selection nothing, and not by luck. Every row that folds is
+/// one obelus drew itself rather than anybody's words, so it has no place
+/// in what was said -- a press on one already meant nothing but "let go".
+/// The rows that *do* carry words are not the rows that fold.
+///
+/// Broken deliberately by letting the press fall through to taking hold,
+/// which is what it did: the run stays shut and the reader is left having
+/// cleared their selection for nothing.
+#[test]
+fn a_heading_the_transcript_folds_under_opens_when_it_is_clicked() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/many");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // Four reads under one heading, shut.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let at = row_of(&dump, "4 Files");
+    assert!(
+        !rows(&dump).iter().any(|row| row.contains("Read src/app")),
+        "the run is open before anybody asked:\n{dump}"
+    );
+
+    // Clicked on, it opens.
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: 8,
+        y: at,
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("Read src/app")),
+        "the click did not open the run:\n{dump}"
+    );
+    // And nothing was taken hold of on the way.
+    assert!(
+        app.chat().is_some_and(|chat| !chat.holding()),
+        "the click took hold of the heading"
+    );
+
+    // And again, it shuts.
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: 8,
+        y: at,
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !rows(&dump).iter().any(|row| row.contains("Read src/app")),
+        "the same click did not shut it again:\n{dump}"
+    );
+}
+
 /// A conversation taken up again is told where obelus's tools are.
 ///
 /// Obelus serves its own tools -- the ones an agent finishes a note with --

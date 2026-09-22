@@ -2185,11 +2185,35 @@ impl App {
                 y,
             )
         });
+        // Whether it landed on a heading that opens, which is a thing to do
+        // to the row rather than to the words in it.
+        //
+        // Free of the selection, and not by luck: every row that folds is
+        // one obelus drew itself -- the heading over a run of tool calls,
+        // the one over a piece of thinking, the one over the agent's plan
+        // -- and none of them is anybody's words. A press on one already
+        // meant nothing but "let go", so opening it costs the reader
+        // nothing they had.
+        let width = obelus_ui::chat::reading_width(area);
+        let folds = self.conversation().and_then(|talk| {
+            let at = obelus_ui::chat::ChatView::row_in_transcript(
+                area,
+                &talk.chat,
+                talk.card.as_ref(),
+                y,
+            )?;
+            talk.chat.rows(width).get(at)?.folds
+        });
         let Some(talk) = self.conversation_mut() else {
             return;
         };
         match kind {
             Pointer::Moved | Pointer::Released => {}
+            Pointer::Pressed if folds.is_some() => {
+                if let Some(begins) = folds {
+                    talk.chat.fold(begins);
+                }
+            }
             Pointer::Pressed => {
                 talk.chat.writing_mut().let_go();
                 match spot {
@@ -2342,15 +2366,22 @@ impl App {
         if x < area.x || x >= area.right() || y < area.y || y >= area.bottom() {
             return;
         }
-        // Everything the view draws in front of the text. A click to the
-        // left of it -- on the gutter, a fold mark, the change margin --
-        // is a click at the start of that row rather than nothing: the
-        // reader pointed at a line.
-        let offset = obelus_ui::editor::text_offset(
-            buffer.text().line_count(),
-            obelus_ui::editor::changed(self.changes()),
-            !buffer.folds().is_empty(),
-        );
+        // Everything the view draws in front of the text. The numbers are a
+        // click at the start of that row rather than nothing: the reader
+        // pointed at a line, and pointing left of the words is how a whole
+        // line is reached.
+        //
+        // The two columns beside them say something about the line that the
+        // reader can *do*: the fold mark says it has more behind it, and
+        // the change margin says what it replaced. Both are one key away
+        // and the mark is the picture of the key -- so a click on the mark
+        // does what the mark is about, which is what a mark like that means
+        // everywhere a reader has met one.
+        let lines = buffer.text().line_count();
+        let changed = obelus_ui::editor::changed(self.changes());
+        let folds = !buffer.folds().is_empty();
+        let offset = obelus_ui::editor::text_offset(lines, changed, folds);
+        let column = obelus_ui::editor::margin_at(x - area.x, lines, changed, folds);
         let row = y - area.y;
         let cell = (x - area.x).saturating_sub(offset);
         let text = self.text_area();
@@ -2373,6 +2404,30 @@ impl App {
                 }
             }
             Pointer::Released => return,
+            // A mark in the margin, pressed: the caret goes to that line --
+            // both keys ask about the line the caret is on -- and then the
+            // key's own work is done. Not a selection as well: the reader
+            // asked for one thing.
+            Pointer::Pressed
+                if matches!(
+                    column,
+                    obelus_ui::editor::Margin::Folds | obelus_ui::editor::Margin::Changes
+                ) =>
+            {
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.place_at_cell(row, 0, text, false);
+                }
+                match column {
+                    obelus_ui::editor::Margin::Folds => self.toggle_fold(),
+                    _ => self.toggle_hunk(),
+                }
+                // The same as every other way out of here: wherever the
+                // caret ended up is somewhere the reader is working from.
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.settle_undo();
+                }
+                return;
+            }
             Pointer::Pressed => {
                 if let Some(buffer) = self.current_buffer_mut() {
                     buffer.place_at_cell(row, cell, text, false);

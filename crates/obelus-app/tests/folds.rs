@@ -900,3 +900,77 @@ fn an_arrow_steps_over_a_closed_run() {
         "stepping back landed inside the run"
     );
 }
+
+/// The mark in the margin folds the line when it is clicked.
+///
+/// A click to the left of the words used to mean one thing everywhere: the
+/// start of that row. Which is right for the numbers -- pointing left of
+/// the words is how a whole line is reached -- and wrong for the column
+/// beside them. The fold mark is the picture of the key that folds, and a
+/// mark like that is clicked everywhere a reader has met one.
+///
+/// It goes to that line first, because the key asks about the line the
+/// caret is on: the reader pointed at a line, so that is the line.
+///
+/// Broken deliberately by taking the fold column back into "the start of
+/// that row", which puts the caret there and leaves the run shut.
+#[test]
+fn the_fold_mark_folds_the_line_it_is_on() {
+    let mut app = App::new(vec![nested()]);
+    support::lay_out(&mut app, 60, 20);
+
+    // The row of a line with something to fold, and the column its mark is
+    // drawn in: the numbers, and then one cell for the mark.
+    let lines = app.current_buffer().expect("a file").text().line_count();
+    let mark = obelus_ui::editor::gutter_width(lines);
+    assert_eq!(
+        obelus_ui::editor::margin_at(mark, lines, false, true),
+        obelus_ui::editor::Margin::Folds,
+        "that is not the column the fold marks are drawn in"
+    );
+
+    // The second line of this file opens a run -- the first is a comment
+    // about the file -- so that is the row whose mark is there.
+    let area = app.editor_area_for_test();
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: area.x + mark,
+        y: area.y + 1,
+    });
+    assert!(
+        app.current_buffer().expect("a file").folds().any_folded(),
+        "the click on the mark folded nothing"
+    );
+    assert_eq!(
+        app.current_buffer().expect("a file").cursor().line.get(),
+        1,
+        "the click did not go to the line it was on"
+    );
+
+    // And again, it opens.
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: area.x + mark,
+        y: area.y + 1,
+    });
+    assert!(
+        !app.current_buffer().expect("a file").folds().any_folded(),
+        "the same click did not open it again"
+    );
+
+    // While the numbers beside it still mean the start of that row.
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: area.x,
+        y: area.y + 2,
+    });
+    assert!(
+        !app.current_buffer().expect("a file").folds().any_folded(),
+        "a click on the numbers folded something"
+    );
+    assert_eq!(
+        app.current_buffer().expect("a file").cursor().line.get(),
+        2,
+        "a click on the numbers did not reach the line"
+    );
+}

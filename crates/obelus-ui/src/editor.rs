@@ -219,6 +219,49 @@ pub fn text_offset(lines: usize, changed: bool, folds: bool) -> u16 {
         .saturating_add(folding)
 }
 
+/// Which of the columns before the text a cell of a row is in.
+///
+/// Counted from the left edge of the editor region, which is where
+/// [`text_offset`] counts from: the two are one arithmetic, and this is the
+/// half that reads it back. Two of them disagreeing is the defect
+/// `text_offset` was written to end, so this is written beside it rather
+/// than worked out again by whoever is pointing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Margin {
+    /// What changed on this line, where obelus has an answer about the
+    /// file.
+    Changes,
+    /// Which line it is.
+    Numbers,
+    /// Whether the line has more behind it.
+    Folds,
+    /// The line itself, or past the end of it.
+    Text,
+}
+
+/// Which column a cell of a row is in.
+///
+/// `changed` and `folds` are what [`text_offset`] is given, because they
+/// decide whether those columns are there at all -- a file obelus knows
+/// nothing about has no change margin, and one with nothing to fold has no
+/// fold column, and a cell cannot be in a column that was never reserved.
+#[must_use]
+pub fn margin_at(cell: u16, lines: usize, changed: bool, folds: bool) -> Margin {
+    let margin = if changed { MARGIN_WIDTH } else { 0 };
+    if cell < margin {
+        return Margin::Changes;
+    }
+    let numbers = margin.saturating_add(gutter_width(lines));
+    if cell < numbers {
+        return Margin::Numbers;
+    }
+    let folding = if folds { FOLD_WIDTH } else { 0 };
+    match cell < numbers.saturating_add(folding) {
+        true => Margin::Folds,
+        false => Margin::Text,
+    }
+}
+
 /// The column the change map takes, just inside the scrollbar.
 ///
 /// The map and the bar are the same picture at the same scale -- the whole

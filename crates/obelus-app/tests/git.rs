@@ -5201,3 +5201,89 @@ fn the_preview_of_a_history_row_is_that_commits_version() {
     support::press(&mut app, KeyCode::Down);
     assert_eq!(shown(&mut app), 40, "the oldest row");
 }
+
+/// The mark in the change margin opens what the line replaced.
+///
+/// A click to the left of the words used to mean one thing everywhere: the
+/// start of that row. Which is right for the numbers -- pointing left of
+/// the words is how a whole line is reached -- and wrong for the column
+/// outside them. The change margin is the picture of the key that opens
+/// what a line replaced, and a mark like that is clicked everywhere a
+/// reader has met one.
+///
+/// It goes to that line first, because the key asks about the line the
+/// caret is on: the reader pointed at a line, so that is the line.
+///
+/// Broken deliberately by taking the change column back into "the start of
+/// that row", which puts the caret there and leaves the hunk shut.
+#[test]
+fn the_change_margin_opens_what_the_line_replaced() {
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("margin-click", "one\nold a\nthree\n");
+    repository.write("one\nnew a\nthree\n");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 40, 16);
+    let _ = support::render(&mut app, 40, 16);
+    assert!(
+        app.opened_hunks().is_empty(),
+        "something was open before anybody asked"
+    );
+
+    // The margin is the first column of the region, outside the numbers.
+    let lines = app.current_buffer().expect("a file").text().line_count();
+    assert_eq!(
+        obelus_ui::editor::margin_at(0, lines, true, false),
+        obelus_ui::editor::Margin::Changes,
+        "that is not the column the change margin is drawn in"
+    );
+
+    // Clicked on the changed line, which is the second.
+    let area = app.editor_area_for_test();
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: area.x,
+        y: area.y + 1,
+    });
+    let dump = support::render(&mut app, 40, 16);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("old a"),
+        "the click on the margin opened nothing:\n{text}"
+    );
+    assert_eq!(
+        app.current_buffer().expect("a file").cursor().line.get(),
+        1,
+        "the click did not go to the line it was on"
+    );
+
+    // And again, it shuts.
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: area.x,
+        y: area.y + 1,
+    });
+    assert!(
+        app.opened_hunks().is_empty(),
+        "the same click did not shut it again"
+    );
+
+    // While the numbers beside it still mean the start of that row.
+    let numbers = obelus_ui::editor::MARGIN_WIDTH;
+    app.handle(obelus_app::event::Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: area.x + numbers,
+        y: area.y + 1,
+    });
+    assert!(
+        app.opened_hunks().is_empty(),
+        "a click on the numbers opened a hunk"
+    );
+    assert_eq!(
+        app.current_buffer().expect("a file").cursor().line.get(),
+        1,
+        "a click on the numbers did not reach the line"
+    );
+}
