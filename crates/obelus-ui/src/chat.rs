@@ -81,6 +81,16 @@ fn mark(speaker: Speaker) -> &'static str {
     }
 }
 
+/// What a tool call's state says while it is still running.
+///
+/// The protocol's own word, named because three places in this file have
+/// to agree about it: the mark at the front of a row, which turns while a
+/// call is in this state; the mark after the title, which stays away while
+/// it is; and [`ChatView::state_of`], which says what each of the four
+/// states looks like. Three spellings of one string is two chances for the
+/// row to say a call is running and still at once.
+const UNDER_WAY: &str = "in_progress";
+
 /// The rows that are there whatever is written: the header and two rules.
 ///
 /// The box needs no rule under it -- the screen keeps one between whatever
@@ -843,8 +853,36 @@ impl ChatView<'_> {
                 // turns whether or not glyphs are drawn: a picture of a
                 // cog says a tool was used, and only movement says it is
                 // still going.
-                if row.speaker == Speaker::Doing {
-                    put(cells, at, y, crate::spinning(self.phase), style);
+                //
+                // Two rows say it. The one at the foot is about the turn,
+                // and a tool call that is still running is about one thing
+                // in it -- the same claim at two sizes, so they are said
+                // with the same mark, on the same frame, in the same
+                // colour. A reader watching a call that takes a minute
+                // should not have to find the foot of the transcript to
+                // learn that it has not stalled, and a still picture of a
+                // cog is what a call that stopped would wear too.
+                //
+                // In the column the kind glyph has, so that nothing moves.
+                // A column of its own in front -- which is how a list of
+                // open documents and the notes both mark a conversation --
+                // would push every tool call's title two cells right of
+                // every other row's words, and the left edge of a
+                // transcript is one column for everything in it. So the
+                // kind goes while the call runs and comes back when it
+                // ends: what sort of call it is is written along the row
+                // beside it, and which of ten calls is the live one is
+                // written nowhere else.
+                let turning =
+                    row.speaker == Speaker::Doing || row.state.as_deref() == Some(UNDER_WAY);
+                if turning {
+                    put(
+                        cells,
+                        at,
+                        y,
+                        crate::spinning(self.phase),
+                        style.fg(self.theme.gutter_current),
+                    );
                 } else if obelus_icons::enabled() {
                     put(cells, at, y, glyph, style);
                 } else {
@@ -912,8 +950,16 @@ impl ChatView<'_> {
             // A tool call's state goes after its title rather than in front
             // of it: the title is what a reader is scanning, and the state
             // changes under them twice.
+            //
+            // Every state but the one the front of the row is already
+            // saying. Said in both places it was said worse: the still
+            // glyph out here is the one a reader's eye lands on -- it sits
+            // where the sentence ends -- and a still glyph is what a call
+            // that has stopped wears. What is left is a row whose front
+            // says whether it is alive and whose end says how it went.
             if let Some(state) = &row.state
                 && row.speaker != Speaker::Step
+                && state != UNDER_WAY
             {
                 self.state_of(cells, ended + 1, y, state, dim, words_end(area) + 1);
             }
@@ -1403,7 +1449,7 @@ impl ChatView<'_> {
     fn state_of(&self, cells: &mut CellBuffer, x: u16, y: u16, state: &str, dim: Style, stop: u16) {
         let (glyph, word, colour) = match state {
             "pending" => (obelus_icons::ui::WAITING, "Waiting", self.theme.gutter),
-            "in_progress" => (
+            UNDER_WAY => (
                 obelus_icons::ui::RUNNING,
                 "Running",
                 self.theme.gutter_current,

@@ -4141,6 +4141,87 @@ fn the_list_of_open_documents_says_what_is_happening_now() {
     );
 }
 
+/// A tool call that is still running turns at the front of its row.
+///
+/// A picture of a cog says a tool was used; only movement says it is still
+/// going, and the only movement obelus had was one row at the foot of the
+/// transcript saying the agent was thinking. That row is below whatever
+/// the call is printing, so a reader watching a build could not see from
+/// the row they were watching whether it had stalled -- the call wore the
+/// same still glyph it would wear if it had.
+///
+/// It turns in the column the kind glyph has, so nothing on the row moves,
+/// and the kind comes back when the call ends. The mark after the title
+/// goes the other way: it says how the call went, and stays away while the
+/// front is saying that it has not gone yet.
+///
+/// It makes three claims and was broken deliberately three times. Drawing
+/// the kind glyph while the call runs leaves the row still. Taking the
+/// frame from anywhere but the ticker leaves it the same glyph twice. And
+/// leaving the state after the title while it runs puts a still mark back
+/// on a row that is moving, which is the pair of marks this replaced.
+#[test]
+fn a_tool_call_that_is_still_running_turns_at_the_front_of_its_row() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // The ordinary turn: the agent reads a file and is still reading it
+    // when it stops to ask permission for the next thing.
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+
+    let call = |app: &mut App, phase: u32| {
+        app.phase_for_test(phase);
+        let dump = support::render(app, WIDTH, HEIGHT);
+        rows(&dump)
+            .iter()
+            .find(|row| row.contains("Read the file"))
+            .unwrap_or_else(|| panic!("no row for the call:\n{dump}"))
+            .to_string()
+    };
+    let running = call(&mut app, 0);
+    assert!(
+        SPINNING.iter().any(|frame| running.contains(*frame)),
+        "the call that is still running is drawn as still as one that has stopped:\n{running}"
+    );
+    assert_ne!(
+        running,
+        call(&mut app, 3),
+        "the mark on a running call does not turn"
+    );
+    assert!(
+        !running.contains(obelus_icons::ui::RUNNING),
+        "the row says it is running twice, once of them standing still:\n{running}"
+    );
+
+    // Answered, the call ends: the kind comes back and the end of the row
+    // says how it went.
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let ended = call(&mut app, 0);
+    assert!(
+        !SPINNING.iter().any(|frame| ended.contains(*frame)),
+        "a call that has finished is still turning:\n{ended}"
+    );
+    assert!(
+        ended.contains(obelus_icons::for_tool("read")),
+        "the call never got its kind back:\n{ended}"
+    );
+    assert!(
+        ended.contains(obelus_icons::ui::DONE),
+        "a call that finished does not say so:\n{ended}"
+    );
+}
+
 /// Every frame of the mark that turns.
 ///
 /// Which frame is on screen depends on how many ticks have landed, and a
