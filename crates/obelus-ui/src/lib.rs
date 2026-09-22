@@ -525,7 +525,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             }
             Layer::Picker => {
                 if let Some(list) = app.picker() {
-                    list_over(cells, app, list, room_for_a_list(app, regions.editor));
+                    list_over(cells, app, list, room_for_a_picker(app, regions.editor));
                 }
             }
             // Drawn by the status row, which is the row it is on.
@@ -540,7 +540,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     if !layers.has(Layer::Picker)
         && let Some(list) = app.slash()
     {
-        list_over(cells, app, list, room_for_a_list(app, regions.editor));
+        list_over(cells, app, list, room_for_the_commands(app, regions.editor));
     }
 
     // The three panels that belong to a place in the file. Each is empty
@@ -606,14 +606,25 @@ pub fn spinning(phase: u32) -> char {
     SPINNING[phase as usize % SPINNING.len()]
 }
 
-/// Where a compact list goes, given what it is over.
+/// Where the list of an agent's commands goes.
 ///
 /// The editor region, less what a conversation's box has taken from the
-/// foot of it: a list drawn over the box would cover the thing the reader
-/// is typing into to find the list.
-fn room_for_a_list(app: &impl Screen, editor: Rect) -> Rect {
+/// foot of it: this list is a list of what is being typed into the box, so
+/// a list drawn over the box would cover the thing the reader is typing
+/// into to find it.
+fn room_for_the_commands(app: &impl Screen, editor: Rect) -> Rect {
     app.chat()
         .map_or(editor, |chat| chat::above_writing(editor, chat, app.card()))
+}
+
+/// Where a list the reader opened goes, given what it is over.
+///
+/// The whole region, less only a question the agent is waiting on an answer
+/// to. A picker is not part of the conversation the way the commands are --
+/// it took the keys and it took the status row -- so the conversation is
+/// behind it rather than beside it.
+fn room_for_a_picker(app: &impl Screen, editor: Rect) -> Rect {
+    chat::above_a_question(editor, app.card())
 }
 
 /// Draws a list over whatever is behind it, with its edge and its preview.

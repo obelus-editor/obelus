@@ -168,6 +168,30 @@ pub fn above_writing(area: Rect, chat: &Chat, card: Option<&Card>) -> Rect {
     }
 }
 
+/// The room a list the reader opened has over a conversation.
+///
+/// The whole of it, unless the agent is asking something. A picker is the
+/// thing on screen: it has the keys, it has the status row, and whatever
+/// stays visible under it is a second view with nothing to say -- the box
+/// is a `>` and a rule when nobody is typing in it, and it sat between the
+/// list's foot and the list's own prompt.
+///
+/// A card is the one exception, and it is not about room: the reader was
+/// asked something and has gone to look before answering, so the question
+/// has to still be there when they come back. [`above_writing`] is the
+/// other side of that pair, for the list of an agent's commands, which
+/// *is* a list of what is being typed in the box and so may never cover
+/// it.
+#[must_use]
+pub fn above_a_question(area: Rect, card: Option<&Card>) -> Rect {
+    let Some(card) = card else { return area };
+    let writing = bands_for(area, card).writing;
+    Rect {
+        height: writing.y.saturating_sub(area.y + 1),
+        ..area
+    }
+}
+
 /// The fewest rows of what has been said the reader is left with.
 ///
 /// A card an agent's question is on takes what it needs from the foot of

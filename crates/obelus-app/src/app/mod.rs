@@ -1152,18 +1152,16 @@ impl App {
 
     /// The area a list is drawn in, which is not always the editor region.
     ///
-    /// Over a conversation it is everything above the box: the list is a
-    /// list of what is being typed there, and it may not cover it.
+    /// Over a conversation it is everything above a question the agent is
+    /// waiting on an answer to, and everything otherwise: the drawing's own
+    /// answer, which this has to be the same as or the rows a key moves
+    /// through are not the rows on screen.
     ///
     /// An area and not a [`layers::Room`]: a room is how much of the screen
     /// a view declares it takes, and this is the rectangle that comes out of
     /// laying one out.
     fn picker_area(&self) -> Rect {
-        let editor = self.drawn_in();
-        match self.chat() {
-            Some(chat) => obelus_ui::chat::above_writing(editor, chat, self.card()),
-            None => editor,
-        }
+        obelus_ui::chat::above_a_question(self.drawn_in(), self.card())
     }
 
     /// The region a view drawn over the file is drawn in.

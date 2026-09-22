@@ -2869,6 +2869,47 @@ fn a_list_over_a_question_does_not_paint_over_it() {
     );
 }
 
+/// A list the reader opened covers the conversation it is over.
+///
+/// A picker has the keys and it has the status row, so what shows under it
+/// is a second view with nothing to say. It used to be given everything
+/// above the box a message is written in whether or not there was a
+/// question on it, which left the box -- and the rule over it -- drawn
+/// between the list's own foot and the list's own prompt, with whatever
+/// the reader had half-typed still in it.
+///
+/// Broken deliberately by giving the picker `above_writing` again in
+/// `room_for_a_picker`, which puts the box back under the list.
+#[test]
+fn a_list_over_a_conversation_covers_the_box() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // Somewhere else to be, so the list has two rows and is worth opening.
+    app.open_for_test(Path::new("src/lib.rs"));
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+
+    let half_written = "what I was in the middle of saying";
+    support::type_text(&mut app, half_written);
+    let before = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&before).iter().any(|row| row.contains(half_written)),
+        "the box is not showing what was typed to begin with:\n{before}"
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("A conversation")),
+        "the list of open documents did not open:\n{dump}"
+    );
+    assert!(
+        !rows(&dump).iter().any(|row| row.contains(half_written)),
+        "the box was left showing under the list:\n{dump}"
+    );
+}
+
 /// A question about a conversation is asked in that conversation.
 ///
 /// It went to the conversation about nothing in particular whichever one it
@@ -4892,9 +4933,7 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
     // Opened by a press on its row, which is what a reader has.
     let shut = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        !rows(&shut)
-            .iter()
-            .any(|row| row.contains("$ sleep 0.3;")),
+        !rows(&shut).iter().any(|row| row.contains("$ sleep 0.3;")),
         "a command that is over is still holding the page open:\n{shut}"
     );
     let y = row_of(&shut, "Run the tests");
