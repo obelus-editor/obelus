@@ -70,6 +70,15 @@ pub struct Conversation {
     /// left: the agent kept every word of that one, and what told it the
     /// first time is among them.
     pub told: Option<String>,
+    /// Whether the agent has been told who it is talking to.
+    ///
+    /// A bit rather than a fingerprint, which is the difference between
+    /// this and [`Self::told`]: what it carries never changes, so there is
+    /// nothing to compare it against and no such thing as saying it again
+    /// because it is out of date. Said once per conversation, and written
+    /// down beside the note like `told` so that picking one up again does
+    /// not repeat it.
+    pub introduced: bool,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.

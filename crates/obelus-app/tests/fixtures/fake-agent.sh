@@ -471,12 +471,18 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'/blocks'*)
-            # Says what the prompt arrived as: how many blocks, and whether
-            # the client put something of its own in front of the reader's
-            # words. A conversation opened on one of obelus's notes sends
-            # two blocks with the note's in front; every message after it
-            # sends one. From here the two look alike otherwise, because
-            # what tells them apart is not in the words the reader typed.
+            # Says what the prompt arrived as: how many blocks, and what
+            # the client put in front of the reader's words. obelus opens
+            # with one block of its own, and what is in that block depends
+            # on what it has already said -- who it is talking to, which of
+            # the reader's notes this is about, or that the note has been
+            # rewritten since. From here the messages look alike otherwise,
+            # because what tells them apart is not in the words the reader
+            # typed.
+            #
+            # Reported as every piece it carries rather than only the one
+            # in front: the pieces are joined into one block, so "what it
+            # begins with" would say nothing about the rest of it.
             #
             # Read with `case` rather than counted with `grep -o`, which is
             # not in POSIX: this script is `sh` on purpose.
@@ -485,12 +491,20 @@ while IFS= read -r line; do
                 *'"text":'*'"text":'*) blocks=2 ;;
                 *) blocks=1 ;;
             esac
+            first=""
             case "$line" in
-                *'"text":"This conversation is about'*'"text":"/blocks'*) first=obelus ;;
-                *'"text":"The note this conversation is about has been rewritten'*'"text":"/blocks'*) first=rewritten ;;
-                *'"text":"/blocks'*) first=reader ;;
-                *) first=neither ;;
+                *'"text":"You are talking to somebody reading code in obelus'*)
+                    first="always" ;;
             esac
+            case "$line" in
+                *"This conversation is about one of obelus's notes"*)
+                    first="${first:+$first+}note" ;;
+            esac
+            case "$line" in
+                *"The note this conversation is about has been rewritten"*)
+                    first="${first:+$first+}rewritten" ;;
+            esac
+            : "${first:=reader}"
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"blocks='"$blocks"' first='"$first"'"}}}}\n'
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;

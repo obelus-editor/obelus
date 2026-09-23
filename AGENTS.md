@@ -520,7 +520,10 @@ src/
                     preview is of a subject, not of a path (previewing); a
                     tree may carry settings, and a tree is not the reader,
                     and the reader's is the layer it is laid over
-                    (preferences)
+                    (preferences); what obelus says before the reader's
+                    first words is one piece that is always said and one
+                    the topic adds, and the reader's own words go into a
+                    template last (opening)
   text.rs         the Rope wrapper: the only place coordinates convert
   buffer/         one open file: text, syntax, cursor, viewport
                   · an edit knows where it happened; do not read over an

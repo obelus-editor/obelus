@@ -324,6 +324,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
                 session: "s-1".to_string(),
                 title: Some("why refilter drops rows".to_string()),
                 told: None,
+                introduced: false,
             },
         );
     });
@@ -345,6 +346,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
                 session: "s-2".to_string(),
                 title: None,
                 told: None,
+                introduced: false,
             },
         );
     });

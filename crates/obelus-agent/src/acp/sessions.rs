@@ -55,6 +55,17 @@ pub struct Kept {
     /// is read as "it has been told nothing" -- one repeated telling on
     /// the way past, rather than a silence that lasts.
     pub told: Option<String>,
+    /// Whether the agent has been told who it is talking to.
+    ///
+    /// A bit and not a fingerprint, unlike [`Self::told`]: what it carries
+    /// is obelus's own words about itself, which do not change under a
+    /// conversation the way the reader's note does, so there is nothing to
+    /// compare and nothing to say again.
+    ///
+    /// Missing from a file written before this was, which reads as `false`
+    /// -- one repeated telling on the way past, which is what the field
+    /// above settles for in the same case.
+    pub introduced: bool,
 }
 
 /// Which conversation is about which note, for one tree.
@@ -195,6 +206,17 @@ pub fn read(root: &Path) -> Reading {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Reading::Nothing,
         Err(error) => return Reading::Unreadable(error.to_string()),
     };
+    read_from(&text)
+}
+
+/// The same, from the text rather than the file.
+///
+/// Apart so that a test can put what [`to_toml`] writes straight back in:
+/// what obelus writes, obelus has to be able to read, and a round trip
+/// through a temporary directory proves it about the filesystem rather
+/// than about the format.
+#[must_use]
+fn read_from(text: &str) -> Reading {
     let table = match text.parse::<toml::Table>() {
         Ok(table) => table,
         Err(error) => return Reading::Unreadable(error.to_string()),
@@ -225,6 +247,10 @@ pub fn read(root: &Path) -> Reading {
                 session: session.to_string(),
                 title: text("title").map(str::to_string),
                 told: text("told").map(str::to_string),
+                introduced: row
+                    .get("introduced")
+                    .and_then(toml::Value::as_bool)
+                    .unwrap_or(false),
             },
         );
     }
@@ -286,6 +312,12 @@ fn to_toml(remembered: &Remembered) -> String {
         if let Some(told) = &kept.told {
             out.push_str(&format!("told = {}\n", quoted(told)));
         }
+        // Only when it is true: `false` is what a missing line already
+        // means, and a file carrying every default is a file a reader
+        // cannot read their own decisions out of.
+        if kept.introduced {
+            out.push_str("introduced = true\n");
+        }
         out.push('\n');
     }
     out
@@ -329,6 +361,7 @@ mod tests {
                 // A note is allowed to be a paragraph, so this is the one
                 // field that routinely has newlines in it.
                 told: Some("what it said\n\nand the rest of it".to_string()),
+                introduced: true,
             },
         );
         // The same note with a second agent, which is a second conversation:
@@ -340,6 +373,7 @@ mod tests {
                 session: "other".to_string(),
                 title: None,
                 told: None,
+                introduced: false,
             },
         );
 
@@ -371,6 +405,28 @@ mod tests {
             .and_then(|row| row.get("told"))
             .and_then(toml::Value::as_str);
         assert_eq!(told, Some("what it said\n\nand the rest of it"));
+        // And the bit beside it, which is the other half of "what has this
+        // agent already been told". Read back through the file rather than
+        // off the map: a field obelus writes and cannot read is a field
+        // that repeats itself every time obelus is started.
+        //
+        // Broken deliberately by dropping the `introduced` line from
+        // `to_toml`, which reads back as `false` and tells the agent who it
+        // is talking to again on the next message.
+        let back = match read_from(&to_toml(&remembered)) {
+            Reading::Remembered(back) => back,
+            other => panic!("the file did not read: {other:?}"),
+        };
+        assert_eq!(
+            back.get(&note("ABCDEFGH"), "claude-acp")
+                .map(|kept| kept.introduced),
+            Some(true)
+        );
+        assert_eq!(
+            back.get(&note("ABCDEFGH"), "codex")
+                .map(|kept| kept.introduced),
+            Some(false)
+        );
     }
 
     /// A conversation whose note has gone is forgotten.
@@ -385,6 +441,7 @@ mod tests {
                     session: name.to_lowercase(),
                     title: None,
                     told: None,
+                    introduced: false,
                 },
             );
         }
@@ -432,6 +489,7 @@ mod tests {
                     session: "one this obelus made up".to_string(),
                     title: None,
                     told: None,
+                    introduced: false,
                 },
             );
         });
@@ -464,6 +522,7 @@ mod tests {
                     session: name.to_lowercase(),
                     title: None,
                     told: None,
+                    introduced: false,
                 },
             );
         }
@@ -490,6 +549,7 @@ mod tests {
                 session: "s-1".into(),
                 title: None,
                 told: None,
+                introduced: false,
             },
         );
         remembered.put(
@@ -499,6 +559,7 @@ mod tests {
                 session: "s-2".into(),
                 title: None,
                 told: None,
+                introduced: false,
             },
         );
         // A second agent's, which this one's answer says nothing about.
@@ -509,6 +570,7 @@ mod tests {
                 session: "x-9".into(),
                 title: None,
                 told: None,
+                introduced: false,
             },
         );
 

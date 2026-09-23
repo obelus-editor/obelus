@@ -2501,8 +2501,8 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
         "the note did not go with the message:\n{text}"
     );
     assert!(
-        text.contains("first=obelus"),
-        "obelus's own block is not the first of them:\n{text}"
+        text.contains("first=always+note"),
+        "obelus's own block did not carry both halves:\n{text}"
     );
     // And the reader can see that obelus said it.
     assert!(
@@ -2970,12 +2970,26 @@ fn a_question_about_a_notes_conversation_is_asked_in_it() {
     );
 }
 
-/// A conversation about nothing in particular says nothing.
+/// A conversation about nothing in particular still says who it is with.
 ///
-/// obelus does not put words in the reader's mouth where it has no fact of
-/// its own to add: what a loose conversation is about is whatever they type.
+/// This said nothing at all once, on the grounds that obelus does not put
+/// words in the reader's mouth where it has no fact of its own to add. It
+/// has one: the agent is talking to somebody at a terminal, and the way to
+/// put a question to them is a card obelus draws from `elicitation/create`.
+/// That is a fact about obelus rather than about the reader, so saying it
+/// is not speaking for them -- and a conversation about nothing in
+/// particular is exactly where an agent asked a question by writing
+/// `1) ... 2) ...` into its answer, because nothing had told it otherwise.
+///
+/// What the reader's own topic adds is still the reader's: a loose one adds
+/// nothing, which is the half of the old rule that survives and is asserted
+/// here as `first=always` and not `always+note`.
+///
+/// Broken deliberately by moving the opening into `Topic::Note`'s arm of
+/// `about_the_topic`, which is where it used to live: the block stops going
+/// and this reads `blocks=1 first=reader`.
 #[test]
-fn a_loose_conversation_carries_no_opening() {
+fn a_loose_conversation_is_told_who_it_is_with_and_no_more() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -2991,9 +3005,25 @@ fn a_loose_conversation_carries_no_opening() {
     });
     let text = screen(&mut app);
     assert!(
-        text.contains("blocks=1"),
-        "something went with a conversation about nothing:\n{text}"
+        text.contains("blocks=2") && text.contains("first=always"),
+        "a conversation about nothing was not told who it is with:\n{text}"
     );
+    // And nothing about a note, because there is none to be about.
+    assert!(
+        !text.contains("first=always+"),
+        "something about a note went with a conversation about nothing:\n{text}"
+    );
+    // Once. The agent keeps every word, so the message after carries none
+    // of it.
+    support::type_text(&mut app, "/blocks again");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks=1 first=reader"))
+        })
+    });
 }
 
 /// A conversation the agent has forgotten starts a fresh one, in place.
@@ -3115,6 +3145,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
                     session: "s-gone".to_string(),
                     title: None,
                     told: Some("a note".to_string()),
+                    introduced: true,
                 },
             );
         },
@@ -3153,7 +3184,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
     });
     let text = screen(&mut app);
     assert!(
-        text.contains("blocks=2") && text.contains("first=obelus"),
+        text.contains("blocks=2") && text.contains("first=always+note"),
         "the fresh conversation was not told what it is about:\n{text}"
     );
 }
@@ -3933,6 +3964,7 @@ fn remembering_how(
                     session: session.to_string(),
                     title: None,
                     told: Some("a note".to_string()),
+                    introduced: true,
                 },
             );
         },
@@ -4002,6 +4034,7 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
                     session: "s-old".to_string(),
                     title: None,
                     told: None,
+                    introduced: false,
                 },
             );
         },
@@ -4408,6 +4441,7 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
                     session: "s-old".to_string(),
                     title: None,
                     told: None,
+                    introduced: false,
                 },
             );
         },

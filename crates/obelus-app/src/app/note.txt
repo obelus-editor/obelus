@@ -1,0 +1,5 @@
+This conversation is about one of obelus's notes, which says:
+
+{said}
+
+Its name is {name}.{at}
