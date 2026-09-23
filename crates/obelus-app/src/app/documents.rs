@@ -630,7 +630,7 @@ impl App {
                 // is put away rather than drawn, and the reader walking
                 // back to that tab should not have to wait for it twice.
                 //
-                // What a tree ignores is not a question about this tab:
+                // What a project ignores is not a question about this tab:
                 // these rows are git's answer about what has changed, and
                 // git does not report a file it was told to ignore.
                 if let Some(picker) = self.picker.as_mut() {

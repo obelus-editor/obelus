@@ -93,7 +93,7 @@ pub struct Looking {
 /// What a search is looking for, and the rule for finding it.
 ///
 /// A thing rather than a string, because "is it in this line, and where" is
-/// one question asked in three places -- by the walk of the tree, by the
+/// one question asked in three places -- by the walk of the project, by the
 /// search of the file being read, and by the view marking what it found --
 /// and three literal `contains` beside each other are three rules that will
 /// come apart.
@@ -116,7 +116,7 @@ pub struct Needle {
     /// words.
     ///
     /// `None` for a plain literal, which is the case worth keeping out of a
-    /// regex engine: it is what a whole tree is walked with, and
+    /// regex engine: it is what a whole project is walked with, and
     /// `str::find` is a real string search.
     pattern: Option<Regex>,
     /// Whether what they typed will not compile.
@@ -191,7 +191,7 @@ impl Needle {
     /// the label a character at a time, and a byte offset would mark the
     /// wrong half of a glyph the moment a line had one in it.
     ///
-    /// Found on bytes first, which is what makes walking a tree affordable:
+    /// Found on bytes first, which is what makes walking a project affordable:
     /// `str::find` is a real string search and stepping character by
     /// character is not. Where case does not matter the line is lowered a
     /// line at a time rather than a file at a time, so a file whose first
@@ -243,7 +243,7 @@ const BATCH: usize = 128;
 /// How many hits are worth having.
 ///
 /// A reader does not read the ten-thousandth match; they narrow the query.
-/// Stopping is also what keeps a two-letter query on a large tree from
+/// Stopping is also what keeps a two-letter query on a large project from
 /// spending the whole walk building rows nobody will scroll to.
 const MOST: usize = 2000;
 
@@ -262,23 +262,23 @@ const BIGGEST_FILE: u64 = 2 * 1024 * 1024;
 /// search of the open file asks and what the view marks.
 ///
 /// `generation` comes back with every batch, because the reader types faster
-/// than a tree can be walked and the answers to the previous query must be
+/// than a project can be walked and the answers to the previous query must be
 /// recognizable as stale. The last batch carries `done`, which is what turns
 /// "searching" into "no match" -- with a query typed and nothing found,
 /// those two are different facts and only the scan knows which is true.
 ///
 /// `wanted` is asked before every file: typing a ten-letter word starts ten
-/// scans, and nine of them would otherwise go on reading the whole tree to
+/// scans, and nine of them would otherwise go on reading the whole project to
 /// answer a question nobody is asking any more. There is nothing else to
 /// stop a thread with -- a walk in `ignore` cannot be interrupted from
 /// outside -- so the thread has to ask. [`obelus_runtime::cancel`] is where
 /// that asking lives now; this file, the history walk and the file walk each
 /// had their own copy of it.
 ///
-/// `ignored` searches the files the tree has said to ignore as well, which
+/// `ignored` searches the files the project has said to ignore as well, which
 /// is the reader's `ignored_files` and not a question of this walk's own: a
 /// file list that offers `target` beside a search that cannot see into it
-/// Something a walk of the tree found.
+/// Something a walk of the project found.
 #[derive(Debug)]
 pub enum Event {
     /// A batch of paths from the file walk.
@@ -288,14 +288,14 @@ pub enum Event {
         generation: u64,
         /// The paths, relative to the walk's root.
         paths: Vec<PathBuf>,
-        /// Whether these are files the tree said it does not keep.
+        /// Whether these are files the project said it does not keep.
         ///
         /// Their own batches rather than a flag per path: a walk sends one
         /// kind or the other and never a mixture, because it is two walks
         /// -- one that obeys the ignore rules and one that does not.
         ignored: bool,
     },
-    /// A batch of matching lines from a search of the tree.
+    /// A batch of matching lines from a search of the project.
     Matches {
         /// Which search these came from, so answers to a query the reader
         /// has already typed past can be dropped.
@@ -313,7 +313,7 @@ pub enum Event {
 ///
 /// One message per file would wake the loop once per file and redraw a list
 /// that is about to change again. One message for everything would leave the
-/// picker empty for as long as the walk takes on a large tree.
+/// picker empty for as long as the walk takes on a large project.
 ///
 /// Larger than the batch a search sends: a path is a path, and a match
 /// carries the line it was found on.

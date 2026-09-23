@@ -85,7 +85,7 @@ pub struct Config {
     /// a reader who would rather keep the shape of the code and read the
     /// complaint from the list can have that.
     pub diagnostics: bool,
-    /// Whether the file list offers the files a tree has said to ignore.
+    /// Whether the file list offers the files a project has said to ignore.
     ///
     /// About the list, not about the files: what `.gitignore` keeps out is
     /// kept out of the *offer*, and a reader who knows the path can still
@@ -141,7 +141,7 @@ impl Default for Config {
             code_actions_on_save: false,
             inlay_hints: true,
             diagnostics: true,
-            // Off, because a tree says what it ignores and mostly means it:
+            // Off, because a project says what it ignores and mostly means it:
             // a list whose first hundred rows are `target` is a list nobody
             // can find anything in.
             ignored_files: false,
@@ -236,9 +236,9 @@ impl Group {
 /// the setting down rather than something to remember.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reach {
-    /// Either file: the reader's own, or the tree's.
+    /// Either file: the reader's own, or the project's.
     Anywhere,
-    /// The reader's own file alone. A tree naming it is ignored, with a word
+    /// The reader's own file alone. A project naming it is ignored, with a word
     /// in the log for whoever wrote that file.
     ReaderOnly,
 }
@@ -248,8 +248,8 @@ pub enum Reach {
 pub enum Whose {
     /// The reader's, wherever this system keeps such things.
     Reader,
-    /// The tree obelus was opened on.
-    Tree,
+    /// The project obelus was opened on.
+    Project,
 }
 
 /// One setting, as data.
@@ -393,7 +393,7 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "ignored_files",
-        name: "Files a tree ignores",
+        name: "Files a project ignores",
         about: "offer them in the file list as well -- what `.gitignore` keeps out is build output most days and the file you are looking for on the others",
         group: Group::Files,
         reach: Reach::Anywhere,
@@ -461,20 +461,20 @@ pub fn path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("obelus").join("config.toml"))
 }
 
-/// Where a tree keeps settings of its own, if it keeps any.
+/// Where a project keeps settings of its own, if it keeps any.
 ///
-/// `.obelus/config.toml`, and only that. A tree keeps more than settings for
+/// `.obelus/config.toml`, and only that. A project keeps more than settings for
 /// obelus -- a theme of its own, whatever comes after it -- and one
 /// directory holding all of it is one thing to find, to copy between
 /// machines and to name in a `.gitignore`, where a dotfile per kind of thing
-/// is a row of them at the top of every listing of the tree.
+/// is a row of them at the top of every listing of the project.
 ///
 /// The working directory itself, without walking up: obelus has one answer
-/// to which tree it is on -- the file list walks it, the counts count it,
+/// to which project it is on -- the file list walks it, the counts count it,
 /// git is read from it -- and settings found by walking somewhere else would
 /// be a second answer to that question.
 #[must_use]
-pub fn tree_path(root: &Path) -> Option<PathBuf> {
+pub fn project_path(root: &Path) -> Option<PathBuf> {
     let inside = root.join(".obelus").join("config.toml");
     inside.is_file().then_some(inside)
 }
@@ -482,7 +482,7 @@ pub fn tree_path(root: &Path) -> Option<PathBuf> {
 /// The table a file holds, for a caller that means to lay it over something.
 ///
 /// Three answers, like [`read_from`]'s four: there is none, here it is, or
-/// it will not read. A tree's file that will not read is *not* a reason to
+/// it will not read. A project's file that will not read is *not* a reason to
 /// stop -- obelus goes on with the reader's own settings and says so in the
 /// log -- which is why this hands back the reason rather than a config with
 /// the defaults in it.
@@ -608,7 +608,7 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
             return true;
         }
         if table.contains_key(key) {
-            tracing::warn!(key, "a tree may not set this, so it is left alone");
+            tracing::warn!(key, "a project may not set this, so it is left alone");
         }
         false
     };
@@ -718,7 +718,7 @@ pub fn to_toml(config: &Config) -> String {
 
 /// The file's contents for a config, laid over a file that already exists.
 ///
-/// Edited rather than rewritten, the way a tree's file is. Obelus used to
+/// Edited rather than rewritten, the way a project's file is. Obelus used to
 /// write its own file whole on the grounds that obelus wrote all of it,
 /// which is not true: readers open it and put lines in by hand. Writing it
 /// whole took out everything obelus did not recognise -- a setting from a
@@ -782,20 +782,20 @@ pub fn resolved(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// Sets or removes one key in a tree's own settings file.
+/// Sets or removes one key in a project's own settings file.
 ///
 /// Edited rather than rewritten. Obelus's own file it writes whole, because
-/// obelus wrote all of it; a tree's is written by hand and committed, so it
+/// obelus wrote all of it; a project's is written by hand and committed, so it
 /// has comments in it, an order somebody chose, and possibly keys this
 /// version has never heard of. A round trip through a `toml::Table` would
 /// throw all three away on the first switch a reader flipped.
 ///
-/// `None` takes the key out, which is how a setting stops being the tree's
+/// `None` takes the key out, which is how a setting stops being the project's
 /// and goes back to being the reader's.
 ///
 /// The file need not exist: setting the first key makes it, which is the
 /// ordinary way a project acquires one.
-pub fn write_tree(path: &Path, key: &str, value: Option<&Value>) -> std::io::Result<()> {
+pub fn write_project(path: &Path, key: &str, value: Option<&Value>) -> std::io::Result<()> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -849,22 +849,22 @@ pub fn write_tree(path: &Path, key: &str, value: Option<&Value>) -> std::io::Res
     };
     std::fs::create_dir_all(directory)?;
     // Beside it and renamed over it, for the reason the reader's own file is
-    // written that way: another obelus on this tree may be reading it at
+    // written that way: another obelus on this project may be reading it at
     // this moment, and a plain write truncates first.
     let beside = path.with_extension("toml.writing");
     std::fs::write(&beside, document.to_string())?;
     std::fs::rename(&beside, path)
 }
 
-/// Where a tree's settings *would* go, for a tree that has none yet.
+/// Where a project's settings *would* go, for a project that has none yet.
 ///
-/// The directory, always. A tree keeps more than settings for obelus -- a
+/// The directory, always. A project keeps more than settings for obelus -- a
 /// theme of its own, whatever comes after it -- and one directory holding
 /// all of it is one thing to find, to copy between machines and to put in a
 /// `.gitignore`, where a dotfile per kind of thing is a row of them at the
-/// top of every listing of the tree.
+/// top of every listing of the project.
 #[must_use]
-pub fn tree_path_for(root: &Path) -> PathBuf {
+pub fn project_path_for(root: &Path) -> PathBuf {
     root.join(".obelus").join("config.toml")
 }
 

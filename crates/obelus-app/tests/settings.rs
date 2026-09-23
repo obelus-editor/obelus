@@ -28,9 +28,9 @@ fn settings_file(scratch: &support::Scratch) -> std::path::PathBuf {
     scratch.join("config.toml")
 }
 
-/// A tree of its own for one test, with settings in it.
-fn tree(name: &str, contents: &str) -> support::Scratch {
-    let scratch = support::Scratch::new(&format!("tree-{name}"));
+/// A project of its own for one test, with settings in it.
+fn project(name: &str, contents: &str) -> support::Scratch {
+    let scratch = support::Scratch::new(&format!("project-{name}"));
     std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
     std::fs::write(scratch.path().join(".obelus").join("config.toml"), contents).expect("the file");
     scratch
@@ -306,7 +306,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
     assert_eq!(rows(&app)[0], "Colour theme");
     assert_eq!(
         rows(&app).last().map(String::as_str),
-        Some("Files a tree ignores")
+        Some("Files a project ignores")
     );
 
     // A heading on the first of each group and on nothing else, so the
@@ -505,7 +505,7 @@ fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
 ///
 /// Beside the name the two were competing for one row, and the one that lost
 /// was the description -- cut off with an ellipsis on exactly the rows that
-/// had most to explain, and cut off further still on a row the tree had
+/// had most to explain, and cut off further still on a row the project had
 /// pinned, where the file's name takes the space as well.
 ///
 /// Broken deliberately by clipping the description to one row instead of
@@ -600,7 +600,7 @@ fn a_tree_lays_its_own_settings_over_the_readers() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let scratch = tree("over", "wrap = true\n");
+    let scratch = project("over", "wrap = true\n");
     let root = scratch.path().to_path_buf();
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -636,7 +636,7 @@ fn a_tree_may_not_start_an_agent_or_move_a_key() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let scratch = tree(
+    let scratch = project(
         "reach",
         "agent = \"claude-acp\"\n[keys]\nquit = \"ctrl+x\"\n",
     );
@@ -646,26 +646,26 @@ fn a_tree_may_not_start_an_agent_or_move_a_key() {
     app.configure(obelus_config::Config::default(), Vec::new());
     app.working_directory_for_test(root.clone());
 
-    assert_eq!(app.config().agent, None, "a tree started an agent");
+    assert_eq!(app.config().agent, None, "a project started an agent");
     assert!(
         app.config().keys.is_empty(),
-        "a tree moved a key: {:?}",
+        "a project moved a key: {:?}",
         app.config().keys
     );
 }
 
-/// A setting the tree has is not the reader's to change, and the row says
+/// A setting the project has is not the reader's to change, and the row says
 /// which file has it.
 ///
 /// Broken deliberately by letting `change_setting` write anyway: the switch
-/// moved, the file the reader's own settings live in got a line the tree
+/// moved, the file the reader's own settings live in got a line the project
 /// overrides, and the first assertion failed.
 #[test]
 fn a_setting_the_tree_has_cannot_be_changed_here() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let scratch = tree("pinned", "wrap = true\n");
+    let scratch = project("pinned", "wrap = true\n");
     let root = scratch.path().to_path_buf();
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -679,7 +679,7 @@ fn a_setting_the_tree_has_cannot_be_changed_here() {
     support::press(&mut app, KeyCode::Enter);
     assert!(
         app.config().wrap,
-        "a setting the tree has was changed from the settings page"
+        "a setting the project has was changed from the settings page"
     );
 
     // And the row says where it comes from.
@@ -704,7 +704,7 @@ fn the_trees_page_edits_the_trees_file() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = tree(
+    let root = project(
         "write",
         "# what this project needs\n\nwrap = true\n# the margin is noisy here\nblame_margin = false\n",
     );
@@ -713,7 +713,7 @@ fn the_trees_page_edits_the_trees_file() {
     app.configure(obelus_config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
-    dispatch::dispatch(&mut app, Command::ConfigTree);
+    dispatch::dispatch(&mut app, Command::ConfigProject);
     // Onto `blame_margin` by narrowing to it, which is one row, and turn it
     // on.
     support::type_text(&mut app, "blame");
@@ -737,7 +737,7 @@ fn the_trees_page_edits_the_trees_file() {
     assert!(app.config().blame_margin, "the setting did not take");
 }
 
-/// Delete takes a setting out of the tree's file, and the file keeps its
+/// Delete takes a setting out of the project's file, and the file keeps its
 /// own heading.
 ///
 /// `delete` means on this page what it means on the keys page: take this
@@ -752,7 +752,7 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = tree(
+    let root = project(
         "Unset",
         "# what this project needs\n\nwrap = true\nblame_margin = true\n",
     );
@@ -761,7 +761,7 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
     app.configure(obelus_config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
-    dispatch::dispatch(&mut app, Command::ConfigTree);
+    dispatch::dispatch(&mut app, Command::ConfigProject);
     support::type_text(&mut app, "wrap");
     support::press(&mut app, KeyCode::Delete);
 
@@ -777,10 +777,10 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
         "the heading went with the key: {written:?}"
     );
     // And the reader's own answer is what is in force again.
-    assert!(!app.config().wrap, "the tree still has it");
+    assert!(!app.config().wrap, "the project still has it");
 }
 
-/// A tree that has no settings file gets one the moment something is set.
+/// A project that has no settings file gets one the moment something is set.
 ///
 /// Broken deliberately by refusing to write when the file is not there:
 /// nothing happened and there was no file, which is a page that cannot be
@@ -790,13 +790,13 @@ fn a_tree_with_no_settings_gets_a_file_when_one_is_set() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = support::Scratch::new("tree-new");
+    let root = support::Scratch::new("project-new");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(obelus_config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
-    dispatch::dispatch(&mut app, Command::ConfigTree);
+    dispatch::dispatch(&mut app, Command::ConfigProject);
     support::type_text(&mut app, "wrap");
     support::press(&mut app, KeyCode::Enter);
 
@@ -805,18 +805,18 @@ fn a_tree_with_no_settings_gets_a_file_when_one_is_set() {
     assert!(written.contains("wrap = true"), "{written:?}");
 }
 
-/// On the tree's page, a setting the tree has not got says whose value is
-/// showing -- and the two tabs a tree may not have say so.
+/// On the project's page, a setting the project has not got says whose value is
+/// showing -- and the two tabs a project may not have say so.
 ///
 /// Broken deliberately by leaving `inherited` `None` for every row: the
-/// rows the tree does not set looked exactly like the one it does, and a
+/// rows the project does not set looked exactly like the one it does, and a
 /// reader could not tell what this project had actually decided.
 #[test]
 fn the_trees_page_says_which_settings_are_not_its_own() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = tree("whose", "wrap = true\n");
+    let root = project("whose", "wrap = true\n");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     // The theme they chose, and the margin's names written down at exactly
@@ -834,7 +834,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     // Tall enough for the whole page: every setting is on one now, and this
     // reads two of them against each other.
     support::lay_out(&mut app, 76, 32);
-    dispatch::dispatch(&mut app, Command::ConfigTree);
+    dispatch::dispatch(&mut app, Command::ConfigProject);
 
     // The theme is the reader's; the glyphs are nobody's.
     let dump = support::render(&mut app, 76, 32);
@@ -847,7 +847,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         "{dump}"
     );
 
-    // And the setting the tree does have says so, in the same column: a
+    // And the setting the project does have says so, in the same column: a
     // column where two of the three layers have a word and the third is
     // blank asks the reader to read an absence.
     let dump = support::render(&mut app, 76, 32);
@@ -857,9 +857,9 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         .expect("the row");
     assert!(
         wrap.contains("Project"),
-        "a setting the tree has does not say so: {wrap:?}"
+        "a setting the project has does not say so: {wrap:?}"
     );
-    // And beside it, one the reader wrote down and the tree says nothing
+    // And beside it, one the reader wrote down and the project says nothing
     // about -- written at exactly what obelus would have done anyway. The
     // column asks whether their file speaks about it, not whether it
     // disagrees: a reader who wrote a line and happened to agree was being
@@ -891,7 +891,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
 /// that was there at startup is the "read once at startup" mistake with a
 /// longer fuse: it looks right until the file is created.
 ///
-/// Broken deliberately by comparing the change against the file the tree
+/// Broken deliberately by comparing the change against the file the project
 /// *has* rather than the one it would have: the event matched nothing, the
 /// setting never arrived, and this failed.
 #[test]
@@ -899,12 +899,12 @@ fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = support::Scratch::new("tree-later");
+    let root = support::Scratch::new("project-later");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(obelus_config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
-    assert!(!app.config().wrap, "the tree had settings already");
+    assert!(!app.config().wrap, "the project had settings already");
 
     // Somebody else writes the project's first settings, and the watcher
     // says so.
@@ -937,7 +937,7 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = tree("grey", "wrap = true\n");
+    let root = project("grey", "wrap = true\n");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(obelus_config::Config::default(), Vec::new());
@@ -961,17 +961,17 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
         styles[at].chars().nth(column).expect("a style")
     };
 
-    // The tree's page: the name is ordinary ink, the word beside it is not.
-    dispatch::dispatch(&mut app, Command::ConfigTree);
+    // The project's page: the name is ordinary ink, the word beside it is not.
+    dispatch::dispatch(&mut app, Command::ConfigProject);
     support::type_text(&mut app, "blame");
     let dump = support::render(&mut app, 76, 16);
     assert_ne!(
         letter(&dump, "Blame in the margin", "margin"),
         letter(&dump, "Blame in the margin", "Default"),
-        "the name is as dim as the word saying the value is not the tree's:\n{dump}"
+        "the name is as dim as the word saying the value is not the project's:\n{dump}"
     );
 
-    // The reader's page: a setting the tree has taken is dim throughout,
+    // The reader's page: a setting the project has taken is dim throughout,
     // name and all, because there it really cannot be used.
     dispatch::dispatch(&mut app, Command::ConfigOpen);
     support::type_text(&mut app, "wrap");
@@ -1007,7 +1007,7 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
     app.configure(obelus_config::Config::default(), Vec::new());
     app.working_directory_for_test(root.path().to_path_buf());
     support::lay_out(&mut app, 76, 10);
-    dispatch::dispatch(&mut app, Command::ConfigTree);
+    dispatch::dispatch(&mut app, Command::ConfigProject);
 
     // The first row, which is the tabs': "Appearance" is a heading down the
     // page now and would find that instead.
@@ -1502,7 +1502,7 @@ fn installed(root: &std::path::Path, id: &str, version: &str) {
 /// whatever the settings say: the card offers to install it.
 ///
 /// The state a reader was stuck in. obelus decided an agent was installed by
-/// looking at what `npm` had left lying about, and npm builds its tree in an
+/// looking at what `npm` had left lying about, and npm builds its project in an
 /// order of its own -- so a run that was killed halfway left a directory
 /// that looked finished. The card then read "active" over an agent nothing
 /// could start, and the only button on it was the one that turned it off.
@@ -1520,7 +1520,7 @@ fn an_agent_that_is_not_installed_is_not_in_use() {
     app.agents_root_for_test(root.clone());
     assert_eq!(app.config().agent.as_deref(), Some("agent-0"));
 
-    // And npm's tree is all there, exactly as an interrupted install leaves
+    // And npm's project is all there, exactly as an interrupted install leaves
     // it -- a manifest, and the link to the program.
     let home = obelus_agent::home("agent-0", &root).expect("a directory for it");
     let package = home.join("node_modules").join("agent-0");
@@ -1928,17 +1928,17 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
 
 /// The settings say what their keys do, because two of them cannot be
 /// guessed: that the page is narrowed by typing at it, and that a setting
-/// the tree has set can be taken out again.
+/// the project has set can be taken out again.
 #[test]
 fn the_settings_say_what_their_keys_do() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let scratch = tree("foot", "wrap = true\n");
+    let scratch = project("foot", "wrap = true\n");
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.working_directory_for_test(scratch.path().to_path_buf());
     support::lay_out(&mut app, 76, 16);
-    dispatch::dispatch(&mut app, Command::ConfigTree);
+    dispatch::dispatch(&mut app, Command::ConfigProject);
 
     let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
     // "type" is capped as the key and "to filter" is what it does, so the
@@ -1954,7 +1954,7 @@ fn the_settings_say_what_their_keys_do() {
     let text = support::text_block(&dump);
     assert!(text.contains("The keys here"), "no card:\n{dump}");
     assert!(
-        text.contains("Take this setting out of the tree's file"),
+        text.contains("Take this setting out of the project's file"),
         "the card only has the foot's word for it:\n{dump}"
     );
 
@@ -1963,7 +1963,7 @@ fn the_settings_say_what_their_keys_do() {
     assert!(app.settings().is_some(), "escape left the settings");
 }
 
-/// `unset` is on the tree's page and nowhere else, because the reader's own
+/// `unset` is on the project's page and nowhere else, because the reader's own
 /// settings have no "Unset" -- one they have not changed is the default.
 #[test]
 fn the_foot_offers_unset_only_where_it_means_something() {

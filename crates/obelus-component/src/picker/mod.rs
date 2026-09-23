@@ -528,11 +528,11 @@ pub struct Picker {
     /// search of the open file are inside the project by construction, and
     /// only a language server has an index that reaches past it.
     outside: Option<bool>,
-    /// Whether this list is offering the files a tree ignores, where that
+    /// Whether this list is offering the files a project ignores, where that
     /// is a question about it at all.
     ///
     /// `None` where the key means nothing: the changed files come from git
-    /// rather than from a walk, and what a tree ignores is not part of that
+    /// rather than from a walk, and what a project ignores is not part of that
     /// answer either way. Greyed at the foot rather than dropped from it, so
     /// the list does not change height as the reader steps between tabs.
     ///
@@ -858,7 +858,7 @@ impl Picker {
         self.outside
     }
 
-    /// Says whether this list is offering the files a tree ignores, or that
+    /// Says whether this list is offering the files a project ignores, or that
     /// the question does not arise here.
     pub const fn offering_ignored(&mut self, offering: Option<bool>) {
         self.ignored = offering;

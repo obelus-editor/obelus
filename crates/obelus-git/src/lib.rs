@@ -105,7 +105,7 @@ fn in_repository(repository: &gix::Repository, path: &Path) -> Option<PathBuf> {
 ///
 /// Discovered from the path rather than from the working directory: the file
 /// being read is the thing the question is about, and it can be outside the
-/// tree obelus was started in.
+/// project obelus was started in.
 fn repository(path: &Path) -> Option<gix::Repository> {
     let from = if path.is_dir() { path } else { path.parent()? };
     // Ceiling directories are left alone deliberately: a reader who opens a
@@ -191,7 +191,7 @@ pub fn state_of(path: &Path) -> Vec<PathBuf> {
 ///
 /// The repository is discovered from the path itself for the same reason
 /// everything else here is: the file the question is about can be outside
-/// the tree obelus was started in.
+/// the project obelus was started in.
 #[must_use]
 pub fn state_moved(path: &Path) -> bool {
     if !matches!(

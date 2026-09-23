@@ -15,7 +15,7 @@ use obelus_app::{
 use obelus_command::Command;
 use obelus_theme::{builtin, written};
 
-/// A tree with a settings file and a themes directory beside it.
+/// A project with a settings file and a themes directory beside it.
 fn reader(name: &str) -> support::Scratch {
     let scratch = support::Scratch::new(&format!("theme-{name}"));
     std::fs::create_dir_all(scratch.join("themes")).expect("the directory");
@@ -120,7 +120,7 @@ fn a_file_theme_previews_and_is_kept() {
     );
 }
 
-/// A tree may hand one over too, and its own goes over the reader's.
+/// A project may hand one over too, and its own goes over the reader's.
 ///
 /// The same order the settings themselves are laid in: what a project says
 /// about itself goes over what the reader says about everything. A theme is

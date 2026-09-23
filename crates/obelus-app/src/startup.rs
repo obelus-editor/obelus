@@ -1,7 +1,7 @@
 //! Everything obelus does before there is a screen.
 //!
 //! The order is the part worth having a name: the paths are read before
-//! anything takes the screen, the tree is settled before the settings that
+//! anything takes the screen, the project is settled before the settings that
 //! belong to it, and the first line of the log is written before either. It
 //! lived in `main` while there was one `main`, where it read as a hundred
 //! lines that happened to be in that order rather than as an order with
@@ -31,7 +31,7 @@ use crate::app::{self, App};
 /// the crate it belongs to and nothing else. Handed in, the same way
 /// [`App::built_at`] already takes it.
 pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
-    // What the paths mean: which tree, which files, and whether the
+    // What the paths mean: which project, which files, and whether the
     // question left over is "which file".
     let opening = app::opening(paths);
 
@@ -46,14 +46,14 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
         version = env!("CARGO_PKG_VERSION"),
         // And which build, because the version does not move between
         // releases and a day's work is a hundred builds of `0.1.0`. The
-        // commit it was built at, and nothing about whether the tree had
+        // commit it was built at, and nothing about whether the project had
         // been edited since -- see the build script for why that cannot be
         // answered from there.
         built,
         directory = ?std::env::current_dir().ok(),
-        // And the tree obelus settled on, which the arguments may have
+        // And the project obelus settled on, which the arguments may have
         // moved: every path in the rest of the log is relative to it.
-        tree = ?opening.root,
+        project = ?opening.root,
         paths = paths.len(),
         opens = opening.files.len(),
         list = opening.list,
@@ -67,8 +67,8 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
         .collect::<Result<Vec<_>>>()?;
 
     let mut app = App::new(buffers);
-    // Before the settings, because a tree has settings of its own and
-    // reading those means knowing which tree.
+    // Before the settings, because a project has settings of its own and
+    // reading those means knowing which project.
     if let Some(root) = opening.root {
         app.work_in(root);
     }

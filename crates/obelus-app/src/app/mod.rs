@@ -586,7 +586,7 @@ pub struct App {
     working_directory: PathBuf,
     /// Whether to open on the file list.
     ///
-    /// A directory on the command line is a reader saying which tree
+    /// A directory on the command line is a reader saying which project
     /// rather than which file, and "which file" is what the list answers.
     /// A flag rather than a list opened on the spot, because the rows come
     /// from a walk on the loop's own channel and there is no channel until
@@ -785,11 +785,11 @@ impl App {
         &self.working_directory
     }
 
-    /// Puts the application on a tree.
+    /// Puts the application on a project.
     ///
-    /// Before the settings are read, always: a tree has settings of its
+    /// Before the settings are read, always: a project has settings of its
     /// own and a theme beside them, and finding those means knowing which
-    /// tree first. [`App::load_config`] lays the tree's answers over the
+    /// project first. [`App::load_config`] lays the project's answers over the
     /// reader's at the end, so this only has to have happened by then.
     pub fn work_in(&mut self, root: PathBuf) {
         self.working_directory = root;
@@ -1009,7 +1009,7 @@ impl App {
         // what putting obelus on a tree means: at startup the two happen
         // together, and a test that moved one without the other would be
         // testing an application no reader can have.
-        self.apply_tree();
+        self.apply_project();
     }
 
     /// Starts watching every open file for changes on disk.
@@ -1055,17 +1055,17 @@ impl App {
                 }
             }
         }
-        // And the tree's own settings, for the same reason twice over:
+        // And the project's own settings, for the same reason twice over:
         // another obelus on this project may be looking at them, and a `git
         // pull` rewrites them under everybody.
-        // The file the tree *would* have, not the one it has: watching only
+        // The file the project *would* have, not the one it has: watching only
         // what was there at startup is the "read once" mistake with a longer
         // fuse, because it looks right until somebody creates the file --
         // the window next door writing the project's first setting, or a
         // pull bringing one.
-        let tree = obelus_config::tree_path_for(&self.working_directory);
-        if let Err(error) = watcher.watch(&tree) {
-            tracing::warn!(%error, path = %tree.display(), "not watching the tree's settings");
+        let project = obelus_config::project_path_for(&self.working_directory);
+        if let Err(error) = watcher.watch(&project) {
+            tracing::warn!(%error, path = %project.display(), "not watching the project's settings");
         }
         self.watcher = Some(watcher);
         // And wherever the colours come from, which is its own question:
@@ -1750,7 +1750,7 @@ impl App {
                 // file appearing is a change like any other: the ordinary
                 // case is a project with no settings yet, and the moment
                 // worth hearing about is the one where it gets some.
-                let tree = path == obelus_config::tree_path_for(&self.working_directory);
+                let tree = path == obelus_config::project_path_for(&self.working_directory);
                 if readers || tree {
                     self.reread_config();
                 } else if self.is_a_theme(&path) {
@@ -1759,7 +1759,7 @@ impl App {
                     // stands for has.
                     self.reread_theme();
                 } else if self.is_the_notes_file(&path) {
-                    // What the tree means to come back to, written by
+                    // What the project means to come back to, written by
                     // another obelus, the reader's own editor -- or by this
                     // obelus, which hears its own writes like anybody
                     // else's. Not told apart, because there is nothing to
@@ -2964,7 +2964,7 @@ where
 /// What the command line asked obelus to open.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Opening {
-    /// The tree to work in, absolute, where the arguments named one.
+    /// The project to work in, absolute, where the arguments named one.
     ///
     /// `None` for no arguments at all, which leaves the directory obelus
     /// was started in -- the shell's answer to the same question.
@@ -2977,13 +2977,13 @@ pub struct Opening {
 
 /// What a set of command-line paths means.
 ///
-/// A file names the tree it is in and is opened; a directory *is* the
-/// tree, and the question it leaves -- which file -- is the one the list
-/// answers. The first path decides the tree, because a reader who names
+/// A file names the project it is in and is opened; a directory *is* the
+/// project, and the question it leaves -- which file -- is the one the list
+/// answers. The first path decides the project, because a reader who names
 /// two has said which they meant first.
 ///
 /// Absolute, and by the same rule [`obelus_buffer::Buffer::open`] uses on
-/// a file: made absolute rather than canonical, so a tree reached through
+/// a file: made absolute rather than canonical, so a project reached through
 /// a symlink is still shown under the name the reader typed. A relative
 /// root would fail quietly -- every path obelus shows is worked out by
 /// stripping this off an absolute one, and git is asked about it from a
@@ -3012,7 +3012,7 @@ pub fn opening(paths: &[PathBuf]) -> Opening {
     Opening {
         root: Some(absolute(&root)),
         // Nothing to open means the list is the whole answer: `ob src`
-        // is a reader saying which tree and asking which file.
+        // is a reader saying which project and asking which file.
         list: files.is_empty(),
         files,
     }
@@ -3231,8 +3231,8 @@ impl Screen for App {
     fn theme(&self) -> &Theme {
         App::theme(self)
     }
-    fn tree_config(&self) -> Option<&Path> {
-        App::tree_config(self)
+    fn project_config(&self) -> Option<&Path> {
+        App::project_config(self)
     }
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble] {
         App::troubles(self)

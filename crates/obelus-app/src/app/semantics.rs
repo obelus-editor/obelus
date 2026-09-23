@@ -45,7 +45,7 @@ impl App {
     /// it is not already running.
     ///
     /// Only for files under the root. A server is rooted at the working
-    /// directory, and asking it about a file outside its own tree gets
+    /// directory, and asking it about a file outside its own project gets
     /// answers about a project it cannot see.
     pub(super) fn serve(&mut self, index: usize) {
         let Some(buffer) = file_in(&self.documents, DocumentId::new(index)) else {
@@ -1679,7 +1679,7 @@ impl App {
     /// from one scope into another is worse than dropping them.
     fn on_workspace_symbols(&mut self, reply: Reply) {
         let root = self.working_directory.clone();
-        // This tree unless the reader has asked to see past it: a list of
+        // This project unless the reader has asked to see past it: a list of
         // every name a server knows is mostly the registry's, and the one
         // they meant is somewhere among them.
         let within = (!self.outside).then_some(root.as_path());

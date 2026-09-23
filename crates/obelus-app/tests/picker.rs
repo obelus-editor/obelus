@@ -718,7 +718,7 @@ fn the_file_list_says_what_its_own_key_does() {
     press_function(&mut app, 1);
     let card = support::render(&mut app, 72, 24);
     assert!(
-        support::text_block(&card).contains("Offer the files the tree ignores"),
+        support::text_block(&card).contains("Offer the files the project ignores"),
         "f1 said nothing:\n{card}"
     );
 }
@@ -833,7 +833,7 @@ fn the_key_is_not_offered_where_it_would_do_nothing() {
     );
 }
 
-/// A file the tree ignores is drawn dim, so a list offering both still says
+/// A file the project ignores is drawn dim, so a list offering both still says
 /// which is which.
 ///
 /// Broken deliberately by drawing every walked row the same: `target` and

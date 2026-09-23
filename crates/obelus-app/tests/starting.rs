@@ -121,7 +121,7 @@ fn the_tree_is_settled_before_its_settings_are_read() {
         app.pinned()
     );
     assert_eq!(
-        app.tree_config(),
+        app.project_config(),
         Some(scratch.path().join(".obelus").join("config.toml").as_path()),
         "obelus looked for the tree's settings somewhere else"
     );

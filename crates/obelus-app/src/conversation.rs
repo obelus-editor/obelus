@@ -30,7 +30,7 @@ pub enum Topic {
     /// Nothing in particular: opened with the key rather than from a note.
     #[default]
     Loose,
-    /// One of the tree's notes, by the name that outlives its position.
+    /// One of the project's notes, by the name that outlives its position.
     Note(NoteId),
 }
 

@@ -24,7 +24,7 @@ impl App {
         self.make_room(Room::Screen);
         self.counts = Some(Counts::new());
         // Counted on every opening rather than once and kept. A count is a
-        // fact about the tree as it is now, and this is a program several
+        // fact about the project as it is now, and this is a program several
         // copies of which sit over one repository while an agent rewrites
         // it: a cached answer would be a screen full of numbers about a
         // project that has moved on, with nothing on it saying so.

@@ -45,16 +45,16 @@ pub struct SettingsView<'a> {
         obelus_command::Command,
         Option<obelus_editing::keymap::KeyChord>,
     )>,
-    /// The settings the tree has set, and the file it set them in.
+    /// The settings the project has set, and the file it set them in.
     ///
     /// Written the way the reader would write it -- `.obelus/config.toml`,
-    /// not the whole path -- because it is a file in the tree they are
+    /// not the whole path -- because it is a file in the project they are
     /// looking at.
     pinned: Vec<&'static str>,
     /// Which settings the reader's own file named.
     named: Vec<&'static str>,
     /// That file, if there is one.
-    tree: Option<String>,
+    project: Option<String>,
 }
 
 impl<'a> SettingsView<'a> {
@@ -71,18 +71,19 @@ impl<'a> SettingsView<'a> {
             keys: app.settings()?.keys(app.keymap()),
             pinned: app.pinned().to_vec(),
             named: app.readers_named().to_vec(),
-            // The file the tree has, or the one it would get: the tree's
+            // The file the project has, or the one it would get: the project's
             // page says which file it is writing before there is a file to
             // write, because that is the question a reader opening it has.
-            tree: (app.settings().is_some_and(Settings::on_tree) || app.tree_config().is_some())
-                .then(|| {
-                    crate::relative_to(
-                        &obelus_config::tree_path_for(app.working_directory()),
-                        app.working_directory(),
-                    )
-                    .display()
-                    .to_string()
-                }),
+            project: (app.settings().is_some_and(Settings::on_project)
+                || app.project_config().is_some())
+            .then(|| {
+                crate::relative_to(
+                    &obelus_config::project_path_for(app.working_directory()),
+                    app.working_directory(),
+                )
+                .display()
+                .to_string()
+            }),
         })
     }
 }
@@ -97,7 +98,7 @@ pub fn footed(area: Rect, settings: &Settings) -> Rect {
 ///
 /// Not the arrows: they walk the tabs and say so on the tab row, where the
 /// key *is* the arrow. What is here is what a reader could not guess -- that
-/// this page is filtered by typing at it, and that a setting the tree has
+/// this page is filtered by typing at it, and that a setting the project has
 /// set can be unset.
 #[must_use]
 pub fn hints(settings: &Settings) -> Vec<Hint> {
@@ -119,8 +120,8 @@ pub fn hints(settings: &Settings) -> Vec<Hint> {
             .written("type")
             .saying("Type to narrow the list"),
         Hint::common(bare(KeyCode::Delete), "Unset")
-            .saying("Take this setting out of the tree's file")
-            .when(settings.on_tree() && !settings.on_keys() && !settings.on_agents()),
+            .saying("Take this setting out of the project's file")
+            .when(settings.on_project() && !settings.on_keys() && !settings.on_agents()),
         // The card's, not the foot's: see `crate::foot`.
         Hint::rare(bare(KeyCode::Esc), "Leave").saying("Leave the settings"),
     ]
@@ -249,10 +250,10 @@ impl Widget for SettingsView<'_> {
         // and kept there: it is the whole of what makes this page different
         // from the other one, and a reader who cannot see it is a reader
         // editing something they have to remember.
-        if let Some(tree) = self
+        if let Some(project) = self
             .settings
-            .on_tree()
-            .then_some(self.tree.as_deref())
+            .on_project()
+            .then_some(self.project.as_deref())
             .flatten()
         {
             // Past the arrows that walk the tabs, which sit at the edge --
@@ -261,14 +262,14 @@ impl Widget for SettingsView<'_> {
             // starts before the tabs end is a name written over them, which
             // is what a narrow screen got.
             let arrows = 4;
-            let width = u16::try_from(obelus_text::text_width(tree)).unwrap_or(0);
+            let width = u16::try_from(obelus_text::text_width(project)).unwrap_or(0);
             let at = area.right().saturating_sub(width + arrows + 2);
             if at > after + 1 {
                 write(
                     cells,
                     at,
                     area.y,
-                    tree,
+                    project,
                     Style::new().fg(self.theme.gutter).bg(self.theme.background),
                 );
             }
@@ -312,11 +313,11 @@ impl Widget for SettingsView<'_> {
         // The keys are a column of the same rows: a command, what it does,
         // and the key it is on -- with the row the reader is binding saying
         // so where its description was.
-        // A tree may not move the keys or choose the agent, so on its page
+        // A project may not move the keys or choose the agent, so on its page
         // those two tabs say so rather than showing rows nothing will
         // accept: a page of controls that all refuse is a page that has to
         // be tried before it can be understood.
-        if self.settings.on_tree() && (self.settings.on_keys() || self.settings.on_agents()) {
+        if self.settings.on_project() && (self.settings.on_keys() || self.settings.on_agents()) {
             crate::nothing(
                 cells,
                 Rect {
@@ -324,8 +325,8 @@ impl Widget for SettingsView<'_> {
                     ..region
                 },
                 match self.settings.on_keys() {
-                    true => "A tree may not move the keys",
-                    false => "A tree may not choose the agent",
+                    true => "A project may not move the keys",
+                    false => "A project may not choose the agent",
                 },
                 self.theme,
             );
@@ -389,19 +390,22 @@ impl SettingsView<'_> {
                     Settings::value_of(shown.setting, self.config),
                 ),
                 // On the reader's page, the file that has this one instead
-                // of them. On the tree's, nothing: a setting the tree has
+                // of them. On the project's, nothing: a setting the project has
                 // is exactly what that page is for.
-                pinned: (!self.settings.on_tree())
+                pinned: (!self.settings.on_project())
                     .then(|| {
                         self.pinned
                             .contains(&shown.setting.key)
-                            .then(|| self.tree.clone())
+                            .then(|| self.project.clone())
                             .flatten()
                     })
                     .flatten(),
-                // And on the tree's page, which layer the value showing
+                // And on the project's page, which layer the value showing
                 // comes from -- the project's own included.
-                scope: self.settings.on_tree().then(|| self.scope(shown.setting)),
+                scope: self
+                    .settings
+                    .on_project()
+                    .then(|| self.scope(shown.setting)),
             })
             .collect()
     }
@@ -423,7 +427,7 @@ struct Row {
     /// What it does, under the name and indented, already broken into the
     /// rows it takes. Empty on a page whose rows are one row each.
     body: Vec<String>,
-    /// Which layer the value showing comes from, on the tree's page.
+    /// Which layer the value showing comes from, on the project's page.
     ///
     /// `None` on the reader's, where the question is the other one: not
     /// "whose is this" but "who has taken it from me", which the file's
@@ -445,7 +449,7 @@ struct Row {
 /// a page where everything is in some sense theirs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scope {
-    /// This tree's own settings file.
+    /// This project's own settings file.
     Project,
     /// The reader's, wherever this system keeps them.
     Global,
@@ -581,12 +585,12 @@ impl SettingsView<'_> {
             // What the row says about where it came from, measured before
             // the name is: it is written between the two, so the name is cut
             // to what is left rather than to the whole row.
-            // The lock is the reader's page saying "not here". The tree's
+            // The lock is the reader's page saying "not here". The project's
             // page has none: there, everything is here.
             let lock = u16::from(obelus_icons::enabled() && row.pinned.is_some()) * 2;
             // Where the value showing comes from, on whichever page is not
             // the one that has it: the file's name and a lock on the
-            // reader's, the word `yours` or `default` on the tree's. One
+            // reader's, the word `yours` or `default` on the project's. One
             // column, because it is one question.
             let source = row
                 .pinned
@@ -608,13 +612,13 @@ impl SettingsView<'_> {
             // matched carry the background every other list marks a match
             // with: a row in a narrowed list has to say why it is in it.
             // The ink says whether a row can be used, which is the rule
-            // everywhere here: a setting the tree has is not this reader's
+            // everywhere here: a setting the project has is not this reader's
             // to move, and a row that looked live until they pressed it
             // would be a row that lied.
             // Dim says "not yours to use here", which on the reader's page
-            // is exactly what a setting the tree has taken is. On the
-            // tree's page it would be the opposite of the truth: a row the
-            // tree has not got is the one thing on that page a reader *can*
+            // is exactly what a setting the project has taken is. On the
+            // project's page it would be the opposite of the truth: a row the
+            // project has not got is the one thing on that page a reader *can*
             // do something to -- pressing it is how a setting becomes the
             // project's. So there the row is ordinary, and what is dim is
             // the word saying where the value showing comes from, and the
@@ -754,9 +758,9 @@ impl SettingsView<'_> {
         );
     }
 
-    /// Which layer the value on a row comes from, on the tree's page.
+    /// Which layer the value on a row comes from, on the project's page.
     ///
-    /// All three, including the tree's own: a column where two of the three
+    /// All three, including the project's own: a column where two of the three
     /// have a word and the third is blank asks the reader to read an
     /// absence. `git config --global` against a repository's own is the
     /// vocabulary they already have for this.
@@ -765,7 +769,7 @@ impl SettingsView<'_> {
             return Scope::Project;
         }
         // Whether their file speaks about it, which is the same question
-        // the line above asks of the tree's. Whether what it says differs
+        // the line above asks of the project's. Whether what it says differs
         // from the default is a different question and the wrong one: a
         // reader who wrote a setting down and happened to agree with obelus
         // would be told they had never been here.
@@ -1078,7 +1082,7 @@ fn draw_control(
     let (x, y) = (at.x, at.y);
     let style = Style::new().bg(background);
     // A control the reader cannot move is drawn in the dim ink, value and
-    // all: what it is set to is still worth seeing -- it is what this tree
+    // all: what it is set to is still worth seeing -- it is what this project
     // has decided -- and what they cannot do about it is said the way
     // everything unusable here says it.
     let ink = if usable {

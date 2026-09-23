@@ -267,7 +267,7 @@ impl App {
         // `None` where the file will not read, so that nothing is swept
         // against a list obelus does not have: what is remembered here is
         // keyed to notes, and an empty list of names would forget every
-        // conversation this tree has.
+        // conversation this project has.
         let notes: Option<Vec<obelus_git::todo::NoteId>> =
             obelus_git::todo::read(&self.working_directory)
                 .notes()
@@ -344,7 +344,7 @@ impl App {
         // `None` where the file will not read, so that nothing is swept
         // against a list obelus does not have: what is remembered here is
         // keyed to notes, and an empty list of names would forget every
-        // conversation this tree has.
+        // conversation this project has.
         let notes: Option<Vec<obelus_git::todo::NoteId>> =
             obelus_git::todo::read(&self.working_directory)
                 .notes()
@@ -2397,7 +2397,7 @@ impl App {
     /// Otherwise from disk.
     ///
     /// Refused outside the project, whichever way the text would have come:
-    /// an agent asking for something outside the tree obelus was started on
+    /// an agent asking for something outside the project obelus was started on
     /// is asking for something the reader did not open it to look at.
     /// Writes a file for the agent.
     ///
@@ -2453,7 +2453,7 @@ impl App {
             })
             .is_ok_and(|full| full.starts_with(self.fenced()));
         if !inside {
-            tracing::info!(path = %full.display(), "the agent asked to write outside the tree");
+            tracing::info!(path = %full.display(), "the agent asked to write outside the project");
             let _ = answer.send(false);
             return;
         }

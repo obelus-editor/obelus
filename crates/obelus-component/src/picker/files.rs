@@ -1,6 +1,6 @@
 //! Gathering the files the picker can offer.
 //!
-//! A list obelus offers is a list of the reader's own tree. A language
+//! A list obelus offers is a list of the reader's own project. A language
 //! server answers `workspace/symbol` with everything it has indexed, which for
 //! rust-analyzer is every dependency of the project: a search for `new` in a
 //! repository of a dozen files comes back with hundreds of rows from the
@@ -22,7 +22,7 @@ use ignore::WalkBuilder;
 /// One thing directly inside a directory, as a row of a tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
-    /// Where it is, relative to the tree's root -- which is what the list
+    /// Where it is, relative to the project's root -- which is what the list
     /// shows and what a reader types to reach it.
     pub path: PathBuf,
     /// Whether it is a directory.
@@ -30,19 +30,19 @@ pub struct Entry {
     /// Whether opening it would put anything on screen.
     ///
     /// Which is the whole of what the mark on a row may claim. A directory
-    /// with nothing in it, or with nothing in it but files a tree was told
+    /// with nothing in it, or with nothing in it but files a project was told
     /// to ignore, offers to open and then does not -- and a mark that does
     /// that once is a mark nobody presses again.
     ///
     /// One level deep, and no further. "Is there a file anywhere under
-    /// this" is a walk of the whole tree per row, and what this says is
+    /// this" is a walk of the whole project per row, and what this says is
     /// exactly what it means: opening it shows at least one row.
     pub holds: bool,
-    /// Whether the tree said to ignore it.
+    /// Whether the project said to ignore it.
     ///
     /// Only ever true where the reader asked to see those as well, and
     /// what it is for is saying which they are: a list that offers them
-    /// without saying which is a list that lies about the tree.
+    /// without saying which is a list that lies about the project.
     pub ignored: bool,
 }
 
@@ -53,7 +53,7 @@ pub struct Entry {
 /// rather than a listing per directory found, which on a directory of
 /// thirty is thirty system calls for thirty arrows.
 ///
-/// `ignored` offers the files the tree has said to ignore as well, the same
+/// `ignored` offers the files the project has said to ignore as well, the same
 /// switch the flat listing reads -- so what counts as a file worth showing
 /// has one answer at both depths.
 #[must_use]

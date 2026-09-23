@@ -163,7 +163,7 @@ const ELIDED: &str = "\u{2026}";
 ///
 /// Something to say rather than merely being asked: a file in a repository
 /// that nobody has touched would otherwise spend a column on an answer of
-/// "nothing", which is every file in every clean tree. What that costs is
+/// "nothing", which is every file in every clean project. What that costs is
 /// a cell of sideways shift when a file does change under the reader --
 /// and with wrapping on, a rewrap -- and it is paid where there is news
 /// worth the column.

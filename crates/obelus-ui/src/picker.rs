@@ -108,7 +108,7 @@ pub fn hints(picker: &Picker) -> Vec<Hint> {
     let offering = picker.offers_ignored();
     vec![
         Hint::common(alt('i'), "Ignored files")
-            .saying("Offer the files the tree ignores, or leave them out")
+            .saying("Offer the files the project ignores, or leave them out")
             .set(offering.unwrap_or(false))
             .when(offering.is_some()),
         // Not a switch: what it does depends on the row the reader is on,
@@ -536,7 +536,7 @@ impl PickerView<'_> {
             (Some(FileStatus::Gone), _) => style
                 .fg(self.theme.change_removed)
                 .add_modifier(ratatui::style::Modifier::CROSSED_OUT),
-            // Dim, because the tree said it does not keep this one: it is
+            // Dim, because the project said it does not keep this one: it is
             // in the list only because the reader asked for the ignored
             // ones too, and a build artefact in the same ink as the source
             // beside it is a list that has stopped saying which is which.

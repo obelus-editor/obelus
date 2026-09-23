@@ -77,7 +77,7 @@ pub struct Asked {
 /// obelus, as an agent can reach it.
 #[derive(Clone)]
 pub struct Obelus {
-    /// The tree the notes belong to.
+    /// The project the notes belong to.
     root: std::path::PathBuf,
     /// How to reach the main loop, which is the only thing that may draw.
     ///
@@ -147,7 +147,7 @@ pub struct Offered {
 
 #[tool_router]
 impl Obelus {
-    /// A server on this tree, answering to this main loop.
+    /// A server on this project, answering to this main loop.
     #[must_use]
     pub fn new(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> Self {
         // One line per connection to the tools, which is the thing that
@@ -167,7 +167,7 @@ impl Obelus {
         }
     }
 
-    /// What the tree means to come back to.
+    /// What the project means to come back to.
     ///
     /// Indented the way the reader's own page indents it, because a note may
     /// hang under another: a flat list would have an agent asking to finish

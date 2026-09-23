@@ -342,7 +342,7 @@ fn the_symbols_of_the_project_or_of_everything() {
     assert_eq!(names(None), ["mine", "theirs"]);
 }
 
-/// What the tree ignores, the search ignores -- unless the reader has asked
+/// What the project ignores, the search ignores -- unless the reader has asked
 /// for the ignored files, and then it does not.
 ///
 /// Broken deliberately by walking with the ignore rules always on: the file

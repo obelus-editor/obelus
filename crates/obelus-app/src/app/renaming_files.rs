@@ -111,7 +111,7 @@ impl App {
     ///
     /// Filled in rather than empty, because the answer is almost always a
     /// small change to it: a word of the name, or the directory in front
-    /// of it. Relative to the tree, which is how the list writes a path
+    /// of it. Relative to the project, which is how the list writes a path
     /// and how a reader says one.
     fn ask_what_to_call_it(&mut self, path: &Path) {
         let shown = relative(path, &self.working_directory);

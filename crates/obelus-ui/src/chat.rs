@@ -267,7 +267,7 @@ pub fn regions_capped(area: Rect, needed: usize, most: u16) -> Regions {
 /// What a tool call says about where it was working, given what its title
 /// has already said.
 ///
-/// The path as a reader writes it -- relative to the tree obelus was opened
+/// The path as a reader writes it -- relative to the project obelus was opened
 /// on -- and the line when the agent named one. And how many other files it
 /// named, because a call that touched six of them says so on its one row
 /// until the reader opens it.
@@ -392,7 +392,7 @@ pub struct ChatView<'a> {
     focus: Focus,
     /// The card an agent's question is on, while it is waiting on one.
     card: Option<&'a Card>,
-    /// The tree obelus was opened on, for writing the paths an agent names
+    /// The project obelus was opened on, for writing the paths an agent names
     /// the way a reader writes them.
     root: &'a Path,
     /// Where the animation has got to, for the row that turns.
@@ -1553,7 +1553,7 @@ mod tests {
 
     /// Where a tool call was, written the way a reader writes a path.
     ///
-    /// Relative to the tree obelus was opened on, because that is the part
+    /// Relative to the project obelus was opened on, because that is the part
     /// already known -- and left alone when it is somewhere else, because a
     /// path outside the tree is news. The others it named are counted
     /// rather than listed: the row is one row until the reader opens it.

@@ -28,7 +28,7 @@ use crate::conversation::Conversation;
 /// A buffer is what a slot in this list usually holds, so it is the one
 /// that should not be behind a pointer. The conversation is boxed because
 /// it was twice the size, and there are a handful of them against a
-/// reader's whole tree of files. `large_enum_variant` had to be silenced
+/// reader's whole project of files. `large_enum_variant` had to be silenced
 /// for that until the notes went in beside them: three variants of 440,
 /// 8 and 240 bytes is a spread clippy does not mind.
 #[derive(Debug)]

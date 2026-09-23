@@ -83,7 +83,7 @@ pub enum Event {
     /// a redraw a reader did not ask for is a redraw that can only get in the
     /// way.
     Tick,
-    /// A walk of the tree found something.
+    /// A walk of the project found something.
     Search(obelus_search::Event),
     /// A walk of the history found something out.
     Git(obelus_git::Event),
@@ -93,7 +93,7 @@ pub enum Event {
     Lsp(obelus_lsp::Message),
     /// An agent asked obelus to change the notes.
     Notes(obelus_mcp::Asked),
-    /// A tree, counted.
+    /// A project, counted.
     ///
     /// Boxed because it is much the largest thing an event carries -- two
     /// lists as long as the project is -- and every other variant would be

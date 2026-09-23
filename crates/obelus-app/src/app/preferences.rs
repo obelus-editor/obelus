@@ -4,38 +4,39 @@
 //! [`obelus_config`]; what is here is applying a setting to the running
 //! program and writing it back.
 //!
-//! A tree may carry settings, and a tree is not the reader.
+//! A project may carry settings, and a project is not the reader.
 //! `.obelus/config.toml` in the working directory, laid *over* the reader's own
-//! file key by key: the tree says what this project needs -- wrapped lines, a
-//! theme -- and says nothing about everything else, which stays theirs. Read
-//! into a fresh config instead of over theirs and a tree with one line in it
+//! file key by key: the project says what this project needs -- wrapped lines,
+//! a theme -- and says nothing about everything else, which stays theirs. Read
+//! into a fresh config instead of over theirs and a project with one line in it
 //! would turn off a reader's wrapping, which is what every "project settings"
 //! feature that replaces rather than layers actually does.
 //!
 //! A directory rather than a dotfile, because settings are not the only thing a
-//! tree will keep for obelus -- a theme of its own, whatever comes after it --
-//! and one directory is one thing to find, to copy between machines and to name
-//! in a `.gitignore`, where a dotfile per kind of thing is a row of them at the
-//! top of every listing. Only the working directory itself, never walking up:
-//! obelus has one answer to which tree it is on -- the file list walks it, the
-//! counts count it, git is read from it.
+//! project will keep for obelus -- a theme of its own, whatever comes after it
+//! -- and one directory is one thing to find, to copy between machines and to
+//! name in a `.gitignore`, where a dotfile per kind of thing is a row of them
+//! at the top of every listing. Only the working directory itself, never
+//! walking up: obelus has one answer to which project it is on -- the file list
+//! walks it, the counts count it, git is read from it.
 //!
-//! The tree's settings have a page of their own, `open-project-settings`, a
+//! The project's settings have a page of their own, `open-project-settings`, a
 //! command rather than a fifth tab: the tabs there are *groups* of settings and
 //! a scope among them would be one list holding two kinds of thing. The same
 //! page otherwise -- same tabs, same rows, same keys -- because they are the
 //! same settings; what differs is the file a change is written to, which is on
 //! the tab row and stays there.
 //!
-//! On the reader's page a setting the tree has is not theirs to change, and the
-//! row says so rather than doing nothing when pressed: the file's name where
-//! they would have reached, a lock against the control, the whole row in the
-//! dim ink that means unusable everywhere else. Sublime's project settings win
-//! silently, and "I changed it and nothing happened" is the bug that follows.
+//! On the reader's page a setting the project has is not theirs to change, and
+//! the row says so rather than doing nothing when pressed: the file's name
+//! where they would have reached, a lock against the control, the whole row in
+//! the dim ink that means unusable everywhere else. Sublime's project settings
+//! win silently, and "I changed it and nothing happened" is the bug that
+//! follows.
 //!
-//! On the tree's page the ink goes the *other* way, because dim means "not
-//! yours to use here" and there a row the tree has not got is the one thing a
-//! reader can do something to: pressing it is how a setting becomes the
+//! On the project's page the ink goes the *other* way, because dim means "not
+//! yours to use here" and there a row the project has not got is the one thing
+//! a reader can do something to: pressing it is how a setting becomes the
 //! project's. So the row is ordinary, and the word saying which layer the value
 //! comes from -- `project`, `global`, `default` -- is dim except on the rows
 //! the project itself has, with the control it belongs to. `global` is what
@@ -45,45 +46,45 @@
 //! reader to read an absence. Drawn like the reader's page, a fresh project was
 //! a page of grey with nothing on it to look at, which is a rule applied past
 //! the point where it still meant anything. `delete` takes it out again, which
-//! is what that key means on the keys page too. The two tabs a tree may not
+//! is what that key means on the keys page too. The two tabs a project may not
 //! have say so instead of showing controls that would all refuse.
 //!
 //! That file is *edited*, not rewritten. Obelus's own it writes whole, because
-//! obelus wrote all of it; a tree's is written by hand and committed, so it has
-//! comments in it, an order somebody chose, and possibly keys this version has
-//! never heard of -- `toml_edit` keeps all three where a round trip through a
-//! `toml::Table` would throw them away on the first switch a reader flipped.
+//! obelus wrote all of it; a project's is written by hand and committed, so it
+//! has comments in it, an order somebody chose, and possibly keys this version
+//! has never heard of -- `toml_edit` keeps all three where a round trip through
+//! a `toml::Table` would throw them away on the first switch a reader flipped.
 //! What is written above a key goes with it when it goes, except for whatever
 //! is above the last blank line: a comment touching a key is about that key,
 //! and a heading an empty line away is the file's own.
 //!
-//! What is watched is the file the tree *would* have, not the one it has. The
-//! ordinary project has no settings of its own until somebody gives it some --
-//! the window next door writing the first one, or a pull bringing it -- and
+//! What is watched is the file the project *would* have, not the one it has.
+//! The ordinary project has no settings of its own until somebody gives it some
+//! -- the window next door writing the first one, or a pull bringing it -- and
 //! watching only what was there at startup is the "read once at startup"
 //! mistake with a longer fuse, because it looks right until the file is
 //! created. The same path answers the change when it arrives.
 //!
-//! The reader's settings are the layer the tree's is laid over, and obelus
+//! The reader's settings are the layer the project's is laid over, and obelus
 //! keeps both. `readers_config` is what their file says; `config` is that
-//! with the tree's over it, rebuilt from the bottom every time either changes.
-//! Laid over what is already there instead, a setting the tree has *stopped*
-//! naming would stay in force -- deleting a line from the tree's file would do
-//! nothing until obelus was started again.
+//! with the project's over it, rebuilt from the bottom every time either
+//! changes. Laid over what is already there instead, a setting the project has
+//! *stopped* naming would stay in force -- deleting a line from the project's
+//! file would do nothing until obelus was started again.
 
 use super::*;
 
 /// The settings as they stand, and where each part of them came from.
 ///
 /// One field on `App` rather than seven, because the seven move together:
-/// the reader's file is read, the keys it named are noted, the tree's file
+/// the reader's file is read, the keys it named are noted, the project's file
 /// is laid over the top, and the page says whose a value is out of all of
 /// it. A change that set one and forgot another would be a page confidently
 /// naming the wrong layer, which is exactly the bug this grouping is here
 /// to stop happening twice.
 #[derive(Debug)]
 pub(super) struct Settled {
-    /// What obelus is actually going by: the reader's own, with the tree's
+    /// What obelus is actually going by: the reader's own, with the project's
     /// laid over it.
     pub config: obelus_config::Config,
     /// Where the reader's file is, or `None` for an application that was
@@ -94,9 +95,9 @@ pub(super) struct Settled {
     /// reader's, and saving over something obelus could not read would
     /// replace settings it never saw. True again the moment it reads.
     pub readable: bool,
-    /// The reader's own layer, before the tree's went over it.
+    /// The reader's own layer, before the project's went over it.
     ///
-    /// Kept so the tree's page can say whose value a row is showing. Worked
+    /// Kept so the project's page can say whose value a row is showing. Worked
     /// out from the merged config it cannot be -- by then the two are one.
     pub readers: obelus_config::Config,
     /// Which settings the reader's file named.
@@ -105,11 +106,11 @@ pub(super) struct Settled {
     /// said something about it even where what they said is what obelus
     /// would have done anyway.
     pub named: Vec<&'static str>,
-    /// The tree's own settings file, while the tree has one.
+    /// The project's own settings file, while the project has one.
     ///
     /// Never written to by a reader changing their own settings: it belongs
-    /// to whoever wrote the tree, and their next commit would carry it.
-    pub tree: Option<PathBuf>,
+    /// to whoever wrote the project, and their next commit would carry it.
+    pub project: Option<PathBuf>,
     /// The settings that file set, which are the ones the reader cannot
     /// change here.
     pub pinned: Vec<&'static str>,
@@ -125,7 +126,7 @@ impl Default for Settled {
             readable: true,
             readers: obelus_config::Config::default(),
             named: Vec::new(),
-            tree: None,
+            project: None,
             pinned: Vec::new(),
         }
     }
@@ -154,7 +155,7 @@ impl App {
         self.settings = Some(Settings::new());
     }
 
-    /// Opens the tree's own settings, which are a page of the same shape.
+    /// Opens the project's own settings, which are a page of the same shape.
     ///
     /// A command of its own rather than a tab on the other page: the tabs
     /// there are *groups* of settings, and a scope among them would be one
@@ -162,7 +163,7 @@ impl App {
     pub fn open_project_settings(&mut self) {
         self.make_room(Room::Region);
         self.refresh_registry();
-        self.settings = Some(Settings::for_tree());
+        self.settings = Some(Settings::for_project());
     }
 
     /// Offers a key to the settings page, and says whether it took it.
@@ -281,16 +282,16 @@ impl App {
 
     /// Where a theme file may be, nearest first.
     ///
-    /// The tree's own `.obelus/themes` and then the reader's, which is the
+    /// The project's own `.obelus/themes` and then the reader's, which is the
     /// order the settings themselves are laid: what a project says about
     /// itself goes over what the reader says about everything. A theme is
     /// only colours -- there is no code in one, and nothing in a file here
-    /// can be run -- so a tree may hand one over on the same terms it hands
+    /// can be run -- so a project may hand one over on the same terms it hands
     /// over a wrapped line.
     fn theme_directories(&self) -> Vec<PathBuf> {
-        let tree = self
+        let project = self
             .settled
-            .tree
+            .project
             .as_deref()
             .and_then(obelus_theme::written::beside);
         let readers = self
@@ -298,7 +299,7 @@ impl App {
             .path
             .as_deref()
             .and_then(obelus_theme::written::beside);
-        tree.into_iter().chain(readers).collect()
+        project.into_iter().chain(readers).collect()
     }
 
     /// Every theme there is to choose from, nearest first and without
@@ -426,25 +427,25 @@ impl App {
     /// restart -- and with a note saying it will not last.
     pub(super) fn change_setting(&mut self, key: &'static str, value: &obelus_config::Value) {
         // Which file this change is for is the page's own question: the
-        // reader's settings, or the tree's. Asked here rather than carried
+        // reader's settings, or the project's. Asked here rather than carried
         // in the outcome, because it is a fact about what is open and not
         // about which key was pressed.
-        if self.settings.as_ref().is_some_and(Settings::on_tree) {
-            self.write_to_tree(key, Some(value));
+        if self.settings.as_ref().is_some_and(Settings::on_project) {
+            self.write_to_project(key, Some(value));
             return;
         }
         if let Some(path) = self.pinned_by(key) {
             // Nothing happens, and nothing needs saying: the row itself
             // carries the name of the file that has it, in the dim ink
             // every unusable thing here is drawn in.
-            tracing::debug!(key, path = %path.display(), "the tree has this one");
+            tracing::debug!(key, path = %path.display(), "the project has this one");
             return;
         }
-        // The reader's own layer, and then the tree's back over it: a
-        // setting they change is theirs, and what the tree has is still the
-        // tree's.
+        // The reader's own layer, and then the project's back over it: a
+        // setting they change is theirs, and what the project has is still the
+        // project's.
         self.settled.readers.set(key, value);
-        self.apply_tree();
+        self.apply_project();
         let Some(path) = self.settled.path.clone() else {
             // Nobody said where the file is, so there is nothing to write
             // to: an application that never read one does not write one.
@@ -463,28 +464,28 @@ impl App {
         }
     }
 
-    /// Takes a setting out of the tree's file, from the tree's own page.
+    /// Takes a setting out of the project's file, from the project's own page.
     pub(super) fn unset_setting(&mut self, key: &'static str) {
-        self.write_to_tree(key, None);
+        self.write_to_project(key, None);
     }
 
-    /// Writes one key to the tree's settings, or takes it out.
+    /// Writes one key to the project's settings, or takes it out.
     ///
-    /// Making the file if the tree has none: a reader who has opened the
-    /// tree's settings and changed something has said plainly enough that
-    /// this tree should have them.
+    /// Making the file if the project has none: a reader who has opened the
+    /// project's settings and changed something has said plainly enough that
+    /// this project should have them.
     ///
-    /// What a tree may not set is refused here as well as when the file is
+    /// What a project may not set is refused here as well as when the file is
     /// read. Refused rather than written and then ignored, which would be a
     /// file that says something obelus will not do.
-    fn write_to_tree(&mut self, key: &'static str, value: Option<&obelus_config::Value>) {
+    fn write_to_project(&mut self, key: &'static str, value: Option<&obelus_config::Value>) {
         if obelus_config::reach_of(key) != obelus_config::Reach::Anywhere {
-            tracing::debug!(key, "a tree may not set this one");
+            tracing::debug!(key, "a project may not set this one");
             return;
         }
-        let path = obelus_config::tree_path_for(&self.working_directory);
-        if let Err(error) = obelus_config::write_tree(&path, key, value) {
-            tracing::warn!(%error, path = %path.display(), "not writing the tree's settings");
+        let path = obelus_config::project_path_for(&self.working_directory);
+        if let Err(error) = obelus_config::write_project(&path, key, value) {
+            tracing::warn!(%error, path = %path.display(), "not writing the project's settings");
             self.note = Some(format!("Not saved: {error}"));
             return;
         }
@@ -596,29 +597,29 @@ impl App {
             }
             obelus_config::Reading::Unreadable(why) => self.settings_unreadable(&path, &why),
         }
-        self.apply_tree();
+        self.apply_project();
     }
 
-    /// Lays the tree's own settings over the reader's.
+    /// Lays the project's own settings over the reader's.
     ///
-    /// After theirs, every time theirs is read: the tree is the narrower
+    /// After theirs, every time theirs is read: the project is the narrower
     /// answer -- it is about *this* project -- so it wins where it says
     /// anything, and says nothing everywhere else.
     ///
     /// A file that will not read is a line in the log and nothing more. The
     /// reader's settings are what obelus has, and throwing them away because
-    /// a tree somebody else wrote has a typo in it would be the tree
+    /// a project somebody else wrote has a typo in it would be the project
     /// deciding something it was never given.
-    pub(super) fn apply_tree(&mut self) {
+    pub(super) fn apply_project(&mut self) {
         // From the reader's own answers up, every time. Laid over what is
-        // already there instead, a setting the tree has *stopped* naming
+        // already there instead, a setting the project has *stopped* naming
         // would stay in force: nothing would have put the reader's answer
-        // back underneath it, and deleting a line from the tree's file
+        // back underneath it, and deleting a line from the project's file
         // would do nothing until obelus was started again.
         self.settled.config = self.settled.readers.clone();
         self.settled.pinned.clear();
-        self.settled.tree = obelus_config::tree_path(&self.working_directory);
-        let Some(path) = self.settled.tree.clone() else {
+        self.settled.project = obelus_config::project_path(&self.working_directory);
+        let Some(path) = self.settled.project.clone() else {
             self.apply_config();
             return;
         };
@@ -627,29 +628,29 @@ impl App {
                 self.settled.pinned = obelus_config::apply(
                     &mut self.settled.config,
                     &table,
-                    obelus_config::Whose::Tree,
+                    obelus_config::Whose::Project,
                 );
                 tracing::info!(
                     path = %path.display(),
                     settings = ?self.settled.pinned,
-                    "the tree has settings of its own",
+                    "the project has settings of its own",
                 );
             }
             Ok(None) => {}
             Err(why) => {
-                tracing::warn!(path = %path.display(), why, "the tree's settings will not read");
+                tracing::warn!(path = %path.display(), why, "the project's settings will not read");
             }
         }
         self.apply_config();
     }
 
-    /// The reader's own settings, under whatever the tree lays over them.
+    /// The reader's own settings, under whatever the project lays over them.
     #[must_use]
     pub const fn readers_config(&self) -> &obelus_config::Config {
         &self.settled.readers
     }
 
-    /// The settings the tree has set, which are the ones the reader cannot
+    /// The settings the project has set, which are the ones the reader cannot
     /// change from here.
     #[must_use]
     pub fn pinned(&self) -> &[&'static str] {
@@ -662,10 +663,10 @@ impl App {
         &self.settled.named
     }
 
-    /// The tree's own settings file, while the tree has one.
+    /// The project's own settings file, while the project has one.
     #[must_use]
-    pub fn tree_config(&self) -> Option<&Path> {
-        self.settled.tree.as_deref()
+    pub fn project_config(&self) -> Option<&Path> {
+        self.settled.project.as_deref()
     }
 
     /// Which file has this setting, if it is not the reader's to change.
@@ -674,7 +675,7 @@ impl App {
         self.settled
             .pinned
             .contains(&key)
-            .then_some(self.settled.tree.as_deref())
+            .then_some(self.settled.project.as_deref())
             .flatten()
     }
 
@@ -705,11 +706,11 @@ impl App {
                 obelus_config::Reading::Unreadable(why) => self.settings_unreadable(&path, &why),
             }
         }
-        // And the tree's over the top, from the reader's file up: a layer
-        // laid over what already has it would keep a setting the tree has
+        // And the project's over the top, from the reader's file up: a layer
+        // laid over what already has it would keep a setting the project has
         // since stopped naming, because nothing would have put the reader's
         // own answer back underneath it.
-        self.apply_tree();
+        self.apply_project();
     }
 
     /// Says the settings file cannot be read, and stops writing to it.
@@ -738,13 +739,13 @@ impl App {
     /// not: working that out by comparing with the default cannot tell a
     /// reader who agreed from a reader who never came.
     pub fn configure(&mut self, config: obelus_config::Config, named: Vec<&'static str>) {
-        // The reader's own layer, which is what the tree's is laid over --
-        // and what a setting goes back to when the tree stops naming it.
+        // The reader's own layer, which is what the project's is laid over --
+        // and what a setting goes back to when the project stops naming it.
         self.settled.readers = config.clone();
         self.settled.named = named;
         self.settled.config = config;
         self.apply_config();
-        self.apply_tree();
+        self.apply_project();
     }
 
     /// Reads and writes settings at a path of the caller's choosing.

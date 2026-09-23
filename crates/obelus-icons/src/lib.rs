@@ -153,7 +153,7 @@ pub mod ui {
     pub const DIRECTORY: char = '\u{f07b}';
     /// A set of colours.
     pub const THEME: char = '\u{f03d8}';
-    /// The tree obelus is reading, taken as a whole.
+    /// The project obelus is reading, taken as a whole.
     ///
     /// A folder, which is what a tree of files is drawn as everywhere. It
     /// sits in the glyph column of the row the languages hang from, so the
@@ -357,7 +357,7 @@ pub fn for_command(command: obelus_command::Command) -> char {
         Command::ConfigOpen => '\u{f062e}',
         // A folder with a cog on it: the same settings, belonging to the
         // tree rather than to the reader -- the folder is what says which.
-        Command::ConfigTree => '\u{f0ee5}',
+        Command::ConfigProject => '\u{f0ee5}',
         // A file with a cog on it: the settings themselves, as the file
         // they are kept in.
         Command::ConfigFile => '\u{f107b}',

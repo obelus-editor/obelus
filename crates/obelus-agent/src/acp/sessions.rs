@@ -5,15 +5,15 @@
 //! own, and the reader's as `user_message_chunk`, which is the only way a
 //! client that was not running when they were typed can have them. What
 //! obelus has to keep is the one thing the agent cannot: which of its
-//! conversations is about which of this tree's notes. Nothing on the
+//! conversations is about which of this project's notes. Nothing on the
 //! agent's side knows that a note exists.
 //!
 //! Beside the notes rather than in them, and in obelus's own state directory
-//! rather than the tree's `.obelus`: a session id is a name one agent on one
+//! rather than the project's `.obelus`: a session id is a name one agent on one
 //! machine gave to something, and committing it would hand the next person a
 //! conversation they cannot open.
 //!
-//! One file per tree, named after the tree, so that a reader with eight
+//! One file per project, named after the project, so that a reader with eight
 //! projects open has eight small files rather than one that every obelus is
 //! writing at once.
 
@@ -68,7 +68,7 @@ pub struct Kept {
     pub introduced: bool,
 }
 
-/// Which conversation is about which note, for one tree.
+/// Which conversation is about which note, for one project.
 ///
 /// Keyed by the note *and* the agent: the same note talked over with two
 /// agents is two conversations, and an agent cannot be handed a session id
@@ -105,7 +105,7 @@ impl Remembered {
     /// `None` is "obelus does not know what notes there are", which is a
     /// different thing from "there are none" and was the same thing:
     /// `Todo::read` answered with an empty list for a file it could not
-    /// read, and an empty list here forgets every conversation in the tree.
+    /// read, and an empty list here forgets every conversation in the project.
     /// A name that cannot be checked against anything is not a name that has
     /// gone.
     pub fn forget_notes_that_are_gone(&mut self, notes: Option<&[NoteId]>) {
@@ -132,10 +132,10 @@ impl Remembered {
     }
 }
 
-/// Where one tree's table is kept.
+/// Where one project's table is kept.
 ///
-/// The tree's own path, made into a file name: a reader with two checkouts
-/// of one project has two trees with two sets of notes, and one file for
+/// The project's own path, made into a file name: a reader with two
+/// checkouts of one repository has two sets of notes, and one file for
 /// both would be one set of conversations for two sets of notes.
 #[must_use]
 pub fn path(root: &Path) -> Option<PathBuf> {
@@ -155,7 +155,7 @@ pub fn path(root: &Path) -> Option<PathBuf> {
     )
 }
 
-/// What reading a tree's table found.
+/// What reading a project's table found.
 ///
 /// Three answers and not two, for the reason the notes beside it give three
 /// and the settings gave three first: a file that will not read is not a
@@ -163,10 +163,10 @@ pub fn path(root: &Path) -> Option<PathBuf> {
 /// back. This table is read, changed and written whole, so one answer for
 /// both meant a file somebody's editor had left half-written was a file
 /// replaced by whatever this session happened to hold -- every conversation
-/// in the tree forgotten, while the agent still had every word of them.
+/// in the project forgotten, while the agent still had every word of them.
 #[derive(Debug)]
 pub enum Reading {
-    /// There is none yet, which is where every tree starts. Also where this
+    /// There is none yet, which is where every project starts. Also where this
     /// system has nowhere to keep one, which comes to the same thing: there
     /// is nothing to read and nothing will be written either.
     Nothing,
@@ -260,7 +260,7 @@ fn read_from(text: &str) -> Reading {
 /// Reads, changes, and writes back.
 ///
 /// Read-modify-write rather than holding a copy, because a second obelus on
-/// the same tree is an ordinary thing to have running and the last one to
+/// the same project is an ordinary thing to have running and the last one to
 /// write would otherwise put back the other's conversations as they were
 /// before it opened them.
 pub fn change(root: &Path, notes: Option<&[NoteId]>, what: impl FnOnce(&mut Remembered)) {
@@ -268,7 +268,7 @@ pub fn change(root: &Path, notes: Option<&[NoteId]>, what: impl FnOnce(&mut Reme
     // Nothing at all where the file will not read. Every other way of
     // declining here leaves it alone; going on would write what obelus can
     // make of a file it cannot read over the file itself, which is every
-    // conversation in this tree traded for a parse error.
+    // conversation in this project traded for a parse error.
     //
     // Said to the log and not to the reader, unlike the notes: this file is
     // obelus's own bookkeeping in its own state directory, and there is
@@ -459,7 +459,7 @@ mod tests {
     /// This table is read, changed and written whole. Reading a file it
     /// could not parse as an empty one meant the next thing to remember a
     /// conversation wrote an almost-empty table over it -- every
-    /// conversation in the tree forgotten, while the agent still held every
+    /// conversation in the project forgotten, while the agent still held every
     /// word of them and nothing here could name one again.
     ///
     /// Broken deliberately by reading a file that will not parse as an empty
@@ -506,7 +506,7 @@ mod tests {
     ///
     /// "There are no notes" and "obelus cannot tell what notes there are"
     /// were one answer, and this table is swept against it: a `todo.toml`
-    /// somebody had left half-edited meant every conversation in the tree
+    /// somebody had left half-edited meant every conversation in the project
     /// went, on the next message anybody sent.
     ///
     /// Broken deliberately by sweeping against `None` as though it were an

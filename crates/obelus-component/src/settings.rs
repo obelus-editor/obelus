@@ -18,7 +18,7 @@
 //!
 //! Beside the name, the two competed for one row and the description lost: cut
 //! off with an ellipsis on exactly the rows that had most to explain, and cut
-//! further still on a row a tree had pinned, where the file's name takes the
+//! further still on a row a project had pinned, where the file's name takes the
 //! space as well. Under it, the sentence has the width of the page and can say
 //! what it means -- `wrap` can say that lines break between words, `icons` can
 //! say what a terminal without the font will draw.
@@ -62,10 +62,10 @@ pub enum SettingsOutcome {
     Consumed,
     /// A setting was changed, and this is what to.
     Changed(&'static str, Value),
-    /// A setting should stop being the tree's, and go back to being
+    /// A setting should stop being the project's, and go back to being
     /// whatever the reader has.
     ///
-    /// Only from the tree's page, where `delete` means what it means on the
+    /// Only from the project's page, where `delete` means what it means on the
     /// keys page: take this one out.
     Unset(&'static str),
     /// An agent should be installed.
@@ -203,7 +203,7 @@ pub struct Settings {
     /// this page's filter, and not as a passing note, which the next
     /// keystroke would clear before it had been read.
     refused: Option<(KeyChord, Refused)>,
-    /// Whose settings this page is: the reader's own, or the tree's.
+    /// Whose settings this page is: the reader's own, or the project's.
     ///
     /// The same page either way -- the same tabs, the same rows, the same
     /// keys -- because they are the same settings. What differs is which
@@ -242,15 +242,15 @@ impl Settings {
         }
     }
 
-    /// The same page, over the tree's own settings file.
+    /// The same page, over the project's own settings file.
     #[must_use]
-    pub fn for_tree() -> Self {
+    pub fn for_project() -> Self {
         Self {
             keys_showing: false,
             query: Field::new(),
             binding: None,
             refused: None,
-            whose: Whose::Tree,
+            whose: Whose::Project,
             page: 0,
             window: Window::new(),
         }
@@ -262,10 +262,10 @@ impl Settings {
         self.whose
     }
 
-    /// Whether this page is the tree's.
+    /// Whether this page is the project's.
     #[must_use]
-    pub const fn on_tree(&self) -> bool {
-        matches!(self.whose, Whose::Tree)
+    pub const fn on_project(&self) -> bool {
+        matches!(self.whose, Whose::Project)
     }
 
     /// The tab names, in order.
@@ -798,11 +798,13 @@ impl Settings {
                     None => SettingsOutcome::Consumed,
                 }
             }
-            // Take it out of the tree's file, which is what `delete` means
+            // Take it out of the project's file, which is what `delete` means
             // on the keys page too: this one is not set here any more.
             // Only there -- the reader's own settings have no "unset", a
             // setting they have not changed is simply the default.
-            KeyCode::Delete if bare && self.on_tree() && !self.on_keys() && !self.on_agents() => {
+            KeyCode::Delete
+                if bare && self.on_project() && !self.on_keys() && !self.on_agents() =>
+            {
                 match rows.get(self.window.focus()) {
                     Some(shown) => SettingsOutcome::Unset(shown.setting.key),
                     None => SettingsOutcome::Consumed,

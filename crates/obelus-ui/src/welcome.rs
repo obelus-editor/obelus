@@ -8,7 +8,7 @@
 //! The keys come from the key table rather than from strings here, so a
 //! rebound key changes the screen instead of leaving it lying. The working
 //! directory is on it because the file picker only ever searches that one
-//! tree, which is worth knowing before pressing the key that opens it.
+//! project, which is worth knowing before pressing the key that opens it.
 
 use obelus_command::Command;
 use obelus_editing::keymap::Keymap;
@@ -26,7 +26,7 @@ use crate::{Screen, put, write};
 /// The commands worth naming, with the words this screen says them in.
 ///
 /// Ways *in*, which is what this screen is for: a file, a file that has
-/// changed, a search of the tree, the agent, everything by name, and the way
+/// changed, a search of the project, the agent, everything by name, and the way
 /// out. Not `switch-document` -- there is nothing open to switch to on the one
 /// screen where this is showing.
 ///

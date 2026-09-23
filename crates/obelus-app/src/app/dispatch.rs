@@ -70,7 +70,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::TodoOpen => app.open_todo(),
         Command::TodoAdd => app.add_todo(),
         Command::ConfigOpen => app.open_settings(),
-        Command::ConfigTree => app.open_project_settings(),
+        Command::ConfigProject => app.open_project_settings(),
         Command::ConfigFile => app.open_config_file(),
         Command::LogOpen => app.open_log(),
         Command::LogServers => app.open_server_log(),

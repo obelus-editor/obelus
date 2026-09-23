@@ -176,7 +176,7 @@ pub trait Screen {
     fn phase(&self) -> u32;
     /// The open picker, for the renderer.
     fn picker(&self) -> Option<&Picker>;
-    /// The settings the tree has set, which are the ones the reader cannot
+    /// The settings the project has set, which are the ones the reader cannot
     /// change from here.
     fn pinned(&self) -> &[&'static str];
     /// The file the picker's selection names, if it has been read, and the
@@ -210,8 +210,8 @@ pub trait Screen {
     fn text_area(&self) -> TextArea;
     /// The colours currently in force.
     fn theme(&self) -> &Theme;
-    /// The tree's own settings file, while the tree has one.
-    fn tree_config(&self) -> Option<&Path>;
+    /// The project's own settings file, while the project has one.
+    fn project_config(&self) -> Option<&Path>;
     /// What the server says is wrong with the file being read.
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble];
     /// How much the reader has said into the conversation being read that

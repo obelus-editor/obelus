@@ -1,8 +1,8 @@
-//! What a tree means to come back to.
+//! What a project means to come back to.
 //!
-//! The application's half of [`obelus_git::todo`]: which tree the notes belong
-//! to, when they are read and written, and what a key that reaches one of
-//! them does. The notes themselves, and the file, are that module's; how
+//! The application's half of [`obelus_git::todo`]: which project the notes
+//! belong to, when they are read and written, and what a key that reaches one
+//! of them does. The notes themselves, and the file, are that module's; how
 //! they are walked and drawn are [`obelus_component::todo`] and
 //! [`obelus_ui::todo`].
 //!
@@ -46,7 +46,7 @@ impl App {
             .find(|id| self.document(*id).is_some_and(|it| it.notes().is_some()))
     }
 
-    /// Opens what the tree means to come back to.
+    /// Opens what the project means to come back to.
     ///
     /// Where each note points is worked out here, once, while the view is
     /// being opened: it is a question for git and for the disk, and the draw
@@ -108,7 +108,7 @@ impl App {
         if let Some(watcher) = self.watcher.as_mut()
             && let Err(error) = watcher.watch(&obelus_git::todo::path(&self.working_directory))
         {
-            tracing::debug!(%error, "not watching what the tree means to come back to");
+            tracing::debug!(%error, "not watching what the project means to come back to");
         }
     }
 
@@ -149,7 +149,7 @@ impl App {
     /// brings the page up to what came out.
     ///
     /// The one way anything the reader does reaches the disk. Not the page's
-    /// copy written whole: another obelus has this tree open -- that is what
+    /// copy written whole: another obelus has this project open -- that is what
     /// a second window is for -- and a file written from a copy is that
     /// window's last minute taken back out, with neither reader told. What
     /// goes is the acts, done inside the lock to whatever the file says by
@@ -421,7 +421,7 @@ impl App {
 
     /// The place a note made now would be about.
     ///
-    /// Relative to the tree, because every path obelus writes down is: an
+    /// Relative to the project, because every path obelus writes down is: an
     /// absolute one is about one machine, and the file it names is about the
     /// project.
     ///

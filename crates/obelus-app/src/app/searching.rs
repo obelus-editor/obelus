@@ -105,7 +105,7 @@ impl App {
 
     /// Which search the rows arriving belong to.
     ///
-    /// A reader types faster than a tree can be walked, so every batch
+    /// A reader types faster than a project can be walked, so every batch
     /// carries the generation it was asked under and anything older is
     /// dropped. Public because the scan is started from outside the loop in
     /// tests, which have to say which search they are answering.
@@ -337,7 +337,7 @@ impl App {
     /// The lines of the file being read that have the query in them.
     ///
     /// The matches rather than every line, by the same rule the walk of the
-    /// tree follows: one question, and only its radius changes. The rows
+    /// project follows: one question, and only its radius changes. The rows
     /// were the lines once, with the picker's fuzzy matcher narrowing them,
     /// which meant `ac` found `abc` -- an answer to a question about
     /// resemblance, in a view whose question is where a string is.
@@ -420,10 +420,10 @@ impl App {
         }
     }
 
-    /// Starts a walk of the tree looking for the query.
+    /// Starts a walk of the project looking for the query.
     ///
     /// A thread per query, and the answers carry the generation they were
-    /// asked under: a reader types faster than a tree can be walked, so the
+    /// asked under: a reader types faster than a project can be walked, so the
     /// rows for "sc" must not land in a list that is now asking about
     /// "scope".
     fn search_the_project(&mut self) {
@@ -434,7 +434,7 @@ impl App {
         let Some(query) = query else { return };
 
         // Only the empty query is not a search: it matches every line of
-        // every file, which is the tree rather than an answer. One letter is
+        // every file, which is the project rather than an answer. One letter is
         // a real question -- and the cheapest one there is, because it fills
         // the row limit in the first few files and stops.
         let generation = self.ask_again();

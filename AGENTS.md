@@ -141,7 +141,7 @@ was never that an agent should not write. It was that a reader could not see
 the change arrive or undo it, which an undo answers: a write goes through the
 buffer as one change, and `ctrl+z` is what it was.
 A fake agent that asks to write a file in the repository is a test that
-rewrites the repository -- it asks about a path outside the tree instead.
+rewrites the repository -- it asks about a path outside the project instead.
 
 Running a command has no undo, so it is held to the other half only, and
 held to it harder. obelus runs what it is asked without asking the reader:
@@ -262,11 +262,11 @@ the same program has a test that the one reads the other, or they drift and
 the symptom turns up somewhere that looks unrelated.
 
 **Ask the question you mean.** A gate that wants to know *whether* anything
-in the tree has changed was building a map of every changed path and taking
+in the project has changed was building a map of every changed path and taking
 its length -- on every command in the palette. The history already makes
-this distinction (`has_any` asks for one commit), and now the tree does.
+this distinction (`has_any` asks for one commit), and now the project does.
 Measured afterwards, and honestly: it is two and a half times cheaper on a
-tree with something in it and no cheaper at all on a clean one, because the
+project with something in it and no cheaper at all on a clean one, because the
 walk has to reach the end to find nothing. The phrasing was wrong; the cost
 lives in the walk, and saying otherwise would have been a win claimed
 rather than got.
@@ -277,12 +277,12 @@ readers put lines in by hand -- so writing it whole silently took out
 everything obelus did not know: a setting from a newer version, a key
 renamed since, a line with a typo in it, and the comment beside them. It
 took them out on the next switch the reader flipped, which is nowhere near
-where they would look. A tree's file was already edited rather than
+where they would look. A project's file was already edited rather than
 rewritten, with `toml_edit`, for exactly this reason; the reader's is now
 too.
 
 **Ask the same question of every layer.** The column saying where a value
-came from asked the tree "does your file name this setting" and asked the
+came from asked the project "does your file name this setting" and asked the
 reader "does your value differ from the default". So a reader who wrote a
 setting down and happened to agree with obelus was told they had never been
 here. Both answers were available -- `apply` returns the keys a table set --
@@ -357,7 +357,7 @@ judgement of whether a command can do its job here: the palette draws a row
 it refuses as dim and will not run it, and `App::handle_key` asks the same
 question before dispatching, so a command cannot be off in one place and
 live in the other. It is silent about it -- `f2` with no file open used to
-draw an empty list of open files, `f3` on a clean tree wrote "nothing has
+draw an empty list of open files, `f3` on a clean project wrote "nothing has
 changed" across the status row, and `ctrl+c` with no selection said "nothing
 selected"; three answers to a question the palette had already said could
 not be asked. So `Requires` is where that work goes, and a note inside a
@@ -367,7 +367,7 @@ is the character under the cursor, and a bracket inside a string is offered
 and finds no partner).
 
 Which makes a condition worth a walk: `AChangedFile` asks git what has
-changed in the tree, once when the palette opens and once per press of the
+changed in the project, once when the palette opens and once per press of the
 key. This repository answers in two milliseconds.
 
 **The text's rows and the screen's rows are two counts.** A cursor moves
@@ -495,7 +495,7 @@ a file. A stray `println!` lands in the middle of a frame and stays there.
 `std::sync::mpsc` channel, one producer thread per event source (keyboard, file
 walk, watcher, each server's stdout), the main loop blocking on `recv()` and
 draining with `try_recv()`. Not a rule against `async` or against tokio --
-tokio is in the tree and `acp::link` runs a current-thread runtime on a thread
+tokio is in the project and `acp::link` runs a current-thread runtime on a thread
 of its own, because the protocol's crate is built around it. What the rule is
 about is the loop: one owner of `&mut App`, and no `.await` between a key
 arriving and the screen it produced.
@@ -564,7 +564,7 @@ src/
                   · a commit's message hangs above its file (history); a
                     history is one view at two radii (history_view); a
                     preview is of a subject, not of a path (previewing); a
-                    tree may carry settings, and a tree is not the reader,
+                    project may carry settings, and it is not the reader,
                     and the reader's is the layer it is laid over
                     (preferences); what obelus says before the reader's
                     first words is one piece that is always said and one
@@ -583,7 +583,7 @@ src/
                     exactly, in one place
   icons.rs        the Nerd Font switch and every glyph behind it
   config.rs       the settings, their file, and what each one is
-                  · what a tree may set is a property of the setting; the
+                  · what a project may set is a property of the setting; the
                     file holds preferences, not state
   logging.rs      two logs split by module, and where a panic goes
   command/        the Command enum, its table, groups, and dispatch
@@ -594,7 +594,7 @@ src/
                     ranks is settled per tab, a list still arriving sits
                     still, say "still reading" where it moves nothing,
                     which tabs a view has must be cheap (picker); a list
-                    obelus offers is the reader's own tree (picker/files);
+                    obelus offers is the reader's own project (picker/files);
                     a question is a card, not a picker (card); a tool call
                     is somewhere to go, the transcript's cursor stands only
                     on rows that do something, a run of tool calls is one

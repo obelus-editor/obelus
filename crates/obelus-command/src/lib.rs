@@ -131,9 +131,9 @@ pub enum Command {
     GoForward,
     /// Talk to the active agent.
     AgentOpen,
-    /// Count the lines of the tree, by language and by file.
+    /// Count the lines of the project, by language and by file.
     CountLines,
-    /// Show what this tree means to come back to.
+    /// Show what this project means to come back to.
     TodoOpen,
     /// Write down something to come back to, here.
     TodoAdd,
@@ -141,8 +141,8 @@ pub enum Command {
     ConfigFile,
     /// Open the settings.
     ConfigOpen,
-    /// Open the settings this tree carries of its own.
-    ConfigTree,
+    /// Open the settings this project carries of its own.
+    ConfigProject,
     /// Open the file obelus logs to.
     LogOpen,
     /// Open the file the language servers' side is logged to.
@@ -171,7 +171,7 @@ pub enum Command {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Group {
     /// Opening and re-reading files, and moving between the open ones --
-    /// with what this tree is made of and what it means to come back to,
+    /// with what this project is made of and what it means to come back to,
     /// both of which are questions about the files rather than about
     /// obelus.
     Files,
@@ -332,7 +332,7 @@ pub enum Requires {
     ARunningServer,
     /// The running server has to say it answers this question.
     AnAnswer,
-    /// Something in the tree has to have changed since the last commit.
+    /// Something in the project has to have changed since the last commit.
     AChangedFile,
     /// A language server has to have written to its log.
     AServerLog,
@@ -664,8 +664,8 @@ pub const ALL: &[CommandSpec] = &[
         title: "Change obelus's settings",
     },
     CommandSpec {
-        command: Command::ConfigTree,
-        // "project" rather than "tree", which is obelus's own word for it
+        command: Command::ConfigProject,
+        // "project" rather than "project", which is obelus's own word for it
         // everywhere else: a name is what a reader types, and what they
         // will type for the settings a repository carries is the word every
         // other program has taught them.
@@ -721,7 +721,7 @@ impl Command {
             | Self::DocumentClose
             | Self::FileRename
             | Self::PreviewToggle
-            // A question about the tree of files, asked before any of them
+            // A question about the project of files, asked before any of them
             // is open: which makes it one of the files rather than one of
             // obelus's own housekeeping.
             | Self::CountLines
@@ -777,7 +777,7 @@ impl Command {
             | Self::LspStop
             | Self::AgentOpen
             | Self::ConfigOpen
-            | Self::ConfigTree
+            | Self::ConfigProject
             | Self::ConfigFile
             | Self::LogOpen
             | Self::LogServers
@@ -847,7 +847,7 @@ impl Command {
             Self::FileReload | Self::GoLine => {
                 Requires::AFileOpen
             }
-            // An outline comes from the syntax tree when no server will
+            // An outline comes from the syntax project when no server will
             // answer, so what it needs is a language obelus can parse.
             Self::SymbolOutline => Requires::AKnownLanguage,
             // Both ways: it turns the rendering on for a markdown file and
@@ -881,7 +881,7 @@ impl Command {
             Self::Fold => Requires::AFoldHere,
             Self::FoldAll => Requires::AFoldableFile,
             Self::UnfoldAll => Requires::SomethingFolded,
-            // One scope needs a file, one needs nothing but the tree, and
+            // One scope needs a file, one needs nothing but the project, and
             // one needs a server -- but all three open the same view, whose
             // other tabs are a left or a right away. What each key requires
             // is what the tab it lands on can answer.
@@ -932,10 +932,10 @@ impl Command {
             | Self::CommandPalette
             | Self::AgentOpen
             | Self::ConfigOpen
-            | Self::ConfigTree
+            | Self::ConfigProject
             | Self::ConfigFile
             | Self::LogOpen
-            // The tree is always there to be counted, and a tree with
+            // The project is always there to be counted, and a project with
             // nothing in it is an answer as well: what it says is that
             // there is nothing here.
             | Self::CountLines

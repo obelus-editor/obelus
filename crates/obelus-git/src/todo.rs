@@ -1,13 +1,13 @@
 //! What a reader means to come back to.
 //!
 //! An *obelus* is the mark a scholar put beside a line they doubted. This is
-//! that mark, written down: a note made while reading, kept with the tree it
+//! that mark, written down: a note made while reading, kept with the project it
 //! is about rather than in the reader's own home, because it is about this
 //! project and the next person to open it has the same questions.
 //!
 //! A note may carry a place -- a file and a line -- or carry none, and both
 //! are ordinary. "This cache is wrong" belongs to a line; "wire the counts
-//! tree up to the search" belongs to the project.
+//! project up to the search" belongs to the project.
 //!
 //! Nothing here draws and nothing here decides what a key does. What is here
 //! is the note, the file it lives in, and the one hard part: a line written
@@ -26,9 +26,9 @@ pub const INDENT: u16 = 2;
 
 use obelus_text::coordinates::LineNumber;
 
-/// Where a tree keeps what it means to come back to.
+/// Where a project keeps what it means to come back to.
 ///
-/// Beside the settings, in the directory obelus keeps a tree's things in.
+/// Beside the settings, in the directory obelus keeps a project's things in.
 #[must_use]
 pub fn path(root: &Path) -> PathBuf {
     root.join(".obelus").join("todo.toml")
@@ -37,17 +37,17 @@ pub fn path(root: &Path) -> PathBuf {
 /// The place a note is about, as it was written down.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct At {
-    /// The file, relative to the tree.
+    /// The file, relative to the project.
     pub path: PathBuf,
     /// The line, as it was when the note was made.
     pub line: LineNumber,
-    /// The commit the file was at when the note was made, where the tree is
+    /// The commit the file was at when the note was made, where the project is
     /// a git repository.
     ///
     /// Not the note's date and not the file's: what the line number means is
     /// "line 412 of the file *as that commit had it*", and a commit is the
     /// only name for a version of a file that is still there next week.
-    /// `None` for a tree git has never heard of, where the line is taken at
+    /// `None` for a project git has never heard of, where the line is taken at
     /// its word because there is nothing to check it against.
     pub commit: Option<gix::ObjectId>,
 }
@@ -77,7 +77,7 @@ impl NoteId {
     /// Mints one.
     ///
     /// No dependency for it. What randomness needs to buy here is only that
-    /// two notes made in one second, in two obeluses, on one tree, do not
+    /// two notes made in one second, in two obeluses, on one project, do not
     /// collide -- the file is read back and a clash is minted over anyway,
     /// so this is a cheap first line rather than the only one. The clock
     /// separates seconds, a counter separates notes within one, and the
@@ -241,7 +241,7 @@ pub enum Doing {
 ///
 /// The page used to hand the notes over as it had them, and the file was
 /// written from that -- every note in it, including the ones it read ten
-/// minutes ago. A second obelus on the same tree writes this file too, and
+/// minutes ago. A second obelus on the same project writes this file too, and
 /// it is not an exotic thing to have running: reading two things at once is
 /// what a second window is *for*. A whole file written from a held copy is
 /// that other window's ten minutes taken back out, with nobody told.
@@ -358,7 +358,7 @@ impl Change {
 /// may as well stop where an outline of things to do stops being one.
 pub const DEEPEST: u16 = 3;
 
-/// Every note a tree has, in the order they were written.
+/// Every note a project has, in the order they were written.
 ///
 /// Written order, not sorted: a reader who ticks something off does not want
 /// the list to reorder itself underneath them, and a note's place in the
@@ -377,7 +377,7 @@ pub struct Todo {
     pub minted: bool,
 }
 
-/// What reading a tree's notes found.
+/// What reading a project's notes found.
 ///
 /// "There is no file" and "there is a file obelus cannot read" are different
 /// answers, and they were the same one. Both came back as no notes -- and no
@@ -387,7 +387,7 @@ pub struct Todo {
 /// enough. What is remembered *beside* the notes went the same way: the
 /// table of which conversation is about which note is swept against the
 /// names the file has, and an empty list of names means every conversation
-/// in this tree is forgotten.
+/// in this project is forgotten.
 ///
 /// The same three answers the settings give, for the same reason and in the
 /// same shape -- `obelus_config::Reading`, which had this out first. A file
@@ -401,7 +401,7 @@ pub struct Todo {
 /// is a thing this file is for.
 #[derive(Clone, Debug)]
 pub enum Reading {
-    /// There is none yet, which is where every tree starts.
+    /// There is none yet, which is where every project starts.
     Nothing,
     /// Here they are.
     Notes(Todo),
@@ -426,7 +426,7 @@ impl Reading {
     }
 }
 
-/// What is in a tree's file.
+/// What is in a project's file.
 #[must_use]
 pub fn read(root: &Path) -> Reading {
     let path = path(root);
@@ -844,7 +844,7 @@ const WAIT_FOR_THE_OTHER: std::time::Duration = std::time::Duration::from_millis
 /// The one door every change goes through. Read-modify-write rather than
 /// writing a copy somebody has been holding, for the reason the
 /// conversations beside these are written the same way: a second obelus on
-/// the same tree is an ordinary thing to have running, and the one that
+/// the same project is an ordinary thing to have running, and the one that
 /// wrote last would otherwise put the file back the way it was before the
 /// other one's note -- and neither of them would be told.
 ///
@@ -983,7 +983,7 @@ fn quoted(text: &str) -> String {
 /// the same arithmetic the blame already walks the other way.
 ///
 /// Without a commit there is nothing to check the number against, so it is
-/// taken at its word. That is the answer for a tree git has never heard of,
+/// taken at its word. That is the answer for a project git has never heard of,
 /// and it is honest: obelus knows where the note *was* put and has no way to
 /// know whether it moved.
 ///
@@ -1009,7 +1009,7 @@ pub fn where_now(root: &Path, at: &At) -> Option<LineNumber> {
     crate::Changes::between(&then, &now).working_line(at.line)
 }
 
-/// The commit a note made now should carry, where the tree has one.
+/// The commit a note made now should carry, where the project has one.
 #[must_use]
 pub fn at_commit(root: &Path) -> Option<gix::ObjectId> {
     crate::history::head_of(root)
@@ -1244,7 +1244,7 @@ mod tests {
 
         assert!(
             matches!(read(&scratch), Reading::Nothing),
-            "a tree with no notes file is not a tree that starts empty"
+            "a project with no notes file is not a project that starts empty"
         );
 
         let path = path(&scratch);
