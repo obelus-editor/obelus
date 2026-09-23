@@ -44,8 +44,14 @@ pub fn render(source: &str, width: u16) -> Vec<Row> {
     // needs them too: this is the document's own injections, read rather
     // than asked for again. Parsing each paragraph a second time cost more
     // than laying the whole file out.
-    let inline: Vec<(Range<usize>, Node<'_>)> = state
-        .injected()
+    // Every run of it, because every row is being laid out: a reading is
+    // scrolled through, and the rows below the screen are how it knows how
+    // far there is to scroll. What the *buffer* does instead -- ask only for
+    // what is on the screen -- is not open to something that has to produce
+    // the whole page at once.
+    state.look_at(&text, 0..text.byte_length().get());
+    let injected = state.injected();
+    let inline: Vec<(Range<usize>, Node<'_>)> = injected
         .iter()
         .filter(|one| one.language() == LanguageId::MarkdownInline)
         .map(|one| {

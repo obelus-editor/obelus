@@ -26,6 +26,82 @@ fn parsed(source: &str) -> (Text, SyntaxState) {
     (text, state)
 }
 
+/// A run written in another language is parsed when somebody looks at it,
+/// and not before.
+///
+/// A file of a hundred fenced blocks shows two of them. Parsing the other
+/// ninety-eight put eight milliseconds between a reader's keystroke and
+/// their letters, on every keystroke, for colours nobody could see -- and it
+/// pushed a five kilobyte README over the line where the highlighting stops
+/// keeping up with typing at all.
+///
+/// Broken deliberately by parsing every run as the file is read: the first
+/// assertion goes red, and with it the reason the other two are cheap.
+#[test]
+fn the_runs_nobody_is_looking_at_are_not_parsed() {
+    let block = "```rust\nfn main() {}\n```\n\nsome prose\n\n";
+    let source = block.repeat(20);
+    let text = Text::from_string(&source);
+    let state = SyntaxState::new(LanguageId::Markdown, &text).expect("parsing");
+    assert!(
+        state.injected().is_empty(),
+        "runs were parsed before anybody asked for them"
+    );
+
+    // One screenful: the first block and no more.
+    let mut highlights = Highlights::default();
+    highlights.refresh(
+        &state,
+        &text,
+        ByteOffset::new(0)..ByteOffset::new(block.len()),
+    );
+    let few = state.injected().len();
+    assert!(few > 0, "nothing was parsed for the range being drawn");
+    assert!(
+        few < 20,
+        "the whole file was parsed for one screen of it: {few}"
+    );
+    // And the colours of what was asked for are there all the same.
+    let at = source.find("fn ").expect("the first block");
+    assert_eq!(
+        highlights.kind_at(ByteOffset::new(at)),
+        Some(SyntaxKind::Keyword),
+        "the run being drawn was not coloured"
+    );
+
+    // Reading further parses further, and what was parsed stays parsed.
+    highlights.refresh(&state, &text, ByteOffset::new(0)..text.byte_length());
+    let all = state.injected().len();
+    assert!(
+        all > few,
+        "looking at the rest of the file parsed nothing more: {all} against {few}"
+    );
+}
+
+/// And the text moving under them throws them away.
+///
+/// Where a run is is a fact about the document's structure, and an edit
+/// changes that: a line typed above a fence moves it, three backticks make a
+/// new one. What is kept is the finding, which is a query over a tree that
+/// is already there; what goes is the reading.
+#[test]
+fn an_edit_forgets_the_runs_that_were_read() {
+    let source = "```rust\nfn main() {}\n```\n";
+    let text = Text::from_string(source);
+    let mut state = SyntaxState::new(LanguageId::Markdown, &text).expect("parsing");
+    let mut highlights = Highlights::default();
+    highlights.refresh(&state, &text, ByteOffset::new(0)..text.byte_length());
+    assert!(!state.injected().is_empty(), "nothing was read");
+
+    let after = Text::from_string(&format!("x{source}"));
+    let edit = parse::edit_between(&text, &after).expect("an edit");
+    state.reparse(&after, &edit);
+    assert!(
+        state.injected().is_empty(),
+        "a run parsed before the edit was kept after it"
+    );
+}
+
 #[test]
 fn the_obvious_things_are_highlighted() {
     let (text, state) = parsed(SOURCE);

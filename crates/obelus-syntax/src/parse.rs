@@ -29,16 +29,49 @@ pub struct SyntaxState {
     /// language and a different set of ranges for each injection, and the
     /// one above would have to be set back to the file's own language after
     /// every one of them.
-    injector: Parser,
-    /// The trees for the runs of this document written in another language,
-    /// outermost first.
-    injected: Vec<Injected>,
+    ///
+    /// Behind a cell with the two below, because parsing one of these runs
+    /// happens when somebody looks at it rather than when the file is read
+    /// -- see [`SyntaxState::look_at`].
+    injector: std::cell::RefCell<Parser>,
+    /// Where the runs in another language are, as the query found them.
+    ///
+    /// Finding them is a query over a tree that is already parsed and costs
+    /// about a millisecond on a large file. *Parsing* them is the dear part,
+    /// and is not done here.
+    found: std::cell::RefCell<Vec<Found>>,
+    /// The trees for the runs somebody has looked at, outermost first.
+    injected: std::cell::RefCell<Vec<Injected>>,
     /// Whether the tree has been told where the text moved but not what it
     /// means there.
     behind: bool,
     /// How long the last parse took, which is what decides whether the next
     /// one waits for a pause in the typing.
     took: std::time::Duration,
+}
+
+/// One run of a document in another language, found but perhaps not read.
+struct Found {
+    /// What it is and where.
+    injection: inject::Injection,
+    /// How many languages deep it sits, which is what [`DEEPEST`] counts.
+    depth: usize,
+    /// Whether it has been parsed.
+    read: bool,
+}
+
+impl Found {
+    /// Whether any part of it lies in a range.
+    ///
+    /// Any part, because a run is drawn if a single byte of it is on the
+    /// screen -- and it is parsed whole either way, a grammar having no way
+    /// to read the middle of something.
+    fn touches(&self, range: &std::ops::Range<usize>) -> bool {
+        self.injection
+            .ranges
+            .iter()
+            .any(|at| at.start_byte < range.end && at.end_byte > range.start)
+    }
 }
 
 /// One run of a document in another language, parsed.
@@ -89,30 +122,40 @@ impl SyntaxState {
             .expect("a grammar shipped with obelus should load");
         let started = std::time::Instant::now();
         let tree = parse(&mut parser, text.rope(), None)?;
-        let mut state = Self {
+        let state = Self {
             language,
             parser,
-            injector: Parser::new(),
+            injector: std::cell::RefCell::new(Parser::new()),
             tree,
-            injected: Vec::new(),
+            found: std::cell::RefCell::new(Vec::new()),
+            injected: std::cell::RefCell::new(Vec::new()),
             behind: false,
             took: std::time::Duration::ZERO,
         };
-        state.inject(text);
+        state.find(text);
         // The first parse is the only measurement there is to go on, and it
         // is the honest one: a grammar that takes ten milliseconds over a
-        // file does not take one over the same file a character later. The
-        // languages inside this one are inside the measurement, because they
-        // are inside the wait: a reader typing does not care which of the
-        // parsers between their key and the colours was the slow one.
+        // file does not take one over the same file a character later.
+        //
+        // What is *not* in it is the languages inside this one. They are
+        // found here and parsed when somebody looks at them, so they are not
+        // between this reader's keystroke and their letters -- which is the
+        // thing this number is asked about.
+        let mut state = state;
         state.took = started.elapsed();
         Some(state)
     }
 
-    /// The runs of this document written in another language.
+    /// The runs of this document written in another language, as far as
+    /// anybody has looked.
+    ///
+    /// A run nobody has asked about is not in here: see
+    /// [`SyntaxState::look_at`]. What that costs whoever forgets to ask is
+    /// the outer language's colours over a run that has its own, which is
+    /// what a fence looked like before any of this existed.
     #[must_use]
-    pub fn injected(&self) -> &[Injected] {
-        &self.injected
+    pub fn injected(&self) -> std::cell::Ref<'_, Vec<Injected>> {
+        self.injected.borrow()
     }
 
     /// The language this was parsed as.
@@ -194,7 +237,7 @@ impl SyntaxState {
         // about the frames in between, which are drawn from these trees
         // exactly as they are drawn from the one above, and would otherwise
         // paint a fence's colours where the fence no longer is.
-        for injected in &mut self.injected {
+        for injected in self.injected.borrow_mut().iter_mut() {
             injected.tree.edit(&edit);
         }
         self.behind = true;
@@ -213,7 +256,7 @@ impl SyntaxState {
         if let Some(tree) = parse(&mut self.parser, text.rope(), Some(&self.tree)) {
             self.tree = tree;
         }
-        self.inject(text);
+        self.find(text);
         self.took = started.elapsed();
         self.behind = false;
     }
@@ -242,7 +285,7 @@ impl SyntaxState {
         self.took.as_micros() < QUICK.as_micros()
     }
 
-    /// Parses the runs written in another language.
+    /// Finds the runs written in another language, without parsing them.
     ///
     /// From the tree that has just been parsed, every time, and from
     /// scratch. Where the injections are is a fact about the document's
@@ -255,44 +298,106 @@ impl SyntaxState {
     /// per cent of a cost that is nearly all in the parsing itself, and it
     /// cost an offset that had to be moved by every edit and a tree that
     /// could be matched to the wrong run. Two silent failures for a tenth of
-    /// the work is the wrong trade; the honest saving, if this ever needs
-    /// one, is not parsing the runs nobody is looking at.
-    fn inject(&mut self, text: &Text) {
-        self.injected.clear();
-        let mut found = inject::found(self.language, &self.tree, text);
-        for _ in 0..DEEPEST {
-            if found.is_empty() {
-                break;
+    /// the work is the wrong trade.
+    ///
+    /// The saving that was worth having is the other one: this only asks
+    /// *where* they are, which is a query over a tree that is already there.
+    /// What they say is worked out by [`SyntaxState::look_at`], for the ones
+    /// somebody is looking at.
+    fn find(&self, text: &Text) {
+        self.injected.borrow_mut().clear();
+        *self.found.borrow_mut() = inject::found(self.language, &self.tree, text)
+            .into_iter()
+            .map(|injection| Found {
+                injection,
+                depth: 0,
+                read: false,
+            })
+            .collect();
+    }
+
+    /// Parses the runs that lie in this range, if they are not parsed.
+    ///
+    /// The one place the languages inside a document are read, and it is
+    /// asked by whoever is about to draw them. On a file of a hundred fenced
+    /// blocks, opening it used to parse a hundred of them and a screen shows
+    /// two: the other ninety-eight were parsed for a reader who might scroll
+    /// there, on every keystroke, before their letters appeared.
+    ///
+    /// What is parsed stays parsed until the text moves under it, so
+    /// scrolling back over a run costs nothing and an edit costs the runs on
+    /// the screen rather than the runs in the file.
+    ///
+    /// Runs inside runs are found as their parent is read, and are parsed in
+    /// this same pass where they are in the range too: a script in an HTML
+    /// page in a fence is three languages and one look.
+    pub fn look_at(&self, text: &Text, range: std::ops::Range<usize>) {
+        // Round after round, because reading a run can turn up runs inside
+        // it, and those may be in the range as well.
+        loop {
+            let reading: Vec<usize> = self
+                .found
+                .borrow()
+                .iter()
+                .enumerate()
+                .filter(|(_, found)| !found.read && found.touches(&range))
+                .map(|(at, _)| at)
+                .collect();
+            if reading.is_empty() {
+                return;
             }
-            let mut deeper = Vec::new();
-            for injection in found {
-                if self
-                    .injector
-                    .set_language(grammar(injection.language).language())
-                    .is_err()
-                {
-                    continue;
-                }
-                // Ranges rather than a slice of the text: this is what keeps
-                // every offset the inner tree reports a place in the whole
-                // document, so nothing downstream has to add a base back on.
-                // It refuses ranges out of order, which a query cannot
-                // produce and which would be worth hearing about if it did.
-                if let Err(error) = self.injector.set_included_ranges(&injection.ranges) {
-                    tracing::debug!(%error, "an injection whose ranges the parser refused");
-                    continue;
-                }
-                let Some(tree) = parse(&mut self.injector, text.rope(), None) else {
+            for at in reading {
+                let Some((language, ranges, depth)) = self.found.borrow().get(at).map(|found| {
+                    (
+                        found.injection.language,
+                        found.injection.ranges.clone(),
+                        found.depth,
+                    )
+                }) else {
                     continue;
                 };
-                deeper.extend(inject::found(injection.language, &tree, text));
-                self.injected.push(Injected {
-                    language: injection.language,
-                    tree,
-                });
+                if let Some(found) = self.found.borrow_mut().get_mut(at) {
+                    found.read = true;
+                }
+                let Some(tree) = self.parse_run(text, language, &ranges) else {
+                    continue;
+                };
+                if depth + 1 < DEEPEST {
+                    let deeper = inject::found(language, &tree, text);
+                    self.found
+                        .borrow_mut()
+                        .extend(deeper.into_iter().map(|injection| Found {
+                            injection,
+                            depth: depth + 1,
+                            read: false,
+                        }));
+                }
+                self.injected.borrow_mut().push(Injected { language, tree });
             }
-            found = deeper;
         }
+    }
+
+    /// One run, parsed in its place in the document.
+    fn parse_run(
+        &self,
+        text: &Text,
+        language: LanguageId,
+        ranges: &[tree_sitter::Range],
+    ) -> Option<Tree> {
+        let mut injector = self.injector.borrow_mut();
+        if injector.set_language(grammar(language).language()).is_err() {
+            return None;
+        }
+        // Ranges rather than a slice of the text: this is what keeps every
+        // offset the inner tree reports a place in the whole document, so
+        // nothing downstream has to add a base back on. It refuses ranges out
+        // of order, which a query cannot produce and which would be worth
+        // hearing about if it did.
+        if let Err(error) = injector.set_included_ranges(ranges) {
+            tracing::debug!(%error, "an injection whose ranges the parser refused");
+            return None;
+        }
+        parse(&mut injector, text.rope(), None)
     }
 }
 

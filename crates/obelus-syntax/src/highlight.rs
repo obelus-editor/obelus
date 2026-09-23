@@ -47,12 +47,18 @@ impl Highlights {
         }
 
         self.paint(crate::grammar(state.language()), state.tree(), text);
+        // The runs of another language that are in this range, parsed if
+        // nobody has looked at them yet. Asked here rather than when the
+        // file was read, because a file of a hundred fenced blocks shows two
+        // of them and the other ninety-eight were being parsed between a
+        // reader's keystroke and their letters.
+        state.look_at(text, self.start..self.start + self.kinds.len());
         // Then the languages inside this one, outermost first -- which is
         // the order they were found in, and the same rule as everywhere
         // else here: what is inside wins. A run of Rust in a fence is drawn
         // over the fence's own colour, and what the Rust query says nothing
         // about is left plain by the `@none` the markdown query puts there.
-        for injected in state.injected() {
+        for injected in state.injected().iter() {
             self.paint(crate::grammar(injected.language()), injected.tree(), text);
         }
     }
