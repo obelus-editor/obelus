@@ -153,6 +153,31 @@ title for it), that everything it printed is there and a failed one stays
 open, and that the key which stops the agent stops the process too -- obelus
 started it, and nothing else can.
 
+**A call's title is the command, so a few rows of it are shown shut.** An
+agent titles a call with its own text and for a command that is the command
+line, which is the thing a reader of a transcript of commands is reading:
+one row of `grep` and an ellipsis is a row that has to be opened to be read
+at all. Three rows, and the rest behind the same arrow as everything else --
+because an agent that writes a script into a heredoc sends the whole script
+as the title, and a closed call sat there with twenty rows of shell under a
+mark saying it was shut. The same cap a card's own prose gets, for the same
+reason: somebody else's text may be as long as it likes and may not push
+what it belongs to off the screen.
+
+Which is also why a row keeps the room for what it says about itself. Where
+the call was, the mark saying it can be opened, how much it changes, how it
+went -- all of that used to be written from wherever the words happened to
+stop, so a title that reached the edge took every one of them with it. The
+tail is worked out first and the words get what is left, in one list rather
+than four writes in a row: the room has to be known before the words are
+drawn, and what is drawn has to be the same thing that was measured.
+
+And a place the title has already named is not said after it. `Write
+src/app.rs` followed by `src/app.rs` is the rule a setting's description
+already follows when it is the setting's name again -- what the title has
+*not* said is what is left to say, so `line 20  +2` where it named the file
+and the whole of `src/app.rs:20  +2` where it did not.
+
 **A conversation takes one prompt turn at a time, so what the reader says
 into a running one waits.** The protocol puts no turn on either end of the
 exchange: `session/cancel` names a session, and the answer to

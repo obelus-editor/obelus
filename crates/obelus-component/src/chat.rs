@@ -323,6 +323,20 @@ fn changed_rows(call: &obelus_agent::acp::Call) -> Vec<obelus_git::change::Line>
 /// and starts scrolling past them.
 const LEAST_TO_FOLD: usize = 3;
 
+/// How many rows of a call's title are shown while it is closed.
+///
+/// A command is a title as long as the command, and the reader of a
+/// transcript of commands is reading the commands: one row of `grep` and
+/// an ellipsis is a row that has to be opened to be read at all. Three
+/// rows is most of them.
+///
+/// Capped rather than free, which is what a card's own prose gets and for
+/// the same reason: an agent may write as much as it likes and may not
+/// push what it belongs to off the screen. An agent that sends a heredoc
+/// script as a call's title is the case that earned this number -- twenty
+/// rows of shell sat under a mark saying the call was shut.
+const MOST_TITLE_ROWS: usize = 3;
+
 /// How far in the members of an opened run are drawn.
 ///
 /// Shared with the view: the rows are wrapped to what is left after it and
@@ -1441,22 +1455,31 @@ impl Chat {
             // rest of the same words, at the same depth and from the same
             // text, so a place in the title is still a place in the title.
             //
-            // And the rest go behind the fold with everything else. They
-            // were drawn whatever the fold said, which nobody noticed
-            // while a title was a handful of words: it wrapped to one row
-            // and there was no rest of it. A command is a title as long as
-            // the command, and an agent that writes a script into a
-            // heredoc sends the whole script as the title -- so a closed
-            // call sat there with twenty rows of shell under a mark saying
-            // it was shut, and the key that was supposed to put it away
-            // moved one row of output.
+            // A few rows of it are shown whatever the fold says, and the
+            // rest goes behind it.
             //
-            // A closed thing is one row, which is what it is everywhere
-            // else here: a run, a stretch of thinking, a block in a file.
-            // The rest of a long title is behind the same arrow as the
-            // rest of the call, because from the reader's side it is the
-            // same answer to the same question -- what is in here that I
-            // am not looking at.
+            // All of it was drawn once, which nobody noticed while a title
+            // was a handful of words: it wrapped to one row and there was
+            // no rest of it. A command is a title as long as the command,
+            // and an agent that writes a script into a heredoc sends the
+            // whole script as the title -- so a closed call sat there with
+            // twenty rows of shell under a mark saying it was shut, and
+            // the key that was supposed to put it away moved one row of
+            // output.
+            //
+            // Then all of it went behind the fold, and a command of two
+            // rows -- which is most of them -- could not be read without
+            // opening the call and reading it past its own output. The
+            // reader is looking at a transcript of commands: the command
+            // is the thing on the row.
+            //
+            // So a cap, which is what a card's own prose gets and for the
+            // same reason: somebody else's text may be as long as it likes
+            // and may not push what it belongs to off the screen. Under it
+            // the whole command is on the page and opening the call is
+            // about the output. Over it the arrow on the first row says
+            // there is more, which is what that arrow says about
+            // everything else behind it.
             let mut title = laid_out(&said.text, room, reads_as_markdown(said.speaker)).into_iter();
             let mut rows = vec![Row {
                 changed: (!said.change.is_empty())
@@ -1469,10 +1492,19 @@ impl Chat {
                     Some((at, Source::Text)),
                 )
             }];
-            if self.is_open(at) {
-                rows.extend(
-                    title.map(|spans| Self::under(said, spans, depth, Some((at, Source::Text)))),
-                );
+            // The rows of it that are shown closed as well as open.
+            let open = self.is_open(at);
+            let shown = match open {
+                true => usize::MAX,
+                false => MOST_TITLE_ROWS.saturating_sub(1),
+            };
+            rows.extend(
+                title
+                    .by_ref()
+                    .take(shown)
+                    .map(|spans| Self::under(said, spans, depth, Some((at, Source::Text)))),
+            );
+            if open {
                 // Markdown, unless obelus is running a command for this
                 // call: then these words are the command and what it has
                 // printed, put here by [`Chat::running`], and a terminal's
@@ -2678,22 +2710,27 @@ mod tests {
         );
     }
 
-    /// A closed call is one row, however long its title.
+    /// A closed call shows its title, and no more of it than it is allowed.
     ///
-    /// The rest of a wrapped title was drawn whatever the fold said, and
-    /// nobody noticed while a title was a handful of words -- it wrapped to
-    /// one row and there was no rest of it. Then an agent wrote a script
-    /// into a heredoc and sent the whole script as the call's title, and a
-    /// closed call sat there with twenty rows of shell under a mark saying
-    /// it was shut. The key that was supposed to put it away moved one row
-    /// of output.
+    /// Three claims, and each was the fault at some point.
     ///
-    /// It makes two claims and was broken deliberately twice. Drawing the
-    /// rest of the title outside the fold leaves a closed call as tall as
-    /// its title. And drawing it nowhere at all loses the title from the
-    /// opened call, which is the half a reader opened it for.
+    /// The whole of a wrapped title was drawn whatever the fold said, which
+    /// nobody noticed while a title was a handful of words. Then an agent
+    /// wrote a script into a heredoc and sent the whole script as the
+    /// call's title, and a closed call sat there with twenty rows of shell
+    /// under a mark saying it was shut.
+    ///
+    /// So all of it went behind the fold -- and a command of two rows,
+    /// which is most of them, could not be read at all without opening the
+    /// call. A transcript of commands is read for the commands.
+    ///
+    /// Broken deliberately three ways. Taking the cap off `shown` leaves a
+    /// closed call as tall as its title. Setting it to nothing puts the
+    /// command back behind the fold. And dropping the `if open` arm loses
+    /// the rest of a long title from the opened call, which is the half a
+    /// reader opened it for.
     #[test]
-    fn a_closed_call_is_one_row_however_long_its_title() {
+    fn a_closed_call_shows_its_title_up_to_the_cap() {
         let script = "python3 - <<'PY'\nimport pathlib\np = pathlib.Path('a.rs')\nPY";
         let mut chat = Chat::new();
         chat.tool(&saying("c1", script, &["what it printed"]), "completed");
@@ -2701,11 +2738,22 @@ mod tests {
         // Closed, which is how a call that is over arrives.
         let rows = chat.rows(ROOM.reading);
         assert!(!rows[0].open, "a call that is over did not fold itself");
-        assert_eq!(
-            rows.len(),
-            1,
-            "a closed call is taller than the row that folds it: {:?}",
+        assert!(
+            rows.len() > 1,
+            "a closed call showed nothing of its title but the first row: {:?}",
             rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+        assert!(
+            rows.len() <= super::MOST_TITLE_ROWS,
+            "a closed call is {} rows tall, which is more than it is allowed: {:?}",
+            rows.len(),
+            rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+        // Long enough to be capped, or the assertion above passes for the
+        // wrong reason.
+        assert!(
+            script.lines().count() > super::MOST_TITLE_ROWS,
+            "this title fits inside the cap, so nothing here can show it working"
         );
 
         // Opened, the whole of the title is there, and what it carries
