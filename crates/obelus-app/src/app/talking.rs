@@ -70,6 +70,67 @@ impl App {
         self.ask_for_a_session(None);
     }
 
+    /// Lets every conversation go, because the agent behind them has.
+    ///
+    /// A session is a name one agent gave to something, and an agent that
+    /// has been stopped -- or swapped for another -- can never be asked
+    /// about it again. What is left is the transcript, which is the
+    /// reader's, and a conversation that asks the next agent for a session
+    /// of its own the moment it is used.
+    ///
+    /// What each was told goes too: the next agent has been told nothing,
+    /// so it is told everything the first time the reader says something.
+    /// One repeated telling on the way past, rather than a silence that
+    /// lasts.
+    pub(super) fn let_the_conversations_go(&mut self) {
+        for document in &mut self.documents {
+            let Some(talk) = document.as_mut().and_then(Document::chat_mut) else {
+                continue;
+            };
+            let had = talk.session.take().is_some() || talk.asked_for.take().is_some();
+            talk.told = None;
+            talk.started_on.clear();
+            if had {
+                talk.chat
+                    .note("The agent this was with is no longer the one obelus talks to");
+            }
+        }
+    }
+
+    /// Asks the active agent what it can be set to, if obelus has never
+    /// been told.
+    ///
+    /// On a conversation of its own, opened and let go on the other side
+    /// of the connection: the reader's conversations are theirs, and one
+    /// of them existing -- or being named, or being written in -- because
+    /// a settings page wanted a list is a conversation that goes wherever
+    /// that list goes.
+    ///
+    /// Asked once. What an agent offers is written down beside its
+    /// install the first time it says, and an agent that has said is not
+    /// asked again.
+    pub(super) fn learn_what_the_agent_offers(&mut self) {
+        if matches!(
+            self.agents.offers.as_ref().map(|(_, read)| read),
+            Some(obelus_agent::options::Reading::Offers(offers)) if !offers.is_empty()
+        ) {
+            return;
+        }
+        if self.talker.is_none() {
+            self.start_agent();
+        }
+        let Some(talker) = self.talker.as_mut() else {
+            return;
+        };
+        talker.offers();
+        // Said on the status row, because a program that starts another
+        // program should say so: the reader pressed enter on a card and a
+        // node process started.
+        if let Some(name) = self.agent_name() {
+            self.note = Some(format!("Asking {name} what it can be set to"));
+        }
+    }
+
     /// Goes to the conversation about one note, opening one if there is
     /// none.
     ///
@@ -611,6 +672,136 @@ impl App {
         // settings again, which is not something to show.
         if let Some(talk) = self.conversation_mut() {
             talk.chat.note(&format!("{name}: {told}"));
+        }
+    }
+
+    /// Writes down what the agent says it can be set to.
+    ///
+    /// The list belongs to a conversation and obelus needs it before there
+    /// is one: the settings page is about what a conversation should
+    /// *start* on, and a page that had nothing to show until the reader
+    /// had already opened one would be asking them to do the thing they
+    /// are setting up afterwards.
+    ///
+    /// Only what it offers, never which value this conversation is on:
+    /// that is a fact about one conversation at one moment, and on this
+    /// page a week later it would read as a fact about now.
+    fn keep_what_the_agent_offers(&mut self, session: &acp::SessionId) {
+        let settings = match self.talker.as_ref() {
+            Some(talker) => talker.settings(Some(session)).to_vec(),
+            None => return,
+        };
+        self.write_down_the_offers(&settings);
+    }
+
+    /// Writes down what the agent says it can be set to.
+    ///
+    /// From either place it can be said: the settings of a conversation
+    /// the reader is in, and the list that comes back from asking on a
+    /// conversation of obelus's own.
+    pub(super) fn write_down_the_offers(&mut self, settings: &[acp::Setting]) {
+        let Some(root) = self.agents_root() else {
+            return;
+        };
+        // The agent that is running, asked of itself, rather than the one
+        // the settings name: the two differ for as long as it takes a
+        // reader who has just changed agents to have the new one started,
+        // and what arrived came from the one on the other end of the pipe.
+        let Some(id) = self.talker.as_ref().map(|talker| talker.id().to_string()) else {
+            return;
+        };
+        if let Err(error) = obelus_agent::options::remember(&id, settings, &root) {
+            // A word in the log and nothing on screen: the reader asked
+            // for a conversation, not for obelus to keep notes, and the
+            // page this would have fed says for itself when it has
+            // nothing to draw.
+            tracing::warn!(%error, id, "not writing down what the agent offers");
+            return;
+        }
+        // What the settings page hands out comes from what was read, so a
+        // file obelus has just written is a file to read again -- which is
+        // what makes the page fill in while it is open.
+        self.reread_what_the_agent_offers();
+    }
+
+    /// Puts a conversation on what the reader said conversations start on.
+    ///
+    /// Once for each setting, and only for the ones they have said
+    /// something about: what they have said nothing about is the agent's,
+    /// which is the third state those rows have.
+    ///
+    /// Nothing is written in the transcript. This is a standing choice
+    /// they made on another page, not something they just did here -- and
+    /// the row at the foot of the conversation says what it is set to
+    /// either way.
+    fn start_the_session_on_what_was_chosen(&mut self, session: &acp::SessionId) {
+        // The running agent's own name again: what the reader said is
+        // written down under the agent it was said about, and this
+        // conversation belongs to whichever one is on the other end.
+        let (agent, settings) = match self.talker.as_ref() {
+            Some(talker) => (
+                talker.id().to_string(),
+                talker.settings(Some(session)).to_vec(),
+            ),
+            None => return,
+        };
+        let chosen = self.config().agent_defaults(&agent).clone();
+        if chosen.is_empty() {
+            return;
+        }
+        let already = self
+            .conversation_at(|talk| talk.session.as_ref() == Some(session))
+            .and_then(|at| self.documents.get(at))
+            .and_then(Option::as_ref)
+            .and_then(Document::chat)
+            .map(|talk| talk.started_on.clone())
+            .unwrap_or_default();
+
+        let mut asked = Vec::new();
+        for setting in &settings {
+            let Some(value) = chosen.get(&setting.id) else {
+                continue;
+            };
+            // Once each. An agent that refused, or that has put it back
+            // since, has answered -- and obelus asking again would be
+            // obelus arguing with it.
+            if already.contains(&setting.id) {
+                continue;
+            }
+            // A value it does not offer any more is left alone rather than
+            // sent and refused: the settings page draws that row in the
+            // colour of something that will not work, which is where the
+            // reader can do something about it.
+            if !setting.values.iter().any(|offered| offered.id == *value) {
+                tracing::debug!(
+                    setting = setting.id,
+                    value,
+                    "what was chosen is not offered any more"
+                );
+                continue;
+            }
+            asked.push(setting.id.clone());
+            if setting.current == *value {
+                // Already there. Written down as asked all the same: the
+                // question has been settled for this conversation, and an
+                // agent that moves it later has moved it itself.
+                continue;
+            }
+            let chosen = acp::Chosen::of(setting, value);
+            if let Some(talker) = self.talker.as_mut() {
+                talker.set(Some(session), &setting.id, chosen);
+            }
+        }
+        if asked.is_empty() {
+            return;
+        }
+        if let Some(talk) = self
+            .conversation_at(|talk| talk.session.as_ref() == Some(session))
+            .and_then(|at| self.documents.get_mut(at))
+            .and_then(Option::as_mut)
+            .and_then(Document::chat_mut)
+        {
+            talk.started_on.extend(asked);
         }
     }
 
@@ -1734,6 +1925,10 @@ impl App {
             acp::Incoming::Started { .. }
             | acp::Incoming::Lost { .. }
             | acp::Incoming::Ready(_)
+            // What an agent can be set to is about the agent: the
+            // conversation it was asked on was opened for the asking and
+            // let go before this arrived.
+            | acp::Incoming::Offers(_)
             | acp::Incoming::Failed(..)
             | acp::Incoming::Gone(_)
             | acp::Incoming::Ask { .. }
@@ -1985,6 +2180,10 @@ impl App {
                 // two it is: both go back to "not said yet" together, or
                 // the half that is left behind is the half never said.
                 talk.told = None;
+                // And what obelus had already asked that session for goes
+                // with it: the one starting is a new conversation, and it
+                // opens on what the reader chose like any other.
+                talk.started_on.clear();
                 talk.introduced = false;
                 talk.chat.note(&format!("Starting again, because {why}"));
             }
@@ -2019,9 +2218,35 @@ impl App {
             });
             if let Some(talk) = mine {
                 talk.asked_for = None;
-                talk.session = Some(session);
+                talk.session = Some(session.clone());
             }
             self.remember_the_conversations();
+            // After the conversation has its name, not before: what obelus
+            // has already asked this one for is written down on the
+            // conversation, and a note written before there is one to
+            // write it on is a question asked twice.
+            self.keep_what_the_agent_offers(&session);
+            self.start_the_session_on_what_was_chosen(&session);
+            return;
+        }
+        // What came back from asking on a conversation of obelus's own.
+        // It names none, because by the time it arrives there is none.
+        if let acp::Incoming::Offers(offers) = &incoming {
+            let offers = offers.clone();
+            self.write_down_the_offers(&offers);
+            return;
+        }
+        // And again whenever the agent says what it offers, which is the
+        // message that actually carries it: a session opens before an
+        // agent has said a word about what it can be set to.
+        if let acp::Incoming::Update {
+            session,
+            update: acp::Update::Settings(_),
+        } = &incoming
+        {
+            let session = session.clone();
+            self.keep_what_the_agent_offers(&session);
+            self.start_the_session_on_what_was_chosen(&session);
             return;
         }
         // And everything else goes to the conversation it names, which is
@@ -2057,7 +2282,9 @@ impl App {
                 acp::Update::Titled(_) => self.remember_the_conversations(),
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
-                // said, and a transcript with them in it is a log.
+                // said, and a transcript with them in it is a log. The
+                // settings are answered above, where the conversation they
+                // are about is still named.
                 acp::Update::Mode(_)
                 | acp::Update::Orders(_)
                 | acp::Update::Settings(_)
@@ -2083,8 +2310,17 @@ impl App {
             }
             acp::Incoming::Failed(what, why) => {
                 tracing::warn!(what, why, "the agent");
-                if let Some(talk) = self.conversation_mut() {
-                    talk.chat.note(&format!("{what}: {why}"));
+                let said = format!("{what}: {why}");
+                match self.conversation_mut() {
+                    Some(talk) => talk.chat.note(&said),
+                    // Nothing on screen is a conversation, which is the
+                    // ordinary case for what obelus asked on its own
+                    // account -- the reader is on the settings page. The
+                    // status row rather than nowhere: an agent that will
+                    // not answer because nobody has signed in says so
+                    // here, and a failure written into a log is a failure
+                    // the reader never sees.
+                    None => self.note = Some(said),
                 }
             }
             // Answered above, before the session it is about can arrive.
@@ -2196,7 +2432,9 @@ impl App {
             // Folded into the handle above, or -- for a conversation
             // opening -- dealt with before the routing, because it is what
             // hands out the name the routing goes by.
-            acp::Incoming::Ready(_) | acp::Incoming::Started { .. } => {}
+            // Answered above, both of them: one before there is a
+            // conversation to name, the other because there is none.
+            acp::Incoming::Ready(_) | acp::Incoming::Started { .. } | acp::Incoming::Offers(_) => {}
         }
     }
 
@@ -2419,15 +2657,16 @@ impl App {
         futures::executor::block_on(answered).unwrap_or(false)
     }
 
-    /// The tree, spelled the way `canonicalize` spells a path.
+    /// The project, spelled the way `canonicalize` spells a path.
     ///
     /// Both sides of the fence have to be spelled the same way or it is not
     /// a comparison. On Windows `canonicalize` hands back a verbatim path --
     /// `\\?\E:\work\obelus\...` -- where the working directory is an
     /// ordinary one, so `starts_with` was asking whether a `\\?\E:` prefix
     /// begins with an `E:` one. It does not, ever: every file an agent asked
-    /// to read was outside the tree, the tree's own included, and what the
-    /// reader saw was an agent reading nothing and being refused everything.
+    /// to read was outside the project, the project's own included, and what
+    /// the reader saw was an agent reading nothing and being refused
+    /// everything.
     ///
     /// The working directory unresolved where it will not resolve, which is
     /// what the comparison had before and is never worse than it.

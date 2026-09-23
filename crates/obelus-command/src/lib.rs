@@ -665,10 +665,9 @@ pub const ALL: &[CommandSpec] = &[
     },
     CommandSpec {
         command: Command::ConfigProject,
-        // "project" rather than "project", which is obelus's own word for it
-        // everywhere else: a name is what a reader types, and what they
-        // will type for the settings a repository carries is the word every
-        // other program has taught them.
+        // The word obelus uses everywhere, and the word every other
+        // program has taught a reader to type for this: a name is typed,
+        // and one that had to be learned is a name nobody finds.
         name: "open-project-settings",
         title: "Change the settings this project carries",
     },
@@ -721,7 +720,7 @@ impl Command {
             | Self::DocumentClose
             | Self::FileRename
             | Self::PreviewToggle
-            // A question about the project of files, asked before any of them
+            // A question about the project's files, asked before any of them
             // is open: which makes it one of the files rather than one of
             // obelus's own housekeeping.
             | Self::CountLines
@@ -847,7 +846,7 @@ impl Command {
             Self::FileReload | Self::GoLine => {
                 Requires::AFileOpen
             }
-            // An outline comes from the syntax project when no server will
+            // An outline comes from the syntax tree when no server will
             // answer, so what it needs is a language obelus can parse.
             Self::SymbolOutline => Requires::AKnownLanguage,
             // Both ways: it turns the rendering on for a markdown file and
@@ -935,7 +934,7 @@ impl Command {
             | Self::ConfigProject
             | Self::ConfigFile
             | Self::LogOpen
-            // The project is always there to be counted, and a project with
+            // The project is always there to be counted, and one with
             // nothing in it is an answer as well: what it says is that
             // there is nothing here.
             | Self::CountLines

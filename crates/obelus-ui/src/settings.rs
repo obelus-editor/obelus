@@ -6,7 +6,9 @@
 //! background means everywhere else on this screen.
 
 use obelus_agent::Listed;
-use obelus_component::settings::{DESCRIPTION_INDENT, GROUP_INDENT, Refused, Settings};
+use obelus_component::settings::{
+    DESCRIPTION_INDENT, GROUP_INDENT, HEADING_ROWS, Offering, Refused, Settings, Shown,
+};
 use obelus_config::{Config, Kind, Value};
 use obelus_text::text_width;
 use obelus_theme::Theme;
@@ -22,6 +24,22 @@ use crate::{
 /// `off` and theme names at ragged left edges is three columns pretending to
 /// be one.
 const CONTROL_WIDTH: u16 = 12;
+
+/// What the agent's heading says under its name.
+///
+/// The one thing about this group that is not true of the others: obelus's
+/// own settings take effect where they stand, and these are about the next
+/// conversation rather than the one on screen. Said once, under the name,
+/// rather than on every row -- a fact about the group is not a fact about
+/// each of its rows, and the rows have a column each of their own to spend.
+const WHEN: &str = "What a new conversation starts on.";
+
+/// What an agent's row says where the reader has chosen nothing.
+///
+/// A word rather than a blank: the third state of one of these rows is a
+/// decision like the other two -- leave it to the agent -- and a control
+/// showing nothing would read as one obelus had failed to fill in.
+const AGENTS_OWN: &str = "Agent's own";
 
 /// How far a card's words are indented from its edge.
 ///
@@ -45,6 +63,9 @@ pub struct SettingsView<'a> {
         obelus_command::Command,
         Option<obelus_editing::keymap::KeyChord>,
     )>,
+    /// What the active agent offers to be set, and what the reader has
+    /// said about each. `None` where no agent is active.
+    offering: Option<Offering>,
     /// The settings the project has set, and the file it set them in.
     ///
     /// Written the way the reader would write it -- `.obelus/config.toml`,
@@ -69,6 +90,7 @@ impl<'a> SettingsView<'a> {
             failure: app.registry_failure(),
             images: app.images(),
             keys: app.settings()?.keys(app.keymap()),
+            offering: app.agent_offering(),
             pinned: app.pinned().to_vec(),
             named: app.readers_named().to_vec(),
             // The file the project has, or the one it would get: the project's
@@ -90,8 +112,8 @@ impl<'a> SettingsView<'a> {
 
 /// How many rows the page gives up to the keys at its foot.
 #[must_use]
-pub fn footed(area: Rect, settings: &Settings) -> Rect {
-    crate::footed(area, &hints(settings))
+pub fn footed(area: Rect, settings: &Settings, offering: Option<&Offering>) -> Rect {
+    crate::footed(area, &hints(settings, offering))
 }
 
 /// What the keys do here, and which of them do anything at the moment.
@@ -101,9 +123,24 @@ pub fn footed(area: Rect, settings: &Settings) -> Rect {
 /// this page is filtered by typing at it, and that a setting the project has
 /// set can be unset.
 #[must_use]
-pub fn hints(settings: &Settings) -> Vec<Hint> {
+pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let bare = |code| obelus_editing::keymap::KeyChord::new(code, KeyModifiers::NONE);
+    // Which row the reader is on, where that changes what a key does. The
+    // agent's rows have a `delete` of their own and obelus's do not.
+    let focused = settings
+        .rows(offering)
+        .get(settings.focus())
+        .copied()
+        .filter(|shown| {
+            matches!(
+                shown,
+                Shown::Agent {
+                    chosen: Some(_),
+                    ..
+                }
+            )
+        });
     vec![
         Hint::common(bare(KeyCode::Enter), "Change")
             .saying(match settings.on_keys() {
@@ -113,7 +150,13 @@ pub fn hints(settings: &Settings) -> Vec<Hint> {
             // Asked of whichever page is showing rather than of the
             // settings: the keys page has rows too, and enter does the same
             // sort of thing to one of them.
-            .when(settings.row_count() > 0),
+            .when(settings.row_count(offering) > 0),
+        // On an agent's row, and only while there is something to undo:
+        // what `delete` leaves there is not a default of obelus's but the
+        // agent's own answer.
+        Hint::common(bare(KeyCode::Delete), AGENTS_OWN)
+            .saying("Stop saying what this one starts on, and leave it to the agent")
+            .when(focused.is_some()),
         // The one thing on this page nothing else says: a page that is
         // filtered by typing at it looks exactly like one that is not.
         Hint::common(bare(KeyCode::Char('a')), "to filter")
@@ -140,8 +183,8 @@ struct Placed {
 /// Named so that a pointer can ask where the rows are rather than working
 /// it out again from the two things that take room off the page.
 #[must_use]
-pub fn rows_region(area: Rect, settings: &Settings) -> Rect {
-    let under = crate::footed(area, &hints(settings));
+pub fn rows_region(area: Rect, settings: &Settings, offering: Option<&Offering>) -> Rect {
+    let under = crate::footed(area, &hints(settings, offering));
     Rect {
         y: under.y + 2,
         height: under.height.saturating_sub(2),
@@ -168,14 +211,18 @@ fn placed(region: Rect, rows: &[Row], window: &obelus_component::window::Window)
         if y >= region.bottom() {
             break;
         }
-        let heading = row.opens.is_some();
-        if heading {
-            y += 2;
+        if let Some(heading) = &row.opens {
+            y += heading.rows();
             if y >= region.bottom() {
                 break;
             }
         }
-        let tall = u16::try_from(row.body.len()).unwrap_or(0) + 1;
+        // A row with no name is its prose and nothing else: there is
+        // nothing to put on a first line. Counted the same way the
+        // component counts it, because the walk down the page and the
+        // window deciding what is on screen must not disagree about where
+        // a row ends.
+        let tall = u16::try_from(row.body.len()).unwrap_or(0) + u16::from(!row.label.is_empty());
         placed.push(Placed {
             at,
             area: Rect {
@@ -204,7 +251,7 @@ impl SettingsView<'_> {
     /// where a row draws what it is set to.
     #[must_use]
     pub fn row_at(&self, area: Rect, x: u16, y: u16) -> Option<(usize, bool)> {
-        let region = rows_region(area, self.settings);
+        let region = rows_region(area, self.settings, self.offering.as_ref());
         if x < region.x || x >= region.right() {
             return None;
         }
@@ -242,7 +289,7 @@ impl Widget for SettingsView<'_> {
         let after = crate::tabs(
             cells,
             area,
-            &Settings::tabs(),
+            &self.settings.tabs(),
             self.settings.tab(),
             self.theme,
         );
@@ -284,25 +331,9 @@ impl Widget for SettingsView<'_> {
             self.theme,
         );
 
-        let hints = hints(self.settings);
+        let hints = hints(self.settings, self.offering.as_ref());
         crate::foot(cells, area, &hints, self.theme);
         let under = crate::footed(area, &hints);
-
-        // The agents are a page of cards rather than a column of controls:
-        // a reader choosing between forty programs is reading about them,
-        // and a row of a table has nowhere to say what one is.
-        if self.settings.on_agents() {
-            self.agents(
-                cells,
-                Rect {
-                    y: under.y + 2,
-                    height: under.height.saturating_sub(2),
-                    ..under
-                },
-            );
-            self.keys_card(cells, area, &hints);
-            return;
-        }
 
         let region = Rect {
             y: under.y + 2,
@@ -310,30 +341,18 @@ impl Widget for SettingsView<'_> {
             ..under
         };
 
-        // The keys are a column of the same rows: a command, what it does,
-        // and the key it is on -- with the row the reader is binding saying
-        // so where its description was.
-        // A project may not move the keys or choose the agent, so on its page
-        // those two tabs say so rather than showing rows nothing will
-        // accept: a page of controls that all refuse is a page that has to
-        // be tried before it can be understood.
-        if self.settings.on_project() && (self.settings.on_keys() || self.settings.on_agents()) {
-            crate::nothing(
-                cells,
-                Rect {
-                    height: 1,
-                    ..region
-                },
-                match self.settings.on_keys() {
-                    true => "A project may not move the keys",
-                    false => "A project may not choose the agent",
-                },
-                self.theme,
-            );
+        // The agents are a page of cards rather than a column of controls:
+        // a reader choosing between forty programs is reading about them,
+        // and a row of a table has nowhere to say what one is.
+        if self.settings.on_agents() {
+            self.agents(cells, region);
             self.keys_card(cells, area, &hints);
             return;
         }
 
+        // The keys are a column of the same rows: a command, what it does,
+        // and the key it is on -- with the row the reader is binding saying
+        // so where its description was.
         if self.settings.on_keys() {
             let rows: Vec<Row> = self
                 .keys
@@ -369,43 +388,81 @@ impl SettingsView<'_> {
     /// is, and the number of rows that takes is what says where the next
     /// name sits.
     fn rows(&self, region: Rect) -> Vec<Row> {
-        let settings = self.settings.rows();
-        settings
+        let width = obelus_component::settings::description_width(region.width);
+        self.settings
+            .rows(self.offering.as_ref())
             .iter()
-            .map(|shown| Row {
-                opens: shown.opens,
-                label: shown.setting.name.to_string(),
-                matched: self.settings.matched(shown.setting),
-                detail: None,
-                // What it does, on its own rows under the name: beside it,
-                // the two were competing for one row -- and the one that
-                // lost was the description, cut off with an ellipsis on
-                // exactly the rows that had most to explain.
-                body: self.settings.wrapped(
-                    shown.setting.about,
-                    obelus_component::settings::description_width(region.width),
-                ),
-                aside: Aside::Control(
-                    shown.setting.kind,
-                    Settings::value_of(shown.setting, self.config),
-                ),
-                // On the reader's page, the file that has this one instead
-                // of them. On the project's, nothing: a setting the project has
-                // is exactly what that page is for.
-                pinned: (!self.settings.on_project())
-                    .then(|| {
-                        self.pinned
-                            .contains(&shown.setting.key)
-                            .then(|| self.project.clone())
-                            .flatten()
-                    })
-                    .flatten(),
-                // And on the project's page, which layer the value showing
-                // comes from -- the project's own included.
-                scope: self
-                    .settings
-                    .on_project()
-                    .then(|| self.scope(shown.setting)),
+            .map(|shown| match shown {
+                Shown::Obelus { setting, opens } => Row {
+                    opens: opens.map(Heading::Group),
+                    label: setting.name.to_string(),
+                    matched: self.settings.matched(setting),
+                    detail: None,
+                    // What it does, on its own rows under the name: beside
+                    // it, the two were competing for one row -- and the one
+                    // that lost was the description, cut off with an
+                    // ellipsis on exactly the rows that had most to
+                    // explain.
+                    body: self.settings.wrapped(setting.about, width),
+                    aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
+                    // On the reader's page, the file that has this one
+                    // instead of them. On the project's, nothing: a setting
+                    // the project has is exactly what that page is for.
+                    pinned: (!self.settings.on_project())
+                        .then(|| {
+                            self.pinned
+                                .contains(&setting.key)
+                                .then(|| self.project.clone())
+                                .flatten()
+                        })
+                        .flatten(),
+                    // And on the project's page, which layer the value showing
+                    // comes from -- the project's own included.
+                    scope: self.settings.on_project().then(|| self.scope(setting)),
+                },
+                Shown::Agent {
+                    offer,
+                    chosen,
+                    opens,
+                } => {
+                    // Three answers, and the word on the row is a different
+                    // one in each: what they chose, what the agent is left
+                    // to decide, and a choice the agent has since stopped
+                    // offering -- which is a line in their settings file
+                    // that will do nothing.
+                    let (word, said) = match chosen {
+                        None => (AGENTS_OWN.to_string(), Said::Agents),
+                        Some(value) => match offer.name_of(value) {
+                            Some(name) => (name.to_string(), Said::Reader),
+                            None => ((*value).to_string(), Said::Gone),
+                        },
+                    };
+                    Row {
+                        opens: opens.map(|name| Heading::Agent(name.to_string())),
+                        label: offer.name.clone(),
+                        matched: self.settings.matched_in(&offer.name),
+                        detail: None,
+                        body: self
+                            .settings
+                            .wrapped(offer.about.as_deref().unwrap_or_default(), width),
+                        aside: Aside::Chosen(word, said),
+                        // Neither column is this group's: what an agent
+                        // starts on is the reader's alone, so no project can
+                        // have taken it and there is no layer to name.
+                        pinned: None,
+                        scope: None,
+                    }
+                }
+                Shown::Silent { saying, opens } => Row {
+                    opens: Some(Heading::Agent((*opens).to_string())),
+                    label: String::new(),
+                    matched: None,
+                    detail: None,
+                    body: self.settings.wrapped(saying, width),
+                    aside: Aside::Nothing,
+                    pinned: None,
+                    scope: None,
+                },
             })
             .collect()
     }
@@ -419,7 +476,7 @@ struct Row {
     /// Part of the row rather than a row of its own, so the focus never
     /// lands on it and `down` means one distance: an entry is its heading,
     /// its name, what it does, and the blank after.
-    opens: Option<obelus_config::Group>,
+    opens: Option<Heading>,
     label: String,
     matched: Option<std::ops::Range<usize>>,
     detail: Option<(String, ratatui::style::Color)>,
@@ -440,6 +497,48 @@ struct Row {
     /// other until it is, and what a reader wants to know here is which of
     /// these are theirs.
     pinned: Option<String>,
+}
+
+/// A heading on the settings page: one of obelus's groups, or the agent.
+///
+/// Two, because they are not the same height. The agent's carries a line
+/// saying that what is under it is about the next conversation, which is
+/// the one thing true of that group and no other -- and a heading that is
+/// sometimes two rows and sometimes three has to say which it is before
+/// anything is laid out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Heading {
+    /// One of obelus's own groups.
+    Group(obelus_config::Group),
+    /// The active agent, by the name it goes by.
+    Agent(String),
+}
+
+impl Heading {
+    /// How many rows it takes, the blank under it included.
+    const fn rows(&self) -> u16 {
+        match self {
+            Self::Group(_) => 2,
+            Self::Agent(_) => HEADING_ROWS,
+        }
+    }
+}
+
+/// Where the word in an agent row's control came from.
+///
+/// Three, because a row that is not set is not a row set to something: an
+/// agent's setting the reader has said nothing about is in the agent's
+/// hands, which is a decision and not a blank. And a value the agent has
+/// stopped offering is neither -- it is a line in the settings file that
+/// will do nothing, and the only way to find that out is to be told.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Said {
+    /// The reader chose it, and the agent still offers it.
+    Reader,
+    /// They have said nothing: whatever the agent opens on stands.
+    Agents,
+    /// They chose it and the agent does not offer it any more.
+    Gone,
 }
 
 /// Which of the three layers a value comes from.
@@ -470,6 +569,16 @@ impl Scope {
 
 /// What a row shows on the right.
 enum Aside {
+    /// What one of the agent's settings is to start on, and where that
+    /// word came from.
+    ///
+    /// Always a word and an arrow, a switch included: every one of these
+    /// has a third answer -- leave it to the agent -- and a tick has two
+    /// sides to say it with. A tick that meant "off" and "obelus says
+    /// nothing" by turns would be a control that cannot be read.
+    Chosen(String, Said),
+    /// Nothing at all, on a row that is prose rather than a setting.
+    Nothing,
     /// A setting's control: a switch, or the word it is set to.
     Control(Kind, Value),
     /// Words -- the key a command is on, and nothing when it is on none.
@@ -564,15 +673,15 @@ impl SettingsView<'_> {
             // and not to the setting that happens to come first in it: a
             // heading wearing the selected row's colour would read as part
             // of the row under it.
-            if let Some(group) = row.opens {
+            if let Some(opens) = row.opens.as_ref() {
                 self.heading(
                     cells,
                     Rect {
-                        y: y.saturating_sub(2),
-                        height: 2,
+                        y: y.saturating_sub(opens.rows()),
+                        height: opens.rows(),
                         ..region
                     },
-                    group,
+                    opens,
                 );
             }
             let area = Rect {
@@ -708,13 +817,55 @@ impl SettingsView<'_> {
                         plain.fg(self.theme.foreground).bg(background),
                     );
                 }
+                Aside::Chosen(word, said) => {
+                    // The reader's choice in the ordinary ink; the agent's
+                    // own in the dim one, which everywhere here means "not
+                    // obelus's doing"; and one the agent has stopped
+                    // offering in the colour a card's failure is in,
+                    // because it is a line that will do nothing and the
+                    // reader is the only one who can fix it.
+                    let ink = match said {
+                        Said::Reader => self.theme.foreground,
+                        Said::Agents => self.theme.gutter,
+                        Said::Gone => self.theme.change_removed,
+                    };
+                    let after = write(
+                        cells,
+                        aside_at,
+                        y,
+                        &truncate_from_right(word, usize::from(CONTROL_WIDTH)),
+                        plain.fg(ink).bg(background),
+                    );
+                    // Pointing right, at the value, the way every other
+                    // list on this page does.
+                    put(
+                        cells,
+                        after + 1,
+                        y,
+                        '\u{25b8}',
+                        plain.fg(self.theme.gutter).bg(background),
+                    );
+                }
+                // A row that is prose has nothing on the right: there is
+                // nothing to set.
+                Aside::Nothing => {}
             }
 
             // What it does, under its name and indented under it, in the
             // dim colour: it is the answer to a question the name has
             // already asked, so it is read after the name or not at all.
+            //
+            // A row with no name is prose and nothing else -- the reason
+            // an agent's group has no rows -- so it starts on the row
+            // itself, and at the column the names are in: it stands in for
+            // them rather than explaining one.
+            let named = usize::from(!row.label.is_empty());
+            let indent = match named {
+                0 => 0,
+                _ => DESCRIPTION_INDENT - 1,
+            };
             for (offset, line) in row.body.iter().enumerate() {
-                let Ok(offset) = u16::try_from(offset + 1) else {
+                let Ok(offset) = u16::try_from(offset + named) else {
                     break;
                 };
                 if y + offset >= region.bottom() {
@@ -722,7 +873,7 @@ impl SettingsView<'_> {
                 }
                 write(
                     cells,
-                    name_at + DESCRIPTION_INDENT - 1,
+                    name_at + indent,
                     y + offset,
                     line,
                     plain.fg(self.theme.gutter).bg(background),
@@ -744,18 +895,35 @@ impl SettingsView<'_> {
     /// groups were told apart by a line across it would have six lines on
     /// it, counting the tabs' and the foot's, and the lines would be the
     /// loudest thing on a page of words.
-    fn heading(&self, cells: &mut CellBuffer, area: Rect, group: obelus_config::Group) {
+    fn heading(&self, cells: &mut CellBuffer, area: Rect, opens: &Heading) {
         let plain = Style::new()
             .fg(self.theme.foreground)
             .bg(self.theme.background);
         fill(cells, area, plain);
+        let name = match opens {
+            Heading::Group(group) => group.label(),
+            Heading::Agent(name) => name.as_str(),
+        };
         write(
             cells,
             area.x + 1,
             area.y,
-            group.label(),
+            &truncate_from_right(name, usize::from(area.width.saturating_sub(2))),
             plain.fg(self.theme.status_foreground),
         );
+        // And under the agent's name, when what is under it takes effect.
+        // The group is the only one on this page whose settings are about
+        // somewhere else, and a reader who changes one and goes back to a
+        // conversation that has not moved has been told nothing.
+        if matches!(opens, Heading::Agent(_)) && area.height > 1 {
+            write(
+                cells,
+                area.x + 1,
+                area.y + 1,
+                &truncate_from_right(WHEN, usize::from(area.width.saturating_sub(2))),
+                plain.fg(self.theme.gutter),
+            );
+        }
     }
 
     /// Which layer the value on a row comes from, on the project's page.

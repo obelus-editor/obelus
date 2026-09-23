@@ -14,15 +14,17 @@
 //! write it. The settings view is built from that table and knows nothing
 //! about any particular setting.
 //!
-//! What a tree may set is a property of the setting, `Reach`, not a list of
+//! What a project may set is a property of the setting, `Reach`, not a list of
 //! exceptions somewhere: the next setting a stranger should not be trusted with
 //! will be found by asking that question while writing the setting down.
 //! `agent` is `ReaderOnly` because it says which agent obelus *starts*, and a
-//! program starting because a file in a downloaded tree said so is a decision
-//! that belongs to the person at the keyboard; `keys` is `ReaderOnly` because a
-//! tree that could rebind them could put `quit` where a reader would find it by
-//! accident. VS Code learned this one the same way and calls it `machine`
-//! scope.
+//! program starting because a file in a downloaded project said so is a
+//! decision that belongs to the person at the keyboard; `keys` is `ReaderOnly`
+//! because a project that could rebind them could put `quit` where a reader
+//! would find it by accident; and `agents` is `ReaderOnly` for the first reason
+//! twice over -- what an agent may do without asking is the setting a
+//! downloaded project would most like to write. VS Code learned this one the
+//! same way and calls it `machine` scope.
 //!
 //! The configuration file holds preferences, not state. `config.rs` is the
 //! whole of it — one table, `dirs` for where it lives, written the moment
@@ -113,6 +115,20 @@ pub struct Config {
     /// should be given the new default for everything they said nothing
     /// about. An empty chord is a key taken away, which is also a decision.
     pub keys: std::collections::BTreeMap<String, String>,
+    /// What each agent is to start a conversation on, in its own words.
+    ///
+    /// The agent's id, then the agent's id for one of the settings it
+    /// offers, then the agent's id for the value. Obelus understands none
+    /// of the three and is not meant to: which settings an agent has is
+    /// the agent's, and this is the reader saying which of them they would
+    /// rather not choose again every time.
+    ///
+    /// Only what they have said. A setting that is not in here is one
+    /// obelus says nothing about, and the conversation starts on whatever
+    /// the agent starts it on -- which is a different thing from starting
+    /// on the value the agent happened to be on last time, and the reason
+    /// this is a map of what was said rather than a copy of a session.
+    pub agents: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
 }
 
 impl Default for Config {
@@ -155,6 +171,9 @@ impl Default for Config {
             agent: None,
             // Nothing moved: the table obelus ships with.
             keys: std::collections::BTreeMap::new(),
+            // And nothing said about any agent: every conversation starts
+            // where the agent starts it.
+            agents: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -221,13 +240,13 @@ impl Group {
 
 /// Who may set a setting.
 ///
-/// A tree's own settings are written by whoever wrote the tree, and a reader
-/// who opens somebody's repository has not agreed to everything in it. Most
-/// of these are harmless to hand over -- a theme, a wrapped line, a name in
-/// the margin -- and some are not: `agent` says which agent obelus starts,
-/// and a program starting because a file in a downloaded tree said so is a
+/// A project's own settings are written by whoever wrote the project, and a
+/// reader who opens somebody's repository has not agreed to everything in it.
+/// Most of these are harmless to hand over -- a theme, a wrapped line, a name
+/// in the margin -- and some are not: `agent` says which agent obelus starts,
+/// and a program starting because a file in a downloaded project said so is a
 /// decision that belongs to the person at the keyboard. The keys are the
-/// same: a tree that could rebind them could put a reader's `quit` somewhere
+/// same: a project that could rebind them could put a reader's `quit` somewhere
 /// they would find by accident.
 ///
 /// A kind rather than a list of exceptions, because the next one of these
@@ -449,6 +468,49 @@ impl Config {
             _ => tracing::debug!(key, ?value, "a setting that does not take this"),
         }
     }
+
+    /// What this agent is to start one of its settings on, if the reader
+    /// has said.
+    #[must_use]
+    pub fn agent_default(&self, agent: &str, setting: &str) -> Option<&str> {
+        Some(self.agents.get(agent)?.get(setting)?.as_str())
+    }
+
+    /// Everything they have said about one agent.
+    ///
+    /// Empty where they have said nothing, which is the ordinary case and
+    /// not a state worth a second answer: there is no difference between
+    /// an agent nobody has set anything on and one whose settings were all
+    /// unset again.
+    #[must_use]
+    pub fn agent_defaults(&self, agent: &str) -> &std::collections::BTreeMap<String, String> {
+        static NOTHING: std::sync::LazyLock<std::collections::BTreeMap<String, String>> =
+            std::sync::LazyLock::new(std::collections::BTreeMap::new);
+        self.agents.get(agent).unwrap_or(&NOTHING)
+    }
+
+    /// Says what one of them is to start on.
+    pub fn set_agent_default(&mut self, agent: &str, setting: &str, value: &str) {
+        self.agents
+            .entry(agent.to_string())
+            .or_default()
+            .insert(setting.to_string(), value.to_string());
+    }
+
+    /// Stops saying, which puts the setting back in the agent's hands.
+    ///
+    /// The agent's own table goes when the last of its settings does: a
+    /// table with nothing in it says obelus was thinking about that agent,
+    /// which after this it is not.
+    pub fn unset_agent_default(&mut self, agent: &str, setting: &str) {
+        let Some(chosen) = self.agents.get_mut(agent) else {
+            return;
+        };
+        chosen.remove(setting);
+        if chosen.is_empty() {
+            self.agents.remove(agent);
+        }
+    }
 }
 
 /// Where the file lives, or `None` on a system with nowhere to put it.
@@ -575,29 +637,31 @@ fn from_table(table: &toml::Table) -> (Config, Vec<&'static str>) {
 
 /// Which files may set the key `key`.
 ///
-/// Asked of a *key* rather than of a [`Setting`], because two of the things
-/// in the file are not rows on the settings page: the agent is chosen on a
-/// page of its own, and the keys are a table. Both are the reader's alone.
+/// Asked of a *key* rather than of a [`Setting`], because three of the
+/// things in the file are not rows on the settings page: the agent is
+/// chosen on a page of its own, the keys are a table, and what an agent
+/// starts on is a table of the agent's own words. All three are the
+/// reader's alone.
 ///
 /// A key obelus has never heard of reaches nowhere, which costs nothing --
 /// nothing reads it either way -- and means a key added to the file before
-/// it is added here cannot arrive from a tree.
+/// it is added here cannot arrive from a project.
 #[must_use]
 pub fn reach_of(key: &str) -> Reach {
     match key {
-        "agent" | "keys" => Reach::ReaderOnly,
+        "agent" | "keys" | "agents" => Reach::ReaderOnly,
         _ => Setting::named(key).map_or(Reach::ReaderOnly, |setting| setting.reach),
     }
 }
 
 /// Lays a table of settings over a config, and says which keys it set.
 ///
-/// Over, rather than into a fresh one: a tree's file names the few settings
-/// that tree cares about, and everything it does not name is the reader's
+/// Over, rather than into a fresh one: a project's file names the few settings
+/// that project cares about, and everything it does not name is the reader's
 /// and stays theirs. Reading it into a default config and taking that would
-/// be a tree with one line in it turning off a reader's wrapped lines.
+/// be a project with one line in it turning off a reader's wrapped lines.
 ///
-/// What the tree may not set is left alone, with a word in the log for
+/// What the project may not set is left alone, with a word in the log for
 /// whoever wrote that file: from the outside it is a line that did nothing,
 /// which is worth being able to find out about.
 pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'static str> {
@@ -687,11 +751,32 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
             }
         }
     }
+    if let Some(agents) = table.get("agents").and_then(toml::Value::as_table)
+        && allowed("agents")
+    {
+        // A table per agent, of strings. Whether an agent by that name
+        // exists, whether it still has a setting by that name, and whether
+        // that setting still takes that value are three questions asked
+        // where the agent is -- here there is nobody to ask, and a line
+        // about an agent that is not installed is not a line with anything
+        // wrong with it.
+        for (agent, chosen) in agents {
+            let Some(chosen) = chosen.as_table() else {
+                tracing::warn!(agent, "what this agent is set to is not a table");
+                continue;
+            };
+            for (setting, value) in chosen {
+                if let Some(value) = value.as_str() {
+                    config.set_agent_default(agent, setting, value);
+                }
+            }
+        }
+    }
 
     // And a word for the lines obelus walked past. A key it has never heard
     // of -- a setting that has gone, a name that has changed, a word spelled
     // wrong -- is read, ignored, and from the outside looks exactly like one
-    // that was obeyed. The line above says as much when a tree oversteps,
+    // that was obeyed. The line above says as much when a project oversteps,
     // for the same reason: from the outside it is a line that did nothing,
     // and that is worth being able to find out about.
     for key in table.keys() {
@@ -704,10 +789,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
 
 /// Whether a key in a settings file names a setting obelus has.
 ///
-/// The two that never appear on the settings page count: they are settings
-/// a reader writes by hand, not settings obelus has stopped having.
+/// The three that are not rows in [`ALL`] count: they are settings a reader
+/// writes by hand or sets somewhere else on the page, not settings obelus
+/// has stopped having.
 fn known(key: &str) -> bool {
-    matches!(key, "agent" | "keys") || Setting::named(key).is_some()
+    matches!(key, "agent" | "keys" | "agents") || Setting::named(key).is_some()
 }
 
 /// The file's contents for a config, with nothing else in it.
@@ -758,6 +844,32 @@ pub fn over(existing: &str, config: &Config) -> String {
             keys[name] = toml_edit::value(chord.clone());
         }
         document["keys"] = toml_edit::Item::Table(keys);
+    }
+    // The same rule, an agent at a time: a table for an agent the reader
+    // has said nothing about is obelus writing down that it thought about
+    // it. `unset_agent_default` already drops one that empties; this is
+    // the same answer for a config that arrived from anywhere else.
+    let agents: Vec<(&String, &std::collections::BTreeMap<String, String>)> = config
+        .agents
+        .iter()
+        .filter(|(_, chosen)| !chosen.is_empty())
+        .collect();
+    if agents.is_empty() {
+        document.remove("agents");
+    } else {
+        let mut table = toml_edit::Table::new();
+        // Implicit, so the file says `[agents.claude-code]` rather than an
+        // empty `[agents]` and a table under it: the reader opening this
+        // file is looking for the agent's name.
+        table.set_implicit(true);
+        for (agent, chosen) in agents {
+            let mut settings = toml_edit::Table::new();
+            for (setting, value) in chosen {
+                settings[setting] = toml_edit::value(value.clone());
+            }
+            table[agent] = toml_edit::Item::Table(settings);
+        }
+        document["agents"] = toml_edit::Item::Table(table);
     }
     document.to_string()
 }
@@ -909,7 +1021,7 @@ mod tests {
     // build is not warned about a name nothing there uses.
     #[cfg(unix)]
     use super::save_to;
-    use super::{Config, Value, from_toml, known, to_toml};
+    use super::{Config, Value, Whose, apply, from_toml, known, over, to_toml};
 
     /// A path that is a link is written *through*, not over.
     ///
@@ -1055,6 +1167,24 @@ mod tests {
             ]
             .into_iter()
             .collect(),
+            // Two agents, because the file keeps a table each and one of
+            // them would not say whether the name on it is the agent's.
+            agents: [
+                (
+                    "claude-acp".to_string(),
+                    [("mode".to_string(), "accept-edits".to_string())]
+                        .into_iter()
+                        .collect(),
+                ),
+                (
+                    "gemini-cli".to_string(),
+                    [("model".to_string(), "flash".to_string())]
+                        .into_iter()
+                        .collect(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
         };
         assert_eq!(from_toml(&to_toml(&config)), config);
         assert_eq!(
@@ -1131,5 +1261,130 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// What an agent is to start on survives the file, agent by agent.
+    ///
+    /// The file is where this lives between sittings, and it is a table of
+    /// tables -- neither of which the flat settings above it exercise. A
+    /// round trip is the whole of the claim: what was said is what comes
+    /// back, under the agent it was said about.
+    ///
+    /// Broken deliberately by writing the inner tables under one shared
+    /// name rather than the agent's: both agents came back with the
+    /// second one's settings.
+    #[test]
+    fn what_an_agent_starts_on_survives_the_file() {
+        let mut config = Config::default();
+        config.set_agent_default("claude-code", "mode", "accept-edits");
+        config.set_agent_default("claude-code", "thinking", "high");
+        config.set_agent_default("gemini-cli", "mode", "plan");
+
+        let written = to_toml(&config);
+        assert!(
+            written.contains("[agents.claude-code]"),
+            "the agent is not its own table: {written}"
+        );
+        let read = from_toml(&written);
+        assert_eq!(
+            read.agent_default("claude-code", "mode"),
+            Some("accept-edits")
+        );
+        assert_eq!(read.agent_default("claude-code", "thinking"), Some("high"));
+        assert_eq!(read.agent_default("gemini-cli", "mode"), Some("plan"));
+        assert_eq!(
+            read.agent_default("gemini-cli", "thinking"),
+            None,
+            "an agent was given what another agent was set to"
+        );
+    }
+
+    /// A project may not say what an agent starts on.
+    ///
+    /// The reason `agent` is the reader's alone, twice over: a downloaded
+    /// project that could write this one could say that the agent it starts
+    /// may edit files without asking.
+    ///
+    /// Broken deliberately by taking "agents" out of `reach_of` *and*
+    /// making the fallback for an unknown key `Anywhere`: the project's line
+    /// was obeyed and the mode came back as the project's. Both, because
+    /// taking out the named arm alone changes nothing -- the fallback
+    /// already refuses a key with no row on the page. The arm stays all
+    /// the same: the rule is that a project may not set this, and a rule that
+    /// holds only because obelus happens to have no setting by that name
+    /// is a rule nobody has written down.
+    #[test]
+    fn a_tree_may_not_say_what_an_agent_starts_on() {
+        let table = r#"
+            [agents.claude-code]
+            mode = "yolo"
+        "#
+        .parse::<toml::Table>()
+        .expect("a table");
+
+        let mut readers = Config::default();
+        readers.set_agent_default("claude-code", "mode", "plan");
+        let mut config = readers.clone();
+        apply(&mut config, &table, Whose::Project);
+        assert_eq!(
+            config.agent_default("claude-code", "mode"),
+            Some("plan"),
+            "a project set what the agent starts on"
+        );
+
+        // And the reader's own file is obeyed, so the test is about who
+        // wrote it rather than about the line being unreadable.
+        let mut config = readers;
+        apply(&mut config, &table, Whose::Reader);
+        assert_eq!(config.agent_default("claude-code", "mode"), Some("yolo"));
+    }
+
+    /// Unsetting the last of an agent's settings takes its table out.
+    ///
+    /// The same rule the keys follow: a table with nothing in it says
+    /// obelus was thinking about that agent, which after this it is not --
+    /// and a reader who opens the file looking for what they undid would
+    /// find the heading still there.
+    ///
+    /// Broken deliberately by leaving the empty map in `agents`: the file
+    /// kept `[agents.claude-code]` with nothing under it.
+    #[test]
+    fn unsetting_the_last_of_an_agents_settings_takes_its_table_out() {
+        let mut config = Config::default();
+        config.set_agent_default("claude-code", "mode", "plan");
+        config.unset_agent_default("claude-code", "mode");
+        assert!(config.agents.is_empty(), "the agent kept an empty table");
+
+        let written = over("[agents.claude-code]\nmode = \"plan\"\n", &config);
+        assert!(
+            !written.contains("agents"),
+            "the file kept a table with nothing in it: {written}"
+        );
+    }
+
+    /// An agent obelus has never installed keeps what the reader wrote.
+    ///
+    /// The table is obelus's to write whole, the way the keys are -- which
+    /// is only lossless because reading takes *every* agent out of the
+    /// file, including ones this machine has never installed and ones a
+    /// newer obelus knows about. A read that kept only the installed ones
+    /// would quietly empty the file on the next switch anybody flipped.
+    ///
+    /// Broken deliberately by having the writer keep only the agents it
+    /// had read this session: the hand-written one went on the first save.
+    #[test]
+    fn an_agent_obelus_has_never_installed_keeps_what_the_reader_wrote() {
+        let read = from_toml("[agents.some-other-agent]\nmode = \"ask\"\n");
+        assert_eq!(read.agent_default("some-other-agent", "mode"), Some("ask"));
+
+        let mut config = read;
+        config.set_agent_default("claude-code", "mode", "plan");
+        let read = from_toml(&to_toml(&config));
+        assert_eq!(
+            read.agent_default("some-other-agent", "mode"),
+            Some("ask"),
+            "writing one agent down lost another"
+        );
+        assert_eq!(read.agent_default("claude-code", "mode"), Some("plan"));
     }
 }

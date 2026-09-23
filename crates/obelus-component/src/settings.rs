@@ -43,7 +43,7 @@
 //! beginnings to find is four, and one is one.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use obelus_agent::{Listed as Agent, Status};
+use obelus_agent::{Listed as Agent, Status, options::Offer};
 use obelus_command::Command;
 use obelus_config::{Config, Group, Kind, Setting, Value, Whose};
 use obelus_editing::keymap::{KeyChord, Keymap};
@@ -86,6 +86,24 @@ pub enum SettingsOutcome {
     /// and asked again, because the reader is looking at the row and it is
     /// that binding the answer is about.
     Bind(Command, Option<KeyChord>),
+    /// One of the active agent's settings wants its values.
+    ///
+    /// Which setting, by the agent's id for it. What the values are is not
+    /// carried: they came from the application in the first place, and a
+    /// list of them travelling back out would be a second copy to keep
+    /// level with the first.
+    ///
+    /// Its own outcome and not [`SettingsOutcome::Choose`]: that one names
+    /// a setting of obelus's own by a key obelus wrote, and this one names
+    /// somebody else's setting in somebody else's words.
+    ChooseForAgent(String),
+    /// One of them should stop being set, and go back to being the
+    /// agent's.
+    ///
+    /// `delete`, which is what it means on the project's page: take this one
+    /// out. Here what is left is not a default of obelus's but the agent's
+    /// own answer, which is the third state every one of these rows has.
+    UnsetForAgent(String),
     /// The reader is done with the view.
     Cancelled,
 }
@@ -113,6 +131,16 @@ pub fn description_width(room: u16) -> u16 {
 
 /// How far a description sits in from the name above it.
 pub const DESCRIPTION_INDENT: u16 = 3;
+
+/// How many rows the agent's heading takes: its name, the line saying when
+/// what is under it takes effect, and the blank under that.
+///
+/// The line is the whole of what tells a reader that these rows are about
+/// the *next* conversation. Without it the group is indistinguishable from
+/// obelus's own, whose settings take effect where they stand -- and the way
+/// that is found out is by changing one and going back to a conversation
+/// that has not moved.
+pub const HEADING_ROWS: u16 = 3;
 
 /// How far a setting sits in from the heading of the group it is in.
 ///
@@ -156,6 +184,28 @@ impl Page {
     /// Every page, in the order their tabs sit in.
     pub const ALL: [Self; 3] = [Self::Settings, Self::Keys, Self::Agents];
 
+    /// The pages one file's settings have.
+    ///
+    /// The project's have one. Which keys a reader is on and which agent
+    /// obelus talks to are the reader's alone -- a downloaded project that
+    /// could set either would be starting programs and moving `quit` under
+    /// somebody's fingers -- so on the project's page those two tabs went
+    /// nowhere. They said so, in a sentence, and the rows behind the
+    /// sentence were still there: the focus walked a list nobody could see
+    /// and enter on it wrote the reader's own file.
+    ///
+    /// Not drawn dim and not refusing when pressed: a tab is for somewhere
+    /// else to go, and one that goes nowhere is a tab that lies. The foot
+    /// of every view in obelus follows the same rule, listing the keys
+    /// that do something here and keeping the rest for `F1`.
+    #[must_use]
+    pub const fn of(whose: Whose) -> &'static [Self] {
+        match whose {
+            Whose::Reader => &Self::ALL,
+            Whose::Project => &[Self::Settings],
+        }
+    }
+
     /// The tab's name.
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -167,20 +217,108 @@ impl Page {
     }
 }
 
-/// One setting on the page, and the heading it sits under if it opens one.
+/// The active agent's settings, as this page needs them.
 ///
-/// The heading travels with the setting rather than being a row of its own:
-/// the focus walks settings, and a row it had to step over would make
-/// `down` mean two different distances. It also makes a group with nothing
-/// left in it disappear by itself -- a heading belongs to the first setting
-/// of its group that the query left, and where there is none there is no
-/// heading.
+/// Handed in the way the agents are, and for the same reason: which agent
+/// is active, what it last said it offers and what the reader has set are
+/// three things the application knows, and a view that went looking for
+/// them would be a second place they live.
+///
+/// Owned rather than borrowed because the application builds one out of
+/// three places at once and hands it to a page it is also holding a
+/// mutable borrow of. Small, and built where the cards are already built.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Offering {
+    /// What to call it, which is the heading its settings sit under.
+    pub name: String,
+    /// What it last said it can be set to.
+    pub offers: Vec<Offer>,
+    /// What the reader has said each is to start on, by the agent's id for
+    /// the setting. What is not in here is what obelus says nothing about.
+    pub chosen: std::collections::BTreeMap<String, String>,
+    /// Why there is nothing to list, where there is nothing.
+    ///
+    /// An agent obelus has not talked to yet has told it nothing, which is
+    /// not the same as an agent with nothing to be set -- and a group that
+    /// simply was not drawn would say the second. So the group is drawn,
+    /// with this in it instead of rows.
+    pub silence: Option<String>,
+}
+
+/// One row of the settings page, and the heading it sits under if it opens
+/// one.
+///
+/// The heading travels with the row rather than being a row of its own:
+/// the focus walks rows, and a row it had to step over would make `down`
+/// mean two different distances. It also makes a group with nothing left in
+/// it disappear by itself -- a heading belongs to the first row of its
+/// group that the query left, and where there is none there is no heading.
 #[derive(Clone, Copy, Debug)]
-pub struct Shown {
-    /// The setting.
-    pub setting: &'static Setting,
-    /// The group it opens, where it is the first of one on show.
-    pub opens: Option<obelus_config::Group>,
+pub enum Shown<'a> {
+    /// One of obelus's own settings.
+    Obelus {
+        /// The setting.
+        setting: &'static Setting,
+        /// The group it opens, where it is the first of one on show.
+        opens: Option<obelus_config::Group>,
+    },
+    /// One thing the active agent offers, and what the reader has said a
+    /// new conversation should start it on.
+    Agent {
+        /// What the agent offers, in the agent's own words.
+        offer: &'a Offer,
+        /// Which of its values the reader has chosen, if they have chosen
+        /// one. `None` is the third state these rows have and obelus's own
+        /// do not: leave it to the agent.
+        chosen: Option<&'a str>,
+        /// The agent whose name this row opens the heading of, where it is
+        /// the first of them.
+        opens: Option<&'a str>,
+    },
+    /// The agent's group, with nothing in it but the reason why.
+    ///
+    /// A row so that the window, the heights and the headings are the ones
+    /// every other row goes through. It has no control and nothing happens
+    /// when it is pressed, which is what its being prose rather than a
+    /// name and a control says on screen.
+    Silent {
+        /// What to say.
+        saying: &'a str,
+        /// The heading it opens, which it always does: it is the only row
+        /// of its group.
+        opens: &'a str,
+    },
+}
+
+impl Shown<'_> {
+    /// The setting this row is about, where it is one of obelus's own.
+    #[must_use]
+    pub const fn setting(&self) -> Option<&'static Setting> {
+        match self {
+            Self::Obelus { setting, .. } => Some(*setting),
+            Self::Agent { .. } | Self::Silent { .. } => None,
+        }
+    }
+
+    /// The name on the row.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Obelus { setting, .. } => setting.name,
+            Self::Agent { offer, .. } => &offer.name,
+            Self::Silent { .. } => "",
+        }
+    }
+
+    /// What it says under the name.
+    #[must_use]
+    pub fn about(&self) -> &str {
+        match self {
+            Self::Obelus { setting, .. } => setting.about,
+            Self::Agent { offer, .. } => offer.about.as_deref().unwrap_or_default(),
+            Self::Silent { saying, .. } => saying,
+        }
+    }
 }
 
 /// The settings view.
@@ -210,7 +348,7 @@ pub struct Settings {
     /// file a change is written to, and what a row says when the file this
     /// page is not about has the setting.
     whose: Whose,
-    /// Which tab is showing, as an index into [`Page::ALL`].
+    /// Which tab is showing, as an index into [`Page::of`] this page's.
     page: usize,
     /// Which row has the focus and which is on top -- of the settings, or
     /// of the cards, whichever page is showing.
@@ -268,16 +406,22 @@ impl Settings {
         matches!(self.whose, Whose::Project)
     }
 
-    /// The tab names, in order.
+    /// The tab names, in order: the ones this page's file has.
     #[must_use]
-    pub fn tabs() -> Vec<&'static str> {
-        Page::ALL.iter().map(|page| page.label()).collect()
+    pub fn tabs(&self) -> Vec<&'static str> {
+        Page::of(self.whose)
+            .iter()
+            .map(|page| page.label())
+            .collect()
     }
 
     /// Which page is showing.
     #[must_use]
     pub fn page(&self) -> Page {
-        Page::ALL.get(self.page).copied().unwrap_or(Page::Settings)
+        Page::of(self.whose)
+            .get(self.page)
+            .copied()
+            .unwrap_or(Page::Settings)
     }
 
     /// Whether the list of every key is showing.
@@ -342,10 +486,10 @@ impl Settings {
     /// not exist, which is none -- so its window had nothing in it and the
     /// page drew nothing at all.
     #[must_use]
-    pub fn row_count(&self) -> usize {
+    pub fn row_count(&self, offering: Option<&Offering>) -> usize {
         match self.on_keys() {
             true => self.key_rows().len(),
-            false => self.rows().len(),
+            false => self.rows(offering).len(),
         }
     }
 
@@ -386,9 +530,9 @@ impl Settings {
     }
 
     /// Puts a run of text into it, which is what a paste is.
-    pub fn put_in_query(&mut self, said: &str) {
+    pub fn put_in_query(&mut self, said: &str, offering: Option<&Offering>) {
         self.query.put(said);
-        self.settle();
+        self.settle(offering);
     }
 
     /// Puts the filter's caret where a cell of its row is.
@@ -411,9 +555,9 @@ impl Settings {
     }
 
     /// The same, and takes it out.
-    pub fn cut_query(&mut self) -> (String, &'static str) {
+    pub fn cut_query(&mut self, offering: Option<&Offering>) -> (String, &'static str) {
         let taken = self.query.cut();
-        self.settle();
+        self.settle(offering);
         taken
     }
 
@@ -421,9 +565,9 @@ impl Settings {
     ///
     /// For a pointer: the keys move it a step at a time and have no use for
     /// naming a row outright, and a press names one.
-    pub fn select_row(&mut self, row: usize) {
+    pub fn select_row(&mut self, row: usize, offering: Option<&Offering>) {
         self.window
-            .set_focus(row.min(self.row_count().saturating_sub(1)));
+            .set_focus(row.min(self.row_count(offering).saturating_sub(1)));
     }
 
     /// Which row has the focus.
@@ -458,7 +602,11 @@ impl Settings {
     /// match would also offer everything with a t, an h and an e scattered
     /// through it.
     #[must_use]
-    pub fn rows(&self) -> Vec<Shown> {
+    // The rows borrow the offering and not the page: what is on them comes
+    // from the table obelus ships with and from what the application
+    // handed in, and a page that lent itself out here could not move its
+    // own window while it held them.
+    pub fn rows<'a>(&self, offering: Option<&'a Offering>) -> Vec<Shown<'a>> {
         if self.on_agents() || self.on_keys() {
             return Vec::new();
         }
@@ -476,11 +624,50 @@ impl Settings {
                 {
                     continue;
                 }
-                rows.push(Shown {
+                rows.push(Shown::Obelus {
                     setting,
                     opens: opens.take(),
                 });
             }
+        }
+        // Never on the project's page. What an agent starts on is the
+        // reader's alone -- the same reason the agent itself is -- so a
+        // group of them there would be rows that look like every other on
+        // that page and write to the other file when pressed. The page
+        // says as much about the agents tab, in words; here there is
+        // simply nothing to say, because there is nothing a project could do
+        // with it.
+        //
+        // And the agent's own, under a heading of its name. Last, because
+        // obelus's settings are the page a reader came to and an agent's
+        // are about somewhere else; and a group rather than a tab of its
+        // own, because it is the same shape of thing -- a name, a line
+        // about it, and one control -- and a reader looking for the one
+        // about thinking should not have to guess which page it is filed
+        // under.
+        let Some(offering) = offering.filter(|_| !self.on_project()) else {
+            return rows;
+        };
+        let mut opens = Some(offering.name.as_str());
+        for offer in &offering.offers {
+            if !(query.is_empty() || offer.name.to_lowercase().contains(&query)) {
+                continue;
+            }
+            rows.push(Shown::Agent {
+                offer,
+                chosen: offering.chosen.get(&offer.id).map(String::as_str),
+                opens: opens.take(),
+            });
+        }
+        // The reason there are none, where there are none and the reader
+        // has not narrowed them away themselves: a group that was simply
+        // not drawn would say the agent has nothing to be set, which is a
+        // sentence about the agent and one obelus has no grounds for.
+        if let Some(saying) = offering.silence.as_deref()
+            && query.is_empty()
+            && let Some(opens) = opens
+        {
+            rows.push(Shown::Silent { saying, opens });
         }
         rows
     }
@@ -621,6 +808,7 @@ impl Settings {
         config: &Config,
         keymap: &Keymap,
         agents: &[Agent],
+        offering: Option<&Offering>,
         room: (u16, u16),
     ) -> SettingsOutcome {
         // A row waiting for a key takes the next one, whatever it is: that
@@ -682,13 +870,13 @@ impl Settings {
             return SettingsOutcome::Ignored;
         }
         let bare = modifiers == KeyModifiers::NONE;
-        let rows = self.rows();
+        let rows = self.rows(offering);
         let keys = self.keys(keymap);
         // How many things the focus can be on: the rows of the page, or the
         // agents that the query leaves.
         let count = match self.on_agents() {
             true => self.agents(agents).len(),
-            false => self.row_count(),
+            false => self.row_count(offering),
         };
 
         // How far a page moves: the rows a group shows, or however many
@@ -742,11 +930,11 @@ impl Settings {
             // cannot move about in is the thing this whole page filters
             // with.
             KeyCode::Tab if bare => {
-                self.step_tab(true);
+                self.step_tab(true, offering);
                 SettingsOutcome::Consumed
             }
             KeyCode::BackTab => {
-                self.step_tab(false);
+                self.step_tab(false, offering);
                 SettingsOutcome::Consumed
             }
             // Enter and space open a list or flip a switch: both are what a
@@ -776,8 +964,22 @@ impl Settings {
                 self.refused = None;
                 SettingsOutcome::Consumed
             }
+            // The agent's rows are one thing before they are a switch or a
+            // list: every one of them can also be left to the agent, which
+            // is a third answer neither control has room for. So they all
+            // open the same list, with that third answer at the top of it.
+            KeyCode::Enter
+                if bare && matches!(rows.get(self.window.focus()), Some(Shown::Agent { .. })) =>
+            {
+                match rows.get(self.window.focus()) {
+                    Some(Shown::Agent { offer, .. }) => {
+                        SettingsOutcome::ChooseForAgent(offer.id.clone())
+                    }
+                    _ => SettingsOutcome::Consumed,
+                }
+            }
             KeyCode::Enter if bare => {
-                match rows.get(self.window.focus()).map(|shown| shown.setting) {
+                match rows.get(self.window.focus()).and_then(Shown::setting) {
                     Some(setting) => match setting.kind {
                         Kind::Switch => {
                             let on = matches!(Self::value_of(setting, config), Value::Switch(true));
@@ -802,11 +1004,27 @@ impl Settings {
             // on the keys page too: this one is not set here any more.
             // Only there -- the reader's own settings have no "unset", a
             // setting they have not changed is simply the default.
+            // And on one of the agent's rows, wherever the page is: what
+            // is left there is not a default of obelus's but the agent's
+            // own answer, so there is something to go back to.
+            KeyCode::Delete
+                if bare
+                    && let Some(Shown::Agent { offer, chosen, .. }) =
+                        rows.get(self.window.focus()) =>
+            {
+                match chosen {
+                    Some(_) => SettingsOutcome::UnsetForAgent(offer.id.clone()),
+                    // Already the agent's. Consumed rather than ignored:
+                    // the key means this here, and letting it fall through
+                    // to the filter would put a character in it.
+                    None => SettingsOutcome::Consumed,
+                }
+            }
             KeyCode::Delete
                 if bare && self.on_project() && !self.on_keys() && !self.on_agents() =>
             {
-                match rows.get(self.window.focus()) {
-                    Some(shown) => SettingsOutcome::Unset(shown.setting.key),
+                match rows.get(self.window.focus()).and_then(Shown::setting) {
+                    Some(setting) => SettingsOutcome::Unset(setting.key),
                     None => SettingsOutcome::Consumed,
                 }
             }
@@ -814,7 +1032,7 @@ impl Settings {
             // a line with a caret in it and takes the keys a line takes.
             _ => match self.query.handle_key(key) {
                 true => {
-                    self.settle();
+                    self.settle(offering);
                     SettingsOutcome::Consumed
                 }
                 false => SettingsOutcome::Ignored,
@@ -823,25 +1041,26 @@ impl Settings {
     }
 
     /// Moves to the next tab, or the previous one, wrapping.
-    fn step_tab(&mut self, forward: bool) {
+    fn step_tab(&mut self, forward: bool, offering: Option<&Offering>) {
         // Every tab, not every group: the agents are a tab and not a group,
         // and a walk that stopped at the groups could never reach them.
-        let last = Self::tabs().len() - 1;
+        // The project's page has one, so this walks it onto itself.
+        let last = self.tabs().len() - 1;
         self.page = match (forward, self.page) {
             (true, at) if at >= last => 0,
             (true, at) => at + 1,
             (false, 0) => last,
             (false, at) => at - 1,
         };
-        self.settle();
+        self.settle(offering);
     }
 
     /// Puts the focus back on a row that exists, after the rows change.
     ///
     /// And the window back to the top, because the rows a query leaves are
     /// not the rows the window was scrolled through.
-    fn settle(&mut self) {
-        self.window.set_count(self.row_count());
+    fn settle(&mut self, offering: Option<&Offering>) {
+        self.window.set_count(self.row_count(offering));
         self.window.home();
     }
 
@@ -870,12 +1089,12 @@ impl Settings {
 
     /// And the same for a page of settings, whose entries are as tall as
     /// what they have to say.
-    pub fn settle_rows(&mut self, room: (u16, u16)) {
+    pub fn settle_rows(&mut self, room: (u16, u16), offering: Option<&Offering>) {
         let heights: Vec<u16> = match self.on_keys() {
             // A key is a name and a chord: one row, the way it always was.
-            true => vec![1; self.row_count()],
+            true => vec![1; self.row_count(offering)],
             false => self
-                .rows()
+                .rows(offering)
                 .iter()
                 .map(|shown| self.setting_rows(shown, description_width(room.0)))
                 .collect(),
@@ -894,10 +1113,20 @@ impl Settings {
     /// here rather than drawn as an afterthought.
     #[must_use]
     pub fn setting_rows(&self, shown: &Shown, width: u16) -> u16 {
-        let about = u16::try_from(self.wrapped(shown.setting.about, width).len()).unwrap_or(0);
+        let about = u16::try_from(self.wrapped(shown.about(), width).len()).unwrap_or(0);
         // A heading is its word and the blank under it: the word alone, with
         // the group's first setting hard against it, reads as a row of the
-        // group rather than as its name.
-        u16::from(shown.opens.is_some()) * 2 + 1 + about + 1
+        // group rather than as its name. The agent's carries a line saying
+        // when what is under it takes effect, which is the one thing about
+        // this group that is not true of the others -- so it is three.
+        let heading = match shown {
+            Shown::Obelus { opens, .. } => u16::from(opens.is_some()) * 2,
+            Shown::Agent { opens, .. } => u16::from(opens.is_some()) * HEADING_ROWS,
+            Shown::Silent { .. } => HEADING_ROWS,
+        };
+        // A row with no name is its prose and the blank after it: there is
+        // nothing to put a name on.
+        let named = u16::from(!matches!(shown, Shown::Silent { .. }));
+        heading + named + about + 1
     }
 }

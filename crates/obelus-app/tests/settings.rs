@@ -8,6 +8,7 @@ use obelus_app::{
     event::Event,
 };
 use obelus_command::Command;
+use obelus_component::settings::Shown;
 
 /// Applying a setting touches process-wide state -- the glyph switch is one
 /// switch the drawing code can read without a flag threaded into every
@@ -296,9 +297,9 @@ fn every_setting_is_on_one_page_under_a_heading() {
     let rows = |app: &App| {
         app.settings()
             .expect("the settings")
-            .rows()
+            .rows(app.agent_offering().as_ref())
             .iter()
-            .map(|shown| shown.setting.name.to_string())
+            .filter_map(|shown| Some(shown.setting()?.name.to_string()))
             .collect::<Vec<_>>()
     };
     // Every setting obelus has, in the order the groups are written in.
@@ -314,9 +315,12 @@ fn every_setting_is_on_one_page_under_a_heading() {
     let opens: Vec<Option<&'static str>> = app
         .settings()
         .expect("the settings")
-        .rows()
+        .rows(app.agent_offering().as_ref())
         .iter()
-        .map(|shown| shown.opens.map(obelus_config::Group::label))
+        .map(|shown| match shown {
+            Shown::Obelus { opens, .. } => opens.map(obelus_config::Group::label),
+            Shown::Agent { .. } | Shown::Silent { .. } => None,
+        })
         .collect();
     assert_eq!(opens[0], Some("Appearance"));
     assert_eq!(opens[1], None, "a second heading inside one group");
@@ -328,7 +332,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
 
     // And the tabs are the pages: the settings, the keys, the agents.
     assert_eq!(
-        obelus_component::settings::Settings::tabs(),
+        app.settings().expect("the settings").tabs(),
         ["Settings", "Keys", "Agents"]
     );
     support::press(&mut app, KeyCode::Tab);
@@ -366,7 +370,10 @@ fn typing_narrows_the_settings() {
     support::type_text(&mut app, "theme");
     let dump = support::render(&mut app, 66, 12);
     assert_eq!(
-        app.settings().expect("the settings").rows().len(),
+        app.settings()
+            .expect("the settings")
+            .rows(app.agent_offering().as_ref())
+            .len(),
         1,
         "the query narrowed nothing:\n{dump}"
     );
@@ -424,7 +431,13 @@ fn typing_narrows_the_settings() {
     for _ in 0..3 {
         support::press(&mut app, KeyCode::Backspace);
     }
-    assert_eq!(app.settings().expect("the settings").rows().len(), 1);
+    assert_eq!(
+        app.settings()
+            .expect("the settings")
+            .rows(app.agent_offering().as_ref())
+            .len(),
+        1
+    );
 }
 
 /// Escape closes the view, and the settings are read from the file the next
@@ -578,21 +591,25 @@ fn the_last_setting_can_be_walked_to_on_a_short_screen() {
     support::press(&mut app, KeyCode::Down);
     let dump = support::render(&mut app, 66, 7);
     let focused = app.settings().expect("the settings").focus();
-    let rows = app.settings().expect("the settings").rows();
-    let name = rows[focused.min(rows.len() - 1)].setting.name;
+    let offering = app.agent_offering();
+    let rows = app
+        .settings()
+        .expect("the settings")
+        .rows(offering.as_ref());
+    let name = rows[focused.min(rows.len() - 1)].label();
     assert!(
         support::text_block(&dump).contains(name),
         "the entry the keys are on is not on screen: {name}\n{dump}"
     );
 }
 
-/// A tree can carry settings of its own, and they win where they say
+/// A project can carry settings of its own, and they win where they say
 /// anything.
 ///
 /// Which is what a project is for: everybody reading this repository gets
 /// its wrapped lines, whatever they have set for themselves elsewhere.
 ///
-/// Broken deliberately by reading the tree's table into a fresh config
+/// Broken deliberately by reading the project's table into a fresh config
 /// instead of over the reader's: the theme the reader had chosen came back
 /// as the default, and the last assertion failed.
 #[test]
@@ -615,22 +632,22 @@ fn a_tree_lays_its_own_settings_over_the_readers() {
     );
     app.working_directory_for_test(root.clone());
 
-    assert!(app.config().wrap, "the tree's setting did not take");
+    assert!(app.config().wrap, "the project's setting did not take");
     assert_eq!(
         app.theme_name(),
         "light",
-        "the tree took away a setting it never named"
+        "the project took away a setting it never named"
     );
 }
 
-/// A tree may not choose the agent, or rebind a key.
+/// A project may not choose the agent, or rebind a key.
 ///
-/// A tree is written by whoever wrote the tree. Most of these settings are
-/// harmless to hand over; starting a program is not, and neither is moving
+/// A project is written by whoever wrote the project. Most of these settings
+/// are harmless to hand over; starting a program is not, and neither is moving
 /// the keys under somebody's fingers.
 ///
 /// Broken deliberately by giving `agent` and `keys` `Reach::Anywhere`: both
-/// arrived from the tree and both assertions failed.
+/// arrived from the project and both assertions failed.
 #[test]
 fn a_tree_may_not_start_an_agent_or_move_a_key() {
     let _turn = SETTINGS
@@ -690,8 +707,8 @@ fn a_setting_the_tree_has_cannot_be_changed_here() {
     );
 }
 
-/// The tree's own page writes to the tree's file, and leaves alone what it
-/// did not come for.
+/// The project's own page writes to the project's file, and leaves alone what
+/// it did not come for.
 ///
 /// The file is written by hand and committed, so it has comments in it and
 /// an order somebody chose. Obelus's own file it writes whole; this one it
@@ -874,16 +891,17 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         "a setting written down at its default is not the reader's: {blame:?}"
     );
 
-    // And the two tabs a tree may not have.
+    // The two tabs a project may not have are not on it at all, which is
+    // `the_projects_page_has_one_tab`'s subject: here it is only that
+    // walking the tabs stays on this page.
     support::press(&mut app, KeyCode::Tab);
-    let dump = support::render(&mut app, 76, 32);
     assert!(
-        support::text_block(&dump).contains("may not move the keys"),
-        "{dump}"
+        !app.settings().expect("the settings").on_keys(),
+        "a tab walk left the only page the project has"
     );
 }
 
-/// A tree that acquires settings while obelus is looking at it is heard.
+/// A project that acquires settings while obelus is looking at it is heard.
 ///
 /// Several obelus processes on one project is the ordinary way to work, and
 /// the ordinary project has no settings of its own until somebody gives it
@@ -915,16 +933,16 @@ fn a_tree_that_gains_settings_while_obelus_is_open_is_heard() {
 
     assert!(
         app.config().wrap,
-        "a tree that gained settings was not heard"
+        "a project that gained settings was not heard"
     );
 }
 
 /// Dim means "not yours to use here", so the two pages use it the opposite
 /// way round.
 ///
-/// On the reader's page a setting the tree has taken is unusable, and the
-/// whole row says so. On the tree's page a setting the tree has *not* got is
-/// the one thing a reader can do something to -- pressing it is how a
+/// On the reader's page a setting the project has taken is unusable, and the
+/// whole row says so. On the project's page a setting the project has *not* got
+/// is the one thing a reader can do something to -- pressing it is how a
 /// setting becomes the project's -- so the row is ordinary there, and only
 /// the word saying where the value comes from is dim. Drawn the other way,
 /// a fresh project was a page of grey with nothing on it to look at.
@@ -1027,16 +1045,16 @@ fn the_file_on_the_tab_row_does_not_write_over_the_tabs() {
         "{wide:?}"
     );
     assert!(
-        wide.find("Agents") < wide.find(".obelus"),
+        wide.find("Settings") < wide.find(".obelus"),
         "the name is not after the tabs: {wide:?}"
     );
 
-    // Narrow: the tabs are whole, and the name is simply not there. Wide
-    // enough for the three tabs and not for the name after them, which is
-    // the corner this is about.
-    let narrow = tabs(&mut app, 40);
+    // Narrow: the tab is whole, and the name is simply not there. Wide
+    // enough for the tab the project's page has and not for the name after
+    // it, which is the corner this is about.
+    let narrow = tabs(&mut app, 30);
     assert!(
-        narrow.contains("Settings") && narrow.contains("Agents"),
+        narrow.contains("Settings"),
         "the tabs were written over: {narrow:?}"
     );
     assert!(
@@ -2004,9 +2022,9 @@ fn the_time_a_rest_takes_is_the_readers() {
     let settings = app.settings().expect("the view");
     assert_eq!(
         settings
-            .rows()
+            .rows(None)
             .iter()
-            .map(|row| row.setting.key)
+            .filter_map(|row| Some(row.setting()?.key))
             .collect::<Vec<_>>(),
         ["hover_delay"],
         "the setting is not on the page, or not the only one that word finds"
@@ -2138,7 +2156,7 @@ fn a_press_on_a_tab_goes_to_it() {
 
     // The tabs are the page's first row, and the third of them is two away
     // -- which the shorter way round makes one step, because they wrap.
-    let names = obelus_component::settings::Settings::tabs();
+    let names = app.settings().expect("the page").tabs();
     assert_eq!(names.len(), 3, "the page does not have the three tabs");
     assert_eq!(app.settings().expect("the page").tab(), 0);
     let row = support::text_block(&dump)
@@ -2167,4 +2185,343 @@ fn a_press_on_a_tab_goes_to_it() {
     );
 
     obelus_icons::use_glyphs(true);
+}
+
+/// One of the agent's settings, as an agent sends it.
+fn offered(id: &str, name: &str, values: &[(&str, &str)]) -> obelus_agent::acp::Setting {
+    obelus_agent::acp::Setting {
+        id: id.to_string(),
+        name: name.to_string(),
+        about: Some(format!("What {name} does")),
+        values: values
+            .iter()
+            .map(|(id, name)| obelus_agent::acp::Value {
+                id: (*id).to_string(),
+                name: (*name).to_string(),
+                about: None,
+            })
+            .collect(),
+        current: values
+            .first()
+            .map(|(id, _)| (*id).to_string())
+            .unwrap_or_default(),
+        kind: obelus_agent::acp::Kind::Select,
+        category: obelus_agent::acp::Category::Other,
+        legacy: false,
+    }
+}
+
+/// An application whose settings name an agent, with a directory of its own
+/// for what that agent offers.
+fn with_an_agent(name: &str, offers: &[obelus_agent::acp::Setting]) -> (support::Scratch, App) {
+    let scratch = temporary(name);
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "agent = \"an-agent\"\n").expect("the settings");
+    let root = scratch.path().join("agents");
+    if !offers.is_empty() {
+        obelus_agent::options::remember("an-agent", offers, &root).expect("what it offers");
+    }
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.agents_root_for_test(root);
+    // Which reads it: `load_config` would go looking at the reader's own
+    // real path, which is not this test's to read.
+    app.config_file_for_test(file);
+    support::lay_out(&mut app, 66, 12);
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    (scratch, app)
+}
+
+/// The active agent's settings are a group on the settings page, under a
+/// heading saying when what is in it takes effect.
+///
+/// A group and not a tab of its own: they are the same shape as obelus's
+/// own -- a name, a line about it, one control -- and a reader looking for
+/// the one about thinking should not have to guess which page it is filed
+/// under. The heading carries the one thing that is true of this group and
+/// no other: these are about the next conversation rather than the one on
+/// screen.
+///
+/// Broken deliberately by returning before the agent's rows are added in
+/// `Settings::rows`: the page had the heading nowhere and the filter found
+/// nothing.
+#[test]
+fn the_active_agents_settings_are_a_group_on_the_page() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (_scratch, mut app) = with_an_agent(
+        "agent-group",
+        &[offered(
+            "way",
+            "Way of working",
+            &[("ask", "Ask first"), ("code", "Write code")],
+        )],
+    );
+
+    // Narrowed to it, because the agent's group is last and obelus's own
+    // settings are a page and a half on a twelve-row screen.
+    support::type_text(&mut app, "way");
+    let dump = support::render(&mut app, 66, 12);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("an-agent"),
+        "no heading for the agent:\n{dump}"
+    );
+    assert!(
+        text.contains("What a new conversation starts on"),
+        "the heading does not say when it takes effect:\n{dump}"
+    );
+    assert!(text.contains("Way of working"), "no row for it:\n{dump}");
+    // Nothing chosen yet, which is a state of its own and not a blank.
+    assert!(
+        text.contains("Agent's own"),
+        "the control does not say the agent decides:\n{dump}"
+    );
+}
+
+/// An agent obelus has not talked to yet says so, and one whose file will
+/// not read says something else.
+///
+/// Three answers to one question, and the two that are not "here they are"
+/// are different sentences. A group that was simply not drawn would say the
+/// agent has nothing to be set, which is a claim about the agent, and false.
+///
+/// Broken deliberately by giving `agent_offering` no `silence` and letting
+/// the group disappear: the page said nothing at all, and an agent with
+/// settings looked exactly like one without.
+#[test]
+fn an_agent_obelus_has_not_talked_to_says_so_rather_than_nothing() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (scratch, mut app) = with_an_agent("agent-silence", &[]);
+
+    // The group is last, so the end of the page is where it is.
+    support::press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("after the first"),
+        "an agent nobody has talked to says nothing:\n{dump}"
+    );
+
+    // And a file that will not read is not that: there is something
+    // written down, and it is the reader who can do something about it.
+    let home = scratch.path().join("agents").join("an-agent");
+    std::fs::create_dir_all(&home).expect("the directory");
+    std::fs::write(home.join("options.json"), "{\"options\": [").expect("the file");
+    // Opened again, because the page reads that file when it opens rather
+    // than once a frame: what a view is asked must already be answered.
+    support::press(&mut app, KeyCode::Esc);
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("will not read"),
+        "a broken file reads as an agent with nothing to set:\n{dump}"
+    );
+}
+
+/// Choosing what a conversation starts on writes it in the reader's own
+/// file, and `delete` puts it back in the agent's hands.
+///
+/// The third state is the point: a row nobody has touched is not a row set
+/// to the first of its values, and the way back to it has to exist or the
+/// reader cannot undo what they said.
+///
+/// Broken deliberately by making `UnsetForAgent` write the value instead of
+/// removing it: the row went on naming a value and the file kept it.
+#[test]
+fn choosing_what_a_conversation_starts_on_is_written_down_and_can_be_undone() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (scratch, mut app) = with_an_agent(
+        "agent-choose",
+        &[offered(
+            "way",
+            "Way of working",
+            &[("ask", "Ask first"), ("code", "Write code")],
+        )],
+    );
+    let file = settings_file(&scratch);
+
+    support::type_text(&mut app, "way");
+    support::press(&mut app, KeyCode::Enter);
+    let picker = app.picker().expect("the choices");
+    assert_eq!(
+        picker
+            .matches()
+            .map(|item| item.label.clone())
+            .collect::<Vec<_>>(),
+        ["Agent's own", "Ask first", "Write code"],
+        "the agent's own answer is not one of the choices"
+    );
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.clone()),
+        Some("Agent's own".to_string()),
+        "the list did not open on what the row is on"
+    );
+
+    support::type_text(&mut app, "Write");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        obelus_config::from_toml(&std::fs::read_to_string(&file).expect("the file"))
+            .agent_default("an-agent", "way"),
+        Some("code"),
+        "the choice did not reach the file"
+    );
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("Write code"),
+        "the row does not say what was chosen:\n{dump}"
+    );
+
+    // And back again.
+    support::press(&mut app, KeyCode::Delete);
+    assert_eq!(
+        obelus_config::from_toml(&std::fs::read_to_string(&file).expect("the file"))
+            .agent_default("an-agent", "way"),
+        None,
+        "delete left the setting in the file"
+    );
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("Agent's own"),
+        "the row did not go back to the agent:\n{dump}"
+    );
+}
+
+/// The project's page has no group for the agent.
+///
+/// What an agent starts on is the reader's alone, for the reason the agent
+/// itself is: a downloaded project that could write it could say that the
+/// agent it starts may edit files without being asked. So the group is not
+/// there to be pressed -- rather than there and refusing, which is a page
+/// that has to be tried before it can be understood.
+///
+/// Broken deliberately by dropping the `on_project` filter in
+/// `Settings::rows`: the group appeared on the project's page, where every
+/// other row writes the project's file and this one would have written the
+/// reader's.
+#[test]
+fn the_trees_page_has_no_group_for_the_agent() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (_scratch, mut app) = with_an_agent(
+        "agent-project",
+        &[offered(
+            "way",
+            "Way of working",
+            &[("ask", "Ask first"), ("code", "Write code")],
+        )],
+    );
+    // It is on the reader's page, so this test is about the other one.
+    support::type_text(&mut app, "way");
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("Way of working"),
+        "the group is not on the reader's page either:\n{dump}"
+    );
+
+    dispatch::dispatch(&mut app, Command::ConfigProject);
+    assert!(app.settings().expect("the settings").on_project());
+    support::type_text(&mut app, "way");
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        !support::text_block(&dump).contains("Way of working"),
+        "the agent's settings are on the project's page:\n{dump}"
+    );
+}
+
+/// The project's page has one tab, because the other two go nowhere.
+///
+/// Which keys a reader is on and which agent obelus talks to are the
+/// reader's alone -- a downloaded project that could set either would be
+/// starting programs and moving `quit` under somebody's fingers. So on this
+/// page those two were tabs that said, when reached, that a project may not
+/// set them.
+///
+/// And the rows behind that sentence were still there. The agents page drew
+/// its cards over the sentence -- the branch that draws them came first and
+/// returned -- so the project's page showed every agent in the registry with
+/// a button on each; and on the keys page the focus walked a list nobody
+/// could see. Enter on either wrote the reader's own file from the page
+/// that is about the project's.
+///
+/// A tab is for somewhere else to go, and one that goes nowhere is a tab
+/// that lies. The foot of every view in obelus already follows this rule:
+/// it lists the keys that do something here and keeps the rest for `F1`.
+///
+/// Broken deliberately by giving `Page::of` every page whoever is asking:
+/// the tabs came back, `tab` walked onto the agents page, and enter there
+/// activated whichever agent the invisible focus was on.
+#[test]
+fn the_projects_page_has_one_tab() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (_scratch, mut app) = with_an_agent("project-tabs", &[]);
+    // Something for an invisible focus to land on, if there were one.
+    app.handle(Event::Agent(obelus_agent::Event::Registry {
+        agents: vec![obelus_agent::Agent {
+            id: "another-agent".to_string(),
+            name: "Another".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Not the one in use".to_string(),
+            authors: Vec::new(),
+            license: "MIT".to_string(),
+            website: None,
+            icon: None,
+            distribution: obelus_agent::Distribution::Node {
+                package: "another@1.0.0".to_string(),
+                arguments: Vec::new(),
+            },
+        }],
+        failure: None,
+    }));
+
+    // The reader's own page has three.
+    assert_eq!(
+        app.settings().expect("the settings").tabs(),
+        ["Settings", "Keys", "Agents"]
+    );
+
+    dispatch::dispatch(&mut app, Command::ConfigProject);
+    assert_eq!(
+        app.settings().expect("the settings").tabs(),
+        ["Settings"],
+        "the project's page offers somewhere it cannot go"
+    );
+    let dump = support::render(&mut app, 76, 12);
+    let tabs = support::text_block(&dump)
+        .lines()
+        .nth(1)
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        !tabs.contains("Keys") && !tabs.contains("Agents"),
+        "the tab row still offers them:\n{dump}"
+    );
+
+    // And the keys that walked the tabs stay on the one page there is,
+    // so nothing can be reached from it.
+    for _ in 0..3 {
+        support::press(&mut app, KeyCode::BackTab);
+        support::press(&mut app, KeyCode::Tab);
+    }
+    let settings = app.settings().expect("the settings");
+    assert!(
+        !settings.on_keys() && !settings.on_agents(),
+        "a tab walk reached a page the project has not got"
+    );
+
+    // Which is what keeps the reader's own file out of this page's reach:
+    // installing an agent, choosing one and moving a key all write it.
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.config().agent.as_deref(),
+        Some("an-agent"),
+        "the project's page changed which agent obelus talks to"
+    );
 }

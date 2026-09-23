@@ -86,11 +86,11 @@ use agent_client_protocol::{
             ElicitationUrlCapabilities, FileSystemCapabilities, Implementation, InitializeRequest,
             KillTerminalRequest, KillTerminalResponse, LoadSessionRequest, McpCapabilities,
             McpServer, McpServerHttp, McpServerSse, MultiSelectItems, NewSessionRequest,
-            PermissionOptionId, PromptRequest, ReadTextFileRequest, ReadTextFileResponse,
-            ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionOutcome,
-            RequestPermissionRequest, RequestPermissionResponse, ResumeSessionRequest,
-            SelectedPermissionOutcome, SessionConfigId, SessionConfigKind, SessionConfigOption,
-            SessionConfigOptionCategory, SessionConfigOptionValue,
+            NewSessionResponse, PermissionOptionId, PromptRequest, ReadTextFileRequest,
+            ReadTextFileResponse, ReleaseTerminalRequest, ReleaseTerminalResponse,
+            RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+            ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigId, SessionConfigKind,
+            SessionConfigOption, SessionConfigOptionCategory, SessionConfigOptionValue,
             SessionConfigOptionsCapabilities, SessionConfigSelectOption,
             SessionConfigSelectOptions, SessionId, SessionModeState, SessionNotification,
             SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest,
@@ -171,6 +171,17 @@ pub enum Ask {
         /// talking about.
         opening: Option<String>,
     },
+    /// Open a conversation only to find out what it can be set to, and
+    /// let it go again.
+    ///
+    /// A session of its own and never one the reader is talking in. The
+    /// protocol says what an agent can be set to in the answer to
+    /// `session/new` and nowhere else -- `initialize` carries the
+    /// capabilities and the ways to sign in, and neither of those is this
+    /// -- so finding out means opening one. Opening the reader's instead
+    /// would mean their conversation existing because a settings page
+    /// wanted a list, and going wherever that list went.
+    Offers,
     /// Stop what you are doing in that one.
     Interrupt {
         /// Which turn obelus is giving up on, for the end it writes itself.
@@ -278,6 +289,14 @@ pub enum Incoming {
         /// And why it stopped.
         why: String,
     },
+    /// What the agent says it can be set to, asked on a session of its own
+    /// and with nothing else in it.
+    ///
+    /// No session on it, because by the time this arrives there is none:
+    /// the session was opened to ask, read, and let go, all on the far
+    /// side of this message. So this is about the *agent* -- which is what
+    /// a page about what conversations should start on is about.
+    Offers(Vec<Setting>),
     /// Something did not work: what obelus was doing, and what it said.
     Failed(&'static str, String),
     /// A conversation obelus asked to pick up again is not there any more.
@@ -1402,6 +1421,47 @@ async fn talk(
                         Ask::Open => {
                             open_session(&connection, &root, offered.as_ref(), &events).await?;
                         }
+                        // A conversation opened to read one thing off it
+                        // and closed again. Nothing is said in it and
+                        // nothing above this hears that it existed: what
+                        // comes back is a list of what the agent offers,
+                        // which is a fact about the agent.
+                        Ask::Offers => {
+                            // Without obelus's own tools: they are what a
+                            // conversation is given so that the agent can
+                            // reach the reader's notes, and nothing is
+                            // going to be said in this one.
+                            let asking = NewSessionRequest::new(root.to_path_buf());
+                            match connection.send_request(asking).block_task().await {
+                                Ok(opened) => {
+                                    let _ = events
+                                        .send(Event::Acp(Incoming::Offers(offers_in(&opened))));
+                                    let session = opened.session_id.clone();
+                                    // Let go the way a conversation about
+                                    // a deleted note is, and by the same
+                                    // two names: an agent left holding a
+                                    // session nobody can reach is the
+                                    // complaint that got the language
+                                    // server killed on the way out.
+                                    let forgotten = connection
+                                        .send_request(DeleteSessionRequest::new(session.clone()))
+                                        .block_task()
+                                        .await;
+                                    if forgotten.is_err() {
+                                        let _ = connection
+                                            .send_request(CloseSessionRequest::new(session))
+                                            .block_task()
+                                            .await;
+                                    }
+                                }
+                                Err(error) => {
+                                    let _ = events.send(Event::Acp(Incoming::Failed(
+                                        "Asking what it can be set to",
+                                        error.to_string(),
+                                    )));
+                                }
+                            }
+                        }
                         // Gone, because the note it was about is. Two ways
                         // to say it and they mean different things: `delete`
                         // is "forget this", `close` is "I am done talking in
@@ -2136,6 +2196,28 @@ fn category_of(category: Option<&SessionConfigOptionCategory>) -> Category {
         }
         None | Some(_) => Category::Other,
     }
+}
+
+/// Everything a new conversation says it can be set to, as one list.
+///
+/// The same two halves a session keeps apart and merges -- the mode from
+/// the older dedicated methods, and the config options -- put together by
+/// the same rule: the options win where they carry a mode themselves, and
+/// the old one goes in front of them where they do not. Written here as
+/// well as there because this list has no session behind it to do it.
+fn offers_in(opened: &NewSessionResponse) -> Vec<Setting> {
+    let options: Vec<Setting> = opened
+        .config_options
+        .as_ref()
+        .map(|options| options.iter().filter_map(setting_of).collect())
+        .unwrap_or_default();
+    let carried = options
+        .iter()
+        .any(|option| option.category == Category::Mode);
+    let mut offers = Vec::with_capacity(options.len() + 1);
+    offers.extend(opened.modes.as_ref().map(mode_setting).filter(|_| !carried));
+    offers.extend(options);
+    offers
 }
 
 /// The mode an agent offers through the dedicated methods, as a setting

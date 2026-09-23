@@ -16,6 +16,7 @@ pub mod running;
 
 pub mod icon;
 pub mod install;
+pub mod options;
 pub mod registry;
 
 use std::path::{Path, PathBuf};

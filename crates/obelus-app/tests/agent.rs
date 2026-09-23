@@ -40,11 +40,33 @@ const HEIGHT: u16 = 24;
 /// a machine was busy is a test nobody trusts.
 const PATIENCE: Duration = Duration::from_secs(10);
 
+/// Where these tests let obelus keep things about agents.
+///
+/// Its own directory, because talking to an agent writes down what that
+/// agent offers -- and a test writing into the reader's real data
+/// directory is a test with a side effect on the machine it ran on.
+fn agents_root() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("obelus-agent-tests-{}", std::process::id()))
+}
+
+/// The same, for one test alone.
+///
+/// Tests in one file share a process, and what an agent offers is written
+/// down under its own name: two tests talking to the fixture write the
+/// same file, and one of them reading it gets whichever write landed last.
+/// A test that is about that file needs one nobody else has.
+fn agents_root_for(name: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("obelus-agent-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    root
+}
+
 /// An application with the loop's channel, and the channel.
 fn wired() -> (App, Receiver<Event>) {
     let (sender, events) = channel();
     let mut app = App::new(Vec::new());
     app.events_for_test(sender);
+    app.agents_root_for_test(agents_root());
     support::lay_out(&mut app, WIDTH, HEIGHT);
     (app, events)
 }
@@ -5942,5 +5964,268 @@ fn what_is_held_in_the_transcript_is_copied() {
         obelus_clipboard::paste().as_deref(),
         Some(held.as_str()),
         "something other than what was held went to the clipboard"
+    );
+}
+
+/// A conversation opens on what the reader said conversations should open
+/// on, and says nothing about having done it.
+///
+/// The whole point of the group on the settings page: a standing choice
+/// that the next conversation is already in, rather than three keys to
+/// press every time one is opened. Silent, because it is not something the
+/// reader did just now -- the row at the foot of the conversation says
+/// what it is on either way.
+///
+/// Broken deliberately by taking the call to
+/// `start_the_session_on_what_was_chosen` out of `on_acp`: the conversation
+/// opened on the agent's own model and the settings file might as well not
+/// have existed.
+#[test]
+fn a_conversation_opens_on_what_the_reader_chose() {
+    let (mut app, events) = wired();
+    // What the reader has said about this agent, before it is started:
+    // `fake` is the name the fixture is talked to under.
+    let mut config = obelus_config::Config::default();
+    config.set_agent_default("fake", "model", "careful");
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.open_agent();
+
+    pump(&mut app, &events, "the model to be the chosen one", |app| {
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.id == "model" && setting.current == "careful")
+    });
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    let status = screen[screen.len() - 1].to_string();
+    assert!(
+        status.contains("Careful"),
+        "the row does not say the conversation is on it:\n{dump}"
+    );
+    // And the transcript says nothing about it: this is a standing choice,
+    // not a thing the reader did in this conversation.
+    assert!(
+        !support::text_block(&dump).contains("Model:"),
+        "the transcript was written in about a choice made elsewhere:\n{dump}"
+    );
+}
+
+/// A value the agent has stopped offering is not sent to it.
+///
+/// A settings file outlives an agent's versions: what the reader chose a
+/// month ago may not be among the values the agent offers today, and
+/// sending it would be obelus asking for something it has been told does
+/// not exist. The row on the settings page is where that is dealt with,
+/// because the reader is the only one who can.
+///
+/// Broken deliberately by taking out the check that the value is among the
+/// ones offered: the agent was asked for `brilliant`, answered with the
+/// settings unchanged, and nothing anywhere said why.
+#[test]
+fn a_value_the_agent_no_longer_offers_is_not_sent() {
+    let (mut app, events) = wired();
+    let mut config = obelus_config::Config::default();
+    // One the agent has never heard of, and one it has. The second is
+    // what makes this test settle: it comes after the model in the
+    // agent's own order, so an agent that has answered about it has
+    // already answered about anything obelus sent before it -- and
+    // waiting on the model itself would be waiting for a message obelus
+    // is supposed not to send.
+    config.set_agent_default("fake", "model", "brilliant");
+    config.set_agent_default("fake", "allow_all", "on");
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.open_agent();
+
+    pump(&mut app, &events, "the switch to be on", |app| {
+        app.agent_settings()
+            .iter()
+            .any(|setting| setting.id == "allow_all" && setting.current == "on")
+    });
+    // Still on the agent's own, because obelus never asked for the other.
+    assert_eq!(
+        app.agent_settings()
+            .iter()
+            .find(|setting| setting.id == "model")
+            .map(|setting| setting.current.as_str()),
+        Some("fast"),
+        "a value the agent does not offer was sent anyway"
+    );
+}
+
+/// Activating an agent asks it what it can be set to, on a conversation of
+/// its own, and leaves the reader's alone.
+///
+/// The settings page lists what an agent offers, and the protocol says it
+/// in the answer to `session/new` and nowhere else -- `initialize` carries
+/// the capabilities and the ways to sign in, and neither of those is this.
+/// So obelus asks, the moment the reader chooses the agent, rather than
+/// leaving them to find out that a page about conversations needs a
+/// conversation first.
+///
+/// On one of its own, because the alternative is a conversation of theirs
+/// existing, being named, or being written in because a settings page
+/// wanted a list.
+///
+/// Broken deliberately twice. Not asking at all -- dropping the
+/// `talker.offers()` -- and the page waited ten seconds for a list nobody
+/// had gone for. Asking the ordinary way instead, `talker.open()`, and
+/// what came back was the one setting a session opens with, `["mode"]`:
+/// the rest arrives as an update to a conversation, which is exactly the
+/// thing a page about *starting* conversations must not need.
+#[test]
+fn activating_an_agent_asks_it_what_it_can_be_set_to() {
+    use obelus_command::Command;
+
+    let (mut app, events) = talking();
+    let root = agents_root_for("asks");
+    app.agents_root_for_test(root.clone());
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    // What an install leaves: how to start it, which here is the fixture.
+    obelus_agent::remember(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        "1.0.0",
+        &root,
+    )
+    .expect("the record");
+    // And what this conversation already taught obelus, taken away again,
+    // so that activating has something to ask about.
+    let offers = obelus_agent::home("fake", &root)
+        .expect("its directory")
+        .join("options.json");
+    let _ = std::fs::remove_file(&offers);
+    let conversation = support::render(&mut app, WIDTH, HEIGHT);
+
+    // Chosen the way a reader chooses one: on the agents page, on its card.
+    app.handle(Event::Agent(obelus_agent::Event::Registry {
+        agents: vec![obelus_agent::Agent {
+            id: "fake".to_string(),
+            name: "The fixture".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Plays one conversation".to_string(),
+            authors: Vec::new(),
+            license: "MIT".to_string(),
+            website: None,
+            icon: None,
+            distribution: obelus_agent::Distribution::Node {
+                package: "fake@1.0.0".to_string(),
+                arguments: Vec::new(),
+            },
+        }],
+        failure: None,
+    }));
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, KeyCode::BackTab);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config().agent.as_deref(), Some("fake"), "not activated");
+
+    pump(&mut app, &events, "what it offers", |app| {
+        app.agent_offering()
+            .is_some_and(|offering| !offering.offers.is_empty())
+    });
+    let offering = app.agent_offering().expect("the group");
+    assert!(
+        offering.offers.iter().any(|offer| offer.id == "model"),
+        "not what the agent offers: {:?}",
+        offering
+            .offers
+            .iter()
+            .map(|offer| &offer.id)
+            .collect::<Vec<_>>()
+    );
+
+    // And the reader's own conversation is where they left it: the asking
+    // was done somewhere else, and nothing was said in theirs.
+    support::press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        support::text_block(&support::render(&mut app, WIDTH, HEIGHT)),
+        support::text_block(&conversation),
+        "the conversation changed under the reader"
+    );
+}
+
+/// Choosing another agent stops the one that was running and lets its
+/// conversations go.
+///
+/// A session is a name one agent gave to something. The agent that gave it
+/// has been stopped, so nothing can ever be asked about it again -- and a
+/// conversation still holding one asks nobody for a new one, because
+/// holding one is how obelus knows it has one. The reader was then left
+/// with a conversation they could type in and never send from.
+///
+/// It was also left talking to the old agent: `start_agent` only starts one
+/// where there is none, so the process nobody had chosen went on answering
+/// every conversation, with the card on the settings page saying the other
+/// one was active.
+///
+/// Broken deliberately by taking the `stop_agent`/`let_the_conversations_go`
+/// pair back out of `activate_agent`: the conversation kept its session,
+/// and what answered the next message was the agent the reader had just
+/// stopped choosing.
+#[test]
+fn choosing_another_agent_stops_the_one_that_was_running() {
+    use obelus_command::Command;
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    assert!(app.agent_settings().len() > 2, "nothing was running");
+
+    // Another agent, installed and chosen. Its command need not work: what
+    // is being watched is what happens to the one that was running.
+    let root = agents_root_for("switch");
+    app.agents_root_for_test(root.clone());
+    obelus_agent::remember(
+        "other",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        "1.0.0",
+        &root,
+    )
+    .expect("the record");
+    app.handle(Event::Agent(obelus_agent::Event::Registry {
+        agents: vec![obelus_agent::Agent {
+            id: "other".to_string(),
+            name: "The other one".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Somebody else".to_string(),
+            authors: Vec::new(),
+            license: "MIT".to_string(),
+            website: None,
+            icon: None,
+            distribution: obelus_agent::Distribution::Node {
+                package: "other@1.0.0".to_string(),
+                arguments: Vec::new(),
+            },
+        }],
+        failure: None,
+    }));
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, KeyCode::BackTab);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config().agent.as_deref(), Some("other"));
+
+    // The one that was running is not the one being talked to any more,
+    // and its settings went with it.
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        support::text_block(&dump).contains("no longer the one obelus talks to"),
+        "the conversation was left holding a session nobody can reach:\n{dump}"
     );
 }

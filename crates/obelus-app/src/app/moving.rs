@@ -358,8 +358,9 @@ impl App {
             self.cut_away(&text, what);
             return;
         }
+        let offering = self.agent_offering();
         if let Some(settings) = self.settings.as_mut() {
-            let (text, what) = settings.cut_query();
+            let (text, what) = settings.cut_query(offering.as_ref());
             self.cut_away(&text, what);
             return;
         }
@@ -483,8 +484,9 @@ impl App {
                 return;
             }
             Some(Layer::Settings) => {
+                let offering = self.agent_offering();
                 if let Some(settings) = self.settings.as_mut() {
-                    settings.put_in_query(what);
+                    settings.put_in_query(what, offering.as_ref());
                 }
                 return;
             }

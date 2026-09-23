@@ -995,18 +995,18 @@ impl App {
         self.tools_url = Some(url.to_string());
     }
 
-    /// Puts the application on a tree of the test's choosing.
+    /// Puts the application on a project of the test's choosing.
     ///
     /// The working directory is read from the process once, at startup, and
     /// a test inherits whatever directory the test runner was started in --
     /// which is the checkout's own path, and differs between a clone, a
     /// worktree and somebody else's machine. Anything that *shows* that path
     /// is then a golden grid that passes where it was written and nowhere
-    /// else, so a test that renders one says which tree it is on.
+    /// else, so a test that renders one says which project it is on.
     pub fn working_directory_for_test(&mut self, root: PathBuf) {
         self.work_in(root);
-        // And whatever that tree has to say about the settings, which is
-        // what putting obelus on a tree means: at startup the two happen
+        // And whatever that project has to say about the settings, which
+        // is what putting obelus on a project means: at startup the two happen
         // together, and a test that moved one without the other would be
         // testing an application no reader can have.
         self.apply_project();
@@ -1744,14 +1744,15 @@ impl App {
                 let readers = self.settled.path.as_deref().is_some_and(|config| {
                     path == config || path == obelus_config::resolved(config)
                 });
-                // Or the tree's own, which is a change to the settings just
+                // Or the project's own, which is a change to the settings just
                 // as much -- it is the layer over them. Against the file the
-                // tree *would* have rather than the one it has, so that the
+                // project *would* have rather than the one it has, so that the
                 // file appearing is a change like any other: the ordinary
                 // case is a project with no settings yet, and the moment
                 // worth hearing about is the one where it gets some.
-                let tree = path == obelus_config::project_path_for(&self.working_directory);
-                if readers || tree {
+                let project = obelus_config::project_path_for(&self.working_directory);
+                let project = path == project;
+                if readers || project {
                     self.reread_config();
                 } else if self.is_a_theme(&path) {
                     // The colours the reader is already wearing, read again:
@@ -2384,7 +2385,7 @@ impl App {
         let area = self.drawn_in();
         // The tabs are the page's first row.
         let tab = self.settings.as_ref().and_then(|settings| {
-            let names = obelus_component::settings::Settings::tabs();
+            let names = settings.tabs();
             let at = obelus_ui::tab_at(Rect { height: 1, ..area }, &names, settings.tab(), x, y)?;
             Some((settings.tab(), at, names.len()))
         });
@@ -2399,8 +2400,9 @@ impl App {
         else {
             return;
         };
+        let offering = self.agent_offering();
         if let Some(settings) = self.settings.as_mut() {
-            settings.select_row(at);
+            settings.select_row(at, offering.as_ref());
         }
         if switch {
             self.settings_key(&enter());
@@ -3110,6 +3112,9 @@ impl Screen for App {
     }
     fn agent_settings(&self) -> &[acp::Setting] {
         App::agent_settings(self)
+    }
+    fn agent_offering(&self) -> Option<obelus_component::settings::Offering> {
+        App::agent_offering(self)
     }
     fn agent_usage(&self) -> Option<&acp::Usage> {
         App::agent_usage(self)

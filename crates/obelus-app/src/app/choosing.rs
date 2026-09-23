@@ -520,6 +520,16 @@ impl App {
             PickerValue::AgentValue { setting, value } => {
                 self.set_agent_setting(&setting, &value);
             }
+            // The agent is named on the row rather than asked for now: the
+            // list may have been opened before the reader changed agents,
+            // and a value meant for one must not land on another.
+            PickerValue::AgentDefault {
+                agent,
+                setting,
+                value,
+            } => {
+                self.change_agent_default(&agent, &setting, value.as_deref());
+            }
             // Dealt with before the list is closed: a commit opens its
             // files under it rather than going anywhere, and a file of one
             // is opened as that commit had it.

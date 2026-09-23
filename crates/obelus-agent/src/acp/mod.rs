@@ -305,6 +305,18 @@ impl Talk {
         let _ = self.asks.unbounded_send(Ask::Open);
     }
 
+    /// Asks what it can be set to, on a conversation of its own.
+    ///
+    /// Opened to read one list off it and let go again, so nothing here
+    /// keeps a session for it: what comes back is
+    /// [`Incoming::Offers`], which names no conversation because by then
+    /// there is none. The reader's own conversations are not used for
+    /// this -- one of them existing because a settings page wanted a list
+    /// would be a conversation that goes wherever that list goes.
+    pub fn offers(&mut self) {
+        let _ = self.asks.unbounded_send(Ask::Offers);
+    }
+
     /// Lets one go, because the note it was about has gone.
     ///
     /// Told to the agent rather than only forgotten here: an agent left
@@ -618,10 +630,22 @@ impl Talk {
                 session,
                 update: Update::Settings(options),
             } => {
-                let open = self.sessions.entry(session).or_default();
-                open.options = options;
+                let open = self.sessions.entry(session.clone()).or_default();
+                open.options = options.clone();
                 open.merge();
-                None
+                // Kept *and* passed up, like the title and unlike the rest
+                // of the folded updates: what an agent offers to be set is
+                // something obelus acts on outside this mirror -- it is
+                // written down beside the install so the settings page has
+                // it before there is a conversation, and it is what the
+                // reader's standing choices are matched against. Folded
+                // away here, both happened only at the moment a session
+                // opened, which is before an agent has said what it
+                // offers.
+                Some(Incoming::Update {
+                    session,
+                    update: Update::Settings(options),
+                })
             }
             Incoming::Ended { session, turn, why } => {
                 let open = self.sessions.entry(session.clone()).or_default();

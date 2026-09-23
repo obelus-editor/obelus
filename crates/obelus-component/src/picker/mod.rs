@@ -131,6 +131,21 @@ pub enum PickerValue {
         /// Which value, by the agent's id for it.
         value: String,
     },
+    /// Say what one of an agent's settings is to start a conversation on.
+    ///
+    /// Not [`PickerValue::AgentValue`], and the difference is the whole of
+    /// why there are two: that one changes the conversation the reader is
+    /// in and this one changes what the next one opens on. They are set
+    /// from different places and one of them outlives the session.
+    AgentDefault {
+        /// Which agent, by the registry's id for it.
+        agent: String,
+        /// Which setting, by the agent's id for it.
+        setting: String,
+        /// Which value, by the agent's id for it -- or nothing, which is
+        /// the reader leaving the answer to the agent.
+        value: Option<String>,
+    },
     /// Open a commit's files under it, or close them again.
     ///
     /// A commit is not a file, so there is nothing for choosing it to open:

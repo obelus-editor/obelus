@@ -119,6 +119,14 @@ pub trait Screen {
     fn agent_name(&self) -> Option<&str>;
     /// The settings it lets the reader change.
     fn agent_settings(&self) -> &[acp::Setting];
+    /// What the active agent offers to be set before a conversation
+    /// starts, with what the reader has said about each.
+    ///
+    /// `None` where no agent is active, which is the one case where the
+    /// settings page has no group for one. Built rather than borrowed: it
+    /// comes out of the config, a file beside the install and the
+    /// registry at once.
+    fn agent_offering(&self) -> Option<obelus_component::settings::Offering>;
     /// How full the agent's memory of this conversation is, once it has
     /// said -- and what it has cost, where it counts that too.
     fn agent_usage(&self) -> Option<&acp::Usage>;
@@ -356,9 +364,9 @@ pub fn area_of(size: Size) -> Rect {
 /// The path as it should be read: relative to the working directory when it
 /// lies under it, and unchanged when it does not.
 ///
-/// A reader spends its time inside one tree, and the leading directories of
-/// that tree are the part already known. Shared, because more than one view
-/// writes a path now: the status bar says which file is open, and a
+/// A reader spends its time inside one project, and the leading directories
+/// of that project are the part already known. Shared, because more than one
+/// view writes a path now: the status bar says which file is open, and a
 /// conversation says which ones an agent has been in.
 #[must_use]
 pub fn relative_to<'a>(path: &'a std::path::Path, root: &std::path::Path) -> &'a std::path::Path {

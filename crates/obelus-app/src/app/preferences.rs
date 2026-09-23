@@ -47,7 +47,8 @@
 //! a page of grey with nothing on it to look at, which is a rule applied past
 //! the point where it still meant anything. `delete` takes it out again, which
 //! is what that key means on the keys page too. The two tabs a project may not
-//! have say so instead of showing controls that would all refuse.
+//! have are not on it at all: a tab is for somewhere else to go, and one that
+//! goes nowhere is a tab that lies.
 //!
 //! That file is *edited*, not rewritten. Obelus's own it writes whole, because
 //! obelus wrote all of it; a project's is written by hand and committed, so it
@@ -152,6 +153,9 @@ impl App {
         // takes a moment, and a reader who walks to the agents tab should
         // find a list there rather than watch one arrive.
         self.refresh_registry();
+        // And what the active agent offers, read once here rather than
+        // once a frame from behind the page's own questions.
+        self.reread_what_the_agent_offers();
         self.settings = Some(Settings::new());
     }
 
@@ -163,6 +167,7 @@ impl App {
     pub fn open_project_settings(&mut self) {
         self.make_room(Room::Region);
         self.refresh_registry();
+        self.reread_what_the_agent_offers();
         self.settings = Some(Settings::for_project());
     }
 
@@ -183,10 +188,21 @@ impl App {
         // key each command is on, and it is the application that owns it.
         let keymap = self.keymap.clone();
         let room = (self.editor_area.width, self.editor_area.height);
+        // And what the active agent offers, for the same reason again: the
+        // page lists its settings and knows nothing about where they came
+        // from.
+        let offering = self.agent_offering();
         let Some(settings) = self.settings.as_mut() else {
             return false;
         };
-        match settings.handle_key(key, &self.settled.config, &keymap, &listed, room) {
+        match settings.handle_key(
+            key,
+            &self.settled.config,
+            &keymap,
+            &listed,
+            offering.as_ref(),
+            room,
+        ) {
             SettingsOutcome::Consumed => true,
             SettingsOutcome::Cancelled => {
                 self.leave(Layer::Settings);
@@ -218,6 +234,14 @@ impl App {
             }
             SettingsOutcome::Deactivate => {
                 self.deactivate_agent();
+                true
+            }
+            SettingsOutcome::ChooseForAgent(setting) => {
+                self.open_agent_default(&setting);
+                true
+            }
+            SettingsOutcome::UnsetForAgent(setting) => {
+                self.set_agent_default(&setting, None);
                 true
             }
             SettingsOutcome::Ignored => false,
@@ -278,6 +302,127 @@ impl App {
             self.theme_before = Some((self.theme_name().to_string(), *self.theme()));
         }
         self.show_list(picker);
+    }
+
+    /// Offers one of the agent's settings, as the same compact list.
+    ///
+    /// With what the agent offers, and with obelus's own row in front of
+    /// it: the third answer these have and obelus's own settings do not,
+    /// which is to say nothing and let the agent open where it opens.
+    pub(super) fn open_agent_default(&mut self, setting: &str) {
+        let Some(offering) = self.agent_offering() else {
+            return;
+        };
+        let Some(agent) = self.config().agent.clone() else {
+            return;
+        };
+        let Some(offer) = offering.offers.iter().find(|offer| offer.id == setting) else {
+            return;
+        };
+        let chosen = offering.chosen.get(setting).cloned();
+        let row = |label: String,
+                   detail: Option<String>,
+                   value: Option<String>,
+                   current: bool|
+         -> PickerItem {
+            PickerItem {
+                prose: false,
+                marker: None,
+                icon: None,
+                label,
+                detail,
+                // The one in force says so in words, the way the
+                // conversation's own list does: a list where the selected
+                // row and the current value look alike cannot say which of
+                // the two it is showing.
+                trailing: current.then(|| "current".to_string()),
+                changed: None,
+                value: PickerValue::AgentDefault {
+                    agent: agent.clone(),
+                    setting: setting.to_string(),
+                    value,
+                },
+                enabled: true,
+                colours: None,
+                status: None,
+                depth: 0,
+                opens: None,
+                kind: None,
+                tab: None,
+            }
+        };
+        let mut items = vec![row(
+            "Agent's own".to_string(),
+            Some("Whatever it opens a conversation on".to_string()),
+            None,
+            chosen.is_none(),
+        )];
+        items.extend(offer.values.iter().map(|value| {
+            row(
+                value.name.clone(),
+                value.about.clone(),
+                Some(value.id.clone()),
+                chosen.as_deref() == Some(value.id.as_str()),
+            )
+        }));
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.ask(&offer.name);
+        picker.when_empty("This one has nothing to choose from");
+        // Opened on what it is on, so the list starts by saying where the
+        // reader is rather than at whatever happens to be first.
+        picker.prefer(match &chosen {
+            None => "Agent's own".to_string(),
+            Some(value) => offer.name_of(value).unwrap_or(value).to_string(),
+        });
+        self.show_list(picker);
+    }
+
+    /// Says what one of the active agent's settings is to start on, or
+    /// stops saying.
+    ///
+    /// Written to the reader's own file and nowhere else: what an agent may
+    /// do without being asked is not a thing a downloaded project gets to
+    /// decide, which is the same reason the agent itself is the reader's.
+    ///
+    /// The conversation on screen is not touched. These rows are about the
+    /// next one, which is what the heading over them says -- and a change
+    /// here reaching into a conversation already under way would be obelus
+    /// answering a question the reader asked about another one.
+    pub(super) fn set_agent_default(&mut self, setting: &str, value: Option<&str>) {
+        let Some(agent) = self.config().agent.clone() else {
+            return;
+        };
+        self.change_agent_default(&agent, setting, value);
+    }
+
+    /// The same, for an agent named outright.
+    ///
+    /// Named because the choice may come back from a list opened before
+    /// the reader changed agents, and a value meant for one agent must not
+    /// land on another.
+    pub(super) fn change_agent_default(&mut self, agent: &str, setting: &str, value: Option<&str>) {
+        match value {
+            Some(value) => self
+                .settled
+                .readers
+                .set_agent_default(agent, setting, value),
+            None => self.settled.readers.unset_agent_default(agent, setting),
+        }
+        // Over the project's, the way every other change to the reader's file
+        // is -- which here can take nothing away, because no project may set
+        // this one.
+        self.apply_project();
+        let Some(path) = self.settled.path.clone() else {
+            return;
+        };
+        if !self.settled.readable {
+            self.note = Some("Not saved: the settings will not read".to_string());
+            return;
+        }
+        if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
+            tracing::warn!(%error, "not saving the configuration");
+            self.note = Some(format!("Not saved: {error}"));
+        }
     }
 
     /// Where a theme file may be, nearest first.

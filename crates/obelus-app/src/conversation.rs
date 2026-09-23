@@ -125,6 +125,20 @@ pub struct Conversation {
     /// Somewhere the agent wants the reader to go, while they have not
     /// said whether they will.
     pub going: Option<Going>,
+    /// Which of the reader's standing choices obelus has already asked
+    /// this conversation for, by the agent's id for the setting.
+    ///
+    /// Once each, and never again. What is in here is not "this setting is
+    /// on that value" -- it is "obelus has said its piece about this one"
+    /// -- and the difference is the whole point: an agent that refuses a
+    /// value, or that puts one back mid-turn, has answered, and obelus
+    /// asking again would be obelus arguing with it.
+    ///
+    /// A set rather than a flag on the conversation, because the settings
+    /// do not all arrive at once: choosing a model can bring a thinking
+    /// level into being that was not there when the conversation opened,
+    /// and that one has not been asked for yet.
+    pub started_on: std::collections::BTreeSet<String>,
 }
 
 /// A place on the web the agent wants the reader to go: to sign in

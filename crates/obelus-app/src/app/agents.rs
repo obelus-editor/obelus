@@ -6,6 +6,7 @@
 //! last time one was tried.
 
 use obelus_agent::{Agent, Listed, Status, install::Progress};
+use obelus_component::settings::Offering;
 use obelus_ui::image::{Images, Palette};
 
 use super::*;
@@ -40,6 +41,19 @@ pub(super) struct Agents {
     /// Where installed agents live, for a test that would rather not use
     /// the reader's own data directory. `None` is that directory.
     pub root: Option<PathBuf>,
+    /// What one agent last said it can be set to, as the file beside its
+    /// install has it -- and which agent that was.
+    ///
+    /// Read when there is a reason to and kept until there is another,
+    /// rather than read where it is wanted: where it is wanted is
+    /// [`App::agent_offering`], which the settings page asks two or three
+    /// times a frame -- and a frame is drawn on every keystroke. The
+    /// questions a view asks must already be answered; a file read behind
+    /// one is work a view has caused.
+    ///
+    /// The agent's id is kept with it so that a copy left over from
+    /// another agent is never handed out as this one's.
+    pub offers: Option<(String, obelus_agent::options::Reading)>,
 }
 
 impl App {
@@ -95,6 +109,100 @@ impl App {
                 }
             })
             .collect()
+    }
+
+    /// What the active agent offers to be set, and what the reader has
+    /// said each should start on.
+    ///
+    /// Built on demand from three places, for the reason the cards are:
+    /// which agent is active is a setting, what it offers is a file beside
+    /// its install, and what the reader has chosen is another setting. A
+    /// fourth copy kept level with all three is a fourth thing to get
+    /// wrong.
+    ///
+    /// `None` where no agent is active, which is the one case where the
+    /// settings page has no group for one: a heading over nothing, on a
+    /// machine where the reader has not chosen an agent, would be obelus
+    /// asking them to set something up for nobody.
+    #[must_use]
+    pub fn agent_offering(&self) -> Option<Offering> {
+        let id = match self.config().agent.as_deref() {
+            None | Some("") => return None,
+            Some(id) => id,
+        };
+        // What it is called, which is the heading. The registry's name for
+        // it where the registry has arrived, and its id until then: a
+        // heading that appears as a name and turns into another name when
+        // a fetch lands is a page rearranging itself under the reader.
+        let name = self
+            .agents
+            .registry
+            .iter()
+            .find(|agent| agent.id == id)
+            .map_or(id, |agent| agent.name.as_str())
+            .to_string();
+        // Three answers, and each is a different thing to say. Nothing
+        // written down is an agent obelus has not talked to yet; a file
+        // that will not read is not an agent with nothing to be set, and
+        // saying so is how the reader finds out there is a file to look
+        // at.
+        //
+        // From what was read, not from the file: this is asked several
+        // times a frame.
+        let read = self
+            .agents
+            .offers
+            .as_ref()
+            .filter(|(whose, _)| whose == id)
+            .map(|(_, read)| read);
+        let (offers, silence) = match read {
+            Some(obelus_agent::options::Reading::Offers(offers)) if !offers.is_empty() => {
+                (offers.clone(), None)
+            }
+            Some(obelus_agent::options::Reading::Unreadable(why)) => (
+                Vec::new(),
+                Some(format!("What it offers will not read: {why}")),
+            ),
+            _ => (
+                Vec::new(),
+                Some(
+                    "What this one can be set to appears here after the first conversation \
+                     with it."
+                        .to_string(),
+                ),
+            ),
+        };
+        Some(Offering {
+            name,
+            offers,
+            chosen: self.config().agent_defaults(id).clone(),
+            silence,
+        })
+    }
+
+    /// Reads what the active agent offers, for [`App::agent_offering`] to
+    /// hand out until there is a reason to read again.
+    ///
+    /// Those reasons are all of them: the settings page opening, obelus
+    /// writing the file itself, and the active agent changing. A file
+    /// another obelus writes while this page is open is not among them --
+    /// it is the agent's own statement about itself rather than anything
+    /// the two are editing, so the worst a stale copy can do is list what
+    /// that agent offered an hour ago.
+    pub(super) fn reread_what_the_agent_offers(&mut self) {
+        let id = match self.config().agent.as_deref() {
+            None | Some("") => {
+                self.agents.offers = None;
+                return;
+            }
+            Some(id) => id.to_string(),
+        };
+        let Some(root) = self.agents_root() else {
+            self.agents.offers = None;
+            return;
+        };
+        let read = obelus_agent::options::read(&id, &root);
+        self.agents.offers = Some((id, read));
     }
 
     /// Where obelus keeps the agents it installs.
@@ -222,6 +330,9 @@ impl App {
         }
         let cards = self.settings.as_ref().is_some_and(Settings::on_agents);
         let listed = self.listed_agents();
+        // Built before the page is borrowed: it comes out of the
+        // application, and the page is about to be held mutably.
+        let offering = self.agent_offering();
         let room = (editor_area.width, editor_area.height);
         if let Some(settings) = self.settings.as_mut() {
             match cards {
@@ -231,7 +342,7 @@ impl App {
                 // the screen should scroll rather than lose its last rows
                 // silently -- and an entry is as tall as what it has to
                 // say, so the window is settled by height like the cards.
-                false => settings.settle_rows(room),
+                false => settings.settle_rows(room, offering.as_ref()),
             }
         }
     }
@@ -373,7 +484,34 @@ impl App {
             self.note = Some(format!("{id} is not installed"));
             return;
         }
+        // Whatever was running is not this one. Stopped rather than left
+        // alive: `start_agent` only starts one when there is none, so an
+        // agent left running is an agent every conversation goes on
+        // talking to -- the reader having chosen another one on this very
+        // page, and nothing on screen saying otherwise.
+        if self.talking_to_someone_else(id) {
+            self.stop_agent();
+            self.let_the_conversations_go();
+        }
         self.change_setting("agent", &obelus_config::Value::Choice(id.to_string()));
+        self.reread_what_the_agent_offers();
+        // And if obelus has never been told what this one can be set to,
+        // it asks -- by opening a conversation with it, because the
+        // protocol has no other way: what an agent offers arrives with a
+        // session and `initialize` says nothing about it.
+        //
+        // In the background, not on screen: the reader is on the settings
+        // page and asked to use this agent, not to start talking to it.
+        // But it is an ordinary conversation, in the list of what is open
+        // like any other -- so if the agent wants them to sign in, the
+        // question is somewhere they can answer it, rather than asked into
+        // a session nothing can show.
+        self.learn_what_the_agent_offers();
+    }
+
+    /// Whether an agent is running and it is not this one.
+    fn talking_to_someone_else(&self, id: &str) -> bool {
+        self.talker.as_ref().is_some_and(|talker| talker.id() != id)
     }
 
     /// Stops talking to whichever agent was active.
@@ -381,8 +519,16 @@ impl App {
     /// And stops the process, if one is running: an agent nobody has chosen
     /// is an agent nobody is talking to, and leaving it alive would leave a
     /// node process holding a session obelus can no longer reach.
+    ///
+    /// And lets the conversations go with it, for the other half of the
+    /// same fact: a session is a name that agent gave to something, and a
+    /// conversation still holding one asks nobody for a new one -- so
+    /// choosing the agent again left the reader with conversations that
+    /// could never be talked in.
     pub(super) fn deactivate_agent(&mut self) {
         self.stop_agent();
+        self.let_the_conversations_go();
         self.change_setting("agent", &obelus_config::Value::Choice(String::new()));
+        self.reread_what_the_agent_offers();
     }
 }
