@@ -18,6 +18,8 @@
 pub mod log;
 /// Markdown, rendered rather than shown as its own source.
 pub mod markdown;
+/// How wide a table's columns are drawn.
+pub mod table;
 
 use std::path::Path;
 
