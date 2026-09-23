@@ -231,17 +231,17 @@ impl App {
         self.open_files(Listing::Changed);
     }
 
-    /// Asks git what has changed in the tree, or takes what a test said.
+    /// Asks git what has changed in the project, or takes what a test said.
     fn gather_statuses(&mut self) {
-        self.statuses = self.tree_statuses();
+        self.statuses = self.project_statuses();
     }
 
-    /// What git says about the tree, asked now.
+    /// What git says about the project, asked now.
     ///
     /// The walk itself, without keeping the answer: what needs it kept is
     /// the list of files, and what needs it fresh is the question of
     /// whether there is anything to list at all.
-    pub(super) fn tree_statuses(&self) -> HashMap<PathBuf, obelus_git::Standing> {
+    pub(super) fn project_statuses(&self) -> HashMap<PathBuf, obelus_git::Standing> {
         match &self.given_statuses {
             Some(given) => given.clone(),
             None => obelus_git::statuses(&self.working_directory),
@@ -251,7 +251,7 @@ impl App {
     /// Whether git says anything in the tree has changed.
     ///
     /// What a test said, where a test said anything: the same door
-    /// `tree_statuses` goes through, so a test that sets up a clean tree
+    /// `project_statuses` goes through, so a test that sets up a clean project
     /// gets a clean answer here too.
     pub(super) fn anything_changed(&self) -> bool {
         match &self.given_statuses {

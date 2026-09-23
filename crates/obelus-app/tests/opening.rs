@@ -98,7 +98,7 @@ fn the_first_path_decides_and_the_rest_are_opened() {
 /// git is asked about the root from a process whose own directory
 /// nothing here controls.
 #[test]
-fn the_tree_is_absolute() {
+fn the_project_is_absolute() {
     let opening = app::opening(&[PathBuf::from("Cargo.toml")]);
     let root = opening.root.expect("a project");
     assert!(
