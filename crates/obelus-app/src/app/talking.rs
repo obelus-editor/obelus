@@ -811,6 +811,13 @@ impl App {
             self.runs.stop(&id);
             self.tell_whoever_waited(&id);
         }
+        // And the calls it left open, which the agent will not close if it
+        // never saw the cancellation: a row that says it is running under a
+        // conversation obelus has said is resting is the one thing on
+        // screen that cannot both be true.
+        if let Some(talk) = self.conversation_mut() {
+            talk.chat.stop_the_calls();
+        }
         // What they said while it was running stays said and stays unsent.
         // Sending it the moment the thing they just stopped comes to a halt
         // is obelus speaking for them straight after they said not to.

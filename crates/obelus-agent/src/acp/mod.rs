@@ -52,7 +52,7 @@ pub use agent_client_protocol::schema::v1::SessionId;
 use futures::channel::mpsc;
 pub use link::{
     Answer, Ask, Call, Category, Change, Choice, Chosen, Cost, Field, Incoming, Kind, Order, Place,
-    Reply, Setting, Step, Takes, Update, Usage, Value,
+    Reply, Setting, Step, Takes, Turn, Update, Usage, Value,
 };
 use obelus_sink::Sink;
 
@@ -92,6 +92,15 @@ pub struct Talk {
     /// the first thing said is what carries it and the first thing said is
     /// what gets held.
     held: Option<(String, Option<String>)>,
+    /// How many turns have been asked for on this connection.
+    ///
+    /// The last number handed out, and the next one is one more. On the
+    /// connection rather than on a session so that a number means one turn
+    /// whichever conversation it turns out to be about -- and because the
+    /// conversation an answer belongs to is a thing obelus reads *off* the
+    /// answer, so a count kept per conversation would be a count that has
+    /// to be found before it can be used.
+    turns: Turn,
 }
 
 /// One conversation, as the main loop needs to see it.
@@ -100,8 +109,15 @@ pub struct Talk {
 /// about on a frame and cannot wait for an answer to.
 #[derive(Debug, Default)]
 pub struct Session {
-    /// Whether a turn is in flight in this one.
-    thinking: bool,
+    /// Which turn is in flight in this one, by obelus's own count.
+    ///
+    /// A number and not a flag, because the answer that ends a turn does
+    /// not say which turn it is about -- the protocol has no name for one.
+    /// A flag was put down by whichever answer came home first, so an
+    /// answer to a turn that had been cancelled, or overtaken, ended the
+    /// turn that had replaced it: the conversation went to resting with an
+    /// agent still working in it, and nothing on screen said so.
+    turn: Option<Turn>,
     /// The commands it says it takes.
     orders: Vec<Order>,
     /// How full the agent's memory of this conversation is, once it has
@@ -227,6 +243,7 @@ impl Talk {
             gone: None,
             sessions: std::collections::HashMap::new(),
             held: None,
+            turns: 0,
         }
     }
 
@@ -263,7 +280,10 @@ impl Talk {
         // looking at a conversation that is plainly all there types into
         // it, and until this that turn went out with nothing on screen
         // saying anything was happening.
-        self.held.is_some() || self.session(session).is_some_and(|open| open.thinking)
+        self.held.is_some()
+            || self
+                .session(session)
+                .is_some_and(|open| open.turn.is_some())
     }
 
     /// One conversation, by the name the agent gave it.
@@ -420,23 +440,31 @@ impl Talk {
             return false;
         };
         let named = id.0.to_string();
+        // Numbered before it goes, and the number comes back on the answer.
+        // Counted on the connection rather than per conversation so that
+        // one of these is never two turns, whichever conversation an answer
+        // turns out to be about.
+        self.turns += 1;
+        let turn = self.turns;
         let sent = self
             .asks
             .unbounded_send(Ask::Say {
                 session: id,
+                turn,
                 words: words.to_string(),
                 opening: opening.map(str::to_string),
             })
             .is_ok();
         match sent {
-            true => tracing::info!(session = %named, "a prompt is on its way"),
+            true => tracing::info!(session = %named, turn, "a prompt is on its way"),
             false => tracing::warn!(
                 session = %named,
+                turn,
                 "a prompt went nowhere: the connection to the agent has ended"
             ),
         }
         if let Some(open) = self.session_mut(session) {
-            open.thinking = sent;
+            open.turn = sent.then_some(turn);
         }
         sent
     }
@@ -450,9 +478,15 @@ impl Talk {
         let Some(id) = session.cloned() else {
             return;
         };
-        if self.is_thinking(session) {
-            let _ = self.asks.unbounded_send(Ask::Interrupt { session: id });
-        }
+        // Named, so that the end obelus writes for it is about the turn the
+        // reader stopped and not about whatever is running by the time it
+        // is read. A turn that is not running has nothing to stop.
+        let Some(turn) = self.session(session).and_then(|open| open.turn) else {
+            return;
+        };
+        let _ = self
+            .asks
+            .unbounded_send(Ask::Interrupt { session: id, turn });
     }
 
     /// Moves to the next way of working.
@@ -589,9 +623,26 @@ impl Talk {
                 open.merge();
                 None
             }
-            Incoming::Ended { session, why } => {
-                self.sessions.entry(session.clone()).or_default().thinking = false;
-                Some(Incoming::Ended { session, why })
+            Incoming::Ended { session, turn, why } => {
+                let open = self.sessions.entry(session.clone()).or_default();
+                // An answer about a turn that is not the one running is an
+                // answer nobody is waiting for: a prompt the reader
+                // cancelled, answered by an agent that never saw the
+                // cancellation, or one overtaken while it was in flight.
+                // Passed up, it ends the turn that replaced it -- which is
+                // the conversation going to rest with an agent still
+                // working in it.
+                if open.turn != Some(turn) {
+                    tracing::debug!(
+                        session = %session.0,
+                        turn,
+                        running = ?open.turn,
+                        "an answer about a turn nobody is waiting for"
+                    );
+                    return None;
+                }
+                open.turn = None;
+                Some(Incoming::Ended { session, turn, why })
             }
             Incoming::Failed(what, why) => {
                 // Which conversation it was is not on the message, so every
@@ -606,7 +657,7 @@ impl Talk {
                 // is running, and the honest reason to accept that is that
                 // it cannot tell which turn the failure was about.
                 for open in self.sessions.values_mut() {
-                    open.thinking = false;
+                    open.turn = None;
                     // A mode obelus showed as on that the agent would not
                     // take.
                     open.unguess();

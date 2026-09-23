@@ -1066,6 +1066,32 @@ impl Chat {
             .collect()
     }
 
+    /// Marks every call that had not finished as one nobody finished.
+    ///
+    /// For the turn the reader stopped. A call's state is the agent's, and
+    /// an agent that is told to stop is asked to send the updates it owes
+    /// -- but one that never saw the cancellation does not, and its calls
+    /// sit at `in_progress` for ever: a mark that says a thing is running
+    /// while obelus has told the reader nothing is. `cancelled` is the
+    /// protocol's own word for it, so this is obelus writing down what the
+    /// agent would have said rather than a state of its own invention.
+    ///
+    /// The whole conversation rather than the last turn, because obelus
+    /// does not keep the boundary between turns: a call from a turn that
+    /// ended properly is not in one of these states to begin with.
+    pub fn stop_the_calls(&mut self) {
+        let mut any = false;
+        for said in &mut self.said {
+            if matches!(said.state.as_deref(), Some("pending" | "in_progress")) {
+                said.state = Some("cancelled".to_string());
+                any = true;
+            }
+        }
+        if any {
+            self.forget_the_layout();
+        }
+    }
+
     /// Says what a command is doing, for every row that is running one.
     ///
     /// Called every frame with whatever obelus's own runner has, the way

@@ -274,7 +274,7 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
         &events,
         "the other answer",
         |_, incoming| match incoming {
-            Incoming::Ended { session, why } if *session == second => {
+            Incoming::Ended { session, why, .. } if *session == second => {
                 answered = Some(why.clone());
                 true
             }

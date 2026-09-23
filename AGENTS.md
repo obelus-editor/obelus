@@ -174,11 +174,30 @@ next thing they send picks it up again, in front of nothing: a queue that
 let a later message overtake an earlier one would put their own words to the
 agent back to front.
 
-The giving-up flag is per turn and not per conversation. One shared flag
-that the next prompt cleared took back the giving up done on the one before,
-so the cancelled turn's own answer -- which a well-behaved agent sends,
-because the protocol tells it to -- was delivered after all, and ended the
-turn that had replaced it.
+**So obelus numbers its own turns**, because the protocol will not: the
+number goes out with the prompt, comes back on the answer, and an answer
+about a turn that is not the one running is dropped where the count is
+kept. It replaced a flag that said only "given up on", which the next
+prompt cleared -- so the cancelled turn's own answer, which a well-behaved
+agent sends because the protocol tells it to, was delivered after all and
+ended the turn that had replaced it. zed numbers them too, and has a test
+whose name is this paragraph.
+
+The queue is what makes two turns rare; the number is what makes the rare
+one harmless. Both, because the first is obelus's own discipline and the
+second is about what arrives.
+
+**And a turn the reader stopped takes its calls with it.** A tool call's
+state is the agent's, and an agent told to stop is *asked* to send the
+updates it owes -- one that never saw the cancellation sends none, and its
+calls sit at `in_progress` for ever under a conversation obelus has said is
+resting. Worse than wrong: nothing wakes the screen for a conversation that
+is not working, so the mark on that row is a spinner frozen mid-turn.
+`cancelled` is the protocol's own word for a call stopped before it
+finished, so writing it down is obelus saying what the agent would have
+said, not inventing a state of its own. The exception is a call obelus is
+running the command for, whose state comes from the runner every frame and
+is not obelus's to overwrite.
 
 **A setting the reader turned on is not a reason to refuse them.** Saving
 with formatting on and no server to ask writes the file unformatted. The

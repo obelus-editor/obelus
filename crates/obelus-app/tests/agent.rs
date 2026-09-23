@@ -561,6 +561,66 @@ fn enter_on_an_empty_box_sends_what_is_waiting_now() {
     );
 }
 
+/// A call still running when the reader stops the turn stops saying so.
+///
+/// A tool call's state is the agent's, and an agent that is told to stop is
+/// asked to send the updates it owes on the way out. One that never sees
+/// the cancellation sends none, and its calls sit at `in_progress` for
+/// ever: obelus tells the reader the conversation is resting and draws, two
+/// rows above, a call that says it is running. The mark on it does not even
+/// turn, because nothing wakes the screen for a conversation obelus
+/// believes is idle -- a spinner frozen mid-turn, which reads worse than no
+/// spinner at all.
+///
+/// `cancelled` is the protocol's own word for a call stopped before it
+/// finished, so this is obelus writing down what the agent would have said
+/// rather than inventing a state.
+///
+/// Broken deliberately by taking `stop_the_calls` out of `interrupt_agent`,
+/// which leaves the row at `in_progress` under a conversation that has been
+/// told it is over.
+#[test]
+fn a_call_still_running_when_the_reader_stops_says_it_was_stopped() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // A call of the agent's own, which is the case this is about: a call
+    // obelus is running the command for has a state of its own from the
+    // runner, and one the agent runs itself has only what the agent last
+    // said about it.
+    support::type_text(&mut app, "read something for me");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the call to start", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.state.as_deref() == Some("in_progress"))
+        })
+    });
+
+    support::press(&mut app, KeyCode::Esc);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let chat = app.chat().expect("the conversation");
+    let rows = chat.rows(WIDTH);
+    let still = rows
+        .iter()
+        .filter(|row| matches!(row.state.as_deref(), Some("pending" | "in_progress")))
+        .count();
+    assert_eq!(
+        still, 0,
+        "a call says it is running under a conversation that has stopped"
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.state.as_deref() == Some("cancelled")),
+        "the call that was running says nothing about having been stopped"
+    );
+}
+
 /// The answer to a turn obelus cancelled does not end the turn after it.
 ///
 /// An agent that is told to stop does what the protocol asks: it answers
@@ -569,16 +629,17 @@ fn enter_on_an_empty_box_sends_what_is_waiting_now() {
 /// it says "the turn is over" with nothing on it saying which turn, because
 /// the protocol puts no turn on it.
 ///
-/// obelus gave up on it for exactly this reason, but with one flag per
-/// conversation that the next prompt cleared: sending the next turn took
-/// back the giving up, the stale answer was delivered after all, and the
-/// conversation went to resting with a turn still running in it. Which is
-/// the whole bug this queue was written for, arriving by the one door the
-/// queue leaves open -- the reader saying "send it now".
+/// So obelus counts its own turns: the number goes out with the prompt,
+/// comes back on the answer, and an answer about a turn that is not the one
+/// running is dropped by the handle. Without that the stale answer ends the
+/// turn that replaced it and the conversation goes to resting with an agent
+/// still working in it -- the whole bug this queue was written for,
+/// arriving by the one door the queue leaves open, which is the reader
+/// saying "send it now".
 ///
-/// A flag per turn instead. Broken deliberately by going back to
-/// `stopped.entry(session).or_default()` and clearing it in `Ask::Say`:
-/// this reads `Ready` with `/forever` in flight.
+/// Broken deliberately by dropping the `open.turn != Some(turn)` guard in
+/// `Talk::on`, so that any answer ends whatever is running: this reads
+/// `Ready` with `/forever` in flight.
 #[test]
 fn the_answer_to_a_cancelled_turn_does_not_end_the_next_one() {
     let (mut app, events) = talking();

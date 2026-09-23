@@ -109,6 +109,15 @@ use obelus_sink::Sink;
 
 use crate::Event;
 
+/// Which turn of a conversation something is about.
+///
+/// obelus's own count and nothing the agent ever sees. The protocol has no
+/// name for a turn -- `session/prompt` answers with a stop reason, and
+/// `session/cancel` names a session -- so a client with two of them about
+/// one conversation cannot tell two answers apart. This is the name obelus
+/// gives them so that it can.
+pub type Turn = u64;
+
 /// What obelus asks the agent to do.
 ///
 /// Sent from the main loop, read by the thread. Not requests: what comes
@@ -143,6 +152,15 @@ pub enum Ask {
     Say {
         /// Which conversation.
         session: SessionId,
+        /// Which turn of it, by obelus's own count.
+        ///
+        /// The protocol numbers nothing: a prompt's answer says the turn is
+        /// over and names only the session, so with two of them about one
+        /// conversation there is no telling which answer belongs to which
+        /// question. obelus counts them itself and puts the number back on
+        /// the answer, which is the same trick a language server's version
+        /// is.
+        turn: Turn,
         /// What to say.
         words: String,
         /// What obelus has to say about the conversation first, once.
@@ -155,6 +173,8 @@ pub enum Ask {
     },
     /// Stop what you are doing in that one.
     Interrupt {
+        /// Which turn obelus is giving up on, for the end it writes itself.
+        turn: Turn,
         /// Which conversation.
         session: SessionId,
     },
@@ -249,6 +269,12 @@ pub enum Incoming {
     Ended {
         /// Whose turn.
         session: SessionId,
+        /// And which one of that conversation's, by obelus's count.
+        ///
+        /// Because the answer itself does not say. An answer to a turn that
+        /// is no longer the one running is an answer about something nobody
+        /// is waiting for, and it used to end the turn that had replaced it.
+        turn: Turn,
         /// And why it stopped.
         why: String,
     },
@@ -960,10 +986,6 @@ async fn open_session(
     root: &std::path::Path,
     tools: Option<&McpServer>,
     events: &impl Sink<Event>,
-    stopped: &mut std::collections::HashMap<
-        SessionId,
-        std::sync::Arc<std::sync::atomic::AtomicBool>,
-    >,
 ) -> Result<SessionId, agent_client_protocol::Error> {
     // What obelus itself offers the agent: a handful of tools about this
     // reader's notes, which the protocol has no way to express because it is
@@ -974,7 +996,6 @@ async fn open_session(
     }
     let opened = connection.send_request(asking).block_task().await?;
     let session = opened.session_id.clone();
-    stopped.entry(session.clone()).or_default();
     // The old mode methods, read into a setting at the edge -- and kept
     // only until the settings say they carry the mode themselves, which is
     // what replaces them.
@@ -1366,22 +1387,6 @@ async fn talk(
                 // up, decided once for the same reason.
                 let again = taking_up(&ready.agent_capabilities);
 
-                // Whether each conversation's turn in flight has been
-                // given up on.
-                //
-                // One flag per conversation and not one for the connection.
-                // It is set by an interruption, cleared by the next prompt,
-                // and read by the answer's callback -- an agent that never
-                // saw the cancellation answers the prompt anyway, and by
-                // then the reader has been told that turn is over. Shared
-                // between two conversations, stopping one would throw away
-                // the answer arriving in the other, with nothing to say so
-                // and no way to notice but to be talking in two at once.
-                let mut stopped: std::collections::HashMap<
-                    SessionId,
-                    std::sync::Arc<std::sync::atomic::AtomicBool>,
-                > = std::collections::HashMap::new();
-
                 // Nothing is opened here. One was, on the grounds that the
                 // reader opening the view is a request to talk -- which
                 // was true while opening the view was the only way to get
@@ -1395,14 +1400,7 @@ async fn talk(
                 while let Some(ask) = asks.next().await {
                     match ask {
                         Ask::Open => {
-                            open_session(
-                                &connection,
-                                &root,
-                                offered.as_ref(),
-                                &events,
-                                &mut stopped,
-                            )
-                            .await?;
+                            open_session(&connection, &root, offered.as_ref(), &events).await?;
                         }
                         // Gone, because the note it was about is. Two ways
                         // to say it and they mean different things: `delete`
@@ -1411,7 +1409,6 @@ async fn talk(
                         // is tried first and the second is the fallback for
                         // an agent that only offers that.
                         Ask::Drop { session } => {
-                            stopped.remove(&session);
                             let forgotten = connection
                                 .send_request(DeleteSessionRequest::new(session.clone()))
                                 .block_task()
@@ -1484,7 +1481,6 @@ async fn talk(
                             };
                             match taken {
                                 Some(Ok((modes, options))) => {
-                                    stopped.entry(session.clone()).or_default();
                                     let mode = modes.as_ref().map(mode_setting);
                                     let _ = events.send(Event::Acp(Incoming::Started {
                                         session: session.clone(),
@@ -1516,14 +1512,8 @@ async fn talk(
                                         session: session.clone(),
                                         why,
                                     }));
-                                    open_session(
-                                        &connection,
-                                        &root,
-                                        offered.as_ref(),
-                                        &events,
-                                        &mut stopped,
-                                    )
-                                    .await?;
+                                    open_session(&connection, &root, offered.as_ref(), &events)
+                                        .await?;
                                 }
                             }
                         }
@@ -1533,22 +1523,11 @@ async fn talk(
                         // agent is thinking has to reach it.
                         Ask::Say {
                             session,
+                            turn,
                             words,
                             opening,
                         } => {
                             let told = events.clone();
-                            // A flag of this turn's own, put in the map in
-                            // place of the last turn's rather than reset.
-                            // Sharing one per conversation and clearing it
-                            // here made a new prompt take back the giving
-                            // up done on the one before: an interrupted
-                            // turn whose answer was still coming had it
-                            // delivered after all, and that answer says
-                            // "the turn is over" about a turn that is not
-                            // the one running.
-                            let given_up =
-                                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-                            stopped.insert(session.clone(), std::sync::Arc::clone(&given_up));
                             let whose = session.clone();
                             connection
                                 .send_request(PromptRequest::new(
@@ -1560,16 +1539,17 @@ async fn talk(
                                         .collect(),
                                 ))
                                 .on_receiving_result(move |asked| {
-                                    // A turn the reader stopped is over,
-                                    // and whatever the agent says about it
-                                    // now is about something nobody is
-                                    // waiting for.
-                                    if given_up.load(std::sync::atomic::Ordering::Relaxed) {
-                                        return std::future::ready(Ok(()));
-                                    }
+                                    // Sent whatever became of the turn, and
+                                    // whatever has happened here since. An
+                                    // answer about a turn nobody is waiting
+                                    // for any more is thrown away by the
+                                    // handle, which is the side that counts
+                                    // them -- this one keeps nothing that
+                                    // could go stale.
                                     let _ = told.send(Event::Acp(match asked {
                                         Ok(answer) => Incoming::Ended {
                                             session: whose,
+                                            turn,
                                             why: said_as(&answer.stop_reason),
                                         },
                                         Err(error) => {
@@ -1588,15 +1568,12 @@ async fn talk(
                         // cancellation can reach an agent before the prompt
                         // it is about -- goes on working on a turn nobody
                         // is waiting for.
-                        Ask::Interrupt { session } => {
-                            stopped
-                                .entry(session.clone())
-                                .or_default()
-                                .store(true, std::sync::atomic::Ordering::Relaxed);
+                        Ask::Interrupt { session, turn } => {
                             connection
                                 .send_notification(CancelNotification::new(session.clone()))?;
                             let _ = events.send(Event::Acp(Incoming::Ended {
                                 session,
+                                turn,
                                 why: "cancelled".to_string(),
                             }));
                         }

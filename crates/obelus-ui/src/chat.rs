@@ -1491,6 +1491,10 @@ impl ChatView<'_> {
                 self.theme.gutter_current,
             ),
             "completed" => (obelus_icons::ui::DONE, "Done", self.theme.gutter),
+            // The word the transcript already uses for the turn this call
+            // was in, because it is the same fact said about a smaller
+            // thing.
+            "cancelled" => (obelus_icons::ui::STAYING, "Stopped", self.theme.gutter),
             "failed" => (
                 obelus_icons::ui::BROKEN,
                 "Failed",
