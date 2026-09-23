@@ -38,6 +38,7 @@ impl App {
             highlights: &preview.highlights,
             marked: &preview.marked,
             changes: preview.changes.as_ref(),
+            troubles: &preview.troubles,
         })
     }
 
@@ -201,8 +202,7 @@ impl App {
     /// Reads whatever the picker's selection names, and points it at the line
     /// the selection is about.
     pub(super) fn refresh_preview(&mut self, editor_area: Rect) {
-        let Some(area) = obelus_ui::picker::preview_region(self.picker.as_ref(), editor_area)
-        else {
+        let Some(area) = self.preview_area(editor_area) else {
             self.preview = None;
             return;
         };
@@ -210,17 +210,28 @@ impl App {
             self.preview = None;
             return;
         };
+        // The file being read is not read a second time to be shown over
+        // itself. A compact list is drawn on it so that it stays readable,
+        // and it is the real one that stays there -- with the caret where
+        // the reader left it, the complaint under its line, and
+        // `look_at_the_selection` scrolling it to the row they are on.
+        if self.previews_over_the_code(editor_area) && self.reading_this(&subject) {
+            self.preview = None;
+            return;
+        }
 
         if self.preview.as_ref().map(|preview| &preview.subject) != Some(&subject) {
-            self.preview = self.read(&subject).map(|(buffer, changes)| Preview {
+            let read = self.read(&subject).map(|(buffer, changes)| Preview {
                 subject: subject.clone(),
                 changes,
+                troubles: self.wrong_in(&subject, &buffer),
                 buffer,
                 highlights: Highlights::default(),
                 marked: Vec::new(),
                 target: marked.at(),
                 scrolled: 0,
             });
+            self.preview = read;
         }
 
         // Whichever encoding the server for this language agreed to. Nothing
@@ -235,6 +246,8 @@ impl App {
                 client.encoding().clone()
             });
 
+        let complaining = self.config().diagnostics;
+        let troubling = self.showing_troubles();
         let Some(preview) = self.preview.as_mut() else {
             return;
         };
@@ -272,6 +285,52 @@ impl App {
             // scroll it would be a line nobody can read.
             wrap: true,
         };
+        let runs = marked.resolve(preview.buffer.text(), &encoding);
+        // What is wrong with the line it is showing, opened under that line
+        // the way the editor opens it under the caret's. A list of problems
+        // that previewed the line and left the words in the row above is a
+        // reader reading a message through a slot; the box is where the
+        // words fit.
+        //
+        // Only for that list. The underline belongs to every buffer the
+        // editor draws -- what is wrong is wrong wherever the line is shown
+        // -- but the box is an answer to a row that *names* a problem. Over
+        // a search's rows it would be four lines about something the query
+        // was not asking after, in the room the match was to be read in.
+        //
+        // Before the view is put anywhere: the block is rows, and rows are
+        // what the centring counts.
+        let Preview {
+            buffer, troubles, ..
+        } = preview;
+        match complaining && troubling {
+            // Which of the line's troubles the row is about, where the row
+            // is about one at all: a search's mark is characters a query
+            // matched, and a column of that is not a column anything was
+            // said at.
+            true => {
+                let chosen = matches!(marked, Marked::Span { .. })
+                    .then(|| runs.first().map(|span| span.column))
+                    .flatten();
+                semantics::say_what_is_wrong(buffer, troubles, target, chosen, text.width);
+            }
+            // Closed rather than left alone: the same file previewed from
+            // the list of problems and then from a search is one preview
+            // read twice, and the box the first list opened is not the
+            // second one's to keep. The same for the setting going off.
+            false => buffer.close_blocks(obelus_buffer::Held::Wrong),
+        }
+        // A problem is not marked in its own preview. The box says which
+        // line, which column and what was said, and a run of colour over
+        // the same characters is that said again -- differently, because a
+        // mark is one colour whatever the severity. It would also be the
+        // odd one out: a row in the file the reader is already in has no
+        // preview to mark, so half the list would be highlighted and half
+        // of it not, for no reason a reader could see.
+        preview.marked = match troubling {
+            true => Vec::new(),
+            false => runs,
+        };
         preview.buffer.place_cursor(target, CharColumn::new(0));
         // Being put somewhere clears the caret out of any block, which is
         // right for a reader who asked to go to a line and wrong here: a
@@ -285,7 +344,6 @@ impl App {
         // Stored back, so rows the file does not have are not banked against
         // the next press the other way.
         preview.scrolled = preview.buffer.scroll_rows(preview.scrolled, text);
-        preview.marked = marked.resolve(preview.buffer.text(), &encoding);
 
         let range = preview.buffer.visible_bytes(area.height);
         if let Some(state) = preview.buffer.syntax() {
@@ -404,7 +462,11 @@ impl App {
         let Some(pages) = preview_paging(key) else {
             return false;
         };
-        if self.preview.is_none() {
+        // A pane of its own, and something in it. Not a preview drawn over
+        // the code: there the list is the thing the reader is working
+        // through, and paging belongs to its rows -- which is where these
+        // keys went before there was anything to show above them.
+        if self.preview.is_none() || self.previews_over_the_code(self.editor_area) {
             return false;
         }
         self.scroll_preview(pages);
@@ -416,8 +478,7 @@ impl App {
     /// Not a command: it is navigation, and navigation belongs to whatever
     /// holds the position it moves. What holds this one is the preview.
     pub(super) fn scroll_preview(&mut self, pages: isize) {
-        let Some(area) = obelus_ui::picker::preview_region(self.picker.as_ref(), self.editor_area)
-        else {
+        let Some(area) = self.preview_area(self.editor_area) else {
             return;
         };
         let Some(preview) = self.preview.as_mut() else {
@@ -427,6 +488,51 @@ impl App {
         // Not clamped here: what the file can actually give is known when it
         // is drawn, and `refresh_preview` stores that back.
         preview.scrolled += pages * rows;
+    }
+
+    /// Where this list shows what its selection names.
+    ///
+    /// Under a full-area list, which has covered the file and needs a pane
+    /// of its own, or over a compact one, in the room the code is drawn in.
+    /// Two places and one preview: the reading and the marking are the same
+    /// wherever it goes.
+    fn preview_area(&self, editor_area: Rect) -> Option<Rect> {
+        obelus_ui::picker::preview_region(self.picker.as_ref(), editor_area).or_else(|| {
+            obelus_ui::picker::preview_over(self.picker.as_ref(), self.above(editor_area))
+        })
+    }
+
+    /// Whether that place is the room the code was drawn in.
+    fn previews_over_the_code(&self, editor_area: Rect) -> bool {
+        obelus_ui::picker::preview_over(self.picker.as_ref(), self.above(editor_area)).is_some()
+    }
+
+    /// The room a compact list leaves above itself.
+    ///
+    /// Which is the room the document was given, because a list sitting on
+    /// the status bar shortens the document rather than covering it --
+    /// except over a conversation, which keeps the whole region and has the
+    /// list drawn on top of it. Worked out here as well as where it is
+    /// drawn, because a preview centred in a taller room than it is drawn
+    /// in puts the line it is about below the bottom of it.
+    fn above(&self, editor_area: Rect) -> Rect {
+        let Some(picker) = self.picker.as_ref().filter(|_| self.chat().is_some()) else {
+            return editor_area;
+        };
+        obelus_ui::picker::room_above(picker, editor_area)
+    }
+
+    /// Whether what a row names is the file already on screen behind the
+    /// list.
+    fn reading_this(&self, subject: &Subject) -> bool {
+        match subject {
+            Subject::File(path) => self
+                .current_buffer()
+                .is_some_and(|buffer| buffer.path() == path),
+            // A file as a commit had it is not the file on disk, whatever
+            // its path says, and a message is not a file at all.
+            Subject::Commit { .. } | Subject::Message(_) => false,
+        }
     }
 
     /// The file, and the part of it, the picker's selection is about.
@@ -554,21 +660,26 @@ impl App {
     /// else would be a promise obelus does not keep.
     fn read(&self, subject: &Subject) -> Option<(Buffer, Option<obelus_git::Changes>)> {
         match subject {
-            Subject::File(path) => match Buffer::open(path) {
-                Ok(buffer) => {
-                    let changes = obelus_git::head_text(path).map(|committed| {
-                        obelus_git::Changes::between(&committed, &buffer.text().rope().to_string())
-                    });
-                    Some((buffer, changes))
-                }
-                // A file that has gone, or one this reader cannot read. No
-                // preview rather than a message: the list is the subject
-                // here.
-                Err(error) => {
-                    tracing::debug!(%error, "no preview");
-                    None
-                }
-            },
+            Subject::File(path) => {
+                // The text as the reader has it, wherever they have it. A
+                // file open in obelus is open with what obelus holds, which
+                // is what choosing the row gives them -- and the disk stops
+                // being the same document the moment anything writes to it
+                // and obelus has not read it again.
+                let buffer = match self.open_file_at(path, None) {
+                    Some(open) => Buffer::from_text(path, &open.text().rope().to_string()),
+                    // A file that has gone, or one this reader cannot read.
+                    // No preview rather than a message: the list is the
+                    // subject here.
+                    None => Buffer::open(path)
+                        .inspect_err(|error| tracing::debug!(%error, "no preview"))
+                        .ok()?,
+                };
+                let changes = obelus_git::head_text(path).map(|committed| {
+                    obelus_git::Changes::between(&committed, &buffer.text().rope().to_string())
+                });
+                Some((buffer, changes))
+            }
             Subject::Commit { id, path } => {
                 let text = obelus_git::history::text_at(&self.working_directory, *id, path)?;
                 let mut buffer = Buffer::at_commit(path, *id, &text);
@@ -640,12 +751,51 @@ impl App {
     /// same file as some commit had it -- and matching on the path alone
     /// would show a reader the other one's place in it.
     fn read_at(&self, path: &Path, at: Option<gix::ObjectId>) -> Marked {
+        self.open_file_at(path, at)
+            .map_or_else(Marked::top, |buffer| Marked::on(&buffer.cursor()))
+    }
+
+    /// What is known to be wrong with what a preview is showing, placed in
+    /// the text it is showing.
+    ///
+    /// Placed against the preview's own buffer rather than taken from the
+    /// placed copy obelus keeps: that one is counted against the text of a
+    /// file obelus has open, and most of what a preview shows is a file
+    /// nobody has opened.
+    ///
+    /// Nothing for a commit's version of a file. What a server said is
+    /// about the file on disk, and hanging it on the bytes of an old commit
+    /// would put the words under a line that was never the one complained
+    /// about.
+    fn wrong_in(&self, subject: &Subject, buffer: &Buffer) -> Vec<obelus_lsp::trouble::Trouble> {
+        let Subject::File(path) = subject else {
+            return Vec::new();
+        };
+        let encoding = buffer
+            .language()
+            .and_then(|language| self.servers.get(&language))
+            .map_or(lsp_types::PositionEncodingKind::UTF16, |client| {
+                client.encoding().clone()
+            });
+        self.reported
+            .get(path)
+            .into_iter()
+            .flatten()
+            .map(|trouble| trouble.placed(buffer.text(), &encoding))
+            .collect()
+    }
+
+    /// The document holding a file, where obelus has one open.
+    ///
+    /// The content as well as the path: a commit's version of a file and
+    /// the file itself share a path and are two documents, so a row about
+    /// one must not be answered with the other.
+    fn open_file_at(&self, path: &Path, at: Option<gix::ObjectId>) -> Option<&Buffer> {
         self.documents
             .iter()
             .flatten()
             .filter_map(Document::file)
             .find(|buffer| buffer.path() == path && buffer.content().at() == at)
-            .map_or_else(Marked::top, |buffer| Marked::on(&buffer.cursor()))
     }
 
     /// The file being read and the line it is being read at, as a preview's
@@ -692,6 +842,12 @@ pub(super) struct Preview {
     subject: Subject,
     buffer: Buffer,
     highlights: Highlights,
+    /// What a server says is wrong with it, placed in this buffer's text.
+    ///
+    /// Worked out when the file is read, like the changes beside it: a
+    /// preview is a snapshot of somewhere else, and what is wrong with a
+    /// file nobody is editing does not change while it is being looked at.
+    troubles: Vec<obelus_lsp::trouble::Trouble>,
     /// What git says about this file, so the preview carries the same
     /// margin the editor does.
     ///

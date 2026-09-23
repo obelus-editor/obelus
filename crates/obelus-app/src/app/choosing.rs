@@ -297,6 +297,13 @@ impl App {
     /// question over the conversation it was asked in.
     pub(super) fn show_list(&mut self, picker: Picker) {
         self.make_room(Room::Band);
+        // Whatever the last list was, it is not this one. Said here rather
+        // than only on the way out, because a list can be opened over a
+        // list without the one underneath being left -- and a radius left
+        // behind would have the *new* list's tabs refilled with problems.
+        // Which is why `open_troubles` declares its radii after this call
+        // and not before.
+        self.troubling.clear();
         // Where the reader is looking, before the list takes any of it.
         // Taken here rather than when the list first shows them somewhere,
         // because a list that sits on the status bar shortens the editor
@@ -346,6 +353,7 @@ impl App {
         // question: the commits of a file and of a project are two
         // answers, not two views of one.
         let historic = !self.history.radii.is_empty();
+        let troubling = !self.troubling.is_empty();
         let before = (picker.tab(), picker.query().to_string());
         // Where the tree is standing, read before the key can move it: a
         // typed letter filters the rows the list already has, so by the
@@ -381,6 +389,12 @@ impl App {
                 }
                 if historic && after.0 != before.0 {
                     self.refresh_history();
+                }
+                // And a list of problems is two answers as well: what is
+                // wrong with this file, and what is wrong with the project
+                // around it.
+                if troubling && after.0 != before.0 {
+                    self.refresh_troubles();
                 }
                 if calling && after.0 != before.0 {
                     self.turn_calls_round();

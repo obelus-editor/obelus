@@ -910,8 +910,12 @@ impl Picker {
     /// with no account of what they answer is a question with the words
     /// missing. The prompt row can hold a few of those words; this holds
     /// the ones that do not fit on a row.
+    ///
+    /// Nothing at all for nothing to say, so that a list which says
+    /// something about one of its tabs and nothing about the next does not
+    /// keep a blank row and a rule where the words were.
     pub fn about(&mut self, about: &str) {
-        self.about = Some(about.to_string());
+        self.about = (!about.is_empty()).then(|| about.to_string());
     }
 
     /// What the list is about, if it says.

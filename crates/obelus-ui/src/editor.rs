@@ -519,6 +519,13 @@ impl<'a> EditorView<'a> {
     /// same margin the editor does: a reader looking at a list of matches
     /// wants to know which of them are in code that has just been touched,
     /// and that is the same question the margin answers everywhere else.
+    ///
+    /// `troubles` is what a server says is wrong with *this* buffer. The
+    /// underline is the editor's, not the file being read's: wherever these
+    /// rows are drawn, a reader looking straight at a broken line and
+    /// seeing nothing under it has been shown the file with the one thing
+    /// anybody said about it taken out -- and would have to open the file
+    /// to find out where it is.
     #[must_use]
     pub const fn for_buffer(
         buffer: &'a Buffer,
@@ -526,12 +533,14 @@ impl<'a> EditorView<'a> {
         theme: &'a Theme,
         marked: &'a [Span],
         changes: Option<&'a Changes>,
+        troubles: &'a [obelus_lsp::trouble::Trouble],
     ) -> Self {
         Self {
             buffer: Some(buffer),
             highlights,
             theme,
             marked,
+            troubles,
             // Nothing for a preview: what is drawn there is somewhere else,
             // and where a colour or a hint goes is a fact about the file
             // the reader is in.
@@ -540,7 +549,6 @@ impl<'a> EditorView<'a> {
             // Everything that answers "where am I and what am I doing" is
             // the document's rather than a look at another one's.
             selection: None,
-            troubles: &[],
             opened: Vec::new(),
             blame: None,
             blamed_here: false,

@@ -249,6 +249,21 @@ pub struct App {
     /// would otherwise be shown against whatever is opened into its place.
     /// Replaced wholesale, because that is what a server sends.
     troubles: HashMap<PathBuf, Vec<obelus_lsp::trouble::Trouble>>,
+    /// What every server has said about every file, as it said it.
+    ///
+    /// The whole project rather than the files obelus has open, and in the
+    /// protocol's own units rather than in any document's: a range is
+    /// placed by counting against the text it is in, and most of what a
+    /// server talks about after a `cargo check` is text obelus has not
+    /// read. Dropping those was dropping the answer to "where is this
+    /// project broken", which is a question about the files nobody has
+    /// opened yet.
+    ///
+    /// Every file, including the open ones, so that the list of the whole
+    /// project is one list read one way. What is placed in `troubles`
+    /// above is the same news, placed, for the things that have to line up
+    /// with characters on screen: the underline, the count, the complaint.
+    reported: HashMap<PathBuf, Vec<obelus_lsp::trouble::Reported>>,
     /// Where the pointer was last put down, and how many times in a row.
     ///
     /// A terminal reports button presses and nothing about double clicks,
@@ -493,6 +508,12 @@ pub struct App {
     /// The tabs are only the scopes that can answer, so which tab is which
     /// scope is not a fixed mapping and has to be remembered.
     searching: Vec<Scope>,
+    /// Which radii the open list of problems is showing, in tab order.
+    ///
+    /// The same remembering for the same reason: a tab is only there when
+    /// it has something to answer with, so its position is not fixed.
+    /// Empty when the list showing is not that one.
+    troubling: Vec<semantics::Wrong>,
     /// Who last changed each line, per file that has been asked about.
     ///
     /// Kept rather than replaced, because a reader goes back and forth
@@ -640,6 +661,7 @@ impl App {
             resting: None,
             settling: None,
             troubles: HashMap::new(),
+            reported: HashMap::new(),
             completion: None,
             filling: None,
             tokens: HashMap::new(),
@@ -676,6 +698,7 @@ impl App {
             history: history_view::Showing::default(),
             calls: None,
             searching: Vec::new(),
+            troubling: Vec::new(),
             blames: std::collections::HashMap::new(),
             committed: None,
             asking_blame: std::collections::HashSet::new(),
@@ -1356,6 +1379,7 @@ impl App {
                 // purpose -- see `App::accept`.
                 self.look_back();
                 self.history = history_view::Showing::default();
+                self.troubling.clear();
                 self.close_calls();
                 // What a server offered to do here, which the rows were
                 // indexes into. A row is chosen by its position, so offers

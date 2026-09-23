@@ -557,111 +557,37 @@ impl App {
             self.close_the_complaint();
             return;
         }
-        let Some(buffer) = self.current_buffer() else {
-            return;
-        };
         // Whatever the reader is looking at, which is the caret's line
         // until a list is showing them somewhere else. Then it is the row
         // they have walked to: the file scrolls to it and the complaint
         // opens under it, so the row in the list and the place in the file
         // are obviously the same thing rather than two things a reader has
         // to pair up by line number.
-        //
-        // The column as well as the line, because the list has a row per
-        // trouble and a line can hold several: told only the line, the box
-        // would show the worst of them whichever row was selected, and two
-        // rows that say different things would look like one thing said
-        // twice.
         let chosen = self.the_selection_in_this_file();
-        let line = chosen.map_or_else(|| buffer.cursor().line, |(line, _)| line);
-        // The worst of them where a line has several, and how many others
-        // there are: the same two facts the underline settles, settled the
-        // same way.
-        let mut here: Vec<&obelus_lsp::trouble::Trouble> = self
-            .troubles()
-            .iter()
-            .filter(|trouble| trouble.span.line == line)
-            .collect();
-        here.sort_by_key(|trouble| trouble.severity);
-        // The one the reader has picked out of the list, where they have
-        // picked one; the worst on the line otherwise, which is what the
-        // underline settles too.
-        let worst = chosen
-            .and_then(|(line, column)| {
-                here.iter()
-                    .find(|trouble| trouble.span.line == line && trouble.span.column == column)
-            })
-            .or_else(|| here.first());
-        let Some(worst) = worst else {
-            self.close_the_complaint();
-            return;
-        };
-        // Indented to the column the trouble starts at, so the words hang
-        // under the thing they are about rather than under the left-hand
-        // edge of code they may have nothing to do with. In display
-        // columns, because that is what a tab is worth on screen and the
-        // block's own indent is spaces.
-        //
-        // Never more than half the room: a complaint about something near
-        // the right-hand edge would otherwise be a word to a row.
-        let column = self.current_buffer().map_or(0, |buffer| {
-            buffer.text().display_column(line, worst.span.column).get()
-        });
-        let room = self.text_area().width;
-        // What the frame costs the row: a rail and a space at either end.
-        const FRAME: u16 = 4;
-        // And the least room worth leaving the words if the indent is to
-        // be kept.
-        const LEAST: u16 = 24;
-        // The indent is the one thing given up as the window narrows, and
-        // it is given up outright rather than shaved: which word the
-        // complaint is about is a nicety, and it is not worth buying at
-        // the price of every sentence wrapping twice as hard.
-        //
-        // The frame itself is never given up. It is the thing that says
-        // these rows are not the file, and half a frame says it worse than
-        // none -- so what a narrow window costs is harder wrapping inside
-        // it, which is only prose being prose.
-        let indent = if room >= FRAME + LEAST + column {
-            column
-        } else {
-            0
-        };
-        let inside = room.saturating_sub(FRAME + indent);
-        // Under a window with no room for a rail, a space and a character
-        // and the same again: a frame there could not be whole whatever it
-        // gave up, and an unclosed one is the shape this is drawn to avoid.
-        let framing = inside > 0;
-        let words = obelus_text::wrapped(&worst.message, inside.max(1));
-        let tally = (here.len() > 1).then(|| format!("and {} more here", here.len() - 1));
-        let said = if framing {
-            framed(&" ".repeat(usize::from(indent)), &words, tally.as_deref())
-        } else {
-            words.into_iter().chain(tally).collect()
-        };
-        // Already saying exactly this, in exactly this place: rebuilding it
-        // would put the caret out of it on every frame, and a reader cannot
-        // select what is rebuilt underneath them.
-        // Under the line, which is where a complaint about it belongs. Past
-        // the end of the file on its last line, which is a place a block
-        // can hang: the row after the last line is counted by
-        // `screen_rows_of` and drawn by the pass the view makes past the
-        // end, both of which a hunk deleting the end of a file needed
-        // first.
-        let under = obelus_text::coordinates::LineNumber::new(line.get() + 1);
-        let standing = self
+        let Some(line) = self
             .current_buffer()
-            .and_then(|buffer| buffer.block_above(under))
-            .filter(|block| block.kind == obelus_buffer::Held::Wrong)
-            .is_some_and(|block| block.opened_with() == said);
-        if standing {
+            .map(|buffer| chosen.map_or_else(|| buffer.cursor().line, |(line, _)| line))
+        else {
             return;
-        }
-        let severity = worst.severity;
-        self.close_the_complaint();
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.open_saying(under, &said, obelus_buffer::Held::Wrong, Some(severity));
-        }
+        };
+        let room = self.text_area().width;
+        let Self {
+            documents,
+            current,
+            troubles,
+            ..
+        } = self;
+        let Some(buffer) = current
+            .and_then(|id| documents.get_mut(id.get()))
+            .and_then(Option::as_mut)
+            .and_then(Document::file_mut)
+        else {
+            return;
+        };
+        let here = troubles
+            .get(buffer.path())
+            .map_or(&[] as &[_], Vec::as_slice);
+        say_what_is_wrong(buffer, here, line, chosen.map(|(_, column)| column), room);
     }
 
     /// Takes away whatever complaint is showing.
@@ -1737,15 +1663,43 @@ impl App {
 impl App {
     /// Keeps what a server says is wrong with a file.
     ///
-    /// Only for a file that is open: the ranges are turned into places in
-    /// a document here, and a document obelus does not have is one it
-    /// cannot place anything in. A server that talks about the rest of the
-    /// project -- rust-analyzer does, after a `cargo check` -- is not
-    /// wrong to, and this is where those would be kept if obelus ever
-    /// listed them.
+    /// Twice over, and neither copy is the other's cache. What arrived is
+    /// kept as it arrived, for every file a server talks about -- and a
+    /// server talks about files obelus does not have open: rust-analyzer
+    /// says what a `cargo check` found, which is the project rather than
+    /// the buffer. That copy is the only one there can be for those files,
+    /// because a range becomes a place by being counted against the text
+    /// it is in and obelus has not read that text.
+    ///
+    /// Then, for a file that *is* open, the same news placed. Everything
+    /// that has to line up with a character on screen reads that one: the
+    /// underline, the count on the status row, the complaint under the
+    /// caret's line.
     pub(super) fn on_published(&mut self, language: LanguageId, params: &serde_json::Value) {
         let Some(path) = obelus_lsp::trouble::path_of(params) else {
             return;
+        };
+        // An empty set is a server saying the file is clean, which is news
+        // worth keeping: it is how what was wrong stops being shown.
+        //
+        // In the order they are in the file, which is not the order they
+        // arrive in. rustc reports what it found in the order it found it,
+        // and rust-analyzer forwards that, so a file whose errors come out
+        // at lines 73, 98, 25 is an ordinary file rather than a strange
+        // one. Everything downstream reads these as places in a file --
+        // the lists walk them top to bottom, and opening one on the row
+        // nearest the caret means something only if the rows are in order.
+        //
+        // Sorted here rather than where a list is built, so that there is
+        // one order and every reader of it gets the same one. Both
+        // readings of the notification, for the same reason: two orders
+        // would be two answers to "what is the third thing wrong with this
+        // file".
+        let mut reported = obelus_lsp::trouble::reported(params);
+        reported.sort_by_key(|trouble| (trouble.line, trouble.character));
+        match reported.is_empty() {
+            true => self.reported.remove(&path),
+            false => self.reported.insert(path.clone(), reported),
         };
         let Some(buffer) = self
             .documents
@@ -1763,20 +1717,7 @@ impl App {
                 client.encoding().clone()
             });
         let mut troubles = obelus_lsp::trouble::published(params, buffer.text(), &encoding);
-        // In the order they are in the file, which is not the order they
-        // arrive in. rustc reports what it found in the order it found it,
-        // and rust-analyzer forwards that, so a file whose errors come out
-        // at lines 73, 98, 25 is an ordinary file rather than a strange
-        // one. Everything downstream reads this as a list of places in a
-        // file -- the list walks it top to bottom, and opening that list on
-        // the one nearest the caret lands on a row whose position in the
-        // list means something.
-        //
-        // Sorted here rather than where the list is built, so that there is
-        // one order and every reader of it gets the same one.
         troubles.sort_by_key(|trouble| (trouble.span.line, trouble.span.column));
-        // An empty set is a server saying the file is clean, which is news
-        // worth keeping: it is how what was wrong stops being shown.
         match troubles.is_empty() {
             true => self.troubles.remove(&path),
             false => self.troubles.insert(path, troubles),
@@ -1848,10 +1789,22 @@ impl App {
         }
     }
 
-    /// Lists what the server says is wrong with this file.
+    /// Lists what the servers say is wrong, at one radius or the other.
+    ///
+    /// Two tabs rather than two views, the way the search is one question
+    /// at three radii: "what is wrong here" and "what is wrong in this
+    /// project" are the same question about a wider circle, and a reader
+    /// who finds this file clean is one row of tabs away from finding out
+    /// the project is not.
     pub fn open_troubles(&mut self) {
-        let troubles: Vec<obelus_lsp::trouble::Trouble> = self.problems().cloned().collect();
-        if troubles.is_empty() {
+        let here = self
+            .reading()
+            .map_or(0, |path| self.wrong_with(path).count());
+        // Nothing anywhere is not a list. What it is instead is whatever
+        // makes it true: a server that has looked and found nothing, one
+        // that is not answering, or none at all -- which is the difference
+        // between "this is fine" and "nobody has said".
+        if here == 0 && self.troubled().is_empty() {
             self.note = Some(match self.server_state() {
                 Some((_, obelus_lsp::ServerState::Ready)) => {
                     "Nothing wrong with this file".to_string()
@@ -1861,99 +1814,368 @@ impl App {
             });
             return;
         }
-        // Back into the protocol's units, which is what a row that names a
-        // place carries: one kind of value for "go here", and the
-        // conversion in one place.
-        let path = self
-            .current_buffer()
-            .map_or(PathBuf::new(), |buffer| buffer.path().to_path_buf());
-        let encoding = self
-            .current_buffer()
-            .and_then(Buffer::language)
-            .and_then(|language| self.servers.get(&language))
-            .map_or(lsp_types::PositionEncodingKind::UTF16, |client| {
-                client.encoding().clone()
-            });
-        let Some(text) = self
-            .current_buffer()
-            .map(|buffer| buffer.text().rope().to_string())
+        let radii = self.wrongs();
+        // Opened on the radius that has something to say. A reader asks
+        // this about where they are, so the file comes first when the file
+        // has anything -- and when it has nothing, a tab saying so is a
+        // list that has to be walked before it answers anything at all.
+        let opening = match here {
+            0 => Wrong::Project,
+            _ => Wrong::File,
+        };
+        let Some(tab) = radii.iter().position(|radius| *radius == opening) else {
+            return;
+        };
+        let names: Vec<&str> = radii.iter().map(|radius| radius.label()).collect();
+        let mut picker = Picker::new(Vec::new(), PickerLayout::Compact { rows: 10 });
+        picker.with_scopes(&names);
+        picker.keeps_order(true);
+        // A row in another file is shown in the room above the rows, which
+        // is where the file being read is drawn: the project's radius names
+        // files nobody has opened, and a list that could only say
+        // `other.rs:12` about them would be a list a reader has to leave to
+        // read. The file's own radius never asks -- its rows are all in the
+        // file already there -- so nothing moves when they walk the tabs.
+        picker.previews();
+        picker.go_to_tab(tab);
+        self.show_list(picker);
+        // After the list is shown, not before: showing one forgets what the
+        // last one was, this included.
+        self.troubling = radii;
+        self.refresh_troubles();
+    }
+
+    /// Which radii can answer, in the order their tabs sit in.
+    ///
+    /// Settled when the list opens rather than watched while it is open,
+    /// for the reason the search settles its own: a tab that came and went
+    /// under the reader's hand would move the ground while they walk it.
+    fn wrongs(&self) -> Vec<Wrong> {
+        [Wrong::File, Wrong::Project]
+            .into_iter()
+            .filter(|radius| match radius {
+                Wrong::File => self.current_buffer().is_some(),
+                // Always: obelus is started in a directory, and a project
+                // nobody has said anything about is an empty list saying
+                // so rather than a missing tab.
+                Wrong::Project => true,
+            })
+            .collect()
+    }
+
+    /// Whether the list showing is the list of problems.
+    pub(super) fn showing_troubles(&self) -> bool {
+        self.picker.is_some() && !self.troubling.is_empty()
+    }
+
+    /// Fills the open list of problems with the radius it is showing.
+    ///
+    /// Called when it opens and whenever the reader walks onto the other
+    /// tab: the two radii are two sets of rows over two sets of files, and
+    /// the list itself knows nothing about where rows come from.
+    pub(super) fn refresh_troubles(&mut self) {
+        let Some(radius) = self
+            .picker
+            .as_ref()
+            .and_then(|picker| self.troubling.get(picker.tab()).copied())
         else {
             return;
         };
-        let text = obelus_text::Text::from_string(&text);
-        let at = |line, column| position::to_lsp(&text, line, column, &encoding);
-
-        let items = troubles
+        let paths = match radius {
+            Wrong::File => self.reading().map(Path::to_path_buf).into_iter().collect(),
+            Wrong::Project => self.troubled(),
+        };
+        let named: Vec<String> = paths
             .iter()
-            .map(|trouble| PickerItem {
-                icon: obelus_icons::enabled()
-                    .then(|| obelus_icons::for_kind(trouble.severity.kind())),
-                label: trouble.summary().to_string(),
-                detail: trouble.source.clone(),
-                prose: true,
-                marker: None,
-                trailing: Some(format!("{}", trouble.span.line.get() + 1)),
-                changed: None,
-                value: {
-                    let start = at(trouble.span.line, trouble.span.column);
-                    let end = at(trouble.span.end_line, trouble.span.end_column);
-                    PickerValue::Place {
-                        path: path.clone(),
-                        line: start.line,
-                        character: start.character,
-                        end_line: end.line,
-                        end_character: end.character,
-                    }
-                },
-                depth: 0,
-                opens: None,
-                status: None,
-                enabled: true,
-                colours: None,
-                kind: Some(trouble.severity.kind()),
-                tab: None,
+            .map(|path| crate::app::relative(path, &self.working_directory))
+            .collect();
+        let items: Vec<PickerItem> = paths
+            .iter()
+            .zip(&named)
+            .flat_map(|(path, name)| {
+                self.wrong_with(path).map(move |trouble| {
+                    // A row says which file it is in only where that is
+                    // news. In the file's own radius every row is in the
+                    // file the heading names, and a path on each of them
+                    // would be the same path ten times over, in the room
+                    // the message needs.
+                    let line = trouble.line + 1;
+                    let trailing = match radius {
+                        Wrong::File => format!("{line}"),
+                        Wrong::Project => format!("{name}:{line}"),
+                    };
+                    trouble_row(trouble, path, trailing)
+                })
             })
             .collect();
-        let mut picker = Picker::new(items, PickerLayout::Compact { rows: 10 });
-        picker.keeps_order(true);
-        // Opened on the one nearest the caret rather than at the top of the
-        // file. A reader asks this about where they are, and a list that
-        // always starts at line one makes them walk back to somewhere they
-        // were already standing -- while the file behind it scrolls away
-        // from them, because the list shows its selection in the file.
-        //
-        // Nearest either way, not the next one down: the one they are on is
-        // the one they meant, and it is the caret's own line that is
-        // nearest it.
-        if let Some(line) = self
-            .current_buffer()
-            .map(|buffer| buffer.cursor().line.get())
-            && let Some((at, _)) = troubles
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, trouble)| trouble.span.line.get().abs_diff(line))
-        {
+        let severities: Vec<obelus_lsp::trouble::Severity> = paths
+            .iter()
+            .flat_map(|path| self.wrong_with(path).map(|trouble| trouble.severity))
+            .collect();
+        let about = match (severities.is_empty(), radius) {
+            // Nothing to count is nothing to say: the list has its own
+            // words for being empty, and a heading over them would be the
+            // same news twice.
+            (true, _) => String::new(),
+            (false, Wrong::File) => format!(
+                "{} in {}",
+                counted(&severities),
+                named.first().map_or("", String::as_str)
+            ),
+            (false, Wrong::Project) => match paths.len() {
+                1 => format!("{} in 1 file", counted(&severities)),
+                files => format!("{} in {files} files", counted(&severities)),
+            },
+        };
+        let at = self.trouble_to_open_on(radius, &items);
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        picker.replace(items);
+        picker.while_empty(match radius {
+            Wrong::File => "Nothing wrong with this file",
+            // Not "nothing is wrong with this project": no server was
+            // asked, and none of them has to say anything about a file
+            // nobody has opened. What is true is that nothing has been
+            // said.
+            Wrong::Project => "No server has said anything about this project",
+        });
+        picker.about(&about);
+        if let Some(at) = at {
             picker.select_item(at);
         }
-        picker.about(&format!(
-            "{} in {}",
-            counted(&troubles),
-            crate::app::relative(&path, &self.working_directory)
-        ));
-        self.show_list(picker);
+    }
+
+    /// Which row the list opens on, which is the one nearest where the
+    /// reader is standing.
+    ///
+    /// In the file, that is the row nearest the caret rather than the top
+    /// of the file: a list that always starts at line one makes them walk
+    /// back to somewhere they were already standing -- while the file
+    /// behind it scrolls away from them, because the list shows its
+    /// selection in the file. Nearest either way, not the next one down:
+    /// the one they are on is the one they meant, and it is the caret's own
+    /// line that is nearest it.
+    ///
+    /// In the project, it is the first row in the file they are reading.
+    /// Same rule, as much of it as there is to have: a list of everywhere
+    /// that opened in a stranger's file would answer from somewhere the
+    /// reader is not.
+    fn trouble_to_open_on(&self, radius: Wrong, items: &[PickerItem]) -> Option<usize> {
+        let reading = self.reading()?;
+        match radius {
+            Wrong::File => {
+                let line = self.current_buffer()?.cursor().line.get();
+                let near = |trouble: &obelus_lsp::trouble::Reported| {
+                    usize::try_from(trouble.line)
+                        .unwrap_or(usize::MAX)
+                        .abs_diff(line)
+                };
+                self.wrong_with(reading)
+                    .enumerate()
+                    .min_by_key(|(_, trouble)| near(trouble))
+                    .map(|(at, _)| at)
+            }
+            Wrong::Project => items.iter().position(
+                |item| matches!(&item.value, PickerValue::Place { path, .. } if path == reading),
+            ),
+        }
+    }
+
+    /// The path of the file being read, where one is.
+    fn reading(&self) -> Option<&Path> {
+        self.current_buffer().map(Buffer::path)
+    }
+
+    /// What has been said about one file that is a problem in its own
+    /// right, in the order it is in the file.
+    ///
+    /// Read from what arrived rather than from what was placed, for every
+    /// radius alike: most of a project is files obelus has not opened, and
+    /// the ones it has say the same thing either way. The notes a server
+    /// hangs on other diagnostics are left out for the reason they are
+    /// left out everywhere a reader works through what is wrong -- see
+    /// [`App::problems`].
+    fn wrong_with(&self, path: &Path) -> impl Iterator<Item = &obelus_lsp::trouble::Reported> {
+        self.reported
+            .get(path)
+            .into_iter()
+            .flatten()
+            .filter(|trouble| trouble.severity != obelus_lsp::trouble::Severity::Hint)
+    }
+
+    /// Every file something is wrong with, in the order a project is read
+    /// in.
+    fn troubled(&self) -> Vec<PathBuf> {
+        let mut paths: Vec<PathBuf> = self
+            .reported
+            .keys()
+            .filter(|path| self.wrong_with(path).next().is_some())
+            .cloned()
+            .collect();
+        paths.sort();
+        paths
     }
 }
 
+/// How wide a question about what is wrong is being asked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Wrong {
+    /// The file being read.
+    File,
+    /// Every file anything has been said about.
+    Project,
+}
+
+impl Wrong {
+    /// The tab's name.
+    const fn label(self) -> &'static str {
+        match self {
+            Self::File => "File",
+            Self::Project => "Project",
+        }
+    }
+}
+
+/// One row of a list of problems, wherever the problem is.
+///
+/// The place is the one the server sent, in the units it sent it in, which
+/// is what a row that names a place carries everywhere in obelus: one kind
+/// of value for "go here", and the conversion in one place.
+fn trouble_row(
+    trouble: &obelus_lsp::trouble::Reported,
+    path: &Path,
+    trailing: String,
+) -> PickerItem {
+    PickerItem {
+        icon: obelus_icons::enabled().then(|| obelus_icons::for_kind(trouble.severity.kind())),
+        label: trouble.summary().to_string(),
+        detail: trouble.source.clone(),
+        prose: true,
+        marker: None,
+        trailing: Some(trailing),
+        changed: None,
+        value: PickerValue::Place {
+            path: path.to_path_buf(),
+            line: trouble.line,
+            character: trouble.character,
+            end_line: trouble.end_line,
+            end_character: trouble.end_character,
+        },
+        depth: 0,
+        opens: None,
+        status: None,
+        enabled: true,
+        colours: None,
+        kind: Some(trouble.severity.kind()),
+        tab: None,
+    }
+}
+
+/// Puts what is wrong with a line under it, in whatever buffer that line is
+/// in.
+///
+/// One box, wherever it is drawn: under the caret in the file being read,
+/// and under the line a preview is showing of somewhere else. A preview
+/// whose box said something other than the editor's would be a promise
+/// obelus does not keep, and two of these would be two sets of decisions
+/// about wrapping, framing and which of several troubles to show.
+///
+/// `chosen` is the column of the one the reader picked out of a list, where
+/// they picked one. A line can hold several, and told only the line the box
+/// would show the worst of them whichever row was selected -- two rows that
+/// say different things would look like one thing said twice.
+///
+/// `room` is the width the words have: the text's, not the window's.
+pub(super) fn say_what_is_wrong(
+    buffer: &mut Buffer,
+    troubles: &[obelus_lsp::trouble::Trouble],
+    line: LineNumber,
+    chosen: Option<CharColumn>,
+    room: u16,
+) {
+    // The worst of them where a line has several, and how many others
+    // there are: the same two facts the underline settles, settled the
+    // same way.
+    let mut here: Vec<&obelus_lsp::trouble::Trouble> = troubles
+        .iter()
+        .filter(|trouble| trouble.span.line == line)
+        .collect();
+    here.sort_by_key(|trouble| trouble.severity);
+    let worst = chosen
+        .and_then(|column| here.iter().find(|trouble| trouble.span.column == column))
+        .or_else(|| here.first());
+    let Some(worst) = worst else {
+        buffer.close_blocks(obelus_buffer::Held::Wrong);
+        return;
+    };
+    // Indented to the column the trouble starts at, so the words hang
+    // under the thing they are about rather than under the left-hand
+    // edge of code they may have nothing to do with. In display
+    // columns, because that is what a tab is worth on screen and the
+    // block's own indent is spaces.
+    //
+    // Never more than half the room: a complaint about something near
+    // the right-hand edge would otherwise be a word to a row.
+    let column = buffer.text().display_column(line, worst.span.column).get();
+    // What the frame costs the row: a rail and a space at either end.
+    const FRAME: u16 = 4;
+    // And the least room worth leaving the words if the indent is to
+    // be kept.
+    const LEAST: u16 = 24;
+    // The indent is the one thing given up as the window narrows, and
+    // it is given up outright rather than shaved: which word the
+    // complaint is about is a nicety, and it is not worth buying at
+    // the price of every sentence wrapping twice as hard.
+    //
+    // The frame itself is never given up. It is the thing that says
+    // these rows are not the file, and half a frame says it worse than
+    // none -- so what a narrow window costs is harder wrapping inside
+    // it, which is only prose being prose.
+    let indent = if room >= FRAME + LEAST + column {
+        column
+    } else {
+        0
+    };
+    let inside = room.saturating_sub(FRAME + indent);
+    // Under a window with no room for a rail, a space and a character
+    // and the same again: a frame there could not be whole whatever it
+    // gave up, and an unclosed one is the shape this is drawn to avoid.
+    let framing = inside > 0;
+    let words = obelus_text::wrapped(&worst.message, inside.max(1));
+    let tally = (here.len() > 1).then(|| format!("and {} more here", here.len() - 1));
+    let said = if framing {
+        framed(&" ".repeat(usize::from(indent)), &words, tally.as_deref())
+    } else {
+        words.into_iter().chain(tally).collect()
+    };
+    // Under the line, which is where a complaint about it belongs. Past
+    // the end of the file on its last line, which is a place a block
+    // can hang: the row after the last line is counted by
+    // `screen_rows_of` and drawn by the pass the view makes past the
+    // end, both of which a hunk deleting the end of a file needed
+    // first.
+    let under = LineNumber::new(line.get() + 1);
+    // Already saying exactly this, in exactly this place: rebuilding it
+    // would put the caret out of it on every frame, and a reader cannot
+    // select what is rebuilt underneath them.
+    let standing = buffer
+        .block_above(under)
+        .filter(|block| block.kind == obelus_buffer::Held::Wrong)
+        .is_some_and(|block| block.opened_with() == said);
+    if standing {
+        return;
+    }
+    let severity = worst.severity;
+    buffer.close_blocks(obelus_buffer::Held::Wrong);
+    buffer.open_saying(under, &said, obelus_buffer::Held::Wrong, Some(severity));
+}
+
 /// How many of each severity, as a phrase.
-fn counted(troubles: &[obelus_lsp::trouble::Trouble]) -> String {
+fn counted(severities: &[obelus_lsp::trouble::Severity]) -> String {
     use obelus_lsp::trouble::Severity;
 
-    let count = |severity: Severity| {
-        troubles
-            .iter()
-            .filter(|trouble| trouble.severity == severity)
-            .count()
-    };
+    let count = |severity: Severity| severities.iter().filter(|had| **had == severity).count();
     let mut said = Vec::new();
     for severity in [
         Severity::Error,

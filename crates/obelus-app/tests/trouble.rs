@@ -172,15 +172,144 @@ fn the_list_names_what_is_wrong_and_goes_there() {
 }
 
 /// A server is entitled to talk about files that are not open -- after a
-/// `cargo check`, rust-analyzer talks about the whole project.
+/// `cargo check`, rust-analyzer talks about the whole project -- and what
+/// it says about them is the answer to "where is this project broken".
+///
+/// Nothing of it is placed in the file being read: a range becomes a place
+/// by being counted against the text it is in, and this is somebody else's
+/// text. So the file's own list, its underlines and its count stay exactly
+/// as empty as they were.
+///
+/// Broken deliberately by dropping the notification in `on_published` the
+/// way it used to be dropped: the project tab goes empty and says nobody
+/// has said anything.
 #[test]
-fn a_notification_about_a_file_that_is_not_open_is_dropped() {
+fn a_notification_about_a_file_that_is_not_open_is_kept_for_the_project() {
     let (_scratch, mut app, path) = editing("trouble-elsewhere", "fn main() {}\n");
     let elsewhere = path.with_file_name("other.rs");
-    app.publish_for_test(published(&elsewhere, 0, 0, 1, 1));
+    std::fs::write(&elsewhere, "fn other() {\n    nmae;\n}\n").expect("writing the other file");
+    app.publish_for_test(published(&elsewhere, 1, 4, 8, 1));
     assert!(
         app.troubles().is_empty(),
-        "something was kept about a file obelus does not have"
+        "something was placed in a file it is not about"
+    );
+
+    // This file is clean, so the list opens on the radius that has
+    // something to say rather than on an empty tab.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SymbolTroubles);
+    let dump = support::render(&mut app, 70, 16);
+    assert!(
+        dump.contains("cannot find value"),
+        "what is wrong elsewhere is not in the list:\n{dump}"
+    );
+    let row = app
+        .picker()
+        .expect("the list")
+        .matches()
+        .next()
+        .expect("a row")
+        .clone();
+    assert_eq!(
+        row.trailing.as_deref(),
+        Some("other.rs:2"),
+        "the row does not say which file it is in"
+    );
+
+    // And choosing it goes there, which is a file that was not open.
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    let buffer = app.current_buffer().expect("a buffer");
+    assert_eq!(buffer.path(), elsewhere, "choosing the row opened nothing");
+    assert_eq!(
+        (buffer.cursor().line.get(), buffer.cursor().column.get()),
+        (1, 4),
+        "choosing the row did not go to what it names"
+    );
+}
+
+/// One list at two radii: the file being read, and everything anybody has
+/// said about the project around it.
+///
+/// Walked with `tab`, which is what walks the tabs everywhere else. The
+/// rows are two different sets read from two different places, so this is
+/// also the test that walking onto a tab is what asks its question.
+///
+/// Broken deliberately by leaving `refresh_troubles` out of the tab change
+/// in `picker_key`: the file's rows stay on screen under the project's tab.
+#[test]
+fn the_list_of_problems_is_the_file_and_the_project() {
+    let (_scratch, mut app, path) = editing("trouble-radii", "fn main() {\n    nmae;\n}\n");
+    let elsewhere = path.with_file_name("other.rs");
+    std::fs::write(&elsewhere, "fn other() {\n    oops;\n}\n").expect("writing the other file");
+    app.publish_for_test(published(&path, 1, 4, 8, 1));
+    app.publish_for_test(json!({
+        "uri": support::uri_for(&elsewhere),
+        "diagnostics": [{
+            "range": { "start": { "line": 1, "character": 4 },
+                       "end": { "line": 1, "character": 8 } },
+            "severity": 1,
+            "source": "rustc",
+            "message": "cannot find value `oops` in this scope"
+        }]
+    }));
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SymbolTroubles);
+    let dump = support::render(&mut app, 70, 16);
+    assert!(
+        !dump.contains("oops"),
+        "the file's own list has somebody else's problem in it:\n{dump}"
+    );
+    let rows = |app: &App| app.picker().expect("the list").matches().count();
+    assert_eq!(rows(&app), 1, "the file's list is not the file's problems");
+
+    support::press(&mut app, crossterm::event::KeyCode::Tab);
+    let dump = support::render(&mut app, 70, 16);
+    assert!(
+        dump.contains("oops"),
+        "walking onto the project tab did not ask the project:\n{dump}"
+    );
+    assert_eq!(
+        rows(&app),
+        2,
+        "the project's list is not both files:\n{dump}"
+    );
+    // Opened on the reader's own file, which sorts second: a list of the
+    // whole project asked from here starts here.
+    let chosen = app
+        .picker()
+        .expect("the list")
+        .selected_item()
+        .expect("a row")
+        .trailing
+        .clone();
+    assert_eq!(
+        chosen.as_deref(),
+        Some("sample.rs:2"),
+        "the project's list opened in somebody else's file:\n{dump}"
+    );
+
+    // Back again, and the file's own list is the file's own again.
+    support::press(&mut app, crossterm::event::KeyCode::BackTab);
+    let dump = support::render(&mut app, 70, 16);
+    assert!(
+        !dump.contains("oops"),
+        "walking back left the project's rows under the file's tab:\n{dump}"
+    );
+}
+
+/// A file with nothing wrong with it and nothing said about anything else
+/// is not an empty list: it is a sentence saying which of those it is.
+#[test]
+fn nothing_wrong_anywhere_is_said_rather_than_listed() {
+    let (_scratch, mut app, _path) = editing("trouble-nothing", "fn main() {}\n");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SymbolTroubles);
+    assert!(
+        app.picker().is_none(),
+        "an empty list was opened instead of a sentence"
+    );
+    let dump = support::render(&mut app, 70, 16);
+    assert!(
+        dump.contains("No language server for this file"),
+        "the sentence does not say why the list is empty:\n{dump}"
     );
 }
 
@@ -1059,5 +1188,396 @@ fn the_notes_hung_on_a_diagnostic_are_not_problems_of_their_own() {
         app.troubles().len(),
         4,
         "the notes were dropped rather than left out of the list:\n{dump}"
+    );
+}
+
+/// A row in another file shows that file where this one is drawn.
+///
+/// The list stays where it is -- ten rows on the status bar -- and what
+/// changes is which file is above it. A project's problems are mostly in
+/// files nobody has opened, and a list that could only say `other.rs:12`
+/// about them is a list the reader has to leave to read.
+///
+/// The reader's own file is not previewed over itself: a row in it scrolls
+/// the real one, caret and complaint and all.
+///
+/// Broken deliberately by leaving `previews` off the list in
+/// `open_troubles`: the row moves and the file above it does not change.
+#[test]
+fn a_row_in_another_file_shows_that_file_above_the_list() {
+    let (_scratch, mut app, path) = editing("trouble-preview", "fn main() {\n    nmae;\n}\n");
+    let elsewhere = path.with_file_name("other.rs");
+    std::fs::write(&elsewhere, "fn other() {\n    let oops = 1;\n}\n").expect("writing");
+    app.publish_for_test(published(&path, 1, 4, 8, 1));
+    app.publish_for_test(json!({
+        "uri": support::uri_for(&elsewhere),
+        "diagnostics": [{
+            "range": { "start": { "line": 1, "character": 8 },
+                       "end": { "line": 1, "character": 12 } },
+            "severity": 2,
+            "source": "clippy",
+            "message": "unused variable `oops`"
+        }]
+    }));
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SymbolTroubles);
+    support::press(&mut app, crossterm::event::KeyCode::Tab);
+    let dump = support::render(&mut app, 74, 18);
+    // Opened on the reader's own file, which is the real one: nothing is
+    // read a second time to be shown over itself.
+    assert!(
+        app.preview().is_none(),
+        "the file being read was previewed over itself:\n{dump}"
+    );
+    assert!(
+        support::text_block(&dump).contains("fn main"),
+        "the file being read is not behind the list:\n{dump}"
+    );
+
+    // Onto the other file's row, which is somewhere the reader has not
+    // opened and does not have to.
+    support::press(&mut app, crossterm::event::KeyCode::Up);
+    let dump = support::render(&mut app, 74, 18);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("fn other") && text.contains("let oops"),
+        "the row's own file is not above the list:\n{dump}"
+    );
+    assert!(
+        !text.contains("fn main"),
+        "two files at once above the list:\n{dump}"
+    );
+    assert_eq!(
+        app.current_buffer().expect("a buffer").path(),
+        path,
+        "looking at the row opened a file the reader did not choose"
+    );
+
+    // And back: the reader's own file is theirs again, untouched.
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    let dump = support::render(&mut app, 74, 18);
+    assert!(
+        support::text_block(&dump).contains("fn main"),
+        "walking back did not put the file being read back:\n{dump}"
+    );
+    support::press(&mut app, crossterm::event::KeyCode::Esc);
+    let dump = support::render(&mut app, 74, 18);
+    assert!(
+        support::text_block(&dump).contains("fn main"),
+        "leaving the list left somebody else's file on screen:\n{dump}"
+    );
+}
+
+/// A previewed problem says what it is, in the box the editor says it in.
+///
+/// A row of the list is one line -- rustc writes paragraphs and a row has
+/// room for a sentence -- so a reader who has walked to a problem in
+/// somebody else's file can see where it is and not what it says. The box
+/// is where the words fit, and it is the editor's own box: the same frame,
+/// the same wrapping, hanging under the same line.
+///
+/// Broken deliberately by taking `say_what_is_wrong` out of
+/// `refresh_preview`: the first line is on the row and the rest is nowhere.
+#[test]
+fn a_previewed_problem_opens_its_own_words_under_it() {
+    let (_scratch, mut app, path) = editing("trouble-preview-words", "fn main() {}\n");
+    let elsewhere = path.with_file_name("other.rs");
+    std::fs::write(&elsewhere, "fn other() {\n    let oops = 1;\n}\n").expect("writing");
+    app.publish_for_test(json!({
+        "uri": support::uri_for(&elsewhere),
+        "diagnostics": [{
+            "range": { "start": { "line": 1, "character": 8 },
+                       "end": { "line": 1, "character": 12 } },
+            "severity": 2,
+            "source": "clippy",
+            "message": "unused variable `oops`\nhelp: prefix it with an underscore"
+        }]
+    }));
+
+    // This file is clean, so the list opens on the project, on the only row
+    // there is -- which is in a file nobody has opened.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SymbolTroubles);
+    let dump = support::render(&mut app, 74, 20);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("prefix it with an underscore"),
+        "the rest of what the server said is nowhere:\n{dump}"
+    );
+    // The row itself is still one line of it: the box is what holds the
+    // paragraph.
+    let label = app
+        .picker()
+        .expect("the list")
+        .matches()
+        .next()
+        .expect("a row")
+        .label
+        .clone();
+    assert!(
+        !label.contains("prefix it"),
+        "the whole paragraph went into the row: {label:?}"
+    );
+    // And it hangs under the line it is about, inside the frame that says
+    // these rows are not the file.
+    let rows: Vec<&str> = text.lines().filter(|row| row.contains('|')).collect();
+    let said = rows
+        .iter()
+        .position(|row| row.contains("unused variable"))
+        .expect("the words");
+    let about = rows
+        .iter()
+        .position(|row| row.contains("let oops"))
+        .expect("the line");
+    assert!(
+        said > about,
+        "the words are not under the line they are about:\n{dump}"
+    );
+    assert!(
+        rows[said].contains('\u{2502}'),
+        "the words are not in a frame of their own:\n{dump}"
+    );
+}
+
+/// One file's underlines are not drawn on another file's lines.
+///
+/// A preview underlines what a server said about the file *it* is showing.
+/// What it must never wear is the underlines of the file it is drawn over:
+/// a style is patched onto a cell rather than replacing what is there --
+/// that is how a caller sets a background and keeps a foreground -- and a
+/// modifier patched that way is one nothing takes off again. So the file
+/// being read left its underlines at the columns they were at *there*, on
+/// lines of somebody else's file, which is a complaint about a line that
+/// has never seen one.
+///
+/// Broken deliberately by leaving the modifiers alone in `fill`: the
+/// underlines of the two files are drawn at once and only one of them is
+/// about anything on screen.
+#[test]
+fn a_preview_does_not_wear_the_underlines_of_the_file_under_it() {
+    let mut under = String::new();
+    for line in 0..30 {
+        under.push_str(&format!("    let UNDER_{line} = {line};\n"));
+    }
+    let (_scratch, mut app, path) = editing("trouble-underline-leak", &under);
+    let elsewhere = path.with_file_name("other.rs");
+    std::fs::write(&elsewhere, "fn other() {\n    let oops = 1;\n}\n").expect("writing");
+    // Wrong on the first lines of the file being read, over a longer run
+    // than the other file's, so a leak shows up as an underline that runs
+    // past what the preview's own server named.
+    app.publish_for_test(json!({
+        "uri": support::uri_for(&path),
+        "diagnostics": [
+            { "range": { "start": { "line": 0, "character": 8 },
+                         "end": { "line": 0, "character": 15 } },
+              "severity": 1, "source": "rustc", "message": "wrong here" },
+            { "range": { "start": { "line": 1, "character": 8 },
+                         "end": { "line": 1, "character": 15 } },
+              "severity": 1, "source": "rustc", "message": "wrong there" }
+        ]
+    }));
+    app.publish_for_test(published(&elsewhere, 1, 8, 12, 1));
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SymbolTroubles);
+    support::press(&mut app, crossterm::event::KeyCode::Tab);
+    support::press(&mut app, crossterm::event::KeyCode::Up);
+    let dump = support::render(&mut app, 74, 20);
+    let cells = support::cells_of(&mut app, 74, 20);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .collect();
+    // Where the preview's own problem is: the word its server named, on
+    // the row the preview drew it.
+    let at = rows
+        .iter()
+        .position(|row| row.contains("let oops"))
+        .expect("the previewed line");
+    let row = rows[at];
+    let text = &row[row.find('|').expect("a divider") + 1..];
+    let before = text.find("oops").expect("the word");
+    let column = u16::try_from(text[..before].chars().count()).expect("a column");
+    let y = u16::try_from(at).expect("a row");
+    let its_own: Vec<(u16, u16)> = (0..4).map(|offset| (column + offset, y)).collect();
+
+    let underlined: Vec<(u16, u16)> = (0..u16::try_from(rows.len()).expect("rows"))
+        .flat_map(|y| (0..74u16).map(move |x| (x, y)))
+        .filter(|(x, y)| {
+            cells
+                .cell((*x, *y))
+                .expect("a cell")
+                .modifier
+                .contains(ratatui::style::Modifier::UNDERLINED)
+        })
+        .collect();
+    assert_eq!(
+        underlined, its_own,
+        "the underlines on screen are not exactly what this file's server named:\n{dump}"
+    );
+}
+
+/// A problem is not marked in its own preview.
+///
+/// The box under the line says which line, which column and what was said.
+/// A run of colour over the same characters says it again -- and says it
+/// differently, because a mark is one colour whatever the severity. It
+/// would also be the odd one out: a row in the file the reader is already
+/// in has no preview to mark, so half a list of the project would be
+/// highlighted and half of it not, for no reason a reader could see.
+///
+/// Broken deliberately by keeping the resolved runs in `refresh_preview`:
+/// the previewed characters come back in the marked background.
+#[test]
+fn a_problem_is_not_marked_in_its_own_preview() {
+    let (_scratch, mut app, path) = editing("trouble-unmarked", "fn main() {}\n");
+    let elsewhere = path.with_file_name("other.rs");
+    std::fs::write(&elsewhere, "fn other() {\n    let oops = 1;\n}\n").expect("writing");
+    app.publish_for_test(published(&elsewhere, 1, 8, 12, 1));
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SymbolTroubles);
+    let dump = support::render(&mut app, 74, 20);
+    assert!(
+        support::text_block(&dump).contains("let oops"),
+        "the problem's file is not being previewed:\n{dump}"
+    );
+    // The colour a mark is drawn in, which is the one thing this is about.
+    assert!(
+        !support::legend_block(&dump).contains("#1e3a5f"),
+        "the previewed problem is marked as well as said:\n{dump}"
+    );
+}
+
+/// What is wrong is underlined wherever the file is drawn, not only where
+/// it is being read.
+///
+/// A reader walking a list of the project is looking straight at a broken
+/// line in a file they have not opened. Without this they would have to
+/// open it to find out which characters anybody was talking about -- which
+/// is the list asking them to go there to find out whether to go there.
+///
+/// Broken deliberately by handing `EditorView::for_buffer` no troubles.
+#[test]
+fn a_previewed_problem_is_underlined_where_it_is() {
+    let (_scratch, mut app, path) = editing("trouble-preview-underline", "fn main() {}\n");
+    let elsewhere = path.with_file_name("other.rs");
+    std::fs::write(&elsewhere, "fn other() {\n    let oops = 1;\n}\n").expect("writing");
+    app.publish_for_test(published(&elsewhere, 1, 8, 12, 2));
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SymbolTroubles);
+    let dump = support::render(&mut app, 74, 20);
+    let cells = support::cells_of(&mut app, 74, 20);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .collect();
+    let at = rows
+        .iter()
+        .position(|row| row.contains("let oops"))
+        .expect("the previewed line");
+    let row = rows[at];
+    let text = &row[row.find('|').expect("a divider") + 1..];
+    let before = text.find("oops").expect("the word");
+    let column = u16::try_from(text[..before].chars().count()).expect("a column");
+    let y = u16::try_from(at).expect("a row");
+    let underlined = |x: u16| {
+        cells
+            .cell((x, y))
+            .expect("a cell")
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
+    };
+    for offset in 0..4 {
+        assert!(
+            underlined(column + offset),
+            "character {offset} of what the server named is not underlined in the preview:\n{dump}"
+        );
+    }
+    assert!(
+        !underlined(column + 4),
+        "the underline runs past what the server named:\n{dump}"
+    );
+    // And in the colour that kind of trouble is written in: a warning and
+    // an error have to be told apart without reading them, here as well.
+    assert!(
+        cells
+            .cell((column, y))
+            .expect("a cell")
+            .underline_color
+            .ne(&ratatui::style::Color::Reset),
+        "the underline has no colour of its own:\n{dump}"
+    );
+}
+
+/// The box belongs to the list that names the problem, and goes when that
+/// list does.
+///
+/// The underline is every buffer's -- what is wrong is wrong wherever the
+/// line is drawn -- but four rows of words about something a reader did not
+/// ask after are four rows of the preview they did ask for. And a preview
+/// is kept while the file it shows is: the box one list opened must not
+/// still be hanging there under the next.
+///
+/// Broken deliberately by opening the box for every list in
+/// `refresh_preview`: the search's preview grows a complaint about the line
+/// its match happens to be on.
+#[test]
+fn only_a_list_of_problems_opens_the_words_in_its_preview() {
+    let (_scratch, mut app, path) = editing("trouble-preview-scope", "fn main() {}\n");
+    let elsewhere = path.with_file_name("other.rs");
+    std::fs::write(&elsewhere, "fn other() {\n    let oops = 1;\n}\n").expect("writing");
+    app.publish_for_test(json!({
+        "uri": support::uri_for(&elsewhere),
+        "diagnostics": [{
+            "range": { "start": { "line": 1, "character": 8 },
+                       "end": { "line": 1, "character": 12 } },
+            "severity": 2,
+            "source": "clippy",
+            "message": "unused variable `oops`\nhelp: prefix it with an underscore"
+        }]
+    }));
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::SymbolTroubles);
+    let dump = support::render(&mut app, 74, 20);
+    assert!(
+        support::text_block(&dump).contains("prefix it with an underscore"),
+        "the list of problems did not open the words:\n{dump}"
+    );
+
+    // The same file, previewed from a list that is about something else.
+    support::press(&mut app, crossterm::event::KeyCode::Esc);
+    app.open_picker_for_test(
+        vec![obelus_component::picker::PickerItem {
+            prose: false,
+            marker: None,
+            icon: None,
+            label: "other.rs:2".to_string(),
+            detail: None,
+            trailing: None,
+            changed: None,
+            value: obelus_component::picker::PickerValue::Place {
+                path: elsewhere,
+                line: 1,
+                character: 8,
+                end_line: 1,
+                end_character: 12,
+            },
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            opens: None,
+            kind: None,
+            tab: None,
+        }],
+        obelus_component::picker::PickerLayout::FullArea,
+    );
+    let dump = support::render(&mut app, 74, 20);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("let oops"),
+        "the file is not being previewed at all:\n{dump}"
+    );
+    assert!(
+        !text.contains("prefix it with an underscore"),
+        "another list's preview kept the box:\n{dump}"
     );
 }

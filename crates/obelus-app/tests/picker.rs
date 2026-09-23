@@ -3696,6 +3696,68 @@ fn the_file_list_previews_an_open_file_where_it_is_being_read() {
     );
 }
 
+/// A file obelus has open is previewed from what obelus holds, not from the
+/// bytes on disk.
+///
+/// The two are the same file until something writes to it -- an agent, a
+/// formatter, another window -- and then they are two, and the one the
+/// reader means is theirs. A preview of the other would be showing them a
+/// document that choosing the row does not give them.
+///
+/// Broken deliberately by reading the path in `App::read`: the preview
+/// shows what was written underneath and the reader's own text is nowhere.
+#[test]
+fn an_open_file_is_previewed_as_the_reader_has_it() {
+    let scratch = support::Scratch::new("picker-preview-held");
+    let path = scratch.path().join("held.rs");
+    std::fs::write(&path, "fn held() {\n    IN_THE_BUFFER;\n}\n").expect("writing the file");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 60, 22);
+    // Written under it, the way anything else with the file open would.
+    std::fs::write(&path, "fn held() {\n    ON_THE_DISK;\n}\n").expect("writing it again");
+
+    app.open_picker_for_test(
+        vec![PickerItem {
+            prose: false,
+            marker: None,
+            icon: None,
+            label: "held.rs:2".to_string(),
+            detail: None,
+            trailing: None,
+            changed: None,
+            value: PickerValue::Place {
+                path,
+                line: 1,
+                character: 4,
+                end_line: 1,
+                end_character: 17,
+            },
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            opens: None,
+            kind: None,
+            tab: None,
+        }],
+        PickerLayout::FullArea,
+    );
+
+    let dump = support::render(&mut app, 60, 22);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("IN_THE_BUFFER"),
+        "the preview is not the text obelus holds:\n{dump}"
+    );
+    assert!(
+        !text.contains("ON_THE_DISK"),
+        "the preview went to the disk for a file that is open:\n{dump}"
+    );
+}
+
 /// Every bar on a screen is in the same column.
 ///
 /// A list opened over a file, with a preview under it, is three scrolling

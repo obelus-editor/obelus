@@ -102,49 +102,24 @@ pub struct Trouble {
     pub item: Value,
 }
 
-impl Trouble {
-    /// The first line of the message.
-    ///
-    /// rustc writes paragraphs -- the explanation, the help, the note --
-    /// and a row of a list has one line. The rest is in the message itself
-    /// for whatever shows the whole of it.
-    #[must_use]
-    pub fn summary(&self) -> &str {
-        self.message.lines().next().unwrap_or_default()
-    }
-}
-
-/// Everything a server just said about one file.
+/// Everything a server just said about one file, placed in it.
 ///
-/// `None` for a notification about a file obelus does not have open, or
-/// one it cannot make a path of: there is nowhere to put it and nothing
-/// that would read it.
+/// The same news [`reported`] reads, counted against the text it is about,
+/// and carrying each diagnostic as it arrived: a code action is asked
+/// *about* a diagnostic and the server matches it by every field it sent.
+///
+/// In arrival order, which is the order the raw diagnostics are in and the
+/// only order the two can be paired in. Whoever keeps them puts them in
+/// the file's order.
 #[must_use]
 pub fn published(params: &Value, text: &Text, encoding: &PositionEncodingKind) -> Vec<Trouble> {
     let raw = diagnostics_of(params);
-    let Ok(params) = serde_json::from_value::<PublishDiagnosticsParams>(params.clone()) else {
-        return Vec::new();
-    };
-    params
-        .diagnostics
-        .into_iter()
+    reported(params)
+        .iter()
         .enumerate()
-        .map(|(at, diagnostic)| {
-            let (line, column) = super::position::from_lsp(text, diagnostic.range.start, encoding);
-            let (end_line, end_column) =
-                super::position::from_lsp(text, diagnostic.range.end, encoding);
-            Trouble {
-                span: Span {
-                    line,
-                    column,
-                    end_line,
-                    end_column,
-                },
-                severity: Severity::of(diagnostic.severity),
-                message: diagnostic.message,
-                source: diagnostic.source,
-                item: raw.get(at).cloned().unwrap_or(Value::Null),
-            }
+        .map(|(at, trouble)| Trouble {
+            item: raw.get(at).cloned().unwrap_or(Value::Null),
+            ..trouble.placed(text, encoding)
         })
         .collect()
 }
@@ -162,4 +137,103 @@ fn diagnostics_of(params: &Value) -> Vec<Value> {
 #[must_use]
 pub fn path_of(params: &Value) -> Option<std::path::PathBuf> {
     super::path_of_uri(params.get("uri")?.as_str()?)
+}
+
+/// One thing a server says about a file, in the units it said it in.
+///
+/// The same news as a [`Trouble`] and none of the placing. A range becomes
+/// a place in a document by counting against that document's text, and a
+/// file obelus has not read is one there is nothing to count against -- so
+/// for those nothing is counted, and what arrived is kept as it arrived.
+///
+/// Which costs a list nothing: a row that names a place carries the
+/// protocol's units anyway. This is the form the whole project is held in;
+/// [`Reported::placed`] makes the other one, wherever a column has to line
+/// up with a character on screen -- under the caret in the file being read,
+/// or under a line of a preview of somewhere else.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Reported {
+    /// Where it starts, as the server counts.
+    pub line: u32,
+    /// The column it starts at, in the encoding the server agreed to.
+    pub character: u32,
+    /// Where it ends.
+    pub end_line: u32,
+    /// The column it ends at.
+    pub end_character: u32,
+    /// How bad.
+    pub severity: Severity,
+    /// What the server said, as it said it.
+    pub message: String,
+    /// Which tool said it.
+    pub source: Option<String>,
+}
+
+impl Reported {
+    /// The first line of the message.
+    ///
+    /// rustc writes paragraphs -- the explanation, the help, the note --
+    /// and a row of a list has one line. The rest is in the message itself
+    /// for whatever shows the whole of it.
+    #[must_use]
+    pub fn summary(&self) -> &str {
+        self.message.lines().next().unwrap_or_default()
+    }
+
+    /// Where it is in a document, once there is a document to count it
+    /// against.
+    ///
+    /// Without the diagnostic it arrived as: placing is for drawing, and
+    /// what is drawn -- an underline, the words under a line -- asks
+    /// nobody anything. [`published`] fills that in for the copy a code
+    /// action can be asked about.
+    #[must_use]
+    pub fn placed(&self, text: &Text, encoding: &PositionEncodingKind) -> Trouble {
+        let place = |line, character| {
+            super::position::from_lsp(text, lsp_types::Position { line, character }, encoding)
+        };
+        let (line, column) = place(self.line, self.character);
+        let (end_line, end_column) = place(self.end_line, self.end_character);
+        Trouble {
+            span: Span {
+                line,
+                column,
+                end_line,
+                end_column,
+            },
+            severity: self.severity,
+            message: self.message.clone(),
+            source: self.source.clone(),
+            item: Value::Null,
+        }
+    }
+}
+
+/// Everything a server just said about one file, unplaced.
+///
+/// No text and no encoding, because neither is needed and neither is to be
+/// had: this is the reading of a notification that works for a file obelus
+/// does not have open.
+///
+/// In the order they were sent, which is not the order they are in the
+/// file: whoever keeps them sorts them, and does it for both readings at
+/// once so that the two cannot disagree.
+#[must_use]
+pub fn reported(params: &Value) -> Vec<Reported> {
+    let Ok(params) = serde_json::from_value::<PublishDiagnosticsParams>(params.clone()) else {
+        return Vec::new();
+    };
+    params
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| Reported {
+            line: diagnostic.range.start.line,
+            character: diagnostic.range.start.character,
+            end_line: diagnostic.range.end.line,
+            end_character: diagnostic.range.end.character,
+            severity: Severity::of(diagnostic.severity),
+            message: diagnostic.message,
+            source: diagnostic.source,
+        })
+        .collect()
 }

@@ -804,7 +804,13 @@ impl Buffer {
     }
 
     /// A buffer holding text that did not come from the path it names.
-    fn from_text(path: &Path, contents: &str) -> Self {
+    ///
+    /// For showing a file as something other than the bytes on disk: as a
+    /// commit had it, or as the reader has it open somewhere else. What it
+    /// has no business holding is [`Seen`] -- nothing here was read from
+    /// that path, so there is nothing to notice has changed under it.
+    #[must_use]
+    pub fn from_text(path: &Path, contents: &str) -> Self {
         let text = Text::from_string(contents);
         let syntax = LanguageId::for_path(path)
             .and_then(|language| SyntaxState::new(language, &text))
@@ -812,6 +818,10 @@ impl Buffer {
         let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
         let mut folds = folds::Folds::default();
         folds.offer(folds::of(&text));
+        // Asked of the text, as a file's own is: a tab is drawn to a stop
+        // and a space is not, so a buffer that assumed spaces would draw
+        // somebody's indentation at the wrong column.
+        let tabs = indented_with_tabs(&text);
 
         Self {
             path,
@@ -834,7 +844,7 @@ impl Buffer {
             seen: None,
             disk: Disk::Unchanged,
             dirty: false,
-            tabs: false,
+            tabs,
         }
     }
 

@@ -198,6 +198,45 @@ pub fn preview_region(picker: Option<&Picker>, editor: Rect) -> Option<Rect> {
     })
 }
 
+/// The room a compact list leaves the file it is drawn on.
+///
+/// The rule above it is the list's too: it is there to say the list and the
+/// file are two things, and a row of rule is not a row of file.
+#[must_use]
+pub fn room_above(picker: &Picker, editor: Rect) -> Rect {
+    let region = region(picker, editor);
+    let height = region
+        .y
+        .saturating_sub(1)
+        .saturating_sub(editor.y)
+        .min(editor.height);
+    Rect { height, ..editor }
+}
+
+/// Whether a compact list shows what its selection names in that room, and
+/// how much of it there is to show in.
+///
+/// The room above the rows is the code's own room. A compact list is drawn
+/// on the file precisely so the file stays readable, and for a row in *that*
+/// file the file is the preview: the list scrolls it and the reader looks
+/// straight at it. A row in another file has nothing to scroll and nowhere
+/// to be shown -- and the answer is not to open it, which would be going
+/// somewhere they have not chosen to go. It is to draw that file where this
+/// one is.
+///
+/// Nothing comes or goes as the selection moves: the room above the list is
+/// full either way, of one file or of another. Which is what makes this safe
+/// to settle per row rather than per list, and what [`Picker::previews`] is
+/// careful about where it refuses to.
+#[must_use]
+pub fn preview_over(picker: Option<&Picker>, above: Rect) -> Option<Rect> {
+    let picker = picker?;
+    if !picker.shows_previews() || picker.layout() == PickerLayout::FullArea {
+        return None;
+    }
+    (above.height >= LEAST_PREVIEW_ROWS).then_some(above)
+}
+
 /// The list, above the prompt.
 pub struct PickerView<'a> {
     picker: &'a Picker,

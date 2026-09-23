@@ -84,6 +84,10 @@ use crate::image::Images;
 pub struct Previewed<'a> {
     /// The file, read into a buffer of its own.
     pub buffer: &'a Buffer,
+    /// What a server says is wrong with it, placed in that buffer's own
+    /// text, so the underline is under the right characters of the file
+    /// actually on screen.
+    pub troubles: &'a [obelus_lsp::trouble::Trouble],
     /// Its syntax, refreshed for the rows on screen.
     pub highlights: &'a Highlights,
     /// The runs of characters the preview is about, once converted.
@@ -339,15 +343,7 @@ pub fn editor_room(area: Rect, app: &impl Screen) -> Rect {
     if app.chat().is_some() {
         return editor;
     }
-    // The rule above it is the list's too: it is there to say the list and
-    // the file are two things, and a row of rule is not a row of file.
-    let region = picker::region(list, editor);
-    let height = region
-        .y
-        .saturating_sub(1)
-        .saturating_sub(editor.y)
-        .min(editor.height);
-    Rect { height, ..editor }
+    picker::room_above(list, editor)
 }
 
 /// The screen as a `Rect` starting at the origin.
@@ -663,6 +659,25 @@ fn list_over(cells: &mut CellBuffer, app: &impl Screen, list: &Picker, room: Rec
         );
     }
 
+    // Above a compact list, in the room the code was drawn in a moment ago:
+    // it sits on the status bar and has nothing under it to divide. Over
+    // the code rather than instead of it, because what a row names changes
+    // as the reader walks and the editor has already drawn the file they
+    // came from.
+    if let Some(over) = picker::preview_over(Some(list), picker::room_above(list, room))
+        && let Some(shown) = app.preview()
+    {
+        editor::EditorView::for_buffer(
+            shown.buffer,
+            shown.highlights,
+            app.theme(),
+            shown.marked,
+            shown.changes,
+            shown.troubles,
+        )
+        .render(over, cells);
+    }
+
     // Below the list, with a rule between them. The preview is drawn by the
     // editor's own view, which is what makes it look like the editor.
     if let Some(preview) = picker::preview_region(Some(list), room) {
@@ -684,6 +699,7 @@ fn list_over(cells: &mut CellBuffer, app: &impl Screen, list: &Picker, room: Rec
                     app.theme(),
                     shown.marked,
                     shown.changes,
+                    shown.troubles,
                 )
                 .render(preview, cells);
             }
@@ -819,11 +835,24 @@ pub(crate) fn bar_row(line: usize, total: usize, height: u16) -> u16 {
 }
 
 /// Paints every cell of a region in one style, blanking whatever was there.
+///
+/// The glyph and the modifiers, and the colours patched over what was
+/// there. A style is patched onto a cell everywhere in here -- that is what
+/// lets a caller set a background and keep a foreground painted underneath
+/// -- and a modifier patched the same way is one nothing can take off: an
+/// underline written here by whatever was drawn before survives every
+/// drawing over it. A preview of another file wore the underlines of the
+/// file it was drawn over, at the columns they were at *there*, which is a
+/// file complaining about a line it has never seen.
+///
+/// Anything drawn over anything else starts with this, so it is the one
+/// place that has to take them off.
 pub fn fill(cells: &mut CellBuffer, area: Rect, style: Style) {
     for y in area.top()..area.bottom() {
         for x in area.left()..area.right() {
             if let Some(cell) = cells.cell_mut((x, y)) {
                 cell.set_symbol(" ");
+                cell.modifier = ratatui::style::Modifier::empty();
                 cell.set_style(style);
             }
         }
