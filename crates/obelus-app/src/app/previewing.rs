@@ -572,15 +572,18 @@ impl App {
                             changed,
                         );
                     }
-                    // Folded, the way opening the row leaves it: a preview
-                    // that showed the whole message would be a preview of
-                    // somebody's prose, and the row under the cursor names a
-                    // file.
-                    buffer.fold_block(obelus_text::coordinates::LineNumber::new(0), true);
-                    // Landing where opening the row would land: in the
-                    // message, at its top. A preview that started at the
-                    // file's first line would show the end of the message
-                    // and call it the beginning of the file.
+                    // Whole, not the first five lines. This is the only
+                    // place the message is shown at all now -- opening the
+                    // row gives the file and nothing else -- so a preview
+                    // that cut it off would be obelus hiding the one thing
+                    // it still has to say about the commit. The reader
+                    // scrolls it like anything else, and the rule under it
+                    // says where the file starts.
+                    //
+                    // Landing at its top, which is where the commit says
+                    // what it is: a preview that started at the file's
+                    // first line would show the end of the message and call
+                    // it the beginning of the file.
                     buffer.enter_block(obelus_text::coordinates::LineNumber::new(0));
                 }
                 let changes = obelus_git::history::text_before(&self.working_directory, *id, path)

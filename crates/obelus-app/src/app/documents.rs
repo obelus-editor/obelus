@@ -1158,19 +1158,13 @@ impl App {
     /// saying so would be the third answer to a question the palette
     /// settled.
     pub fn toggle_fold(&mut self) {
-        // The block first, when the caret is in one. "Fold what the cursor
-        // is inside" is the question this key asks, and a commit's message
-        // is a thing the reader is inside -- they were put there. Asking the
-        // file instead would fold a run of code the caret is nowhere near,
-        // on a screen where the caret is visibly somewhere else.
-        let inside = self
-            .current_buffer()
-            .and_then(obelus_buffer::Buffer::caret_block);
-        if let (Some(buffer), Some(above)) = (self.current_buffer_mut(), inside)
-            && buffer.toggle_block_fold(above)
-        {
-            return;
-        }
+        // The file's own runs, always. A block used to be asked first --
+        // "fold what the cursor is inside", and a commit's message was a
+        // thing the reader was put inside -- but nothing a block holds
+        // folds now: a message is read whole in the preview, and a hunk's
+        // removed lines are a thing the reader opened and closes with the
+        // same key, where a second way to half-close it would be two
+        // answers to one question.
         let line = self.current_buffer().map(|buffer| buffer.cursor().line);
         if let (Some(buffer), Some(line)) = (self.current_buffer_mut(), line) {
             buffer.toggle_fold(line);

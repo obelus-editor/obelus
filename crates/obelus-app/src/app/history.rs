@@ -78,14 +78,6 @@ impl App {
                 buffer.close_block(above);
                 return;
             }
-            if kind == Some(obelus_buffer::Held::Message) {
-                // A line has room for one block, and this line's is spoken
-                // for. Said rather than done quietly: the margin says this
-                // line changed, so a key that asks what it changed *from*
-                // and appears to do nothing is a key that looks broken.
-                self.note = Some("The commit's message hangs where this hunk would".to_string());
-                return;
-            }
         }
         let Some(hunk) = hunk.as_ref() else {
             self.note = Some("Nothing changed here".to_string());

@@ -539,8 +539,13 @@ impl Drop for Scratch {
 /// The preview's own rows, out of a rendered screen.
 ///
 /// A screen with a list on it has a rule under the tabs, one between the
-/// list and the preview, and one above the status row, so the preview is
-/// what lies between the last two.
+/// list and the preview, and one above the status row. So the preview is
+/// what lies between the *second* rule and the last -- not between the
+/// last two, which is what this said while the preview had no rule of its
+/// own. A commit's message carries one under it now, and counting from the
+/// end took that for the preview's top edge: everything the assertions
+/// were about was above it, and the slice came back holding the file
+/// alone.
 #[allow(dead_code)]
 pub(crate) fn previewed(dump: &str) -> String {
     let rows: Vec<&str> = text_block(dump).lines().collect();
@@ -550,7 +555,11 @@ pub(crate) fn previewed(dump: &str) -> String {
         .filter(|(_, row)| row.contains('\u{2500}'))
         .map(|(at, _)| at)
         .collect();
-    let (from, to) = (rules[rules.len() - 2] + 1, rules[rules.len() - 1]);
+    assert!(
+        rules.len() >= 3,
+        "not a screen with a preview on it: rules at {rules:?}"
+    );
+    let (from, to) = (rules[1] + 1, rules[rules.len() - 1]);
     rows[from..to].join("\n")
 }
 

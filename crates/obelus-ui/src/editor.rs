@@ -105,7 +105,7 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::{Screen, fill, put};
+use crate::{Screen, fill, put, rule};
 
 /// The narrowest the gutter is allowed to be.
 ///
@@ -770,14 +770,20 @@ impl Widget for EditorView<'_> {
                         // way, and a bar that came and went with whether
                         // git had anything to say would be a bar that
                         // means something it does not.
-                        {
+                        //
+                        // Not a message. A message is said once, by the
+                        // rule under it: a bar down the side of prose the
+                        // reader cannot open, beside a boundary already
+                        // drawn, is two marks for one fact -- and in a
+                        // preview the bar was the only one of the two that
+                        // could not be acted on.
+                        if block.kind != obelus_buffer::Held::Message {
                             draw_marker(
                                 area.x,
                                 y,
                                 Marker::Modified,
                                 match block.kind {
                                     obelus_buffer::Held::Removed => self.theme.change_removed,
-                                    obelus_buffer::Held::Message => self.theme.gutter,
                                     // How bad it is, in the colour the same
                                     // trouble underlines the line in: one
                                     // complaint, one colour, whichever of
@@ -787,6 +793,7 @@ impl Widget for EditorView<'_> {
                                             self.theme.colour_for(Some(severity.kind()))
                                         })
                                     }
+                                    obelus_buffer::Held::Message => self.theme.gutter,
                                 },
                                 cells,
                             );
@@ -877,6 +884,30 @@ impl Widget for EditorView<'_> {
                                 cells,
                             );
                         }
+                        screen_row += 1;
+                    }
+                }
+                // And the boundary under it, which is the block's last row
+                // -- counted by `Block::rows`, so what is drawn here and
+                // what the viewport scrolled past are the same row. Across
+                // the whole width, gutter included: it is where the message
+                // stops and the file starts, and a rule that began at the
+                // text would leave the line numbers looking like part of
+                // what is above them.
+                if block.ruled() {
+                    if into > 0 {
+                        into -= 1;
+                    } else if screen_row < area.height {
+                        rule(
+                            cells,
+                            Rect {
+                                x: area.x,
+                                y: area.y + screen_row,
+                                width: area.width,
+                                height: 1,
+                            },
+                            self.theme,
+                        );
                         screen_row += 1;
                     }
                 }

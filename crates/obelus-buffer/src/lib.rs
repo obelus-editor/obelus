@@ -328,8 +328,6 @@ pub struct Block {
     /// the caret, a selection, a copy -- goes on asking the text and gets an
     /// answer about what the reader can actually see.
     full: Vec<String>,
-    /// Whether it is showing its opening lines rather than all of them.
-    folded: bool,
     /// How bad what this says is, where it says something is wrong.
     ///
     /// On the block rather than looked up from the line it hangs over,
@@ -362,33 +360,12 @@ pub struct Block {
     rows: std::cell::Cell<Option<(u16, usize)>>,
 }
 
-/// How many of a message's opening lines a folded block shows.
-///
-/// Five, because that is what a message is made of: the commit and who wrote
-/// it, a blank, the subject, a blank, and the first line of the body. A
-/// commit at a glance -- what it is called and the sentence it starts with --
-/// and the rest a keypress away.
-///
-/// A commit's message hangs above a file the reader asked to see. Forty rows
-/// of somebody's prose in front of it is the file pushed off the screen by
-/// its own footnote.
-pub const FOLDED_LINES: usize = 5;
-
-/// The row that says a folded block has more behind it.
-///
-/// A row of its own rather than a mark in the gutter, because these rows do
-/// not have one: they are not lines of the file and take no line numbers, so
-/// there is nowhere beside them to put it.
-const MORE: &str = "\u{2026}";
-
 impl Block {
-    /// Every line it was opened with, whether or not it is showing them
-    /// all.
+    /// Every line it was opened with.
     ///
-    /// What it *holds* rather than what is on screen, which is what a
-    /// caller comparing it against what it would open now has to ask: the
-    /// text is rewritten by folding, and comparing against that would
-    /// reopen a folded block on every frame.
+    /// What it *holds*, which is what a caller comparing it against what it
+    /// would open now has to ask: a complaint the server has repeated word
+    /// for word must not reopen its block on every frame.
     #[must_use]
     pub fn opened_with(&self) -> &[String] {
         &self.full
@@ -400,57 +377,17 @@ impl Block {
         self.editing.text()
     }
 
-    /// Whether folding it would hide anything.
-    ///
-    /// Only a message. A hunk's removed lines are already a thing the reader
-    /// opened and can close with the same key, and a second way to half-close
-    /// it would be two answers to one question.
-    #[must_use]
-    pub fn can_fold(&self) -> bool {
-        self.kind == Held::Message && self.full.len() > FOLDED_LINES
-    }
-
-    /// Whether it is showing its opening lines rather than all of them.
-    #[must_use]
-    pub const fn folded(&self) -> bool {
-        self.folded
-    }
-
-    /// Shows all of it, or its opening lines and a mark.
-    ///
-    /// Rewrites the text, which is the whole trick: everything that draws a
-    /// block, walks it or copies from it asks the text, so none of it has to
-    /// learn what a fold is. The cached height goes with it -- it was
-    /// measured against rows that are no longer there.
-    fn refold(&mut self, folded: bool) {
-        self.folded = folded && self.can_fold();
-        let lines = match self.folded {
-            true => {
-                let mut kept: Vec<&str> = self
-                    .full
-                    .iter()
-                    .take(FOLDED_LINES)
-                    .map(String::as_str)
-                    .collect();
-                kept.push(MORE);
-                kept.join("\n")
-            }
-            false => self.full.join("\n"),
-        };
-        let cursor = self.editing.cursor();
-        *self.editing.text_mut() = Text::from_string(&lines);
-        // The caret may have been standing on a row that has just gone. It
-        // keeps its place where it can, because a reader who folds while
-        // reading the third line expects to still be near the top -- not
-        // thrown back to the start. What was selected is let go: a selection
-        // across rows that are no longer there is not a selection of
-        // anything a reader can point at.
-        self.editing.clear_selection();
-        self.editing.arrive(cursor.line, cursor.column);
-        self.rows.set(None);
-    }
-
     /// How many rows the whole block takes at a width.
+    ///
+    /// A message takes one more than its text: the rule under it, which
+    /// says where the message stops and the file starts. Counted here
+    /// rather than added by whoever draws it, because the viewport and the
+    /// caret ask this the same question and a row the drawing had and the
+    /// arithmetic did not is a row nothing can be scrolled past.
+    ///
+    /// Nothing can stand on that row. [`Block::place_at_row`] clamps a row
+    /// past the last line onto the last line, which is where a caret
+    /// arriving at the rule belongs: it is a boundary, not a place.
     #[must_use]
     pub fn rows(&self, width: u16) -> usize {
         if self.is_empty() {
@@ -462,11 +399,21 @@ impl Block {
             return rows;
         }
         let text = self.text();
-        let rows = (0..text.line_count())
+        let rows: usize = (0..text.line_count())
             .map(|line| text.row_count(LineNumber::new(line), width))
             .sum();
+        let rows = rows + usize::from(self.kind == Held::Message);
         self.rows.set(Some((width, rows)));
         rows
+    }
+
+    /// Whether a rule is drawn under it.
+    ///
+    /// Asked by the drawing, so that what it puts on the screen and what
+    /// [`Block::rows`] counted cannot come apart.
+    #[must_use]
+    pub const fn ruled(&self) -> bool {
+        matches!(self.kind, Held::Message)
     }
 
     /// How many rows come before one of its lines.
@@ -923,7 +870,6 @@ impl Buffer {
             // the hunk replaced.
             editing: Editing::over(Text::from_string(&lines.join("\n"))),
             full: lines.to_vec(),
-            folded: false,
             changed: None,
             lines: lines.len(),
             rows: std::cell::Cell::new(None),
@@ -940,25 +886,6 @@ impl Buffer {
         self.in_block = None;
     }
 
-    /// Shows a block's opening lines, or all of them.
-    ///
-    /// Returns whether there was anything to fold, so a key that means "fold
-    /// what the cursor is inside" can fall through to the file's own runs
-    /// when it is not inside one of these.
-    pub fn fold_block(&mut self, above: LineNumber, folded: bool) -> bool {
-        let Ok(at) = self
-            .blocks
-            .binary_search_by_key(&above, |block| block.above)
-        else {
-            return false;
-        };
-        if !self.blocks[at].can_fold() {
-            return false;
-        }
-        self.blocks[at].refold(folded);
-        true
-    }
-
     /// Says what the commit behind a block did to the file it hangs over.
     pub fn mark_block_change(&mut self, above: LineNumber, changed: (usize, usize)) {
         if let Ok(at) = self
@@ -967,12 +894,6 @@ impl Buffer {
         {
             self.blocks[at].changed = Some(changed);
         }
-    }
-
-    /// The same, the other way round from wherever it is now.
-    pub fn toggle_block_fold(&mut self, above: LineNumber) -> bool {
-        let folded = self.block_above(above).is_some_and(Block::folded);
-        self.fold_block(above, !folded)
     }
 
     /// Closes it, and brings the caret back to the file if it was in there.

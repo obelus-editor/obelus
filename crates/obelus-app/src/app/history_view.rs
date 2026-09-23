@@ -638,28 +638,22 @@ impl App {
         let from = self.here();
         self.record(from);
         let mut buffer = Buffer::at_commit(&full, id, &text);
-        // The message above the first line, so the reader lands on *why*
-        // and pages down to what. It is not a line of the file, and a
-        // block is exactly the shape obelus has for that -- rows on screen
-        // the file does not have, with no line numbers, that the caret can
-        // walk into and copy from.
-        if let Some(said) = self.said_at(id) {
-            buffer.open_held(LineNumber::new(0), &said, obelus_buffer::Held::Message);
-            // What it did to this file, beside who did it.
-            if let Some(changed) = self.changed_at(id, path) {
-                buffer.mark_block_change(LineNumber::new(0), changed);
-            }
-            // Folded, showing what the commit is called and the sentence it
-            // starts with. The reader asked for a *file*; the message is why
-            // it says what it says, which is worth a glance and `alt+f` when
-            // the glance is not enough.
-            buffer.fold_block(LineNumber::new(0), true);
-            buffer.enter_block(LineNumber::new(0));
-        }
+        // The message is *not* hung above it. The reader asked for a file,
+        // and what they get is the file: which commit it is stays on the
+        // status row, where the mode and the staleness go, and the message
+        // itself is on the row they came from -- the list previews it in
+        // full.
+        //
+        // It used to hang here, folded to five lines. Two things came of
+        // that and neither was worth its keep: a page of somebody's prose
+        // between the reader and the file they asked for, and the first
+        // line of every commit's version with its one block slot spoken
+        // for -- so `alt+d` there could only say that the message was in
+        // the way.
+        //
         // A reader who asked about a line is put on that line, where it was
         // then -- which is not where it is now, because everything added
-        // above it since has pushed it down. The message stays above the
-        // first line, a page away, for when they want it.
+        // above it since has pushed it down.
         if let Some(line) = at {
             buffer.place_cursor(line, obelus_text::coordinates::CharColumn::new(0));
         }

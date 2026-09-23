@@ -2626,98 +2626,6 @@ fn a_commit_opens_its_files_under_it() {
     );
 }
 
-/// A commit's message hangs above the file, and a commit's message is long.
-/// Forty rows of somebody's prose in front of a file is the file pushed off
-/// the screen by its own footnote, so what opens is the first five lines --
-/// the commit, the subject, and the sentence the body starts with -- and a
-/// mark saying there is more.
-#[test]
-fn a_commits_message_opens_folded() {
-    let (mut app, _repository, _events) = a_file_at_a_wordy_commit("history-folded");
-
-    let dump = support::render(&mut app, 64, 18);
-    let text = support::text_block(&dump);
-    assert!(
-        text.contains("Give the third bank"),
-        "the subject is not on screen:\n{text}"
-    );
-    assert!(
-        text.contains("The opening line."),
-        "the body's opening line is not on screen:\n{text}"
-    );
-    assert!(
-        !text.contains("The far line"),
-        "the whole message is on screen, so nothing was folded:\n{text}"
-    );
-    assert!(
-        text.contains('\u{2026}'),
-        "nothing says the message goes on:\n{text}"
-    );
-}
-
-/// `alt+f` is already "fold what the cursor is inside", and a message is a
-/// thing the reader is inside -- they were put there. The same key opens it
-/// and closes it again.
-#[test]
-fn alt_f_opens_a_folded_message_and_folds_it_again() {
-    use crossterm::event::KeyCode;
-
-    let (mut app, _repository, _events) = a_file_at_a_wordy_commit("history-alt-f");
-    let showing = |app: &mut App| support::text_block(&support::render(app, 64, 18)).to_string();
-
-    assert!(
-        !showing(&mut app).contains("fourth line of the body"),
-        "it did not open folded"
-    );
-
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
-    let open = showing(&mut app);
-    assert!(
-        open.contains("The far line"),
-        "alt+f did not open the message:\n{open}"
-    );
-    assert!(
-        !open.contains('\u{2026}'),
-        "the mark is still there with nothing left to hide:\n{open}"
-    );
-
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
-    assert!(
-        !showing(&mut app).contains("fourth line of the body"),
-        "alt+f would not fold it again"
-    );
-}
-
-/// Nothing to hide, so nothing is hidden and nothing says it was. A mark
-/// over a message that is already whole is a promise of something that is
-/// not there.
-#[test]
-fn a_message_with_nothing_to_hide_is_not_folded() {
-    use crossterm::event::KeyCode;
-
-    let repository = Repository::new("history-short", "one\n");
-    repository.write("one\ntwo\n");
-    repository.commit_all("Just the one line");
-    let (mut app, _events) = reading_it_at_its_commit(&repository);
-
-    let dump = support::render(&mut app, 64, 18);
-    let text = support::text_block(&dump);
-    assert!(text.contains("Just the one line"), "the subject is missing");
-    assert!(
-        !text.contains('\u{2026}'),
-        "a whole message is marked as cut:\n{text}"
-    );
-
-    // And the key finds nothing to do rather than doing something odd.
-    support::press_alt_key(&mut app, KeyCode::Char('f'));
-    let dump = support::render(&mut app, 64, 18);
-    let after = support::text_block(&dump);
-    assert!(
-        !after.contains('\u{2026}'),
-        "alt+f folded a message with nothing behind it:\n{after}"
-    );
-}
-
 /// A line written down against one version of a file is found again in the
 /// next, which is what a note made while reading needs: it was put beside
 /// something, and the something has been moving ever since.
@@ -2888,10 +2796,10 @@ fn a_commit_alone_says_what_it_did_to_everything() {
     );
 }
 
-/// Beside who wrote it: what it did to *this* file. The block hangs above one
-/// file, and the question there is what this commit did to that -- not what it
-/// did to the tree, which is a number about a diff the reader is not looking
-/// at.
+/// Beside who wrote it: what it did to *this* file. The message hangs over
+/// one file, and the question there is what this commit did to that -- not
+/// what it did to the project, which is a number about a diff the reader is
+/// not looking at.
 #[test]
 fn the_message_says_how_much_the_commit_changed_this_file() {
     use obelus_theme::builtin::DARK;
@@ -2900,10 +2808,10 @@ fn the_message_says_how_much_the_commit_changed_this_file() {
     // Two lines gone, three put in their place.
     repository.write("one\nTWO\nfour\nfive\n");
     repository.commit_all("Change it about");
-    let (mut app, _events) = reading_it_at_its_commit(&repository);
+    let (mut app, _events) = previewing_it_at_its_commit(&repository);
 
-    let dump = support::render(&mut app, 64, 18);
-    let text = support::text_block(&dump);
+    let dump = support::render(&mut app, 64, 24);
+    let text = support::previewed(&dump);
     let head = text
         .lines()
         .find(|row| row.contains("just now"))
@@ -2932,22 +2840,25 @@ fn the_message_says_how_much_the_commit_changed_this_file() {
     );
 }
 
-/// The message is not the file, and two things already say so: the bar down
-/// its left, and the line numbers it does not have. A panel of another
-/// colour on top of the code, as tall as somebody's prose, was a third --
-/// and the loudest thing on a screen whose subject is the code underneath.
+/// The message is not the file, and two things say so: the line numbers it
+/// does not have, and the rule under it. A panel of another colour on top of
+/// the code, as tall as somebody's prose, was a third -- and the loudest
+/// thing on a screen whose subject is the code underneath.
 #[test]
 fn a_message_is_drawn_on_the_page_rather_than_on_a_panel() {
     use obelus_theme::builtin::DARK;
 
     let repository = Repository::new("history-panel", "one\n");
     repository.write("one\ntwo\n");
-    repository.commit_all("Give the third bank of keys to git");
-    let (mut app, _events) = reading_it_at_its_commit(&repository);
+    // The letters asked about are in the *body*: the list above the preview
+    // shows the subject, on a row that wears the selected background, and a
+    // glyph looked up across the whole screen would find that one first.
+    repository.commit_all("A subject\n\nzyxw, and nothing else spells it.");
+    let (mut app, _events) = previewing_it_at_its_commit(&repository);
 
-    let dump = support::render(&mut app, 64, 18);
+    let dump = support::render(&mut app, 64, 24);
     let page = support::spelled(DARK.background);
-    for glyph in ['G', 'k', 'g'] {
+    for glyph in ['z', 'y', 'x'] {
         let row = support::legend_for(&dump, glyph);
         assert!(
             row.ends_with(&format!("bg={page}")),
@@ -2956,35 +2867,20 @@ fn a_message_is_drawn_on_the_page_rather_than_on_a_panel() {
     }
 }
 
-/// A repository whose one commit has a body worth folding, opened at that
-/// commit's version of its file.
-fn a_file_at_a_wordy_commit(name: &str) -> (App, Repository, Receiver<Event>) {
-    let repository = Repository::new(name, "one\n");
-    repository.write("one\ntwo\n");
-    // Short lines, so a wrapped row cannot split a phrase a test looks for.
-    repository.commit_all(
-        "Give the third bank of keys to git\n\n\
-         The opening line.\n\
-         The second line.\n\
-         The third line.\n\n\
-         The far line, well out of sight.",
-    );
-    let (app, events) = reading_it_at_its_commit(&repository);
-    (app, repository, events)
-}
-
-/// Opens the repository's file as its newest commit had it, the way a reader
-/// gets there: the file's own history, and the commit at the top of it.
-fn reading_it_at_its_commit(repository: &Repository) -> (App, Receiver<Event>) {
-    use crossterm::event::KeyCode;
-
+/// The same history, stopped one key short: the row is under the cursor and
+/// the preview under the list is showing what pressing it would give.
+///
+/// Which is where a commit's message is now read. Opening the row gives the
+/// file and nothing else, so anything about the message is asked of this.
+fn previewing_it_at_its_commit(repository: &Repository) -> (App, Receiver<Event>) {
     let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
     app.working_directory_for_test(repository.directory());
     let events = support::drive(&mut app);
-    support::lay_out(&mut app, 64, 18);
+    // Taller than the editor's helper needs: a preview is drawn only where
+    // there is room under the list for one, and eighteen rows is not.
+    support::lay_out(&mut app, 64, 24);
     support::press_function(&mut app, 9);
     support::read_history(&mut app, &events);
-    support::press(&mut app, KeyCode::Enter);
     (app, events)
 }
 
@@ -3163,11 +3059,19 @@ fn a_subject_is_cut_at_its_end() {
     );
 }
 
-/// A commit's version of a file carries the commit's message above its
-/// first line, and the reader lands in it: they opened this to find out
-/// *why* it says what it says, and the file itself is a page down.
+/// A commit's version of a file is the file, and the message is not on it.
+///
+/// It used to hang above the first line, folded, with the reader landing in
+/// it: they opened this to find out *why*, so the why came first. What that
+/// cost was a page of somebody's prose between a reader and the file they
+/// asked for, and the first line's one block slot spoken for. The message
+/// is read whole in the preview, a keypress back; what opening the row
+/// gives is the file, and the status row still says which commit it is.
+///
+/// Broken deliberately by hanging the message above the first line again in
+/// `read_at_commit`: the file was a page down and the caret was in prose.
 #[test]
-fn a_commits_version_carries_what_the_commit_said() {
+fn a_commits_version_is_the_file_and_not_the_message() {
     use crossterm::event::KeyCode;
     use obelus_app::app::App;
     use obelus_buffer::Buffer;
@@ -3189,28 +3093,27 @@ fn a_commits_version_carries_what_the_commit_said() {
     let dump = support::render(&mut app, 60, 16);
     let text = support::text_block(&dump);
     assert!(
-        text.contains("A subject worth reading"),
-        "the message is not above the file:\n{text}"
-    );
-    assert!(
-        text.contains("And a body under it."),
-        "only the subject came up:\n{text}"
-    );
-    assert!(
         text.contains("second"),
         "the file itself is not there:\n{text}"
     );
-    // The caret is in the message, which has no line numbers of its own,
-    // so the status row says where it is and marks that it is not the
-    // file's own count.
+    assert!(
+        !text.contains("And a body under it."),
+        "the commit's prose is in front of the file:\n{text}"
+    );
+    // On the file's own first line, not in prose above it: a negative line
+    // is what the status row says for a row the file does not have.
     let status = support::text_block(&dump)
         .lines()
         .last()
         .expect("a status row")
         .to_string();
     assert!(
-        status.contains("-1:1"),
-        "the reader did not land in the message:\n{dump}"
+        status.contains("1:1"),
+        "the reader did not land on the file's first line:\n{dump}"
+    );
+    assert!(
+        !status.contains("-1:1"),
+        "the reader landed in a message that should not be there:\n{dump}"
     );
     // And which commit this is, where the mode and the staleness go.
     let at = app
@@ -3430,12 +3333,18 @@ fn the_history_previews_what_a_row_would_give() {
         "a commit previewed a file it is not:\n{text}"
     );
     // Drawn as a block, so it has no line numbers: a message has no lines
-    // of its own to go to.
+    // of its own to go to. Asked of the gutter rather than of the bar that
+    // used to run down the side -- the rule under the message says where it
+    // ends now, and a bar beside prose nobody can open said it twice.
+    let subject = text
+        .lines()
+        .find(|row| row.contains("A subject worth reading"))
+        .expect("the subject's row");
+    // Past the dump's own row number, which is not on the screen.
+    let drawn = subject.split_once('|').map_or(subject, |(_, rest)| rest);
+    let gutter = &drawn[..drawn.find("A subject").expect("the subject")];
     assert!(
-        text.lines()
-            .next()
-            .expect("a first row")
-            .contains('\u{2590}'),
+        !gutter.chars().any(|c| c.is_ascii_digit()),
         "the message is numbered as if it were a file:\n{text}"
     );
 
@@ -3857,20 +3766,35 @@ fn a_version_already_open_previews_where_it_is_open() {
     for _ in 0..60 {
         support::press(&mut app, KeyCode::Down);
     }
+    // Which lines a screen is showing, by their number in the file.
+    fn lines_on(text: &str) -> Vec<usize> {
+        text.lines()
+            .filter_map(|row| {
+                let (_, said) = row.split_once("line ")?;
+                said.split_whitespace().next()?.parse().ok()
+            })
+            .collect()
+    }
+
     let read_at = support::render(&mut app, 60, 24);
+    let reading = lines_on(support::text_block(&read_at));
     assert!(
-        read_at.contains("line 55"),
+        reading.iter().min().copied().unwrap_or(0) > 10,
         "the version did not open and scroll:\n{read_at}"
     );
 
     // Ask for the history again. The row for that commit is the version
-    // that is open, so it previews where it is being read.
+    // that is open, so it previews where it is being read -- which is well
+    // down the file. Asserted as "not the top" rather than as a line
+    // number: how far sixty presses reach is not what this is about, and a
+    // number here would be a second claim about where the caret starts.
     support::press_function(&mut app, 9);
     support::read_history(&mut app, &events);
-    let text = previewed(&support::render(&mut app, 60, 24));
+    let shown = previewed(&support::render(&mut app, 60, 24));
+    let previewing = lines_on(&shown);
     assert!(
-        text.contains("line 55"),
-        "the preview went back to the top of a version already open:\n{text}"
+        previewing.iter().min().copied().unwrap_or(0) > 10,
+        "the preview went back to the top of a version already open:\n{shown}"
     );
 }
 
@@ -4150,11 +4074,10 @@ fn a_hunk_in_a_commits_version_is_what_that_commit_changed() {
     support::read_history(&mut app, &events);
     support::press(&mut app, KeyCode::Enter);
 
-    // Down out of the message -- which is three rows that are not lines of
-    // the file -- and onto the line the commit changed.
-    for _ in 0..4 {
-        support::press(&mut app, KeyCode::Down);
-    }
+    // Onto the line the commit changed, which is the second. One press:
+    // the version opens on its own first line, with nothing above it -- the
+    // message is read in the preview and hangs over no file.
+    support::press(&mut app, KeyCode::Down);
     let dump = support::render(&mut app, 52, 16);
     assert!(
         support::text_block(&dump)
@@ -4185,15 +4108,26 @@ fn a_hunk_in_a_commits_version_is_what_that_commit_changed() {
     );
 }
 
+/// The first line of a commit's version has its block slot to itself.
+///
+/// It did not. The message hung there, a line has room for one block, and
+/// `alt+d` on the line the commit changed could only say so -- the one line
+/// in the file where the key that asks what a line changed from had nothing
+/// to give. The message is read in the preview now and hangs over nothing,
+/// so the slot is the hunk's.
+///
+/// Broken deliberately by hanging the message above the first line again in
+/// `read_at_commit`: the hunk had nowhere to go and what opened was the
+/// message.
 #[test]
-fn the_hunk_key_never_takes_a_commits_message_away() {
+fn the_first_lines_hunk_opens_in_a_commits_version() {
     use crossterm::event::KeyCode;
     use obelus_app::app::App;
     use obelus_buffer::Buffer;
     use obelus_command::Command;
 
-    // The commit changes the first line, so the hunk it would open wants
-    // the very slot the message hangs in: a line has room for one block.
+    // The commit changes the first line, which is the line whose hunk used
+    // to have nowhere to open.
     let repository = Repository::new("hunk-and-message", "old one\ntwo\n");
     repository.write("new one\ntwo\n");
     repository.commit("the second");
@@ -4206,31 +4140,29 @@ fn the_hunk_key_never_takes_a_commits_message_away() {
     support::read_history(&mut app, &events);
     support::press(&mut app, KeyCode::Enter);
 
-    // The caret opens inside the message, which is where a reader lands and
-    // where they press keys before they have gone anywhere.
-    obelus_app::app::dispatch::dispatch(&mut app, Command::GitHunk);
+    // Nothing of the commit's prose is in the way, and nothing of it is on
+    // screen: what the reader asked for was the file.
     let dump = support::render(&mut app, 100, 12);
     assert!(
-        support::text_block(&dump).contains("the second"),
-        "asking for a hunk from inside the message closed the message:\n{dump}"
+        !support::text_block(&dump).contains("the second"),
+        "the message is hanging over the file again:\n{dump}"
     );
 
-    // And from the line itself, whose own hunk has nowhere to go.
-    for _ in 0..3 {
-        support::press(&mut app, KeyCode::Down);
-    }
     obelus_app::app::dispatch::dispatch(&mut app, Command::GitHunk);
     let dump = support::render(&mut app, 100, 12);
+    let rows: Vec<&str> = support::text_block(&dump).lines().collect();
+    let removed = rows
+        .iter()
+        .position(|row| row.contains("old one"))
+        .unwrap_or_else(|| panic!("the first line's hunk did not open:\n{dump}"));
     assert!(
-        support::text_block(&dump).contains("the second"),
-        "asking for a hunk on the line below it closed the message:\n{dump}"
+        rows[removed + 1].contains("new one"),
+        "what was there is not above what replaced it:\n{dump}"
     );
-    // Said rather than done quietly: the margin says the line changed, so a
-    // key that asks what it changed from and seems to do nothing looks
-    // broken.
+    // And no word about anything being in the way, because nothing is.
     assert!(
-        support::text_block(&dump).contains("message hangs where"),
-        "nothing said about why the hunk did not open:\n{dump}"
+        !support::text_block(&dump).contains("message hangs where"),
+        "the key still says the message is in its slot:\n{dump}"
     );
 }
 
@@ -4384,10 +4316,17 @@ fn a_line_opens_the_commit_that_wrote_it() {
 
     let dump = support::render(&mut app, 70, 14);
     let text = support::text_block(&dump);
-    // The commit that wrote it, not the one that pushed it down.
+    // The commit that wrote it, not the one that pushed it down -- said by
+    // what the version holds, since the message no longer hangs over it:
+    // that commit's file is the two lines it started as, and the one that
+    // pushed it down has four.
     assert!(
-        text.contains("committed") && !text.contains("Put two at the top"),
-        "the line opened the wrong commit:\n{dump}"
+        text.contains(" 1 a") && text.contains(" 2 b"),
+        "not the file as the commit that wrote the line had it:\n{dump}"
+    );
+    assert!(
+        !text.contains(" 1 x"),
+        "the version open is a later one, whose first line that commit never had:\n{dump}"
     );
     // And on that line as that commit had it: the second of two, not the
     // fifth of a file that did not exist yet.
@@ -4612,7 +4551,15 @@ fn the_commit_behind_a_line_can_be_asked_for_with_the_names_off() {
             Ok(event) => app.handle(event),
             Err(_) => break,
         }
-        if support::text_block(&support::render(&mut app, 74, 14)).contains("Put one at the top") {
+        // Asked of the document rather than of the screen: what says the
+        // commit opened is that what is being read is a commit's version,
+        // and the commit's own words are no longer drawn over the file to
+        // be read off it.
+        support::render(&mut app, 74, 14);
+        if app
+            .current_buffer()
+            .is_some_and(|buffer| buffer.content().at().is_some())
+        {
             return;
         }
     }
