@@ -1,4 +1,4 @@
-//! Markdown, laid out, from the tree obelus already parses.
+//! Markdown, laid out into rows, from the tree obelus already parses.
 //!
 //! This borrowed a markdown renderer for a long time, and to use one at all
 //! it had to cut the fenced blocks out of the source first: the renderer
@@ -14,15 +14,17 @@
 //! the reader is already looking at while they edit the file.
 //!
 //! What is borrowed now is nothing. The wrapping is
-//! [`obelus_text::wrapped_from`] and the column widths are [`crate::table`],
-//! both obelus's own.
+//! [`obelus_text::wrapped_from`] and the column widths are [`table`], both
+//! obelus's own.
+
+/// How wide a table's columns are drawn.
+mod table;
 
 use std::ops::Range;
 
+use obelus_row::{Ink, Row, Span};
 use obelus_syntax::{LanguageId, highlight::Highlights, parse::SyntaxState, tree_sitter::Node};
 use obelus_text::{Text, coordinates::ByteOffset, kind::SyntaxKind, text_width};
-
-use crate::{Ink, Row, Span, table};
 
 /// Lays a markdown source out for a width.
 ///

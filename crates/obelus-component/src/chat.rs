@@ -75,7 +75,7 @@
 //! under somebody who is reading it.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use obelus_reading::{Ink, Span};
+use obelus_row::{Ink, Span};
 
 use crate::{composer::Composer, window::Window};
 
@@ -787,7 +787,7 @@ fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<Vec<Span>> {
             .map(|(said, from)| vec![Span::from_source(said, Ink::Plain, from)])
             .collect();
     }
-    obelus_reading::markdown::render(text, width)
+    obelus_markdown::render(text, width)
         .into_iter()
         .map(|row| match row.rule {
             // A rule has no words of its own, and the transcript has no

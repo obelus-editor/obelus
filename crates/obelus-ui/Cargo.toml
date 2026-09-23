@@ -19,6 +19,7 @@ obelus-editing.workspace = true
 obelus-git.workspace = true
 obelus-icons.workspace = true
 obelus-lsp.workspace = true
+obelus-row.workspace = true
 obelus-reading.workspace = true
 obelus-search.workspace = true
 obelus-syntax.workspace = true

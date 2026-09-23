@@ -1,133 +1,26 @@
-//! The readings a file's bytes have, and the rows they come out as.
+//! The readings a file's bytes have.
 //!
 //! A reading is what a file is *for*: markdown laid out as prose, a log put
 //! in columns. Which one a file has is the file's own business -- that is
-//! what keeps a buffer's `Mode` down to two -- and this is where
-//! that question is answered and where the answer is turned into rows.
+//! what keeps a buffer's `Mode` down to two -- and this is where that
+//! question is answered.
 //!
-//! One row type for every reading, which is the point. What markdown holds
-//! and what a log holds are different things while they are being laid out,
-//! and by the time they are rows they are the same thing: runs of text with
-//! a look. So one piece of code draws either, and adding a reading is a
-//! `render` arm rather than a view of its own.
+//! About *files*, which is what tells this from the laying out itself. A
+//! language server's hover and an agent's message are markdown too, and
+//! neither of them is a file with a reading: they go straight to
+//! [`obelus_markdown`] and never come past here. What is here is the
+//! question only a file can be asked.
 
 /// A log file, read as the entries it is made of.
 ///
 /// Not obelus's own logging, which is the log it *writes* about itself.
 /// This one is a file somebody opens.
 pub mod log;
-/// Markdown, rendered rather than shown as its own source.
-pub mod markdown;
-/// How wide a table's columns are drawn.
-pub mod table;
 
 use std::path::Path;
 
+use obelus_row::Row;
 use obelus_text::Text;
-
-/// What a run of text looks like.
-///
-/// The *screen's* vocabulary rather than markdown's or a log's: a heading
-/// and a level are different ideas about the same thing, which is how a run
-/// should be drawn. Roles rather than colours, for the reason the syntax
-/// layer caches capture indices: switching theme then needs no re-render.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Ink {
-    /// The text itself.
-    Plain,
-    /// A heading, and how deep it is.
-    Heading(u8),
-    /// Something quoted from elsewhere: a code span, a field's value.
-    Code,
-    /// Quieter than the text: a quoted block, a timestamp, a level nobody
-    /// reads until they have to.
-    Aside,
-    /// A mark the reading added rather than the author's words: a bullet, a
-    /// table's border, the blanks that hold a column open.
-    Mark,
-    /// Who said it: a module, a host, a program.
-    Name,
-    /// What a value is called.
-    Key,
-    /// Something is wrong.
-    Wrong,
-    /// Something might be.
-    Doubtful,
-    /// Code, in the colour the code itself would be.
-    ///
-    /// What a fenced block in markdown is made of, once the grammar its
-    /// fence names has said what each run is. A block with no language, or
-    /// one obelus has no grammar for, stays [`Ink::Code`] -- one colour,
-    /// which says "this is code" and nothing more.
-    Syntax(obelus_text::kind::SyntaxKind),
-}
-
-/// A run of text with one look.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Span {
-    /// The characters.
-    pub text: String,
-    /// How they are drawn.
-    pub ink: Ink,
-    /// Whether they are emphasised.
-    pub bold: bool,
-    /// Whether they are emphasised the other way.
-    pub italic: bool,
-    /// Where in the source these characters came from, in bytes.
-    ///
-    /// `None` for the runs a reading adds rather than reads: a bullet, a
-    /// quotation's bar, the border round a fenced block, the padding that
-    /// holds a table's columns open. Those are the layout's own marks and
-    /// point at nothing anybody wrote.
-    ///
-    /// What it is for is anything that has to survive being laid out
-    /// again. A reading is rows at a width, and every width gives
-    /// different rows -- so a place in a reading that is remembered as a
-    /// row and a column is a place that moves when the window does. Kept
-    /// as where it came from, it does not: the source is the same
-    /// whatever the window is doing.
-    pub from: Option<std::ops::Range<usize>>,
-}
-
-impl Span {
-    /// A run with no emphasis, which is every run but markdown's.
-    #[must_use]
-    pub fn new(text: impl Into<String>, ink: Ink) -> Self {
-        Self {
-            text: text.into(),
-            ink,
-            bold: false,
-            italic: false,
-            from: None,
-        }
-    }
-
-    /// A run that came from somewhere in the source.
-    #[must_use]
-    pub fn from_source(text: impl Into<String>, ink: Ink, from: std::ops::Range<usize>) -> Self {
-        Self {
-            from: Some(from),
-            ..Self::new(text, ink)
-        }
-    }
-}
-
-/// One row of a reading, ready to draw.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Row {
-    /// The runs, left to right.
-    pub spans: Vec<Span>,
-    /// Whether the row is a horizontal rule, which has no text of its own.
-    pub rule: bool,
-}
-
-impl Row {
-    /// A row of runs, with no rule.
-    #[must_use]
-    pub const fn of(spans: Vec<Span>) -> Self {
-        Self { spans, rule: false }
-    }
-}
 
 /// Which reading a file's bytes have.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,7 +69,7 @@ pub fn of(path: &Path, text: &Text) -> Option<Reading> {
 #[must_use]
 pub fn render(reading: Reading, source: &str, width: u16) -> Vec<Row> {
     match reading {
-        Reading::Markdown => crate::markdown::render(source, width),
+        Reading::Markdown => obelus_markdown::render(source, width),
         Reading::Log => crate::log::render(source, width),
     }
 }

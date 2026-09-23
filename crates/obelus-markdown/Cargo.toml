@@ -1,6 +1,6 @@
 [package]
-name = "obelus-reading"
-description = "Markdown and logs, as something to read rather than edit"
+name = "obelus-markdown"
+description = "Markdown, laid out into rows"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,7 +10,6 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-obelus-markdown.workspace = true
 obelus-row.workspace = true
+obelus-syntax.workspace = true
 obelus-text.workspace = true
-access_log_parser.workspace = true

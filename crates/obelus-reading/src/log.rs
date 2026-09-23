@@ -39,7 +39,7 @@
 //! line that is actually in `/var/log/syslog`, which is the file a reader
 //! opens.
 
-use crate::{Ink, Row, Span};
+use obelus_row::{Ink, Row, Span};
 
 /// How much an entry matters.
 ///

@@ -40,7 +40,7 @@ const COMFORTABLE: usize = 4;
 /// the rest of them are not drawn. A table squeezed to nothing is worse than
 /// a table that says it has been cut.
 #[must_use]
-pub fn widths(cells: &[Vec<usize>], columns: usize, room: usize) -> Vec<usize> {
+pub(crate) fn widths(cells: &[Vec<usize>], columns: usize, room: usize) -> Vec<usize> {
     if columns == 0 || room == 0 {
         return Vec::new();
     }

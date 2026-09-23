@@ -3203,7 +3203,7 @@ impl Screen for App {
     fn rendered_rows(&self) -> Option<usize> {
         App::rendered_rows(self)
     }
-    fn rendering(&self) -> Option<&[obelus_reading::Row]> {
+    fn rendering(&self) -> Option<&[obelus_row::Row]> {
         App::rendering(self)
     }
     fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)> {

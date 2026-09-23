@@ -8,7 +8,7 @@
 //! file's lines, and a line number beside a wrapped paragraph would be a
 //! number for something that is not there.
 
-use obelus_reading::{Ink, Row};
+use obelus_row::{Ink, Row};
 use obelus_theme::Theme;
 use ratatui::{
     buffer::Buffer as CellBuffer,
@@ -122,7 +122,7 @@ pub fn write_spans(
     cells: &mut CellBuffer,
     x: u16,
     y: u16,
-    spans: &[obelus_reading::Span],
+    spans: &[obelus_row::Span],
     drawn: &Drawn<'_>,
 ) -> u16 {
     let Drawn {

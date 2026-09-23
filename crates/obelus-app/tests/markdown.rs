@@ -6,7 +6,8 @@
 //! than the width it was laid out for.
 mod support;
 
-use obelus_reading::{Ink, Row, markdown::render};
+use obelus_markdown::render;
+use obelus_row::{Ink, Row};
 
 /// Every span of a row, joined.
 fn text(row: &Row) -> String {
@@ -315,7 +316,7 @@ fn obelus_can_read_its_own_log() {
 /// A fenced block is not prose and is not laid out as prose: what it is made
 /// of is what its fence says it is.
 mod fences {
-    use obelus_reading::{Ink, Row};
+    use obelus_row::{Ink, Row};
     use obelus_text::kind::SyntaxKind;
 
     use super::{render, text};
@@ -343,7 +344,7 @@ mod fences {
 
     /// The runs of a row of code, without the box and the room round it --
     /// and without whatever the blocks it is inside draw down its left.
-    fn inside(row: &Row) -> &[obelus_reading::Span] {
+    fn inside(row: &Row) -> &[obelus_row::Span] {
         let at = box_at(row, &['\u{2502}']).unwrap_or(0);
         &row.spans[at + 1..row.spans.len() - 2]
     }

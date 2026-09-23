@@ -3415,8 +3415,10 @@ dependencies = [
  "obelus-icons",
  "obelus-logging",
  "obelus-lsp",
+ "obelus-markdown",
  "obelus-mcp",
  "obelus-reading",
+ "obelus-row",
  "obelus-runtime",
  "obelus-search",
  "obelus-syntax",
@@ -3494,7 +3496,9 @@ dependencies = [
  "obelus-git",
  "obelus-icons",
  "obelus-lsp",
+ "obelus-markdown",
  "obelus-reading",
+ "obelus-row",
  "obelus-search",
  "obelus-text",
  "tracing",
@@ -3580,6 +3584,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "obelus-markdown"
+version = "0.1.0"
+dependencies = [
+ "obelus-row",
+ "obelus-syntax",
+ "obelus-text",
+]
+
+[[package]]
 name = "obelus-mcp"
 version = "0.1.0"
 dependencies = [
@@ -3607,7 +3620,15 @@ name = "obelus-reading"
 version = "0.1.0"
 dependencies = [
  "access_log_parser",
- "obelus-syntax",
+ "obelus-markdown",
+ "obelus-row",
+ "obelus-text",
+]
+
+[[package]]
+name = "obelus-row"
+version = "0.1.0"
+dependencies = [
  "obelus-text",
 ]
 
@@ -3694,6 +3715,7 @@ dependencies = [
  "obelus-icons",
  "obelus-lsp",
  "obelus-reading",
+ "obelus-row",
  "obelus-search",
  "obelus-syntax",
  "obelus-text",

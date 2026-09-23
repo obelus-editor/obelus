@@ -21,7 +21,7 @@ use nucleo_matcher::{
 };
 use obelus_buffer::DocumentId;
 use obelus_lsp::complete::{Candidate, Offer};
-use obelus_reading::Row;
+use obelus_row::Row;
 use obelus_text::coordinates::{CharColumn, LineNumber};
 
 use crate::window::{Move, Window, Wrap};
@@ -346,7 +346,7 @@ impl Completion {
             return;
         }
         let rows = match self.documentation() {
-            Some(source) => obelus_reading::markdown::render(&source, width),
+            Some(source) => obelus_markdown::render(&source, width),
             None => Vec::new(),
         };
         self.rendered = Some(Rendered {

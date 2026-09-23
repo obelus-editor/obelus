@@ -10,7 +10,7 @@ description = "A terminal code reader. It doesn't want you to type."
 
 # The lints the whole of obelus is written under. Crate attributes do not
 # travel, so `#![deny(..)]` in one crate root would silently stop applying to
-# the other twenty-two; here they are stated once and each member opts in with
+# the other twenty-five; here they are stated once and each member opts in with
 # a `[lints] workspace = true` of its own, which Cargo does not inherit for it.
 [workspace.lints.rust]
 missing_docs = "warn"
@@ -33,9 +33,11 @@ obelus-git = { path = "crates/obelus-git" }
 obelus-icons = { path = "crates/obelus-icons" }
 obelus-logging = { path = "crates/obelus-logging" }
 obelus-lsp = { path = "crates/obelus-lsp" }
+obelus-markdown = { path = "crates/obelus-markdown" }
 obelus-mcp = { path = "crates/obelus-mcp" }
 obelus-program = { path = "crates/obelus-program" }
 obelus-reading = { path = "crates/obelus-reading" }
+obelus-row = { path = "crates/obelus-row" }
 obelus-runtime = { path = "crates/obelus-runtime" }
 obelus-search = { path = "crates/obelus-search" }
 obelus-sink = { path = "crates/obelus-sink" }

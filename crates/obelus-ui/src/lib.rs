@@ -193,7 +193,7 @@ pub trait Screen {
     /// How many rows it has, for the keys that scroll it.
     fn rendered_rows(&self) -> Option<usize>;
     /// The reading on screen, if the current file is being shown as one.
-    fn rendering(&self) -> Option<&[obelus_reading::Row]>;
+    fn rendering(&self) -> Option<&[obelus_row::Row]>;
     /// The server for the file being read, and what it is doing.
     fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)>;
     /// What a language server is busy with, if one is.

@@ -981,7 +981,7 @@ impl App {
 
     /// The reading on screen, if the current file is being shown as one.
     #[must_use]
-    pub fn rendering(&self) -> Option<&[obelus_reading::Row]> {
+    pub fn rendering(&self) -> Option<&[obelus_row::Row]> {
         self.rendered
             .as_ref()
             .map(|rendered| rendered.rows.as_slice())
@@ -1412,7 +1412,7 @@ impl App {
 #[derive(Debug)]
 pub(super) struct Rendered {
     at: (PathBuf, i32, u16),
-    rows: Vec<obelus_reading::Row>,
+    rows: Vec<obelus_row::Row>,
 }
 
 /// Re-reads one buffer, and says whether the text changed.

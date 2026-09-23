@@ -7,7 +7,7 @@
 //! moves the reader off the place the answer is about.
 
 use obelus_lsp::hover::Hovered;
-use obelus_reading::Row;
+use obelus_row::Row;
 use obelus_text::coordinates::{CharColumn, LineNumber, Span};
 
 /// The most rows of it to show at once.
@@ -89,10 +89,7 @@ impl Hover {
     /// Lays the markdown out for a width, if it is not laid out already.
     pub fn settle(&mut self, width: u16, height: u16) {
         if self.rendered.as_ref().is_none_or(|(was, _)| *was != width) {
-            self.rendered = Some((
-                width,
-                obelus_reading::markdown::render(&self.markdown, width),
-            ));
+            self.rendered = Some((width, obelus_markdown::render(&self.markdown, width)));
         }
         let rows = self.rows().len();
         self.scrolled = self.scrolled.min(rows.saturating_sub(usize::from(height)));
