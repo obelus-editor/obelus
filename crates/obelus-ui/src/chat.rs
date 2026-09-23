@@ -264,21 +264,41 @@ pub fn regions_capped(area: Rect, needed: usize, most: u16) -> Regions {
     }
 }
 
-/// What a tool call says about where it was working.
+/// What a tool call says about where it was working, given what its title
+/// has already said.
 ///
 /// The path as a reader writes it -- relative to the tree obelus was opened
 /// on -- and the line when the agent named one. And how many other files it
 /// named, because a call that touched six of them says so on its one row
 /// until the reader opens it.
-fn said_place(place: &acp::Place, root: &Path, more: usize) -> String {
+///
+/// Unless the title is already that path. An agent's title for a call is
+/// usually the verb and the file -- `Write crates/obelus-reading/src/
+/// blocks.rs` -- and obelus writes the path after it because the path is
+/// the affordance: a row that names a file is a row that goes there. Both,
+/// and the row said one thing twice and ran off the edge of the screen,
+/// taking the mark that says there is more behind it and the count of what
+/// it changes with it. The same rule as the one a setting's description
+/// follows when it is the setting's name again.
+///
+/// What the title has *not* said is still worth saying, so a line and the
+/// other files are what is left: `line 20  +2` where the title named the
+/// file, `src/app.rs:20  +2` where it did not.
+fn said_place(title: &str, place: &acp::Place, root: &Path, more: usize) -> String {
     let path = super::relative_to(&place.path, root).display().to_string();
-    let said = match place.line {
-        Some(line) => format!("{path}:{line}"),
-        None => path,
+    // As the reader writes it, or as the agent wrote it: a title is the
+    // agent's own words and it may have put the whole path in.
+    let named = title.contains(&path) || title.contains(&place.path.display().to_string());
+    let said = match (named, place.line) {
+        (true, None) => String::new(),
+        (true, Some(line)) => format!("line {line}"),
+        (false, None) => path,
+        (false, Some(line)) => format!("{path}:{line}"),
     };
-    match more {
-        0 => said,
-        more => format!("{said}  +{more}"),
+    match (more, said.is_empty()) {
+        (0, _) => said,
+        (more, true) => format!("+{more}"),
+        (more, false) => format!("{said}  +{more}"),
     }
 }
 
@@ -949,14 +969,10 @@ impl ChatView<'_> {
             // its own affordance: obelus opens files, so a row that names
             // one is a row that goes there.
             if let Some((place, more)) = &row.place {
-                ended = write_within(
-                    cells,
-                    ended + 2,
-                    y,
-                    &said_place(place, self.root, *more),
-                    dim,
-                    words_end(area) + 1,
-                );
+                let said = said_place(&row.text(), place, self.root, *more);
+                if !said.is_empty() {
+                    ended = write_within(cells, ended + 2, y, &said, dim, words_end(area) + 1);
+                }
             }
             // What says there is more behind this row than it is showing:
             // the same mark a settings row and a card use for the same
@@ -1548,15 +1564,56 @@ mod tests {
             path: PathBuf::from("/tree/src/app.rs"),
             line: Some(20),
         };
-        assert_eq!(said_place(&inside, root, 0), "src/app.rs:20");
-        assert_eq!(said_place(&inside, root, 2), "src/app.rs:20  +2");
+        assert_eq!(
+            said_place("Read the file", &inside, root, 0),
+            "src/app.rs:20"
+        );
+        assert_eq!(
+            said_place("Read the file", &inside, root, 2),
+            "src/app.rs:20  +2"
+        );
 
         // No line, and nowhere near the tree.
         let elsewhere = obelus_agent::acp::Place {
             path: PathBuf::from("/etc/hosts"),
             line: None,
         };
-        assert_eq!(said_place(&elsewhere, root, 0), "/etc/hosts");
+        assert_eq!(
+            said_place("Read the file", &elsewhere, root, 0),
+            "/etc/hosts"
+        );
+    }
+
+    /// A title that is already the path does not have it written after it.
+    ///
+    /// Which is what an agent's titles are: `Write <path>`, every time. The
+    /// row said the path twice and the second copy ran off the edge of the
+    /// screen, taking the mark that says there is more behind the row and
+    /// the count of what it changes with it -- so the one row that says a
+    /// file was rewritten said nothing about how much.
+    ///
+    /// What the title has not said is still said. Broken deliberately by
+    /// answering `false` for `named`, which puts the second copy back.
+    #[test]
+    fn a_place_the_title_already_names_is_not_said_again() {
+        let root = Path::new("/tree");
+        let written = obelus_agent::acp::Place {
+            path: PathBuf::from("/tree/src/app.rs"),
+            line: None,
+        };
+        let title = "Write src/app.rs";
+        assert_eq!(said_place(title, &written, root, 0), "");
+        // The other files it touched are news whatever the title says.
+        assert_eq!(said_place(title, &written, root, 2), "+2");
+        // And so is the line.
+        let at = obelus_agent::acp::Place {
+            line: Some(20),
+            ..written.clone()
+        };
+        assert_eq!(said_place(title, &at, root, 0), "line 20");
+        assert_eq!(said_place(title, &at, root, 2), "line 20  +2");
+        // An agent that wrote the whole path in its title has said it too.
+        assert_eq!(said_place("Write /tree/src/app.rs", &written, root, 0), "");
     }
 
     /// Without glyphs the mark is all there is to tell one voice from
