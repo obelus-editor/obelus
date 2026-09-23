@@ -134,7 +134,7 @@ pub fn write_spans(
     let mut column = x;
     let mut at = 0usize;
     for span in spans {
-        let style = style_of(span.ink, span.bold, span.italic, theme, base);
+        let style = style_of(span.ink, span, theme, base);
         for character in span.text.chars() {
             if column >= stop {
                 return column;
@@ -161,7 +161,7 @@ pub fn write_spans(
 /// quote or a timestamp the colour of a comment. That mapping is the same
 /// one the *highlighting* uses, so the reading and the bytes of one file are
 /// recognizably the same file.
-fn style_of(ink: Ink, bold: bool, italic: bool, theme: &Theme, base: Style) -> Style {
+fn style_of(ink: Ink, span: &obelus_row::Span, theme: &Theme, base: Style) -> Style {
     let style = base;
     let mut style = match ink {
         // Left as it came: a run markdown had no opinion about is most of
@@ -178,11 +178,14 @@ fn style_of(ink: Ink, bold: bool, italic: bool, theme: &Theme, base: Style) -> S
         Ink::Wrong => style.fg(theme.syntax.error),
         Ink::Doubtful => style.fg(theme.syntax.warning),
     };
-    if bold {
+    if span.bold {
         style = style.add_modifier(Modifier::BOLD);
     }
-    if italic {
+    if span.italic {
         style = style.add_modifier(Modifier::ITALIC);
+    }
+    if span.strikeout {
+        style = style.add_modifier(Modifier::CROSSED_OUT);
     }
     style
 }

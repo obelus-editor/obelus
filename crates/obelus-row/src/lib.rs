@@ -71,6 +71,13 @@ pub struct Span {
     pub bold: bool,
     /// Whether they are emphasised the other way.
     pub italic: bool,
+    /// Whether they are struck through.
+    ///
+    /// Markdown's third emphasis, and the one that cannot be dropped
+    /// quietly: bold read as plain is a sentence that has lost a little, and
+    /// struck-out text read as plain is a sentence that says the opposite of
+    /// what the author meant.
+    pub strikeout: bool,
     /// Where in the source these characters came from, in bytes.
     ///
     /// `None` for the runs a layout adds rather than reads: a bullet, a
@@ -96,6 +103,7 @@ impl Span {
             ink,
             bold: false,
             italic: false,
+            strikeout: false,
             from: None,
         }
     }

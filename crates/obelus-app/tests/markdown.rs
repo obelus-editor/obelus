@@ -313,6 +313,81 @@ fn obelus_can_read_its_own_log() {
     );
 }
 
+/// A heading underlined rather than marked with hashes is a heading.
+///
+/// markdown's other way of writing one, and the underline is the marking
+/// rather than a line of text: drawn, it would be a row of `=` under a
+/// sentence that no longer looks like a heading at all.
+#[test]
+fn a_heading_underlined_is_a_heading() {
+    for (source, level) in [("Title\n=====\n", 1), ("Title\n-----\n", 2)] {
+        let rows = render(source, 30);
+        let inks = inks(&rows);
+        assert!(
+            inks.contains(&Ink::Heading(level)),
+            "{source:?} was not read as a heading of level {level}: {inks:?}"
+        );
+        let said: Vec<String> = rows.iter().map(text).collect();
+        assert!(
+            said.iter()
+                .all(|row| !row.contains('=') && !row.contains("---")),
+            "the underline was drawn as text: {said:?}"
+        );
+    }
+}
+
+/// Words struck out are struck out, rather than quietly becoming words.
+///
+/// The one emphasis that cannot be dropped: bold read as plain has lost a
+/// little, and a struck-out sentence read as plain says the opposite of what
+/// was meant. The marks themselves go, like every other marking.
+///
+/// Broken deliberately by carrying the strike no further than the tree: the
+/// text comes out plain and this goes red.
+#[test]
+fn words_struck_out_are_struck_out() {
+    let rows = render("a ~~gone~~ word\n", 30);
+    let struck: Vec<&str> = rows
+        .iter()
+        .flat_map(|row| row.spans.iter())
+        .filter(|span| span.strikeout)
+        .map(|span| span.text.as_ref())
+        .collect();
+    assert_eq!(struck, vec!["gone"], "{rows:?}");
+    let said: Vec<String> = rows.iter().map(text).collect();
+    assert!(
+        said.iter().all(|row| !row.contains('~')),
+        "the marking was drawn as text: {said:?}"
+    );
+}
+
+/// A row with nothing on it carries only what would be seen.
+///
+/// A quotation goes on across the blank line inside it, so the bar stays and
+/// says so. A list's indent is blanks, and a row of trailing spaces is
+/// something nobody asked for and nobody can see -- until they select it, or
+/// their editor marks it, or it lands in a file.
+#[test]
+fn a_blank_row_carries_only_what_can_be_seen() {
+    let rows = render("- one\n\n  second\n", 30);
+    let blank = rows
+        .iter()
+        .map(text)
+        .find(|row| row.trim().is_empty())
+        .expect("a blank row between the two parts of the item");
+    assert_eq!(
+        blank, "",
+        "the blank row inside a list is padded: {blank:?}"
+    );
+
+    let rows = render("> one\n>\n> two\n", 30);
+    let said: Vec<String> = rows.iter().map(text).collect();
+    assert!(
+        said.iter().any(|row| row.trim() == "\u{2503}"),
+        "the quote stopped being quoted across its own blank line: {said:?}"
+    );
+}
+
 /// A fenced block is not prose and is not laid out as prose: what it is made
 /// of is what its fence says it is.
 mod fences {

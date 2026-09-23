@@ -473,8 +473,15 @@ impl Laying<'_> {
 
     /// Puts one row down, with whatever goes down its left.
     ///
+    /// A row with nothing on it carries only what would be *seen*: a
+    /// quotation's bar, which is what says the quote goes on across the
+    /// blank line inside it, and not a list's indent, which is blanks and
+    /// would be a row of trailing spaces nobody asked for.
     fn row(&mut self, prefix: &Prefix, spans: Vec<Span>) {
         let mut row = self.owed.take().unwrap_or_else(|| prefix.rest.clone());
+        if spans.is_empty() {
+            row.retain(|span| !span.text.trim().is_empty());
+        }
         row.extend(spans);
         self.rows.push(Row::of(row));
     }
@@ -627,6 +634,7 @@ struct Look {
     ink: Option<Ink>,
     bold: bool,
     italic: bool,
+    strikeout: bool,
 }
 
 /// A paragraph with its markers taken out, and what each byte that is left
@@ -707,6 +715,7 @@ fn marks(node: Node<'_>, gathered: &Gathered, looks: &mut [Look], gone: &mut Vec
         match child.kind() {
             "emphasis" => paint(looks, &range, |look| look.italic = true),
             "strong_emphasis" => paint(looks, &range, |look| look.bold = true),
+            "strikethrough" => paint(looks, &range, |look| look.strikeout = true),
             "code_span" => paint(looks, &range, |look| look.ink = Some(Ink::Code)),
             // The marks themselves, whatever they asked for.
             "emphasis_delimiter" | "code_span_delimiter" => {
@@ -783,6 +792,7 @@ fn spanned(said: &str, at: usize, look: Look, gathered: &Gathered) -> Span {
     };
     span.bold = look.bold;
     span.italic = look.italic;
+    span.strikeout = look.strikeout;
     span
 }
 
