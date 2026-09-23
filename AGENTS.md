@@ -153,6 +153,25 @@ title for it), that everything it printed is there and a failed one stays
 open, and that the key which stops the agent stops the process too -- obelus
 started it, and nothing else can.
 
+**What a frame asks every frame must answer without doing the work.** The
+conversation keeps its rows laid out and throws them away when what they
+are made of changes -- and the two things asked on *every* frame, what is
+happening now and what obelus's own commands have printed, threw them away
+before looking at whether the answer had moved. So every keypress laid the
+whole transcript out from its bytes again: measured at 75ms on a thousand
+rows, against 213us for the rows it already had, which is a cursor a reader
+watches arrive. Both ask first now. The same shape as the ticker's rule --
+asked from what is true, and quiet when nothing is.
+
+The other half of that cache is its width. It holds one laying out, keyed
+by the width it was made at, so two callers asking at two widths lay the
+whole thing out twice per frame between them: 146ms a keypress in a
+measurement where the keys used the region's width and the drawing used the
+transcript band's. They are the same number today because a band is as wide
+as its region, and that is why `App::chat_key` takes its room from the same
+functions the view lays itself out with rather than from anything of its
+own.
+
 **A call's title is the command, so a few rows of it are shown shut.** An
 agent titles a call with its own text and for a command that is the command
 line, which is the thing a reader of a transcript of commands is reading:

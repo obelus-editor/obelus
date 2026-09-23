@@ -1017,18 +1017,23 @@ impl Chat {
     /// state rather than remembered, so there is no way for it to be left
     /// behind.
     pub fn doing(&mut self, what: Option<&str>) {
-        self.forget_the_layout();
+        // Nothing at all where nothing has moved, which is almost every
+        // call: this is asked twelve times a second and answers the same
+        // thing. Throwing the rows away here laid the whole conversation
+        // out again on every frame -- 75ms of it on a transcript of a
+        // thousand rows, against 213us for the rows it already had -- so
+        // walking the cursor down a long turn was a keypress the reader
+        // could watch arrive.
+        if self.doing.as_deref() == what {
+            return;
+        }
         // Written down when it moves. This is the row a reader watches to
         // know whether anything is happening at all, and when it says
         // nothing there is nothing else on screen to say why -- so a
         // report that it stayed blank is a report with no evidence in it,
         // and the log is where obelus keeps what a reader cannot show.
-        //
-        // On the change and not the frame: this is called twelve times a
-        // second with the same answer.
-        if self.doing.as_deref() != what {
-            tracing::info!(was = ?self.doing, now = ?what, "what is happening now");
-        }
+        tracing::info!(was = ?self.doing, now = ?what, "what is happening now");
+        self.forget_the_layout();
         self.doing = what.map(str::to_string);
     }
 
@@ -1114,7 +1119,10 @@ impl Chat {
     /// behind. Which command a row is about is the row's own `ran`, so a
     /// caller hands over one answer per command and this finds them.
     pub fn running(&mut self, what: &dyn Fn(&str) -> Option<Doing>) {
-        self.forget_the_layout();
+        // Only where something moved, for the reason [`Chat::doing`] gives:
+        // this is asked on every frame and a command that has printed
+        // nothing since the last one has nothing to lay out again.
+        let mut moved = false;
         for said in &mut self.said {
             let Some(id) = said.ran.as_deref() else {
                 continue;
@@ -1125,13 +1133,22 @@ impl Chat {
             // The command and what it has printed, in the place a call's
             // own words go: for a call that is a command, this *is* what
             // it says.
-            said.words = vec![words];
+            if said.words.len() != 1 || said.words[0] != words {
+                said.words = vec![words];
+                moved = true;
+            }
             // And how it is going, which is the call's state rather than a
             // second mark: a call running a command that failed is a call
             // that failed.
-            if let Some(state) = state {
+            if let Some(state) = state
+                && said.state.as_deref() != Some(state.as_str())
+            {
                 said.state = Some(state);
+                moved = true;
             }
+        }
+        if moved {
+            self.forget_the_layout();
         }
     }
 
@@ -2707,6 +2724,72 @@ mod tests {
             !rows.iter().any(|row| row.text() == "output 1"),
             "opening one call opened its neighbours: {:?}",
             rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+    }
+
+    /// A frame that changes nothing does not lay the conversation out again.
+    ///
+    /// Both of these are asked on every frame -- what is happening now, and
+    /// what the commands obelus is running have printed -- and both threw
+    /// the rows away before looking at whether the answer had moved. So
+    /// every keypress laid the whole conversation out from its bytes:
+    /// 75ms of it on a transcript of a thousand rows, against 213us for
+    /// the rows it already had. Walking the cursor down a long turn was a
+    /// keypress a reader could watch arrive.
+    ///
+    /// The other half is what makes that safe, and is asserted here too: an
+    /// answer that *has* moved still drops them, or the row says what was
+    /// happening a minute ago.
+    ///
+    /// Broken deliberately by putting `forget_the_layout()` back at the top
+    /// of either one, which fails the first pair, or by dropping the call
+    /// from the moved branch, which fails the second.
+    #[test]
+    fn a_frame_that_changes_nothing_does_not_lay_the_conversation_out_again() {
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, "a word about it");
+        chat.tool(
+            &saying("c1", "Run the tests", &["nothing yet"]),
+            "in_progress",
+        );
+        chat.said[1].ran = Some("r1".to_string());
+
+        let held = |chat: &Chat| chat.laid.borrow().is_some();
+
+        chat.doing(Some("thinking\u{2026}"));
+        let _ = chat.rows(ROOM.reading);
+        assert!(held(&chat), "the rows were not kept at all");
+        chat.doing(Some("thinking\u{2026}"));
+        assert!(
+            held(&chat),
+            "the same answer about what is happening threw the rows away"
+        );
+        chat.doing(Some("starting\u{2026}"));
+        assert!(
+            !held(&chat),
+            "what is happening changed and the rows stayed as they were"
+        );
+
+        let printed = |words: &str| {
+            let words = words.to_string();
+            move |_: &str| {
+                Some(Doing {
+                    words: words.clone(),
+                    state: None,
+                })
+            }
+        };
+        let _ = chat.rows(ROOM.reading);
+        chat.running(&printed("$ cargo test"));
+        assert!(
+            !held(&chat),
+            "a command that printed something kept the rows"
+        );
+        let _ = chat.rows(ROOM.reading);
+        chat.running(&printed("$ cargo test"));
+        assert!(
+            held(&chat),
+            "a command that printed nothing new threw the rows away"
         );
     }
 
