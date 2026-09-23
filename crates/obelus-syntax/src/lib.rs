@@ -1,5 +1,13 @@
 //! Languages, their grammars, and their highlight queries.
 
+/// The parser this is written on, for whoever walks a tree it hands back.
+///
+/// Re-exported rather than depended on twice: [`parse::SyntaxState::tree`]
+/// answers with one of its types, so anything that reads a tree is already
+/// using this crate's version -- and a second `tree-sitter` in another
+/// manifest is a second version waiting to disagree with it.
+pub use tree_sitter;
+
 pub mod brackets;
 pub mod highlight;
 pub mod inject;

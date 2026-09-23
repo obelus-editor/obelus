@@ -13,4 +13,3 @@ workspace = true
 obelus-syntax.workspace = true
 obelus-text.workspace = true
 access_log_parser.workspace = true
-termimad.workspace = true

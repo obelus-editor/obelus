@@ -141,7 +141,6 @@ tree-sitter-md = "0.5.3"
 # structure obelus needs and none of the escape sequences it must not have --
 # obelus writes cells, not ANSI. It is on crossterm 0.29, the same one pinned
 # above, so there is still one crossterm in the tree.
-termimad = "0.35"
 base64 = "0.23.1"
 # Line diffs whose hunks agree with git's, because it implements the same
 # histogram algorithm. What "changed since HEAD" means has to be the same

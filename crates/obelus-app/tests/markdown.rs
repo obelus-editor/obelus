@@ -320,19 +320,32 @@ mod fences {
 
     use super::{render, text};
 
+    /// Where the box begins on a row, if the row has one.
+    ///
+    /// Not always the first run: a block of code inside a list or a quote
+    /// carries that list's indent and that quote's bar down its left, and
+    /// the box is drawn in what is left.
+    fn box_at(row: &Row, side: &[char]) -> Option<usize> {
+        row.spans
+            .iter()
+            .position(|span| span.text.starts_with(side))
+    }
+
     /// Whether a row is a line of code, which is a row inside the box.
     fn is_code(row: &Row) -> bool {
-        row.spans.len() > 2 && row.spans[0].text == "\u{2502}"
+        box_at(row, &['\u{2502}']).is_some_and(|at| row.spans.len() > at + 2)
     }
 
     /// Whether a row is the top or the bottom of the box.
     fn is_across(row: &Row) -> bool {
-        row.spans.len() == 1 && row.spans[0].text.starts_with(['\u{250c}', '\u{2514}'])
+        box_at(row, &['\u{250c}', '\u{2514}']).is_some_and(|at| row.spans.len() == at + 1)
     }
 
-    /// The runs of a row of code, without the box and the room round it.
+    /// The runs of a row of code, without the box and the room round it --
+    /// and without whatever the blocks it is inside draw down its left.
     fn inside(row: &Row) -> &[obelus_reading::Span] {
-        &row.spans[1..row.spans.len() - 2]
+        let at = box_at(row, &['\u{2502}']).unwrap_or(0);
+        &row.spans[at + 1..row.spans.len() - 2]
     }
 
     /// Every ink on a row of code, in the order the runs are in, with the
@@ -481,6 +494,28 @@ mod fences {
         assert!(
             !lines.iter().any(|line| line.contains("rust")),
             "the fence's language leaked into the rows: {lines:?}"
+        );
+
+        // And the box is drawn *inside* the item, under the words of the
+        // step it belongs to. A block of code in a list is part of the step
+        // it is written under, and one drawn the whole width of the reading
+        // has walked out of the list it was in.
+        let rows = render(
+            "1. first\n\n   ```rust\n   let x = 1;\n   ```\n\n2. second\n",
+            40,
+        );
+        let boxed = rows
+            .iter()
+            .find(|row| {
+                row.spans
+                    .iter()
+                    .any(|span| span.text.starts_with('\u{250c}'))
+            })
+            .expect("the top of the box");
+        assert!(
+            boxed.spans.len() > 1 && boxed.spans[0].text.chars().all(char::is_whitespace),
+            "the box is not indented under the step it belongs to: {:?}",
+            text(boxed)
         );
     }
 
