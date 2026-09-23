@@ -901,7 +901,8 @@ impl ChatView<'_> {
                 && let Some(state) = &row.state
             {
                 let at = area.x + MARGIN + u16::from(row.depth) * DEEPER;
-                self.state_of(cells, at, y, state, dim, words_end(area) + 1);
+                let (_, said, style) = self.state_said(state, dim);
+                write_within(cells, at, y, &said, style, words_end(area) + 1);
             }
             if row.first {
                 let at = area.x + MARGIN + u16::from(row.depth) * DEEPER;
@@ -950,6 +951,28 @@ impl ChatView<'_> {
             // run with no opinion of its own keeps, and the background --
             // a selected row, a line of a change -- is the row's either
             // way. Clipped at the edge like every other row here.
+            // What the row says about itself goes after its words, and the
+            // room for it is taken off them first. It used to be written
+            // from wherever the words happened to stop, so words that
+            // reached the edge of the screen took all of it with them --
+            // and an agent's title for a call is the agent's own text,
+            // which for a command it ran is the whole command line. A
+            // hundred columns of `grep` left the row with nothing on it
+            // saying the call could be opened, or how it went, or how much
+            // it changed: the one row about a rewritten file said nothing
+            // about the rewriting, and read as a line obelus had lost the
+            // end of.
+            let tail = self.tail_of(row, dim);
+            let kept: usize = tail
+                .iter()
+                .map(|(gap, said, _)| usize::from(*gap) + text_width(said))
+                .sum();
+            let stop = (words_end(area) + 1).saturating_sub(u16::try_from(kept).unwrap_or(0));
+            // Whether they fit, asked of the words rather than of where the
+            // drawing got to: a row that ends exactly at the edge has not
+            // lost anything and must not be marked as though it had.
+            let wanted: usize = row.spans.iter().map(|span| text_width(&span.text)).sum();
+            let clipped = wanted > usize::from(stop.saturating_sub(words));
             let mut ended = crate::reading::write_spans(
                 cells,
                 words,
@@ -961,59 +984,21 @@ impl ChatView<'_> {
                     // The one answer to where a row's words end, which
                     // `words_end` gives the caret as well: the column past
                     // them belongs to the scrollbar.
-                    stop: words_end(area) + 1,
+                    stop: match clipped {
+                        true => stop.saturating_sub(1),
+                        false => stop,
+                    },
                     held: row.held.as_ref(),
                 },
             );
-            // Where it said it was working, after the title. The path is
-            // its own affordance: obelus opens files, so a row that names
-            // one is a row that goes there.
-            if let Some((place, more)) = &row.place {
-                let said = said_place(&row.text(), place, self.root, *more);
-                if !said.is_empty() {
-                    ended = write_within(cells, ended + 2, y, &said, dim, words_end(area) + 1);
-                }
+            // Said where they stop, rather than simply running out: a row
+            // that ends mid-word at the edge of the screen reads as the
+            // terminal having cut it off, not as there being more.
+            if clipped {
+                ended = write_within(cells, stop.saturating_sub(1), y, "\u{2026}", dim, stop);
             }
-            // What says there is more behind this row than it is showing:
-            // the same mark a settings row and a card use for the same
-            // promise, turned down when what it holds is open.
-            if row.folds.is_some() {
-                ended = write_within(
-                    cells,
-                    ended + 1,
-                    y,
-                    &opens(row.open),
-                    dim,
-                    words_end(area) + 1,
-                );
-            }
-            // How much it changes, which is what a reader reads first: the
-            // shape of the change before any of its lines.
-            if let Some((added, removed)) = row.changed {
-                ended = write_within(
-                    cells,
-                    ended + 2,
-                    y,
-                    &format!("+{added} \u{2212}{removed}"),
-                    dim,
-                    words_end(area) + 1,
-                );
-            }
-            // A tool call's state goes after its title rather than in front
-            // of it: the title is what a reader is scanning, and the state
-            // changes under them twice.
-            //
-            // Every state but the one the front of the row is already
-            // saying. Said in both places it was said worse: the still
-            // glyph out here is the one a reader's eye lands on -- it sits
-            // where the sentence ends -- and a still glyph is what a call
-            // that has stopped wears. What is left is a row whose front
-            // says whether it is alive and whose end says how it went.
-            if let Some(state) = &row.state
-                && row.speaker != Speaker::Step
-                && state != UNDER_WAY
-            {
-                self.state_of(cells, ended + 1, y, state, dim, words_end(area) + 1);
+            for (gap, said, style) in tail {
+                ended = write_within(cells, ended + gap, y, &said, style, words_end(area) + 1);
             }
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
@@ -1497,8 +1482,57 @@ impl ChatView<'_> {
         }
     }
 
-    /// How far a tool call has got.
-    fn state_of(&self, cells: &mut CellBuffer, x: u16, y: u16, state: &str, dim: Style, stop: u16) {
+    /// What a row says about itself, after its words.
+    ///
+    /// The gap before each piece, the piece, and the colour it is drawn in.
+    /// One list rather than four writes in a row, because the room these
+    /// need has to be known *before* the words are drawn and what is drawn
+    /// has to be the same thing that was measured. Two answers to "what
+    /// goes at the end of this row" is how the end of a row goes missing.
+    fn tail_of(&self, row: &Row, dim: Style) -> Vec<(u16, String, Style)> {
+        let mut tail = Vec::new();
+        // Where it said it was working. The path is its own affordance:
+        // obelus opens files, so a row that names one is a row that goes
+        // there.
+        if let Some((place, more)) = &row.place {
+            let said = said_place(&row.text(), place, self.root, *more);
+            if !said.is_empty() {
+                tail.push((2, said, dim));
+            }
+        }
+        // What says there is more behind this row than it is showing: the
+        // same mark a settings row and a card use for the same promise,
+        // turned down when what it holds is open.
+        if row.folds.is_some() {
+            tail.push((1, opens(row.open).to_string(), dim));
+        }
+        // How much it changes, which is what a reader reads first: the
+        // shape of the change before any of its lines.
+        if let Some((added, removed)) = row.changed {
+            tail.push((2, format!("+{added} \u{2212}{removed}"), dim));
+        }
+        // A tool call's state goes after its title rather than in front of
+        // it: the title is what a reader is scanning, and the state changes
+        // under them twice.
+        //
+        // Every state but the one the front of the row is already saying.
+        // Said in both places it was said worse: the still glyph out here
+        // is the one a reader's eye lands on -- it sits where the sentence
+        // ends -- and a still glyph is what a call that has stopped wears.
+        // What is left is a row whose front says whether it is alive and
+        // whose end says how it went.
+        if let Some(state) = &row.state
+            && row.speaker != Speaker::Step
+            && state != UNDER_WAY
+        {
+            tail.push(self.state_said(state, dim));
+        }
+        tail
+    }
+
+    /// How far a tool call has got: the gap before it, what to write, and
+    /// the colour.
+    fn state_said(&self, state: &str, dim: Style) -> (u16, String, Style) {
         let (glyph, word, colour) = match state {
             "pending" => (obelus_icons::ui::WAITING, "Waiting", self.theme.gutter),
             UNDER_WAY => (
@@ -1519,15 +1553,14 @@ impl ChatView<'_> {
             other => (obelus_icons::ui::WAITING, other, self.theme.gutter),
         };
         let style = dim.fg(colour);
-        if obelus_icons::enabled() {
-            // A glyph is one cell, and it is not drawn at all where that
-            // cell is the scrollbar's.
-            if x < stop {
-                put(cells, x, y, glyph, style);
-            }
-        } else {
-            write_within(cells, x, y, word, style, stop);
-        }
+        // A glyph where there are glyphs, the word where there are not:
+        // both are written the same way, so the room worked out for one is
+        // the room the other takes.
+        let said = match obelus_icons::enabled() {
+            true => glyph.to_string(),
+            false => word.to_string(),
+        };
+        (1, said, style)
     }
 
     /// What to say when nothing has been said yet, in words.

@@ -643,6 +643,54 @@ fn a_call_still_running_when_the_reader_stops_says_it_was_stopped() {
     );
 }
 
+/// A title too long for the row does not take the row's own marks with it.
+///
+/// An agent titles a call with its own text, and for a command it ran that
+/// is the whole command line -- a hundred columns of `grep`. obelus wrote
+/// everything the row says about itself from wherever those words happened
+/// to stop, so a title that reached the edge of the screen left no room for
+/// any of it: no mark saying the row can be opened, nothing saying how the
+/// call went, and for a call that rewrote a file nothing saying how much it
+/// changed. And the words simply ran out at the last column, which reads as
+/// a line obelus lost the end of rather than one with more behind it.
+///
+/// Broken deliberately by drawing the words to `words_end(area) + 1` again
+/// instead of taking the tail off first: the ellipsis goes, and so does the
+/// mark that says the call is done.
+#[test]
+fn a_title_longer_than_the_row_keeps_the_row_its_own_end() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/longtitle");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the call", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("grep -rn"))
+        })
+    });
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let screen = rows(&dump);
+    let row = screen
+        .iter()
+        .find(|row| row.contains("grep -rn"))
+        .unwrap_or_else(|| panic!("no call on screen:\n{dump}"));
+    // Cut where it stops, rather than running out at the edge.
+    assert!(
+        row.contains('\u{2026}'),
+        "the title was cut off with nothing saying so:\n{dump}"
+    );
+    // And the row still says how the call went: the glyph a finished call
+    // wears, which is the thing the title used to push off the screen.
+    assert!(
+        row.contains(obelus_icons::ui::DONE),
+        "the row lost its own account of the call:\n{dump}"
+    );
+}
+
 /// The answer to a turn obelus cancelled does not end the turn after it.
 ///
 /// An agent that is told to stop does what the protocol asks: it answers

@@ -508,6 +508,20 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"blocks='"$blocks"' first='"$first"'"}}}}\n'
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
+        *'"method":"session/prompt"'*'"text":"/longtitle'*)
+            # A call whose title is the whole command line, which is what
+            # claude-agent-acp sends for every command it runs. Longer than
+            # any terminal is wide, so the row it lands on has to give
+            # something up -- and what it must not give up is its own
+            # account of the call.
+            set_turn "$session" "$(id_of "$line")"
+            # No quotes or backslashes in it: this goes into a JSON string
+            # unescaped, and a title that breaks the message is a test
+            # about nothing.
+            long='grep -rn tick-it-off crates/obelus-app/tests/agent.rs crates/obelus-ui/src/chat.rs crates/obelus-component/src/chat.rs'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"g-1","title":"%s","kind":"execute","status":"completed","content":[{"type":"content","content":{"type":"text","text":"nothing matched"}}]}}}\n' "$long"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'"text":"/many'*)
             # A turn with a run of tool calls of one kind in it, which is
             # what an agent looking around a repository actually does: a
