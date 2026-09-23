@@ -108,8 +108,12 @@ impl Prefix {
 }
 
 /// A mark the reading adds, of a given width.
-fn mark(said: &str) -> Span {
-    Span::new(said.to_string(), Ink::Mark)
+///
+/// Takes what it is given rather than a `&str`: the marks that never change
+/// -- a quotation's bar, the sides of a box -- come in as themselves and are
+/// not copied, and the ones that are worked out for a width come in owned.
+fn mark(said: impl Into<std::borrow::Cow<'static, str>>) -> Span {
+    Span::new(said, Ink::Mark)
 }
 
 /// The blank that stands where a mark stood, on the rows after the first.
@@ -304,14 +308,26 @@ impl Laying<'_> {
             let wide = u16::try_from(text_width(&said)).unwrap_or(2);
             let inside = prefix.and(vec![room(text_width(&said))], wide);
             // The mark itself, once, on whichever row the item draws first.
-            let marks = prefix.rest.iter().cloned().chain([mark(&said)]).collect();
+            let marks = prefix
+                .rest
+                .iter()
+                .cloned()
+                .chain([mark(said.clone())])
+                .collect();
             self.owe(marks);
             if let Some(end) = last
                 && self.parted(end, item.start_byte())
             {
                 self.owed = None;
                 self.row(prefix, Vec::new());
-                self.owe(prefix.rest.iter().cloned().chain([mark(&said)]).collect());
+                self.owe(
+                    prefix
+                        .rest
+                        .iter()
+                        .cloned()
+                        .chain([mark(said.clone())])
+                        .collect(),
+                );
             }
             self.blocks(item, width, &inside);
             last = Some(item.end_byte());
@@ -345,7 +361,7 @@ impl Laying<'_> {
         let gathered = self.gather(content.unwrap_or(node), Join::Lines);
         let room = usize::from(prefix.room(width)).saturating_sub(2).max(1);
 
-        self.row(prefix, vec![mark(&across(room, true))]);
+        self.row(prefix, vec![mark(across(room, true))]);
         for line in gathered.text.lines() {
             let at = offset_in(&gathered.text, line);
             let mut taken = 0usize;
@@ -363,7 +379,7 @@ impl Laying<'_> {
                 }
             }
         }
-        self.row(prefix, vec![mark(&across(room, false))]);
+        self.row(prefix, vec![mark(across(room, false))]);
     }
 
     /// A table, in columns that fit.
@@ -422,7 +438,7 @@ impl Laying<'_> {
         if widths.is_empty() {
             return;
         }
-        let rule = |at: Rule| Row::of(vec![mark(&rule_across(&widths, at))]);
+        let rule = |at: Rule| Row::of(vec![mark(rule_across(&widths, at))]);
 
         self.rows.push(rule(Rule::Top));
         for (index, row) in rows.iter().enumerate() {
@@ -456,6 +472,7 @@ impl Laying<'_> {
     }
 
     /// Puts one row down, with whatever goes down its left.
+    ///
     fn row(&mut self, prefix: &Prefix, spans: Vec<Span>) {
         let mut row = self.owed.take().unwrap_or_else(|| prefix.rest.clone());
         row.extend(spans);

@@ -11,7 +11,7 @@ use obelus_row::{Ink, Row};
 
 /// Every span of a row, joined.
 fn text(row: &Row) -> String {
-    row.spans.iter().map(|span| span.text.as_str()).collect()
+    row.spans.iter().map(|span| span.text.as_ref()).collect()
 }
 
 fn inks(rows: &[Row]) -> Vec<Ink> {
@@ -365,7 +365,7 @@ mod fences {
             .iter()
             .filter(|row| !row.spans.is_empty() && !is_across(row))
             .map(|row| match is_code(row) {
-                true => inside(row).iter().map(|span| span.text.as_str()).collect(),
+                true => inside(row).iter().map(|span| span.text.as_ref()).collect(),
                 false => text(row),
             })
             .collect()

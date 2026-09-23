@@ -52,7 +52,19 @@ pub enum Ink {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Span {
     /// The characters.
-    pub text: String,
+    ///
+    /// Borrowed where they are the same every time -- a quotation's bar, the
+    /// sides of a box round a block of code, a bullet. Those are the
+    /// layout's own marks and there are as many of them as there are rows;
+    /// a `String` for each was a three-byte allocation for a character that
+    /// has never changed and never will.
+    ///
+    /// Owned for everything else. A run of what somebody wrote *is* a slice
+    /// of the source, and says so in [`Self::from`] -- but the rows outlive
+    /// the text they were laid out from, which is the whole point of keeping
+    /// them, so it cannot be borrowed from there without the two being kept
+    /// together.
+    pub text: std::borrow::Cow<'static, str>,
     /// How they are drawn.
     pub ink: Ink,
     /// Whether they are emphasised.
@@ -78,7 +90,7 @@ pub struct Span {
 impl Span {
     /// A run with no emphasis, which is every run but markdown's.
     #[must_use]
-    pub fn new(text: impl Into<String>, ink: Ink) -> Self {
+    pub fn new(text: impl Into<std::borrow::Cow<'static, str>>, ink: Ink) -> Self {
         Self {
             text: text.into(),
             ink,
@@ -90,7 +102,11 @@ impl Span {
 
     /// A run that came from somewhere in the source.
     #[must_use]
-    pub fn from_source(text: impl Into<String>, ink: Ink, from: std::ops::Range<usize>) -> Self {
+    pub fn from_source(
+        text: impl Into<std::borrow::Cow<'static, str>>,
+        ink: Ink,
+        from: std::ops::Range<usize>,
+    ) -> Self {
         Self {
             from: Some(from),
             ..Self::new(text, ink)

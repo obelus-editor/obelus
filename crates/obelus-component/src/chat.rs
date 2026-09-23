@@ -706,7 +706,7 @@ impl Row {
     /// one that is drawn is the runs.
     #[must_use]
     pub fn text(&self) -> String {
-        self.spans.iter().map(|span| span.text.as_str()).collect()
+        self.spans.iter().map(|span| span.text.as_ref()).collect()
     }
 }
 

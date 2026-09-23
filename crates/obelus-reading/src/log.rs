@@ -594,7 +594,7 @@ pub fn render(source: &str, width: u16) -> Vec<Row> {
 
 /// A row of somebody else's text, uncoloured.
 fn plain(line: &str) -> Row {
-    Row::of(vec![Span::new(line, Ink::Plain)])
+    Row::of(vec![Span::new(line.to_string(), Ink::Plain)])
 }
 
 /// The same, indented to where the message above it started.
@@ -637,7 +637,7 @@ fn wrapped(spans: Vec<Span>, width: u16, columns: usize) -> Vec<Row> {
     let mut row: Vec<Span> = Vec::new();
     let mut filled = 0;
     for span in spans {
-        let mut text = span.text.as_str();
+        let mut text = span.text.as_ref();
         loop {
             let left = room.saturating_sub(filled);
             let wide = text.chars().count();
