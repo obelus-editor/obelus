@@ -384,6 +384,9 @@ pub struct ChatView<'a> {
     /// would otherwise differ only in what was said in them. A label reading
     /// "chat" would answer a question nobody asked -- they pressed the key.
     about: Option<String>,
+    /// How much the reader has said that has not gone yet, for the mark
+    /// that says so.
+    waiting: usize,
     /// What obelus has to say, until the next key.
     ///
     /// A conversation has a status row of its own, so it has to carry this
@@ -412,6 +415,7 @@ impl<'a> ChatView<'a> {
             root: app.working_directory(),
             phase: app.phase(),
             about: app.what_this_conversation_is_about(),
+            waiting: app.waiting_to_be_said(),
             note: app.note(),
             usage: app.agent_usage(),
         })
@@ -728,16 +732,24 @@ impl ChatView<'_> {
     /// answered them yet, and the scrollbar beside them can only say how
     /// much there is -- never whether any of it is new.
     fn the_way_back(&self, cells: &mut CellBuffer, y: u16, area: Rect) {
-        if self.chat.at_the_end() {
-            return;
-        }
-        let since = self.chat.said_since();
-        let said = match since {
-            0 => "To the end".to_string(),
-            1 => "1 new message".to_string(),
-            many => format!("{many} new messages"),
+        // What is waiting first, where anything is. Both are about the
+        // conversation as a whole and there is one row for them, and of the
+        // two this is the one the reader cannot find out any other way: the
+        // end of the transcript is a keypress away, and a message that has
+        // not gone looks exactly like one that has.
+        let label = match (self.waiting, self.chat.at_the_end()) {
+            (0, true) => return,
+            (0, false) => {
+                let said = match self.chat.said_since() {
+                    0 => "To the end".to_string(),
+                    1 => "1 new message".to_string(),
+                    many => format!("{many} new messages"),
+                };
+                format!("  {said}  ctrl+end \u{2193}  ")
+            }
+            (1, _) => "  1 waiting  enter sends it now  ".to_string(),
+            (many, _) => format!("  {many} waiting  enter sends the first now  "),
         };
-        let label = format!("  {said}  ctrl+end \u{2193}  ");
         let width = text_width(&label);
         let Ok(width) = u16::try_from(width) else {
             return;
@@ -1660,6 +1672,7 @@ mod caret {
                         root: std::path::Path::new("/"),
                         phase: 0,
                         about: None,
+                        waiting: 0,
                         note: None,
                         usage: None,
                     };

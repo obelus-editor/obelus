@@ -479,6 +479,14 @@ pub enum ChatOutcome {
     Send(String),
     /// Ask the agent to stop.
     Interrupt,
+    /// Send what the reader has waiting, without waiting for the turn.
+    ///
+    /// Enter on an empty box, which is otherwise the one keypress here that
+    /// does nothing at all. Whether there *is* anything waiting is not this
+    /// component's to know -- the queue belongs to the conversation -- so
+    /// this is the key saying what it meant and the application deciding
+    /// whether it meant anything.
+    SendWaiting,
     /// Move to the agent's next way of working.
     StepMode,
     /// Open what a row of the transcript names.
@@ -1951,7 +1959,7 @@ impl Chat {
             }
             KeyCode::Enter => {
                 if self.input.is_blank() {
-                    return ChatOutcome::Consumed;
+                    return ChatOutcome::SendWaiting;
                 }
                 ChatOutcome::Send(self.input.take())
             }
@@ -3832,10 +3840,13 @@ mod tests {
         // Sent, so the row is empty: a prompt still sitting there after
         // being sent is a prompt that gets sent twice.
         assert_eq!(chat.writing().text(), "");
-        // And an empty row sends nothing.
+        // And an empty row sends nothing of its own: it asks for whatever
+        // the reader has waiting, which is the application's to have or not
+        // have. Nothing here knows about that queue, which is why this is
+        // the key saying what it meant rather than doing it.
         assert_eq!(
             chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
-            ChatOutcome::Consumed
+            ChatOutcome::SendWaiting
         );
     }
 

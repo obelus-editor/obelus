@@ -3237,6 +3237,9 @@ impl Screen for App {
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble] {
         App::troubles(self)
     }
+    fn waiting_to_be_said(&self) -> usize {
+        App::waiting_to_be_said(self)
+    }
     fn what_this_conversation_is_about(&self) -> Option<String> {
         App::what_this_conversation_is_about(self)
     }

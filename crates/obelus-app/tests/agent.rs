@@ -82,6 +82,20 @@ fn pump(app: &mut App, events: &Receiver<Event>, what: &str, until: impl Fn(&App
     }
 }
 
+/// Handles whatever arrives for a moment, and does not mind if nothing
+/// does.
+///
+/// The counterpart of [`pump`], for the cases where what is being tested is
+/// that something does *not* happen: there is no state to wait for, so what
+/// the test needs is the chance for the thing to go wrong.
+fn settle(app: &mut App, events: &Receiver<Event>, how_long: Duration) {
+    let deadline = Instant::now() + how_long;
+    while let Ok(event) = events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        app.handle(event);
+        support::lay_out(app, WIDTH, HEIGHT);
+    }
+}
+
 /// The rows of a dump's text block, one string per screen row.
 ///
 /// The block starts with a newline, so `lines()` on its own is one out.
@@ -378,6 +392,232 @@ fn escape_stops_an_agent_that_is_working() {
     assert!(
         text.contains("Stopped"),
         "it did not say it stopped:\n{text}"
+    );
+}
+
+/// What the reader says into a running turn waits for it, and goes when it
+/// ends.
+///
+/// A conversation takes one prompt turn at a time. `session/cancel` names a
+/// session and not a turn, and the answer to `session/prompt` says "the turn
+/// is over" with nothing on it saying *which* turn -- so obelus sending a
+/// second prompt into a running one cannot tell the two answers apart. It
+/// did not: the first one home put the conversation back to resting, and
+/// the turn still working went on with no spinner, no `thinking...`, and no
+/// key that would stop it. The reader was told nothing was happening while
+/// their agent read the repository.
+///
+/// So the second thing they say waits. Held and not dropped, and said as
+/// soon as there is a turn free for it.
+///
+/// Broken deliberately by taking the `thinking || queued` check out of
+/// `send_to_agent`, which sends it straight away: the agent answers
+/// `/blocks` while `/forever` is still in flight, and `blocks=` is on the
+/// screen before anything has ended.
+#[test]
+fn what_the_reader_says_into_a_running_turn_waits_for_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // A turn that does not end on its own, so there is no race about when
+    // the second message is typed.
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.waiting_to_be_said(),
+        1,
+        "what the reader typed was not held back"
+    );
+    // Still working on the first one, and still saying so -- which is the
+    // whole of what went wrong.
+    assert_eq!(app.talking(), obelus_agent::Talking::Thinking);
+    let text = screen(&mut app);
+    assert!(
+        !text.contains("blocks="),
+        "the second message went into the running turn:\n{text}"
+    );
+    // And the reader can see it has not gone.
+    assert!(
+        text.contains("1 waiting"),
+        "nothing on screen says a message is waiting:\n{text}"
+    );
+}
+
+/// A turn the reader stopped does not let what they said out behind it.
+///
+/// Stopping is the reader saying no more of this. Sending what they typed
+/// the moment the thing they just stopped comes to a halt is obelus
+/// speaking for them straight after they said not to -- and what they typed
+/// was written to steer a turn that no longer exists.
+///
+/// The next thing they send is them picking it up again, and then both go,
+/// in the order they were typed.
+///
+/// Broken deliberately by not setting `held_back` in `interrupt_agent`,
+/// which lets the message out on the `Ended` that escape itself produces.
+#[test]
+fn a_turn_the_reader_stopped_keeps_what_was_waiting_behind_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+
+    support::press(&mut app, KeyCode::Esc);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Stopped"),
+        "it did not say it stopped:\n{text}"
+    );
+    assert!(
+        !text.contains("blocks="),
+        "what they typed went out behind the turn they stopped:\n{text}"
+    );
+    assert_eq!(
+        app.waiting_to_be_said(),
+        1,
+        "what they typed was thrown away rather than held"
+    );
+
+    // And picking the conversation up again lets it out, in front of what
+    // they said to pick it up with.
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "both of them", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("heard you"))
+        })
+    });
+    let text = screen(&mut app);
+    let blocks = at_row(&rows(&text), "blocks=", &text);
+    let echoed = at_row(&rows(&text), "heard you", &text);
+    assert!(
+        blocks < echoed,
+        "what was said first was not said first:\n{text}"
+    );
+}
+
+/// Enter on an empty box sends what is waiting rather than waiting.
+///
+/// The one keypress in a conversation that did nothing at all, and the
+/// reader who has changed their mind about waiting has nowhere else to say
+/// so: the turn in front of theirs may be a build with ten minutes left in
+/// it.
+///
+/// It stops that turn rather than racing it, because two prompts in one
+/// conversation is what the queue exists to prevent -- so what is waiting
+/// waits one moment longer and goes when the cancelled turn comes to a
+/// halt.
+///
+/// Broken deliberately by having `ChatOutcome::SendWaiting` do nothing,
+/// which is what enter on an empty box used to do: the turn runs on and
+/// `blocks=` never arrives.
+#[test]
+fn enter_on_an_empty_box_sends_what_is_waiting_now() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.waiting_to_be_said(), 1);
+
+    // The box is empty -- what was typed went to the queue, not into it.
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what was waiting", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks="))
+        })
+    });
+    assert_eq!(
+        app.waiting_to_be_said(),
+        0,
+        "it was sent and kept waiting as well"
+    );
+}
+
+/// The answer to a turn obelus cancelled does not end the turn after it.
+///
+/// An agent that is told to stop does what the protocol asks: it answers
+/// the prompt it was working on with `cancelled`. That answer arrives after
+/// obelus has already said the turn is over and started the next one -- and
+/// it says "the turn is over" with nothing on it saying which turn, because
+/// the protocol puts no turn on it.
+///
+/// obelus gave up on it for exactly this reason, but with one flag per
+/// conversation that the next prompt cleared: sending the next turn took
+/// back the giving up, the stale answer was delivered after all, and the
+/// conversation went to resting with a turn still running in it. Which is
+/// the whole bug this queue was written for, arriving by the one door the
+/// queue leaves open -- the reader saying "send it now".
+///
+/// A flag per turn instead. Broken deliberately by going back to
+/// `stopped.entry(session).or_default()` and clearing it in `Ask::Say`:
+/// this reads `Ready` with `/forever` in flight.
+#[test]
+fn the_answer_to_a_cancelled_turn_does_not_end_the_next_one() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    // A second turn that also does not end on its own, so that "is it still
+    // thinking" is a question about the second one and nothing else.
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+
+    // Send it now: the first turn is cancelled, and the agent answers that
+    // prompt with `cancelled` somewhere behind us.
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the first turn to end", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("Stopped"))
+        })
+    });
+    assert_eq!(
+        app.waiting_to_be_said(),
+        0,
+        "what was waiting did not go when the cancelled turn ended"
+    );
+    // Long enough for the agent's own answer to the cancelled prompt to
+    // arrive and be ignored.
+    settle(&mut app, &events, Duration::from_millis(500));
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Thinking,
+        "a turn that is running was reported as over:\n{}",
+        screen(&mut app)
     );
 }
 

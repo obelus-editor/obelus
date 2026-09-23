@@ -62,14 +62,19 @@ impl App {
     /// `None` when it has been told all of it, which is the ordinary case:
     /// this is asked before every message and has something to say before
     /// the first one and after the reader rewrites their note.
-    pub(super) fn opening(&self, introduced: bool, told: Option<&str>) -> Option<Opening> {
+    pub(super) fn opening(
+        &self,
+        topic: &Topic,
+        introduced: bool,
+        told: Option<&str>,
+    ) -> Option<Opening> {
         let mut pieces = Vec::new();
         let mut said = Vec::new();
         if !introduced {
             pieces.push(ALWAYS.trim().to_string());
             said.push("Told the agent who it is talking to");
         }
-        let about = self.about_the_topic(told);
+        let about = self.about_the_topic(topic, told);
         if let Some((words, line, _)) = &about {
             pieces.push(words.clone());
             said.push(line);
@@ -95,8 +100,12 @@ impl App {
     /// made from. Exhaustive on [`Topic`] on purpose: a new kind of
     /// conversation is a new decision about what an agent is told it is
     /// in, and a wildcard here would let one ship having said nothing.
-    fn about_the_topic(&self, told: Option<&str>) -> Option<(String, &'static str, String)> {
-        match self.conversation().map(|talk| &talk.topic)? {
+    fn about_the_topic(
+        &self,
+        topic: &Topic,
+        told: Option<&str>,
+    ) -> Option<(String, &'static str, String)> {
+        match topic {
             // Nothing obelus knows that the agent does not: what a loose
             // conversation is about is whatever the reader types.
             Topic::Loose => None,

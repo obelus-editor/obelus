@@ -595,9 +595,16 @@ impl Talk {
             }
             Incoming::Failed(what, why) => {
                 // Which conversation it was is not on the message, so every
-                // one of them stops thinking. A turn that is still running
-                // says so again on its next update; a turn that is not
-                // would otherwise spin for ever.
+                // one of them stops thinking -- one that is not would
+                // otherwise spin for ever.
+                //
+                // Nothing puts that back. It read "a turn that is still
+                // running says so again on its next update", which was
+                // never true: `say` is the only place this is ever set, and
+                // no update touches it. A turn that outlives a `Failed`
+                // about something else is a turn obelus has stopped saying
+                // is running, and the honest reason to accept that is that
+                // it cannot tell which turn the failure was about.
                 for open in self.sessions.values_mut() {
                     open.thinking = false;
                     // A mode obelus showed as on that the agent would not

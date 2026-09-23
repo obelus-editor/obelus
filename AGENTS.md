@@ -153,6 +153,33 @@ title for it), that everything it printed is there and a failed one stays
 open, and that the key which stops the agent stops the process too -- obelus
 started it, and nothing else can.
 
+**A conversation takes one prompt turn at a time, so what the reader says
+into a running one waits.** The protocol puts no turn on either end of the
+exchange: `session/cancel` names a session, and the answer to
+`session/prompt` says the turn is over with nothing on it saying which turn.
+So two prompts in flight is two answers obelus cannot tell apart, and the
+first one home put the conversation back to resting while the other turn
+worked on -- no `thinking...`, no mark turning, and `interrupt` gated on the
+same flag, so escape would not even send the cancellation. zed queues for
+this reason too, and "send it now" there is `cancel` awaited and *then* the
+prompt, never the two at once.
+
+What is waiting is the reader's, so it is on screen (over the box, where the
+way back to the end goes) and it is theirs to release: enter on an empty box
+stops the turn in front of it, which was the one keypress in a conversation
+that did nothing at all. Stopping the turn themselves holds it back instead
+-- sending what they typed the moment the thing they just stopped comes to a
+halt is obelus speaking for them straight after they said not to -- and the
+next thing they send picks it up again, in front of nothing: a queue that
+let a later message overtake an earlier one would put their own words to the
+agent back to front.
+
+The giving-up flag is per turn and not per conversation. One shared flag
+that the next prompt cleared took back the giving up done on the one before,
+so the cancelled turn's own answer -- which a well-behaved agent sends,
+because the protocol tells it to -- was delivered after all, and ended the
+turn that had replaced it.
+
 **A setting the reader turned on is not a reason to refuse them.** Saving
 with formatting on and no server to ask writes the file unformatted. The
 alternative is a file that is never written because of something the reader

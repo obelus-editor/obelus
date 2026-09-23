@@ -1537,9 +1537,18 @@ async fn talk(
                             opening,
                         } => {
                             let told = events.clone();
-                            let flag = stopped.entry(session.clone()).or_default();
-                            flag.store(false, std::sync::atomic::Ordering::Relaxed);
-                            let given_up = std::sync::Arc::clone(flag);
+                            // A flag of this turn's own, put in the map in
+                            // place of the last turn's rather than reset.
+                            // Sharing one per conversation and clearing it
+                            // here made a new prompt take back the giving
+                            // up done on the one before: an interrupted
+                            // turn whose answer was still coming had it
+                            // delivered after all, and that answer says
+                            // "the turn is over" about a turn that is not
+                            // the one running.
+                            let given_up =
+                                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                            stopped.insert(session.clone(), std::sync::Arc::clone(&given_up));
                             let whose = session.clone();
                             connection
                                 .send_request(PromptRequest::new(
