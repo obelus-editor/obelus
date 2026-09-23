@@ -814,13 +814,16 @@ the fixture file being *committed*: edit `tests/fixtures/long.rs` without
 committing and the preview grows change marks. Which is the feature working,
 and a surprising way to see it.
 
-**Run them in the real checkout, not in a `git worktree`.** The welcome screen
-prints the working directory (`welcome_64x20`, `welcome_narrow_34x10` both
-carry `~/Work/obelus`), so every fixture that shows it fails in a worktree for
-a reason that has nothing to do with the change under test — and
-`UPDATE_FIXTURES=1` there writes the worktree's path into the fixture, which
-then fails everywhere else. `cargo check` and `cargo clippy` in a worktree are
-fine; `cargo test` belongs in the checkout.
+**A test that only passes in one checkout is a broken test, not a rule.** The
+welcome screen prints the working directory, so its fixture once carried
+`~/Work/obelus` and failed in a `git worktree` for a reason that had nothing
+to do with the change under test -- and `UPDATE_FIXTURES=1` there wrote the
+worktree's path into the fixture, which then failed everywhere else. The note
+here used to say to run the suite in the real checkout. The test says which
+directory it is on instead (`working_directory_for_test`, a path outside
+`$HOME` so the `~` is nobody's either), which is the fix; the two places that
+ask the process for its own directory compare against that same answer, so
+they hold anywhere. The suite runs wherever it is checked out.
 
 The git tests build real repositories in a temp directory, with one
 deliberate exception: `the_committed_text_comes_from_git` reads *this*
