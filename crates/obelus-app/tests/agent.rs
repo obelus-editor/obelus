@@ -1220,6 +1220,137 @@ fn down_scrolls_the_transcript_before_it_leaves_the_box() {
     );
 }
 
+/// The wheel scrolls the conversation, and leaves the cursor where it is.
+///
+/// A conversation is a document, and the wheel over a document moves the
+/// view: that is what it does over a file, and a transcript is the one
+/// place in obelus with more text than the screen where it did nothing at
+/// all. A reader with a mouse in their hand had to reach back to the
+/// keyboard to see what an agent had said a minute ago.
+///
+/// And it leaves the cursor, which is the whole difference between the
+/// wheel and the keys: the keys go somewhere, the wheel looks around. The
+/// same rule the file follows.
+///
+/// Broken deliberately by taking the conversation back out of `App::scroll`,
+/// which is where it was never put: the notch reaches the file behind the
+/// conversation, which is not on screen, and the transcript does not move.
+#[test]
+fn the_wheel_scrolls_the_transcript_and_leaves_the_cursor() {
+    use obelus_component::chat::Focus;
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // A screen too short for the turn, so there is something to scroll.
+    let short = 14;
+    support::lay_out(&mut app, WIDTH, short);
+    let end = app.chat().expect("the chat").top();
+    assert!(
+        end > 0,
+        "the transcript fits, so nothing here means anything"
+    );
+
+    app.handle(Event::Scroll(-3));
+    support::lay_out(&mut app, WIDTH, short);
+    assert_eq!(
+        app.chat().expect("the chat").top(),
+        end - 3,
+        "the wheel did not scroll the transcript"
+    );
+    assert_eq!(
+        app.chat().expect("the chat").focus(),
+        Focus::Writing,
+        "the wheel took the cursor with it"
+    );
+
+    // And back down to the end, which is where a transcript sits.
+    app.handle(Event::Scroll(3));
+    support::lay_out(&mut app, WIDTH, short);
+    assert_eq!(
+        app.chat().expect("the chat").top(),
+        end,
+        "the wheel did not bring it back"
+    );
+    assert_eq!(app.chat().expect("the chat").focus(), Focus::Writing);
+}
+
+/// A selection dragged above the top of the transcript carries on scrolling.
+///
+/// The other half of the same fix, and the one the code already promised:
+/// `App::drag_on` says in as many words that a drag held past the edge
+/// reaches the view through the one function a notch of the wheel goes
+/// through. In a conversation that function reached nothing, so a reader
+/// dragging up the transcript to take hold of a paragraph stopped at the
+/// first row on screen and could go no further.
+///
+/// Broken deliberately the same way as the notch: with the conversation out
+/// of `App::scroll`, the tick scrolls nothing and the transcript stands
+/// still under the pointer.
+#[test]
+fn a_drag_held_above_the_transcript_carries_on_scrolling() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let short = 14;
+    support::lay_out(&mut app, WIDTH, short);
+    let end = app.chat().expect("the chat").top();
+    assert!(
+        end > 0,
+        "the transcript fits, so nothing here means anything"
+    );
+
+    // Taken hold of inside the transcript, and dragged out above it.
+    let band = obelus_ui::chat::bands(
+        app.editor_area_for_test(),
+        app.chat().expect("the chat"),
+        app.card(),
+    )
+    .transcript;
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: 10,
+        y: band.y + 1,
+    });
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Dragged,
+        x: 10,
+        y: band.y.saturating_sub(1),
+    });
+    app.handle(Event::Tick);
+    support::lay_out(&mut app, WIDTH, short);
+    assert!(
+        app.chat().expect("the chat").top() < end,
+        "the drag stopped at the top row on screen"
+    );
+}
+
 /// A row too narrow for everything says so rather than stopping silently: a
 /// reader who cannot see a setting cannot know it is there.
 #[test]

@@ -699,19 +699,21 @@ pub struct Chat {
     /// them is the list growing under a window that is not following. One
     /// place that asks "are we at the end now" cannot miss any of them.
     left_at: Option<usize>,
-    /// Where the cursor was when it last left the transcript.
+    /// Which column the cursor was in when it last left the transcript.
     ///
-    /// So that leaving and coming back is coming back. Down off the last
-    /// row goes to the box, and up from the box came back to the end of
-    /// that row rather than to the column the reader left from -- which
-    /// for anybody reading down a long answer meant the cursor jumping to
-    /// the far side of the page for no reason they could see.
+    /// The column and not the row, because the two do not keep the same
+    /// way. Up from the box goes to the foot of the transcript, which is
+    /// the words nearest the box and where whatever arrived while the
+    /// reader was typing is; a row kept from before that is a number that
+    /// has since come to mean different words, which is what [`Place`]
+    /// says about itself and why [`Spot`] exists. So the row is asked for
+    /// again and the column is the reader's.
     ///
-    /// Forgotten when the wheel moves the view, because that is the reader
-    /// looking somewhere else: the keys go somewhere and the wheel looks
-    /// around, which is the difference the transcript already draws
-    /// everywhere else.
-    stood: Option<Place>,
+    /// And the column is worth keeping: coming back to the end of the row
+    /// rather than to the column left from put the cursor on the far side
+    /// of the page, for anybody reading down a long answer who stepped one
+    /// row too far and pressed up again.
+    stood: Option<usize>,
 }
 
 impl Default for Chat {
@@ -1046,6 +1048,12 @@ impl Chat {
         match self.said.last_mut() {
             Some(last) if last.speaker == speaker && last.tag.is_none() => {
                 last.text.push_str(text);
+                // The rows this was laid out into are rows of the text as
+                // it was a packet ago. Every other way of changing what
+                // there is to lay out drops them; this one appends to a
+                // string in place, which is exactly the change that is
+                // easy to make without noticing it is one.
+                self.forget_the_layout();
             }
             _ => self.push(speaker, text, None),
         }
@@ -1944,12 +1952,10 @@ impl Chat {
     /// Which is not a key: it moves the view and leaves the caret in the
     /// box where the reader put it.
     pub fn scroll(&mut self, rows: isize) {
-        // And wherever the cursor last stood is not where the reader is
-        // looking any more. The wheel looks around and the keys go
-        // somewhere, which is the difference the transcript draws
-        // everywhere else: coming in from the box after this goes to the
-        // words nearest the box, not back to wherever the page used to be.
-        self.stood = None;
+        // And what the cursor kept is a column, which says nothing about
+        // where the reader is looking. Coming in from the box goes to the
+        // foot of the transcript whether the wheel has moved or not, so
+        // there is nothing here to forget.
         self.scroll_by(rows);
     }
 
@@ -2066,11 +2072,11 @@ impl Chat {
                 if self.input.up(room.writing) {
                     return ChatOutcome::Consumed;
                 }
-                // On to the end of the last row, which is the words
-                // nearest the box and so the ones the reader was looking
-                // at. Not the nearest row that *does* something, which is
-                // where this used to land: the cursor walks the words now,
-                // and tab is what goes to the next thing enter opens.
+                // On to the last row, which is the words nearest the box
+                // and so the ones the reader was looking at. Not the
+                // nearest row that *does* something, which is where this
+                // used to land: the cursor walks the words now, and tab is
+                // what goes to the next thing enter opens.
                 match self.back_into_the_transcript(room) {
                     Some(place) => {
                         self.focus = Focus::Transcript(place);
@@ -2294,34 +2300,30 @@ impl Chat {
         }
     }
 
-    /// Goes back to the box, remembering where in the transcript this was.
+    /// Goes back to the box, remembering which column of the transcript
+    /// this was.
     fn leave_the_transcript(&mut self, at: Place) {
-        self.stood = Some(at);
+        self.stood = Some(at.character);
         self.focus = Focus::Writing;
     }
 
     /// Where the cursor goes when it comes in from the box.
     ///
-    /// Where it left, if it has been in here and the row it left is still
-    /// there. Otherwise the end of the last row, which is the words
-    /// nearest the box and so the ones the reader was looking at.
+    /// The last row always: it is the words nearest the box, and it is
+    /// where whatever was said while the reader was typing has gone. And
+    /// the column it left in, where it has been in here -- otherwise the
+    /// end of that row.
     fn back_into_the_transcript(&self, room: Room) -> Option<Place> {
         let rows = self.rows(room.reading);
-        if let Some(stood) = self.stood
-            && let Some(row) = rows.get(stood.row)
-        {
-            return Some(Place {
-                row: stood.row,
-                // The row may be a different length than it was: the
-                // window is resized, a run is opened, the agent says
-                // something that reflows what is above it.
-                character: stood.character.min(row.characters()),
-            });
-        }
         let row = rows.len().checked_sub(1)?;
+        let characters = rows[row].characters();
         Some(Place {
             row,
-            character: rows[row].characters(),
+            // The row is not the one the column was left in, and even if
+            // it were it may be a different length than it was: the window
+            // is resized, a run is opened, the agent says something that
+            // reflows what is above it.
+            character: self.stood.unwrap_or(characters).min(characters),
         })
     }
 
@@ -3209,75 +3211,102 @@ mod tests {
         assert_eq!(chat.focus(), Focus::Writing);
     }
 
-    /// Leaving the transcript and coming back is coming back.
+    /// Up from the box goes to the foot of the transcript, in the column
+    /// it left.
     ///
-    /// Down off the last row goes to the box, which is the one key walking
-    /// whatever can still move. Up from the box came back to the *end* of
-    /// that row rather than to the column it was left from, so a reader
-    /// reading down a long answer, who stepped one row too far and pressed
-    /// up again, found the cursor on the far side of the page for no
-    /// reason they could see.
+    /// The two halves of where the cursor was keep differently. The column
+    /// is the reader's: coming back to the *end* of the row rather than to
+    /// the column it was left from put the cursor on the far side of the
+    /// page, for anybody reading down a long answer who stepped one row too
+    /// far and pressed up again. The row is a number that stops meaning the
+    /// same words -- the agent answers while the reader is typing, and the
+    /// row they left is now somewhere in the middle of what they have not
+    /// read. So the row is asked for again, and the answer is the foot,
+    /// which is the words nearest the box and where what arrived has gone.
     ///
-    /// The wheel is the exception, and on purpose: it moves the view and
-    /// leaves the cursor, because a reader spinning it is looking around
-    /// rather than going somewhere. So after it, coming in from the box
-    /// goes to the words nearest the box, not back to a page they have
-    /// scrolled away from.
+    /// The wheel is not the exception it used to be. It moves the view, and
+    /// what is kept is a column, which says nothing about where the view is
+    /// looking.
     ///
-    /// Broken deliberately two ways: by not remembering where the cursor
-    /// left, which is what it did; and by remembering it across the wheel,
-    /// which drags the view back to where the reader used to be the moment
-    /// they press a key.
+    /// Broken deliberately three ways: by coming back to the end of the
+    /// row, which is what it did before the column was kept; by coming back
+    /// to the row the cursor left, which is what it did after; and by
+    /// forgetting the column when the wheel turns.
     #[test]
-    fn coming_back_into_the_transcript_comes_back_where_it_left() {
+    fn up_from_the_box_goes_to_the_foot_of_the_transcript() {
         let mut chat = Chat::new();
-        chat.chunk(Speaker::Agent, "hello there, this is the answer");
+        chat.chunk(
+            Speaker::Agent,
+            "hello there, this is the answer, and it is long enough to be \
+             several rows of it at the width these tests read at",
+        );
         chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
+        let foot = chat.rows(ROOM.reading).len() - 1;
 
-        // In at the end of the last row, then to the start of it, then
-        // down -- which is off the end of the transcript and into the box.
+        // In at the foot, to the start of that row, and then two rows up:
+        // away from the foot, in a column that is the end of nothing.
         chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
         chat.handle_key(&key(KeyCode::Home), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
         let Focus::Transcript(left) = chat.focus() else {
             panic!("the cursor is not in the transcript");
         };
         assert_eq!(left.character, 0, "home did not reach the start of the row");
-        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
-        assert_eq!(chat.focus(), Focus::Writing, "down did not reach the box");
+        assert!(
+            left.row < foot,
+            "up did not leave the foot of the transcript"
+        );
 
-        // And back up, to where it left rather than to the end of the row.
+        // Out to the box and back in: the column it left, on the foot
+        // rather than on the row it left.
+        chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Writing, "escape did not reach the box");
         chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
         assert_eq!(
             chat.focus(),
-            Focus::Transcript(left),
-            "coming back did not come back"
+            Focus::Transcript(Place {
+                row: foot,
+                character: 0
+            }),
+            "coming back did not come back to the foot, in the column it left"
         );
 
-        // Escape is the other way out, and it remembers the same way.
-        chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]);
+        // Down is the other way out, and what arrives while the reader is
+        // in the box moves the foot. Which is what they are taken to: the
+        // row they left is now in the middle of what they have not read.
+        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Writing, "down did not reach the box");
+        chat.chunk(
+            Speaker::Agent,
+            ", and here is the rest of it, which arrived while the reader \
+             was writing",
+        );
+        chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
+        let grown = chat.rows(ROOM.reading).len() - 1;
+        assert!(grown > foot, "the rest of the answer made no rows");
         chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        assert_eq!(chat.focus(), Focus::Transcript(left));
+        assert_eq!(
+            chat.focus(),
+            Focus::Transcript(Place {
+                row: grown,
+                character: 0
+            }),
+            "coming back went to where the foot used to be"
+        );
 
-        // But the wheel is looking around rather than going somewhere, so
-        // after it the cursor comes in where it always did: at the words
-        // nearest the box.
+        // And the wheel keeps the column, because a column is not a place
+        // the view can be moved away from.
         chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]);
         chat.scroll(-1);
         chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        let Focus::Transcript(back) = chat.focus() else {
-            panic!("the cursor is not in the transcript");
-        };
-        assert_ne!(
-            back, left,
-            "the wheel left the cursor pointing at where the reader used to be"
-        );
-        let rows = chat.rows(ROOM.reading);
         assert_eq!(
-            back,
-            Place {
-                row: rows.len() - 1,
-                character: rows[rows.len() - 1].characters(),
-            }
+            chat.focus(),
+            Focus::Transcript(Place {
+                row: grown,
+                character: 0
+            }),
+            "the wheel forgot the column"
         );
     }
 
@@ -4079,6 +4108,16 @@ mod remembering {
             (
                 "chunk",
                 Box::new(|chat: &mut Chat| chat.chunk(Speaker::Agent, "a piece of one")),
+            ),
+            // The second piece of the same answer, which is the other
+            // half of what a chunk does: the first starts something said
+            // and the second appends to it in place. That one shipped
+            // without the forgetting -- an answer streaming into a
+            // paragraph already on screen stopped growing until something
+            // else happened to drop the rows.
+            (
+                "chunk again",
+                Box::new(|chat: &mut Chat| chat.chunk(Speaker::Agent, " and another piece")),
             ),
             (
                 "away",

@@ -340,8 +340,9 @@ impl App {
     /// Whatever the reader is looking at: the list when one is open -- a list
     /// under a wheel scrolls, and with the mouse reported the wheel no longer
     /// arrives as arrow keys, so a picker that ignored it would have lost
-    /// something -- and otherwise the file, by rows, with the cursor left
-    /// where it was put.
+    /// something -- and otherwise the document, by rows, with the cursor left
+    /// where it was put. A conversation is a document like the file is, and
+    /// the two say that the same way.
     pub(super) fn scroll(&mut self, rows: isize) {
         // What a server said about a place, while it is up: it is what the
         // reader is looking at, and the file behind it is not going
@@ -365,6 +366,17 @@ impl App {
             if self.scroll_layer(layer, rows) {
                 return;
             }
+        }
+        // The conversation, which is a document and takes the wheel the
+        // way the file below does: by rows, with the cursor left where the
+        // reader put it. After the layers, because a list open over a
+        // conversation is nearer than the conversation is; before the
+        // file, because while a conversation is what is being read the
+        // file is not on screen -- which is why a notch used to reach
+        // nothing at all in here.
+        if let Some(talk) = self.conversation_mut() {
+            talk.chat.scroll(rows);
+            return;
         }
         let height = self.editor_area.height;
         if let Some(rows_in_view) = self.rendered_rows()
