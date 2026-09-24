@@ -1897,10 +1897,13 @@ fn a_settings_file_that_will_not_read_is_not_written_over() {
         "nothing said the change was not kept:\n{dump}"
     );
 
-    // Fixed in the other window, it reads again and saves again.
+    // Fixed in the other window, it reads again and saves again. Another
+    // theme, so the save has something to change: the one already in the
+    // file saves as the file it already is.
     std::fs::write(&file, "theme = \"light\"\n").expect("the other window");
     app.handle(Event::Watched(obelus_watch::Changed { path: file.clone() }));
     dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     assert_ne!(
         std::fs::read_to_string(&file).expect("the file"),
@@ -1948,8 +1951,11 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
         written.contains("# mine, do not eat"),
         "somebody's comment was deleted:\n{written}"
     );
+    // Flipped back to the default, which is written down by taking the
+    // line out: the file says what the reader has chosen, not what obelus
+    // would have chosen anyway.
     assert!(
-        written.contains("wrap = false"),
+        !obelus_config::from_toml(&written).wrap && !written.contains("wrap"),
         "the switch that was flipped was not written:\n{written}"
     );
 }

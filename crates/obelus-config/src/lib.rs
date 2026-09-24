@@ -821,25 +821,116 @@ pub fn to_toml(config: &Config) -> String {
 /// A file that is not toml at all is started again from nothing: there is
 /// no document to lay anything over, and obelus has already said so
 /// elsewhere.
+///
+/// Only what differs from the default is written, and a line that has come
+/// back to the default is taken out. A file with every setting in it
+/// freezes the defaults of the version that wrote it: the glyphs went off
+/// by default, and every reader who had ever flipped anything kept them on,
+/// because obelus had written `icons = true` down for them the first time
+/// it saved. The same rule the keys and the agents already kept -- a line
+/// is something the reader said, not something obelus was thinking about.
 #[must_use]
 pub fn over(existing: &str, config: &Config) -> String {
+    lay(existing, config, false)
+}
+
+/// What a settings file starts as: every setting, at its default, in a
+/// comment.
+///
+/// Because a file of only what differs is empty until the reader has said
+/// something, and an empty file opened to change a setting by hand is a
+/// reader told nothing about what there is to change. In comments, so none
+/// of it is said: a default that moves still reaches them. And the header
+/// says that a line only counts once it says something else, because one
+/// taken out of its comment as it stands is a default, and the next save
+/// takes it out.
+fn template() -> String {
+    let every = lay("", &Config::default(), true);
+    let mut said = String::from(
+        "# Every setting, at its default. To set one, take it out of its comment\n# and change it: a line that says the default is taken out when obelus\n# next saves, so that a default which changes reaches you.\n",
+    );
+    for line in every.lines() {
+        said.push_str("# ");
+        said.push_str(line);
+        said.push('\n');
+    }
+    said
+}
+
+/// [`over`], or with `every` every setting whatever its value -- which is
+/// only ever what [`template`] comments out.
+fn lay(existing: &str, config: &Config, every: bool) -> String {
     let mut document = existing
         .parse::<toml_edit::DocumentMut>()
         .unwrap_or_default();
-    document["theme"] = toml_edit::value(config.theme.clone());
-    document["icons"] = toml_edit::value(config.icons);
-    document["blame_margin"] = toml_edit::value(config.blame_margin);
-    document["wrap"] = toml_edit::value(config.wrap);
-    document["tab_width"] = toml_edit::value(i64::try_from(config.tab_width).unwrap_or(4));
-    document["hover_delay"] = toml_edit::value(i64::try_from(config.hover_delay).unwrap_or(400));
-    document["format_on_save"] = toml_edit::value(config.format_on_save);
-    document["code_actions_on_save"] = toml_edit::value(config.code_actions_on_save);
-    document["inlay_hints"] = toml_edit::value(config.inlay_hints);
-    document["diagnostics"] = toml_edit::value(config.diagnostics);
-    document["ignored_files"] = toml_edit::value(config.ignored_files);
-    // Written even when there is nobody, so the file says what obelus read
-    // rather than leaving the reader to wonder whether it noticed.
-    document["agent"] = toml_edit::value(config.agent.clone().unwrap_or_default());
+    let default = Config::default();
+    let mut put = |key: &str, differs: bool, value: toml_edit::Item| {
+        if every || differs {
+            document[key] = value;
+        } else {
+            document.remove(key);
+        }
+    };
+    put(
+        "theme",
+        config.theme != default.theme,
+        toml_edit::value(config.theme.clone()),
+    );
+    put(
+        "icons",
+        config.icons != default.icons,
+        toml_edit::value(config.icons),
+    );
+    put(
+        "blame_margin",
+        config.blame_margin != default.blame_margin,
+        toml_edit::value(config.blame_margin),
+    );
+    put(
+        "wrap",
+        config.wrap != default.wrap,
+        toml_edit::value(config.wrap),
+    );
+    put(
+        "tab_width",
+        config.tab_width != default.tab_width,
+        toml_edit::value(i64::try_from(config.tab_width).unwrap_or(4)),
+    );
+    put(
+        "hover_delay",
+        config.hover_delay != default.hover_delay,
+        toml_edit::value(i64::try_from(config.hover_delay).unwrap_or(400)),
+    );
+    put(
+        "format_on_save",
+        config.format_on_save != default.format_on_save,
+        toml_edit::value(config.format_on_save),
+    );
+    put(
+        "code_actions_on_save",
+        config.code_actions_on_save != default.code_actions_on_save,
+        toml_edit::value(config.code_actions_on_save),
+    );
+    put(
+        "inlay_hints",
+        config.inlay_hints != default.inlay_hints,
+        toml_edit::value(config.inlay_hints),
+    );
+    put(
+        "diagnostics",
+        config.diagnostics != default.diagnostics,
+        toml_edit::value(config.diagnostics),
+    );
+    put(
+        "ignored_files",
+        config.ignored_files != default.ignored_files,
+        toml_edit::value(config.ignored_files),
+    );
+    put(
+        "agent",
+        config.agent != default.agent,
+        toml_edit::value(config.agent.clone().unwrap_or_default()),
+    );
     // Only while the reader has moved something: an empty table in the file
     // says obelus was thinking about keys, which it was not.
     if config.keys.is_empty() {
@@ -998,9 +1089,14 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
     let resolved = resolved(path);
     let path = resolved.as_path();
     // What is in it already, so that whatever obelus does not recognise
-    // stays there. Nothing, where there is nothing: the first write makes
-    // the file.
-    let existing = std::fs::read_to_string(path).unwrap_or_default();
+    // stays there. The template where there is nothing: the first write
+    // makes the file, and makes it saying what there is to set. A file the
+    // reader emptied is not nothing, and stays as empty as they left it.
+    let existing = match std::fs::read_to_string(path) {
+        Ok(existing) => existing,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => template(),
+        Err(_) => String::new(),
+    };
     let Some(directory) = path.parent() else {
         return std::fs::write(path, over(&existing, config));
     };
@@ -1392,5 +1488,90 @@ mod tests {
             "writing one agent down lost another"
         );
         assert_eq!(read.agent_default("claude-code", "mode"), Some("plan"));
+    }
+
+    /// Only what differs from the default is written down, and a line that
+    /// has come back to it is taken out.
+    ///
+    /// Otherwise the file freezes the defaults of the version that first
+    /// saved it, and a default that changes afterwards never reaches the
+    /// reader -- which is how the glyphs stayed on for everybody who had
+    /// flipped anything, once they had gone off by default.
+    ///
+    /// Broken deliberately by writing every setting whatever its value, the
+    /// way `over` used to: the defaults' file is no longer empty, and the
+    /// stale `icons = true` survives a save it should have been taken out by.
+    #[test]
+    fn only_what_differs_from_the_default_is_written() {
+        let written = to_toml(&Config::default());
+        assert!(
+            written.trim().is_empty(),
+            "the defaults were written down: {written:?}"
+        );
+
+        // What an older obelus left behind: every setting, one of them at a
+        // default that has changed since, and a line of the reader's own.
+        let existing = "theme = \"dark\"\nicons = true\nwrap = false\n# mine\nfuture_setting = 3\n";
+        let config = Config {
+            wrap: true,
+            ..Config::default()
+        };
+        let written = over(existing, &config);
+        assert!(!written.contains("theme"), "a default stayed: {written:?}");
+        assert!(
+            !written.contains("icons"),
+            "a line the reader never said stayed: {written:?}"
+        );
+        assert!(
+            written.contains("wrap = true"),
+            "what they did say is gone: {written:?}"
+        );
+        assert!(
+            written.contains("future_setting = 3"),
+            "a line obelus does not know went: {written:?}"
+        );
+        assert_eq!(from_toml(&written), config);
+    }
+
+    /// A file obelus makes lists every setting, in comments, and says none
+    /// of them.
+    ///
+    /// Only what differs is written, so the first file would otherwise be
+    /// empty -- and it is the file `open-settings-file` puts in front of a
+    /// reader who has come to change something by hand. A file the reader
+    /// emptied themselves is theirs, and stays empty.
+    ///
+    /// Broken deliberately by starting a new file from nothing again: the
+    /// settings are not in it.
+    #[test]
+    fn a_new_settings_file_lists_every_setting_and_sets_none() {
+        let directory =
+            std::env::temp_dir().join(format!("obelus-config-template-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let file = directory.join("config.toml");
+
+        super::save_to(&file, &Config::default()).expect("writing it");
+        let made = std::fs::read_to_string(&file).expect("reading it");
+        for setting in super::ALL {
+            assert!(
+                made.contains(&format!("# {} = ", setting.key)),
+                "{} is not listed: {made}",
+                setting.key
+            );
+        }
+        assert_eq!(
+            from_toml(&made),
+            Config::default(),
+            "the list said something"
+        );
+
+        std::fs::write(&file, "").expect("emptying it");
+        super::save_to(&file, &Config::default()).expect("writing it again");
+        assert_eq!(
+            std::fs::read_to_string(&file).expect("reading it"),
+            "",
+            "a file the reader emptied was filled in again"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
     }
 }
