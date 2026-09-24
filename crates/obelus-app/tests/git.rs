@@ -5330,62 +5330,6 @@ fn a_worktree_and_its_repository_are_one_project() {
     );
 }
 
-/// Notes from before they were kept per project are still the reader's.
-///
-/// They sat in the project's own `.obelus` and are kept in Obelus's state
-/// directory now. A reader who had a list and opened Obelus to an empty one
-/// would think it had gone: it is still on disk, and nothing on the page
-/// would say so.
-///
-/// The main checkout's, deliberately. A reader with worktrees has one of
-/// these files in each, they do not say the same thing, and Obelus putting
-/// them together would be Obelus deciding what their notes say -- so the
-/// repository's own checkout is the one that carries them over and the rest
-/// are left exactly where they are.
-///
-/// Broken deliberately by having `left_beside_a_checkout` answer `None`:
-/// both of these read as a project with no notes at all.
-#[test]
-fn notes_kept_beside_a_checkout_are_still_read() {
-    let repository = Repository::new("notes-carried-over", "fn main() {}\n");
-    obelus_logging::state_directory_for_test(
-        std::env::temp_dir().join(format!("obelus-git-tests-state-{}", std::process::id())),
-    );
-    let beside = repository
-        .directory()
-        .with_file_name(format!("obelus-carried-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&beside);
-    repository.run(&[
-        "worktree",
-        "add",
-        "--quiet",
-        "-b",
-        "carried",
-        beside.to_str().expect("a path"),
-    ]);
-
-    // Where they used to be, in the checkout the project is named after.
-    let was = repository.directory().join(".obelus");
-    std::fs::create_dir_all(&was).expect("the directory");
-    std::fs::write(
-        was.join("todo.toml"),
-        "[[todo]]\nid = \"0123456A\"\nsaid = \"from before\"\ndone = false\ndepth = 0\n",
-    )
-    .expect("the notes");
-
-    for root in [repository.directory(), beside] {
-        let notes = obelus_git::todo::read(&root)
-            .notes()
-            .expect("the notes read");
-        assert_eq!(
-            notes.notes.first().map(|note| note.said.as_str()),
-            Some("from before"),
-            "the notes were not carried over, read from {}",
-            root.display()
-        );
-    }
-}
-
 /// The pairs the history sweep turned up, kept so the question has an answer
 /// that does not move.
 ///

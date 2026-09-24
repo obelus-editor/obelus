@@ -41,10 +41,10 @@ use obelus_text::coordinates::LineNumber;
 #[must_use]
 pub fn path(root: &Path) -> PathBuf {
     let Some(state) = obelus_logging::state_directory() else {
-        // Nowhere of this machine's own to keep them, which is where they
-        // were kept before there was anywhere else. A reader on such a
-        // machine has a checkout's notes rather than a project's: the old
-        // answer, and not a wrong one.
+        // Nowhere of this machine's own to keep them, so the checkout is
+        // the only thing left to keep them beside. A reader on such a
+        // machine has a checkout's notes rather than a project's, which is
+        // the most that can be said there.
         return beside_a_checkout(root);
     };
     state
@@ -52,27 +52,12 @@ pub fn path(root: &Path) -> PathBuf {
         .join(format!("{}.toml", crate::project(root)))
 }
 
-/// Where a checkout's notes sat before they were kept per project.
+/// Where they go on a machine with nowhere of its own to keep state.
+///
+/// A checkout's rather than a project's, because a checkout is the only
+/// thing there is to name them after here.
 fn beside_a_checkout(root: &Path) -> PathBuf {
     root.join(".obelus").join("todo.toml")
-}
-
-/// The notes to carry over, for a project that has none where they go now.
-///
-/// The *main* checkout's, and deliberately not this one's: a reader with
-/// worktrees has one of these files in each, they do not say the same thing,
-/// and Obelus putting them together would be Obelus deciding what their
-/// notes say. The project is the repository, so the repository's own
-/// checkout is the one that carries them over. The others are left exactly
-/// where they are, for the reader to take what they want out of them --
-/// nothing here deletes one.
-fn left_beside_a_checkout(root: &Path) -> Option<PathBuf> {
-    // The same answer [`crate::project`] names the file by, so that what is
-    // carried over is the checkout the project was named after. A project
-    // git has never heard of has no other checkout to be confused with, and
-    // its notes are where it is.
-    let was = beside_a_checkout(&crate::main_checkout(root).unwrap_or_else(|| root.to_path_buf()));
-    was.exists().then_some(was)
 }
 
 /// The place a note is about, as it was written down.
@@ -474,16 +459,9 @@ pub fn read(root: &Path) -> Reading {
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         // Not there yet is the ordinary case and not a failure: the file is
-        // written the first time a reader writes a note down. Or the notes
-        // are where they used to be, which is the same thing for a reader
-        // who had some before Obelus kept them per project -- read from
-        // there until the first change writes them here.
+        // written the first time a reader writes a note down.
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            match left_beside_a_checkout(root).map(std::fs::read_to_string) {
-                None => return Reading::Nothing,
-                Some(Ok(text)) => text,
-                Some(Err(error)) => return Reading::Unreadable(error.to_string()),
-            }
+            return Reading::Nothing;
         }
         Err(error) => return Reading::Unreadable(error.to_string()),
     };
