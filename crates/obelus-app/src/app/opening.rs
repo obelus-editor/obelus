@@ -39,16 +39,25 @@ const REWORDED: &str = include_str!("reworded.txt");
 /// What obelus has to say before the reader's own words, this time.
 ///
 /// Three things rather than one string, because saying it is three things
-/// at once: the block that goes in front of the reader's words, the lines
-/// the transcript shows so that a reader can see obelus spoke in their
-/// name, and what the topic was made from -- written down beside the
+/// at once: the block that goes in front of the reader's words, the line
+/// the transcript shows where obelus put something of the reader's own in
+/// there, and what the topic was made from -- written down beside the
 /// conversation, so that tomorrow's obelus can tell whether the agent is
 /// out of date.
 pub(super) struct Opening {
     /// The block, first of the prompt's own.
     pub words: String,
-    /// What the transcript says obelus did, a line per piece.
-    pub said: Vec<&'static str>,
+    /// What the transcript says obelus did, where it did anything the
+    /// reader has a stake in.
+    ///
+    /// Only the topic fills this. What obelus puts in the prompt in the
+    /// reader's name is the reader's to see -- and the piece that says who
+    /// the agent is talking to is not in their name: it is the client
+    /// introducing itself, about obelus rather than about them or their
+    /// work. A line saying so would be the same line at the head of every
+    /// conversation they ever open, which is a row that has stopped
+    /// telling anybody anything.
+    pub said: Option<&'static str>,
     /// What the topic was made from, where the topic had something to say.
     pub now: Option<String>,
     /// Whether this carries the piece that goes once per conversation.
@@ -69,15 +78,12 @@ impl App {
         told: Option<&str>,
     ) -> Option<Opening> {
         let mut pieces = Vec::new();
-        let mut said = Vec::new();
         if !introduced {
             pieces.push(ALWAYS.trim().to_string());
-            said.push("Told the agent who it is talking to");
         }
         let about = self.about_the_topic(topic, told);
-        if let Some((words, line, _)) = &about {
+        if let Some((words, _, _)) = &about {
             pieces.push(words.clone());
-            said.push(line);
         }
         if pieces.is_empty() {
             return None;
@@ -88,7 +94,7 @@ impl App {
             // between here and the wire would have to become a list to
             // carry it.
             words: pieces.join("\n\n"),
-            said,
+            said: about.as_ref().map(|(_, line, _)| *line),
             now: about.map(|(_, _, now)| now),
             introduced: true,
         })

@@ -3487,9 +3487,16 @@ fn a_question_about_a_notes_conversation_is_asked_in_it() {
 /// nothing, which is the half of the old rule that survives and is asserted
 /// here as `first=always` and not `always+note`.
 ///
-/// Broken deliberately by moving the opening into `Topic::Note`'s arm of
-/// `about_the_topic`, which is where it used to live: the block stops going
-/// and this reads `blocks=1 first=reader`.
+/// And it goes without a word about it. obelus says on the page what it
+/// puts in a prompt in the reader's name, because those are the reader's
+/// own words going somewhere -- this piece is not in their name, it is the
+/// client saying what it is, and a line about it would be the same line at
+/// the head of every conversation anybody ever opens.
+///
+/// Broken deliberately two ways. Moving the opening into `Topic::Note`'s
+/// arm of `about_the_topic`, which is where it used to live, stops the
+/// block going at all: this reads `blocks=1 first=reader`. And giving
+/// `Opening::said` a line for it again puts the note back on the page.
 #[test]
 fn a_loose_conversation_is_told_who_it_is_with_and_no_more() {
     let (mut app, events) = talking();
@@ -3514,6 +3521,25 @@ fn a_loose_conversation_is_told_who_it_is_with_and_no_more() {
     assert!(
         !text.contains("first=always+"),
         "something about a note went with a conversation about nothing:\n{text}"
+    );
+    // The reader is told nothing about it: it went in their name but it is
+    // not their words, and there is nothing in it for them to have a view
+    // about. Asked of the voice rather than of the words, because the row
+    // obelus speaks in carries four other kinds of remark -- how a turn
+    // ended, what became of a question, what happened to the agent -- and
+    // what this is about is that obelus said nothing at all.
+    //
+    // With words on it: the blank row between two things said wears the
+    // speaker of what follows it, and past the last of them that is this
+    // one -- so a transcript with no remark in it still ends on a row that
+    // says it is obelus's.
+    assert!(
+        app.chat().is_some_and(|chat| {
+            !chat.rows(WIDTH).iter().any(|row| {
+                row.speaker == obelus_component::chat::Speaker::Note && !row.text().is_empty()
+            })
+        }),
+        "obelus announced its own introduction:\n{text}"
     );
     // Once. The agent keeps every word, so the message after carries none
     // of it.

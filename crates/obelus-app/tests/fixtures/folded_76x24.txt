@@ -2,19 +2,19 @@ screen 76x24  editor 76x22  status 76x1
 -- text --
  0| 󰚩  Fake Agent 0.1                                                          
  1|────────────────────────────────────────────────────────────────────────────
- 2| 󰋽  Told the agent who it is talking to                                     
+ 2| 󰀓  /many                                                                   
  3|                                                                            
- 4| 󰀓  /many                                                                   
- 5|                                                                            
- 6| 󰈙  4 Files  ▾ 󰄬                                                            
- 7|   󰈙  Read src/app  tests/fixtures/many_lines.rs:4 󰄬                        
- 8|   󰈙  Read src/acp  tests/fixtures/many_lines.rs:4 󰄬                        
- 9|   󰈙  Read src/buffer  tests/fixtures/many_lines.rs:4 󰄬                     
-10|   󰈙  Read src/ui  tests/fixtures/many_lines.rs:4 󰄬                         
+ 4| 󰈙  4 Files  ▾ 󰄬                                                            
+ 5|   󰈙  Read src/app  tests/fixtures/many_lines.rs:4 󰄬                        
+ 6|   󰈙  Read src/acp  tests/fixtures/many_lines.rs:4 󰄬                        
+ 7|   󰈙  Read src/buffer  tests/fixtures/many_lines.rs:4 󰄬                     
+ 8|   󰈙  Read src/ui  tests/fixtures/many_lines.rs:4 󰄬                         
+ 9|                                                                            
+10| 󰆍  Run the tests 󰅙                                                         
 11|                                                                            
-12| 󰆍  Run the tests 󰅙                                                         
+12| 󰚩  that is where it is                                                     
 13|                                                                            
-14| 󰚩  that is where it is                                                     
+14|                                                                            
 15|                                                                            
 16|                                                                            
 17|                                                                            
@@ -27,17 +27,17 @@ screen 76x24  editor 76x22  status 76x1
 -- style --
  0|abaaccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 2|abaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|acaacccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|acaacccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 6|ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda
- 7|aaabaabbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaa
- 8|aaabaabbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaa
- 9|aaabaabbbbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaa
-10|aaabaabbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda
+ 5|aaabaabbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaabaabbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|aaabaabbbbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaa
+ 8|aaabaabbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaaa
+ 9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+10|abaabbbbbbbbbbbbbaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-12|abaabbbbbbbbbbbbbaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -56,4 +56,4 @@ c fg=#a1a1aa bg=#18181b
 d fg=#52525b bg=#27272a
 e fg=#f472b6 bg=#18181b
 -- cursor --
-4,6
+4,4

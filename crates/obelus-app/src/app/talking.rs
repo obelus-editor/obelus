@@ -868,8 +868,9 @@ impl App {
                     talk.told = Some(now.clone());
                 }
                 // What obelus sends in the reader's name is the reader's
-                // to see.
-                for said in &opening.said {
+                // to see. Which the piece saying who the agent is talking
+                // to is not -- see `Opening::said`.
+                if let Some(said) = opening.said {
                     talk.chat.note(said);
                 }
             }

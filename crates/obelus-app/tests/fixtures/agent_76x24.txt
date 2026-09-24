@@ -2,21 +2,21 @@ screen 76x24  editor 76x22  status 76x1
 -- text --
  0| 󰚩  Fake Agent 0.1                                                          
  1|────────────────────────────────────────────────────────────────────────────
- 2| 󰋽  Told the agent who it is talking to                                     
+ 2| 󰀓  what is this file                                                       
  3|                                                                            
- 4| 󰀓  what is this file                                                       
+ 4| 󰟷  working it out                                                          
  5|                                                                            
- 6| 󰟷  working it out                                                          
+ 6| 󰚩  it is a rust file                                                       
  7|                                                                            
- 8| 󰚩  it is a rust file                                                       
+ 8| 󰈙  Read the file  tests/fixtures/many_lines.rs:7 󰄬                         
  9|                                                                            
-10| 󰈙  Read the file  tests/fixtures/many_lines.rs:7 󰄬                         
+10| 󰚩  saying this is what obelus handed over and it refused to write          
 11|                                                                            
-12| 󰚩  saying this is what obelus handed over and it refused to write          
+12| 󰆍  Run the tests  /tmp/obelus/Cargo.toml  ▸ 󰄬                              
 13|                                                                            
-14| 󰆍  Run the tests  /tmp/obelus/Cargo.toml  ▸ 󰄬                              
+14| 󰚩  and I was allowed                                                       
 15|                                                                            
-16| 󰚩  and I was allowed                                                       
+16|                                                                            
 17|                                                                            
 18|                                                                            
 19|                                                                            
@@ -27,19 +27,19 @@ screen 76x24  editor 76x22  status 76x1
 -- style --
  0|abaaccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 2|abaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|acaacccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|acaacccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|abaabbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 6|abaabbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 8|abaabbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaaa
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-10|abaabbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaaa
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+12|abaabbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbabbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-14|abaabbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbabbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

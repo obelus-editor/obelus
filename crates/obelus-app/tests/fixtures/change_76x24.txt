@@ -2,18 +2,18 @@ screen 76x24  editor 76x22  status 76x1
 -- text --
  0| 󰚩  Fake Agent 0.1                                                          
  1|────────────────────────────────────────────────────────────────────────────
- 2| 󰋽  Told the agent who it is talking to                                     
+ 2| 󰀓  /edit                                                                   
  3|                                                                            
- 4| 󰀓  /edit                                                                   
- 5|                                                                            
- 6| 󰲶  Edit the file  tests/fixtures/many_lines.rs  ▾  +2 −2 󰇘                 
- 7|      line 1                                                                
- 8|     ▐fn step_rows(row: usize) -> usize {                                   
- 9|     ▐    row                                                               
-10|     ▐fn step_rows(row: ScreenRow) -> usize {                               
-11|     ▐    row.get()                                                         
+ 4| 󰲶  Edit the file  tests/fixtures/many_lines.rs  ▾  +2 −2 󰇘                 
+ 5|      line 1                                                                
+ 6|     ▐fn step_rows(row: usize) -> usize {                                   
+ 7|     ▐    row                                                               
+ 8|     ▐fn step_rows(row: ScreenRow) -> usize {                               
+ 9|     ▐    row.get()                                                         
+10|                                                                            
+11| ⠋  thinking…                                                  Esc stops it 
 12|                                                                            
-13| ⠋  thinking…                                                  Esc stops it 
+13|                                                                            
 14|                                                                            
 15|                                                                            
 16|                                                                            
@@ -27,18 +27,18 @@ screen 76x24  editor 76x22  status 76x1
 -- style --
  0|abaaccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 2|abaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|acaacccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|acaacccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 6|abaabbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbabbaabbbbbabaaaaaaaaaaaaaaaaa
- 7|aaaaaabbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 8|aaaaadeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeea
- 9|aaaaadeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeea
-10|aaaaafggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggga
-11|aaaaafggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggga
+ 4|abaabbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbabbaabbbbbabaaaaaaaaaaaaaaaaa
+ 5|aaaaaabbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaaaadeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeea
+ 7|aaaaadeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeea
+ 8|aaaaafggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggga
+ 9|aaaaafggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggga
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+11|acaacccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbba
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-13|acaacccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbba
+13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
