@@ -205,7 +205,7 @@ pub struct TodoView {
     /// This session's and not the file's. Which notes are open is the same
     /// kind of fact as which runs of a file are folded -- something the
     /// reader did to what is in front of them, not something they wrote
-    /// down -- and `todo.toml` is a file two obeluses share.
+    /// down -- and `todo.toml` is a file two Obeluses share.
     shut: HashSet<NoteId>,
     /// The notes this page started that are not in the file yet.
     ///

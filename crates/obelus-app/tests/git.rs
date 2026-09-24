@@ -161,9 +161,9 @@ impl Repository {
                 // A commit needs an identity, and the machine's own may be
                 // unset or may be someone else's.
                 .env("GIT_AUTHOR_NAME", "obelus")
-                .env("GIT_AUTHOR_EMAIL", "Obelus@example.invalid")
+                .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
                 .env("GIT_COMMITTER_NAME", "obelus")
-                .env("GIT_COMMITTER_EMAIL", "Obelus@example.invalid")
+                .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
                 .output()
                 .expect("running git");
             assert!(
@@ -197,9 +197,9 @@ impl Repository {
             .arg(&self.directory)
             .args(arguments)
             .env("GIT_AUTHOR_NAME", "obelus")
-            .env("GIT_AUTHOR_EMAIL", "Obelus@example.invalid")
+            .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
             .env("GIT_COMMITTER_NAME", "obelus")
-            .env("GIT_COMMITTER_EMAIL", "Obelus@example.invalid")
+            .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
             .output()
             .expect("running git");
         assert!(outcome.status.success(), "git {arguments:?} failed");
@@ -225,9 +225,9 @@ impl Repository {
                 .arg(&self.directory)
                 .args(arguments)
                 .env("GIT_AUTHOR_NAME", "obelus")
-                .env("GIT_AUTHOR_EMAIL", "Obelus@example.invalid")
+                .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
                 .env("GIT_COMMITTER_NAME", "obelus")
-                .env("GIT_COMMITTER_EMAIL", "Obelus@example.invalid")
+                .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
                 .output()
                 .expect("running git");
             assert!(outcome.status.success(), "git {arguments:?} failed");
@@ -3509,9 +3509,9 @@ impl Pushed {
                 .arg(at)
                 .args(arguments)
                 .env("GIT_AUTHOR_NAME", "obelus")
-                .env("GIT_AUTHOR_EMAIL", "Obelus@example.invalid")
+                .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
                 .env("GIT_COMMITTER_NAME", "obelus")
-                .env("GIT_COMMITTER_EMAIL", "Obelus@example.invalid")
+                .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
                 .output()
                 .expect("running git");
             assert!(outcome.status.success(), "git {arguments:?} failed");
@@ -4915,9 +4915,9 @@ fn what_git_says_has_changed_is_what_the_list_says() {
             .arg(&within)
             .args(arguments)
             .env("GIT_AUTHOR_NAME", "obelus")
-            .env("GIT_AUTHOR_EMAIL", "Obelus@example.invalid")
+            .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
             .env("GIT_COMMITTER_NAME", "obelus")
-            .env("GIT_COMMITTER_EMAIL", "Obelus@example.invalid")
+            .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
             .output()
             .expect("running git");
         assert!(outcome.status.success(), "git {arguments:?} failed");

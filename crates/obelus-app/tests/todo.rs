@@ -1022,7 +1022,7 @@ fn what_was_done_while_the_file_would_not_read_lands_when_it_reads_again() {
 /// Two windows on one tree, and neither of them loses the other's note.
 ///
 /// The one this is all for. `split` is not Obelus's answer to reading two
-/// things at once -- a second window is -- so two obeluses on one tree is
+/// things at once -- a second window is -- so two Obeluses on one tree is
 /// the ordinary case and not the exotic one, and what a reader does in each
 /// of them has to survive the other. Nothing is told about anything here:
 /// no watcher event is handed to either, which is exactly what the watcher

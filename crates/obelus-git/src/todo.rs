@@ -118,11 +118,11 @@ impl NoteId {
     /// Mints one.
     ///
     /// No dependency for it. What randomness needs to buy here is only that
-    /// two notes made in one second, in two obeluses, on one project, do not
+    /// two notes made in one second, in two Obeluses, on one project, do not
     /// collide -- the file is read back and a clash is minted over anyway,
     /// so this is a cheap first line rather than the only one. The clock
     /// separates seconds, a counter separates notes within one, and the
-    /// hasher's per-process key separates two obeluses.
+    /// hasher's per-process key separates two Obeluses.
     #[must_use]
     pub fn mint() -> Self {
         use std::hash::{BuildHasher as _, Hasher as _};
