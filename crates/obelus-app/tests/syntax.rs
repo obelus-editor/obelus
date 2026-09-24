@@ -755,10 +755,10 @@ mod catching_up {
         );
     }
 
-    /// One that cannot keep up is left owing, and the tick that lands after
-    /// the reader stops is what comes back for it.
+    /// One that cannot keep up is left owing, and the pause that runs out
+    /// after the reader stops is what comes back for it.
     #[test]
-    fn a_slow_grammar_catches_up_on_the_next_tick() {
+    fn a_slow_grammar_catches_up_when_its_pause_runs_out() {
         let (_scratch, mut app) = editing("catch-slow", "sample.rs", SOURCE);
         app.current_buffer_mut()
             .expect("a buffer")
@@ -770,19 +770,26 @@ mod catching_up {
             "a grammar too slow to keep up was asked anyway"
         );
 
-        app.handle(Event::Tick);
+        app.handle(Event::SyntaxSettled);
         assert!(
             !app.current_buffer().expect("a buffer").syntax_is_behind(),
             "the tree never caught up"
         );
     }
 
-    /// And it wakes itself to do it. Without the ticker running, nothing
-    /// would come back for the tree until the reader pressed something
-    /// else -- which for the last keystroke of a paragraph is never.
+    /// And it starts a clock to do it with, which is not the animation's.
+    ///
+    /// Nothing would come back for the tree until the reader pressed
+    /// something else -- which for the last keystroke of a paragraph is
+    /// never. That used to be the ticker, kept awake for as long as a tree
+    /// owed an answer, and `Ticker::start` answers `None` over a network:
+    /// on ssh the colours simply stopped arriving. Both halves, because
+    /// either one passes with the other broken.
     #[test]
-    fn a_slow_grammar_keeps_the_ticker_awake_until_it_has_caught_up() {
+    fn a_slow_grammar_starts_a_clock_of_its_own() {
         let (_scratch, mut app) = editing("catch-ticker", "sample.rs", SOURCE);
+        let (sender, heard) = obelus_app::event::channel();
+        app.events_for_test(sender);
         app.current_buffer_mut()
             .expect("a buffer")
             .hold_syntax_back_for_test();
@@ -792,15 +799,13 @@ mod catching_up {
         support::type_text(&mut app, "x");
         support::lay_out(&mut app, 60, 12);
         assert!(
-            app.is_waking(),
-            "nothing will come back for the tree that was left behind"
+            !app.is_waking(),
+            "the tree that was left behind is being carried by the animation"
         );
 
-        app.handle(Event::Tick);
-        support::lay_out(&mut app, 60, 12);
         assert!(
-            !app.is_waking(),
-            "the screen is still being woken for a tree that has caught up"
+            support::waited_for(&heard, |event| matches!(event, Event::SyntaxSettled)),
+            "nothing will come back for the tree that was left behind"
         );
     }
 
@@ -825,7 +830,7 @@ mod catching_up {
             "this test is about a difference that was not there"
         );
 
-        held.handle(Event::Tick);
+        held.handle(Event::SyntaxSettled);
         assert_eq!(
             support::text_block(&support::render(&mut kept, 60, 12)),
             support::text_block(&support::render(&mut held, 60, 12)),

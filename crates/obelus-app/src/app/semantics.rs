@@ -361,10 +361,13 @@ impl App {
     /// Says the document has just changed, so that it is asked about once
     /// it stops.
     pub(super) fn will_settle(&mut self, id: DocumentId) {
-        self.settling = Some(Settling {
-            buffer: id,
-            since: std::time::Instant::now(),
-        });
+        self.settling = Some(Settling { buffer: id });
+        // Started again by every change, so what it measures is the reader
+        // stopping. It used to be a frame that asked whether they had, and
+        // frames come from the animation: a reader over a network typed and
+        // the colours never caught up, because nothing was animated to keep
+        // the frames coming.
+        self.changes_pause = self.come_back_in(Self::SETTLES_AFTER, Event::ChangesSettled);
     }
 
     /// Asks what a server works out about a document the reader has
@@ -376,13 +379,10 @@ impl App {
     /// finishes any, and a reader who has not saved has changed the file
     /// without anything asking about it since.
     pub(super) fn settle_changes(&mut self) {
-        let Some(settling) = self.settling else {
+        let Some(settling) = self.settling.take() else {
             return;
         };
-        if settling.since.elapsed() < Self::SETTLES_AFTER {
-            return;
-        }
-        self.settling = None;
+        self.changes_pause = None;
         // Not the semantic tokens. They are a whole file's worth of answer
         // per ask, which is why they wait for a save -- and while the
         // reader types, the tree Obelus parses itself is what answers for

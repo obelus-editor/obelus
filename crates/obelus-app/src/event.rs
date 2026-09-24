@@ -83,6 +83,26 @@ pub enum Event {
     /// a redraw a reader did not ask for is a redraw that can only get in the
     /// way.
     Tick,
+    /// The pause after typing into the notes ran out.
+    NotesSettled,
+    /// Long enough since a tree was left behind its text to catch it up.
+    ///
+    /// A grammar too slow to keep up with typing owes an answer, and this
+    /// is what comes back for it.
+    SyntaxSettled,
+    /// A document the reader has stopped changing is ready to be asked
+    /// about.
+    ///
+    /// What a server works out about a whole file -- its colours, its
+    /// hints -- which is asked where the file has stopped moving.
+    ChangesSettled,
+    /// The pointer has rested long enough to be asking.
+    PointerRested,
+    /// A server asked what a rename changes has had long enough.
+    ///
+    /// The rename happens without it. A reader who asked for a file to be
+    /// called something else is owed the file being called it.
+    RenameOverdue,
     /// A walk of the project found something.
     Search(obelus_search::Event),
     /// A walk of the history found something out.
@@ -317,6 +337,55 @@ impl Ticker {
 impl Drop for Ticker {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// A one-shot timer sending one event when a wait has run out.
+///
+/// What comes back for work that is owed at a moment rather than drawn at a
+/// frame rate: the notes once the reader stops typing, a tree a slow
+/// grammar left behind, a rename whose server has stopped answering.
+///
+/// All three hung on [`Ticker`], and that was wrong twice. An animation is
+/// a luxury and `Ticker::start` says so by refusing over a network -- so on
+/// ssh none of these ever happened, and a note typed there reached no file
+/// until the reader walked out of it. And a repeating clock asks twelve
+/// times a second for an answer that is "not yet" until the one time it is
+/// not, waking the screen for each. A pause is a moment and an animation is
+/// a frame rate; the two only ever looked alike.
+///
+/// The event is named by whoever starts one, because the mechanism is
+/// shared and the meaning is not: what these three are waiting for has
+/// nothing in common but the waiting.
+///
+/// Dropping it, or starting another in its place, ends the one before -- an
+/// abort has no window, the same reason [`Ticker`] aborts. Whether it is
+/// started again by each key or left alone until it fires belongs to the
+/// caller, and the three differ: the notes measure the reader *stopping* and
+/// so start again on every key, while a tree that is behind wants catching
+/// up soon whether or not the reader has paused.
+#[derive(Debug)]
+pub struct Pause {
+    waiting: tokio::task::JoinHandle<()>,
+}
+
+impl Pause {
+    /// Starts one, to send `event` in `after`.
+    #[must_use]
+    pub fn start(sender: Sender<Event>, after: Duration, event: Event) -> Self {
+        let waiting = obelus_runtime::handle().spawn(async move {
+            tokio::time::sleep(after).await;
+            // Nothing is left to send to, which is Obelus leaving. Every one
+            // of these has something else that does its work on the way out.
+            let _ = sender.send(event);
+        });
+        Self { waiting }
+    }
+}
+
+impl Drop for Pause {
+    fn drop(&mut self) {
+        self.waiting.abort();
     }
 }
 

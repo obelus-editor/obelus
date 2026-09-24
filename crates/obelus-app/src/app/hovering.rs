@@ -224,15 +224,6 @@ impl App {
         }
     }
 
-    /// Whether anything is waiting on the clock, so the frame asks to be
-    /// woken.
-    pub(super) fn is_resting(&self) -> bool {
-        self.dwell().is_some_and(|dwell| {
-            self.resting
-                .is_some_and(|resting| !resting.asked && resting.since.elapsed() < dwell)
-        })
-    }
-
     /// The place in the document a screen cell is over, if it is over one.
     pub(super) fn place_under(&self, x: u16, y: u16) -> Option<(LineNumber, CharColumn)> {
         let buffer = self.current_buffer()?;
@@ -275,6 +266,16 @@ impl App {
             since: std::time::Instant::now(),
             asked: reading,
         });
+        // What comes back when the rest has been long enough. Only where
+        // there is something to wait for: a rest that has already asked is
+        // not being timed, and a reader who set the delay to zero has said
+        // the pointer asks nothing. It used to be a frame that noticed, and
+        // frames come from the animation -- so over a network the pointer
+        // could rest for ever and never ask.
+        self.hover_pause = match (reading, self.dwell()) {
+            (false, Some(dwell)) => self.come_back_in(dwell, crate::event::Event::PointerRested),
+            _ => None,
+        };
         // The answers on screen were about wherever the pointer was.
         if !reading {
             if self.hover.as_ref().is_some_and(Hover::pointed) {
@@ -326,6 +327,17 @@ impl App {
     #[must_use]
     pub fn rest_has_asked_for_test(&self) -> bool {
         self.resting.is_some_and(|resting| resting.asked)
+    }
+
+    /// Whether the rest the pointer is on is being timed.
+    ///
+    /// For a test, which cannot see a clock any other way. It used to ask
+    /// whether the frame wanted waking, because the animation was what did
+    /// the timing; the rest has a clock of its own now and the animation
+    /// knows nothing about it.
+    #[must_use]
+    pub fn rest_has_a_clock_for_test(&self) -> bool {
+        self.hover_pause.is_some()
     }
 
     /// Hands the panel an answer to a question the pointer asked, about

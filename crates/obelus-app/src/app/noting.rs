@@ -128,20 +128,32 @@ impl App {
         }
     }
 
+    /// Says the notes have just been typed into, so they are written down
+    /// once the reader stops.
+    ///
+    /// Three hundred milliseconds, the same pause a slow grammar waits out:
+    /// what it is for is the same, which is a burst of keys costing one
+    /// piece of work rather than one each. Started again by every key, so
+    /// what it measures is the reader stopping rather than the reader
+    /// starting.
+    ///
+    /// A clock of its own -- [`crate::event::Pause`] -- and not the
+    /// animation's tick, which is where this used to hang. That clock does
+    /// not run over a network, and a note that reaches no file until the
+    /// reader walks out of it is not something a reader should have to have
+    /// a local terminal for.
+    fn the_notes_will_settle(&mut self) {
+        self.notes_pause =
+            self.come_back_in(Self::SETTLES_AFTER, crate::event::Event::NotesSettled);
+    }
+
     /// Writes the notes down once the reader has stopped typing in them.
     ///
-    /// Called from the clock, which is awake for as long as this is
-    /// waiting. Three hundred milliseconds, the same pause a slow grammar
-    /// waits out: what it is for is the same, which is a burst of keys
-    /// costing one piece of work rather than one each.
+    /// The clock arriving *is* the reader having stopped, so there is no
+    /// moment to check it against. Nothing else reaches here, and one that
+    /// arrives with nothing waiting finds nothing to write.
     pub(super) fn settle_notes(&mut self) {
-        let Some(since) = self.notes_settling else {
-            return;
-        };
-        if since.elapsed() < Self::SETTLES_AFTER {
-            return;
-        }
-        self.notes_settling = None;
+        self.notes_pause = None;
         self.write_the_notes();
     }
 
@@ -197,7 +209,7 @@ impl App {
 
     /// Does them, and says whether any was about a note that had gone.
     fn write_them_down(&mut self, changes: Vec<obelus_git::todo::Change>) -> bool {
-        self.notes_settling = None;
+        self.notes_pause = None;
         if changes.is_empty() {
             return false;
         }
@@ -691,7 +703,7 @@ impl App {
             TodoOutcome::Ignored => false,
             TodoOutcome::Consumed => {
                 if waiting {
-                    self.notes_settling = Some(std::time::Instant::now());
+                    self.the_notes_will_settle();
                 }
                 true
             }

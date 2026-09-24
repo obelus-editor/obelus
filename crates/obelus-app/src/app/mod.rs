@@ -478,15 +478,24 @@ pub struct App {
     /// on the row they were reading rather than on the file they happen to
     /// have open.
     stood_on: Option<PathBuf>,
-    /// When the notes were last typed into, so they can be written once the
-    /// reader stops.
+    /// What will come back for the notes, to write down what was typed.
     ///
     /// Structural changes -- a note added, finished, moved -- are written
-    /// the moment they happen and never come through here: they are one
-    /// act each, and there is nothing to wait for. Typing is not one act,
-    /// and it used to be written when the reader left the page. There is no
-    /// leaving a document, so this is the moment instead.
-    notes_settling: Option<std::time::Instant>,
+    /// the moment they happen and never wait: they are one act each, and
+    /// there is nothing to wait for. Typing is not one act, and it used to
+    /// be written when the reader left the page. There is no leaving a
+    /// document, so a pause is the moment instead.
+    notes_pause: Option<crate::event::Pause>,
+    /// What will come back for a tree that is behind its text.
+    ///
+    /// One for all the open documents, because catching up asks every one
+    /// of them: which are behind is a question with an answer, and a clock
+    /// each would be a clock per file for a question asked once.
+    syntax_pause: Option<crate::event::Pause>,
+    /// What will come back for a document the reader has stopped changing.
+    changes_pause: Option<crate::event::Pause>,
+    /// What will come back for a pointer that has stopped moving.
+    hover_pause: Option<crate::event::Pause>,
     /// A rename of a file, from the question to the act.
     ///
     /// The gap between the two is a round trip: a server that knows the
@@ -693,7 +702,10 @@ impl App {
             listing: Vec::new(),
             found: Vec::new(),
             stood_on: None,
-            notes_settling: None,
+            notes_pause: None,
+            syntax_pause: None,
+            changes_pause: None,
+            hover_pause: None,
             renaming: None,
             opened: std::collections::HashSet::new(),
             history: history_view::Showing::default(),
@@ -1278,6 +1290,36 @@ impl App {
             .any(Buffer::syntax_is_behind)
     }
 
+    /// How long a tree may be behind its text before it is caught up.
+    ///
+    /// What the animation's tick used to give this by accident, kept at the
+    /// same length so that the colours arrive when they always have: long
+    /// enough that a burst of keys is one parse, short enough that the
+    /// reader is still looking at what they typed.
+    const CATCHES_UP_AFTER: std::time::Duration = std::time::Duration::from_millis(80);
+
+    /// Comes back for the trees that owe an answer, unless something
+    /// already is.
+    ///
+    /// Set by the first frame that notices and not put back by the ones
+    /// after it -- the same rule the watcher's debouncing follows, and for
+    /// the same reason: a deadline that slid would never arrive while the
+    /// reader kept typing, which is exactly when a tree is behind.
+    ///
+    /// Asked from what is true rather than started where a document
+    /// changes, which is how the ticker was asked and is what stops a clock
+    /// outliving its reason.
+    fn catch_up_soon(&mut self) {
+        if !self.anything_behind() {
+            self.syntax_pause = None;
+            return;
+        }
+        if self.syntax_pause.is_some() {
+            return;
+        }
+        self.syntax_pause = self.come_back_in(Self::CATCHES_UP_AFTER, Event::SyntaxSettled);
+    }
+
     /// Works out what every document that owes it means now.
     ///
     /// Everything open rather than what is on screen: a tree left behind on
@@ -1295,6 +1337,27 @@ impl App {
         {
             buffer.settle_syntax();
         }
+    }
+
+    /// A clock to come back with, where there is a loop to come back to.
+    ///
+    /// The one place that knows a timer needs the loop's channel. `None`
+    /// without one, which is a test driving its own events: whether
+    /// something is waiting is decided either way, and what a test drives
+    /// by hand is the event the clock would have sent.
+    ///
+    /// Every wait Obelus keeps goes through here -- the notes, a tree
+    /// behind its text, a rename's server, a document's standing questions
+    /// and the pointer's rest -- so that the answer to "is there anything
+    /// to come back from" is written once.
+    fn come_back_in(
+        &self,
+        after: std::time::Duration,
+        event: Event,
+    ) -> Option<crate::event::Pause> {
+        self.events
+            .clone()
+            .map(|events| crate::event::Pause::start(events, after, event))
     }
 
     /// Starts or stops the ticker, and does nothing where it is already
@@ -1588,21 +1651,14 @@ impl App {
         };
         self.in_transcript(|chat| chat.doing(doing));
         self.show_what_is_running();
-        // A grammar too slow to keep up with typing leaves a tree owing an
-        // answer, and the ticker is what comes back for it: the reader
-        // stops, the next tick lands, and the colours catch up.
-        self.animate(
-            self.wants_animating(doing.is_some())
-                || self.anything_behind()
-                || self.is_resting()
-                || self.settling.is_some()
-                // And a rename waiting on a server: the clock is what ends
-                // that wait, so a clock that is asleep would leave the
-                // reader's file where it was for ever.
-                || self.renaming_is_waiting()
-                // And the notes waiting to be written down.
-                || self.notes_settling.is_some(),
-        );
+        // Only the animation, which is what the ticker is for. Everything
+        // else that once rode this question waits on a clock of its own:
+        // work that is owed is owed on a machine with nothing moving on it.
+        self.animate(self.wants_animating(doing.is_some()));
+        // Which for a tree behind its text is asked from what is true
+        // rather than started where a document changes -- the same way the
+        // ticker was asked, and what stops a clock outliving its reason.
+        self.catch_up_soon();
 
         // Which rows the list will draw is what decides which rows need
         // their matched characters worked out, and only the geometry knows
@@ -1657,12 +1713,6 @@ impl App {
         // And the answer about a place, which the pointer resting is what
         // asks for: this is where the resting is noticed.
         self.settle_hover();
-        // And what a server works out about a file the reader has stopped
-        // changing, which is noticed the same way.
-        self.settle_changes();
-        // And what a server works out about a file the reader has stopped
-        // changing, which is noticed the same way.
-        self.settle_changes();
         // And what the call under the caret takes. It is the third of the
         // panels that belong to a place in the file, and it was the one
         // that never asked whether the file was still what the reader is
@@ -1887,21 +1937,31 @@ impl App {
             // One change for the whole of it, so undoing a paste is one
             // step rather than however many lines it happened to be.
             Event::Paste(text) => self.paste_text(&text),
+            // A frame of the one thing moving, and nothing else: what is
+            // owed at a moment is owed on a machine with nothing animated
+            // on it, and each of the three below says when it wants asking.
             Event::Tick => {
                 self.phase = self.phase.wrapping_add(1);
                 self.drag_on();
-                // The pause the slow grammars are waiting for. A tick that
-                // lands mid-word settles the tree that word began in, which
-                // is one parse for a burst of typing rather than one per
-                // key.
-                self.settle_syntax();
-                self.settle_notes();
-                // And the end of the wait for a server that was asked what
-                // a rename changes. A file the reader asked to be called
-                // something else is not held up by a subprocess that
-                // stopped talking.
-                self.rename_without_them();
             }
+            // The notes, once the reader has stopped typing into them.
+            Event::NotesSettled => self.settle_notes(),
+            Event::SyntaxSettled => {
+                // Let go of first: `catch_up_soon` starts another only when
+                // there is none, and one held after it has fired is a tree
+                // that never gets a second chance.
+                self.syntax_pause = None;
+                self.settle_syntax();
+            }
+            // The rename's own clock is inside the wait it belongs to, so
+            // there is nothing to let go of here: the wait ending drops it.
+            Event::ChangesSettled => self.settle_changes(),
+            // The rest asking what is under it. `settle_hover` is still
+            // asked every frame, because the rest of what it does is
+            // letting go of an answer the pointer has moved off -- that is
+            // about where the pointer is now, not about a moment passing.
+            Event::PointerRested => self.settle_hover(),
+            Event::RenameOverdue => self.rename_without_them(),
             Event::Search(obelus_search::Event::Matches {
                 generation,
                 hits,
@@ -2968,8 +3028,6 @@ pub(crate) struct Resting {
 pub(crate) struct Settling {
     /// Which document.
     pub(crate) buffer: DocumentId,
-    /// When it last changed.
-    pub(crate) since: std::time::Instant,
 }
 
 /// A path as it should be read: relative to the root when it lies under it.

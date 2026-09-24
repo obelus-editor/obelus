@@ -3,7 +3,10 @@
 mod support;
 
 use crossterm::event::KeyCode;
-use obelus_app::app::{App, dispatch};
+use obelus_app::{
+    app::{App, dispatch},
+    event::Event,
+};
 use obelus_buffer::Buffer;
 use obelus_command::Command;
 
@@ -371,19 +374,24 @@ fn the_question_is_on_the_row_the_caret_is_in() {
     );
 }
 
-/// A rename waiting on a server keeps the clock awake.
+/// A rename waiting on a server carries the clock that ends it.
 ///
-/// The clock is what ends the wait when a server stops answering, and the
-/// clock only runs while something says it is needed. Without this, the
-/// five-second limit is a comment: a file the reader asked to rename sits
-/// where it was until they happen to press something else.
+/// Without one the five-second limit is a comment: a file the reader asked
+/// to rename sits where it was until they happen to press something else.
+/// It used to be the animation's clock, which is the same comment on any
+/// machine with nothing animated on it -- `Ticker::start` answers `None`
+/// over a network, which is exactly where a server is most likely to be
+/// the one that stops answering.
+///
+/// Three things, because each passes with the other two broken: the wait
+/// has a clock, the animation is not asked to carry it, and what the clock
+/// sends is what makes the rename happen.
 #[test]
-fn a_rename_waiting_on_a_server_keeps_the_clock_awake() {
+fn a_rename_waiting_on_a_server_carries_the_clock_that_ends_it() {
     use obelus_syntax::LanguageId;
-    use serde_json::json;
 
-    let (_scratch, mut app) = reading("rename-clock");
-    let (sender, heard) = obelus_app::event::channel();
+    let (scratch, mut app) = reading("rename-clock");
+    let (sender, _heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
     app.declared_for_test(LanguageId::Rust, will_rename_rust());
@@ -394,19 +402,27 @@ fn a_rename_waiting_on_a_server_keeps_the_clock_awake() {
     answer(&mut app, "src/lsp/hints.rs");
     support::lay_out(&mut app, 76, 18);
     assert!(
-        app.is_waking(),
+        app.renaming_has_a_clock_for_test(),
         "nothing will come back for a server that stops answering"
     );
-
-    let id = request_id(&support::heard_requests(
-        &heard,
-        "workspace/willRenameFiles",
-        1,
-    ));
-    app.answer_for_test(LanguageId::Rust, id, Ok(json!(null)));
-    support::lay_out(&mut app, 76, 18);
     assert!(
         !app.is_waking(),
-        "the screen is still being woken for a rename that has happened"
+        "the rename is still being carried by the animation"
+    );
+
+    // The server never answers, and the clock goes off.
+    app.handle(Event::RenameOverdue);
+    assert!(
+        !app.renaming_has_a_clock_for_test(),
+        "the wait did not end when its clock went off"
+    );
+    assert!(
+        scratch.join("src/lsp/hints.rs").exists(),
+        "a server that stopped answering held the move up"
+    );
+    let said = app.note().unwrap_or_default().to_string();
+    assert!(
+        said.contains("did not answer"),
+        "the reader was not told why the references were left alone: {said}"
     );
 }

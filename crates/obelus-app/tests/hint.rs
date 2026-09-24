@@ -541,17 +541,32 @@ fn a_file_that_stops_changing_is_asked_about_again() {
     app.declared_for_test(LanguageId::Rust, json!({ "inlayHintProvider": true }));
     let _ = support::heard_requests(&heard, "textDocument/inlayHint", 1);
 
-    // Typed, and nothing asked: the reader is still going.
+    // Typed, and then they stop -- which is what the pause the change
+    // started comes back to say. Waited for rather than slept through:
+    // that it arrives at all is the half of this that was broken, since
+    // the frame that used to notice came from the animation and there is
+    // none of that over a network.
+    //
+    // Before the drain below, which walks the channel for two seconds and
+    // would swallow this on its way past.
     support::type_text(&mut app, "y");
     support::render(&mut app, 76, 18);
+    assert!(
+        support::waited_for(&heard, |event| matches!(
+            event,
+            obelus_app::event::Event::ChangesSettled
+        )),
+        "nothing came back to say the reader had stopped"
+    );
+
+    // And nothing has asked yet: the clock arriving is not the asking, and
+    // between two keystrokes there was nothing to ask about.
     assert!(
         support::heard_requests(&heard, "textDocument/inlayHint", 0).is_empty(),
         "a question went out between two keystrokes"
     );
 
-    // And then they stop.
-    std::thread::sleep(App::SETTLES_AFTER + std::time::Duration::from_millis(50));
-    support::render(&mut app, 76, 18);
+    app.handle(obelus_app::event::Event::ChangesSettled);
     let asked = support::heard_requests(&heard, "textDocument/inlayHint", 1);
     assert_eq!(
         asked.len(),

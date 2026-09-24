@@ -2434,19 +2434,75 @@ fn typing_is_written_down_once_the_reader_stops() {
         "every keystroke wrote the file:\n{at_once}"
     );
 
-    // The clock is what comes back for it, which is why it is kept awake.
-    // Asked after a frame, because that is where the question is answered.
-    support::lay_out(&mut app, 76, 18);
-    assert!(app.is_waking(), "nothing will come back to write the notes");
-    std::thread::sleep(std::time::Duration::from_millis(350));
-    app.handle(Event::Tick);
+    app.handle(Event::NotesSettled);
     let after = std::fs::read_to_string(&file).expect("the notes");
     assert!(
         after.contains("!!wire the counts"),
         "the pause did not write the notes:\n{after}"
     );
+}
+
+/// And the pause is the notes' own, not the animation's.
+///
+/// It used to be `Event::Tick` that came back for them, which meant the
+/// notes were written down only where there was something to animate:
+/// `Ticker::start` answers `None` over a network, so a reader on ssh typed
+/// a note and nothing wrote it until they walked out of it. Both halves
+/// here -- the tick does not write them, and the notes do not keep the
+/// animation awake -- because either one alone passes with the other
+/// broken.
+#[test]
+fn the_notes_do_not_wait_on_the_animation() {
+    let scratch = tree("unticked", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let file = obelus_git::todo::path(scratch.path());
+
+    support::type_text(&mut app, "%%");
+
+    // The tick is not what comes back for them, so however many arrive the
+    // words stay off the disk until the notes' own clock does.
+    app.handle(Event::Tick);
+    let ticked = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        !ticked.contains("%%wire the counts"),
+        "the animation's clock is still writing the notes:\n{ticked}"
+    );
+
+    // And nothing is being woken twelve times a second to ask. Asked after
+    // a frame, because that is where the question is answered.
     support::lay_out(&mut app, 76, 18);
-    assert!(!app.is_waking(), "the clock is still being kept awake");
+    assert!(
+        !app.is_waking(),
+        "the notes are still keeping the animation awake"
+    );
+
+    app.handle(Event::NotesSettled);
+    let after = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        after.contains("%%wire the counts"),
+        "the notes' own pause did not write them:\n{after}"
+    );
+}
+
+/// And it arrives on its own, from the loop's channel.
+///
+/// The two tests above hand `Event::NotesSettled` over by name, which says
+/// what Obelus does with one and nothing about whether one ever comes. This
+/// is the half that was broken: a pause that is never started is a note
+/// that is never written.
+#[test]
+fn the_pause_comes_back_by_itself() {
+    let scratch = tree("arrives", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let (sender, events) = obelus_app::event::channel();
+    app.events_for_test(sender);
+
+    support::type_text(&mut app, "&&");
+
+    assert!(
+        support::waited_for(&events, |event| matches!(event, Event::NotesSettled)),
+        "nothing came back to write the notes down"
+    );
 }
 
 /// And closing the document writes what the pause has not yet.

@@ -428,6 +428,56 @@ fn an_answer_about_somewhere_the_reader_has_left_is_dropped() {
     );
 }
 
+/// And when the rest's clock goes off, the rest asks.
+///
+/// The other half of the one below: that a clock is started says nothing
+/// about what its arrival does, and the two break apart. Nothing else in
+/// the suite covers it -- every other assertion about a rest is that it has
+/// *not* asked -- so `Event::PointerRested` doing nothing was a break that
+/// left the whole suite green.
+///
+/// No frame between the rest and the clock, which is the point: a frame
+/// would notice the dwell by itself, and what is being asked here is
+/// whether anything causes one.
+#[test]
+fn the_rest_asks_when_its_clock_goes_off() {
+    use obelus_app::event::{Event, Pointer};
+
+    let (scratch, mut app) = editing("hover-asks", SOURCE);
+    let (sender, _heard) = obelus_app::event::channel();
+    app.events_for_test(sender);
+    // Short enough to wait out in a test, long enough that the frame just
+    // below the pointer's arrival is inside it.
+    let settings = scratch.path().join("config.toml");
+    std::fs::write(&settings, "hover_delay = 50\n").expect("writing the settings");
+    app.config_file_for_test(settings);
+
+    let dump = support::render(&mut app, 76, 18);
+    let (y, x) = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
+        .enumerate()
+        .find_map(|(y, row)| row.find("iter").map(|x| (y, x)))
+        .expect("a word to rest on");
+    app.handle(Event::Pointer {
+        kind: Pointer::Moved,
+        x: u16::try_from(x).expect("a column"),
+        y: u16::try_from(y).expect("a row"),
+    });
+    support::lay_out(&mut app, 76, 18);
+    assert!(
+        !app.rest_has_asked_for_test(),
+        "the question was asked before the rest was long enough"
+    );
+
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    app.handle(Event::PointerRested);
+    assert!(
+        app.rest_has_asked_for_test(),
+        "the rest's clock went off and nothing asked what was under it"
+    );
+}
+
 /// Zero is the reader saying the pointer asks nothing: the key still
 /// does, and nothing waits on a clock.
 #[test]
@@ -435,6 +485,9 @@ fn a_rest_of_nothing_asks_nothing() {
     use obelus_app::event::{Event, Pointer};
 
     let (scratch, mut app) = editing("hover-never", SOURCE);
+    // A clock needs the loop's channel, and the rest is timed by one.
+    let (sender, _heard) = obelus_app::event::channel();
+    app.events_for_test(sender);
     let dump = support::render(&mut app, 76, 18);
     let (y, x) = support::text_block(&dump)
         .lines()
@@ -451,12 +504,18 @@ fn a_rest_of_nothing_asks_nothing() {
         support::lay_out(app, 76, 18);
     };
 
-    // The frame asks to be woken while a rest is being timed, which is the
-    // only thing about a rest that can be seen without a server.
+    // A clock of the rest's own is what times it, which is the only thing
+    // about a rest that can be seen without a server. It used to be the
+    // animation asked to keep waking -- and over a network nothing is
+    // animated, so the pointer could rest for ever and never ask.
     point(&mut app, x, y);
     assert!(
-        app.is_waking(),
+        app.rest_has_a_clock_for_test(),
         "nothing is waiting for the rest to be long enough"
+    );
+    assert!(
+        !app.is_waking(),
+        "the rest is still being timed by the animation"
     );
     assert!(
         !app.rest_has_asked_for_test(),
@@ -468,7 +527,10 @@ fn a_rest_of_nothing_asks_nothing() {
     std::fs::write(&settings, "hover_delay = 0\n").expect("writing the settings");
     app.config_file_for_test(settings);
     point(&mut app, x + 1, y);
-    assert!(!app.is_waking(), "a rest of nothing is still being timed");
+    assert!(
+        !app.rest_has_a_clock_for_test(),
+        "a rest of nothing is still being timed"
+    );
     assert!(
         !app.rest_has_asked_for_test(),
         "a rest of nothing asked at once, which is the opposite of what it says"

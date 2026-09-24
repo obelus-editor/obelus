@@ -843,6 +843,44 @@ thing on screen that has to be legible without them. `Ticker::start` still
 answers `None` over a network, where an animation is a luxury paid for in
 round trips.
 
+**Nothing but the animation waits on the animation's clock.** Answering
+`None` over a network is right for a sheen and wrong for anything the reader
+is owed, and five things that are owed hung on the tick or on the frames it
+kept coming: the notes' three hundred milliseconds, a tree a slow grammar
+left behind, the five seconds a rename gives a server, the standing
+questions a server is asked once the reader stops, and the pointer's rest.
+So over ssh none of the five ever happened -- a note typed reached no file
+until the reader walked out of it, the colours stopped arriving, a rename
+waited on a stuck server for the rest of the session, and the pointer could
+rest for ever and never ask. Each has a one-shot clock of its own now
+(`event::Pause`, an event each, all started through `App::come_back_in`), so
+`animate` asks one question again -- whether anything is *moving* -- and
+`Event::Tick` is the animation's: a phase and a drag. A pause is a moment
+and an animation is a frame rate; the two only ever looked alike.
+
+The waiting is the shared part and the meaning is not, so each waiter names
+its own event and its own rule for restarting one. The notes and a
+document's standing questions measure the reader *stopping*, so every key
+starts theirs again; a tree that is behind wants catching up soon whether or
+not they have paused, so `catch_up_soon` is set by the first frame that
+notices and not put back by the ones after -- which is the watcher's
+debouncing rule, kept for the same reason. Where the clock has an owner it
+lives in it: the rename's is a field on the wait, so finishing takes the
+wait and drops the clock with it.
+
+Saying the deadline twice is what a repeating clock forces, and three of
+these said it twice. `rename_without_them` was asked on every tick whether
+the question was five seconds old; the notes and the standing questions each
+kept an `Instant` for a frame to measure. A one-shot arriving *is* the wait
+having run out, so those checks went and `Waiting::asked`, `notes_settling`
+and `Settling::since` went with them. The one that stayed is the pointer's,
+and the rule is what decides it: `settle_hover` is still reached every
+frame, because the rest of what it does is letting go of an answer the
+pointer has moved off -- that is about where the pointer is now, not about a
+moment passing -- so a frame arriving for some other reason must not be
+taken for the dwell. **A guard on a deadline earns its place exactly when
+something other than that deadline's own clock can reach the work.**
+
 **A change that has happened is the working tree's; a change that has not is
 the agent's to show.** An agent that edits a file leaves the file different
 from the last commit, and drawing that is what Obelus does all day: the

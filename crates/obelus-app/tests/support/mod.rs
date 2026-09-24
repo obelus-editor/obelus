@@ -770,6 +770,27 @@ pub(crate) fn place_of(app: &mut App, needle: &str) -> (u16, u16) {
     )
 }
 
+/// Whether an event the application started a clock for ever arrives.
+///
+/// Generously longer than any pause Obelus keeps: what is being asked is
+/// whether anything comes back at all, and a machine under load is not a
+/// failure. Everything else on the channel is walked past -- a clock is not
+/// the only thing that sends.
+pub(crate) fn waited_for(
+    heard: &std::sync::mpsc::Receiver<obelus_app::event::Event>,
+    which: impl Fn(&obelus_app::event::Event) -> bool,
+) -> bool {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while let Some(left) = until.checked_duration_since(std::time::Instant::now()) {
+        match heard.recv_timeout(left) {
+            Ok(event) if which(&event) => return true,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    false
+}
+
 /// The messages of a kind that Obelus wrote, as the echo gave them back.
 ///
 /// Waits for `want` of them and then stops waiting, so a test that

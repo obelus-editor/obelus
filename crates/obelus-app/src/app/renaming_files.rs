@@ -18,7 +18,7 @@
 
 use std::{
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use obelus_lsp::{edits::Wanted, renaming};
@@ -74,9 +74,15 @@ pub(super) struct Waiting {
     /// reader: one is "there was nothing to update" and the other is "ask
     /// me again when I have finished indexing".
     pub(super) unready: bool,
-    /// When it was asked, so a server that never answers does not hold the
-    /// move forever.
-    pub(super) asked: Instant,
+    /// What comes back when it has waited long enough.
+    ///
+    /// Held here rather than beside the rename, so that it cannot outlive
+    /// what it is about: the wait is one field on the application and
+    /// finishing takes it, which drops this with it. It used to be the
+    /// animation's tick that came back, which meant a rename over a network
+    /// -- where there is no tick -- waited on a stuck server for the rest
+    /// of the session.
+    pub(super) pause: Option<crate::event::Pause>,
 }
 
 impl App {
@@ -173,7 +179,7 @@ impl App {
             waiting,
             wanted: Wanted::default(),
             unready: false,
-            asked: Instant::now(),
+            pause: self.come_back_in(ANSWERS_WITHIN, crate::event::Event::RenameOverdue),
         }));
     }
 
@@ -281,22 +287,33 @@ impl App {
 
     /// Makes the rename a server has stopped answering about.
     ///
-    /// Called from the clock, which is awake for exactly as long as this
-    /// is waiting. A rename that is waiting is the reader's file not being
+    /// Called by the wait's own clock, which lives in the wait and dies
+    /// with it. A rename that is waiting is the reader's file not being
     /// called what they asked for, so the wait has an end.
+    ///
+    /// The clock arriving *is* the wait having run out, and how long that
+    /// is said once, where the clock is started. It used to be said twice
+    /// -- a tick came twelve times a second and each one asked whether
+    /// `asked` was old enough -- which is the shape a repeating clock
+    /// forces and two answers to one question to keep in step.
+    ///
+    /// Nothing else can arrive here: the clock is started once and let go
+    /// of with the wait, so one that has fired is one whose rename is still
+    /// waiting. A rename that finished first left nothing for this to find,
+    /// which `finish_the_rename` says by taking it.
     pub(super) fn rename_without_them(&mut self) {
-        let overdue = matches!(
-            self.renaming.as_ref(),
-            Some(Renaming::Waiting(waiting)) if waiting.asked.elapsed() > ANSWERS_WITHIN
-        );
-        if overdue {
-            self.finish_the_rename(Some("The language server did not answer"));
-        }
+        self.finish_the_rename(Some("The language server did not answer"));
     }
 
-    /// Whether a rename is waiting on a server, and so the clock is needed.
-    pub(super) fn renaming_is_waiting(&self) -> bool {
-        matches!(self.renaming, Some(Renaming::Waiting(_)))
+    /// Whether the rename that is waiting has the clock that ends it.
+    ///
+    /// For the test that asks it. The clock is what makes the five seconds
+    /// above a promise rather than a comment, and a wait carrying none is
+    /// a file that sits where it was until the reader presses something
+    /// else.
+    #[must_use]
+    pub fn renaming_has_a_clock_for_test(&self) -> bool {
+        matches!(&self.renaming, Some(Renaming::Waiting(waiting)) if waiting.pause.is_some())
     }
 
     /// Does what the answers said, and then the rename itself.
