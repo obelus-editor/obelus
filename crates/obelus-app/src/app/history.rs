@@ -1,11 +1,11 @@
-//! What obelus says about a file's history.
+//! What Obelus says about a file's history.
 //!
 //! The reading is [`obelus_git`]; what is here is when to ask it, what to
 //! keep, and how the answers reach the views.
 //!
 //! A commit's message hangs above the first line of its file. Rows on
 //! screen that the file does not have, with no line numbers, that the caret can
-//! walk into and copy from: obelus has one shape for that already, and this is
+//! walk into and copy from: Obelus has one shape for that already, and this is
 //! it. The reader lands *in* it, because they opened this to find out why the
 //! file says what it says and the file itself is a page away. `Held` is what
 //! keeps it apart from a hunk's removed lines -- a deletion is gone and reads
@@ -15,7 +15,7 @@
 use super::*;
 
 impl App {
-    /// What has changed in the current file, if obelus can tell.
+    /// What has changed in the current file, if Obelus can tell.
     #[must_use]
     pub fn changes(&self) -> Option<&obelus_git::Changes> {
         self.changes.as_ref().map(|changed| &changed.changes)
@@ -236,7 +236,7 @@ impl App {
 
     /// Throws away what git said, because the repository has moved.
     ///
-    /// A commit, a checkout, a stage -- in another obelus or in a shell.
+    /// A commit, a checkout, a stage -- in another Obelus or in a shell.
     /// What has changed in a file is a question about the file *and* about
     /// the commit it is being compared with, and the caches here are keyed
     /// only by the file: without this the margin goes on showing a diff

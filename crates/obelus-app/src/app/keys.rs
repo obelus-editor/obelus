@@ -19,7 +19,7 @@ impl App {
     /// cursor nobody could see.
     ///
     /// It answers `false` rather than swallowing the key, so what it has no
-    /// use for goes on to the key table: `ctrl+q` still leaves obelus, and
+    /// use for goes on to the key table: `ctrl+q` still leaves Obelus, and
     /// `ctrl+w` still closes a file from the list of them.
     pub(super) fn editor_key(&mut self, key: &KeyEvent) -> bool {
         if self.layers().any() {
@@ -264,7 +264,7 @@ impl App {
                         (above, text.line_length(above))
                     }
                     // A step of the indent where the cursor is standing
-                    // in one. Spaces are what obelus puts in for a tab, so
+                    // in one. Spaces are what Obelus puts in for a tab, so
                     // taking them out one at a time makes backspace the
                     // one key that does not undo what tab did -- four
                     // presses for one, and the reader counting them.
@@ -741,7 +741,7 @@ fn outdented(line: &str, indent: &str) -> String {
 
 /// The half that closes what a character opens.
 ///
-/// The brackets obelus already matches, and the quotes, which open and
+/// The brackets Obelus already matches, and the quotes, which open and
 /// close with the same character. Not a table of its own for the brackets:
 /// [`obelus_syntax::brackets::PAIRS`] is where the pairs live, and a second
 /// list would be a second list to keep right.
@@ -811,9 +811,9 @@ fn indent_back(text: &obelus_text::Text, line: LineNumber, column: CharColumn) -
 ///
 /// The indentation of the line the reader was on, and one step more where
 /// that line ended by opening something. Not from a grammar: tree-sitter has
-/// queries for this and obelus ships none of them, and the line above is
+/// queries for this and Obelus ships none of them, and the line above is
 /// what a reader would have copied by hand anyway. It is also the rule that
-/// is right in a file obelus cannot parse at all, which is the case a
+/// is right in a file Obelus cannot parse at all, which is the case a
 /// grammar cannot help with.
 fn indent_after(text: &obelus_text::Text, line: LineNumber, column: CharColumn) -> String {
     let characters: Vec<char> = text.line(line).chars().collect();

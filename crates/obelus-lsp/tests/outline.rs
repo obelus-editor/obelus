@@ -90,7 +90,7 @@ fn nothing_is_nothing_however_it_is_said() {
     assert!(outline::symbols_in(Err("no".to_string())).is_empty());
     assert!(outline::symbols_in(Ok(json!(null))).is_empty());
     assert!(outline::symbols_in(Ok(json!([]))).is_empty());
-    // A reply that is not either shape. A server obelus cannot read is a
+    // A reply that is not either shape. A server Obelus cannot read is a
     // server it has no answer from.
     assert!(outline::symbols_in(Ok(json!({ "unexpected": true }))).is_empty());
 }

@@ -5,7 +5,7 @@
 //! leaving the line. The offers are a list, because there are usually
 //! several and only the reader knows which -- and the list is the ordinary
 //! compact one, so it filters by typing and closes on escape like every
-//! other list in obelus.
+//! other list in Obelus.
 
 use obelus_lsp::actions;
 
@@ -283,7 +283,7 @@ impl App {
         });
         match client.request("workspace/executeCommand", &params) {
             // Nothing is waiting for the answer: what a command does, it
-            // does to the project, and what obelus would learn from the
+            // does to the project, and what Obelus would learn from the
             // result is nothing it can act on. What it *sends back* is a
             // `workspace/applyEdit`, and that is where the change to the
             // files actually arrives -- made by `on_asked_edit`, not here.
@@ -295,11 +295,11 @@ impl App {
     /// Asks for one of the whole-file actions, because the file is about
     /// to be written.
     ///
-    /// The only code action obelus sends on its own account, which is the
+    /// The only code action Obelus sends on its own account, which is the
     /// whole of why it says `only`: a request with no kind on it comes
     /// back with every refactoring the cursor happens to be near, and
     /// applying one of those to a file somebody pressed save on would be
-    /// obelus rewriting their code on its own initiative.
+    /// Obelus rewriting their code on its own initiative.
     ///
     /// Says whether anybody was asked. A save nobody could tidy goes ahead
     /// untidied rather than waiting for an answer that is not coming.
@@ -371,7 +371,7 @@ impl App {
     pub(super) fn on_saving(&mut self, id: DocumentId, version: i32, kind: usize, reply: Reply) {
         if !self.unmoved(id, version) {
             // Not a note: the reader pressed save, the save is what they
-            // are waiting for, and this was obelus's own idea.
+            // are waiting for, and this was Obelus's own idea.
             tracing::debug!("the file changed while it was being looked at");
             self.write_now(id.get());
             return;
@@ -466,7 +466,7 @@ impl App {
         self.next_on_save(id.get(), kind + 1);
     }
 
-    /// Hands obelus a filled-in offer worked out against a version of the
+    /// Hands Obelus a filled-in offer worked out against a version of the
     /// document that has been left behind.
     pub fn action_at_version_for_test(&mut self, answer: serde_json::Value, version: i32) {
         let Some(id) = self.current else { return };
@@ -481,7 +481,7 @@ impl App {
         );
     }
 
-    /// Hands obelus what a server offered mid-save, for one of the kinds
+    /// Hands Obelus what a server offered mid-save, for one of the kinds
     /// a save asks about.
     pub fn saving_for_test(&mut self, kind: usize, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
@@ -503,7 +503,7 @@ impl App {
         ON_SAVE
     }
 
-    /// Hands obelus a list of offers, as a server would.
+    /// Hands Obelus a list of offers, as a server would.
     pub fn actions_for_test(&mut self, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
         let version = self

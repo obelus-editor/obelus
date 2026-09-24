@@ -1,4 +1,4 @@
-//! Everything obelus knows, the screen it draws, and the loop between them.
+//! Everything Obelus knows, the screen it draws, and the loop between them.
 //!
 //! The crate at the top, and the only one that has heard of all the others:
 //! the application's state is one thing, and cutting it into several would

@@ -27,7 +27,7 @@ const CONTROL_WIDTH: u16 = 12;
 
 /// What the agent's heading says under its name.
 ///
-/// The one thing about this group that is not true of the others: obelus's
+/// The one thing about this group that is not true of the others: Obelus's
 /// own settings take effect where they stand, and these are about the next
 /// conversation rather than the one on screen. Said once, under the name,
 /// rather than on every row -- a fact about the group is not a fact about
@@ -38,7 +38,7 @@ const WHEN: &str = "What a new conversation starts on.";
 ///
 /// A word rather than a blank: the third state of one of these rows is a
 /// decision like the other two -- leave it to the agent -- and a control
-/// showing nothing would read as one obelus had failed to fill in.
+/// showing nothing would read as one Obelus had failed to fill in.
 const AGENTS_OWN: &str = "Agent's own";
 
 /// How far a card's words are indented from its edge.
@@ -52,7 +52,7 @@ pub struct SettingsView<'a> {
     settings: &'a Settings,
     config: &'a Config,
     theme: &'a Theme,
-    /// The agents the registry lists, with what obelus knows about each.
+    /// The agents the registry lists, with what Obelus knows about each.
     agents: Vec<Listed>,
     /// Why the list could not be fetched, if it could not.
     failure: Option<&'a str>,
@@ -127,7 +127,7 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let bare = |code| obelus_editing::keymap::KeyChord::new(code, KeyModifiers::NONE);
     // Which row the reader is on, where that changes what a key does. The
-    // agent's rows have a `delete` of their own and obelus's do not.
+    // agent's rows have a `delete` of their own and Obelus's do not.
     let focused = settings
         .rows(offering)
         .get(settings.focus())
@@ -152,7 +152,7 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             // sort of thing to one of them.
             .when(settings.row_count(offering) > 0),
         // On an agent's row, and only while there is something to undo:
-        // what `delete` leaves there is not a default of obelus's but the
+        // what `delete` leaves there is not a default of Obelus's but the
         // agent's own answer.
         Hint::common(bare(KeyCode::Delete), AGENTS_OWN)
             .saying("Stop saying what this one starts on, and leave it to the agent")
@@ -499,7 +499,7 @@ struct Row {
     pinned: Option<String>,
 }
 
-/// A heading on the settings page: one of obelus's groups, or the agent.
+/// A heading on the settings page: one of Obelus's groups, or the agent.
 ///
 /// Two, because they are not the same height. The agent's carries a line
 /// saying that what is under it is about the next conversation, which is
@@ -508,7 +508,7 @@ struct Row {
 /// anything is laid out.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Heading {
-    /// One of obelus's own groups.
+    /// One of Obelus's own groups.
     Group(obelus_config::Group),
     /// The active agent, by the name it goes by.
     Agent(String),
@@ -552,7 +552,7 @@ enum Scope {
     Project,
     /// The reader's, wherever this system keeps them.
     Global,
-    /// Nobody's: what obelus ships with.
+    /// Nobody's: what Obelus ships with.
     Default,
 }
 
@@ -574,7 +574,7 @@ enum Aside {
     ///
     /// Always a word and an arrow, a switch included: every one of these
     /// has a third answer -- leave it to the agent -- and a tick has two
-    /// sides to say it with. A tick that meant "off" and "obelus says
+    /// sides to say it with. A tick that meant "off" and "Obelus says
     /// nothing" by turns would be a control that cannot be read.
     Chosen(String, Said),
     /// Nothing at all, on a row that is prose rather than a setting.
@@ -820,7 +820,7 @@ impl SettingsView<'_> {
                 Aside::Chosen(word, said) => {
                     // The reader's choice in the ordinary ink; the agent's
                     // own in the dim one, which everywhere here means "not
-                    // obelus's doing"; and one the agent has stopped
+                    // Obelus's doing"; and one the agent has stopped
                     // offering in the colour a card's failure is in,
                     // because it is a line that will do nothing and the
                     // reader is the only one who can fix it.
@@ -939,7 +939,7 @@ impl SettingsView<'_> {
         // Whether their file speaks about it, which is the same question
         // the line above asks of the project's. Whether what it says differs
         // from the default is a different question and the wrong one: a
-        // reader who wrote a setting down and happened to agree with obelus
+        // reader who wrote a setting down and happened to agree with Obelus
         // would be told they had never been here.
         match self.named.contains(&setting.key) {
             true => Scope::Global,

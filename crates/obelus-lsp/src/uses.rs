@@ -19,7 +19,7 @@ pub const fn supported(capabilities: &ServerCapabilities) -> bool {
 /// The runs a server's answer names.
 ///
 /// The kinds -- read, write, text -- are dropped. Marking a write
-/// differently from a read is a thing some editors do and a thing obelus
+/// differently from a read is a thing some editors do and a thing Obelus
 /// has nowhere to put: the mark is a background, there is one of them, and
 /// a second would be a colour a reader has to learn.
 #[must_use]

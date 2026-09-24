@@ -191,7 +191,7 @@ fn a_deletion_is_reported() {
 
 /// Reading the file must not be reported as a change to it.
 ///
-/// On Linux a read produces `Access(Open(Any))`. Without the filter obelus
+/// On Linux a read produces `Access(Open(Any))`. Without the filter Obelus
 /// reports its own reload's read as a change, which triggers another reload,
 /// which reads again: a loop that never settles, spinning on one file and
 /// redrawing forever. The reload's content comparison does not stop it —

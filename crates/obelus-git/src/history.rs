@@ -250,7 +250,7 @@ fn walk(within: &Path, only: Option<&Path>, mut each: impl FnMut(Option<Commit>)
     };
     // A path that cannot be placed in the repository is not the whole
     // project: asking about one file and being handed every commit is the
-    // wrong answer told confidently. Nothing says what is true -- obelus has
+    // wrong answer told confidently. Nothing says what is true -- Obelus has
     // nothing to show about this path.
     let mut relative = match only {
         Some(path) => match within_repository(&repository, path) {
@@ -381,7 +381,7 @@ fn touches(repository: &gix::Repository, commit: &gix::Commit<'_>, path: &Path) 
 /// One tree diff, run only where a file appears under a name its parent did
 /// not have. See `looking_for_moves` for what the search costs and where it
 /// gives up: past that, a file that was edited on the way reads as having
-/// been written here, which is what obelus said about every move before any
+/// been written here, which is what Obelus said about every move before any
 /// of this.
 fn moved_to(
     repository: &gix::Repository,
@@ -787,7 +787,7 @@ pub fn pushed(within: &Path, asked: &[gix::ObjectId]) -> Option<HashSet<gix::Obj
     Some(found)
 }
 
-/// How far behind the remote may be before obelus stops looking.
+/// How far behind the remote may be before Obelus stops looking.
 ///
 /// A branch that is a few commits ahead is the ordinary case and stops at
 /// once. One that is thousands behind is a reader who has not fetched in

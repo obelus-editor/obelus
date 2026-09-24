@@ -455,7 +455,7 @@ fn what_arrives_is_asked_about_without_being_told_to() {
 /// turn it.
 ///
 /// Both halves matter: a busy server takes seconds over one of these, and
-/// a mark drawn once and never again says obelus has stopped rather than
+/// a mark drawn once and never again says Obelus has stopped rather than
 /// that it is waiting.
 #[test]
 fn the_row_being_waited_on_turns() {
@@ -495,7 +495,7 @@ fn the_row_being_waited_on_turns() {
 ///
 /// Driven through the door the event loop uses, because that is where the
 /// two kinds are told apart: a test that calls the handler itself has
-/// already made the choice obelus is supposed to be making.
+/// already made the choice Obelus is supposed to be making.
 #[test]
 fn the_readers_question_is_the_one_that_opens() {
     let (scratch, mut app) = reading("calls-kinds");
@@ -510,7 +510,7 @@ fn the_readers_question_is_the_one_that_opens() {
     let path = scratch.join("one.rs");
     app.prepared_for_test(json!([item(&path, "run", 0)]));
 
-    // The question obelus asked about the root, read off the wire.
+    // The question Obelus asked about the root, read off the wire.
     let asked = support::heard_requests(&heard, "callHierarchy/incomingCalls", 1);
     let id = asked[0]["id"].as_i64().expect("a request id");
     app.answer_for_test(
@@ -524,7 +524,7 @@ fn the_readers_question_is_the_one_that_opens() {
         "the answer to what the reader asked for was filed instead of opened"
     );
 
-    // And the one nobody asked for, which obelus sent by itself: it says
+    // And the one nobody asked for, which Obelus sent by itself: it says
     // whether the row opens, and opens nothing.
     let asked = support::heard_requests(&heard, "callHierarchy/incomingCalls", 1);
     let id = asked[0]["id"].as_i64().expect("a request id");
@@ -672,7 +672,7 @@ fn the_question_that_goes_out_is_the_one_the_protocol_names() {
 
     dispatch::dispatch(&mut app, Command::SymbolCalls);
     let asked = support::heard_requests(&heard, "textDocument/prepareCallHierarchy", 1);
-    assert_eq!(asked.len(), 1, "obelus asked nobody: {asked:?}");
+    assert_eq!(asked.len(), 1, "Obelus asked nobody: {asked:?}");
     assert!(
         asked[0]["params"]["textDocument"]["uri"]
             .as_str()

@@ -45,7 +45,7 @@ fn open(file: &std::path::Path) -> App {
     app
 }
 
-/// The settings are a dialog: nothing of obelus's own opens over them.
+/// The settings are a dialog: nothing of Obelus's own opens over them.
 #[test]
 fn nothing_of_obeluss_own_opens_over_the_settings() {
     let _taken = SETTINGS.lock().expect("the lock");
@@ -217,7 +217,7 @@ fn walking_the_theme_list_wears_each_one() {
     );
 
     // And a theme that *was* chosen stays chosen: what the list put back is
-    // the theme nobody picked, and the next escape anywhere in obelus has
+    // the theme nobody picked, and the next escape anywhere in Obelus has
     // nothing to do with it.
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Down);
@@ -302,7 +302,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
             .filter_map(|shown| Some(shown.setting()?.name.to_string()))
             .collect::<Vec<_>>()
     };
-    // Every setting obelus has, in the order the groups are written in.
+    // Every setting Obelus has, in the order the groups are written in.
     assert_eq!(rows(&app).len(), obelus_config::ALL.len());
     assert_eq!(rows(&app)[0], "Colour theme");
     assert_eq!(
@@ -453,7 +453,7 @@ fn the_view_closes_and_the_file_is_what_it_shows() {
     support::press(&mut app, KeyCode::Esc);
     assert!(app.settings().is_none(), "the view stayed open");
 
-    // A file written by someone else -- an editor, another obelus -- is what
+    // A file written by someone else -- an editor, another Obelus -- is what
     // a fresh application reads.
     std::fs::write(
         &file,
@@ -470,9 +470,9 @@ fn the_view_closes_and_the_file_is_what_it_shows() {
 /// Settings arriving from another machine are noticed, link and all.
 ///
 /// Which is how anybody keeps settings in git: the file lives in a dotfiles
-/// repository and the place obelus looks is a link to it. What a `git pull`
+/// repository and the place Obelus looks is a link to it. What a `git pull`
 /// rewrites is the file at the far end, so that is the path the change
-/// arrives on -- not the one obelus was told about.
+/// arrives on -- not the one Obelus was told about.
 ///
 /// Broken deliberately by comparing the event's path only against the
 /// configured one: the change arrived on the file the link points at,
@@ -841,7 +841,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     // The theme they chose, and the margin's names written down at exactly
-    // what obelus would have done anyway: a reader who agrees has still
+    // what Obelus would have done anyway: a reader who agrees has still
     // been here, and the column has to say so.
     app.configure(
         obelus_config::Config {
@@ -881,7 +881,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
         "a setting the project has does not say so: {wrap:?}"
     );
     // And beside it, one the reader wrote down and the project says nothing
-    // about -- written at exactly what obelus would have done anyway. The
+    // about -- written at exactly what Obelus would have done anyway. The
     // column asks whether their file speaks about it, not whether it
     // disagrees: a reader who wrote a line and happened to agree was being
     // told they had never been here.
@@ -905,9 +905,9 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     );
 }
 
-/// A project that acquires settings while obelus is looking at it is heard.
+/// A project that acquires settings while Obelus is looking at it is heard.
 ///
-/// Several obelus processes on one project is the ordinary way to work, and
+/// Several Obelus processes on one project is the ordinary way to work, and
 /// the ordinary project has no settings of its own until somebody gives it
 /// some -- from the window next door, or in a pull. Watching only the file
 /// that was there at startup is the "read once at startup" mistake with a
@@ -1414,7 +1414,7 @@ fn the_cards_scroll_only_at_an_edge() {
     assert!(support::text_block(&dump).contains("Agent 0"));
 }
 
-/// The first agent to install is the one obelus talks to, and the next one
+/// The first agent to install is the one Obelus talks to, and the next one
 /// does not take its place.
 ///
 /// The reader pressed the button on a machine with nothing active, so what
@@ -1523,7 +1523,7 @@ fn installed(root: &std::path::Path, id: &str, version: &str) {
 /// An agent the settings name and the machine does not have is not active,
 /// whatever the settings say: the card offers to install it.
 ///
-/// The state a reader was stuck in. obelus decided an agent was installed by
+/// The state a reader was stuck in. Obelus decided an agent was installed by
 /// looking at what `npm` had left lying about, and npm builds its project in an
 /// order of its own -- so a run that was killed halfway left a directory
 /// that looked finished. The card then read "active" over an agent nothing
@@ -1596,7 +1596,7 @@ fn an_agent_that_is_not_installed_is_not_in_use() {
 }
 
 /// A command's key is moved on the keys page, and the table it changes is
-/// the one obelus is running on.
+/// the one Obelus is running on.
 #[test]
 fn a_command_can_be_put_on_another_key() {
     use crossterm::event::KeyModifiers;
@@ -1802,7 +1802,7 @@ fn delete_takes_a_key_away() {
 /// there yet.
 ///
 /// A reader sent to a path that does not exist has been told nothing. The
-/// file obelus would write is the answer to "what are the settings", and it
+/// file Obelus would write is the answer to "what are the settings", and it
 /// is what they need in front of them to change one by hand.
 #[test]
 fn the_settings_file_itself_can_be_read() {
@@ -1830,13 +1830,13 @@ fn the_settings_file_itself_can_be_read() {
     );
 }
 
-/// A setting changed in another obelus is a setting changed here.
+/// A setting changed in another Obelus is a setting changed here.
 ///
-/// The terminal splits the window; obelus does not. So several of them on
+/// The terminal splits the window; Obelus does not. So several of them on
 /// one project is the ordinary way to work, and a settings file read once at
 /// startup would leave every other window holding what the reader has
 /// already moved on from. The watcher says the file changed, and what is in
-/// it is what obelus is set to -- whichever process wrote it.
+/// it is what Obelus is set to -- whichever process wrote it.
 #[test]
 fn a_setting_changed_by_another_obelus_arrives_here() {
     let _turn = SETTINGS
@@ -1850,7 +1850,7 @@ fn a_setting_changed_by_another_obelus_arrives_here() {
     support::lay_out(&mut app, 66, 12);
     assert_eq!(app.theme_name(), "light", "the file was not read");
 
-    // Another obelus writes the file. Nothing else says so: the watcher
+    // Another Obelus writes the file. Nothing else says so: the watcher
     // hands over a path, and everything about what changed is in the file.
     std::fs::write(&file, "theme = \"dark\"\n").expect("the other window");
     app.handle(Event::Watched(obelus_watch::Changed { path: file }));
@@ -1861,9 +1861,9 @@ fn a_setting_changed_by_another_obelus_arrives_here() {
     );
 }
 
-/// A settings file obelus cannot read is one it will not write over.
+/// A settings file Obelus cannot read is one it will not write over.
 ///
-/// What is in it is the reader's. A file caught mid-write by another obelus,
+/// What is in it is the reader's. A file caught mid-write by another Obelus,
 /// or hand-edited into something that will not parse, used to read as "no
 /// settings at all" -- and the next change in this window wrote the defaults
 /// over everything that was in it.
@@ -1889,7 +1889,7 @@ fn a_settings_file_that_will_not_read_is_not_written_over() {
     assert_eq!(
         std::fs::read_to_string(&file).expect("the file"),
         kept,
-        "obelus wrote over a file it could not read"
+        "Obelus wrote over a file it could not read"
     );
     let dump = support::render(&mut app, 66, 12);
     assert!(
@@ -1919,8 +1919,8 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let scratch = support::Scratch::new("settings-unknown");
     let file = scratch.path().join("config.toml");
-    // A line from a newer obelus, a setting that has been renamed since, and
-    // a comment somebody wrote for themselves. None of it is obelus's to
+    // A line from a newer Obelus, a setting that has been renamed since, and
+    // a comment somebody wrote for themselves. None of it is Obelus's to
     // throw away on the next switch a reader flips.
     std::fs::write(
         &file,
@@ -1932,7 +1932,7 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
     app.config_file_for_test(file.clone());
     support::lay_out(&mut app, 76, 16);
     // Any change at all: the file is written whole, and whole used to mean
-    // only what obelus knew about. Onto the reading tab and flip the first
+    // only what Obelus knew about. Onto the reading tab and flip the first
     // switch on it.
     dispatch::dispatch(&mut app, Command::ConfigOpen);
     support::type_text(&mut app, "wrap");
@@ -1941,18 +1941,18 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
     let written = std::fs::read_to_string(&file).expect("reading it back");
     assert!(
         written.contains("future_setting = 3"),
-        "a setting obelus has never heard of was deleted:\n{written}"
+        "a setting Obelus has never heard of was deleted:\n{written}"
     );
     assert!(
         written.contains("blame = false"),
-        "a setting under a name obelus has stopped using was deleted:\n{written}"
+        "a setting under a name Obelus has stopped using was deleted:\n{written}"
     );
     assert!(
         written.contains("# mine, do not eat"),
         "somebody's comment was deleted:\n{written}"
     );
     // Flipped back to the default, which is written down by taking the
-    // line out: the file says what the reader has chosen, not what obelus
+    // line out: the file says what the reader has chosen, not what Obelus
     // would have chosen anyway.
     assert!(
         !obelus_config::from_toml(&written).wrap && !written.contains("wrap"),
@@ -1977,7 +1977,7 @@ fn the_settings_say_what_their_keys_do() {
     let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
     // "type" is capped as the key and "to filter" is what it does, so the
     // two are looked for apart. Escape is not here at all: it is on the
-    // card, because it means the same thing in every view obelus has.
+    // card, because it means the same thing in every view Obelus has.
     for word in ["Change", "type", "to filter", "Unset", "Keys"] {
         assert!(word_on(&text, word), "{word:?} is not at the foot:\n{text}");
     }
@@ -2054,7 +2054,7 @@ fn the_time_a_rest_takes_is_the_readers() {
             .map(|item| item.label.clone())
             .collect::<Vec<_>>(),
         ["0", "200", "400", "800"],
-        "not the times obelus offers"
+        "not the times Obelus offers"
     );
     assert_eq!(
         picker.selected_item().map(|item| item.label.clone()),
@@ -2069,7 +2069,7 @@ fn the_time_a_rest_takes_is_the_readers() {
         800,
         "the file does not say what was chosen"
     );
-    assert_eq!(app.config().hover_delay, 800, "obelus is not using it");
+    assert_eq!(app.config().hover_delay, 800, "Obelus is not using it");
 }
 
 /// A press on a switch flips it, and a press on the row it is on does not.
@@ -2154,7 +2154,7 @@ fn a_press_on_a_switch_flips_it() {
 /// Walked rather than jumped, by the shorter way round. What a tab *costs*
 /// is the application's -- a scope asks the search again, a radius walks
 /// the history again -- so the press goes down the key's own path; and the
-/// tabs wrap, so the short way is at most one step for every list obelus
+/// tabs wrap, so the short way is at most one step for every list Obelus
 /// has, which is what keeps a tab in between from being asked its question
 /// on the way past.
 ///
@@ -2250,7 +2250,7 @@ fn with_an_agent(name: &str, offers: &[obelus_agent::acp::Setting]) -> (support:
 /// The active agent's settings are a group on the settings page, under a
 /// heading saying when what is in it takes effect.
 ///
-/// A group and not a tab of its own: they are the same shape as obelus's
+/// A group and not a tab of its own: they are the same shape as Obelus's
 /// own -- a name, a line about it, one control -- and a reader looking for
 /// the one about thinking should not have to guess which page it is filed
 /// under. The heading carries the one thing that is true of this group and
@@ -2274,7 +2274,7 @@ fn the_active_agents_settings_are_a_group_on_the_page() {
         )],
     );
 
-    // Narrowed to it, because the agent's group is last and obelus's own
+    // Narrowed to it, because the agent's group is last and Obelus's own
     // settings are a page and a half on a twelve-row screen.
     support::type_text(&mut app, "way");
     let dump = support::render(&mut app, 66, 12);
@@ -2295,7 +2295,7 @@ fn the_active_agents_settings_are_a_group_on_the_page() {
     );
 }
 
-/// An agent obelus has not talked to yet says so, and one whose file will
+/// An agent Obelus has not talked to yet says so, and one whose file will
 /// not read says something else.
 ///
 /// Three answers to one question, and the two that are not "here they are"
@@ -2452,7 +2452,7 @@ fn the_trees_page_has_no_group_for_the_agent() {
 
 /// The project's page has one tab, because the other two go nowhere.
 ///
-/// Which keys a reader is on and which agent obelus talks to are the
+/// Which keys a reader is on and which agent Obelus talks to are the
 /// reader's alone -- a downloaded project that could set either would be
 /// starting programs and moving `quit` under somebody's fingers. So on this
 /// page those two were tabs that said, when reached, that a project may not
@@ -2466,7 +2466,7 @@ fn the_trees_page_has_no_group_for_the_agent() {
 /// that is about the project's.
 ///
 /// A tab is for somewhere else to go, and one that goes nowhere is a tab
-/// that lies. The foot of every view in obelus already follows this rule:
+/// that lies. The foot of every view in Obelus already follows this rule:
 /// it lists the keys that do something here and keeps the rest for `F1`.
 ///
 /// Broken deliberately by giving `Page::of` every page whoever is asking:
@@ -2538,6 +2538,6 @@ fn the_projects_page_has_one_tab() {
     assert_eq!(
         app.config().agent.as_deref(),
         Some("an-agent"),
-        "the project's page changed which agent obelus talks to"
+        "the project's page changed which agent Obelus talks to"
     );
 }

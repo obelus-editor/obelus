@@ -309,7 +309,7 @@ impl Completion {
     /// What the documentation half of the panel says, as markdown.
     ///
     /// The signature goes in as a fenced block in the file's own language,
-    /// which is how helix does it and why obelus's markdown grew fences
+    /// which is how helix does it and why Obelus's markdown grew fences
     /// that are coloured: the same renderer that shows a README shows the
     /// type of what is about to be typed, in the colours the code has.
     #[must_use]
@@ -431,7 +431,7 @@ impl Completion {
 
     /// Walks the list by a notch of the wheel.
     ///
-    /// The list rather than the documentation: obelus is told that a notch
+    /// The list rather than the documentation: Obelus is told that a notch
     /// happened and not where the pointer was, and the half a reader is
     /// choosing from is the one worth moving blind.
     pub fn scroll(&mut self, by: isize) {

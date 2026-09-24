@@ -13,11 +13,11 @@
 //! feature that replaces rather than layers actually does.
 //!
 //! A directory rather than a dotfile, because settings are not the only thing a
-//! project will keep for obelus -- a theme of its own, whatever comes after it
+//! project will keep for Obelus -- a theme of its own, whatever comes after it
 //! -- and one directory is one thing to find, to copy between machines and to
 //! name in a `.gitignore`, where a dotfile per kind of thing is a row of them
 //! at the top of every listing. Only the working directory itself, never
-//! walking up: obelus has one answer to which project it is on -- the file list
+//! walking up: Obelus has one answer to which project it is on -- the file list
 //! walks it, the counts count it, git is read from it.
 //!
 //! The project's settings have a page of their own, `open-project-settings`, a
@@ -51,7 +51,7 @@
 //! goes nowhere is a tab that lies.
 //!
 //! That file is *edited*, not rewritten. Obelus's own it writes whole, because
-//! obelus wrote all of it; a project's is written by hand and committed, so it
+//! Obelus wrote all of it; a project's is written by hand and committed, so it
 //! has comments in it, an order somebody chose, and possibly keys this version
 //! has never heard of -- `toml_edit` keeps all three where a round trip through
 //! a `toml::Table` would throw them away on the first switch a reader flipped.
@@ -66,12 +66,12 @@
 //! mistake with a longer fuse, because it looks right until the file is
 //! created. The same path answers the change when it arrives.
 //!
-//! The reader's settings are the layer the project's is laid over, and obelus
+//! The reader's settings are the layer the project's is laid over, and Obelus
 //! keeps both. `readers_config` is what their file says; `config` is that
 //! with the project's over it, rebuilt from the bottom every time either
 //! changes. Laid over what is already there instead, a setting the project has
 //! *stopped* naming would stay in force -- deleting a line from the project's
-//! file would do nothing until obelus was started again.
+//! file would do nothing until Obelus was started again.
 
 use super::*;
 
@@ -85,7 +85,7 @@ use super::*;
 /// to stop happening twice.
 #[derive(Debug)]
 pub(super) struct Settled {
-    /// What obelus is actually going by: the reader's own, with the project's
+    /// What Obelus is actually going by: the reader's own, with the project's
     /// laid over it.
     pub config: obelus_config::Config,
     /// Where the reader's file is, or `None` for an application that was
@@ -93,7 +93,7 @@ pub(super) struct Settled {
     /// over the reader's real settings.
     pub path: Option<PathBuf>,
     /// False once that file has been found unreadable: what is in it is the
-    /// reader's, and saving over something obelus could not read would
+    /// reader's, and saving over something Obelus could not read would
     /// replace settings it never saw. True again the moment it reads.
     pub readable: bool,
     /// The reader's own layer, before the project's went over it.
@@ -104,7 +104,7 @@ pub(super) struct Settled {
     /// Which settings the reader's file named.
     ///
     /// Which, not what they came to: a reader who writes a setting down has
-    /// said something about it even where what they said is what obelus
+    /// said something about it even where what they said is what Obelus
     /// would have done anyway.
     pub named: Vec<&'static str>,
     /// The project's own settings file, while the project has one.
@@ -123,7 +123,7 @@ impl Default for Settled {
             config: obelus_config::Config::default(),
             path: None,
             // Until something says otherwise: a file nobody has failed to
-            // read is a file obelus may write.
+            // read is a file Obelus may write.
             readable: true,
             readers: obelus_config::Config::default(),
             named: Vec::new(),
@@ -306,8 +306,8 @@ impl App {
 
     /// Offers one of the agent's settings, as the same compact list.
     ///
-    /// With what the agent offers, and with obelus's own row in front of
-    /// it: the third answer these have and obelus's own settings do not,
+    /// With what the agent offers, and with Obelus's own row in front of
+    /// it: the third answer these have and Obelus's own settings do not,
     /// which is to say nothing and let the agent open where it opens.
     pub(super) fn open_agent_default(&mut self, setting: &str) {
         let Some(offering) = self.agent_offering() else {
@@ -386,7 +386,7 @@ impl App {
     ///
     /// The conversation on screen is not touched. These rows are about the
     /// next one, which is what the heading over them says -- and a change
-    /// here reaching into a conversation already under way would be obelus
+    /// here reaching into a conversation already under way would be Obelus
     /// answering a question the reader asked about another one.
     pub(super) fn set_agent_default(&mut self, setting: &str, value: Option<&str>) {
         let Some(agent) = self.config().agent.clone() else {
@@ -552,8 +552,8 @@ impl App {
     ///
     /// The name in the settings has not moved -- nobody chose anything --
     /// and what that name stands for has. Which is the whole of what a
-    /// desktop that themes every program it has does to obelus: it writes
-    /// the file, and obelus is wearing the colours a moment later without
+    /// desktop that themes every program it has does to Obelus: it writes
+    /// the file, and Obelus is wearing the colours a moment later without
     /// anybody having to tell it.
     pub(super) fn reread_theme(&mut self) {
         let called = self.settled.config.theme.clone();
@@ -622,7 +622,7 @@ impl App {
     ///
     /// What a project may not set is refused here as well as when the file is
     /// read. Refused rather than written and then ignored, which would be a
-    /// file that says something obelus will not do.
+    /// file that says something Obelus will not do.
     fn write_to_project(&mut self, key: &'static str, value: Option<&obelus_config::Value>) {
         if obelus_config::reach_of(key) != obelus_config::Reach::Anywhere {
             tracing::debug!(key, "a project may not set this one");
@@ -635,16 +635,16 @@ impl App {
             return;
         }
         // Read back the way any other change to that file arrives, so the
-        // page shows what the file says rather than what obelus meant to
+        // page shows what the file says rather than what Obelus meant to
         // put in it.
         self.reread_config();
     }
 
     /// Opens the settings file itself, for a reader who would rather see    ///
     /// Opens the settings file itself, for a reader who would rather see
-    /// them all at once -- or edit one obelus has no control for.
+    /// them all at once -- or edit one Obelus has no control for.
     ///
-    /// Written first if it is not there yet, because the file obelus would
+    /// Written first if it is not there yet, because the file Obelus would
     /// write is the answer to "what are the settings": a reader sent to a
     /// path that does not exist has been told nothing, and the file with
     /// every default in it is what they need in front of them to change one
@@ -652,7 +652,7 @@ impl App {
     ///
     /// Read, not applied. Obelus reads this file when it starts and writes
     /// it when the reader changes something on the settings page; a change
-    /// made in it by hand is picked up the next time obelus starts.
+    /// made in it by hand is picked up the next time Obelus starts.
     pub fn open_config_file(&mut self) {
         let Some(path) = self.settled.path.clone() else {
             self.note = Some("This system has nowhere for a settings file".to_string());
@@ -674,7 +674,7 @@ impl App {
     /// The same shape as changing a setting -- applied first, saved second
     /// -- and through the same table: what is written down is the command's
     /// name and the chord spelled out, because a table full of enum
-    /// spellings and keycodes would be obelus's own business rather than
+    /// spellings and keycodes would be Obelus's own business rather than
     /// something a reader can edit.
     pub(super) fn rebind(&mut self, command: obelus_command::Command, chord: Option<KeyChord>) {
         let written = chord.map(|chord| chord.label_in(false)).unwrap_or_default();
@@ -730,7 +730,7 @@ impl App {
             return;
         };
         // Which file, and what was in it: "my setting did nothing" is
-        // answered by the path obelus actually read, and a reader with two
+        // answered by the path Obelus actually read, and a reader with two
         // machines or an `XDG_CONFIG_HOME` has more than one candidate.
         match obelus_config::read_from(&path) {
             obelus_config::Reading::Settings(config, named) => {
@@ -752,7 +752,7 @@ impl App {
     /// anything, and says nothing everywhere else.
     ///
     /// A file that will not read is a line in the log and nothing more. The
-    /// reader's settings are what obelus has, and throwing them away because
+    /// reader's settings are what Obelus has, and throwing them away because
     /// a project somebody else wrote has a typo in it would be the project
     /// deciding something it was never given.
     pub(super) fn apply_project(&mut self) {
@@ -760,7 +760,7 @@ impl App {
         // already there instead, a setting the project has *stopped* naming
         // would stay in force: nothing would have put the reader's answer
         // back underneath it, and deleting a line from the project's file
-        // would do nothing until obelus was started again.
+        // would do nothing until Obelus was started again.
         self.settled.config = self.settled.readers.clone();
         self.settled.pinned.clear();
         self.settled.project = obelus_config::project_path(&self.working_directory);
@@ -827,8 +827,8 @@ impl App {
     /// Takes the settings file as it stands now, because somebody else
     /// changed it.
     ///
-    /// Another obelus on the same project, or the reader's own editor: what
-    /// is in the file is what obelus is set to, whichever process wrote it.
+    /// Another Obelus on the same project, or the reader's own editor: what
+    /// is in the file is what Obelus is set to, whichever process wrote it.
     /// Only the settings, not [`App::configure`]'s second half -- that puts
     /// every open file back to the reading the settings ask for, and a
     /// reader who has turned a preview off should not have it come back
@@ -845,7 +845,7 @@ impl App {
                     self.settled.readable = true;
                 }
                 // Gone, which is somebody deleting it or an editor writing
-                // it in a way obelus caught mid-flight. Neither is a reason
+                // it in a way Obelus caught mid-flight. Neither is a reason
                 // to throw away what this session is set to.
                 obelus_config::Reading::Nothing | obelus_config::Reading::Nowhere => {}
                 obelus_config::Reading::Unreadable(why) => self.settings_unreadable(&path, &why),
@@ -860,7 +860,7 @@ impl App {
 
     /// Says the settings file cannot be read, and stops writing to it.
     ///
-    /// What is in it is the reader's, and obelus cannot read it: saving
+    /// What is in it is the reader's, and Obelus cannot read it: saving
     /// over it would replace settings it never saw with whatever this
     /// session happens to be set to. So nothing is saved until it reads
     /// -- which it will, the moment somebody fixes the file, because the
@@ -904,7 +904,7 @@ impl App {
             _ => Vec::new(),
         };
         // Where the file is, before what is in it: applying a setting can
-        // send obelus looking beside that file for something -- a theme is
+        // send Obelus looking beside that file for something -- a theme is
         // in the directory next to it -- and a path set afterwards is a
         // path that was not there when it was needed. The real way in sets
         // it first for the same reason.

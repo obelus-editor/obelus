@@ -75,7 +75,7 @@ pub fn found(language: LanguageId, tree: &Tree, text: &Text) -> Vec<Injection> {
             }
         }
 
-        // A name obelus has no grammar for: the run stays as the outer
+        // A name Obelus has no grammar for: the run stays as the outer
         // language drew it, which is the same thing that happens to a file
         // in that language. A fence saying `ruby` is not a broken fence.
         let Some(language) = named
@@ -151,7 +151,7 @@ fn query(language: LanguageId) -> Option<&'static Query> {
             static $cell: OnceLock<Query> = OnceLock::new();
             Some($cell.get_or_init(|| {
                 Query::new(crate::grammar(language).language(), $source)
-                    .expect("an injection query shipped with obelus should compile")
+                    .expect("an injection query shipped with Obelus should compile")
             }))
         }};
     }
@@ -163,7 +163,7 @@ fn query(language: LanguageId) -> Option<&'static Query> {
         }
         LanguageId::Html => compiled!(HTML, tree_sitter_html::INJECTIONS_QUERY),
         // Nothing yet for the languages whose own injections are into
-        // grammars obelus does not have -- JavaScript's are regex and
+        // grammars Obelus does not have -- JavaScript's are regex and
         // jsdoc, Rust's is Rust inside a macro, and that last one is a
         // query over every macro call in the file for a little more colour
         // inside it. Both are a decision rather than an oversight: what is
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(covered(document, fence), vec!["fn main() {}\n"]);
     }
 
-    /// A language obelus has no grammar for is no injection at all. The
+    /// A language Obelus has no grammar for is no injection at all. The
     /// fence still reads -- the block grammar has drawn it -- and a reader
     /// opening a Ruby file gets exactly the same thing.
     #[test]
@@ -231,7 +231,7 @@ mod tests {
         assert!(
             found.iter().all(|injection| injection.ranges.is_empty()
                 || injection.language == LanguageId::MarkdownInline),
-            "something was injected for a language obelus has no grammar for"
+            "something was injected for a language Obelus has no grammar for"
         );
     }
 

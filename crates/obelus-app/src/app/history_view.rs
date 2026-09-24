@@ -667,7 +667,7 @@ impl App {
     /// Opens the commit that wrote the line under the cursor.
     ///
     /// The direct answer to "why is this line here", which is the question a
-    /// reader asks most often and the one obelus could not answer: the
+    /// reader asks most often and the one Obelus could not answer: the
     /// margin said who and when, and there was no way from a line to the
     /// commit behind it. A list would be ceremony -- one line has one
     /// commit.

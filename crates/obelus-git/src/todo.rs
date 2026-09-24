@@ -28,14 +28,14 @@ use obelus_text::coordinates::LineNumber;
 
 /// Where a project keeps what it means to come back to.
 ///
-/// In obelus's own state directory, named after the project rather than
+/// In Obelus's own state directory, named after the project rather than
 /// after the checkout: a repository and its worktrees are one project, and
 /// a reader with three of them open means to come back to one list.
 ///
 /// It used to sit in the project's own `.obelus`, beside the settings, so
 /// that the next person to open the project would find the same questions
 /// already asked. They never did: `.obelus` is a directory readers
-/// gitignore -- obelus's own repository is one of them -- so the notes were
+/// gitignore -- Obelus's own repository is one of them -- so the notes were
 /// one reader's own already. Being one reader's own, they were also one
 /// *checkout's*, which is the half of it that was actually wrong.
 #[must_use]
@@ -61,7 +61,7 @@ fn beside_a_checkout(root: &Path) -> PathBuf {
 ///
 /// The *main* checkout's, and deliberately not this one's: a reader with
 /// worktrees has one of these files in each, they do not say the same thing,
-/// and obelus putting them together would be obelus deciding what their
+/// and Obelus putting them together would be Obelus deciding what their
 /// notes say. The project is the repository, so the repository's own
 /// checkout is the one that carries them over. The others are left exactly
 /// where they are, for the reader to take what they want out of them --
@@ -104,7 +104,7 @@ pub struct At {
 /// Eight characters of Crockford's base32, which is the alphabet without
 /// the four letters a person copying by hand gets wrong -- no `I`, `L`, `O`
 /// or `U`. Short enough to read out, and the file is the reader's as much
-/// as it is obelus's.
+/// as it is Obelus's.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NoteId(String);
 
@@ -197,7 +197,7 @@ pub struct Note {
     /// How far under the note above it this one sits.
     ///
     /// A number and the order the file already has, rather than a name for
-    /// whoever the parent is. The file is the reader's as much as obelus's
+    /// whoever the parent is. The file is the reader's as much as Obelus's
     /// and an outline is something they can write by hand; a graph of names
     /// is not. And the order is already the one thing about a note they can
     /// rely on -- a parent named beside each note would be a second
@@ -230,7 +230,7 @@ impl Note {
     }
 }
 
-/// What an agent asked obelus to do to the notes.
+/// What an agent asked Obelus to do to the notes.
 ///
 /// Added, ticked, reworded. Taking one away is the reader's and stays
 /// theirs: `done` is already how a list keeps what was decided against, so
@@ -282,7 +282,7 @@ pub enum Doing {
 ///
 /// The page used to hand the notes over as it had them, and the file was
 /// written from that -- every note in it, including the ones it read ten
-/// minutes ago. A second obelus on the same project writes this file too, and
+/// minutes ago. A second Obelus on the same project writes this file too, and
 /// it is not an exotic thing to have running: reading two things at once is
 /// what a second window is *for*. A whole file written from a held copy is
 /// that other window's ten minutes taken back out, with nobody told.
@@ -300,7 +300,7 @@ pub enum Doing {
 /// into the copy still on their own screen.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Change {
-    /// A note this obelus started, put in.
+    /// A note this Obelus started, put in.
     ///
     /// The one change that may add, because the note is the reader's own
     /// and has never been in anybody's file. Idempotent all the same: a
@@ -420,9 +420,9 @@ pub struct Todo {
 
 /// What reading a project's notes found.
 ///
-/// "There is no file" and "there is a file obelus cannot read" are different
+/// "There is no file" and "there is a file Obelus cannot read" are different
 /// answers, and they were the same one. Both came back as no notes -- and no
-/// notes is a thing obelus will happily write down: the page opens empty,
+/// notes is a thing Obelus will happily write down: the page opens empty,
 /// the reader writes one note in a list they cannot see is not their list,
 /// and the file they had is replaced by it. A comma in the wrong place was
 /// enough. What is remembered *beside* the notes went the same way: the
@@ -432,7 +432,7 @@ pub struct Todo {
 ///
 /// The same three answers the settings give, for the same reason and in the
 /// same shape -- `obelus_config::Reading`, which had this out first. A file
-/// obelus cannot read is the reader's file all the same, and the one thing
+/// Obelus cannot read is the reader's file all the same, and the one thing
 /// it must never do is write over it.
 ///
 /// This is about the file as a whole, not about what is in it. A file that
@@ -476,7 +476,7 @@ pub fn read(root: &Path) -> Reading {
         // Not there yet is the ordinary case and not a failure: the file is
         // written the first time a reader writes a note down. Or the notes
         // are where they used to be, which is the same thing for a reader
-        // who had some before obelus kept them per project -- read from
+        // who had some before Obelus kept them per project -- read from
         // there until the first change writes them here.
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             match left_beside_a_checkout(root).map(std::fs::read_to_string) {
@@ -517,7 +517,7 @@ impl Todo {
             let at = note.get("at").and_then(toml::Value::as_str).map(|at| At {
                 path: PathBuf::from(at),
                 // Written one-based, because that is how a reader counts
-                // lines and how every other number obelus writes down is
+                // lines and how every other number Obelus writes down is
                 // meant. Held zero-based, which is how it counts them.
                 line: LineNumber::new(
                     note.get("line")
@@ -695,7 +695,7 @@ impl Todo {
     /// about was still there to do it to.
     ///
     /// `false` is the answer that matters: it means somebody else took that
-    /// note away between this obelus reading the file and writing to it, and
+    /// note away between this Obelus reading the file and writing to it, and
     /// whoever asked has a reader to tell -- a key that appears to do
     /// nothing is the worst way to find out. [`Change::Put`] is always
     /// `true`, because it is about a note that is the reader's own.
@@ -725,7 +725,7 @@ impl Todo {
                 // started from that one and is the next thing at its level.
                 // Between it and its children, it would have been adopted by
                 // it without the reader asking for a child at all -- and the
-                // children it would be adopted over may be ones this obelus
+                // children it would be adopted over may be ones this Obelus
                 // has never seen, put there by the other window.
                 let at = after
                     .as_ref()
@@ -879,12 +879,12 @@ impl Todo {
     }
 }
 
-/// How long to wait for another obelus to finish writing.
+/// How long to wait for another Obelus to finish writing.
 ///
 /// Long enough that the wait is never the reason two windows collide --
 /// what is held across it is a read of a few notes, a parse and a write, so
 /// microseconds -- and short enough that a lock file left behind by an
-/// obelus that was killed costs a pause nobody times rather than a reader
+/// Obelus that was killed costs a pause nobody times rather than a reader
 /// who cannot write notes any more.
 const WAIT_FOR_THE_OTHER: std::time::Duration = std::time::Duration::from_millis(50);
 
@@ -893,7 +893,7 @@ const WAIT_FOR_THE_OTHER: std::time::Duration = std::time::Duration::from_millis
 ///
 /// The one door every change goes through. Read-modify-write rather than
 /// writing a copy somebody has been holding, for the reason the
-/// conversations beside these are written the same way: a second obelus on
+/// conversations beside these are written the same way: a second Obelus on
 /// the same project is an ordinary thing to have running, and the one that
 /// wrote last would otherwise put the file back the way it was before the
 /// other one's note -- and neither of them would be told.
@@ -904,7 +904,7 @@ const WAIT_FOR_THE_OTHER: std::time::Duration = std::time::Duration::from_millis
 ///
 /// The lock is `todo.toml.lock`, made and then renamed over the file, which
 /// is the same shape as the name-beside-it this used to write through --
-/// with the difference that another obelus finds it in the way. Best effort:
+/// with the difference that another Obelus finds it in the way. Best effort:
 /// where the lock cannot be had the change is made anyway, because the lock
 /// is what makes the read and the write one act and not what makes the
 /// change safe. A stale lock must never be a reader who cannot write a note
@@ -928,11 +928,11 @@ pub fn change<T>(root: &Path, what: impl FnOnce(&mut Todo) -> T) -> Result<(Todo
             None
         }
     };
-    // Inside the lock, so that what is changed is what the other obelus
+    // Inside the lock, so that what is changed is what the other Obelus
     // just finished writing rather than what was there before it started.
     //
     // And nothing at all where that read fails. Every other way of declining
-    // here leaves the file alone; this one would replace what obelus could
+    // here leaves the file alone; this one would replace what Obelus could
     // not read with what it could -- which is the reader's notes traded for
     // whatever this session happens to be holding, over a typo.
     let mut todo = match read(root) {
@@ -945,7 +945,7 @@ pub fn change<T>(root: &Path, what: impl FnOnce(&mut Todo) -> T) -> Result<(Todo
     // A change that changed nothing does not touch the file. Half of what
     // comes through here settles a note that says what it already said, or
     // asks after a note that has gone -- and every write is heard by this
-    // obelus and the other one, both of which then read the file to find
+    // Obelus and the other one, both of which then read the file to find
     // out that nothing happened. Names minted on the way in are a change:
     // they are not in the file yet, which is the whole reason they have to
     // be written.
@@ -967,7 +967,7 @@ pub fn change<T>(root: &Path, what: impl FnOnce(&mut Todo) -> T) -> Result<(Todo
 ///
 /// Two answers because they are two things to say to the reader and two
 /// things for them to do about it. A file that will not read is one they can
-/// fix, and until they do obelus is holding off *on purpose*; a file that
+/// fix, and until they do Obelus is holding off *on purpose*; a file that
 /// will not write is a disk or a permission, and nothing they type will help.
 #[derive(Debug)]
 pub enum NotChanged {
@@ -991,8 +991,8 @@ impl std::error::Error for NotChanged {}
 /// What a note says, with the blank line off the end.
 ///
 /// A text that ends in a newline has an empty last line, and that line is a
-/// row on the page nobody typed. obelus never writes one -- but the file is
-/// the reader's as much as it is obelus's, and TOML's multi-line form
+/// row on the page nobody typed. Obelus never writes one -- but the file is
+/// the reader's as much as it is Obelus's, and TOML's multi-line form
 /// invites it: closing quotes on a line of their own is the natural way to
 /// write one, and it leaves the break behind.
 #[must_use]
@@ -1034,7 +1034,7 @@ fn quoted(text: &str) -> String {
 ///
 /// Without a commit there is nothing to check the number against, so it is
 /// taken at its word. That is the answer for a project git has never heard of,
-/// and it is honest: obelus knows where the note *was* put and has no way to
+/// and it is honest: Obelus knows where the note *was* put and has no way to
 /// know whether it moved.
 ///
 /// `None` only where git can answer and the answer is that the line is gone
@@ -1069,7 +1069,7 @@ pub fn at_commit(root: &Path) -> Option<gix::ObjectId> {
 mod tests {
     /// Somewhere of this run's own for the notes to be kept in.
     ///
-    /// They live in obelus's state directory, so a test that did not say
+    /// They live in Obelus's state directory, so a test that did not say
     /// this would write into the reader's own and leave it there. One
     /// directory for the binary, because it is set once and the tests name
     /// their projects apart by their scratch paths anyway.
@@ -1135,7 +1135,7 @@ mod tests {
         assert_eq!(Todo::from_table(&table), todo);
     }
 
-    /// The line is written the way a reader counts and held the way obelus
+    /// The line is written the way a reader counts and held the way Obelus
     /// does, and the two are one apart.
     #[test]
     fn the_line_is_written_as_a_reader_would_say_it() {
@@ -1213,7 +1213,7 @@ mod tests {
     }
 
     /// A new note goes behind the whole of what hangs under the note it
-    /// follows -- including children this obelus has never seen.
+    /// follows -- including children this Obelus has never seen.
     ///
     /// The other window put them there while this one was holding the page.
     /// Between the note and its children, this one would have been adopted
@@ -1290,7 +1290,7 @@ mod tests {
     /// "There is no file" and "there is a file that will not read" are
     /// different answers.
     ///
-    /// Both came back as no notes, and no notes is a thing obelus writes
+    /// Both came back as no notes, and no notes is a thing Obelus writes
     /// down: the page opens empty, one note is written into a list the
     /// reader cannot see is not their list, and what they had is replaced by
     /// it. A comma in the wrong place was enough.
@@ -1330,7 +1330,7 @@ mod tests {
     /// And nothing is written over one.
     ///
     /// The one guard that covers every writer, because they all come through
-    /// here: what obelus could not read it does not replace with what it
+    /// here: what Obelus could not read it does not replace with what it
     /// could.
     ///
     /// Broken deliberately by letting `change` go on with the default where
@@ -1349,7 +1349,7 @@ mod tests {
         let outcome = change(&scratch, |todo| {
             todo.notes.push(Note {
                 id: NoteId::mint(),
-                said: "one this obelus made up".to_string(),
+                said: "one this Obelus made up".to_string(),
                 done: false,
                 at: None,
                 depth: 0,

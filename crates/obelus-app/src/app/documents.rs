@@ -22,7 +22,7 @@ impl App {
             prose: false,
             // A mark for a document with changes that are not on disk.
             // `marker` rather than `status`, which is git's and colours
-            // the whole row: "git says this file changed" and "obelus
+            // the whole row: "git says this file changed" and "Obelus
             // has not written this" are two different things, and
             // telling them apart is what this is for.
             //
@@ -192,7 +192,7 @@ impl App {
 
     /// The notes, as a row of the list of what is open.
     ///
-    /// Called `todo` rather than `notes`, which is obelus's own word for it
+    /// Called `todo` rather than `notes`, which is Obelus's own word for it
     /// in prose: `todo` is what the reader types into the palette, what
     /// `alt+t` stands for, and what the file is called. The mark is the
     /// command's, so the row and the row that opened it wear the same one.
@@ -674,7 +674,7 @@ impl App {
                         icon: obelus_icons::enabled()
                             .then(|| obelus_icons::for_path(std::path::Path::new(&name))),
                         // A submodule is another repository at a path, and
-                        // obelus has no notion of one. It is listed because
+                        // Obelus has no notion of one. It is listed because
                         // it is a change to this tree and git reports it as
                         // one; it cannot be pressed, and the row is drawn in
                         // the colour that says so rather than waiting to be
@@ -757,7 +757,7 @@ impl App {
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::FullArea);
-        // Reachable with nothing open at all, which is how obelus starts --
+        // Reachable with nothing open at all, which is how Obelus starts --
         // and was not, for as long as the command asked for a file.
         picker.when_empty("Nothing is open");
         picker.previews();
@@ -1126,7 +1126,7 @@ impl App {
     /// when to write -- and taking the reader to each of them in turn
     /// would be a tour of a dozen files they did not ask for.
     ///
-    /// The server is told about it, as it is for any file obelus opens: it
+    /// The server is told about it, as it is for any file Obelus opens: it
     /// is about to be edited, and a server that has not been told has a
     /// different document.
     pub(super) fn open_quietly(&mut self, path: &Path) -> Option<usize> {
@@ -1231,7 +1231,7 @@ impl App {
     /// Re-reads whichever open buffers came from `path`.
     ///
     /// The watch is on a directory, so most of what arrives here is about
-    /// files obelus does not have open.
+    /// files Obelus does not have open.
     pub(super) fn reload_path(&mut self, path: &Path) {
         for index in 0..self.documents.len() {
             let Some(buffer) = file_in_mut(&mut self.documents, DocumentId::new(index)) else {
@@ -1244,7 +1244,7 @@ impl App {
             if buffer.path() != path || !buffer.content().is_file() {
                 continue;
             }
-            // The commonest change reported about an open file is obelus's
+            // The commonest change reported about an open file is Obelus's
             // own save arriving back, and that one looks exactly like the
             // file that was just recorded. Asked before anything is read,
             // because it is one `stat` and the alternative is reading the

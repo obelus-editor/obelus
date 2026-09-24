@@ -1,6 +1,6 @@
 //! Telling work that has been started that nobody wants it any more.
 //!
-//! obelus starts a walk, a search or a history the moment the reader asks,
+//! Obelus starts a walk, a search or a history the moment the reader asks,
 //! and the reader asks again before the first one has finished: another
 //! tab, another query, a list opened and closed. What it did until now was
 //! number each attempt and throw away the answers from the old ones -- the

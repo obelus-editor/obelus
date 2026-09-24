@@ -1,7 +1,7 @@
 //! Which agents there are, which one is in use, and installing them.
 //!
 //! The list is somebody else's: [`obelus_agent::registry`] fetches it and
-//! this keeps it, alongside what obelus knows locally -- what is installed,
+//! this keeps it, alongside what Obelus knows locally -- what is installed,
 //! what is being installed and how far it has got, and what went wrong the
 //! last time one was tried.
 
@@ -11,7 +11,7 @@ use obelus_ui::image::{Images, Palette};
 
 use super::*;
 
-/// What obelus knows about the agents it could run.
+/// What Obelus knows about the agents it could run.
 ///
 /// One field on `App` rather than nine. They are one subject -- the list,
 /// the mark beside each name, the installs in flight -- and they arrive
@@ -98,7 +98,7 @@ impl App {
                 };
                 Listed {
                     // In use *and* here. An agent the settings name and the
-                    // machine does not have is not something obelus can
+                    // machine does not have is not something Obelus can
                     // talk to, and a card saying "active" over a button
                     // that offers to install it says two things at once.
                     active: self.config().agent.as_deref() == Some(agent.id.as_str())
@@ -122,7 +122,7 @@ impl App {
     ///
     /// `None` where no agent is active, which is the one case where the
     /// settings page has no group for one: a heading over nothing, on a
-    /// machine where the reader has not chosen an agent, would be obelus
+    /// machine where the reader has not chosen an agent, would be Obelus
     /// asking them to set something up for nobody.
     #[must_use]
     pub fn agent_offering(&self) -> Option<Offering> {
@@ -142,7 +142,7 @@ impl App {
             .map_or(id, |agent| agent.name.as_str())
             .to_string();
         // Three answers, and each is a different thing to say. Nothing
-        // written down is an agent obelus has not talked to yet; a file
+        // written down is an agent Obelus has not talked to yet; a file
         // that will not read is not an agent with nothing to be set, and
         // saying so is how the reader finds out there is a file to look
         // at.
@@ -183,9 +183,9 @@ impl App {
     /// Reads what the active agent offers, for [`App::agent_offering`] to
     /// hand out until there is a reason to read again.
     ///
-    /// Those reasons are all of them: the settings page opening, obelus
+    /// Those reasons are all of them: the settings page opening, Obelus
     /// writing the file itself, and the active agent changing. A file
-    /// another obelus writes while this page is open is not among them --
+    /// another Obelus writes while this page is open is not among them --
     /// it is the agent's own statement about itself rather than anything
     /// the two are editing, so the worst a stale copy can do is list what
     /// that agent offered an hour ago.
@@ -205,7 +205,7 @@ impl App {
         self.agents.offers = Some((id, read));
     }
 
-    /// Where obelus keeps the agents it installs.
+    /// Where Obelus keeps the agents it installs.
     ///
     /// The reader's data directory, or wherever a test has pointed it: what
     /// is under here is written by installing things and read to find out
@@ -279,7 +279,7 @@ impl App {
         &self.agents.images
     }
 
-    /// Fetches every mark obelus does not have, once.
+    /// Fetches every mark Obelus does not have, once.
     ///
     /// Only on a terminal that can show one: on every other terminal the
     /// cards wear glyphs, and forty downloads for something nothing will
@@ -350,7 +350,7 @@ impl App {
     /// Whether the next frame will hand the terminal a picture.
     ///
     /// Which is worth knowing outside the agents page, because a terminal
-    /// handed a sixel draws it then and there -- in the middle of obelus
+    /// handed a sixel draws it then and there -- in the middle of Obelus
     /// writing the rest of the frame. That is the one case where the frame
     /// has to be written with the caret put out, and everywhere else the
     /// caret is left alone: see [`crate::app::render`].
@@ -369,7 +369,7 @@ impl App {
     /// Per frame, and free after the first: encoding is cached, and what
     /// this walks is the handful of cards on screen. It happens here rather
     /// than in the view because handing pixels to a terminal changes what
-    /// obelus is holding, and a view holds nothing.
+    /// Obelus is holding, and a view holds nothing.
     pub(super) fn prepare_icons(&mut self) {
         if !self.shows_pictures() {
             return;
@@ -464,7 +464,7 @@ impl App {
         }
     }
 
-    /// Makes an agent the one obelus talks to.
+    /// Makes an agent the one Obelus talks to.
     ///
     /// One at a time. Two would mean every question having to say which
     /// agent it was for, and a reader having to know.
@@ -495,7 +495,7 @@ impl App {
         }
         self.change_setting("agent", &obelus_config::Value::Choice(id.to_string()));
         self.reread_what_the_agent_offers();
-        // And if obelus has never been told what this one can be set to,
+        // And if Obelus has never been told what this one can be set to,
         // it asks -- by opening a conversation with it, because the
         // protocol has no other way: what an agent offers arrives with a
         // session and `initialize` says nothing about it.
@@ -518,7 +518,7 @@ impl App {
     ///
     /// And stops the process, if one is running: an agent nobody has chosen
     /// is an agent nobody is talking to, and leaving it alive would leave a
-    /// node process holding a session obelus can no longer reach.
+    /// node process holding a session Obelus can no longer reach.
     ///
     /// And lets the conversations go with it, for the other half of the
     /// same fact: a session is a name that agent gave to something, and a

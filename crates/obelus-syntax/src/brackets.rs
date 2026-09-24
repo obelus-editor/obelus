@@ -16,7 +16,7 @@ use obelus_text::{Text, coordinates::ByteOffset, kind::SyntaxKind};
 
 use crate::highlight::Highlights;
 
-/// The pairs obelus matches.
+/// The pairs Obelus matches.
 ///
 /// Public because folding needs the closing half of them: a line that
 /// *begins* with one closes something, whatever was opened and wherever.

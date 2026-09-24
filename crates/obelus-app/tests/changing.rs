@@ -2,7 +2,7 @@
 //! offers to do about where the reader is.
 //!
 //! Against values rather than against a server: what is interesting is
-//! which files obelus changes and how -- every one of them opened and
+//! which files Obelus changes and how -- every one of them opened and
 //! edited, none of them written, one act of undo for the lot -- and a
 //! server cannot be made to offer a particular edit on demand.
 
@@ -95,7 +95,7 @@ fn every_file_a_rename_touches_is_opened_and_left_unwritten() {
         "the other file was written without being asked"
     );
     // And the one the reader cannot see says so: it is unwritten, and the
-    // keys that leave obelus ask about it.
+    // keys that leave Obelus ask about it.
     assert!(
         app.buffers_for_test().iter().all(|(_, dirty)| *dirty),
         "a file the rename changed is not marked unsaved: {:?}",
@@ -103,7 +103,7 @@ fn every_file_a_rename_touches_is_opened_and_left_unwritten() {
     );
 
     // The status row says what happened, by the numbers. Read before the
-    // undo below: a key press is obelus taking it that whatever it had to
+    // undo below: a key press is Obelus taking it that whatever it had to
     // say has been read.
     let note = app.note().unwrap_or_default().to_string();
     assert!(
@@ -124,7 +124,7 @@ fn every_file_a_rename_touches_is_opened_and_left_unwritten() {
 /// so truthfully.
 ///
 /// This is how the refactorings a server works out for itself arrive: the
-/// action carried a command rather than an edit, obelus asked the server
+/// action carried a command rather than an edit, Obelus asked the server
 /// to run it, and the change comes back the other way round.
 #[test]
 fn an_edit_the_server_asks_for_is_made_and_the_answer_says_so() {
@@ -152,7 +152,7 @@ fn an_edit_the_server_asks_for_is_made_and_the_answer_says_so() {
 }
 
 /// And it arrives the way a server sends it: a message on the pipe,
-/// carrying a request rather than an answer to anything obelus asked.
+/// carrying a request rather than an answer to anything Obelus asked.
 #[test]
 fn an_edit_from_the_server_walks_the_whole_way_in() {
     use obelus_app::event::Event;
@@ -177,7 +177,7 @@ fn an_edit_from_the_server_walks_the_whole_way_in() {
     );
 }
 
-/// And one obelus will not make is declined rather than claimed: a server
+/// And one Obelus will not make is declined rather than claimed: a server
 /// told its refactoring landed goes on to the next step of it.
 #[test]
 fn an_edit_obelus_will_not_make_is_declined() {
@@ -191,13 +191,13 @@ fn an_edit_obelus_will_not_make_is_declined() {
     assert_eq!(
         answer["result"]["applied"],
         json!(false),
-        "obelus said it had deleted a file: {answer}"
+        "Obelus said it had deleted a file: {answer}"
     );
     assert!(
         answer["result"]["failureReason"]
             .as_str()
             .is_some_and(|why| why.contains("deleting a file")),
-        "the server was not told what obelus would not do: {answer}"
+        "the server was not told what Obelus would not do: {answer}"
     );
     assert!(open.exists(), "the file was deleted");
 }
@@ -205,10 +205,10 @@ fn an_edit_obelus_will_not_make_is_declined() {
 /// A save asks what the server would do to the whole file, and says
 /// which kinds it means.
 ///
-/// The only code action obelus sends without being asked, so it is the
+/// The only code action Obelus sends without being asked, so it is the
 /// one that has to say `only`: a request with no kind on it comes back
 /// with every refactoring near the cursor, and applying one of those to a
-/// file somebody pressed save on would be obelus rewriting their code on
+/// file somebody pressed save on would be Obelus rewriting their code on
 /// its own initiative.
 #[test]
 fn a_save_asks_only_for_what_a_server_does_to_a_whole_file() {
@@ -364,7 +364,7 @@ fn a_kind_the_server_has_nothing_for_does_not_end_the_save() {
 ///
 /// Nobody is watching a save the way they watch a menu: the row that
 /// would have been dim is not on screen at all, so the only thing that
-/// stops obelus doing what the server said cannot be done is the save
+/// stops Obelus doing what the server said cannot be done is the save
 /// itself checking.
 #[test]
 fn a_save_passes_over_an_offer_the_server_will_not_carry_out() {
@@ -387,7 +387,7 @@ fn a_save_passes_over_an_offer_the_server_will_not_carry_out() {
     support::press_control(&mut app, 's');
 
     // An offer of the right kind, carrying an edit, that the server has
-    // marked as one it will not make. Taking it would be obelus doing
+    // marked as one it will not make. Taking it would be Obelus doing
     // what it was told could not be done.
     let kinds = App::kinds_asked_on_save_for_test();
     for (at, kind) in kinds.iter().enumerate() {
@@ -476,7 +476,7 @@ fn edits_to_one_file_do_not_move_each_other() {
     assert_eq!(open_text(&app), "first second third\n");
 }
 
-/// What obelus will not do, said rather than done.
+/// What Obelus will not do, said rather than done.
 #[test]
 fn moving_a_file_is_refused_and_reported() {
     let (_scratch, mut app, open, _closed) = project("rename-refused");
@@ -604,7 +604,7 @@ fn what_can_be_done_here_is_a_list_and_choosing_one_does_it() {
 /// cannot be chosen.
 ///
 /// The point of it is that the reader learns the thing exists: a server
-/// that left it out would leave them never finding out obelus can extract
+/// that left it out would leave them never finding out Obelus can extract
 /// a function, because the one time they wanted it their selection was
 /// wrong. So the row is there, the reason is beside it, and stepping
 /// through the list goes past it.

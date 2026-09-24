@@ -1,20 +1,20 @@
 //! Which conversation belongs to which note, across sittings.
 //!
-//! An agent keeps what was said -- `session/load` replays it -- so obelus
+//! An agent keeps what was said -- `session/load` replays it -- so Obelus
 //! does not have to keep a word of it. Both halves come back: the agent's
 //! own, and the reader's as `user_message_chunk`, which is the only way a
 //! client that was not running when they were typed can have them. What
-//! obelus has to keep is the one thing the agent cannot: which of its
+//! Obelus has to keep is the one thing the agent cannot: which of its
 //! conversations is about which of this project's notes. Nothing on the
 //! agent's side knows that a note exists.
 //!
-//! Beside the notes rather than in them, and in obelus's own state directory
+//! Beside the notes rather than in them, and in Obelus's own state directory
 //! rather than the project's `.obelus`: a session id is a name one agent on one
 //! machine gave to something, and committing it would hand the next person a
 //! conversation they cannot open.
 //!
 //! One file per project, named after the project, so that a reader with eight
-//! projects open has eight small files rather than one that every obelus is
+//! projects open has eight small files rather than one that every Obelus is
 //! writing at once.
 
 use std::{
@@ -24,7 +24,7 @@ use std::{
 
 use obelus_git::todo::NoteId;
 
-/// What obelus remembers about one conversation.
+/// What Obelus remembers about one conversation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Kept {
     /// The agent's own name for the conversation, which is what reopens it.
@@ -37,9 +37,9 @@ pub struct Kept {
     /// title is the document's name, so a reader coming back to a list of
     /// conversations with no names would be looking at a list of nothing.
     pub title: Option<String>,
-    /// What the note said when obelus last told the agent about it.
+    /// What the note said when Obelus last told the agent about it.
     ///
-    /// Kept so that obelus can tell whether the agent is out of date. The
+    /// Kept so that Obelus can tell whether the agent is out of date. The
     /// note is the reader's file and they rewrite it -- overnight, between
     /// two messages -- and an agent told what it said on Monday has no way
     /// to find out that it says something else on Tuesday: the protocol
@@ -47,7 +47,7 @@ pub struct Kept {
     /// what is not said in one is not said at all.
     ///
     /// The note's own words and where it points, which are the two things
-    /// about it that obelus tells an agent. Not the paragraph obelus wraps
+    /// about it that Obelus tells an agent. Not the paragraph Obelus wraps
     /// them in: rewording that is not the note being rewritten and must
     /// not read as it.
     ///
@@ -58,7 +58,7 @@ pub struct Kept {
     /// Whether the agent has been told who it is talking to.
     ///
     /// A bit and not a fingerprint, unlike [`Self::told`]: what it carries
-    /// is obelus's own words about itself, which do not change under a
+    /// is Obelus's own words about itself, which do not change under a
     /// conversation the way the reader's note does, so there is nothing to
     /// compare and nothing to say again.
     ///
@@ -98,11 +98,11 @@ impl Remembered {
     /// Forgets every conversation whose note has gone.
     ///
     /// Collected when the file is written rather than when a note is
-    /// deleted, because a note can go without obelus watching -- another
-    /// obelus, the reader's own editor -- and a table that only shrank when
-    /// obelus was looking would grow for ever.
+    /// deleted, because a note can go without Obelus watching -- another
+    /// Obelus, the reader's own editor -- and a table that only shrank when
+    /// Obelus was looking would grow for ever.
     ///
-    /// `None` is "obelus does not know what notes there are", which is a
+    /// `None` is "Obelus does not know what notes there are", which is a
     /// different thing from "there are none" and was the same thing:
     /// `Todo::read` answered with an empty list for a file it could not
     /// read, and an empty list here forgets every conversation in the project.
@@ -122,7 +122,7 @@ impl Remembered {
 
     /// Forgets every conversation the agent no longer has.
     ///
-    /// The other half of reconciling: a session obelus holds that the agent
+    /// The other half of reconciling: a session Obelus holds that the agent
     /// has never heard of would be found out by a `session/load` that fails,
     /// which is a worse way to find out -- the reader has already pressed
     /// the key and is looking at an empty conversation.
@@ -209,7 +209,7 @@ pub fn read(root: &Path) -> Reading {
 /// The same, from the text rather than the file.
 ///
 /// Apart so that a test can put what [`to_toml`] writes straight back in:
-/// what obelus writes, obelus has to be able to read, and a round trip
+/// what Obelus writes, Obelus has to be able to read, and a round trip
 /// through a temporary directory proves it about the filesystem rather
 /// than about the format.
 #[must_use]
@@ -256,19 +256,19 @@ fn read_from(text: &str) -> Reading {
 
 /// Reads, changes, and writes back.
 ///
-/// Read-modify-write rather than holding a copy, because a second obelus on
+/// Read-modify-write rather than holding a copy, because a second Obelus on
 /// the same project is an ordinary thing to have running and the last one to
 /// write would otherwise put back the other's conversations as they were
 /// before it opened them.
 pub fn change(root: &Path, notes: Option<&[NoteId]>, what: impl FnOnce(&mut Remembered)) {
     let Some(path) = path(root) else { return };
     // Nothing at all where the file will not read. Every other way of
-    // declining here leaves it alone; going on would write what obelus can
+    // declining here leaves it alone; going on would write what Obelus can
     // make of a file it cannot read over the file itself, which is every
     // conversation in this project traded for a parse error.
     //
     // Said to the log and not to the reader, unlike the notes: this file is
-    // obelus's own bookkeeping in its own state directory, and there is
+    // Obelus's own bookkeeping in its own state directory, and there is
     // nothing for them to go and fix. What they see is a conversation that
     // has to be started again.
     let Some(mut remembered) = read(root).remembered() else {
@@ -404,8 +404,8 @@ mod tests {
         assert_eq!(told, Some("what it said\n\nand the rest of it"));
         // And the bit beside it, which is the other half of "what has this
         // agent already been told". Read back through the file rather than
-        // off the map: a field obelus writes and cannot read is a field
-        // that repeats itself every time obelus is started.
+        // off the map: a field Obelus writes and cannot read is a field
+        // that repeats itself every time Obelus is started.
         //
         // Broken deliberately by dropping the `introduced` line from
         // `to_toml`, which reads back as `false` and tells the agent who it
@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn a_file_that_will_not_read_is_not_written_over() {
         // Said before the directory is asked for: this one builds its
-        // project *inside* obelus's state directory, so without it the
+        // project *inside* Obelus's state directory, so without it the
         // test leaves a table in the reader's own -- which it had been
         // doing since it was written.
         obelus_logging::state_directory_for_test(
@@ -490,7 +490,7 @@ mod tests {
                 &note("JKMNPQRS"),
                 "claude-acp",
                 Kept {
-                    session: "one this obelus made up".to_string(),
+                    session: "one this Obelus made up".to_string(),
                     title: None,
                     told: None,
                     introduced: false,
@@ -500,15 +500,15 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&path).expect("the table"),
             half,
-            "the table obelus could not read was written over"
+            "the table Obelus could not read was written over"
         );
 
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// And one whose notes obelus could not read is not forgotten at all.
+    /// And one whose notes Obelus could not read is not forgotten at all.
     ///
-    /// "There are no notes" and "obelus cannot tell what notes there are"
+    /// "There are no notes" and "Obelus cannot tell what notes there are"
     /// were one answer, and this table is swept against it: a `todo.toml`
     /// somebody had left half-edited meant every conversation in the project
     /// went, on the next message anybody sent.
@@ -534,7 +534,7 @@ mod tests {
         assert!(remembered.get(&note("ABCDEFGH"), "claude-acp").is_some());
         assert!(
             remembered.get(&note("JKMNPQRS"), "claude-acp").is_some(),
-            "a conversation was forgotten against a list obelus does not have"
+            "a conversation was forgotten against a list Obelus does not have"
         );
     }
 

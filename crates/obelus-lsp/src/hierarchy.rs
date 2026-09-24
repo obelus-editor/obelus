@@ -15,7 +15,7 @@
 //! An item is carried whole, as it arrived. The protocol says a `data`
 //! field is preserved between preparing an item and asking about it, and a
 //! server may put anything there -- so the thing sent back has to be the
-//! thing that came, not a rebuilt copy of the parts obelus happened to
+//! thing that came, not a rebuilt copy of the parts Obelus happened to
 //! read.
 
 use lsp_types::{CallHierarchyItem, ServerCapabilities};

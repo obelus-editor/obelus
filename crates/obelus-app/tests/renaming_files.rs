@@ -331,7 +331,7 @@ fn will_rename_rust() -> serde_json::Value {
     })
 }
 
-/// The id obelus sent the question under, so the answer can come back
+/// The id Obelus sent the question under, so the answer can come back
 /// under it.
 fn request_id(asked: &[serde_json::Value]) -> i64 {
     asked

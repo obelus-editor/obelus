@@ -91,7 +91,7 @@ fn the_command_palette_hugs_the_status_bar_and_leaves_the_code_visible() {
 ///
 /// Paired with `the_arrow_on_a_commit_recedes` over in the git tests. Between
 /// them they say that a mark is drawn by what it means, and that the two
-/// meanings in obelus today do not look alike.
+/// meanings in Obelus today do not look alike.
 #[test]
 fn the_mark_on_an_unwritten_buffer_does_not_recede() {
     use obelus_theme::builtin::DARK;
@@ -1401,7 +1401,7 @@ fn a_question_with_no_server_is_dim_and_keeps_its_key() {
 /// cannot do its job here is dim and cannot be chosen. A row that silently
 /// fails is worse than no row at all -- but a list that hides what it cannot
 /// do cannot be learned from, and a reader who never sees `show-change` does
-/// not find out obelus has it.
+/// not find out Obelus has it.
 ///
 /// With a plain Rust file open and no server, so what is dim is everything
 /// needing a server, a selection, a bracket, a history, or markdown.
@@ -1422,7 +1422,7 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
             .map(|(_, enabled)| *enabled)
     };
 
-    // Every command obelus has, whatever it can do here.
+    // Every command Obelus has, whatever it can do here.
     assert_eq!(
         rows.len(),
         obelus_command::ALL.len(),
@@ -1477,7 +1477,7 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
     // written to it, and on a machine where none ever has there is no file
     // and the row says so. Asked the way the palette asks, so the two agree
     // on a machine that has never started one -- which is every machine the
-    // first time, and was a failure here that said nothing about obelus.
+    // first time, and was a failure here that said nothing about Obelus.
     assert_eq!(
         listed("open-server-log"),
         Some(obelus_logging::current_file(obelus_logging::SERVERS).is_some()),
@@ -1596,7 +1596,7 @@ fn a_key_does_nothing_where_its_command_is_dim() {
     // The list of what is open is one of those, and it is worth saying why:
     // it asked for a file to be open, which meant the message it carries for
     // an empty list -- "no file is open" -- was one nobody could ever reach.
-    // A list of nothing is an answer, and the one obelus starts with.
+    // A list of nothing is an answer, and the one Obelus starts with.
     assert!(
         empty.offers(Command::DocumentList),
         "the list of what is open refuses to say that nothing is"
@@ -2278,7 +2278,7 @@ fn moving_the_selection_forgets_the_scrolling() {
     );
 }
 
-/// The picker judges modifiers the way the key table does, so a chord obelus
+/// The picker judges modifiers the way the key table does, so a chord Obelus
 /// has no name for is not text, not a motion, and not a selection — it falls
 /// through. A picker that typed `super+f` into the prompt would be the same
 /// bug as one that paged on `ctrl+pagedown`.
@@ -2547,7 +2547,7 @@ fn stopping_and_restarting_say_what_happened() {
     obelus_app::app::dispatch::dispatch(&mut empty, Command::LspRestart);
     assert_eq!(empty.note(), Some("No file to restart a server for"));
 
-    // A language obelus highlights but has no server for. The reason is the
+    // A language Obelus highlights but has no server for. The reason is the
     // useful part: "nothing happened" is not.
     let mut toml = App::new(vec![support::open_fixture("sample.toml")]);
     support::lay_out(&mut toml, 60, 12);
@@ -3557,7 +3557,7 @@ fn the_file_list_previews_an_open_file_where_it_is_being_read() {
     );
 }
 
-/// A file obelus has open is previewed from what obelus holds, not from the
+/// A file Obelus has open is previewed from what Obelus holds, not from the
 /// bytes on disk.
 ///
 /// The two are the same file until something writes to it -- an agent, a
@@ -3611,7 +3611,7 @@ fn an_open_file_is_previewed_as_the_reader_has_it() {
     let text = support::text_block(&dump);
     assert!(
         text.contains("IN_THE_BUFFER"),
-        "the preview is not the text obelus holds:\n{dump}"
+        "the preview is not the text Obelus holds:\n{dump}"
     );
     assert!(
         !text.contains("ON_THE_DISK"),

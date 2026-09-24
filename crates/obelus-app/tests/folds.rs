@@ -1,7 +1,7 @@
 //! What a file offers to fold, and what a reader does with it.
 //!
 //! The runs come from the shape of the file rather than from a server, so
-//! these read real fixtures and check what obelus makes of them -- which is
+//! these read real fixtures and check what Obelus makes of them -- which is
 //! also the only way to test folding for the languages no server answers
 //! about.
 
@@ -185,7 +185,7 @@ fn a_block_closes_as_a_block() {
 }
 
 /// A block that closes with nothing shows the mark and nothing else. There
-/// is no closing line to bring up, and obelus does not invent one.
+/// is no closing line to bring up, and Obelus does not invent one.
 #[test]
 fn a_block_with_no_bracket_shows_only_the_mark() {
     let mut app = App::new(vec![support::open_fixture("blocks.py")]);
@@ -205,7 +205,7 @@ fn a_block_with_no_bracket_shows_only_the_mark() {
 }
 
 /// The closing text is the file's and is drawn the colour it would be at
-/// home; the mark is obelus's own and is drawn the way its notes are. A
+/// home; the mark is Obelus's own and is drawn the way its notes are. A
 /// brace that changed colour on its way up the screen would read as
 /// something else.
 #[test]

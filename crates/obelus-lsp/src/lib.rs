@@ -37,7 +37,7 @@ pub struct Message {
 ///
 /// Three states rather than a boolean, because the two that are not "ready"
 /// mean opposite things to a reader whose jump did nothing: one is worth
-/// waiting for and the other is worth restarting obelus over.
+/// waiting for and the other is worth restarting Obelus over.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServerState {
     /// Spawned, handshake not answered yet.
@@ -66,7 +66,7 @@ impl ServerState {
     /// The mark that stands for the state.
     ///
     /// Ordinary Unicode, not a Nerd Font glyph: this one is on screen the
-    /// whole time, so it cannot depend on a font obelus has not been told
+    /// whole time, so it cannot depend on a font Obelus has not been told
     /// about.
     #[must_use]
     pub const fn mark(self) -> char {
@@ -83,7 +83,7 @@ impl ServerState {
 /// The arguments are the reason this is a struct: most servers speak the
 /// protocol on stdio only when told to (`--stdio`, `start`), and a table that
 /// held a bare command name could describe four of the fourteen languages
-/// obelus can highlight.
+/// Obelus can highlight.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Server {
     /// The program, looked up on `PATH`.
@@ -95,10 +95,10 @@ pub struct Server {
 /// The server to run for a language.
 ///
 /// A table, so a language gains a server by gaining a row. Only the languages
-/// obelus can already highlight are here: a server for a language it cannot
+/// Obelus can already highlight are here: a server for a language it cannot
 /// identify would have nothing to attach to.
 ///
-/// Nothing is installed on obelus's behalf. Reaching into a package manager to
+/// Nothing is installed on Obelus's behalf. Reaching into a package manager to
 /// fetch a server is a job with no end — the wrong version, the wrong
 /// platform, the download that fails behind a proxy — and every editor that
 /// has tried it has ended up maintaining a package manager.
@@ -122,7 +122,7 @@ pub const fn server_for(language: LanguageId) -> Option<Server> {
         LanguageId::Go => bare("gopls"),
         LanguageId::C | LanguageId::Cpp => bare("clangd"),
         LanguageId::Python => bare("pylsp"),
-        // One program for all three, but obelus keys its servers by language,
+        // One program for all three, but Obelus keys its servers by language,
         // so a project with `.ts` and `.tsx` files in it runs two copies.
         // That is worth fixing by keying on the command instead -- a bigger
         // change than this table -- and not worth leaving the languages out
@@ -159,8 +159,8 @@ pub const fn command_for(language: LanguageId) -> Option<&'static str> {
 
 /// The path a `file:` uri names.
 ///
-/// `None` for anything else -- `untitled:`, a scheme obelus has never
-/// heard of -- which is a document obelus cannot open and so cannot edit.
+/// `None` for anything else -- `untitled:`, a scheme Obelus has never
+/// heard of -- which is a document Obelus cannot open and so cannot edit.
 ///
 /// [`client::path_of`] does the work, because it is written next to
 /// [`client::uri_for`]: an escaping and an unescaping that disagree name a
@@ -212,7 +212,7 @@ pub fn on_path(command: &str) -> bool {
 /// The URI comes from [`client::uri_for`] rather than from a `format!` beside
 /// the test. A test that writes its own is a test that agrees with itself and
 /// with nothing else -- which is how these passed on one platform for as long
-/// as obelus was only ever run on it.
+/// as Obelus was only ever run on it.
 #[cfg(test)]
 pub(crate) mod fake {
     use super::PathBuf;
@@ -238,7 +238,7 @@ pub(crate) mod fake {
 mod tests {
     use super::*;
 
-    /// Every server obelus knows how to start, and the arguments it needs.
+    /// Every server Obelus knows how to start, and the arguments it needs.
     ///
     /// A server told to speak the protocol on stdio and not given the flag
     /// that makes it do so sits there saying nothing, which looks exactly

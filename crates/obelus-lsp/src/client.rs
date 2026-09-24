@@ -33,7 +33,7 @@ use serde_json::{Value, json};
 
 use crate::{Message, transport};
 
-/// The id obelus uses for its `initialize` request.
+/// The id Obelus uses for its `initialize` request.
 ///
 /// Fixed rather than drawn from the counter so recognising the one reply that
 /// has to be handled here needs no extra state.
@@ -48,7 +48,7 @@ pub struct Reply {
     pub result: Result<Value, String>,
 }
 
-/// An edit a server has asked obelus to make across the project.
+/// An edit a server has asked Obelus to make across the project.
 ///
 /// A request rather than an answer: the server is waiting to be told
 /// whether it happened, which is why the id is kept with it.
@@ -73,7 +73,7 @@ pub struct Client {
     /// Messages held until the handshake finishes.
     ///
     /// A server may not be sent anything but `initialize` until it has
-    /// answered, and obelus opens its first file well before that: the queue
+    /// answered, and Obelus opens its first file well before that: the queue
     /// is why the caller does not have to know.
     ///
     /// This is protocol correctness rather than something a reader would
@@ -81,7 +81,7 @@ pub struct Client {
     /// answers questions about a file whether or not it was told the file is
     /// open — `didOpen` only matters once a buffer and the disk disagree. A
     /// stricter server is entitled to refuse anything sent before it has
-    /// answered `initialize`, and this is why obelus never sends it.
+    /// answered `initialize`, and this is why Obelus never sends it.
     queued: Vec<String>,
     capabilities: Option<ServerCapabilities>,
     encoding: PositionEncodingKind,
@@ -96,7 +96,7 @@ pub struct Client {
     /// here and drained by the caller, which is the only side that knows
     /// whether the file they are about is still open.
     published: Vec<Value>,
-    /// The edits the server has asked obelus to make, since the caller
+    /// The edits the server has asked Obelus to make, since the caller
     /// last looked.
     ///
     /// Here for the same reason [`Client::published`] is, and for one
@@ -335,7 +335,7 @@ impl Client {
     pub fn on_message(&mut self, message: &Value) -> Option<Reply> {
         if let Some(method) = message.get("method").and_then(Value::as_str) {
             // A message with a method *and* an id is the server asking
-            // obelus something, and the protocol says every request gets
+            // Obelus something, and the protocol says every request gets
             // an answer. Left unanswered -- which is what this did -- a
             // server that waits for one waits for ever, and the ones that
             // do not wait have still been told nothing: a server asking
@@ -396,7 +396,7 @@ impl Client {
     /// hanging the exit on.
     const PATIENCE: std::time::Duration = std::time::Duration::from_millis(500);
 
-    /// Says obelus has stopped waiting for an answer.
+    /// Says Obelus has stopped waiting for an answer.
     ///
     /// A notification, so there is nothing to wait for and nothing to go
     /// wrong: a server that has already answered ignores it, and one that
@@ -407,7 +407,7 @@ impl Client {
         let _ = self.notify("$/cancelRequest", &json!({ "id": request }));
     }
 
-    /// What obelus would send back for a message from a server.
+    /// What Obelus would send back for a message from a server.
     ///
     /// The answering itself, without a server to send it to: what is
     /// interesting is the shape of the answer, and a live server cannot be
@@ -419,12 +419,12 @@ impl Client {
         Some(answered(id, method, &message["params"]))
     }
 
-    /// Answers a request the server made of obelus.
+    /// Answers a request the server made of Obelus.
     ///
     /// The answers are the smallest legal ones. Saying nothing useful is
     /// allowed and saying nothing at all is not: `null` for a setting
-    /// obelus does not have is exactly what the protocol asks a client to
-    /// send for a scope it cannot answer for, and a method obelus does not
+    /// Obelus does not have is exactly what the protocol asks a client to
+    /// send for a scope it cannot answer for, and a method Obelus does not
     /// know gets the error the protocol has for that -- which is an answer
     /// a server can act on, where silence is a server waiting.
     fn answer(&mut self, id: &Value, method: &str, params: &Value) {
@@ -435,7 +435,7 @@ impl Client {
     ///
     /// The request is sent and not waited on. A server with a lot to say on
     /// the way down would answer it late -- gopls flushes a thousand log
-    /// lines first -- and what obelus needs is not the answer but that the
+    /// lines first -- and what Obelus needs is not the answer but that the
     /// `exit` after it has been written.
     pub fn shutdown(&mut self) {
         let _ = self.request("shutdown", &Value::Null);
@@ -593,7 +593,7 @@ impl Client {
 /// by `/` where Windows writes `\`, and its path begins with one where a
 /// Windows path begins at a drive letter -- so `C:\src\main.rs`, escaped
 /// character by character, arrived as `file://C%3A%5Csrc%5Cmain.rs`: one long
-/// word in the place a URI keeps the *host*. Every server obelus spoke to on
+/// word in the place a URI keeps the *host*. Every server Obelus spoke to on
 /// that platform was told about a file on a machine that does not exist.
 ///
 /// Made absolute first, because `Url::from_file_path` will not take anything
@@ -601,7 +601,7 @@ impl Client {
 /// reader typed, and `file://src/main.rs` reads `src` as a host the same way.
 /// `std::path::absolute` rather than `canonicalize`, which would touch the
 /// disk and hand back the file a link points at -- a different path from the
-/// one every other part of obelus knows this buffer by.
+/// one every other part of Obelus knows this buffer by.
 pub fn uri_for(path: &Path) -> Result<Uri> {
     use std::str::FromStr as _;
 
@@ -625,7 +625,7 @@ pub fn uri_for(path: &Path) -> Result<Uri> {
 /// What comes back is a path this platform would have written itself --
 /// `C:\src\main.rs` rather than `/C:/src/main.rs`. These are compared against
 /// paths a walk of the tree found and drawn on the rows beside them, and a
-/// second spelling of one file is a file obelus opens twice.
+/// second spelling of one file is a file Obelus opens twice.
 #[must_use]
 pub fn path_of(uri: &str) -> Option<std::path::PathBuf> {
     url::Url::parse(uri).ok()?.to_file_path().ok()
@@ -664,7 +664,7 @@ fn spawn_reader(
             let message = match parsed {
                 Ok(Ok(message)) => message,
                 Ok(Err(error)) => {
-                    tracing::warn!(%error, language = language.name(), "a message obelus could not read");
+                    tracing::warn!(%error, language = language.name(), "a message Obelus could not read");
                     continue;
                 }
                 Err(error) => {
@@ -728,7 +728,7 @@ impl Drop for Client {
     /// usual thing to want -- it is what every daemon ever started from a
     /// shell depends on. It is not the thing to want here, and every other
     /// editor says so in its own words: helix spawns with tokio's
-    /// `kill_on_drop`, zed with `async-process`'s. obelus now spawns with
+    /// `kill_on_drop`, zed with `async-process`'s. Obelus now spawns with
     /// tokio too and could ask for the same flag; it says it here instead,
     /// because a server is not killed on the way out -- it is told to shut
     /// down, and that is a conversation rather than a signal.
@@ -748,10 +748,10 @@ impl Drop for Client {
     }
 }
 
-/// The answer obelus sends for one of the server's own requests.
+/// The answer Obelus sends for one of the server's own requests.
 ///
 /// The answers are the smallest legal ones. Saying nothing useful is
-/// allowed and saying nothing at all is not: `null` for a setting obelus
+/// allowed and saying nothing at all is not: `null` for a setting Obelus
 /// does not have is exactly what the protocol asks a client to send for a
 /// scope it cannot answer for.
 ///
@@ -761,7 +761,7 @@ impl Drop for Client {
 /// question on demand.
 fn answered(id: &Value, method: &str, params: &Value) -> Value {
     let result = match method {
-        // One entry per item asked about, all of them nothing: obelus
+        // One entry per item asked about, all of them nothing: Obelus
         // keeps no per-server settings, and a shorter array than the
         // question is a malformed answer.
         "workspace/configuration" => {
@@ -771,14 +771,14 @@ fn answered(id: &Value, method: &str, params: &Value) -> Value {
                 .map_or(0, Vec::len);
             Some(Value::Array(vec![Value::Null; items]))
         }
-        // Acknowledged and nothing more. obelus declares no dynamic
+        // Acknowledged and nothing more. Obelus declares no dynamic
         // registration, so a server should not be asking; one that asks
         // anyway is told yes rather than left hanging.
         "client/registerCapability" | "client/unregisterCapability" => Some(Value::Null),
-        // A progress token the server wants to use, which obelus reads
+        // A progress token the server wants to use, which Obelus reads
         // from the notifications it already handles.
         "window/workDoneProgress/create" => Some(Value::Null),
-        // A message with buttons on it. obelus has nowhere to put the
+        // A message with buttons on it. Obelus has nowhere to put the
         // buttons, and `null` is the protocol's word for "the reader
         // pressed none of them".
         "window/showMessageRequest" => Some(Value::Null),
@@ -786,7 +786,7 @@ fn answered(id: &Value, method: &str, params: &Value) -> Value {
         // edit, so [`Client::on_message`] keeps it for the side that has
         // the documents and the answer goes back through [`edit_answer`].
         other => {
-            tracing::debug!(method = other, "a request obelus has no answer for");
+            tracing::debug!(method = other, "a request Obelus has no answer for");
             None
         }
     };
@@ -798,12 +798,12 @@ fn answered(id: &Value, method: &str, params: &Value) -> Value {
         None => json!({
             "jsonrpc": "2.0",
             "id": id,
-            "error": { "code": -32601, "message": format!("obelus does not answer {method}") },
+            "error": { "code": -32601, "message": format!("Obelus does not answer {method}") },
         }),
     }
 }
 
-/// What obelus sends back for an edit a server asked it to make.
+/// What Obelus sends back for an edit a server asked it to make.
 ///
 /// The protocol asks for a plain yes or no, and a reason when it is no.
 /// Saying yes to an edit that did not happen is the failure worth
@@ -818,7 +818,7 @@ pub fn edit_answer(id: &Value, applied: bool, why: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "result": result })
 }
 
-/// What obelus tells a server it can do.
+/// What Obelus tells a server it can do.
 ///
 /// Every line of this is load-bearing and the way it fails is silence: a
 /// server does not complain about a capability that is missing, it
@@ -829,7 +829,7 @@ pub fn edit_answer(id: &Value, applied: bool, why: &str) -> Value {
 /// anywhere.
 ///
 /// That was one instance of a general mistake, which is why this is now
-/// written from the other end: every entry here is something obelus's own
+/// written from the other end: every entry here is something Obelus's own
 /// code reads, and the doc comment says which code. A capability declared
 /// and not used invites answers nobody looks at; one used and not
 /// declared is a feature that is written, tested, and never reached --
@@ -851,14 +851,14 @@ pub fn client_capabilities() -> ClientCapabilities {
         }),
         text_document: Some(TextDocumentClientCapabilities {
             // `didOpen`, `didChange`, `didSave`, `didClose`. Not the two
-            // `willSave` messages: obelus has nothing to say before a
+            // `willSave` messages: Obelus has nothing to say before a
             // write, and `willSaveWaitUntil` is a server being allowed to
             // hold up the save.
             synchronization: Some(TextDocumentSyncClientCapabilities {
                 did_save: Some(true),
                 ..Default::default()
             }),
-            // Read by `lsp::complete`. Snippets because obelus has an
+            // Read by `lsp::complete`. Snippets because Obelus has an
             // engine for them (`lsp::snippet`), and a server that has not
             // been told may not send one; label details because the offer
             // list draws them; insert-and-replace because a completion in
@@ -889,7 +889,7 @@ pub fn client_capabilities() -> ClientCapabilities {
             }),
             // The panel marks the parameter the cursor is in, which it
             // can only do from offsets: given the parameter as a piece of
-            // text instead, obelus has to find it in the label, and a
+            // text instead, Obelus has to find it in the label, and a
             // name that appears twice is found in the wrong place.
             signature_help: Some(SignatureHelpClientCapabilities {
                 signature_information: Some(SignatureInformationSettings {
@@ -935,7 +935,7 @@ pub fn client_capabilities() -> ClientCapabilities {
             // server's own legend: `lsp::tokens` reads the names out of
             // it rather than assuming the standard set, so what is
             // declared here is the floor and anything past it still
-            // works. Not the range request: obelus asks for a file once
+            // works. Not the range request: Obelus asks for a file once
             // and keeps the answer.
             semantic_tokens: Some(SemanticTokensClientCapabilities {
                 requests: SemanticTokensClientCapabilitiesRequests {
@@ -961,7 +961,7 @@ pub fn client_capabilities() -> ClientCapabilities {
             // and a reader would be reading the file rather than the one
             // the compiler has.
             inlay_hint: Some(InlayHintClientCapabilities::default()),
-            // The diagnostic obelus keeps is the one the server sent,
+            // The diagnostic Obelus keeps is the one the server sent,
             // whole, because it goes back in a code action's context and
             // the server matches it by every field -- `data` included.
             publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
@@ -1013,7 +1013,7 @@ pub fn client_capabilities() -> ClientCapabilities {
             ..Default::default()
         }),
         workspace: Some(WorkspaceClientCapabilities {
-            // obelus makes the edits a server asks for, which a server
+            // Obelus makes the edits a server asks for, which a server
             // that has not been told this will never ask for: the whole
             // path from `workspace/executeCommand` to a refactoring
             // landing in the files goes through one request, and this is
@@ -1022,14 +1022,14 @@ pub fn client_capabilities() -> ClientCapabilities {
             workspace_edit: Some(WorkspaceEditClientCapabilities {
                 document_changes: Some(true),
                 // Empty on purpose, and it is the same policy the code
-                // enforces: obelus will not create, move or delete a file
+                // enforces: Obelus will not create, move or delete a file
                 // because a server suggested it. Said here, a server has
                 // the chance not to ask.
                 resource_operations: Some(Vec::new()),
                 failure_handling: Some(FailureHandlingKind::Abort),
                 ..Default::default()
             }),
-            // Each of these is a message obelus sends.
+            // Each of these is a message Obelus sends.
             symbol: Some(WorkspaceSymbolClientCapabilities::default()),
             execute_command: Some(ExecuteCommandClientCapabilities::default()),
             did_change_watched_files: Some(DidChangeWatchedFilesClientCapabilities::default()),
@@ -1040,13 +1040,13 @@ pub fn client_capabilities() -> ClientCapabilities {
             // server that registered only the second still learns the
             // file is gone from where it was.
             //
-            // Not `willCreate` or `willDelete`: obelus does neither.
+            // Not `willCreate` or `willDelete`: Obelus does neither.
             file_operations: Some(WorkspaceFileOperationsClientCapabilities {
                 will_rename: Some(true),
                 did_rename: Some(true),
                 ..Default::default()
             }),
-            // Not `configuration`: obelus keeps no per-server settings,
+            // Not `configuration`: Obelus keeps no per-server settings,
             // so a server that asked would be asked to wait for an answer
             // of nulls. It is answered when it comes anyway, because the
             // protocol says every request is.
@@ -1101,9 +1101,9 @@ mod tests {
     /// A path spelled the way this platform spells one survives being said
     /// to a server and read back.
     ///
-    /// Built from the directory obelus is running in rather than written
+    /// Built from the directory Obelus is running in rather than written
     /// out, because a written-out path is a unix path and a unix path is
-    /// exactly the case that was never broken: on Windows every file obelus
+    /// exactly the case that was never broken: on Windows every file Obelus
     /// named arrived as one escaped word where the host goes, and every
     /// server answered about a file it could not find.
     ///

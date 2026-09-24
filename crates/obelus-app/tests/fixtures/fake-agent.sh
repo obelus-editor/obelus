@@ -1,5 +1,5 @@
 #!/bin/sh
-# An agent, for testing obelus's side of the Agent Client Protocol.
+# An agent, for testing Obelus's side of the Agent Client Protocol.
 #
 # Written in `sh` on purpose: a test that needs python, or node, or a second
 # Rust binary, is a test that stops running on somebody's machine. What it
@@ -22,7 +22,7 @@
 #                         -> taken, and every setting again with the new value
 #   session/prompt "/..." -> says which command it ran, and ends the turn
 #   session/prompt        -> it thinks, says something, reads a file through
-#                            obelus, tries to write one (which obelus
+#                            Obelus, tries to write one (which Obelus
 #                            refuses), uses a tool, and asks permission; the
 #                            turn ends once the answer to that arrives
 #   session/prompt "/ask" -> asks the reader three things through
@@ -35,15 +35,15 @@
 #   session/cancel        -> the turn ends, cancelled
 #
 # Every reply's id is read out of the request rather than assumed, because
-# the point of the exercise is that obelus's numbering is its own business.
+# the point of the exercise is that Obelus's numbering is its own business.
 
 # The working directory, spelled the way the program on the other end spells
 # one.
 #
 # `$PWD` is this shell's, and on Windows this shell is a POSIX one running
-# beside a Windows obelus: it says `/e/work/obelus` where obelus says
+# beside a Windows Obelus: it says `/e/work/obelus` where Obelus says
 # `E:/work/obelus`, and a tool call naming a file that way names no file at
-# all -- the transcript showed the path and obelus could not read it.
+# all -- the transcript showed the path and Obelus could not read it.
 # `cygpath` is what those shells ship for exactly this, and where there is
 # none there is nothing to translate.
 here=$PWD
@@ -136,7 +136,7 @@ switches=''
 # Every setting it offers, as the protocol's own list.
 #
 # The switch is only offered to a client that said it can show one, which is
-# what that capability is for: obelus promises `boolean: {}` in the
+# what that capability is for: Obelus promises `boolean: {}` in the
 # handshake, and a client that stops promising it stops being offered the
 # row.
 options() {
@@ -164,7 +164,7 @@ while IFS= read -r line; do
     fi
     case "$line" in
         *'"method":"initialize"'*)
-            # What the client promised. obelus says it reads files and does
+            # What the client promised. Obelus says it reads files and does
             # not write them, and an agent decides what to ask for from
             # exactly this -- so a client that said something else is a
             # different client, and says so through the name it is given
@@ -178,14 +178,14 @@ while IFS= read -r line; do
                 *) switches='' ;;
             esac
             # Whether it may ask the reader anything at all. A client that
-            # does not advertise a form cannot be sent one, so obelus's
+            # does not advertise a form cannot be sent one, so Obelus's
             # promise is what decides between the question and the excuse.
             case "$line" in
                 *'"form":{}'*) forms='yes' ;;
                 *) forms='' ;;
             esac
             # And whether it may run anything at all. A client that does
-            # not offer `terminal` cannot be sent one, so what obelus
+            # not offer `terminal` cannot be sent one, so what Obelus
             # promised is what decides between running and saying it
             # cannot.
             case "$line" in
@@ -198,7 +198,7 @@ while IFS= read -r line; do
                 *) able='' ;;
             esac
             # And that it takes tools over HTTP, which is what the real one
-            # says and what decides whether obelus offers it any: a client
+            # says and what decides whether Obelus offers it any: a client
             # that hands an address to an agent which cannot fetch it has
             # offered nothing, so a fixture that stayed quiet here could not
             # tell a client that offers its tools from one that does not.
@@ -246,7 +246,7 @@ while IFS= read -r line; do
             # line about themselves, and a free-text field for an answer
             # that is not on the list.
             set_turn "$session" "$(id_of "$line")"
-            printf '{"jsonrpc":"2.0","id":904,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"what would you like to do","requestedSchema":{"type":"object","properties":{"task":{"type":"string","title":"Task","oneOf":[{"const":"report","title":"Write the weekly report","description":"Gather the git changes of the week and write them up"},{"const":"review","title":"Review the code","description":"Read the current diff for bugs and simplifications"},{"const":"build","title":"Carry on with obelus","description":"Write code in this repository"},{"const":"survey","title":"Survey the repository","description":"Read the recent commits and describe where things stand"}]},"other":{"type":"string","title":"Other","description":"Type your own answer instead of choosing one above"}},"required":["task"]}}}\n'
+            printf '{"jsonrpc":"2.0","id":904,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"what would you like to do","requestedSchema":{"type":"object","properties":{"task":{"type":"string","title":"Task","oneOf":[{"const":"report","title":"Write the weekly report","description":"Gather the git changes of the week and write them up"},{"const":"review","title":"Review the code","description":"Read the current diff for bugs and simplifications"},{"const":"build","title":"Carry on with Obelus","description":"Write code in this repository"},{"const":"survey","title":"Survey the repository","description":"Read the recent commits and describe where things stand"}]},"other":{"type":"string","title":"Other","description":"Type your own answer instead of choosing one above"}},"required":["task"]}}}\n'
             ;;
         *'"method":"session/prompt"'*'"text":"/wordy'*)
             # The same form with one answer whose line about itself is
@@ -293,7 +293,7 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":909,"method":"elicitation/create","params":{"mode":"url","sessionId":"%s","message":"sign in to continue","elicitationId":"e1","url":"https://console.example.com/oauth/authorize?client_id=9d1c4a&scope=user%%3Ainference&code=1&state=7f2b"}}\n' "$session"
             ;;
         *'"method":"session/prompt"'*'/nowhere'*)
-            # A URL obelus will not hand to the machine's own launcher: a
+            # A URL Obelus will not hand to the machine's own launcher: a
             # scheme some program on this machine has registered, which is
             # the shape that turns a link into a way to start it. It must
             # come back as an error rather than as a refusal -- this is not
@@ -309,7 +309,7 @@ while IFS= read -r line; do
                     said='you went'
                     # And later, having watched the far end, the agent says
                     # the waiting is over. A notification: nothing is owed
-                    # back, because obelus answered when it sent them.
+                    # back, because Obelus answered when it sent them.
                     printf '{"jsonrpc":"2.0","method":"elicitation/complete","params":{"elicitationId":"e1"}}\n'
                     ;;
                 *'"action":"decline"'*) said='you would not go' ;;
@@ -320,7 +320,7 @@ while IFS= read -r line; do
             ;;
         *'"method":"session/prompt"'*'/run'*)
             # A command, the way an agent runs one: create, wait, read the
-            # output, let go. obelus runs it and shows it -- it does not
+            # output, let go. Obelus runs it and shows it -- it does not
             # ask, because asking is what this agent's own permission
             # request is for.
             set_turn "$session" "$(id_of "$line")"
@@ -367,7 +367,7 @@ while IFS= read -r line; do
             ;;
         *'"method":"session/prompt"'*'/echo'*)
             # An agent that sends the prompt it was just given straight
-            # back. Some do. obelus put those words on the page when the
+            # back. Some do. Obelus put those words on the page when the
             # reader pressed send, and they must not land twice.
             set_turn "$session" "$(id_of "$line")"
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"/echo"}}}}\n' "$session"
@@ -375,7 +375,7 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'/relay'*)
-            # Words in the reader's voice that obelus never put there --
+            # Words in the reader's voice that Obelus never put there --
             # which is what a replayed conversation is made of, and what
             # another client on the same session sends.
             set_turn "$session" "$(id_of "$line")"
@@ -454,7 +454,7 @@ while IFS= read -r line; do
             # A command put to the reader by an agent that sends the tool's
             # description as the call's title *and* as the call's content.
             # claude-agent-acp does this for every command it runs, so it is
-            # what a reader of obelus actually meets: the one line arrives
+            # what a reader of Obelus actually meets: the one line arrives
             # twice, and the thing being allowed -- the command -- arrives in
             # neither, because it is in `rawInput`, the agent's own arguments
             # in the agent's own shape.
@@ -475,7 +475,7 @@ while IFS= read -r line; do
             ;;
         *'"method":"session/prompt"'*'/blocks'*)
             # Says what the prompt arrived as: how many blocks, and what
-            # the client put in front of the reader's words. obelus opens
+            # the client put in front of the reader's words. Obelus opens
             # with one block of its own, and what is in that block depends
             # on what it has already said -- who it is talking to, which of
             # the reader's notes this is about, or that the note has been
@@ -496,11 +496,11 @@ while IFS= read -r line; do
             esac
             first=""
             case "$line" in
-                *'"text":"This is obelus, the client you are talking through'*)
+                *'"text":"This is Obelus, the client you are talking through'*)
                     first="always" ;;
             esac
             case "$line" in
-                *"This conversation is about one of obelus's notes"*)
+                *"This conversation is about one of Obelus's notes"*)
                     first="${first:+$first+}note" ;;
             esac
             case "$line" in
@@ -637,7 +637,7 @@ while IFS= read -r line; do
             ;;
         *'"method":"session/prompt"'*'slowly'*)
             # Asked to take its time: it says nothing and answers nothing,
-            # so the turn stays in flight until obelus cancels it.
+            # so the turn stays in flight until Obelus cancels it.
             set_turn "$session" "$(id_of "$line")"
             ;;
         *'"method":"session/prompt"'*)
@@ -652,13 +652,13 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":900,"method":"fs/read_text_file","params":{"sessionId":"'"$session"'","path":"tests/fixtures/read-me.txt"}}\n'
             ;;
         *'"id":900'*)
-            # What obelus handed back, quoted into a chunk so the test can
+            # What Obelus handed back, quoted into a chunk so the test can
             # see that it was the buffer's text and not the disk's.
             # Up to the first quote or backslash: the answer ends with an
             # escaped newline, and what the test looks for is the words.
             text=$(printf '%s' "$line" | sed -n 's/.*"content":"\([^"\\]*\).*/\1/p')
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" saying %s"}}}}\n' "$text"
-            # And a write outside the tree, which obelus refuses: an agent
+            # And a write outside the tree, which Obelus refuses: an agent
             # inside a reader may change what the reader is looking at and
             # nothing else.
             printf '{"jsonrpc":"2.0","id":902,"method":"fs/write_text_file","params":{"sessionId":"'"$session"'","path":"/tmp/obelus-not-in-the-tree.txt","content":"no"}}\n'
@@ -714,7 +714,7 @@ while IFS= read -r line; do
             loaded="$(session_of "$line")"
             # And whether the client said where its own tools are. A real
             # agent connects to them at the handshake and keeps what it was
-            # given; obelus offers them on a port the machine hands out
+            # given; Obelus offers them on a port the machine hands out
             # afresh every run, so a conversation taken up in a later run
             # has to be told the new one or the agent goes on calling a
             # port that died with the process that named it. Said back, so

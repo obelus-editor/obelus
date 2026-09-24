@@ -5,7 +5,7 @@
 //! compiler worked out -- and a reader who has to hold all of it in their
 //! head is reading the file the compiler has rather than the one on disk.
 //!
-//! Cells the file does not contain, which obelus draws through
+//! Cells the file does not contain, which Obelus draws through
 //! [`obelus_text::Phantom`]: every column after one of them is drawn one
 //! cell further along, and that arithmetic happens in the one module that
 //! is allowed to do it. Which is also what keeps the caret out of them --

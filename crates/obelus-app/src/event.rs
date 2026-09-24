@@ -5,7 +5,7 @@
 //! and the LSP client, later — is a sender and a variant rather than a second
 //! code path.
 //!
-//! One channel with several producer threads is what makes obelus need no
+//! One channel with several producer threads is what makes Obelus need no
 //! async runtime: the main loop blocks on `recv`, which is exactly what a
 //! reader with nothing else to do should be doing, and every source — the
 //! keyboard, the file walker, the watcher, later a language server's output —
@@ -29,7 +29,7 @@ use crossterm::event::{Event as TerminalEvent, KeyEvent};
 ///
 /// Six of these are the terminal's, and the rest are one worker's each.
 /// The workers do not know this type: each names what it produces, and the
-/// `From` impls below are where the application -- the only part of obelus
+/// `From` impls below are where the application -- the only part of Obelus
 /// that has heard of all of them -- says they are the same inbox.
 ///
 /// Not `Clone`: an agent's question carries the channel its answer goes
@@ -45,7 +45,7 @@ pub enum Event {
     ///
     /// A wheel is not an arrow key: it moves the *view*, and the place the
     /// reader had chosen stays where they put it. Which is only knowable
-    /// because obelus asks the terminal to report the mouse -- without that
+    /// because Obelus asks the terminal to report the mouse -- without that
     /// the wheel arrives as arrow keys.
     Scroll(isize),
     /// The pointer, over the screen.
@@ -65,19 +65,19 @@ pub enum Event {
     },
     /// Text the terminal pasted, all at once.
     ///
-    /// Because obelus asks for bracketed paste, which wraps what the
+    /// Because Obelus asks for bracketed paste, which wraps what the
     /// terminal's own paste key delivers in a pair of escape sequences.
     /// Without it a pasted function arrives as somebody typing very fast,
     /// newlines and all, and every line of it is indented again by whatever
     /// `Enter` does -- the staircase the mode was invented to stop.
     ///
-    /// It is also how text from outside reaches obelus at all: the sequence
-    /// obelus copies *with* cannot be read back, so the terminal reading the
+    /// It is also how text from outside reaches Obelus at all: the sequence
+    /// Obelus copies *with* cannot be read back, so the terminal reading the
     /// clipboard is the way in.
     Paste(String),
     /// Time passed, and something on screen moves with it.
     ///
-    /// The only animated thing obelus has is the welcome screen's wordmark,
+    /// The only animated thing Obelus has is the welcome screen's wordmark,
     /// and the ticker runs only while that is what is on screen. A reader
     /// looking at code gets no ticks at all: there is nothing to animate, and
     /// a redraw a reader did not ask for is a redraw that can only get in the
@@ -91,7 +91,7 @@ pub enum Event {
     Agent(obelus_agent::Event),
     /// A message from a language server.
     Lsp(obelus_lsp::Message),
-    /// An agent asked obelus to change the notes.
+    /// An agent asked Obelus to change the notes.
     Notes(obelus_mcp::Asked),
     /// A project, counted.
     ///
@@ -133,7 +133,7 @@ pub enum Pointer {
     /// Moved with nothing held down.
     ///
     /// Reported only by terminals that track motion, which is every one
-    /// obelus has been run on: it is what a rest is measured from, and
+    /// Obelus has been run on: it is what a rest is measured from, and
     /// where there is none there is simply no hover on a rest.
     Moved,
     /// Put down.
@@ -145,9 +145,9 @@ pub enum Pointer {
 }
 
 impl Event {
-    /// Translates a crossterm event, or `None` for one obelus ignores.
+    /// Translates a crossterm event, or `None` for one Obelus ignores.
     ///
-    /// Mouse and focus events obelus has no use for are dropped rather than
+    /// Mouse and focus events Obelus has no use for are dropped rather than
     /// stored: a variant nothing reads is indistinguishable from a broken
     /// feature.
     fn from_terminal(event: TerminalEvent) -> Option<Self> {
@@ -322,7 +322,7 @@ impl Drop for Ticker {
 
 #[cfg(test)]
 mod tests {
-    /// A paste is the only way text from outside reaches obelus: the
+    /// A paste is the only way text from outside reaches Obelus: the
     /// sequence it copies *with* cannot be read back, so what the terminal
     /// delivers is the way in. Dropped, it is not a paste that arrives
     /// wrong -- it is a key that does nothing.

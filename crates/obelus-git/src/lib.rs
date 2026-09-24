@@ -1,6 +1,6 @@
 //! What has changed in a file since the last commit, and who changed it.
 //!
-//! Through `gix` rather than by running `git`: obelus reads a repository
+//! Through `gix` rather than by running `git`: Obelus reads a repository
 //! while the reader is reading a file in it, and shelling out means a
 //! process per question, output parsed back out of a format meant for
 //! people, and a program that has to be installed for the editor to be able
@@ -101,7 +101,7 @@ fn in_repository(repository: &gix::Repository, path: &Path) -> Option<PathBuf> {
     Some(file.strip_prefix(work_dir).ok()?.to_path_buf())
 }
 
-/// What names the project a path is in, for the things obelus keeps about it.
+/// What names the project a path is in, for the things Obelus keeps about it.
 ///
 /// A repository and its worktrees are one project. The notes are about the
 /// code and the code is the same code: a reader with three worktrees open
@@ -115,7 +115,7 @@ fn in_repository(repository: &gix::Repository, path: &Path) -> Option<PathBuf> {
 /// spelling the reader typed comes back as the one the disk has. Elsewhere
 /// it resolves the symlinks that would otherwise keep two paths to one
 /// directory apart. A path that will not canonicalise -- it has gone, or
-/// cannot be opened -- is taken as it came, because a name obelus cannot
+/// cannot be opened -- is taken as it came, because a name Obelus cannot
 /// work out is worse than one that is merely long.
 ///
 /// Not a path: a file name. Every character a file name cannot safely carry
@@ -167,7 +167,7 @@ pub fn main_checkout(root: &Path) -> Option<PathBuf> {
 ///
 /// Discovered from the path rather than from the working directory: the file
 /// being read is the thing the question is about, and it can be outside the
-/// project obelus was started in.
+/// project Obelus was started in.
 fn repository(path: &Path) -> Option<gix::Repository> {
     let from = if path.is_dir() { path } else { path.parent()? };
     // Ceiling directories are left alone deliberately: a reader who opens a
@@ -181,7 +181,7 @@ fn repository(path: &Path) -> Option<gix::Repository> {
 /// Discovery derives trust from who owns `.git`, so a checkout the reader
 /// happens to own is fully trusted -- and a fully trusted repository's own
 /// config may name a program: `filter.*` drivers are run while a blob is
-/// converted the way a checkout would convert it, which is a thing obelus
+/// converted the way a checkout would convert it, which is a thing Obelus
 /// does to draw an honest margin. A code reader that executes a stranger's
 /// code because it was pointed at their clone is not a reader.
 ///
@@ -189,7 +189,7 @@ fn repository(path: &Path) -> Option<gix::Repository> {
 /// reduced trust costs something: gix will not resolve a remote whose url
 /// comes from an untrusted config, and that is how the history knows which
 /// commits have been pushed. So the reduction is applied where the risk is
-/// -- the one place obelus runs anything -- and nowhere else.
+/// -- the one place Obelus runs anything -- and nowhere else.
 ///
 /// What survives it is what the conversion actually needs: `core.autocrlf`
 /// and `.gitattributes` are both read at this level. Measured, both of
@@ -200,7 +200,7 @@ fn without_running_anything(path: &Path) -> Option<gix::Repository> {
     let found = gix::discover::upwards(from).ok()?.0;
     let (git_dir, _) = found.into_repository_and_work_tree_directories();
     let options = gix::open::Options::default()
-        // Every config file obelus would have read anyway. The level is
+        // Every config file Obelus would have read anyway. The level is
         // about what a repository may *do*, and its own default turns these
         // off as well.
         .permissions(gix::open::Permissions {
@@ -253,7 +253,7 @@ pub fn state_of(path: &Path) -> Vec<PathBuf> {
 ///
 /// The repository is discovered from the path itself for the same reason
 /// everything else here is: the file the question is about can be outside
-/// the project obelus was started in.
+/// the project Obelus was started in.
 #[must_use]
 pub fn state_moved(path: &Path) -> bool {
     if !matches!(
@@ -273,7 +273,7 @@ pub fn state_moved(path: &Path) -> bool {
 /// Only the states a reader cares about while choosing a file to read: one
 /// they have changed, one that is not committed at all, and one the tree
 /// has said it does not keep. Staged or not is a distinction for
-/// committing, which obelus does not do.
+/// committing, which Obelus does not do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileStatus {
     /// Tracked, and different from the last commit.
@@ -291,7 +291,7 @@ pub enum FileStatus {
     /// Kept out of the tree by `.gitignore` and friends.
     ///
     /// Never from [`statuses`], which does not ask about them -- `git
-    /// status` leaves them out and so does obelus. It comes from the file
+    /// status` leaves them out and so does Obelus. It comes from the file
     /// walk, which is the only thing that goes looking for them, and only
     /// when the reader has asked to be offered them.
     Ignored,
@@ -384,7 +384,7 @@ pub struct Standing {
     /// Git records one as a commit at a path and reports it as changed the
     /// moment that commit moves, so it arrives here looking exactly like a
     /// modified file and is a directory. It is a change to the tree and is
-    /// listed as one; it is not something obelus can open, and the row says
+    /// listed as one; it is not something Obelus can open, and the row says
     /// so rather than waiting to be pressed to say it.
     pub submodule: bool,
     /// What it was called before, for a move git has been told about.
@@ -392,7 +392,7 @@ pub struct Standing {
     /// Only a move git itself reports -- which is one that has been staged,
     /// by `git mv` or by adding both halves. A file moved in the working
     /// tree and not staged is a deletion and an untracked file to git, and
-    /// obelus says what git says: pairing those two up would be obelus's
+    /// Obelus says what git says: pairing those two up would be Obelus's
     /// inference rather than the tree's state, and this list is the tree's
     /// state.
     pub was: Option<PathBuf>,
@@ -482,7 +482,7 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, Standing> {
             // git's own answer rather than a guess from the disk: a file
             // that is gone says so, and a submodule -- which git records as
             // a commit at a path and reports as changed the moment that
-            // commit moves -- says that too, and is a directory obelus has
+            // commit moves -- says that too, and is a directory Obelus has
             // no notion of opening.
             Item::IndexWorktree(index_worktree::Item::Modification {
                 rela_path, status, ..
@@ -593,7 +593,7 @@ pub fn statuses(root: &Path) -> HashMap<PathBuf, Standing> {
 /// Every part of it but the name it had, which is merged in whichever
 /// answer carries it. Only one of them does -- a rename is a change
 /// between two of the three states git compares, and the other answer is
-/// about the third -- and which arrives first is not obelus's to decide:
+/// about the third -- and which arrives first is not Obelus's to decide:
 /// gix reports the index against the working tree and the head against the
 /// index as one stream, and a file that was moved and then edited came
 /// back a move or an ordinary change depending on which finished first. A
@@ -690,7 +690,7 @@ pub fn head_text(path: &Path) -> Option<String> {
 /// A stored blob as it would be on disk.
 ///
 /// The one place this matters is here, and it is why: everywhere else that
-/// obelus reads an old version of a file, it compares it against *another*
+/// Obelus reads an old version of a file, it compares it against *another*
 /// stored version, and two blobs converted the same way or not at all give
 /// the same answer. The margin compares a stored version against the
 /// reader's own buffer, which came off the disk -- so a project whose

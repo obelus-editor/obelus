@@ -170,7 +170,7 @@ impl App {
             return;
         };
         let Some(state) = buffer.syntax() else {
-            self.note = Some("Not a language obelus knows".to_string());
+            self.note = Some("Not a language Obelus knows".to_string());
             return;
         };
         let text = buffer.text();
@@ -310,9 +310,9 @@ impl App {
     /// Hands text to the clipboard and says what the reader got.
     ///
     /// Handed to the terminal, which owns it from here: that is what makes
-    /// the copy outlive obelus and what makes it work over ssh. A terminal
+    /// the copy outlive Obelus and what makes it work over ssh. A terminal
     /// that does not implement the sequence copies nothing and cannot say
-    /// so, so the note reports what obelus did rather than what the terminal
+    /// so, so the note reports what Obelus did rather than what the terminal
     /// did with it.
     ///
     /// Shared with the notes, because a copy is a copy: the file and the box
@@ -420,7 +420,7 @@ impl App {
 
     /// Puts back what was last copied or cut.
     ///
-    /// From wherever the clipboard is -- an outside program's, or obelus's
+    /// From wherever the clipboard is -- an outside program's, or Obelus's
     /// own where that cannot be read. A selection is what it replaces,
     /// because a reader who selected something and pasted meant to.
     pub fn paste(&mut self) {
@@ -579,7 +579,7 @@ impl App {
     /// prompt turns down is still a key it *saw*, and a digit falling into
     /// the file under a "line:" question would be the reader's answer
     /// landing somewhere else. What falls through is the chords, which is
-    /// how `ctrl+q` still leaves obelus from inside one.
+    /// how `ctrl+q` still leaves Obelus from inside one.
     pub(super) fn prompt_key(&mut self, key: &KeyEvent) -> bool {
         let Some(prompt) = self.prompt.as_mut() else {
             return false;

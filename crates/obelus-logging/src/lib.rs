@@ -2,16 +2,16 @@
 //!
 //! stdout is the drawing surface. A stray line written to it lands in the
 //! middle of the rendered frame and stays there, so the subscriber writes to a
-//! file and failing to open that file is not allowed to stop obelus starting.
+//! file and failing to open that file is not allowed to stop Obelus starting.
 //!
-//! Two logs, split by module. `obelus.log` is what obelus says about itself
+//! Two logs, split by module. `obelus.log` is what Obelus says about itself
 //! and `lsp.log` is what the language servers say -- a handshake, every
 //! request, and whatever they write to their stderr, at a volume that would
-//! bury the dozen lines obelus has of its own. `logging::is_server` decides by
+//! bury the dozen lines Obelus has of its own. `logging::is_server` decides by
 //! the event's target, which `tracing` takes from the module it came from, so a
 //! call site needs to know nothing and a module moved into `lsp` takes its
 //! lines with it. `open-log` and `open-server-log` open them; both are ordinary
-//! buffers, like anything else obelus opens.
+//! buffers, like anything else Obelus opens.
 //!
 //! The default filter names `ob` as well as `obelus`: the binary is its own
 //! crate, so everything `main` logged -- what started, and that it left -- was
@@ -34,18 +34,18 @@ use tracing_subscriber::{
     EnvFilter, Layer, layer::SubscriberExt as _, util::SubscriberInitExt as _,
 };
 
-/// What obelus writes about itself.
+/// What Obelus writes about itself.
 pub const OBELUS: &str = "obelus";
 
-/// What the language servers say, and what obelus said to them.
+/// What the language servers say, and what Obelus said to them.
 ///
 /// Its own file because it is somebody else's program talking: a handshake,
 /// a stream of requests and whatever the server writes to its stderr, at a
-/// volume that would bury the dozen lines obelus has to say about itself.
+/// volume that would bury the dozen lines Obelus has to say about itself.
 /// Two files, two commands, and each of them is readable.
 pub const SERVERS: &str = "lsp";
 
-/// Whether an event belongs to the servers' log rather than obelus's own.
+/// Whether an event belongs to the servers' log rather than Obelus's own.
 ///
 /// By the module it came from, which `tracing` uses as an event's target
 /// unless one is given -- so nothing at the call sites has to know which
@@ -55,10 +55,10 @@ pub const SERVERS: &str = "lsp";
 pub fn is_server(target: &str) -> bool {
     // Two spellings because a module path names the crate first, and the
     // reading of a language server is its own crate: `obelus::lsp::client`
-    // while obelus was one crate, `obelus_lsp::client` now that it is
+    // while Obelus was one crate, `obelus_lsp::client` now that it is
     // several. Matching one of them and not the other is silent -- the
     // servers' log is simply empty, and the handshake it should have held
-    // is in obelus's own log instead.
+    // is in Obelus's own log instead.
     ["obelus::lsp", "obelus_lsp"].iter().any(|name| {
         target == *name
             || target
@@ -67,14 +67,14 @@ pub fn is_server(target: &str) -> bool {
     })
 }
 
-/// The crates obelus is, as `tracing` spells them.
+/// The crates Obelus is, as `tracing` spells them.
 ///
 /// A target is a module path and its first segment is the crate, and a
 /// filter directive matches whole segments -- so `obelus` does not cover
 /// `obelus_lsp`, and a crate missing from this list writes nothing above
 /// `warn`. That is the failure this list exists to prevent, and it is one
 /// nothing reports: the log is not empty, it is just missing the half of
-/// obelus that was left out of it.
+/// Obelus that was left out of it.
 ///
 /// `ob` is the binary rather than a library: the lines main writes -- what
 /// started, and that it left -- carry the target of the crate the `ob`
@@ -109,9 +109,9 @@ pub const OURS: &[&str] = &[
 ///
 /// `tokei=off` because counting a tree warns once per file whose extension
 /// it does not know -- `Cargo.lock` alone does it on this repository --
-/// and that is a fact about the tree rather than anything obelus has to
+/// and that is a fact about the tree rather than anything Obelus has to
 /// say about itself. A line per unrecognised file would bury the dozen
-/// obelus writes, which is the thing this log is for.
+/// Obelus writes, which is the thing this log is for.
 fn ours_at_info() -> EnvFilter {
     let mut filter = EnvFilter::new("warn,tokei=off");
     for name in OURS {
@@ -130,7 +130,7 @@ fn ours_at_info() -> EnvFilter {
 /// flushes and shuts down the writer threads.
 ///
 /// Verbosity comes from `RUST_LOG`, which is `tracing-subscriber`'s own
-/// convention rather than a setting obelus invents.
+/// convention rather than a setting Obelus invents.
 #[must_use]
 pub fn install() -> Option<(WorkerGuard, WorkerGuard)> {
     let directory = log_directory()?;
@@ -189,7 +189,7 @@ fn writer(
 
 /// A writer that puts this process's number in front of every line.
 ///
-/// obelus does not split its own window -- the terminal does that -- so
+/// Obelus does not split its own window -- the terminal does that -- so
 /// several of them on one project is the ordinary way to work, and they
 /// share one log. Two interleaved stories with nothing to tell them apart
 /// are neither of them readable.
@@ -238,7 +238,7 @@ impl<W: std::io::Write> std::io::Write for Whose<W> {
 ///
 /// A panic is the one thing a log has to have and the one thing it had none
 /// of: the message goes to stderr, which is behind the alternate screen
-/// while obelus is drawing, and the log simply stopped mid-session with no
+/// while Obelus is drawing, and the log simply stopped mid-session with no
 /// reason in it. Chained, like every other hook here, so whatever was
 /// already installed still runs.
 pub fn catch_panics() {
@@ -309,18 +309,18 @@ pub fn state_directory_for_test(directory: PathBuf) {
 /// Where [`state_directory_for_test`] put it, if anywhere.
 static ELSEWHERE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// Where obelus keeps what it has worked out and could work out again.
+/// Where Obelus keeps what it has worked out and could work out again.
 ///
 /// State rather than config or data, which is what the directory is for: a
 /// reader who deleted all of this would lose nothing they wrote and nothing
-/// they chose. The logs are here, and what obelus remembers about the
+/// they chose. The logs are here, and what Obelus remembers about the
 /// conversations it has had.
 ///
 /// `None` is a session that keeps none of it -- no log, and no conversation
 /// to come back to -- which is what a Windows machine got, because the only
 /// answers here were an XDG variable and `HOME`. Where `dirs` is asked at
 /// all it is asked for the *local* data directory rather than the roaming
-/// one the settings use: this is what obelus worked out about this machine,
+/// one the settings use: this is what Obelus worked out about this machine,
 /// and following a reader to another machine is the one thing it must not
 /// do.
 #[must_use]
@@ -332,7 +332,7 @@ pub fn state_directory() -> Option<PathBuf> {
         return Some(elsewhere.clone());
     }
     // Said by name, wherever it is said. A reader who sets this has told
-    // every program they run where its state goes, and obelus is one.
+    // every program they run where its state goes, and Obelus is one.
     if let Some(state) = std::env::var_os("XDG_STATE_HOME") {
         return Some(PathBuf::from(state).join("obelus"));
     }
@@ -353,13 +353,13 @@ fn log_directory() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    /// There is somewhere to keep what obelus works out, and on Windows it
+    /// There is somewhere to keep what Obelus works out, and on Windows it
     /// is somewhere that platform keeps such things.
     ///
     /// Both halves, because the first one alone passes for the wrong
     /// reason. `None` is a session with no log and no conversation kept --
     /// which is what a Windows machine got -- and the log is the only thing
-    /// a reader has to send back when obelus does something they cannot
+    /// a reader has to send back when Obelus does something they cannot
     /// describe. But `HOME` *is* set on the Windows machine this was
     /// written on, by git's installer, so asking only whether there is an
     /// answer would have found one there and none on a machine without git.
@@ -386,7 +386,7 @@ mod tests {
         }
     }
 
-    /// Every line says which obelus wrote it.
+    /// Every line says which Obelus wrote it.
     ///
     /// Several of them share the log, because several of them on one
     /// project is the ordinary way to work. A line that does not say whose
@@ -436,7 +436,7 @@ mod tests {
 
     /// Which file an event goes to, by the module it came from. The split
     /// is the whole point of having two, and it is silent when wrong: a
-    /// server's stream in obelus's own log buries it, and obelus's lines in
+    /// server's stream in Obelus's own log buries it, and Obelus's lines in
     /// the servers' log are lost in it.
     #[test]
     fn the_servers_lines_are_told_apart_by_their_module() {
@@ -448,7 +448,7 @@ mod tests {
         assert!(!super::is_server("obelus"));
         // A module whose name starts the same way and is not it.
         assert!(!super::is_server("obelus::lspish"));
-        // The same question once obelus is a workspace and the crate is
+        // The same question once Obelus is a workspace and the crate is
         // named in the target rather than a module of one crate.
         assert!(super::is_server("obelus_lsp"));
         assert!(super::is_server("obelus_lsp::client"));
@@ -489,7 +489,7 @@ mod tests {
         fs::create_dir_all(&directory).expect("a directory to test in");
 
         fs::write(directory.join("obelus.2026-01-01.log"), "old").expect("the old log");
-        // The servers' log shares the directory, and is not obelus's own.
+        // The servers' log shares the directory, and is not Obelus's own.
         std::thread::sleep(Duration::from_millis(20));
         fs::write(directory.join("lsp.2026-01-03.log"), "theirs").expect("the server log");
         // Written second, so it is the newer of the two whatever the clock
@@ -504,7 +504,7 @@ mod tests {
         assert_eq!(
             newest_log(&directory, OBELUS),
             Some(directory.join("obelus.2026-01-02.log")),
-            "the servers' log, or the older one, was taken for obelus's own"
+            "the servers' log, or the older one, was taken for Obelus's own"
         );
         assert_eq!(
             newest_log(&directory, SERVERS),

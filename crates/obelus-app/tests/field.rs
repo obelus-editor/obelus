@@ -170,7 +170,7 @@ fn a_paste_goes_in_under_the_same_rules() {
 }
 
 /// And the three boxes that hold one: the caret reaches the middle of what
-/// was typed, wherever obelus asks a short question.
+/// was typed, wherever Obelus asks a short question.
 mod in_place {
     use obelus_app::{
         app::{App, dispatch},
@@ -240,7 +240,7 @@ mod in_place {
     /// away where nobody could see it go.
     #[test]
     fn a_copy_comes_out_of_what_is_being_typed_into() {
-        // The turn, and a provider of obelus's own: a copy is kept in one
+        // The turn, and a provider of Obelus's own: a copy is kept in one
         // place for the whole process, so a test that takes neither reaches
         // into the machine's real clipboard and empties whatever another
         // test had just put there.
@@ -292,7 +292,7 @@ mod in_place {
     fn copy_and_paste_work_through_the_keys_inside_a_list() {
         use obelus_clipboard::{Provider, use_provider_for_test};
 
-        // The turn first: what obelus keeps when a provider cannot hold a
+        // The turn first: what Obelus keeps when a provider cannot hold a
         // copy is one thing for the whole process, and asking for a
         // provider clears it. Two of these running at once is one test
         // emptying the clipboard another had just copied into.
@@ -337,7 +337,7 @@ mod in_place {
     fn the_same_keys_reach_the_settings_filter() {
         use obelus_clipboard::{Provider, use_provider_for_test};
 
-        // The turn first: what obelus keeps when a provider cannot hold a
+        // The turn first: what Obelus keeps when a provider cannot hold a
         // copy is one thing for the whole process, and asking for a
         // provider clears it. Two of these running at once is one test
         // emptying the clipboard another had just copied into.
@@ -369,7 +369,7 @@ mod in_place {
     fn the_same_keys_reach_the_list_of_open_files() {
         use obelus_clipboard::{Provider, use_provider_for_test};
 
-        // The turn first: what obelus keeps when a provider cannot hold a
+        // The turn first: what Obelus keeps when a provider cannot hold a
         // copy is one thing for the whole process, and asking for a
         // provider clears it. Two of these running at once is one test
         // emptying the clipboard another had just copied into.
@@ -414,7 +414,7 @@ mod in_place {
     fn the_keys_reach_a_box_with_no_file_behind_it() {
         use obelus_clipboard::{Provider, use_provider_for_test};
 
-        // The turn first: what obelus keeps when a provider cannot hold a
+        // The turn first: what Obelus keeps when a provider cannot hold a
         // copy is one thing for the whole process, and asking for a
         // provider clears it. Two of these running at once is one test
         // emptying the clipboard another had just copied into.
@@ -456,7 +456,7 @@ mod in_place {
     /// the places a reader types.
     #[test]
     fn a_cut_comes_out_of_the_message_being_written() {
-        // The turn, and a provider of obelus's own: a copy is kept in one
+        // The turn, and a provider of Obelus's own: a copy is kept in one
         // place for the whole process, so a test that takes neither reaches
         // into the machine's real clipboard and empties whatever another
         // test had just put there.

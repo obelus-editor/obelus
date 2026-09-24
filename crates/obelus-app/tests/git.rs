@@ -112,7 +112,7 @@ fn an_unchanged_file_has_nothing_to_say() {
     );
 }
 
-/// Against the repository obelus is being read in, which is the only thing
+/// Against the repository Obelus is being read in, which is the only thing
 /// that says the two halves agree: a diff of what git *actually* has against
 /// what is on disk.
 #[test]
@@ -121,7 +121,7 @@ fn the_committed_text_comes_from_git() {
     let committed = obelus_git::head_text(&path).expect("src/lib.rs is committed");
     assert!(
         committed.contains("pub mod app;"),
-        "that is not obelus's lib.rs"
+        "that is not Obelus's lib.rs"
     );
 
     let working = std::fs::read_to_string(&path).expect("reading it");
@@ -161,9 +161,9 @@ impl Repository {
                 // A commit needs an identity, and the machine's own may be
                 // unset or may be someone else's.
                 .env("GIT_AUTHOR_NAME", "obelus")
-                .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+                .env("GIT_AUTHOR_EMAIL", "Obelus@example.invalid")
                 .env("GIT_COMMITTER_NAME", "obelus")
-                .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+                .env("GIT_COMMITTER_EMAIL", "Obelus@example.invalid")
                 .output()
                 .expect("running git");
             assert!(
@@ -190,16 +190,16 @@ impl Repository {
     }
 
     /// Runs git in the repository, for the things a test sets up that
-    /// obelus itself never does: a branch, a checkout.
+    /// Obelus itself never does: a branch, a checkout.
     fn run(&self, arguments: &[&str]) {
         let outcome = std::process::Command::new("git")
             .arg("-C")
             .arg(&self.directory)
             .args(arguments)
             .env("GIT_AUTHOR_NAME", "obelus")
-            .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+            .env("GIT_AUTHOR_EMAIL", "Obelus@example.invalid")
             .env("GIT_COMMITTER_NAME", "obelus")
-            .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+            .env("GIT_COMMITTER_EMAIL", "Obelus@example.invalid")
             .output()
             .expect("running git");
         assert!(outcome.status.success(), "git {arguments:?} failed");
@@ -225,9 +225,9 @@ impl Repository {
                 .arg(&self.directory)
                 .args(arguments)
                 .env("GIT_AUTHOR_NAME", "obelus")
-                .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+                .env("GIT_AUTHOR_EMAIL", "Obelus@example.invalid")
                 .env("GIT_COMMITTER_NAME", "obelus")
-                .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+                .env("GIT_COMMITTER_EMAIL", "Obelus@example.invalid")
                 .output()
                 .expect("running git");
             assert!(outcome.status.success(), "git {arguments:?} failed");
@@ -1380,7 +1380,7 @@ fn the_changes_can_be_stepped_through() {
 /// else to look.
 ///
 /// Inside the bar rather than outside it, so that the bar is the last
-/// column -- which is where every list in obelus puts its own, and what
+/// column -- which is where every list in Obelus puts its own, and what
 /// keeps them in one line when a list opens over a file.
 #[test]
 fn the_map_beside_the_bar_shows_the_whole_file() {
@@ -1455,7 +1455,7 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
     );
 }
 
-/// `@@ -old,count +new,count @@`, as the runs obelus would name.
+/// `@@ -old,count +new,count @@`, as the runs Obelus would name.
 ///
 /// Shared by the two tests that ask git where a change is, because a second
 /// reading of git's own headers is a second thing to get wrong.
@@ -1476,7 +1476,7 @@ fn hunk_headers(text: &str) -> Vec<String> {
                 .and_then(|start| start.parse().ok())
                 .unwrap_or(0);
             let (added, removed): (usize, usize) = (count(after), count(before));
-            // git names the line *before* a pure deletion; obelus marks
+            // git names the line *before* a pure deletion; Obelus marks
             // the line it sits in front of.
             let at = if added == 0 { start + 1 } else { start };
             format!("{at}+{added}-{removed}")
@@ -1613,7 +1613,7 @@ fn a_run_of_changes_is_where_git_draws_it_in_this_history() {
             ]));
             assert!(
                 same_runs(&ours, &theirs, &after),
-                "{} {name}\n  obelus {ours:?}\n  git    {theirs:?}",
+                "{} {name}\n  Obelus {ours:?}\n  git    {theirs:?}",
                 &id[..8]
             );
             checked += 1;
@@ -1631,7 +1631,7 @@ fn a_run_of_changes_is_where_git_draws_it_in_this_history() {
 /// identical lines was anchored. A block put into a list of like blocks --
 /// a package added to a lockfile, an arm added to a match -- can be drawn
 /// starting at any line of the run it slides through, and every one of
-/// those reconstructs the same file. git slides one way and obelus the
+/// those reconstructs the same file. git slides one way and Obelus the
 /// other; neither is wrong, and a test that insisted would be asserting a
 /// thing neither tool promises.
 ///
@@ -1795,7 +1795,7 @@ fn a_list_of_files_says_which_have_changed() {
     );
 
     // Keyed by absolute path, because git reports paths relative to the
-    // repository root and obelus knows files by where they are: a map keyed
+    // repository root and Obelus knows files by where they are: a map keyed
     // by one and read with the other silently matches nothing.
     assert!(
         found.keys().all(|path| path.is_absolute()),
@@ -2009,7 +2009,7 @@ fn a_line_too_long_for_a_note_keeps_its_code() {
 }
 
 /// The names can be turned off, because on a narrow screen or in a file
-/// being read closely they are the noisiest thing obelus draws.
+/// being read closely they are the noisiest thing Obelus draws.
 ///
 /// The setting is what turns them off, and there is no command for it: a
 /// switch that should outlive the session is a setting, and one a key owned
@@ -2102,10 +2102,10 @@ fn a_real_repository_gives_a_real_blame() {
 
 /// A commit in another window is a commit in this one.
 ///
-/// obelus does not split its own window -- the terminal does -- so several
+/// Obelus does not split its own window -- the terminal does -- so several
 /// of them on one project is the ordinary way to work, and the reader's own
 /// shell is in there too. What has changed in a file is a question about the
-/// file *and* about the commit it is being compared with, and obelus only
+/// file *and* about the commit it is being compared with, and Obelus only
 /// ever asked again when the file changed: the margin went on drawing a diff
 /// against a commit that was no longer the one the file is against.
 #[test]
@@ -2401,7 +2401,7 @@ fn a_file_a_commit_moved_is_one_row_that_says_where_it_was() {
 /// and looks like a complete answer to the one that was asked. Git records
 /// no rename -- it infers one from what a commit added and removed, and
 /// `git log --follow` is that inference -- so this has to make the same
-/// one, or obelus's history is obelus's opinion.
+/// one, or Obelus's history is Obelus's opinion.
 ///
 /// Edited on the way, because a move with no edit is matched on content
 /// alone and would pass with the search for near-misses turned off.
@@ -2609,7 +2609,7 @@ fn the_history_opens_at_the_radius_its_key_names() {
     assert_eq!(rows, ["master"], "the refs tab shows the same commits");
 
     // The project is its own key, its own view, and its own single tab --
-    // reached by leaving this one first, because obelus's commands do not
+    // reached by leaving this one first, because Obelus's commands do not
     // run from inside a list.
     support::press(&mut app, KeyCode::Esc);
     support::press_function(&mut app, 10);
@@ -3509,9 +3509,9 @@ impl Pushed {
                 .arg(at)
                 .args(arguments)
                 .env("GIT_AUTHOR_NAME", "obelus")
-                .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+                .env("GIT_AUTHOR_EMAIL", "Obelus@example.invalid")
                 .env("GIT_COMMITTER_NAME", "obelus")
-                .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+                .env("GIT_COMMITTER_EMAIL", "Obelus@example.invalid")
                 .output()
                 .expect("running git");
             assert!(outcome.status.success(), "git {arguments:?} failed");
@@ -3589,7 +3589,7 @@ fn the_commits_the_remote_has_not_seen_are_marked() {
 
 /// Nothing is marked where the question does not arise. Every commit is
 /// then equally unpushed, and marking all of them says no more than marking
-/// none -- and obelus's own repository, which has no remote at all, would
+/// none -- and Obelus's own repository, which has no remote at all, would
 /// otherwise be a wall of one colour.
 #[test]
 fn a_repository_with_nowhere_to_push_marks_nothing() {
@@ -3857,7 +3857,7 @@ fn a_history_is_not_cut_off_at_a_screenful() {
     use obelus_buffer::Buffer;
 
     let repository = Repository::new("history-unbounded", "0\n");
-    // More commits than any list obelus used to ask for. A history is as
+    // More commits than any list Obelus used to ask for. A history is as
     // long as the project, and a reader searching one is searching all of
     // it: rows that were never fetched are rows a query cannot match.
     for change in 1..=230 {
@@ -4310,7 +4310,7 @@ fn a_blame_is_about_the_version_on_screen() {
     support::read_history(&mut app, &events);
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
-    // The walk is asked for while drawing, which is where obelus finds out
+    // The walk is asked for while drawing, which is where Obelus finds out
     // what is on screen to be asked about.
     support::render(&mut app, 70, 14);
     let at = std::time::Instant::now();
@@ -4803,7 +4803,7 @@ fn a_project_that_asks_for_crlf_has_an_honest_margin() {
     );
 }
 
-/// And a repository does not get to run a program because obelus looked at
+/// And a repository does not get to run a program because Obelus looked at
 /// it.
 ///
 /// Converting a blob the way a checkout would is what makes the margin
@@ -4811,7 +4811,7 @@ fn a_project_that_asks_for_crlf_has_an_honest_margin() {
 /// by the repository's own config. `gix::discover` would call a checkout
 /// the reader happens to own fully trusted and run it. A code reader that
 /// executes a stranger's code because it was pointed at their clone is not
-/// a reader, so the trust level is obelus's decision: reduced, which keeps
+/// a reader, so the trust level is Obelus's decision: reduced, which keeps
 /// the conversion and refuses the program.
 #[test]
 fn a_repository_does_not_get_to_run_a_program_because_obelus_read_it() {
@@ -4833,7 +4833,7 @@ fn a_repository_does_not_get_to_run_a_program_because_obelus_read_it() {
     assert_eq!(base, "hello\n", "the content did not survive the refusal");
     assert!(
         !marker.exists(),
-        "obelus ran a program the repository named, just by reading the file"
+        "Obelus ran a program the repository named, just by reading the file"
     );
 }
 
@@ -4842,7 +4842,7 @@ fn a_repository_does_not_get_to_run_a_program_because_obelus_read_it() {
 /// `git status` writes it `R old -> new`, and this list says the same
 /// thing. Only a move git itself reports, which is one that has been
 /// staged: a file moved in the working tree and not staged is a deletion
-/// and an untracked file to git, and pairing those two up would be obelus's
+/// and an untracked file to git, and pairing those two up would be Obelus's
 /// inference rather than the tree's state.
 #[test]
 fn a_move_git_knows_about_is_one_row_with_the_name_it_had() {
@@ -4915,9 +4915,9 @@ fn what_git_says_has_changed_is_what_the_list_says() {
             .arg(&within)
             .args(arguments)
             .env("GIT_AUTHOR_NAME", "obelus")
-            .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+            .env("GIT_AUTHOR_EMAIL", "Obelus@example.invalid")
             .env("GIT_COMMITTER_NAME", "obelus")
-            .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+            .env("GIT_COMMITTER_EMAIL", "Obelus@example.invalid")
             .output()
             .expect("running git");
         assert!(outcome.status.success(), "git {arguments:?} failed");
@@ -4939,7 +4939,7 @@ fn what_git_says_has_changed_is_what_the_list_says() {
         "a file the reader deleted is not among the changes: {statuses:?}"
     );
     // So is a submodule, which git reports as changed the moment the commit
-    // it records moves. It is not a file obelus can open, and the row says
+    // it records moves. It is not a file Obelus can open, and the row says
     // so -- rather than being left out of a list that claims to be what git
     // says has changed.
     let vendor = statuses
@@ -4975,7 +4975,7 @@ fn what_git_says_has_changed_is_what_the_list_says() {
 /// The row was fine when the list was drawn, so nothing dimmed it, and by
 /// the time the reader presses enter the file is gone. The list closes on
 /// the way to trying, which is what makes the status row free to say it --
-/// and without this, obelus closed the list, opened nothing and said
+/// and without this, Obelus closed the list, opened nothing and said
 /// nothing at all.
 #[test]
 fn a_path_that_went_away_after_the_list_was_built_says_so() {
@@ -5332,14 +5332,14 @@ fn a_worktree_and_its_repository_are_one_project() {
 
 /// Notes from before they were kept per project are still the reader's.
 ///
-/// They sat in the project's own `.obelus` and are kept in obelus's state
-/// directory now. A reader who had a list and opened obelus to an empty one
+/// They sat in the project's own `.obelus` and are kept in Obelus's state
+/// directory now. A reader who had a list and opened Obelus to an empty one
 /// would think it had gone: it is still on disk, and nothing on the page
 /// would say so.
 ///
 /// The main checkout's, deliberately. A reader with worktrees has one of
-/// these files in each, they do not say the same thing, and obelus putting
-/// them together would be obelus deciding what their notes say -- so the
+/// these files in each, they do not say the same thing, and Obelus putting
+/// them together would be Obelus deciding what their notes say -- so the
 /// repository's own checkout is the one that carries them over and the rest
 /// are left exactly where they are.
 ///
@@ -5408,13 +5408,13 @@ fn a_diff(name: &str) -> (String, std::path::PathBuf, std::path::PathBuf) {
     (text, before, after)
 }
 
-/// Where obelus draws a run of changes, against where git draws it.
+/// Where Obelus draws a run of changes, against where git draws it.
 ///
 /// A minimal diff still has choices in it -- a block inserted where the lines
 /// around it repeat can be written as starting a line or two earlier, and one
 /// change can be written as two hunks with a line between them -- and which
 /// reading you get is what decides which lines are marked in the margin. So
-/// obelus tidies the diff the way git does before showing it, and this is
+/// Obelus tidies the diff the way git does before showing it, and this is
 /// what says the two still agree.
 ///
 /// Against real git rather than against a recorded answer: what "changed"
@@ -5464,12 +5464,12 @@ fn a_run_of_changes_is_where_git_draws_it() {
         let theirs = hunk_headers(&String::from_utf8_lossy(&out.stdout));
         assert!(
             same_runs(&ours, &theirs, &after),
-            "{name}\n  obelus {ours:?}\n  git    {theirs:?}"
+            "{name}\n  Obelus {ours:?}\n  git    {theirs:?}"
         );
     }
 }
 
-/// Every run obelus draws puts the file back.
+/// Every run Obelus draws puts the file back.
 ///
 /// The claim underneath the one above, and the one that has to hold whatever
 /// git would have said: a hunk carries the lines that were there before, so
@@ -5478,7 +5478,7 @@ fn a_run_of_changes_is_where_git_draws_it() {
 ///
 /// Asked of `serving` as well, which is the one pair in the corpus where git
 /// draws the change somewhere else. Both accounts are diffs of the same two
-/// files and both put the file back -- obelus's is four edits the smaller --
+/// files and both put the file back -- Obelus's is four edits the smaller --
 /// and where two independent implementations of one algorithm break a tie
 /// differently there is nothing to fix. What can be held to is this.
 ///

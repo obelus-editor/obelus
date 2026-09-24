@@ -11,7 +11,7 @@
 //! ink it in are the view's business and are not known here.
 //!
 //! Fetched one at a time on one thread, and cached by id. Forty files of
-//! four kilobytes is a directory obelus can keep for good: these change
+//! four kilobytes is a directory Obelus can keep for good: these change
 //! when an agent changes its logo, which is not on the scale a reader
 //! notices.
 
@@ -42,7 +42,7 @@ pub fn directory() -> Option<PathBuf> {
 
 /// Where one agent's icon is kept.
 ///
-/// Named by the registry's id, which is the only name obelus has for an
+/// Named by the registry's id, which is the only name Obelus has for an
 /// agent -- and, since it is also a path segment here, one that has to be
 /// checked: a registry entry is somebody else's string, and `../` in it
 /// would name a file outside the cache.
@@ -65,7 +65,7 @@ pub fn cached(id: &str) -> Option<String> {
     std::fs::read_to_string(path_for(id)?).ok()
 }
 
-/// Fetches the icons obelus does not already have.
+/// Fetches the icons Obelus does not already have.
 ///
 /// The cached ones are sent first and from the same thread, so the page
 /// draws whatever it had while the rest arrive. Each one is its own event:
@@ -107,7 +107,7 @@ pub fn spawn_fetch(wanted: Vec<(String, String)>, sender: impl Sink<Event>) {
                 }
                 // Nothing is sent for one that did not arrive. A missing
                 // mark is a card that looks the way it looked before
-                // obelus fetched marks at all, which is why this whole
+                // Obelus fetched marks at all, which is why this whole
                 // path is allowed to fail quietly.
                 Err(error) => tracing::debug!(id, %error, "no icon for this agent"),
             }
@@ -214,7 +214,7 @@ mod tests {
             let path = path_for(id).expect("a path for a plain id");
             assert!(path.ends_with(format!("{id}.svg")));
         }
-        // And what obelus refuses to take from somebody else's file.
+        // And what Obelus refuses to take from somebody else's file.
         for id in ["", "../../evil", "a/b", ".ssh", "x\0y"] {
             assert!(path_for(id).is_none(), "{id} named a file");
         }

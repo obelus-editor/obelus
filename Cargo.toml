@@ -8,7 +8,7 @@ edition = "2024"
 license = "Apache-2.0"
 description = "A terminal code reader. It doesn't want you to type."
 
-# The lints the whole of obelus is written under. Crate attributes do not
+# The lints the whole of Obelus is written under. Crate attributes do not
 # travel, so `#![deny(..)]` in one crate root would silently stop applying to
 # the other twenty-five; here they are stated once and each member opts in with
 # a `[lints] workspace = true` of its own, which Cargo does not inherit for it.
@@ -18,7 +18,7 @@ unreachable_pub = "deny"
 private_interfaces = "deny"
 
 [workspace.dependencies]
-# obelus itself. One place that says which directory a crate is in, so a
+# Obelus itself. One place that says which directory a crate is in, so a
 # member's manifest is a list of names and nothing else.
 obelus-agent = { path = "crates/obelus-agent" }
 obelus-app = { path = "crates/obelus-app" }
@@ -67,7 +67,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Fuzzy matching. `nucleo-matcher` rather than `nucleo`: the latter adds a
-# streaming worker on rayon and parking_lot, and obelus matches a list it
+# streaming worker on rayon and parking_lot, and Obelus matches a list it
 # already holds.
 nucleo-matcher = "0.3"
 
@@ -81,9 +81,9 @@ ignore = "0.4"
 globset = "0.4"
 
 # The search's patterns. Already in the tree by way of `ignore` and `tokei`,
-# so this states a dependency obelus was compiling anyway rather than adding
+# so this states a dependency Obelus was compiling anyway rather than adding
 # one. `default-features = false` with `std`, `perf` and `unicode` kept: what
-# is dropped is `logging`, which would put obelus's own tracing output in the
+# is dropped is `logging`, which would put Obelus's own tracing output in the
 # middle of a frame.
 regex = { version = "1", default-features = false, features = ["std", "perf", "unicode"] }
 
@@ -108,7 +108,7 @@ ropey = "1.6"
 # different types, and the error says nothing useful about why.
 #
 # Each is a C parser compiled by its build script, so this list is most of
-# obelus's cold build. A language whose files nobody opens is paid for on
+# Obelus's cold build. A language whose files nobody opens is paid for on
 # every clean build, which is the reason not to add every grammar that exists.
 tree-sitter = "0.27"
 tree-sitter-rust = "0.24"
@@ -130,7 +130,7 @@ tree-sitter-html = "0.23"
 tree-sitter-yaml = "0.7"
 # No markdown: it is two grammars, a block one and an inline one, which the
 # one-grammar-per-language registry cannot express. It needs the injection
-# machinery obelus does not have yet.
+# machinery Obelus does not have yet.
 unicode-width = "0.2"
 
 anyhow = "1"
@@ -140,18 +140,18 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tree-sitter-md = "0.5.3"
 # Markdown for a terminal: the parse and the layout, not the painting. Its
 # `FmtText` is a list of lines of styled compounds, which is exactly the
-# structure obelus needs and none of the escape sequences it must not have --
-# obelus writes cells, not ANSI. It is on crossterm 0.29, the same one pinned
+# structure Obelus needs and none of the escape sequences it must not have --
+# Obelus writes cells, not ANSI. It is on crossterm 0.29, the same one pinned
 # above, so there is still one crossterm in the tree.
 base64 = "0.23.1"
 # Line diffs whose hunks agree with git's, because it implements the same
 # histogram algorithm. What "changed since HEAD" means has to be the same
-# answer `git diff` gives, or the markers in the margin are obelus's opinion
+# answer `git diff` gives, or the markers in the margin are Obelus's opinion
 # rather than the repository's.
 imara-diff = "0.2"
 # Git itself, as a library. The alternative is running `git` and parsing what
 # it prints for people, which means a process per question and a program that
-# has to be installed for obelus to be able to see a repository at all.
+# has to be installed for Obelus to be able to see a repository at all.
 # Where a configuration file goes, which is a different answer on every
 # platform and one it is not worth being wrong about: a file the reader
 # cannot find is a setting that does not exist.
@@ -163,7 +163,7 @@ dirs = "7"
 # the search starts at the application's directory and the working directory
 # before it reaches `PATH` at all; and a name with a separator in it is not a
 # search. Written out here, the first of those was missed and every language
-# obelus has a server for reported that the server was not installed.
+# Obelus has a server for reported that the server was not installed.
 # `either` and `home`, which it brings, were in the tree already.
 which = "8"
 
@@ -172,17 +172,17 @@ which = "8"
 # it, and the `\` between its parts means nothing to a URI -- escaped rather
 # than converted, `C:\src\main.rs` arrives at a language server as one long
 # word in the place a URI keeps the *host*. Already in the tree by way of
-# `reqwest` and `tower-http`, so this states a dependency obelus was
+# `reqwest` and `tower-http`, so this states a dependency Obelus was
 # compiling anyway.
 url = "2"
 # The file's format. Hand-rolling a parser for something that looks like toml
 # invites the question "why doesn't a section work", and the answer to
-# "is this valid" is not obelus's to own.
+# "is this valid" is not Obelus's to own.
 toml = "1"
 
 # Editing a file somebody else wrote. The tree's own settings are written by
 # hand and committed, so they have comments and an order in them that a
-# round trip through a `toml::Table` would throw away -- obelus's own file
+# round trip through a `toml::Table` would throw away -- Obelus's own file
 # has neither, and is written whole. Already in the tree by way of another
 # dependency, so this costs a line rather than a build.
 toml_edit = "0.22"
@@ -213,11 +213,11 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 # images, or sixels, whichever the terminal answers that it speaks. Its
 # default features probe for chafa, a C library, and its build script *fails*
 # where chafa is not installed -- so those are off. What chafa would have
-# added is the half-block fallback, and obelus falls back to a glyph instead:
+# added is the half-block fallback, and Obelus falls back to a glyph instead:
 # a sixteen-pixel mark pressed into two half-block cells is four coloured
 # squares.
 ratatui-image = { version = "11.0.8", default-features = false, features = ["crossterm"] }
-# The pixels themselves. Only png, because obelus decodes no image files at
+# The pixels themselves. Only png, because Obelus decodes no image files at
 # all -- this is the buffer type `ratatui-image` takes.
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 # The registry's marks are SVG, so something has to draw them. Without its
@@ -229,8 +229,8 @@ agent-client-protocol = "2.1.0"
 # The channels and streams the protocol's own crate speaks. Runtime-agnostic,
 # which is why they stay here with tokio driving them.
 futures = "0.3.34"
-# The runtime obelus's waiting is done on -- one of them, in `src/runtime.rs`,
-# for the agent's connection, the tools obelus offers it, a language server's
+# The runtime Obelus's waiting is done on -- one of them, in `src/runtime.rs`,
+# for the agent's connection, the tools Obelus offers it, a language server's
 # pipe and the clock behind an animation. Work-stealing because a language
 # server's answer is parsed where it is read and a big one takes twenty
 # milliseconds, which on one thread would stall everything else waiting here.
@@ -243,7 +243,7 @@ tokio = { version = "1.53.1", default-features = false, features = [
     # `tokio::sync::mpsc`, which the watcher's debounce and the language
     # server's reader both use. It compiled without being named here only
     # because reqwest, rmcp and axum each ask for it and cargo unifies the
-    # three; nothing obelus declares implies it, so a tree without those
+    # three; nothing Obelus declares implies it, so a tree without those
     # three -- which is what the watcher alone is -- would not build.
     "sync",
     "time",
@@ -251,7 +251,7 @@ tokio = { version = "1.53.1", default-features = false, features = [
 ] }
 access_log_parser = "0.11"
 
-# What carries the tools obelus offers an agent. A router for one route,
+# What carries the tools Obelus offers an agent. A router for one route,
 # most of which is unused -- but a tool call has to wait for the reader to
 # answer a card, and an `await` on that costs no thread where a blocking
 # server would park one. rmcp's transport hands over a `tower` service, so
@@ -266,15 +266,15 @@ axum = "0.8"
 rmcp = { version = "3.4", features = ["transport-streamable-http-server"] }
 
 # The schemas `#[tool]` builds from those signatures. Already in the tree by
-# way of rmcp; declared here because obelus derives on its own types.
+# way of rmcp; declared here because Obelus derives on its own types.
 schemars = "1"
 
 # Handing a URL to whatever the reader opens URLs with, for an agent that
 # needs them to sign in somewhere. Three crates, none of them large.
 #
 # Not three lines of `Command::new("xdg-open")`, for reasons that are
-# obelus's own rather than general: it silences the child's stdin, stdout
-# and stderr, and obelus lives in the alternate screen where a launcher
+# Obelus's own rather than general: it silences the child's stdin, stdout
+# and stderr, and Obelus lives in the alternate screen where a launcher
 # that prints one line has torn the page up. It tries `gio`, `gnome-open`
 # and `kde-open` where `xdg-open` is not installed. And it knows WSL, where
 # a terminal program wanting the Windows browser is exactly the case a
@@ -285,14 +285,14 @@ schemars = "1"
 open = "5"
 
 # What the tests use and the program does not.
-# A blocking HTTP client, for the tests that talk to the server obelus runs
-# for an agent. obelus itself fetches with `reqwest` on its own runtime;
+# A blocking HTTP client, for the tests that talk to the server Obelus runs
+# for an agent. Obelus itself fetches with `reqwest` on its own runtime;
 # a test is a synchronous function and wants neither.
 ureq = "3.4.1"
 
 # Asking the system whether a process is still there, which one test does
-# from outside obelus on purpose: what it is checking is that a language
-# server obelus let go of is gone, and obelus's own answer to that is the
+# from outside Obelus on purpose: what it is checking is that a language
+# server Obelus let go of is gone, and Obelus's own answer to that is the
 # thing under test. Both are dev-dependencies of `obelus-lsp` alone, and
 # each only on the platform whose question it answers.
 libc = "0.2.189"
@@ -306,7 +306,7 @@ windows-sys = { version = "0.61.2", features = [
 # Nothing but cargo's own defaults.
 #
 # Link-time optimisation and a single codegen unit were here, for a real
-# reason: obelus draws the whole screen on every keystroke, and the work
+# reason: Obelus draws the whole screen on every keystroke, and the work
 # that takes is spread over a dozen small crates -- the rope, the matcher,
 # the diff, the grammars -- so the calls that matter most cross crate
 # boundaries, which is what a link-time pass can see through and a

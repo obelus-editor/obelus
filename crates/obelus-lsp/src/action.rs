@@ -196,9 +196,9 @@ pub struct Place {
 /// them.
 ///
 /// `null` is a server saying it has nothing to change, and is turned away
-/// before the parse so that it is not logged as a layout obelus could not
+/// before the parse so that it is not logged as a layout Obelus could not
 /// read -- the answer is the same either way, and the line in the log is
-/// not. Anything else that will not parse is a server obelus cannot follow,
+/// not. Anything else that will not parse is a server Obelus cannot follow,
 /// and following half of a layout is worse than following none.
 #[must_use]
 pub fn edits_in(result: Option<serde_json::Value>) -> Option<Vec<lsp_types::TextEdit>> {
@@ -210,7 +210,7 @@ pub fn edits_in(result: Option<serde_json::Value>) -> Option<Vec<lsp_types::Text
         Ok(edits) if !edits.is_empty() => Some(edits),
         Ok(_) => None,
         Err(error) => {
-            tracing::warn!(%error, "a layout obelus cannot read");
+            tracing::warn!(%error, "a layout Obelus cannot read");
             None
         }
     }

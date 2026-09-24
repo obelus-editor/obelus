@@ -140,7 +140,7 @@ pub fn write_spans(
                 return column;
             }
             // What the reader has hold of, in the colour every list in
-            // obelus marks a run of itself with: a ground under whatever
+            // Obelus marks a run of itself with: a ground under whatever
             // colour the characters already carry, which is why the ink
             // above is worked out first and only the ground is replaced.
             let style = match held.is_some_and(|held| held.contains(&at)) {

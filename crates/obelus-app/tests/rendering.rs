@@ -54,7 +54,7 @@ fn a_file_renders_with_a_gutter_and_a_status_bar() {
 ///
 /// It has the rule above it to say it is a different subject from the file,
 /// and saying that twice makes a strip of colour -- the heaviest thing
-/// obelus draws -- out of the smallest part of the screen. What tells the
+/// Obelus draws -- out of the smallest part of the screen. What tells the
 /// row apart is the rule and the words on it.
 #[test]
 fn the_status_row_is_the_pages_own_colour() {
@@ -116,7 +116,7 @@ fn a_narrow_screen_truncates_the_path_from_the_left() {
 #[test]
 fn starting_with_nothing_open_shows_a_welcome_screen() {
     let mut app = App::new(Vec::new());
-    // The screen says which tree obelus is on, so the test says which tree
+    // The screen says which tree Obelus is on, so the test says which tree
     // that is: left to the process's own directory this grid holds the path
     // of whoever's checkout ran it -- and a path outside `$HOME` so the `~`
     // it would otherwise be written with is not this machine's either.
@@ -130,11 +130,11 @@ fn starting_with_nothing_open_shows_a_welcome_screen() {
 /// since the first commit and will until a release changes it, so "was the
 /// fix in the thing I am looking at" is answered by the commit -- and the
 /// log, which already carried it, is not where a reader looks. This screen
-/// is: it is what obelus shows before anything is open.
+/// is: it is what Obelus shows before anything is open.
 ///
 /// It goes into the plate's own edge beside the version. Only the binary
 /// knows it, so it arrives as a string like everything else whatever started
-/// obelus had to say -- which is why nothing said is the ordinary state
+/// Obelus had to say -- which is why nothing said is the ordinary state
 /// here, and why the golden fixtures show the version alone: a commit in one
 /// would be a fixture rewritten every time anybody commits anything.
 ///
@@ -162,7 +162,7 @@ fn the_welcome_screen_says_which_build_this_is() {
     let dump = support::render(&mut app, 34, 10);
     let row = support::text_block(&dump)
         .lines()
-        .find(|row| row.contains("obelus"))
+        .find(|row| row.contains("Obelus"))
         .unwrap_or_default()
         .to_string();
     assert!(
@@ -617,7 +617,7 @@ fn continuation_rows_have_no_line_number() {
 
     // The numbers that appear, in the order they appear. Found by looking
     // for a number rather than at a fixed column: what is to the left of the
-    // gutter depends on whether obelus has anything to say about the file,
+    // gutter depends on whether Obelus has anything to say about the file,
     // and how many rows a long line wraps into depends on how wide the text
     // is -- neither of which this test is about.
     let numbers: Vec<u32> = text
@@ -830,7 +830,7 @@ fn the_welcome_screen_lines_up_keys_of_different_widths() {
 
     assert_eq!(
         column_of("Open a file"),
-        column_of("Leave obelus"),
+        column_of("Leave Obelus"),
         "the words in one column do not start together:\n{dump}"
     );
     // The wider chord's key starts further left inside its cap, which is
@@ -844,7 +844,7 @@ fn the_welcome_screen_lines_up_keys_of_different_widths() {
     assert!(column_of(&narrow) > column_of(&wide), "{dump}");
 }
 
-/// A motion key held with a modifier obelus has no meaning for does nothing.
+/// A motion key held with a modifier Obelus has no meaning for does nothing.
 /// Reading it as the plain key would make `super+End` jump somewhere the
 /// reader did not ask to go, and `ctrl+super+Home` leave the file entirely.
 #[test]
@@ -1259,7 +1259,7 @@ fn the_scrollbar_reaches_both_ends() {
 }
 
 /// The wheel moves the view, not the cursor. Which is only knowable because
-/// obelus asks the terminal to report the mouse: without that the wheel
+/// Obelus asks the terminal to report the mouse: without that the wheel
 /// arrives as arrow keys and there is no way to tell it not to.
 #[test]
 fn the_wheel_scrolls_without_moving_the_cursor() {
@@ -1578,7 +1578,7 @@ fn nowhere_to_jump_does_nothing() {
 }
 
 /// The ends of the file are the one place a selection could not reach: the
-/// rule that a modifier obelus has no meaning for disqualifies the key made
+/// rule that a modifier Obelus has no meaning for disqualifies the key made
 /// `ctrl+shift+End` do nothing at all rather than extend to the end.
 #[test]
 fn shift_and_control_together_select_to_the_ends_of_the_file() {
@@ -2094,7 +2094,7 @@ fn a_screen_with_no_room_for_the_text_still_draws() {
         support::lay_out(&mut app, width, height);
         let dump = support::render(&mut app, width, height);
         // A screen with no columns has nothing to say about what is on it;
-        // what matters is that asking did not take obelus down.
+        // what matters is that asking did not take Obelus down.
         if width > 0 {
             assert!(
                 !support::text_block(&dump).is_empty(),

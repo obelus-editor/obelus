@@ -1,6 +1,6 @@
 [package]
 name = "obelus-icons"
-description = "One glyph per thing obelus draws"
+description = "One glyph per thing Obelus draws"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

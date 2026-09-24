@@ -26,7 +26,7 @@ pub const fn supported(capabilities: &ServerCapabilities) -> bool {
 
 /// Whether typing this character asks for one.
 ///
-/// The server's own list: `(` and `,` in most languages, and obelus has no
+/// The server's own list: `(` and `,` in most languages, and Obelus has no
 /// business guessing which punctuation opens a call in fourteen of them.
 #[must_use]
 pub fn triggered_by(capabilities: &ServerCapabilities, character: char) -> bool {
@@ -66,7 +66,7 @@ pub fn in_reply(result: &Result<Value, String>) -> Option<Signature> {
         .as_ref()
         .and_then(|parameters| parameters.get(at))
         .and_then(|parameter| match &parameter.label {
-            // Character offsets into the label, which is what obelus
+            // Character offsets into the label, which is what Obelus
             // wants: the panel draws characters.
             ParameterLabel::LabelOffsets([from, to]) => Some((*from as usize, *to as usize)),
             // A piece of the label, given as text. Found in it, because

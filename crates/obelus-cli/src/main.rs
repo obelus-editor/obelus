@@ -1,4 +1,4 @@
-//! The `ob` binary: obelus drawn on a terminal.
+//! The `ob` binary: Obelus drawn on a terminal.
 //!
 //! What is here is the terminal and nothing else -- asking it what it can
 //! draw, taking it over, handing it back. Everything that happens before
@@ -21,7 +21,7 @@ struct Arguments {
     /// What to open: a file, or a directory to work in.
     ///
     /// A file names the tree it is in and is opened. A directory is the
-    /// tree itself, and obelus opens on the list of what is in it.
+    /// tree itself, and Obelus opens on the list of what is in it.
     paths: Vec<PathBuf>,
 }
 
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
     // alternate one. The order inside is argued where it lives.
     let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
     // The terminal's half of the line `startup::start` just wrote: what was
-    // drawing obelus, which a log read a week later has no other way to
+    // drawing Obelus, which a log read a week later has no other way to
     // learn, and which is the first thing to suspect when a key or a colour
     // did not do what it should.
     tracing::info!(
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
     let mouse = enable_mouse();
     // And what the terminal pastes, wrapped so it can be told from typing.
     enable_paste();
-    // And the keyboard, for the one key obelus needs that a terminal
+    // And the keyboard, for the one key Obelus needs that a terminal
     // cannot otherwise report.
     let keyboard = enable_keyboard();
     app.use_images(images);
@@ -100,7 +100,7 @@ fn main() -> Result<()> {
     outcome
 }
 
-/// Asks the terminal to tell obelus which key was pressed, and says whether
+/// Asks the terminal to tell Obelus which key was pressed, and says whether
 /// the request went out.
 ///
 /// A traditional terminal sends the same byte for `enter` and `shift+enter`
@@ -163,7 +163,7 @@ fn enable_paste() {
 /// Turns on mouse reporting, and says whether it worked.
 ///
 /// Best effort: a terminal that will not report the mouse is a terminal where
-/// the wheel keeps sending arrow keys, which is how obelus behaved before it
+/// the wheel keeps sending arrow keys, which is how Obelus behaved before it
 /// asked. Not a reason to refuse to start.
 fn enable_mouse() -> bool {
     match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {

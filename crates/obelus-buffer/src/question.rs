@@ -1,9 +1,9 @@
 //! Stopping to ask.
 //!
-//! A few of the things obelus does would throw work away if it simply did
+//! A few of the things Obelus does would throw work away if it simply did
 //! them: closing a document with something unwritten in it, leaving with
 //! several, saving over a file that moved while it was being edited. Each of
-//! those stops and asks, in the compact list that is already how obelus asks
+//! those stops and asks, in the compact list that is already how Obelus asks
 //! an agent's questions.
 //!
 //! Adding another one is three small things and no plumbing: an enum of its

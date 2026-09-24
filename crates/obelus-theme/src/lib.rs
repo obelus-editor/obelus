@@ -146,7 +146,7 @@ pub struct Theme {
     pub status_stale: Color,
     /// Behind the row the keys are on.
     ///
-    /// Every list, page and card in obelus: the rows of a picker, of the
+    /// Every list, page and card in Obelus: the rows of a picker, of the
     /// settings, of an agent's question, and the row of the transcript the
     /// reader is standing on. One colour, because they are one thing being
     /// said -- and it is said *only* where there is no caret to say it, a
@@ -167,7 +167,7 @@ pub struct Theme {
     /// there each key has a column to itself. A foot is one row among the
     /// reader's work, where nothing else gives the key an edge.
     ///
-    /// The same colour as a selected row in the themes obelus ships, and a
+    /// The same colour as a selected row in the themes Obelus ships, and a
     /// field of its own because they are two different promises -- one says
     /// "the keys are here", the other "this is a thing to press" -- and a
     /// theme that wanted them apart could not say so through one name.

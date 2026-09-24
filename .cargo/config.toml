@@ -4,7 +4,7 @@
 # readings of a fold have to agree on shapes nobody writes into a test, and
 # counting a tree is only worth asserting on a tree with more than one
 # language in it. Those tests reached for `CARGO_MANIFEST_DIR`, which is the
-# crate's own directory -- one answer while obelus was one crate, and the
+# crate's own directory -- one answer while Obelus was one crate, and the
 # wrong one in every crate but the root once it is several.
 #
 # `relative = true` resolves the value against this file's parent, which is

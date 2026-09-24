@@ -1,4 +1,4 @@
-//! The lists obelus offers, and what choosing from one does.
+//! The lists Obelus offers, and what choosing from one does.
 //!
 //! The list itself is [`obelus_component::picker`]; what is here is which
 //! rows go in it and what a chosen row means.
@@ -58,7 +58,7 @@ impl App {
         // Every command, and what it can do *here* said by whether its row
         // can be chosen. Leaving out what cannot run makes the palette a
         // list nobody can learn from -- a reader who never sees `show-change`
-        // does not find out obelus has it -- while a row that runs and then
+        // does not find out Obelus has it -- while a row that runs and then
         // reports why it did nothing is a row nobody trusts. Dim and
         // unselectable is both answers at once.
         let items = obelus_command::ALL
@@ -110,19 +110,19 @@ impl App {
 
     /// Opens the log, as a file like any other.
     ///
-    /// A reader is what obelus is, so the log needs no viewer of its own: it
+    /// A reader is what Obelus is, so the log needs no viewer of its own: it
     /// becomes a buffer, the watcher on its directory reloads it as it grows,
     /// and the cursor stays where it was put. What is in it that no screen
     /// shows is a server's own words -- its stderr, its handshake, and the
-    /// requests obelus sent it.
+    /// requests Obelus sent it.
     pub fn open_log(&mut self) {
         self.open_log_file(obelus_logging::OBELUS, "No log file");
     }
 
     /// And the language servers' own, which is the other half of the same
-    /// idea: a server's handshake and every request obelus sent it, in a
+    /// idea: a server's handshake and every request Obelus sent it, in a
     /// file of its own because it is somebody else's program talking at a
-    /// volume that would bury the dozen lines obelus has to say.
+    /// volume that would bury the dozen lines Obelus has to say.
     pub fn open_server_log(&mut self) {
         self.open_log_file(obelus_logging::SERVERS, "No server log file");
     }
@@ -131,7 +131,7 @@ impl App {
     fn open_log_file(&mut self, prefix: &str, missing: &str) {
         match obelus_logging::current_file(prefix) {
             Some(path) => self.open(&path),
-            // Logging is allowed to fail without stopping obelus starting, so
+            // Logging is allowed to fail without stopping Obelus starting, so
             // there may genuinely be no file -- and a server log exists only
             // once a server has said something.
             None => self.note = Some(missing.to_string()),
@@ -249,7 +249,7 @@ impl App {
             // whose whole answer would be "nothing has changed".
             // What the tree offers on the line the cursor is on, which is
             // a question about this file and this line rather than about
-            // the language: a file obelus parses can still have nothing to
+            // the language: a file Obelus parses can still have nothing to
             // fold where the reader is standing.
             // A walk of one commit, which is what "is there a history
             // here" costs: the same trade `AChangedFile` makes.

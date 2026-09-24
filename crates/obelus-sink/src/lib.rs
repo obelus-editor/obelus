@@ -8,7 +8,7 @@
 //! hold all of them at once.
 //!
 //! The application is that thing, and it is the only one that could be: it
-//! is the only part of obelus that has heard of every worker. Which is why
+//! is the only part of Obelus that has heard of every worker. Which is why
 //! the joining is an `impl From<obelus_git::Event> for Event` written there,
 //! and not a trait any of the workers implement.
 
@@ -34,7 +34,7 @@ impl std::error::Error for Gone {}
 /// `Send + Sync + 'static` because that is exactly what a producer does with
 /// one: clone it into a thread or a task, which wants `Send`, and hold a `&`
 /// to it across an `.await` inside one, which is what makes the future
-/// `Send` and wants `Sync`. Three of obelus's producers do the second --
+/// `Send` and wants `Sync`. Three of Obelus's producers do the second --
 /// installing an agent, downloading one, opening a session -- so leaving
 /// `Sync` out would surface as "future cannot be sent between threads" in
 /// three files that never mention this trait.

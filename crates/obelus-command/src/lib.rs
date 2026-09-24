@@ -16,7 +16,7 @@
 //! module is the names alone -- which is what lets the key table, the icons
 //! and the palette read it without reaching the application at all.
 
-/// Everything obelus can be asked to do by name.
+/// Everything Obelus can be asked to do by name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Command {
     /// Choose a file under the working directory and open it.
@@ -143,7 +143,7 @@ pub enum Command {
     ConfigOpen,
     /// Open the settings this project carries of its own.
     ConfigProject,
-    /// Open the file obelus logs to.
+    /// Open the file Obelus logs to.
     LogOpen,
     /// Open the file the language servers' side is logged to.
     LogServers,
@@ -151,15 +151,15 @@ pub enum Command {
     LspRestart,
     /// Stop the language server for this file and leave it stopped.
     LspStop,
-    /// Leave obelus.
+    /// Leave Obelus.
     Quit,
 }
 
-/// The part of obelus a command belongs to.
+/// The part of Obelus a command belongs to.
 ///
 /// Three, and deliberately few: the palette shows these as tabs, and every
 /// tab is somewhere a reader has to look before deciding to type instead. A
-/// group per part of obelus would be nine of them, which is a worse way to
+/// group per part of Obelus would be nine of them, which is a worse way to
 /// find `open-file` than its name is.
 ///
 /// Split by what the reader is doing, not by what the code touches. There
@@ -173,7 +173,7 @@ pub enum Group {
     /// Opening and re-reading files, and moving between the open ones --
     /// with what this project is made of and what it means to come back to,
     /// both of which are questions about the files rather than about
-    /// obelus.
+    /// Obelus.
     Files,
     /// Finding somewhere and going there: the searches, a line, a bracket,
     /// and the way back from wherever they led.
@@ -189,7 +189,7 @@ pub enum Group {
     /// What has changed and what it was: the hunks in this file, and the
     /// commits behind it.
     Git,
-    /// obelus itself, its colours, its log, and its language servers.
+    /// Obelus itself, its colours, its log, and its language servers.
     Obelus,
 }
 
@@ -198,7 +198,7 @@ impl Group {
     ///
     /// Roughly the order of a morning: open something, find your way about
     /// it, ask what it means, change it, see what you changed -- and
-    /// obelus's own housekeeping last, because it is the tab a reader wants
+    /// Obelus's own housekeeping last, because it is the tab a reader wants
     /// least often.
     pub const ALL: &'static [Self] = &[
         Self::Files,
@@ -218,7 +218,7 @@ impl Group {
             Self::Code => "Code",
             Self::Edit => "Edit",
             Self::Git => "Git",
-            Self::Obelus => "obelus",
+            Self::Obelus => "Obelus",
         }
     }
 }
@@ -275,7 +275,7 @@ pub enum Requires {
     /// instead: the key that closes what is being read went dim inside a
     /// conversation, and so did the key that lists what is open.
     ADocumentOpen,
-    /// The open file has to be in a language obelus can parse.
+    /// The open file has to be in a language Obelus can parse.
     AKnownLanguage,
     /// The open file has to have a reading, or be showing one.
     APreview,
@@ -661,11 +661,11 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::ConfigOpen,
         name: "open-settings",
-        title: "Change obelus's settings",
+        title: "Change Obelus's settings",
     },
     CommandSpec {
         command: Command::ConfigProject,
-        // The word obelus uses everywhere, and the word every other
+        // The word Obelus uses everywhere, and the word every other
         // program has taught a reader to type for this: a name is typed,
         // and one that had to be learned is a name nobody finds.
         name: "open-project-settings",
@@ -679,7 +679,7 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::LogOpen,
         name: "open-log",
-        title: "Open obelus's own log",
+        title: "Open Obelus's own log",
     },
     CommandSpec {
         command: Command::LogServers,
@@ -699,7 +699,7 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::Quit,
         name: "quit",
-        title: "Leave obelus",
+        title: "Leave Obelus",
     },
 ];
 
@@ -804,7 +804,7 @@ impl Command {
             | Self::PreviewToggle
             // A question about the project's files, asked before any of them
             // is open: which makes it one of the files rather than one of
-            // obelus's own housekeeping.
+            // Obelus's own housekeeping.
             | Self::CountLines
             | Self::TodoOpen
             | Self::TodoAdd => Group::Files,
@@ -929,7 +929,7 @@ impl Command {
                 Requires::AFileOpen
             }
             // An outline comes from the syntax tree when no server will
-            // answer, so what it needs is a language obelus can parse.
+            // answer, so what it needs is a language Obelus can parse.
             Self::SymbolOutline => Requires::AKnownLanguage,
             // Both ways: it turns the rendering on for a markdown file and
             // off again for one already showing as markdown.
@@ -938,7 +938,7 @@ impl Command {
             // A file, and nothing more: the first step is the word under
             // the caret, which every file has and no grammar is needed for.
             Self::SelectionWiden => Requires::AFileOpen,
-            // Not `AKnownLanguage`: a file obelus can parse can still have
+            // Not `AKnownLanguage`: a file Obelus can parse can still have
             // nothing to fold on the line the reader is on, and a key that
             // is offered everywhere and works in places is worse than one
             // that says where it works.
@@ -991,7 +991,7 @@ impl Command {
             // may be a box.
             Self::SelectionCopy => Requires::SomethingToCopy,
             Self::SelectionCut | Self::Paste => Requires::ACaret,
-            // Not "is there anything to paste": obelus's own store knows
+            // Not "is there anything to paste": Obelus's own store knows
             // without being asked, and an external clipboard has to be run
             // to find out. A requirement that cannot be answered cheaply
             // becomes a key that does nothing and a row grey for ever,
@@ -1022,8 +1022,8 @@ impl Command {
             | Self::CountLines
             | Self::Quit => Requires::Nothing,
             // A file of its own that only exists once a server has said
-            // something, which on a file in a language obelus has no
-            // server for is never. obelus's own log is not this: it is
+            // something, which on a file in a language Obelus has no
+            // server for is never. Obelus's own log is not this: it is
             // there from the first line it writes, and if it is not, the
             // command saying so is the only way a reader learns that
             // logging failed.
@@ -1118,7 +1118,7 @@ mod tests {
 
     /// Every command is somewhere a reader would look for it.
     ///
-    /// Housekeeping is obelus's own: restarting a language server and
+    /// Housekeeping is Obelus's own: restarting a language server and
     /// opening the log are not *reading*, and neither is worth a tab, so
     /// they go with the settings -- which is where a reader looks when the
     /// tool rather than the code is the problem.

@@ -10,7 +10,7 @@
 //! same path in the working tree. `Subject` is what a row resolves to, and the
 //! preview is built from it the way the editor would build it, message block
 //! and all, because a preview that showed something other than what choosing
-//! the row gives is a promise obelus does not keep. A commit's message previews
+//! the row gives is a promise Obelus does not keep. A commit's message previews
 //! as a block over an empty buffer, which is how it gets no line numbers: a
 //! message has no lines of its own to go to.
 //!
@@ -410,7 +410,7 @@ impl App {
             return;
         }
         // What could be typed next, which is a list beside the cursor: a
-        // notch walks it a row, the way a notch walks any list in obelus.
+        // notch walks it a row, the way a notch walks any list in Obelus.
         if let Some(completion) = self.completion.as_mut() {
             completion.scroll(rows.signum());
             return;
@@ -657,15 +657,15 @@ impl App {
     /// The same two answers the editor works from, so a preview of a
     /// commit's file carries the message above it and the margin beside it
     /// that opening the row would give: a preview that showed something
-    /// else would be a promise obelus does not keep.
+    /// else would be a promise Obelus does not keep.
     fn read(&self, subject: &Subject) -> Option<(Buffer, Option<obelus_git::Changes>)> {
         match subject {
             Subject::File(path) => {
                 // The text as the reader has it, wherever they have it. A
-                // file open in obelus is open with what obelus holds, which
+                // file open in Obelus is open with what Obelus holds, which
                 // is what choosing the row gives them -- and the disk stops
                 // being the same document the moment anything writes to it
-                // and obelus has not read it again.
+                // and Obelus has not read it again.
                 let buffer = match self.open_file_at(path, None) {
                     Some(open) => Buffer::from_text(path, &open.text().rope().to_string()),
                     // A file that has gone, or one this reader cannot read.
@@ -698,7 +698,7 @@ impl App {
                     // Whole, not the first five lines. This is the only
                     // place the message is shown at all now -- opening the
                     // row gives the file and nothing else -- so a preview
-                    // that cut it off would be obelus hiding the one thing
+                    // that cut it off would be Obelus hiding the one thing
                     // it still has to say about the commit. The reader
                     // scrolls it like anything else, and the rule under it
                     // says where the file starts.
@@ -759,8 +759,8 @@ impl App {
     /// the text it is showing.
     ///
     /// Placed against the preview's own buffer rather than taken from the
-    /// placed copy obelus keeps: that one is counted against the text of a
-    /// file obelus has open, and most of what a preview shows is a file
+    /// placed copy Obelus keeps: that one is counted against the text of a
+    /// file Obelus has open, and most of what a preview shows is a file
     /// nobody has opened.
     ///
     /// Nothing for a commit's version of a file. What a server said is
@@ -785,7 +785,7 @@ impl App {
             .collect()
     }
 
-    /// The document holding a file, where obelus has one open.
+    /// The document holding a file, where Obelus has one open.
     ///
     /// The content as well as the path: a commit's version of a file and
     /// the file itself share a path and are two documents, so a row about
@@ -905,7 +905,7 @@ pub(super) enum Marked {
     /// A line, with nothing on it to mark.
     ///
     /// Which is what a row that names a whole file is about: the top of one
-    /// obelus has never opened, and wherever the reader is in one it has.
+    /// Obelus has never opened, and wherever the reader is in one it has.
     At {
         /// Which line of the file, counted from zero.
         line: u32,
@@ -946,7 +946,7 @@ impl Marked {
         }
     }
 
-    /// The runs to mark, in obelus's own coordinates.
+    /// The runs to mark, in Obelus's own coordinates.
     fn resolve(
         &self,
         text: &obelus_text::Text,

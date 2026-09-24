@@ -19,7 +19,7 @@
 //! other.
 //!
 //! Read field by field, and forgivingly, for the reason the registry is:
-//! this file is written by whichever obelus last talked to the agent, which
+//! this file is written by whichever Obelus last talked to the agent, which
 //! may be a newer one than the one reading it.
 
 use std::path::Path;
@@ -81,7 +81,7 @@ impl Offer {
 ///
 /// Three answers, like every other read under an agent's directory: there
 /// is none, here it is, or it will not read. The third is not the first --
-/// a file another obelus is in the middle of writing, or one somebody's
+/// a file another Obelus is in the middle of writing, or one somebody's
 /// disk has half of, is not an agent that offers nothing -- and the
 /// difference is the whole reason this is an enum: a page that drew "no
 /// settings" for it would be a page saying something false, and a writer
@@ -146,7 +146,7 @@ fn offer(entry: &Json) -> Option<Offer> {
                     .collect()
             })
             .unwrap_or_default(),
-        // A shape obelus has never heard of is not a row it can draw, so
+        // A shape Obelus has never heard of is not a row it can draw, so
         // the entry goes rather than being guessed at.
         kind: match text(entry, "kind")?.as_str() {
             "select" => Kind::Select,
@@ -161,7 +161,7 @@ fn offer(entry: &Json) -> Option<Offer> {
 /// Called with a session's settings whenever they arrive, which is often:
 /// an agent sends the whole list again every time one of them changes. So
 /// the file is read first and left alone where it already says this --
-/// which is also the read-before-write a directory several obelus
+/// which is also the read-before-write a directory several Obelus
 /// processes share needs.
 ///
 /// An empty list is not written. An agent that offers nothing sends one,
@@ -179,10 +179,10 @@ pub fn remember(id: &str, settings: &[Setting], root: &Path) -> Result<(), Strin
         return Ok(());
     }
     let Some(home) = crate::home(id, root) else {
-        return Err(format!("{id} is not a name obelus can keep a directory of"));
+        return Err(format!("{id} is not a name Obelus can keep a directory of"));
     };
     // A file that will not read is written over, which is the opposite of
-    // what obelus does to a file under a tree's `.obelus`. The difference
+    // what Obelus does to a file under a tree's `.obelus`. The difference
     // is whose the contents are: nothing here was written by the reader
     // and every word of it can be had again from the agent, so a broken
     // copy is repaired rather than kept for ever. What must not happen to
@@ -212,7 +212,7 @@ pub fn remember(id: &str, settings: &[Setting], root: &Path) -> Result<(), Strin
             .collect::<Vec<_>>(),
     });
     std::fs::create_dir_all(&home).map_err(|error| format!("{home:?}: {error}"))?;
-    // Beside it and renamed over it, because another obelus may be reading
+    // Beside it and renamed over it, because another Obelus may be reading
     // this file at this moment: a plain write truncates first, and a reader
     // landing in that gap gets a file that will not parse.
     let path = home.join(OPTIONS);
@@ -318,7 +318,7 @@ mod tests {
             matches!(read("an-agent", &root), Reading::Unreadable(_)),
             "a file that will not parse was read as an answer"
         );
-        // And an agent obelus has never talked to is the other answer
+        // And an agent Obelus has never talked to is the other answer
         // again: nothing to read, and nothing wrong.
         assert!(matches!(read("another-agent", &root), Reading::Nothing));
         let _ = std::fs::remove_dir_all(&root);
@@ -349,7 +349,7 @@ mod tests {
     /// The same offers again leave the file alone.
     ///
     /// An agent sends the whole list every time one of them changes, so
-    /// this is written many times a conversation -- and several obelus
+    /// this is written many times a conversation -- and several Obelus
     /// processes share the directory. A write that changes nothing is a
     /// rename other readers have to survive for no reason.
     ///

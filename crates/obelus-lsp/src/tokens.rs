@@ -3,7 +3,7 @@
 //! `textDocument/semanticTokens/full`: the server classifies every token in
 //! the document -- keyword, variable, function, type, comment -- from the
 //! compiler's own understanding of the language rather than from a grammar's
-//! guess. obelus asks it one question: is the thing under the cursor a name
+//! guess. Obelus asks it one question: is the thing under the cursor a name
 //! anybody could ask about, or is it `match`?
 //!
 //! A whole file at a time, and cached, because the answer is needed
@@ -21,7 +21,7 @@ use lsp_types::{Position, PositionEncodingKind, SemanticTokensLegend};
 /// twenty-odd types are a floor and every server adds its own -- rust
 /// analyzer alone has `lifetime`, `builtinType`, `derive` and a dozen kinds
 /// of punctuation. An unknown kind counts as a name, because hiding a
-/// question obelus was unsure about is the worse of the two mistakes: a
+/// question Obelus was unsure about is the worse of the two mistakes: a
 /// question that comes back with nothing costs a round trip, and one that is
 /// never offered costs the reader the feature.
 const NOT_NAMES: &[&str] = &[

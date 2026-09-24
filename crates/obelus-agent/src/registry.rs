@@ -7,7 +7,7 @@
 //! exactly when a reader is looking at it.
 //!
 //! Read field by field rather than deserialized into a struct. The registry
-//! grows fields and gains distribution kinds, and an older obelus reading a
+//! grows fields and gains distribution kinds, and an older Obelus reading a
 //! newer registry should show the entries it understands rather than
 //! refusing the whole document because one entry has something new in it.
 
@@ -43,7 +43,7 @@ pub fn cache() -> Option<PathBuf> {
 
 /// The agents in a registry document.
 ///
-/// Entries obelus cannot make sense of are left out rather than failing the
+/// Entries Obelus cannot make sense of are left out rather than failing the
 /// document: this is somebody else's file and it will grow.
 #[must_use]
 pub fn agents_in(text: &str) -> Vec<Agent> {
@@ -85,7 +85,7 @@ fn agent(entry: &Value) -> Option<Agent> {
 
 /// How to get an agent, for this machine.
 ///
-/// The kinds are tried in the order obelus would rather have them: a package
+/// The kinds are tried in the order Obelus would rather have them: a package
 /// manager over a download, because a package manager is what keeps it up to
 /// date afterwards.
 fn distribution(entry: &Value) -> Option<Distribution> {
@@ -245,7 +245,7 @@ mod tests {
     use crate::Distribution;
 
     /// The document's own shape, cut down to one entry of each kind: the
-    /// three the registry has today, and one obelus cannot use.
+    /// three the registry has today, and one Obelus cannot use.
     const SAMPLE: &str = r#"{
       "version": "1.0.0",
       "agents": [
@@ -290,8 +290,8 @@ mod tests {
       ]
     }"#;
 
-    /// Every kind the registry has, read as the kind obelus would install
-    /// it with -- and the entry with a distribution obelus knows nothing
+    /// Every kind the registry has, read as the kind Obelus would install
+    /// it with -- and the entry with a distribution Obelus knows nothing
     /// about left out rather than failing the document.
     #[test]
     fn every_kind_of_entry_is_read() {
@@ -301,7 +301,7 @@ mod tests {
 
         // The mark, where an entry has one. Every entry in the registry
         // does today, but it is somebody else's file: an entry without one
-        // is a card that wears a glyph, not an entry obelus drops.
+        // is a card that wears a glyph, not an entry Obelus drops.
         assert_eq!(
             agents[0].icon.as_deref(),
             Some("https://example.invalid/claude.svg")

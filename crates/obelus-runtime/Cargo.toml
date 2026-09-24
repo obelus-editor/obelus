@@ -1,6 +1,6 @@
 [package]
 name = "obelus-runtime"
-description = "The one runtime obelus waits on, and giving up on a walk"
+description = "The one runtime Obelus waits on, and giving up on a walk"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

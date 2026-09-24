@@ -1,7 +1,7 @@
 //! What a server offers to type next.
 //!
 //! Against values rather than against a server: what is interesting is what
-//! obelus does with an answer -- which word it thinks the answer is about,
+//! Obelus does with an answer -- which word it thinks the answer is about,
 //! what it puts in, and what it does when the reader has gone on typing --
 //! and a server cannot be made to answer late on demand.
 
@@ -122,7 +122,7 @@ fn a_candidate_replaces_the_word_it_was_offered_for() {
     assert_eq!(text(&app), "fn main() {\n    pu\n}\n");
 }
 
-/// A server that says what to replace is obeyed: it knows things obelus
+/// A server that says what to replace is obeyed: it knows things Obelus
 /// does not, like whether the dot before the word is part of what is being
 /// completed.
 #[test]
@@ -494,7 +494,7 @@ mod snippets {
 
     #[test]
     fn a_variable_expands_to_nothing_and_an_escape_to_itself() {
-        // Nothing obelus can honestly fill in, so it fills in nothing --
+        // Nothing Obelus can honestly fill in, so it fills in nothing --
         // and the text around it survives either way.
         assert_eq!(parse("$TM_FILENAME:$1").text, ":");
         assert_eq!(parse("cost: \\$5").text, "cost: $5");
@@ -524,7 +524,7 @@ fn a_list_opened_over_the_file_takes_the_panel_away() {
 }
 
 /// Against a real server, because the two rules below are the only ones
-/// obelus cannot state by itself: which punctuation is worth asking about
+/// Obelus cannot state by itself: which punctuation is worth asking about
 /// is the server's to say, and there is no way to find out what it says
 /// without asking it.
 ///
@@ -598,7 +598,7 @@ mod against_a_real_server {
     /// Leaves the cursor on a line of its own with `self` typed on it, and
     /// the server known to be answering questions about that place.
     ///
-    /// Asking until an answer comes is what obelus itself does: a server
+    /// Asking until an answer comes is what Obelus itself does: a server
     /// that has not finished reading the project answers a question with
     /// nothing, which is the same answer a question with no answer gets.
     /// Everything below is about what a *key* asks, so the asking has to be
@@ -668,7 +668,7 @@ mod against_a_real_server {
     ///
     /// A reader typing a word asks for a completion per letter. Without
     /// this the server computes every one of them in full, and the ones
-    /// that are never answered sit in obelus's table for the rest of the
+    /// that are never answered sit in Obelus's table for the rest of the
     /// session.
     #[test]
     #[ignore = "starts a server and waits for the project to be read"]
@@ -697,7 +697,7 @@ mod against_a_real_server {
     }
 
     /// A file changing on disk is news to the server as much as to
-    /// obelus: a branch checked out under it, a build script's output, an
+    /// Obelus: a branch checked out under it, a build script's output, an
     /// editor somewhere else.
     #[test]
     #[ignore = "starts a server and waits for the project to be read"]
@@ -725,7 +725,7 @@ mod against_a_real_server {
     }
 
     /// The pointer resting on a word asks what it is, which is the one
-    /// thing in obelus that happens because the reader did nothing.
+    /// thing in Obelus that happens because the reader did nothing.
     #[test]
     #[ignore = "starts a server and waits for the project to be read"]
     fn the_pointer_resting_on_a_word_asks_what_it_is() {
@@ -825,7 +825,7 @@ mod against_a_real_server {
         pump(&mut app, &events, Duration::from_secs(3), |_| false);
 
         // The answer is the test's own, so that what is accepted is known:
-        // what is being tested is what obelus does with a candidate whose
+        // what is being tested is what Obelus does with a candidate whose
         // text ends in a trigger, not which candidates a server sends.
         app.complete_for_test(serde_json::json!([{
             "label": "std::", "kind": 9, "insertText": "std::"

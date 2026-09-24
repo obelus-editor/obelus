@@ -2,7 +2,7 @@
 //!
 //! One declaration, read by everything that used to answer it on its own:
 //! which view a key is offered to, what order they are drawn in, whether
-//! obelus's own keys reach the file underneath, where the caret goes, and
+//! Obelus's own keys reach the file underneath, where the caret goes, and
 //! what a view covers when it opens.
 //!
 //! Eight places used to decide this and they did not agree. The counts were
@@ -65,7 +65,7 @@ pub enum Room {
     /// A band of the editor region, with the code above and below it still
     /// readable.
     Band,
-    /// The whole editor region, and obelus's status row under it.
+    /// The whole editor region, and Obelus's status row under it.
     Region,
     /// The screen: the status row and the rule above it included. A view
     /// with no file and no cursor in it has nothing for that row to say.
@@ -79,7 +79,7 @@ impl Room {
     /// it *is* the region, and a question on the status bar about something
     /// now behind it is a question nobody can answer. A list covers the
     /// question and the list that was there and nothing else -- a setting's
-    /// choices open *over* the settings, which is the one place obelus
+    /// choices open *over* the settings, which is the one place Obelus
     /// stacks two things the reader is in.
     #[must_use]
     pub const fn covers(self, other: Self) -> bool {
@@ -105,11 +105,11 @@ impl Layer {
 
     /// Which key table applies while this is showing.
     ///
-    /// A dialog takes the keys bound in it and no others, so obelus's own
+    /// A dialog takes the keys bound in it and no others, so Obelus's own
     /// commands cannot open a second one over the first. The question on the
     /// status bar is not one of those: it is a row rather than a screen,
     /// what it is asking about is still visible, and `ctrl+q` still leaves
-    /// obelus from inside it.
+    /// Obelus from inside it.
     ///
     /// Read off the room rather than declared a second time, because it is
     /// the same fact said twice: a view that covers nothing is not a view
@@ -270,7 +270,7 @@ mod tests {
             assert!(room.covers(Room::Row), "{room:?} does not cover a row");
             assert!(room.covers(room), "{room:?} does not cover its own kind");
         }
-        // The one nesting obelus has: a setting's choices over the settings.
+        // The one nesting Obelus has: a setting's choices over the settings.
         assert!(!Room::Band.covers(Room::Region));
         assert!(Room::Region.covers(Room::Band));
         // And a question cannot stay up under anything else.

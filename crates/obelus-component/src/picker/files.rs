@@ -1,6 +1,6 @@
 //! Gathering the files the picker can offer.
 //!
-//! A list obelus offers is a list of the reader's own project. A language
+//! A list Obelus offers is a list of the reader's own project. A language
 //! server answers `workspace/symbol` with everything it has indexed, which for
 //! rust-analyzer is every dependency of the project: a search for `new` in a
 //! repository of a dozen files comes back with hundreds of rows from the

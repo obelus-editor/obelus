@@ -86,7 +86,7 @@ use obelus_text::{
 /// left of the line it ends on -- a `}`, a `);`, a `</div>` -- stays with
 /// it, on the same row, beside the mark. A block then reads as a block,
 /// `if ready { … }`, and a language whose blocks close with nothing reads
-/// as `def ready(): …`, without obelus knowing which language it is looking
+/// as `def ready(): …`, without Obelus knowing which language it is looking
 /// at. The server said where the run ends; that is the whole of it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fold {

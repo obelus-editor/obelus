@@ -17,10 +17,10 @@ use obelus_text::coordinates::CharOffset;
 
 use super::*;
 
-/// Whether a character is part of a word obelus would complete.
+/// Whether a character is part of a word Obelus would complete.
 ///
 /// What starts the asking and what ends it. Deliberately not the language's
-/// own idea of an identifier: obelus asks servers about fourteen languages
+/// own idea of an identifier: Obelus asks servers about fourteen languages
 /// and has no table of what each calls a word, and every one of them agrees
 /// about letters, digits and an underscore.
 #[must_use]
@@ -44,7 +44,7 @@ impl App {
     ///
     /// Asked of the server rather than of a table here: which punctuation
     /// means "there is something to offer" is a fact about a language, and
-    /// obelus serves fourteen of them.
+    /// Obelus serves fourteen of them.
     fn triggers_completion(&self, character: char) -> bool {
         self.current_buffer()
             .and_then(Buffer::language)
@@ -492,7 +492,7 @@ impl App {
         let cursor = buffer.cursor();
         // What the candidate replaces: what the server said, and otherwise
         // the word the reader is in the middle of. A server knows things
-        // obelus does not -- that `::` is part of the path being completed,
+        // Obelus does not -- that `::` is part of the path being completed,
         // that a method call replaces the dot as well -- so its answer wins
         // wherever it gave one.
         let replacing = candidate.replace.unwrap_or(obelus_text::coordinates::Span {
@@ -665,7 +665,7 @@ impl App {
         let (end_line, end_column) = buffer.text().position(to);
         buffer.place_cursor(line, column);
         // A stop with a default in it is selected, so that typing replaces
-        // it -- which is the rule obelus already has for a selection, and
+        // it -- which is the rule Obelus already has for a selection, and
         // the reason a snippet's defaults are worth putting in at all.
         if (line, column) != (end_line, end_column) {
             buffer.select(obelus_text::coordinates::Span {

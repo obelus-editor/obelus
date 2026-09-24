@@ -14,7 +14,7 @@
 //! asking the reader instead — lazygit's `nerdFontsVersion`, eza's `--icons`,
 //! `vim.g.have_nerd_font`.
 //!
-//! So obelus has one switch, [`NERD_FONT`], and everything that draws a glyph
+//! So Obelus has one switch, [`NERD_FONT`], and everything that draws a glyph
 //! has a fallback that reads correctly without one. There is nowhere to
 //! configure it yet, which makes it the fourth thing wanting a configuration
 //! file.
@@ -30,13 +30,13 @@
 
 use std::path::Path;
 
-/// Whether obelus may draw glyphs from a Nerd Font.
+/// Whether Obelus may draw glyphs from a Nerd Font.
 ///
 /// One switch for the whole program, because whether the font has them is a
 /// fact about the reader's terminal rather than about any one view -- and
 /// every reader of it has a fallback that reads correctly without one.
 ///
-/// Global state, which is unlike the rest of obelus: the alternative is
+/// Global state, which is unlike the rest of Obelus: the alternative is
 /// threading a flag into every function that draws a glyph, including the
 /// pure ones that turn a name into a character. It is written once at
 /// startup and once per change of the setting, and read while drawing.
@@ -148,7 +148,7 @@ pub mod ui {
     pub const TODO: char = '\u{f0131}';
     /// The same box, with the mark in it.
     pub const TODO_DONE: char = '\u{f0132}';
-    /// A conversation another obelus has open, which this one may not
+    /// A conversation another Obelus has open, which this one may not
     /// enter.
     ///
     /// A lock, because that is what it is: the claim is a lock the system
@@ -162,7 +162,7 @@ pub mod ui {
     pub const DIRECTORY: char = '\u{f07b}';
     /// A set of colours.
     pub const THEME: char = '\u{f03d8}';
-    /// The project obelus is reading, taken as a whole.
+    /// The project Obelus is reading, taken as a whole.
     ///
     /// A folder, which is what a tree of files is drawn as everywhere. It
     /// sits in the glyph column of the row the languages hang from, so the
@@ -176,7 +176,7 @@ pub mod ui {
     pub const THOUGHT: char = '\u{f07f7}';
     /// The agent using a tool.
     pub const TOOL: char = '\u{f05b7}';
-    /// obelus's own remark in a conversation.
+    /// Obelus's own remark in a conversation.
     pub const NOTE: char = '\u{f02fd}';
     /// A tool call that has not started.
     pub const WAITING: char = '\u{f01d8}';
@@ -204,7 +204,7 @@ pub fn for_permission(kind: &str) -> char {
         "allow_always" => '\u{f05e0}',
         "reject_once" => '\u{f0156}',
         "reject_always" => '\u{f0159}',
-        // A kind obelus has not heard of. The name says what it does; the
+        // A kind Obelus has not heard of. The name says what it does; the
         // glyph says only that it is an answer.
         _ => '\u{f0450}',
     }
@@ -223,7 +223,7 @@ pub fn for_tool(kind: &str) -> char {
         "edit" => '\u{f0cb6}',
         "delete" => '\u{f01b4}',
         "move" => '\u{f0552}',
-        // The same magnifier obelus searches with everywhere else.
+        // The same magnifier Obelus searches with everywhere else.
         "search" => '\u{f0349}',
         // A terminal, because that is what running something is.
         "execute" => '\u{f018d}',
@@ -232,7 +232,7 @@ pub fn for_tool(kind: &str) -> char {
         "think" => ui::THOUGHT,
         "fetch" => '\u{f059f}',
         "switch_mode" => '\u{f04e6}',
-        // A kind obelus has not heard of. The title says what it is; the
+        // A kind Obelus has not heard of. The title says what it is; the
         // glyph says only that the agent is doing something.
         _ => ui::TOOL,
     }
@@ -275,7 +275,7 @@ pub fn for_command(command: obelus_command::Command) -> char {
         // implementation is what hangs below the thing, and references are a
         // search.
         Command::SymbolMenu => '\u{f0174}',
-        // A lightbulb: what could be typed here is the one thing obelus
+        // A lightbulb: what could be typed here is the one thing Obelus
         // offers rather than answers.
         Command::SymbolComplete => '\u{f0335}',
         // `md-auto_fix`: the wand, which is what every editor draws for
@@ -377,7 +377,7 @@ pub fn for_command(command: obelus_command::Command) -> char {
         Command::LogServers => '\u{f048d}',
         Command::LspRestart => '\u{f0709}',
         Command::LspStop => '\u{f04db}',
-        // Leaving obelus, not switching a machine off.
+        // Leaving Obelus, not switching a machine off.
         Command::Quit => '\u{f0206}',
     }
 }
@@ -605,12 +605,12 @@ mod command_tests {
             assert_ne!(
                 for_kind(kind),
                 anything,
-                "{kind:?} is drawn as something obelus could not name"
+                "{kind:?} is drawn as something Obelus could not name"
             );
         }
     }
 
-    /// Every command obelus has gets a glyph of its own, so the palette is a
+    /// Every command Obelus has gets a glyph of its own, so the palette is a
     /// column of pictures that mean something rather than one picture
     /// repeated. There is no fallback to find a hole in: the match is over
     /// the commands themselves, so a new one that nobody has drawn a picture

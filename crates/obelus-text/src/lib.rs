@@ -21,7 +21,7 @@ use crate::coordinates::{
 ///
 /// Fixed rather than configurable: a reader that renders a file differently
 /// from the tool that wrote it is worse than one that picks a number, and four
-/// is the number the code obelus is written in uses.
+/// is the number the code Obelus is written in uses.
 pub const TAB_WIDTH: usize = 4;
 
 /// How wide a tab is laid out, while the reader has said something else.
@@ -384,7 +384,7 @@ impl Text {
     /// # Panics
     ///
     /// Panics if `offset` is not a character boundary. Every byte offset in
-    /// obelus comes from tree-sitter, which only ever reports boundaries.
+    /// Obelus comes from tree-sitter, which only ever reports boundaries.
     #[must_use]
     pub fn char_of_byte(&self, offset: ByteOffset) -> CharOffset {
         CharOffset::new(

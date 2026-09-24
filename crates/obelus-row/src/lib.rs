@@ -43,7 +43,7 @@ pub enum Ink {
     ///
     /// What a fenced block in markdown is made of, once the grammar its
     /// fence names has said what each run is. A block with no language, or
-    /// one obelus has no grammar for, stays [`Ink::Code`] -- one colour,
+    /// one Obelus has no grammar for, stays [`Ink::Code`] -- one colour,
     /// which says "this is code" and nothing more.
     Syntax(obelus_text::kind::SyntaxKind),
 }

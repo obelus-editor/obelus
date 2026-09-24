@@ -1,4 +1,4 @@
-# obelus, themed by omarchy.
+# Obelus, themed by omarchy.
 #
 # Rendered into ~/.local/state/omarchy/current/theme/obelus.toml every time
 # a theme is set, and read from there through a link. See the README beside
@@ -7,7 +7,7 @@
 # What is not here is not an omission. A theme file gives what it wants and
 # inherits the rest from the built-in theme it names, so the colours omarchy
 # has no word for -- the wash behind a changed line, the ground behind a
-# matched character -- are left to obelus, which does have one.
+# matched character -- are left to Obelus, which does have one.
 
 base = "{{ mode }}"
 

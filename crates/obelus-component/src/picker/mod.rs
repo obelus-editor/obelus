@@ -159,7 +159,7 @@ pub enum PickerValue {
         /// Which of the files it changed, relative to the repository.
         path: PathBuf,
     },
-    /// One of the ways out of a question obelus stopped to ask.
+    /// One of the ways out of a question Obelus stopped to ask.
     Answer(obelus_buffer::question::Answer),
     /// Nothing. A row that is there to say why the list is short.
     Nothing,
@@ -221,7 +221,7 @@ pub enum Marking {
     /// Something the row says about itself on the way past: what it holds,
     /// or that it is where the reader already is.
     Aside,
-    /// Work that obelus has not written.
+    /// Work that Obelus has not written.
     Unwritten,
     /// Something is happening in it that nobody is watching.
     Working,
@@ -326,7 +326,7 @@ pub struct PickerItem {
     /// A row that cannot is drawn dim and the selection walks past it. Shown
     /// rather than left out, because a list that hides what it cannot do
     /// cannot be learned from: a reader who never sees `show-change` does not
-    /// find out that obelus has it. What they see instead is that it is
+    /// find out that Obelus has it. What they see instead is that it is
     /// there and not available *here*.
     pub enabled: bool,
     /// What the label's characters *are*, for a row that is a line of code.
@@ -409,7 +409,7 @@ pub struct Picker {
     indices: Vec<(usize, Vec<u32>)>,
     /// Which matching row is selected, and which is on the top row.
     ///
-    /// The same window every list in obelus has, and the reason it is state
+    /// The same window every list in Obelus has, and the reason it is state
     /// rather than worked out from the selection: it moves only when the
     /// selection would leave it, so walking down the list moves a cursor
     /// through rows that stay still, and the rows only slide once the
@@ -1493,7 +1493,7 @@ impl Picker {
             }
             // `tab` walks the tabs, which is the key's own name and the
             // only thing it can mean in a list: nothing here indents, and
-            // the one completion obelus accepts with a key accepts with
+            // the one completion Obelus accepts with a key accepts with
             // enter. The arrows used to do this and cannot any more -- the
             // query is a text with a caret in it, and left and right are
             // where a caret goes.
@@ -1542,7 +1542,7 @@ impl Picker {
             // reach the first and last row, duplicating `ctrl+home` and
             // `ctrl+end` on purpose -- but the query is a line with a caret
             // in it now, and bare home and end are where a caret goes in
-            // every other text obelus holds. The duplicate was what made
+            // every other text Obelus holds. The duplicate was what made
             // them free to give away.
             code if (bare || (control && paging))
                 && !(bare && matches!(code, KeyCode::Home | KeyCode::End))
@@ -1566,7 +1566,7 @@ impl Picker {
             // is a line with a caret in it and takes the keys a line takes:
             // the arrows, the words, what is held, what is typed. A key it
             // has no use for it refuses, and that is how `ctrl+q` still
-            // reaches the key table and leaves obelus from in here.
+            // reaches the key table and leaves Obelus from in here.
             _ => match self.query.handle_key(key) {
                 true => {
                     self.refilter();
@@ -1813,7 +1813,7 @@ mod tests {
     /// A list can say what it is about, and what it says takes room from
     /// its rows rather than from the screen around it.
     ///
-    /// Nothing in obelus sets this today -- an agent's question moved to a
+    /// Nothing in Obelus sets this today -- an agent's question moved to a
     /// card of its own, which is where prose above answers belongs when the
     /// answers are the whole point. It is kept because the next list that
     /// is an answer to something the reader did not start will want it, and

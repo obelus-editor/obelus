@@ -190,7 +190,7 @@ fn highlighting_still_works_after_a_reload() {
 /// The buffer keeps its contents when the file can no longer be read, so the
 /// only way the reader learns about it is the status bar.
 ///
-/// Unreadable rather than deleted: a file that is gone is a fact obelus can
+/// Unreadable rather than deleted: a file that is gone is a fact Obelus can
 /// state, and it says "Deleted". `stale` is for the case it cannot -- here,
 /// bytes that are not text.
 #[test]
@@ -238,7 +238,7 @@ fn a_deleted_file_says_it_was_deleted() {
     assert_eq!(buffer.on_disk(), obelus_buffer::Disk::Deleted);
     assert!(
         !buffer.is_stale(),
-        "a file obelus knows the fate of was called stale"
+        "a file Obelus knows the fate of was called stale"
     );
 
     let mut app = obelus_app::app::App::new(vec![buffer]);

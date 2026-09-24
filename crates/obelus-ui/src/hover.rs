@@ -1,8 +1,8 @@
 //! What a server said about a place, drawn over the place.
 //!
-//! The same box the completion panel is in, holding what obelus's own
+//! The same box the completion panel is in, holding what Obelus's own
 //! markdown renderer makes of the answer: a hover is a README about one
-//! symbol, and a README is a thing obelus already knows how to draw.
+//! symbol, and a README is a thing Obelus already knows how to draw.
 
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect};
 

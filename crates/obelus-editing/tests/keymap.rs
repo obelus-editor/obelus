@@ -51,7 +51,7 @@ fn release_events_are_discarded() {
 
     // A terminal speaking the kitty keyboard protocol reports a press and a
     // release for one keystroke. Matching both fires every binding twice,
-    // which reads as "obelus quit before I let go" rather than as a bug in
+    // which reads as "Obelus quit before I let go" rather than as a bug in
     // key handling.
     assert_eq!(keymap.lookup(&event, Context::Normal), None);
 }
@@ -137,7 +137,7 @@ fn no_global_binding_is_shadowed_by_a_context_binding() {
     }
 }
 
-/// A key held with a modifier obelus cannot be bound to is a different key,
+/// A key held with a modifier Obelus cannot be bound to is a different key,
 /// and matches nothing. Ignoring the modifier instead would quit on
 /// `ctrl+super+q` — an answer, and the wrong one, where none was asked for.
 #[test]
@@ -279,7 +279,7 @@ fn the_readers_own_bindings_go_over_the_defaults() {
         ("open-file".to_string(), String::new()),
         ("nonsense.command".to_string(), "ctrl+z".to_string()),
         ("show-change".to_string(), "not a key".to_string()),
-        // A key obelus can read and can never be given: the editor takes
+        // A key Obelus can read and can never be given: the editor takes
         // the arrows before the table is reached.
         ("go-to-line".to_string(), "up".to_string()),
     ]
@@ -318,7 +318,7 @@ fn the_readers_own_bindings_go_over_the_defaults() {
         "the key the reader removed is still bound"
     );
     // And everything else is the default, including the two the file got
-    // wrong: a typo leaves the reader with obelus, not with holes.
+    // wrong: a typo leaves the reader with Obelus, not with holes.
     assert_eq!(
         keymap.chord_for(Command::CommandPalette),
         Keymap::new().chord_for(Command::CommandPalette)

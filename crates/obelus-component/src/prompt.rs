@@ -197,7 +197,7 @@ impl Prompt {
     /// Handles a key.
     ///
     /// Modifiers are judged the way every other path judges them, so
-    /// `ctrl+q` still leaves obelus from here and a stray `super` disqualifies
+    /// `ctrl+q` still leaves Obelus from here and a stray `super` disqualifies
     /// a key rather than being ignored.
     pub fn handle_key(&mut self, key: &KeyEvent) -> PromptOutcome {
         let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {

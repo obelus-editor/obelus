@@ -337,7 +337,7 @@ fn it_goes_back_to_the_row_and_not_to_the_name() {
 
 /// A press moves the selection, and a press on a row's arrow opens it.
 ///
-/// The lists obelus draws over a file took no press at all. The wheel
+/// The lists Obelus draws over a file took no press at all. The wheel
 /// reached them -- it is its own event, and goes to whichever layer is
 /// nearest -- and the query box did too, because the box is on the status
 /// row and the status row is asked first. So the box was clickable and the

@@ -4,16 +4,16 @@
 //! `terminal/write`, no size, no keys. What the five `terminal/*` methods
 //! ask for is a command started, its output read, its exit status waited
 //! for, and a way to stop it. So this is a process runner with the output
-//! kept, not a terminal -- obelus has no terminal to offer and does not
+//! kept, not a terminal -- Obelus has no terminal to offer and does not
 //! need one.
 //!
 //! Its pipes are read on [`obelus_runtime`], not on threads of their own:
 //! reading a pipe is waiting, which is what that runtime is for, and a
 //! reader may have several commands going at once.
 //!
-//! obelus does not ask the reader before running one. The agent asks --
+//! Obelus does not ask the reader before running one. The agent asks --
 //! that is what `session/request_permission` is for, and a client asking
-//! again is a second question about one thing. What obelus owes instead is
+//! again is a second question about one thing. What Obelus owes instead is
 //! that the command is *on the page*, in the words it was actually run in,
 //! and that a key stops it: what cannot be undone has to be visible while
 //! it happens.
@@ -102,7 +102,7 @@ impl Output {
     }
 }
 
-/// Every command this obelus has running, and the ones that have finished
+/// Every command this Obelus has running, and the ones that have finished
 /// and not been let go of.
 ///
 /// Kept until the agent says `terminal/release`: it may ask for the output
@@ -112,7 +112,7 @@ impl Output {
 pub struct Runs {
     running: HashMap<RunId, Running>,
     /// What the next one is called. The agent's own ids name *its*
-    /// terminals; these are obelus's, and the protocol says the client
+    /// terminals; these are Obelus's, and the protocol says the client
     /// mints them.
     next: u64,
 }
@@ -152,7 +152,7 @@ impl Runs {
             .arg(&said)
             .current_dir(cwd.unwrap_or(root))
             // Nothing to type into. The protocol has no way to send a
-            // key to one of these, and obelus's own input is the reader's
+            // key to one of these, and Obelus's own input is the reader's
             // terminal in raw mode -- inherited, the command would be
             // taking their keystrokes out of the page they are reading.
             .stdin(Stdio::null())
@@ -236,13 +236,13 @@ impl Runs {
     /// Stops one, whether the reader asked or the agent did.
     ///
     /// Two halves, because they answer to different things. The signal is
-    /// sent *here*, synchronously: obelus may be on its way out, and a
+    /// sent *here*, synchronously: Obelus may be on its way out, and a
     /// kill queued behind a runtime nobody polls again is a process that
     /// outlives the reader. The reaping is a task, because waiting for a
     /// process to die is waiting -- and a killed child nobody waits for is
     /// a zombie.
     ///
-    /// How it ended is written down rather than read back. obelus killed
+    /// How it ended is written down rather than read back. Obelus killed
     /// it, so `KILL` is the truth whatever the wait would later say, and
     /// the answer is owed to whoever asked now rather than a frame later.
     pub fn stop(&mut self, id: &str) {
@@ -291,7 +291,7 @@ impl Drop for Runs {
     /// shell depends on. It is not the thing to want here, for the reason
     /// `obelus_lsp::Client` gives in its own words -- and more sharply, because
     /// these are commands a reader never typed. A `cargo build` left
-    /// running after obelus is gone is a process eating a machine on
+    /// running after Obelus is gone is a process eating a machine on
     /// behalf of a conversation nobody can see any more.
     fn drop(&mut self) {
         self.release_all();
@@ -321,7 +321,7 @@ fn read_into(stream: Stream, into: Arc<Mutex<Output>>) {
                 Ok(0) | Err(_) => return,
                 Ok(read) => read,
             };
-            // Lossily, because a command's output is bytes and obelus
+            // Lossily, because a command's output is bytes and Obelus
             // draws characters: a program writing something that is not
             // UTF-8 is a program whose output is still worth showing.
             let more = String::from_utf8_lossy(&buffer[..read]).into_owned();
@@ -554,7 +554,7 @@ mod tests {
 
     /// Nothing is left running when the runs go.
     ///
-    /// A command a reader never typed, still going after obelus is gone,
+    /// A command a reader never typed, still going after Obelus is gone,
     /// is a process eating a machine on behalf of a conversation nobody
     /// can see any more.
     ///
@@ -584,7 +584,7 @@ mod tests {
 
     /// Stopping one stops it, and says how it stopped.
     ///
-    /// Asked of the machine and not only of the books: obelus writes down
+    /// Asked of the machine and not only of the books: Obelus writes down
     /// `KILL` the moment it sends the signal rather than waiting to be
     /// told, so a version that wrote it down and sent nothing would say
     /// the same thing while the command carried on.

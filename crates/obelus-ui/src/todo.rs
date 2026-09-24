@@ -3,7 +3,7 @@
 //! A title, a rule, the notes, and a foot saying what the keys do. The notes
 //! are the only thing here with more than one shape: a row is a box, what it
 //! says, and where it points, and a note with more behind it turns the mark
-//! every other folding thing in obelus turns.
+//! every other folding thing in Obelus turns.
 //!
 //! Where a note points is right-aligned in a column of its own, the way a
 //! changed file's counts are: a place hung off the ragged end of a sentence
@@ -71,7 +71,7 @@ pub fn hints(notes: &Notes, elsewhere: bool) -> Vec<Hint> {
         Hint::common(alt(KeyCode::Enter), "Go there")
             .saying("Go to what it is about")
             .when(notes.can_go()),
-        // Not where another obelus has that conversation open: a
+        // Not where another Obelus has that conversation open: a
         // conversation is not a thing two of them may have at once, so the
         // key does nothing there and a foot offering it would be the page
         // promising something it will not do.
@@ -325,10 +325,10 @@ const TALKED: u16 = 2;
 fn working_mark(talked: Talked, phase: u32) -> Option<String> {
     match talked {
         Talked::Not | Talked::Yes => None,
-        // Whose it is, where it is not this obelus's. It goes in this
+        // Whose it is, where it is not this Obelus's. It goes in this
         // column and not the one beside it because this is the column
         // about what a conversation is doing -- and an empty one here
-        // would say "nothing", which is a thing this obelus is in no
+        // would say "nothing", which is a thing this Obelus is in no
         // position to say about somebody else's window.
         Talked::Elsewhere => Some(match obelus_icons::enabled() {
             true => obelus_icons::ui::ELSEWHERE.to_string(),
@@ -370,7 +370,7 @@ pub struct TodoUi<'a> {
     /// Which notes have a conversation, in the notes' own order.
     talked: Vec<Talked>,
     /// Whether the note the reader is on has its conversation open in
-    /// another obelus, which is the one key the foot holds back.
+    /// another Obelus, which is the one key the foot holds back.
     elsewhere: bool,
     /// How far the ticker has got, for the mark that turns.
     ///
@@ -473,7 +473,7 @@ impl TodoUi<'_> {
             Style::new().bg(background),
         );
         // "The keys are here", said down the edge of the whole note rather
-        // than under it, which is how every other list in obelus says it.
+        // than under it, which is how every other list in Obelus says it.
         //
         // This is the one list whose rows the reader also selects text
         // *inside*, and a run of selection lying on a selected row's
@@ -575,7 +575,7 @@ impl TodoUi<'_> {
         let step = row.depth * obelus_git::todo::INDENT;
         if row.head {
             // What is under it, where anything is: the mark every other
-            // folding thing in obelus wears, because it is the same act.
+            // folding thing in Obelus wears, because it is the same act.
             if let Some(open) = row.under {
                 put(
                     cells,
@@ -603,7 +603,7 @@ impl TodoUi<'_> {
             false => self.theme.foreground,
         };
         // What the reader has hold of, marked the way every other row in
-        // obelus marks a run of itself -- and the way the file marks its
+        // Obelus marks a run of itself -- and the way the file marks its
         // own selection, which is the colour a reader has learnt means
         // "this is what you are holding".
         let marked = match row.held.clone() {

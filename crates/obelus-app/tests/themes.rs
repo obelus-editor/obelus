@@ -199,7 +199,7 @@ fn a_colour_is_written_the_way_everybody_writes_one() {
 /// A theme rewritten on disk is a theme the screen is already wearing.
 ///
 /// Which is the whole of what a desktop that themes every program it has
-/// does to obelus: it writes the file. Nobody chose anything, the name in
+/// does to Obelus: it writes the file. Nobody chose anything, the name in
 /// the settings has not moved, and what that name stands for has.
 #[test]
 fn a_theme_rewritten_on_disk_arrives_here() {
@@ -215,7 +215,7 @@ fn a_theme_rewritten_on_disk_arrives_here() {
         "the file was not read at startup"
     );
 
-    // Somebody else writes it: another obelus, the reader's own editor, or
+    // Somebody else writes it: another Obelus, the reader's own editor, or
     // the thing that themes everything on their desktop.
     std::fs::write(&file, "base = \"dark\"\nbackground = \"#241f31\"\n").expect("rewriting");
     app.handle(Event::Watched(obelus_watch::Changed { path: file }));
@@ -279,7 +279,7 @@ fn a_theme_whose_directory_is_replaced_arrives_here() {
     );
 }
 
-/// The template shipped for omarchy names colours obelus actually has.
+/// The template shipped for omarchy names colours Obelus actually has.
 ///
 /// A key it spells wrong is a line that does nothing: a theme file gives
 /// what it wants and inherits the rest, so a misspelling is indentical to
@@ -294,7 +294,7 @@ fn the_template_for_omarchy_names_colours_obelus_has() {
     let template = std::fs::read_to_string(
         std::path::Path::new(env!("OBELUS_TREE")).join("contrib/omarchy/obelus.toml.tpl"),
     )
-    .expect("the template shipped beside obelus");
+    .expect("the template shipped beside Obelus");
 
     // A different colour per placeholder, so each can be looked for. `mode`
     // is not one: it names the theme to build on, and is the one place the
@@ -367,7 +367,7 @@ fn the_template_for_omarchy_names_colours_obelus_has() {
         let colour = written::hex(&colour).expect("a colour");
         assert!(
             got.contains(&colour),
-            "the template sets a colour obelus does not have: {key}"
+            "the template sets a colour Obelus does not have: {key}"
         );
     }
 }

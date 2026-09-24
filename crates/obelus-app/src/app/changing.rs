@@ -25,13 +25,13 @@ impl App {
     /// Makes what a server asked for, and says what happened.
     ///
     /// The sentence it returns is what goes on the status row: how much
-    /// changed, and anything obelus refused to do.
+    /// changed, and anything Obelus refused to do.
     pub(super) fn apply_wanted(&mut self, wanted: &Wanted) -> String {
         if wanted.is_empty() {
             return match wanted.refused.is_empty() {
                 true => "Nothing to change".to_string(),
                 false => format!(
-                    "Not something obelus will do: {}",
+                    "Not something Obelus will do: {}",
                     wanted.refused.join(", ")
                 ),
             };
@@ -99,9 +99,9 @@ impl App {
 
     /// Makes an edit a server asked for, and tells it what happened.
     ///
-    /// The one request from a server that obelus answers by doing
+    /// The one request from a server that Obelus answers by doing
     /// something. It is how a refactoring that the server works out for
-    /// itself arrives: the action obelus chose carried a command rather
+    /// itself arrives: the action Obelus chose carried a command rather
     /// than an edit, the server ran it, and this is the result coming
     /// back the other way.
     pub(super) fn on_asked_edit(
@@ -115,12 +115,12 @@ impl App {
         }
     }
 
-    /// The same, as far as the answer: what obelus did and what it will
+    /// The same, as far as the answer: what Obelus did and what it will
     /// say it did.
     fn make_asked_edit(&mut self, asked: &obelus_lsp::client::AskedEdit) -> serde_json::Value {
         let wanted = obelus_lsp::edits::wanted_in(&asked.edit);
         // Whether anything landed, which is what the server is asking.
-        // An edit with nothing obelus will do in it is a no, and the
+        // An edit with nothing Obelus will do in it is a no, and the
         // sentence that says why is the reason the protocol asks for.
         let applied = !wanted.is_empty();
         let said = self.apply_wanted(&wanted);
@@ -131,7 +131,7 @@ impl App {
         obelus_lsp::client::edit_answer(&asked.id, applied, &said)
     }
 
-    /// Hands obelus an edit, as a server would ask for one, and gives
+    /// Hands Obelus an edit, as a server would ask for one, and gives
     /// back the answer it would send.
     pub fn asked_edit_for_test(&mut self, edit: serde_json::Value) -> serde_json::Value {
         self.make_asked_edit(&obelus_lsp::client::AskedEdit {

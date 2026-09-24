@@ -288,17 +288,17 @@ fn obelus_can_read_its_own_log() {
     // file holds every session and several of them run at once.
     let pid = std::process::id();
     let written = format!(
-        "{pid} 2026-09-14T00:36:43.625057Z  INFO ob: obelus starting version=\"0.1.0\"\n\
+        "{pid} 2026-09-14T00:36:43.625057Z  INFO ob: Obelus starting version=\"0.1.0\"\n\
          {pid} 2026-09-14T00:36:43.625558Z  INFO obelus_ui::image: pictures protocol=Sixel\n\
          {pid} 2026-09-14T00:36:43.626000Z  WARN obelus_app::app: no keyboard protocol\n"
     );
     assert_eq!(
         format_of(&written),
         Some(Format::Ours),
-        "obelus does not recognise the log it writes itself"
+        "Obelus does not recognise the log it writes itself"
     );
 
-    // And which obelus said it survives into the entry, beside the rest of
+    // And which Obelus said it survives into the entry, beside the rest of
     // what the line carries by name.
     let entry = Format::Ours
         .read(written.lines().next().expect("a line"))

@@ -1,4 +1,4 @@
-# obelus
+# Obelus
 
 A terminal code reader. **It doesn't want you to type.**
 
@@ -71,7 +71,7 @@ letter is a letter, `enter` starts another note, and what acts on a note *as* a
 note is under `alt`. The line a note was put beside is found again through git,
 so a note written last week still points at what it was written about.
 
-**An agent, over ACP.** obelus implements nobody's model: it installs one from
+**An agent, over ACP.** Obelus implements nobody's model: it installs one from
 the protocol's own registry and talks to it. A conversation is one of the open
 documents, and a conversation opened from a note stays about that note — come
 back tomorrow and it is where you left it. A change the agent is *asking* to
@@ -79,7 +79,7 @@ make is drawn in the transcript, the way an opened hunk is drawn in a file, and
 stays there afterwards. Over MCP it can also read the notes, add some, tick one
 off or reword one — having asked you first.
 
-**Several obelus at once.** There are no splits: two files side by side is
+**Several Obelus at once.** There are no splits: two files side by side is
 another window. A repository and its worktrees are one project, so they share
 one set of notes; two windows writing notes do not erase each other, and a
 conversation can only be open in one of them at a time.

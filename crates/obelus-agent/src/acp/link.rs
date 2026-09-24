@@ -3,12 +3,12 @@
 //! `agent-client-protocol` is the protocol's reference implementation: it
 //! spawns the agent, frames the messages, numbers the requests, and gives
 //! every method of the protocol a type whose field names the compiler
-//! checks. What it is built around is `async`, and obelus's main loop is a
+//! checks. What it is built around is `async`, and Obelus's main loop is a
 //! thread blocked on a channel -- so this is the join between them.
 //!
-//! One thread runs the connection. It holds the whole of obelus's side of
+//! One thread runs the connection. It holds the whole of Obelus's side of
 //! it: the handshake, every conversation opened on it, and a loop over the
-//! [`Ask`]s obelus sends it. In the other direction everything becomes an
+//! [`Ask`]s Obelus sends it. In the other direction everything becomes an
 //! [`Event`] on the loop's own channel, like the keyboard, the file walk and
 //! the language servers. Every message in both directions names which
 //! conversation it is about, because one agent holds several.
@@ -20,10 +20,10 @@
 //! them and for nothing else.
 //!
 //! The two directions are not symmetrical, and that is the interesting
-//! part. What obelus *asks* is fire-and-forget: a prompt is spawned as a
+//! part. What Obelus *asks* is fire-and-forget: a prompt is spawned as a
 //! task on the connection, so a cancellation typed while the agent is
 //! thinking is read rather than queued behind it. What the agent asks --
-//! permission, the text of a file -- is a question obelus cannot answer
+//! permission, the text of a file -- is a question Obelus cannot answer
 //! without the reader, so the handler sends the question to the main loop
 //! with a [`oneshot`] to answer through, and waits. Waiting is right there:
 //! the agent has stopped, and what it is waiting for is a keystroke. It is
@@ -42,23 +42,23 @@
 //! One thing the crate does not promise: that a notification sent after a
 //! request leaves after it. A cancellation typed in the same instant as a
 //! prompt can reach the agent first. So an interruption does both halves --
-//! it tells the agent *and* ends the turn on obelus's side -- and a late
+//! it tells the agent *and* ends the turn on Obelus's side -- and a late
 //! answer to a turn the reader stopped is dropped rather than shown.
 //!
 //! An agent that wants to ask something uses `elicitation/create`. That is
 //! the one way it can put UI on a client's screen, and it is gated on a
 //! capability: a mode not named in the handshake and an agent either falls
-//! back or gives up. obelus names both.
+//! back or gives up. Obelus names both.
 //!
 //! A *form* is a flat set of primitives: one of a list, several of a list, a
 //! switch, words, a number. The whole form goes back as one answer, keyed by
 //! the agent's own names; escape declines it, and the view going away cancels
 //! it, because an agent that hears nothing waits for ever. A property type
-//! obelus has never heard of is declined with the reason in the transcript
+//! Obelus has never heard of is declined with the reason in the transcript
 //! rather than half-filled in.
 //!
 //! A *url* is somewhere the reader has to go: to sign in, to authorise
-//! something. obelus is not a browser, which was once the reason not to
+//! something. Obelus is not a browser, which was once the reason not to
 //! declare this at all -- but it does not have to be one. It shows the
 //! address whole and hands it to whatever the machine opens links with,
 //! which is the same thing it does with a file it cannot display. Only
@@ -111,14 +111,14 @@ use crate::Event;
 
 /// Which turn of a conversation something is about.
 ///
-/// obelus's own count and nothing the agent ever sees. The protocol has no
+/// Obelus's own count and nothing the agent ever sees. The protocol has no
 /// name for a turn -- `session/prompt` answers with a stop reason, and
 /// `session/cancel` names a session -- so a client with two of them about
-/// one conversation cannot tell two answers apart. This is the name obelus
+/// one conversation cannot tell two answers apart. This is the name Obelus
 /// gives them so that it can.
 pub type Turn = u64;
 
-/// What obelus asks the agent to do.
+/// What Obelus asks the agent to do.
 ///
 /// Sent from the main loop, read by the thread. Not requests: what comes
 /// back comes back as an [`Event`], because by then the reader may be
@@ -142,32 +142,32 @@ pub enum Ask {
     },
     /// Take up one the agent already has, from a previous sitting.
     ///
-    /// The agent kept every word of it, so obelus keeps none: what it keeps
+    /// The agent kept every word of it, so Obelus keeps none: what it keeps
     /// is the name, because the agent has no idea a note exists.
     Reopen {
-        /// The name obelus wrote down last time.
+        /// The name Obelus wrote down last time.
         session: SessionId,
     },
     /// Say this, in that conversation.
     Say {
         /// Which conversation.
         session: SessionId,
-        /// Which turn of it, by obelus's own count.
+        /// Which turn of it, by Obelus's own count.
         ///
         /// The protocol numbers nothing: a prompt's answer says the turn is
         /// over and names only the session, so with two of them about one
         /// conversation there is no telling which answer belongs to which
-        /// question. obelus counts them itself and puts the number back on
+        /// question. Obelus counts them itself and puts the number back on
         /// the answer, which is the same trick a language server's version
         /// is.
         turn: Turn,
         /// What to say.
         words: String,
-        /// What obelus has to say about the conversation first, once.
+        /// What Obelus has to say about the conversation first, once.
         ///
         /// Its own block rather than stuck to the front of the words: the
         /// protocol takes a prompt as blocks, and one of these is the
-        /// reader talking while the other is obelus saying what they are
+        /// reader talking while the other is Obelus saying what they are
         /// talking about.
         opening: Option<String>,
     },
@@ -184,7 +184,7 @@ pub enum Ask {
     Offers,
     /// Stop what you are doing in that one.
     Interrupt {
-        /// Which turn obelus is giving up on, for the end it writes itself.
+        /// Which turn Obelus is giving up on, for the end it writes itself.
         turn: Turn,
         /// Which conversation.
         session: SessionId,
@@ -225,7 +225,7 @@ impl Chosen {
     ///
     /// A switch takes a boolean and a list takes an id, and which one a
     /// setting takes is the setting's own business -- so it is answered
-    /// here, where what obelus calls the two sides of a switch is also
+    /// here, where what Obelus calls the two sides of a switch is also
     /// written down.
     #[must_use]
     pub fn of(setting: &Setting, value: &str) -> Self {
@@ -236,7 +236,7 @@ impl Chosen {
     }
 }
 
-/// How obelus answers something the agent asked.
+/// How Obelus answers something the agent asked.
 ///
 /// One value, once. `None` is a refusal: no option chosen, or no text to
 /// hand over -- both of which the protocol has an answer for.
@@ -270,7 +270,7 @@ pub enum Incoming {
     /// Something to show, in one of the conversations.
     Update {
         /// Which one it belongs to. The protocol puts it on every message
-        /// obelus reads and obelus threw it away, which was free while
+        /// Obelus reads and Obelus threw it away, which was free while
         /// there was one conversation and is the whole of the routing now.
         session: SessionId,
         /// What to show.
@@ -280,7 +280,7 @@ pub enum Incoming {
     Ended {
         /// Whose turn.
         session: SessionId,
-        /// And which one of that conversation's, by obelus's count.
+        /// And which one of that conversation's, by Obelus's count.
         ///
         /// Because the answer itself does not say. An answer to a turn that
         /// is no longer the one running is an answer about something nobody
@@ -297,9 +297,9 @@ pub enum Incoming {
     /// side of this message. So this is about the *agent* -- which is what
     /// a page about what conversations should start on is about.
     Offers(Vec<Setting>),
-    /// Something did not work: what obelus was doing, and what it said.
+    /// Something did not work: what Obelus was doing, and what it said.
     Failed(&'static str, String),
-    /// A conversation obelus asked to pick up again is not there any more.
+    /// A conversation Obelus asked to pick up again is not there any more.
     ///
     /// Its own message rather than a [`Self::Failed`], because it names
     /// which conversation: a failure that says only *what* went wrong lands
@@ -329,7 +329,7 @@ pub enum Incoming {
         /// And in its own words: which command, which file -- what the
         /// reader is actually being asked about.
         reason: Option<String>,
-        /// What obelus may answer.
+        /// What Obelus may answer.
         options: Vec<Choice>,
         /// Which option, or nothing for "not answered".
         answer: Answer<Option<String>>,
@@ -382,7 +382,7 @@ pub enum Incoming {
     Ask {
         /// What it says it needs, in its own words.
         message: String,
-        /// What it wants, in the order obelus will put them.
+        /// What it wants, in the order Obelus will put them.
         fields: Vec<Field>,
         /// Every field's answer, or nothing for "not answered".
         answer: Answer<Option<Vec<(String, Reply)>>>,
@@ -395,7 +395,7 @@ pub enum Incoming {
         line: Option<u32>,
         /// How many lines.
         limit: Option<u32>,
-        /// The text, or nothing for "obelus will not read that".
+        /// The text, or nothing for "Obelus will not read that".
         answer: Answer<Option<String>>,
     },
     /// It wants a command run.
@@ -403,7 +403,7 @@ pub enum Incoming {
     /// Not a question for the reader. The agent asks before it does
     /// anything it thinks is worth asking about -- that is what
     /// `session/request_permission` is -- and a client that asked again
-    /// would be a second question about one thing. What obelus owes is
+    /// would be a second question about one thing. What Obelus owes is
     /// that the command is on the page in the words it was run in, and
     /// that a key stops it: what cannot be undone has to be visible while
     /// it happens.
@@ -412,13 +412,13 @@ pub enum Incoming {
         command: String,
         /// Its arguments, where the agent kept them apart.
         args: Vec<String>,
-        /// What to set in its environment, beside obelus's own.
+        /// What to set in its environment, beside Obelus's own.
         env: Vec<(String, String)>,
         /// Where to run it, or the tree when the agent did not say.
         cwd: Option<PathBuf>,
         /// How much of its output to keep.
         limit: Option<usize>,
-        /// What obelus calls it, or nothing where it would not start.
+        /// What Obelus calls it, or nothing where it would not start.
         answer: Answer<Option<String>>,
     },
     /// What a command has written so far.
@@ -436,7 +436,7 @@ pub enum Incoming {
     Waited {
         /// Which command.
         id: String,
-        /// How it ended, or nothing for a command obelus has no record of.
+        /// How it ended, or nothing for a command Obelus has no record of.
         answer: Answer<Option<crate::running::Ended>>,
     },
     /// Stop one.
@@ -508,7 +508,7 @@ pub enum Update {
     Thought(String),
     /// A piece of what the *reader* said, as the agent has it.
     ///
-    /// Which sounds like news obelus already has, and in a live turn it is
+    /// Which sounds like news Obelus already has, and in a live turn it is
     /// -- it put those words there itself. The turn this is for is the one
     /// nobody was here for: `session/load` replays a conversation to a
     /// client that may be a fresh process, and the reader's own half comes
@@ -547,7 +547,7 @@ pub enum Update {
     /// reader meant to do, and this says what the conversation turned into.
     Titled(String),
     /// The settings it lets the reader change, sent when the session opens
-    /// and again after every change -- by obelus or by the agent itself.
+    /// and again after every change -- by Obelus or by the agent itself.
     Settings(Vec<Setting>),
     /// How much of what the agent can hold this conversation is using, and
     /// what it has cost. Sent several times a turn.
@@ -575,7 +575,7 @@ pub struct Cost {
     /// The amount, in whatever the currency is.
     pub amount: f64,
     /// Which currency, as an ISO 4217 code. Passed through rather than
-    /// turned into a sign: obelus does not know every currency's, and one
+    /// turned into a sign: Obelus does not know every currency's, and one
     /// it guessed wrong would be a number about the wrong money.
     pub currency: String,
 }
@@ -583,8 +583,8 @@ pub struct Cost {
 /// One thing about the session the agent lets the reader change.
 ///
 /// The model, how hard it thinks, whether it asks before doing things: the
-/// agent names them, obelus lists them. Which are on offer is the agent's,
-/// and so is what each of them means -- obelus only shows the names and
+/// agent names them, Obelus lists them. Which are on offer is the agent's,
+/// and so is what each of them means -- Obelus only shows the names and
 /// sends back the id of what was chosen.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Setting {
@@ -606,7 +606,7 @@ pub struct Setting {
     /// Set with `session/set_mode` rather than `session/set_config_option`.
     ///
     /// True only of the mode an agent offers through the older, dedicated
-    /// methods, which obelus reads into a setting like any other. The
+    /// methods, which Obelus reads into a setting like any other. The
     /// protocol is dropping those methods; this is the one field that
     /// remembers which door a setting goes back out of, and when they are
     /// gone it is the only thing to delete.
@@ -622,7 +622,7 @@ pub struct Setting {
 pub enum Kind {
     /// One value out of several.
     Select,
-    /// On or off, which obelus offers as two values of its own making.
+    /// On or off, which Obelus offers as two values of its own making.
     Switch,
 }
 
@@ -630,7 +630,7 @@ pub enum Kind {
 ///
 /// `category` exists for exactly this -- the spec's own list of what a
 /// client may do with it is "keyboard shortcuts, icons, placement" -- and
-/// it says a client must work without it. So obelus uses it for a glyph,
+/// it says a client must work without it. So Obelus uses it for a glyph,
 /// for which setting `shift+tab` steps, and for nothing that would be
 /// wrong if an agent said nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -644,7 +644,7 @@ pub enum Category {
     /// How hard it thinks.
     ThoughtLevel,
     /// Something else, or nothing said. Every unknown category is this
-    /// one: the name of a category obelus has never heard of tells it no
+    /// one: the name of a category Obelus has never heard of tells it no
     /// more than silence does.
     Other,
 }
@@ -684,7 +684,7 @@ pub struct Order {
 
 /// One thing an agent asked the reader for.
 ///
-/// A field of a form, in the shape obelus can put it: what to call it, what
+/// A field of a form, in the shape Obelus can put it: what to call it, what
 /// sort of answer it takes, and the name the answer goes back under.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Field {
@@ -755,24 +755,24 @@ pub struct Call {
     /// The files it named, with the line where it said one.
     ///
     /// What makes a tool call something a reader can go to rather than
-    /// something they can only read about: obelus opens files for a living,
+    /// something they can only read about: Obelus opens files for a living,
     /// and this is the agent saying which.
     pub places: Vec<Place>,
     /// The change it is making, when it said.
     pub change: Option<Change>,
-    /// The command obelus is running for it, where it is running one.
+    /// The command Obelus is running for it, where it is running one.
     ///
     /// The agent embeds one it asked for with `terminal/create`, so the
     /// call's row is where the command shows: what it is running, what it
-    /// has printed, and whether it is still going. obelus holds the
-    /// process, so the row is filled from what obelus has rather than from
+    /// has printed, and whether it is still going. Obelus holds the
+    /// process, so the row is filled from what Obelus has rather than from
     /// anything the agent sends.
     pub ran: Option<String>,
     /// What it said in words, which is not always nothing.
     ///
     /// A call may carry text as well as a diff -- the plan an agent asks
     /// leave to act on is a call of this shape, and so is anything whose
-    /// result is prose rather than a file. obelus kept the diff and threw
+    /// result is prose rather than a file. Obelus kept the diff and threw
     /// the words away, so the row that was actually asking the reader
     /// something had nothing on it.
     ///
@@ -784,16 +784,16 @@ pub struct Call {
 /// The protocol's own word for one of its enums.
 ///
 /// Through serde, which is the only thing that knows: these are
-/// `snake_case` on the wire and `CamelCase` in Rust, and obelus used to
+/// `snake_case` on the wire and `CamelCase` in Rust, and Obelus used to
 /// bridge them with `{:?}` lowercased. That gives `inprogress` for
 /// `InProgress` and `switchmode` for `SwitchMode` -- so every arm in
-/// obelus written against the protocol's spelling was an arm nothing could
+/// Obelus written against the protocol's spelling was an arm nothing could
 /// reach: the glyph that says a call is running, the rule that keeps its
 /// lines open while it runs, the picture on a plan being approved.
 /// Somebody had already met it and papered over it by matching both
 /// spellings of one word.
 ///
-/// Derived rather than written out, so a variant obelus has never seen
+/// Derived rather than written out, so a variant Obelus has never seen
 /// still comes out as whatever the wire calls it.
 fn said_as(value: &impl serde::Serialize) -> String {
     serde_json::to_value(value)
@@ -819,7 +819,7 @@ pub struct Step {
     /// How important the agent thinks it is.
     ///
     /// Read and not drawn, which is a decision rather than an oversight:
-    /// obelus's own notes have no priority because the order is the
+    /// Obelus's own notes have no priority because the order is the
     /// reader's, and three shades of urgency on a list the reader cannot
     /// reorder is colour spent on something they cannot act on.
     pub priority: String,
@@ -828,7 +828,7 @@ pub struct Step {
 /// A change to a file, as the agent describes it.
 ///
 /// The file as it is and as it would be, which is what the protocol sends
-/// rather than a patch: obelus diffs the two with the engine it diffs
+/// rather than a patch: Obelus diffs the two with the engine it diffs
 /// everything else with, so a change that has not happened is read the way
 /// every change that has is.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -929,10 +929,10 @@ const SAID_ABOUT: usize = 1200;
 
 /// Writes down what an agent asked permission for.
 ///
-/// The protocol carries more about a call than obelus keeps -- the tool's
-/// own arguments, and whatever the agent puts in `_meta` -- and what obelus
+/// The protocol carries more about a call than Obelus keeps -- the tool's
+/// own arguments, and whatever the agent puts in `_meta` -- and what Obelus
 /// keeps is what it can draw. This is the rest of it, which is the only
-/// place to find out how an agent names a call: obelus's own tools raise a
+/// place to find out how an agent names a call: Obelus's own tools raise a
 /// card of their own and being asked about them first is being asked twice,
 /// but telling one of those apart from an agent's own tool means knowing
 /// what a request about one looks like.
@@ -943,7 +943,7 @@ fn said_about(request: &RequestPermissionRequest) {
     //
     // The answers on the card are the agent's alone. The protocol has four
     // kinds -- allowed once, allowed always, refused once, refused always
-    // -- and obelus shows every one it is given, so a card with two
+    // -- and Obelus shows every one it is given, so a card with two
     // answers on it is an agent that sent two. Which made "why am I not
     // offered `always`" a question about the agent that nothing here could
     // answer: this line said what was asked and not what was on offer.
@@ -970,17 +970,17 @@ fn cut_to(said: &str, most: usize) -> &str {
     }
 }
 
-/// Which way obelus can hand an agent its tools, if any.
+/// Which way Obelus can hand an agent its tools, if any.
 ///
 /// The agent says in the handshake which transports it can connect to, and
 /// the protocol is strict about it: `Http` and `Sse` are "only available
 /// when the agent capabilities indicate" so. Offering one it did not ask
 /// for is a server it is entitled to ignore without saying anything, which
-/// is the shape of an obelus that looks like it works and quietly offers
+/// is the shape of an Obelus that looks like it works and quietly offers
 /// nothing.
 ///
 /// `Stdio` every agent must take, but the agent is the one that spawns
-/// the server there -- obelus's is already running inside obelus, so it
+/// the server there -- Obelus's is already running inside Obelus, so it
 /// would have to be a second program that connects back to this one. That
 /// is a real option and not this one.
 fn offering(url: Option<&str>, can: &McpCapabilities) -> Option<McpServer> {
@@ -991,7 +991,7 @@ fn offering(url: Option<&str>, can: &McpCapabilities) -> Option<McpServer> {
         (false, false) => {
             tracing::warn!(
                 url,
-                "this agent takes neither http nor sse, so obelus offers it no tools"
+                "this agent takes neither http nor sse, so Obelus offers it no tools"
             );
             return None;
         }
@@ -1006,7 +1006,7 @@ async fn open_session(
     tools: Option<&McpServer>,
     events: &impl Sink<Event>,
 ) -> Result<SessionId, agent_client_protocol::Error> {
-    // What obelus itself offers the agent: a handful of tools about this
+    // What Obelus itself offers the agent: a handful of tools about this
     // reader's notes, which the protocol has no way to express because it is
     // about talking to an agent rather than about being talked to.
     let mut asking = NewSessionRequest::new(root.to_path_buf());
@@ -1095,7 +1095,7 @@ async fn talk(
                 said_about(&request);
                 // The reader's to answer, so the question goes to the main
                 // loop and this waits for the keystroke. An answer that
-                // never comes -- the view closed, obelus quit -- is the
+                // never comes -- the view closed, Obelus quit -- is the
                 // protocol's "cancelled", which is what an agent needs to
                 // hear to stop waiting.
                 let (answer, answered) = oneshot::channel();
@@ -1134,7 +1134,7 @@ async fn talk(
         )
         .on_receive_request(
             async move |request: ReadTextFileRequest, responder, _connection| {
-                // From a buffer if obelus has one, which is the main loop's
+                // From a buffer if Obelus has one, which is the main loop's
                 // to know: what the reader is looking at is not always what
                 // is on disk, and an agent inside a reader should be
                 // looking at the same thing.
@@ -1146,12 +1146,12 @@ async fn talk(
                     answer,
                 };
                 if reading.send(Event::Acp(question)).is_err() {
-                    return responder.respond_with_error(refusal("obelus is not listening"));
+                    return responder.respond_with_error(refusal("Obelus is not listening"));
                 }
                 match answered.await {
                     Ok(Some(text)) => responder.respond(ReadTextFileResponse::new(text)),
                     Ok(None) | Err(_) => {
-                        responder.respond_with_error(refusal("obelus will not read that"))
+                        responder.respond_with_error(refusal("Obelus will not read that"))
                     }
                 }
             },
@@ -1160,7 +1160,7 @@ async fn talk(
         .on_receive_request(
             async move |request: CreateElicitationRequest, responder, _connection| {
                 // The agent is asking the reader something. What it may ask
-                // for is a flat form of primitives, and obelus puts that
+                // for is a flat form of primitives, and Obelus puts that
                 // the way it puts every other choice: a list where the
                 // answer is one of a few, the box where it is words. One
                 // field at a time, because a terminal reader has one thing
@@ -1172,7 +1172,7 @@ async fn talk(
                     let Some(url) = somewhere_to_go(&mode.url) else {
                         // An error rather than a decline, because this is
                         // not the reader refusing: the agent sent something
-                        // obelus will not hand to the machine's own
+                        // Obelus will not hand to the machine's own
                         // launcher, and it should hear which of those it
                         // was. `file:` and the schemes an editor or a
                         // chat program registers can start a program, and
@@ -1209,7 +1209,7 @@ async fn talk(
                 }
                 let asked = match &request.mode {
                     ElicitationMode::Form(form) => fields_of(&form.requested_schema),
-                    // A mode obelus never offered to show. Declined rather
+                    // A mode Obelus never offered to show. Declined rather
                     // than errored: the agent asked a fair question of a
                     // client that cannot put it, and it has to be able to
                     // carry on.
@@ -1219,7 +1219,7 @@ async fn talk(
                     Ok(fields) => fields,
                     Err(why) => {
                         let _ = elicited.send(Event::Acp(Incoming::Failed(
-                            "a question obelus cannot put",
+                            "a question Obelus cannot put",
                             why,
                         )));
                         return responder
@@ -1269,14 +1269,14 @@ async fn talk(
                     answer,
                 };
                 if running.send(Event::Acp(question)).is_err() {
-                    return responder.respond_with_error(refusal("obelus is not listening"));
+                    return responder.respond_with_error(refusal("Obelus is not listening"));
                 }
                 match answered.await {
                     Ok(Some(id)) => {
                         responder.respond(CreateTerminalResponse::new(TerminalId::new(id)))
                     }
                     Ok(None) | Err(_) => {
-                        responder.respond_with_error(refusal("obelus could not run that"))
+                        responder.respond_with_error(refusal("Obelus could not run that"))
                     }
                 }
             },
@@ -1290,7 +1290,7 @@ async fn talk(
                     answer,
                 };
                 if reading_output.send(Event::Acp(question)).is_err() {
-                    return responder.respond_with_error(refusal("obelus is not listening"));
+                    return responder.respond_with_error(refusal("Obelus is not listening"));
                 }
                 match answered.await {
                     Ok(Some((output, truncated, ended))) => responder.respond(
@@ -1298,7 +1298,7 @@ async fn talk(
                             .exit_status(ended.map(exit_status)),
                     ),
                     Ok(None) | Err(_) => {
-                        responder.respond_with_error(refusal("obelus is not running that"))
+                        responder.respond_with_error(refusal("Obelus is not running that"))
                     }
                 }
             },
@@ -1316,14 +1316,14 @@ async fn talk(
                     answer,
                 };
                 if waiting.send(Event::Acp(question)).is_err() {
-                    return responder.respond_with_error(refusal("obelus is not listening"));
+                    return responder.respond_with_error(refusal("Obelus is not listening"));
                 }
                 match answered.await {
                     Ok(Some(ended)) => {
                         responder.respond(WaitForTerminalExitResponse::new(exit_status(ended)))
                     }
                     Ok(None) | Err(_) => {
-                        responder.respond_with_error(refusal("obelus is not running that"))
+                        responder.respond_with_error(refusal("Obelus is not running that"))
                     }
                 }
             },
@@ -1337,7 +1337,7 @@ async fn talk(
                     answer,
                 };
                 if stopping.send(Event::Acp(question)).is_err() {
-                    return responder.respond_with_error(refusal("obelus is not listening"));
+                    return responder.respond_with_error(refusal("Obelus is not listening"));
                 }
                 // Waited for, so that the output asked for next is the
                 // output of something no longer writing.
@@ -1354,7 +1354,7 @@ async fn talk(
                     answer,
                 };
                 if forgetting.send(Event::Acp(question)).is_err() {
-                    return responder.respond_with_error(refusal("obelus is not listening"));
+                    return responder.respond_with_error(refusal("Obelus is not listening"));
                 }
                 let _ = answered.await;
                 responder.respond(ReleaseTerminalResponse::new())
@@ -1364,7 +1364,7 @@ async fn talk(
         .on_receive_request(
             async move |request: WriteTextFileRequest, responder, _connection| {
                 // Through the main loop, the same as a read -- and for a
-                // stronger reason. A file obelus has open is a document the
+                // stronger reason. A file Obelus has open is a document the
                 // reader can undo, and an agent writing straight to disk
                 // under one would leave two versions with no way back to
                 // either.
@@ -1375,12 +1375,12 @@ async fn talk(
                     answer,
                 };
                 if writing.send(Event::Acp(question)).is_err() {
-                    return responder.respond_with_error(refusal("obelus is not listening"));
+                    return responder.respond_with_error(refusal("Obelus is not listening"));
                 }
                 match answered.await {
                     Ok(true) => responder.respond(WriteTextFileResponse::new()),
                     Ok(false) | Err(_) => {
-                        responder.respond_with_error(refusal("obelus will not write that"))
+                        responder.respond_with_error(refusal("Obelus will not write that"))
                     }
                 }
             },
@@ -1412,7 +1412,7 @@ async fn talk(
                 // a conversation. A view can open on a note that already
                 // names one now, and then the session minted on the way up
                 // is a conversation nobody asked for: empty, so the agent
-                // never keeps it, and yet a name obelus could write down
+                // never keeps it, and yet a name Obelus could write down
                 // against the note in place of the one the reader had been
                 // talking in. Whoever opens a conversation says what it
                 // wants, and waits the one round trip that costs.
@@ -1427,7 +1427,7 @@ async fn talk(
                         // comes back is a list of what the agent offers,
                         // which is a fact about the agent.
                         Ask::Offers => {
-                            // Without obelus's own tools: they are what a
+                            // Without Obelus's own tools: they are what a
                             // conversation is given so that the agent can
                             // reach the reader's notes, and nothing is
                             // going to be said in this one.
@@ -1497,9 +1497,9 @@ async fn talk(
                             // between a page with the conversation on it
                             // and a page with none.
                             //
-                            // And obelus's own tools go with it, the same
+                            // And Obelus's own tools go with it, the same
                             // as they go with a conversation being opened
-                            // for the first time. Where obelus offers
+                            // for the first time. Where Obelus offers
                             // them is a port the machine handed out when
                             // this process started, so it is a different
                             // one every run -- and a conversation outlives
@@ -1732,7 +1732,7 @@ fn ended_because(error: &agent_client_protocol::schema::v1::Error) -> String {
         })
 }
 
-/// What obelus tells an agent about itself.
+/// What Obelus tells an agent about itself.
 ///
 /// It reads files out and writes them back inside the tree it was opened
 /// on, runs the commands it is given, and puts both of the questions an
@@ -1745,13 +1745,13 @@ fn handshake() -> InitializeRequest {
                 .fs(FileSystemCapabilities::new()
                     .read_text_file(true)
                     .write_text_file(true))
-                // Commands, which obelus runs and shows rather than
+                // Commands, which Obelus runs and shows rather than
                 // asking about: see [`Incoming::Run`]. There is no
                 // terminal behind this and none is needed -- the five
                 // `terminal/*` methods want a process, not a screen.
                 .terminal(true)
                 // Both kinds of question: a form, which goes on a card,
-                // and a URL, which obelus hands to whatever the reader
+                // and a URL, which Obelus hands to whatever the reader
                 // opens links with. Saying only `form` left an agent that
                 // needed the reader to sign in somewhere with no way to
                 // say so.
@@ -1780,7 +1780,7 @@ fn exit_status(ended: crate::running::Ended) -> TerminalExitStatus {
         .signal(ended.signal.map(str::to_string))
 }
 
-/// What obelus says when it will not do something.
+/// What Obelus says when it will not do something.
 fn refusal(why: &str) -> agent_client_protocol::Error {
     agent_client_protocol::Error::method_not_found().data(serde_json::json!(why))
 }
@@ -1794,7 +1794,7 @@ fn refusal(why: &str) -> agent_client_protocol::Error {
 /// this is the words of it, and the files it names when it has no words.
 ///
 /// Not `raw_input`: that is the agent's own arguments in its own shape,
-/// which obelus would have to guess the meaning of. The typed fields are
+/// which Obelus would have to guess the meaning of. The typed fields are
 /// what an agent fills in to be shown.
 fn reason_of(request: &RequestPermissionRequest) -> Option<String> {
     let fields = &request.tool_call.fields;
@@ -1822,7 +1822,7 @@ fn reason_of(request: &RequestPermissionRequest) -> Option<String> {
     (!places.is_empty()).then(|| places.join("\n"))
 }
 
-/// What a `session/update` means, if it is one obelus shows.
+/// What a `session/update` means, if it is one Obelus shows.
 ///
 /// The protocol has a dozen and a half kinds and this reads nine. The rest
 /// -- usage, compaction -- are facts about the agent rather than about the
@@ -1916,16 +1916,16 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
             | agent_client_protocol::schema::MaybeUndefined::Null => Vec::new(),
         },
         other => {
-            tracing::debug!(?other, "an update obelus does not show");
+            tracing::debug!(?other, "an update Obelus does not show");
             Vec::new()
         }
     }
 }
 
-/// A URL obelus is willing to hand to the machine, or nothing.
+/// A URL Obelus is willing to hand to the machine, or nothing.
 ///
 /// `http` and `https` only, and it must name a host. Everything else is
-/// refused, because what happens next is that obelus asks the machine to
+/// refused, because what happens next is that Obelus asks the machine to
 /// open this with whatever is registered for it: `file:` reaches the disk,
 /// and an editor or a chat program registering a scheme of its own turns a
 /// link into a way to start a program. The string came from the agent.
@@ -1955,9 +1955,9 @@ fn somewhere_to_go(url: &str) -> Option<String> {
     Some(url.to_string())
 }
 
-/// The fields of a form, in the order obelus will put them.
+/// The fields of a form, in the order Obelus will put them.
 ///
-/// Or why it cannot put this one. A form obelus half-fills in is worse than
+/// Or why it cannot put this one. A form Obelus half-fills in is worse than
 /// one it declines: the agent gets an answer to a question it did not ask.
 ///
 /// The order is the schema's map order, which is alphabetical by name --
@@ -2083,7 +2083,7 @@ fn fields_of(schema: &ElicitationSchema) -> Result<Vec<Field>, String> {
     //
     // The schema's properties arrive as a sorted map -- JSON objects have
     // no order to keep -- so the order the agent wrote them in is gone by
-    // the time obelus sees it, and asking by the alphabet put "Other" in
+    // the time Obelus sees it, and asking by the alphabet put "Other" in
     // front of the question it was an alternative to. What is left is what
     // the agent said had to be answered, which is the question itself.
     fields.sort_by_key(
@@ -2114,11 +2114,11 @@ fn content_of(
         .collect()
 }
 
-/// One setting, as the view offers it -- if it is one obelus can show.
+/// One setting, as the view offers it -- if it is one Obelus can show.
 ///
 /// Nothing but a kind it has never heard of is dropped: a setting whose
-/// values obelus cannot list is a row that would do nothing when chosen,
-/// and the agent's own dialog for it is not obelus's to open.
+/// values Obelus cannot list is a row that would do nothing when chosen,
+/// and the agent's own dialog for it is not Obelus's to open.
 fn setting_of(option: &SessionConfigOption) -> Option<Setting> {
     let (values, current, kind) = match &option.kind {
         SessionConfigKind::Select(select) => (
@@ -2146,12 +2146,12 @@ fn setting_of(option: &SessionConfigOption) -> Option<Setting> {
             Kind::Switch,
         ),
         other => {
-            tracing::debug!(?other, "a setting obelus cannot show");
+            tracing::debug!(?other, "a setting Obelus cannot show");
             return None;
         }
     };
     // What each one is, once, where it arrives. How an agent declares a
-    // setting decides how obelus draws it and what pressing enter on it
+    // setting decides how Obelus draws it and what pressing enter on it
     // does -- a switch is flipped and a list is opened -- so "why is this
     // one drawn like that" is a question about this line, and it was
     // unanswerable without it.
@@ -2177,10 +2177,10 @@ fn setting_of(option: &SessionConfigOption) -> Option<Setting> {
     Some(setting)
 }
 
-/// What the agent said a setting is about, as one of the few obelus can do
+/// What the agent said a setting is about, as one of the few Obelus can do
 /// something with.
 ///
-/// A category obelus has never heard of is [`Category::Other`], which is
+/// A category Obelus has never heard of is [`Category::Other`], which is
 /// also what nothing said means: the spec reserves the unprefixed names for
 /// itself and tells clients to handle the rest gracefully, and the graceful
 /// thing is to show the setting and claim nothing about it.
@@ -2191,7 +2191,7 @@ fn category_of(category: Option<&SessionConfigOptionCategory>) -> Category {
         Some(SessionConfigOptionCategory::ModelConfig) => Category::ModelConfig,
         Some(SessionConfigOptionCategory::ThoughtLevel) => Category::ThoughtLevel,
         Some(SessionConfigOptionCategory::Other(name)) => {
-            tracing::debug!(name, "a category obelus has never heard of");
+            tracing::debug!(name, "a category Obelus has never heard of");
             Category::Other
         }
         None | Some(_) => Category::Other,
@@ -2227,7 +2227,7 @@ fn offers_in(opened: &NewSessionResponse) -> Vec<Setting> {
 /// will be removed in a future version of the protocol", and the option
 /// with `category: "mode"` is what replaces them -- so an agent in the
 /// middle of that change offers both, to be understood by clients on either
-/// side of it. obelus reads the old shape into the new one here, at the
+/// side of it. Obelus reads the old shape into the new one here, at the
 /// edge, so that everything above this has one kind of thing to draw, walk
 /// and set. What is left of the old way is [`Setting::legacy`] and the one
 /// branch that reads it.
@@ -2252,14 +2252,14 @@ fn mode_setting(state: &SessionModeState) -> Setting {
     }
 }
 
-/// What obelus calls the setting it makes out of the old mode methods.
+/// What Obelus calls the setting it makes out of the old mode methods.
 ///
-/// Only obelus's own name for it -- the agent never sees it, because a
+/// Only Obelus's own name for it -- the agent never sees it, because a
 /// change to this one goes out as `session/set_mode` and names a mode
 /// rather than a setting.
 pub const MODE: &str = "mode";
 
-/// What obelus calls the two sides of a switch.
+/// What Obelus calls the two sides of a switch.
 const ON: &str = "on";
 /// The other one.
 const OFF: &str = "off";
@@ -2287,7 +2287,7 @@ fn values_of(options: &SessionConfigSelectOptions) -> Vec<Value> {
             })
             .collect(),
         other => {
-            tracing::debug!(?other, "values obelus cannot list");
+            tracing::debug!(?other, "values Obelus cannot list");
             Vec::new()
         }
     }
@@ -2306,7 +2306,7 @@ fn value_of(option: &SessionConfigSelectOption) -> Value {
 ///
 /// Agents fill both in for every row whether they have anything to add or
 /// not -- Copilot's model list describes "GPT-5.4" as "GPT-5.4" -- and a row
-/// that says the same thing twice reads as a mistake in obelus.
+/// that says the same thing twice reads as a mistake in Obelus.
 fn said_twice(about: Option<&str>, name: &str) -> Option<String> {
     about
         .filter(|about| about.trim() != name.trim())
@@ -2389,7 +2389,7 @@ fn order_of(order: &AvailableCommand) -> Order {
             agent_client_protocol::schema::v1::AvailableCommandInput::Unstructured(hint) => {
                 Some(hint.hint.clone())
             }
-            // A kind of input obelus has not heard of. The name is still
+            // A kind of input Obelus has not heard of. The name is still
             // the command; what it takes after it is between the reader and
             // the agent.
             _ => None,
@@ -2416,7 +2416,7 @@ fn words(content: &ContentBlock) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    /// Every shape obelus refuses to hand to the machine's own launcher.
+    /// Every shape Obelus refuses to hand to the machine's own launcher.
     ///
     /// The end-to-end test drives one of these through a real agent; this
     /// is the rest of them, because a predicate with five arms wants five
@@ -2447,7 +2447,7 @@ mod tests {
             assert_eq!(
                 super::somewhere_to_go(said),
                 None,
-                "obelus would have opened {said:?}"
+                "Obelus would have opened {said:?}"
             );
         }
 
@@ -2460,7 +2460,7 @@ mod tests {
             assert_eq!(
                 super::somewhere_to_go(said).as_deref(),
                 Some(said),
-                "obelus would not have opened {said:?}"
+                "Obelus would not have opened {said:?}"
             );
         }
     }
@@ -2485,16 +2485,16 @@ mod tests {
         assert_eq!(cut_to("笔记本", 9), "笔记本");
     }
 
-    /// The transport is the agent's to choose, and obelus asks.
+    /// The transport is the agent's to choose, and Obelus asks.
     ///
     /// The protocol is strict about it -- `Http` and `Sse` are "only
     /// available when the Agent capabilities indicate" so -- and an agent
     /// that is handed one it did not ask for is entitled to ignore it
-    /// without saying anything. obelus hard-coded `Http` and got away with
+    /// without saying anything. Obelus hard-coded `Http` and got away with
     /// it because the two agents installed today both take it.
     ///
     /// Broken deliberately by going back to that: the third case stops
-    /// being `None` and obelus offers an agent a server it cannot reach.
+    /// being `None` and Obelus offers an agent a server it cannot reach.
     #[test]
     fn the_tools_go_by_whichever_way_the_agent_says_it_takes() {
         let url = Some("http://127.0.0.1:1/mcp");
@@ -2505,7 +2505,7 @@ mod tests {
             Some(McpServer::Http(_))
         ));
         // Http wins where both are offered: one request and one answer,
-        // against a stream obelus would have to hold open.
+        // against a stream Obelus would have to hold open.
         assert!(matches!(
             offering(url, &takes(true, false)),
             Some(McpServer::Http(_))
@@ -2514,7 +2514,7 @@ mod tests {
             offering(url, &takes(false, true)),
             Some(McpServer::Sse(_))
         ));
-        // Neither: obelus has a server running and no way to hand it over,
+        // Neither: Obelus has a server running and no way to hand it over,
         // and says so rather than offering one that will be dropped.
         assert!(offering(url, &takes(false, false)).is_none());
 

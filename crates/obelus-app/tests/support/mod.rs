@@ -39,7 +39,7 @@ use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Color};
 /// URI with a scheme in front of it: a Windows path begins at a drive letter
 /// where a URI's path begins with `/`, and writes `\` between its parts where
 /// a URI writes `/`. A test that builds its own agrees with itself and with
-/// nothing else -- which is how a dozen of these passed for as long as obelus
+/// nothing else -- which is how a dozen of these passed for as long as Obelus
 /// was only ever run on one platform.
 pub(crate) fn uri_for(path: impl AsRef<Path>) -> String {
     obelus_lsp::client::uri_for(path.as_ref())
@@ -214,14 +214,14 @@ pub(crate) fn check(name: &str, actual: &str) {
 
 /// A dump with every separator in a path written the one way.
 ///
-/// obelus draws a path the way this platform writes one, so a row that reads
+/// Obelus draws a path the way this platform writes one, so a row that reads
 /// `src/main.rs` here reads `src\main.rs` there. A fixture is one file and
 /// both platforms are read against it, so both sides come through here --
 /// which also means a fixture regenerated on either is the same file, and a
 /// suite run on a machine nobody has used before does not rewrite thirty of
 /// them.
 ///
-/// Safe because nothing obelus draws carries a backslash of its own: no
+/// Safe because nothing Obelus draws carries a backslash of its own: no
 /// fixture in this directory holds one. A test that needed to tell the two
 /// apart would have to say so some other way, and none does.
 fn one_spelling(dump: &str) -> String {
@@ -352,12 +352,12 @@ pub(crate) fn column_of(row: &str, needle: &str) -> usize {
     obelus_text::text_width(&cells[..at])
 }
 
-/// The corner a panel obelus floats over the page is drawn with.
+/// The corner a panel Obelus floats over the page is drawn with.
 ///
 /// Rounded, and spelled here rather than in each test: what a test is about
 /// is *where* a panel is, and a test that went looking for a square corner
 /// found the markdown fence inside a hover instead -- which is square
-/// because it belongs to the document, not to obelus.
+/// because it belongs to the document, not to Obelus.
 pub(crate) const PANEL_CORNER: char = '\u{256d}';
 
 /// The first glyph after `word` on a row, blanks skipped.
@@ -476,7 +476,7 @@ pub(crate) struct Scratch {
 /// Keeps this run's state out of the reader's own.
 ///
 /// The notes, the table of which conversation is about which note and the
-/// claims saying which are open all live in obelus's state directory, so a
+/// claims saying which are open all live in Obelus's state directory, so a
 /// test that did not say this would write into the reader's and leave it
 /// there -- which the suite did, for as long as the conversations have been
 /// kept there. One directory for the binary: every test names its project
@@ -489,7 +489,7 @@ pub(crate) struct Scratch {
 ///
 /// Called from both doors a test comes in by -- making a scratch directory
 /// and laying the screen out -- because a test that does neither touches
-/// nothing of obelus's either.
+/// nothing of Obelus's either.
 pub(crate) fn state_of_its_own() {
     obelus_logging::state_directory_for_test(
         std::env::temp_dir().join(format!("obelus-state-{}", std::process::id())),
@@ -498,9 +498,9 @@ pub(crate) fn state_of_its_own() {
 
 /// Makes the directory a project's notes are written into.
 ///
-/// They are kept in obelus's state directory now rather than beside the
+/// They are kept in Obelus's state directory now rather than beside the
 /// project, so a test that writes a file of them has to ask where that is
-/// -- and make the directory, which obelus itself makes on its way past.
+/// -- and make the directory, which Obelus itself makes on its way past.
 pub(crate) fn make_room_for_notes(root: &std::path::Path) {
     let path = obelus_git::todo::path(root);
     let directory = path.parent().expect("the notes are in a directory");
@@ -636,7 +636,7 @@ pub(crate) fn read_history(
     panic!("the history never finished arriving");
 }
 
-/// The ways out of the question obelus is asking, in the order offered.
+/// The ways out of the question Obelus is asking, in the order offered.
 ///
 /// Panics if it is not asking one: a test that walks past a question it did
 /// not expect would go on to assert about a screen nobody is looking at.
@@ -648,7 +648,7 @@ pub(crate) fn ways(app: &App) -> Vec<String> {
         .collect()
 }
 
-/// Answers the question obelus is asking, by walking to a way out and
+/// Answers the question Obelus is asking, by walking to a way out and
 /// choosing it.
 ///
 /// Through the arrow keys and enter rather than by reaching for the value,
@@ -683,7 +683,7 @@ pub(crate) fn said(dump: &str) -> String {
 
 /// The turn to use the clipboard.
 ///
-/// What obelus keeps when no provider can hold a copy is one thing for the
+/// What Obelus keeps when no provider can hold a copy is one thing for the
 /// whole process, so two tests reading it at once each see what the other
 /// put there. Held for as long as the returned guard lives, which is the
 /// body of the test that took it.
@@ -734,7 +734,7 @@ pub(crate) fn colour_under(dump: &str, glyph: char) -> String {
         .to_string()
 }
 
-/// Sends a letter with alt held, which is the family obelus's own commands
+/// Sends a letter with alt held, which is the family Obelus's own commands
 /// live in.
 pub(crate) fn press_alt(app: &mut App, character: char) {
     app.handle(Event::Key(KeyEvent::new(
@@ -770,7 +770,7 @@ pub(crate) fn place_of(app: &mut App, needle: &str) -> (u16, u16) {
     )
 }
 
-/// The messages of a kind that obelus wrote, as the echo gave them back.
+/// The messages of a kind that Obelus wrote, as the echo gave them back.
 ///
 /// Waits for `want` of them and then stops waiting, so a test that
 /// expects none pays a moment and a test that expects two does not: there

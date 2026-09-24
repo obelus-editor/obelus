@@ -3,7 +3,7 @@
 //!
 //! An edit knows where it happened; do not work it out again afterwards.
 //! `edit_between` recovers a change by trimming two whole documents, which is
-//! right for a file that was replaced under obelus and wasteful for a
+//! right for a file that was replaced under Obelus and wasteful for a
 //! keystroke. The three places an edit needs -- where it began, where what it
 //! replaced ended, where what it put there ends -- have to be taken *as it
 //! happens*, because two of them stop existing: the old end is gone once the
@@ -486,7 +486,7 @@ pub enum Held {
     /// Only ever the line the caret is on. One of these costs a row of the
     /// file's own space, and a file with thirty of them is a file whose
     /// shape is the complaints rather than the code -- which is the thing
-    /// obelus is for looking at. The rest are said by the underline, which
+    /// Obelus is for looking at. The rest are said by the underline, which
     /// costs nothing and is on every one of them.
     Wrong,
 }
@@ -607,14 +607,14 @@ pub struct Buffer {
     /// What was on disk when this was last read or written.
     ///
     /// Nothing was kept about a file before, because nothing ever had to ask
-    /// whether it had moved: obelus re-read it and that was the whole of the
+    /// whether it had moved: Obelus re-read it and that was the whole of the
     /// answer. A document somebody has edited cannot be re-read to find out,
     /// so the question has to be asked of the file rather than of its text.
     seen: Option<Seen>,
     /// Whether this file indents with tabs rather than with spaces.
     ///
     /// Read off the file rather than configured: what a file is indented
-    /// with is a fact about the file, and a reader who has to tell obelus
+    /// with is a fact about the file, and a reader who has to tell Obelus
     /// once per project has been asked something their files already say.
     /// A file with no indentation at all gets spaces, which is the answer
     /// that is wrong in the fewest places.
@@ -778,7 +778,7 @@ impl Buffer {
     ///
     /// The path is the file's own so that everything which reads a name --
     /// the highlighting, the icon, the status bar -- goes on working. What
-    /// is different is [`Content::Commit`], which is how the rest of obelus
+    /// is different is [`Content::Commit`], which is how the rest of Obelus
     /// knows these bytes are not the ones on disk.
     #[must_use]
     pub fn at_commit(path: &Path, id: gix::ObjectId, contents: &str) -> Self {
@@ -1150,7 +1150,7 @@ impl Buffer {
     ///
     /// Cheap, and wrong in both directions -- see [`Stat`]. What it is for
     /// is skipping the read: the commonest change reported about an open
-    /// file is obelus's own save arriving back through the watcher, and
+    /// file is Obelus's own save arriving back through the watcher, and
     /// that one looks exactly like what was just recorded.
     #[must_use]
     pub fn file_touched(&self) -> bool {
@@ -1178,7 +1178,7 @@ impl Buffer {
         };
         match std::fs::read_to_string(&self.path) {
             Ok(contents) => digest_of(contents.as_bytes()) != seen.digest,
-            // Gone, or no longer something obelus can read. Either way it is
+            // Gone, or no longer something Obelus can read. Either way it is
             // not what was read from.
             Err(_) => true,
         }
@@ -1189,7 +1189,7 @@ impl Buffer {
     /// Asked of disk at the moment of asking rather than of the flag the
     /// watcher sets, because the watcher is allowed to miss things: its
     /// events are dropped on queue overflow, never arrive at all over NFS
-    /// and the like, and cannot report what happened before obelus started.
+    /// and the like, and cannot report what happened before Obelus started.
     /// A file is only ever written once, so this is the one place that has
     /// to be right.
     ///
@@ -1270,13 +1270,13 @@ impl Buffer {
         self.version
     }
 
-    /// Whether the file could not be re-read the last time obelus tried.
+    /// Whether the file could not be re-read the last time Obelus tried.
     #[must_use]
     pub const fn is_stale(&self) -> bool {
         self.stale
     }
 
-    /// Which language this is, if obelus knows it.
+    /// Which language this is, if Obelus knows it.
     ///
     /// Taken from the parse rather than from the path a second time, so the
     /// server and the highlighting can never disagree about what a file is.
@@ -1285,7 +1285,7 @@ impl Buffer {
         self.syntax.as_deref().map(SyntaxState::language)
     }
 
-    /// The parse, if this is a language obelus knows.
+    /// The parse, if this is a language Obelus knows.
     #[must_use]
     pub fn syntax(&self) -> Option<&SyntaxState> {
         self.syntax.as_deref()
@@ -1518,7 +1518,7 @@ impl Buffer {
 
     /// Writes the document to the file it came from.
     ///
-    /// Beside it and renamed over it, which is how obelus writes its own
+    /// Beside it and renamed over it, which is how Obelus writes its own
     /// settings and for the same reason: another program may be reading this
     /// file at this moment, a plain write truncates first, and a reader
     /// landing in that gap sees an empty file. A rename within one directory
@@ -1602,7 +1602,7 @@ impl Buffer {
             Ok(contents) => contents,
             Err(error) => {
                 // A file that is simply gone is not a re-read that went
-                // wrong: `stale` means obelus could not find out what is
+                // wrong: `stale` means Obelus could not find out what is
                 // there, and here it has found out.
                 match self.file_gone() {
                     true => self.disk = Disk::Deleted,

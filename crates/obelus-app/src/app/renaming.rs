@@ -6,7 +6,7 @@
 //! somebody else's identifier that happens to contain it.
 //!
 //! Asked in two halves -- what to call it, then the server -- because the
-//! question obelus asks the reader is the only part it knows: what the
+//! question Obelus asks the reader is the only part it knows: what the
 //! rename *touches* is the server's answer, and it arrives after.
 
 use obelus_component::prompt::PromptKind;
@@ -153,7 +153,7 @@ impl App {
         self.note = Some(self.apply_wanted(&wanted));
     }
 
-    /// Hands obelus an answer worked out against a version of the file
+    /// Hands Obelus an answer worked out against a version of the file
     /// that has been left behind.
     pub fn rename_at_version_for_test(&mut self, answer: serde_json::Value, version: i32) {
         let Some(id) = self.current else { return };
@@ -167,7 +167,7 @@ impl App {
         );
     }
 
-    /// Hands obelus a server's answer, as one would arrive.
+    /// Hands Obelus a server's answer, as one would arrive.
     pub fn rename_for_test(&mut self, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
         let version = self.current_buffer().map_or(0, Buffer::version);

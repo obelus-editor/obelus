@@ -32,7 +32,7 @@ pub enum Severity {
 impl Severity {
     /// The colour it is drawn in.
     ///
-    /// The file's own colours, as everything in obelus is: an error is
+    /// The file's own colours, as everything in Obelus is: an error is
     /// what an error in a log is, a warning what a warning is. The two
     /// quieter ones take the colour of a comment, which is what they read
     /// as -- something written beside the code rather than about it.
@@ -49,7 +49,7 @@ impl Severity {
     ///
     /// Ordinary Unicode rather than a Nerd Font glyph: this goes on the
     /// status row, which is on screen the whole time, so it cannot depend
-    /// on a font obelus has not been told about.
+    /// on a font Obelus has not been told about.
     #[must_use]
     pub const fn mark(self) -> char {
         match self {
@@ -143,7 +143,7 @@ pub fn path_of(params: &Value) -> Option<std::path::PathBuf> {
 ///
 /// The same news as a [`Trouble`] and none of the placing. A range becomes
 /// a place in a document by counting against that document's text, and a
-/// file obelus has not read is one there is nothing to count against -- so
+/// file Obelus has not read is one there is nothing to count against -- so
 /// for those nothing is counted, and what arrived is kept as it arrived.
 ///
 /// Which costs a list nothing: a row that names a place carries the
@@ -212,7 +212,7 @@ impl Reported {
 /// Everything a server just said about one file, unplaced.
 ///
 /// No text and no encoding, because neither is needed and neither is to be
-/// had: this is the reading of a notification that works for a file obelus
+/// had: this is the reading of a notification that works for a file Obelus
 /// does not have open.
 ///
 /// In the order they were sent, which is not the order they are in the

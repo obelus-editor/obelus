@@ -223,7 +223,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
     }
 
     // The named answers, with the one the reader is on marked the way
-    // every list in obelus marks it.
+    // every list in Obelus marks it.
     //
     // Two rows and not one: the name, and under it what the agent said
     // choosing it would do, wrapped to the card rather than cut. Those
@@ -262,7 +262,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
             // A private-use codepoint measures one cell and a Nerd Font's
             // own glyphs are drawn two wide, so the one after it is left
             // blank for the half that bleeds -- the same allowance every
-            // list in obelus makes for the same glyphs.
+            // list in Obelus makes for the same glyphs.
             x += put(cells, x, y, icon, style) + 1;
         }
         write(cells, x, y, &choice.name, style);
@@ -348,12 +348,12 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
 
     // The row that sends the card, where every row above it is a tick
     // rather than an answer. What is missing is written on it rather than
-    // said after the fact: obelus draws what cannot be done dim and says
+    // said after the fact: Obelus draws what cannot be done dim and says
     // why, everywhere else too.
     if let Some(row) = parts.submit {
         rule(cells, Rect { height: 1, ..row }, theme);
         let wanting = card.wanting();
-        // Two things, said in two ways, the way every list in obelus says
+        // Two things, said in two ways, the way every list in Obelus says
         // them: the background is where the keys are, and the ink is
         // whether the row can be used. A row that lost its background for
         // being unusable would leave the reader with no way to see where

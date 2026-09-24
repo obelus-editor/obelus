@@ -17,7 +17,7 @@ screen 76x24  editor 76x22  status 76x1
 14|   Gather the git changes of the week and write them up                     
 15| Review the code                                                            
 16|   Read the current diff for bugs and simplifications                       
-17| Carry on with obelus                                                       
+17| Carry on with Obelus                                                       
 18|   Write code in this repository                                            
 19| Survey the repository                                                      
 20|   Read the recent commits and describe where things stand                  

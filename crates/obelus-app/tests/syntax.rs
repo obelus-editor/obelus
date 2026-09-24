@@ -317,7 +317,7 @@ fn an_edits_points_are_byte_columns_not_character_columns() {
 ///
 /// A query that compiles but matches nothing is the failure this catches: the
 /// file opens, the parse succeeds, and the screen shows plain text. That is
-/// indistinguishable from a language obelus has never heard of, so nothing
+/// indistinguishable from a language Obelus has never heard of, so nothing
 /// else would report it. It is a real risk here because several of these
 /// queries are two upstream queries concatenated -- TypeScript's covers only
 /// what TypeScript adds to JavaScript.
@@ -365,7 +365,7 @@ fn every_language_highlights_its_own_sample() {
         (LanguageId::Html, "<!-- c -->\n<div class=\"a\">hi</div>\n"),
         (LanguageId::Yaml, "# c\nkey: \"hi\"\nlist:\n  - 1\n"),
         // Markdown has no comments and no strings of its own: the *block*
-        // grammar is what obelus parses, and what it names is structure --
+        // grammar is what Obelus parses, and what it names is structure --
         // a heading, a fenced block, a list. So this one is checked by the
         // exception below rather than by the three assertions.
         (
@@ -663,13 +663,13 @@ const NAMED: u32 = 1;
 /// every one of them is outside the nothing there is to write them into. It
 /// is reachable two ways -- a screen with no room for the text at all, and a
 /// viewport sitting on the empty last line a file ending in a newline has --
-/// and it took obelus down with an out-of-range slice.
+/// and it took Obelus down with an out-of-range slice.
 #[test]
 fn an_empty_range_colours_nothing() {
     let (text, state) = parsed(SOURCE);
     let mut highlights = Highlights::default();
 
-    // At the beginning, which is the case that took obelus down: a range
+    // At the beginning, which is the case that took Obelus down: a range
     // of `0..0` is indistinguishable from never having set one, so the
     // query answers for the whole document.
     let none = ByteOffset::new(0);

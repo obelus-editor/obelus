@@ -6,7 +6,7 @@
 //!
 //! The protocol has two spellings of it, `changes` and `documentChanges`,
 //! and the second can also ask for files to be created, renamed or
-//! deleted. obelus reads the edits out of either and refuses the rest: a
+//! deleted. Obelus reads the edits out of either and refuses the rest: a
 //! program that quietly deleted a file because a server suggested it would
 //! be a program nobody should run, and a refusal a reader can see beats a
 //! surprise they cannot undo.
@@ -31,15 +31,15 @@ pub struct Change {
     pub text: String,
 }
 
-/// What a server asked for, and what obelus will not do.
+/// What a server asked for, and what Obelus will not do.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Wanted {
     /// The edits, in the order the server gave them.
     pub changes: Vec<Change>,
-    /// The operations obelus refuses, named so a reader can be told.
+    /// The operations Obelus refuses, named so a reader can be told.
     ///
     /// Creating, renaming and deleting files. A rename that moves a module
-    /// to a new path is a real thing servers ask for and a thing obelus
+    /// to a new path is a real thing servers ask for and a thing Obelus
     /// has no way to undo, so the edits go in and this is reported.
     pub refused: Vec<String>,
 }
@@ -95,7 +95,7 @@ pub fn from_edit(edit: WorkspaceEdit) -> Wanted {
                         lsp_types::OneOf::Left(edit) => edit,
                         // An annotated edit is an edit with a note on it
                         // saying what it is for. The note is for a dialog
-                        // obelus does not have.
+                        // Obelus does not have.
                         lsp_types::OneOf::Right(annotated) => annotated.text_edit,
                     })
                     .collect();

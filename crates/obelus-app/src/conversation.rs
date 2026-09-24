@@ -50,16 +50,16 @@ pub struct Conversation {
     pub session: Option<acp::SessionId>,
     /// The one it asked the agent to take up again, while it waits.
     ///
-    /// Only for a conversation being reopened, where obelus already knows
+    /// Only for a conversation being reopened, where Obelus already knows
     /// the name because it wrote it down. It is not put straight into
     /// `session`, because until the agent has answered the conversation is
     /// still starting and the screen should say so -- and it is kept apart
     /// from "no session yet" because two conversations opening at once would
     /// otherwise be told apart by nothing, and could take each other's.
     pub asked_for: Option<acp::SessionId>,
-    /// What the note said when obelus last told the agent about it.
+    /// What the note said when Obelus last told the agent about it.
     ///
-    /// What the agent has been *told*, rather than what obelus has to say:
+    /// What the agent has been *told*, rather than what Obelus has to say:
     /// the second is worked out from the first every time the reader sends
     /// something, by asking what the note says now. So there is one rule --
     /// tell it what it does not know -- and no flag anybody has to clear.
@@ -79,9 +79,9 @@ pub struct Conversation {
     /// down beside the note like `told` so that picking one up again does
     /// not repeat it.
     pub introduced: bool,
-    /// This obelus's claim on the conversation, while it is open.
+    /// This Obelus's claim on the conversation, while it is open.
     ///
-    /// A conversation is not a thing two obelus may have open at once: the
+    /// A conversation is not a thing two Obelus may have open at once: the
     /// agent takes one prompt turn at a time and the queue that keeps it to
     /// one lives in a process, so a second process prompting the same
     /// conversation walks straight past it. Held here because here is what
@@ -114,14 +114,14 @@ pub struct Conversation {
     /// Somewhere the agent wants the reader to go, while they have not
     /// said whether they will.
     pub going: Option<Going>,
-    /// Which of the reader's standing choices obelus has already asked
+    /// Which of the reader's standing choices Obelus has already asked
     /// this conversation for, by the agent's id for the setting.
     ///
     /// Once each, and never again. What is in here is not "this setting is
-    /// on that value" -- it is "obelus has said its piece about this one"
+    /// on that value" -- it is "Obelus has said its piece about this one"
     /// -- and the difference is the whole point: an agent that refuses a
-    /// value, or that puts one back mid-turn, has answered, and obelus
-    /// asking again would be obelus arguing with it.
+    /// value, or that puts one back mid-turn, has answered, and Obelus
+    /// asking again would be Obelus arguing with it.
     ///
     /// A set rather than a flag on the conversation, because the settings
     /// do not all arrive at once: choosing a model can bring a thinking

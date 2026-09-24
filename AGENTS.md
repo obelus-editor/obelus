@@ -1,4 +1,4 @@
-# obelus
+# Obelus
 
 A terminal code **reader**. In the AI era every line you read is a line you did
 not write, so browsing is the product and editing is incidental. The eventual
@@ -93,17 +93,27 @@ prefix off a string and guessing. The names are also what the config file's
 unbound with a word in the log.
 
 **Copy starts with a capital; a name keeps its own spelling.** Everything
-obelus says to the reader begins with a capital -- a key's word at the foot
+Obelus says to the reader begins with a capital -- a key's word at the foot
 (`Read it`, `Leave`), a note on the status row, an empty list's line, a card,
 a tab, a setting's name and its gloss. What is *not* copy is a name, and a
 name is written the way it is written everywhere else: a command (`open-file`
 -- also the word in the config file's `[keys]` table), a theme (`dark`), a
-language as it is counted (`Rust`, `TOML`, `Plain Text`), a file's path, and
-obelus itself, which spells itself lowercase. Where a sentence would have to
-start with one of those, reword it rather than misspell the name --
-`Not a language obelus knows`, not `Obelus does not know this language`.
+language as it is counted (`Rust`, `TOML`, `Plain Text`), and a file's path.
+Where a sentence would have to start with one of those, reword it rather than
+misspell the name -- `Nothing is bound to open-file`, not `open-file has no
+key`.
 
-Three things are not obelus's to capitalise, and are left exactly as they
+Obelus's own name is a name like any other, and it is written `Obelus`
+wherever the name is being written -- copy, a log line, a refusal sent to an
+agent, a comment. What stays lowercase is not the name but the things named
+after it: the `ob` binary, the `obelus-*` crates, `~/.config/obelus` and the
+project's `.obelus`, the `obelus::` log targets, and the word it gives itself
+on the wire (`Implementation`, and the MCP server it offers an agent). The
+lowercase *obelus* is also a word of its own -- the mark a scholar put beside
+a doubtful line -- and where the text means the mark rather than the program
+it keeps its small letter.
+
+Three things are not Obelus's to capitalise, and are left exactly as they
 arrive: what an agent sends (its modes, its tool titles, its questions),
 what a language server sends, and a protocol's own words -- a tool call's
 `state` is `"failed"` because that is what the wire says, even though the
@@ -144,19 +154,19 @@ A fake agent that asks to write a file in the repository is a test that
 rewrites the repository -- it asks about a path outside the project instead.
 
 Running a command has no undo, so it is held to the other half only, and
-held to it harder. obelus runs what it is asked without asking the reader:
+held to it harder. Obelus runs what it is asked without asking the reader:
 *the agent* asks -- that is what `session/request_permission` is for, and a
 client asking again is a second question about one thing, which is the same
-rule obelus's own tools follow. What obelus owes in exchange is that the
+rule Obelus's own tools follow. What Obelus owes in exchange is that the
 command is on the page in the words it was actually run in (not the agent's
 title for it), that everything it printed is there and a failed one stays
-open, and that the key which stops the agent stops the process too -- obelus
+open, and that the key which stops the agent stops the process too -- Obelus
 started it, and nothing else can.
 
 **What a frame asks every frame must answer without doing the work.** The
 conversation keeps its rows laid out and throws them away when what they
 are made of changes -- and the two things asked on *every* frame, what is
-happening now and what obelus's own commands have printed, threw them away
+happening now and what Obelus's own commands have printed, threw them away
 before looking at whether the answer had moved. So every keypress laid the
 whole transcript out from its bytes again: measured at 75ms on a thousand
 rows, against 213us for the rows it already had, which is a cursor a reader
@@ -201,7 +211,7 @@ and the whole of `src/app.rs:20  +2` where it did not.
 into a running one waits.** The protocol puts no turn on either end of the
 exchange: `session/cancel` names a session, and the answer to
 `session/prompt` says the turn is over with nothing on it saying which turn.
-So two prompts in flight is two answers obelus cannot tell apart, and the
+So two prompts in flight is two answers Obelus cannot tell apart, and the
 first one home put the conversation back to resting while the other turn
 worked on -- no `thinking...`, no mark turning, and `interrupt` gated on the
 same flag, so escape would not even send the cancellation. zed queues for
@@ -222,17 +232,17 @@ lint, and then commit -- so they are joined with a blank line, which is what
 the box's own `alt+enter` makes. One per turn meant the agent answered the
 first without ever seeing the second, and the third did not reach it until
 two turns had run. The rows stay the rows they were: the page is what the
-reader said, and obelus adds to their half of it rather than rewriting it.
+reader said, and Obelus adds to their half of it rather than rewriting it.
 
 Stopping the turn releases them. Escape means "stop what the agent is
 doing", not "unsay what I said" -- it used to mean both, because the words
-had been taken off the page into a queue and obelus sending them unasked
-would have been obelus speaking for them. They are on the page now, and
+had been taken off the page into a queue and Obelus sending them unasked
+would have been Obelus speaking for them. They are on the page now, and
 taking one back is a key on the row it is about. They still go in the order
 they were typed: a queue that let a later message overtake an earlier one
 would put their own words to the agent back to front.
 
-**So obelus numbers its own turns**, because the protocol will not: the
+**So Obelus numbers its own turns**, because the protocol will not: the
 number goes out with the prompt, comes back on the answer, and an answer
 about a turn that is not the one running is dropped where the count is
 kept. It replaced a flag that said only "given up on", which the next
@@ -242,20 +252,20 @@ ended the turn that had replaced it. zed numbers them too, and has a test
 whose name is this paragraph.
 
 The queue is what makes two turns rare; the number is what makes the rare
-one harmless. Both, because the first is obelus's own discipline and the
+one harmless. Both, because the first is Obelus's own discipline and the
 second is about what arrives.
 
 **And a turn the reader stopped takes its calls with it.** A tool call's
 state is the agent's, and an agent told to stop is *asked* to send the
 updates it owes -- one that never saw the cancellation sends none, and its
-calls sit at `in_progress` for ever under a conversation obelus has said is
+calls sit at `in_progress` for ever under a conversation Obelus has said is
 resting. Worse than wrong: nothing wakes the screen for a conversation that
 is not working, so the mark on that row is a spinner frozen mid-turn.
 `cancelled` is the protocol's own word for a call stopped before it
-finished, so writing it down is obelus saying what the agent would have
-said, not inventing a state of its own. The exception is a call obelus is
+finished, so writing it down is Obelus saying what the agent would have
+said, not inventing a state of its own. The exception is a call Obelus is
 running the command for, whose state comes from the runner every frame and
-is not obelus's to overwrite.
+is not Obelus's to overwrite.
 
 **A server's running commentary is not news; that it is running is.**
 `rust-analyzer` sends a few hundred progress messages over a cold start --
@@ -266,7 +276,7 @@ bit: an empty answer while a server is reading the project and an empty
 answer about a symbol with no definition are the same message on the wire,
 and the row is the only thing that tells them apart. So the badge that names
 the server turns while it is busy, in the same braille everything else in
-obelus turns in, and the words stay in the log.
+Obelus turns in, and the words stay in the log.
 
 Which needed the ticker woken for it, like every other mark that turns --
 one drawn once and never again is a mark saying nothing is happening. And
@@ -354,11 +364,11 @@ the commit the reader was on, not the row they were on: a re-read history
 is the same history with rows added on top, and row seven is a different
 commit afterwards.
 
-**What obelus writes, obelus has to be able to read.** The log gained a
+**What Obelus writes, Obelus has to be able to read.** The log gained a
 process id at the front of every line so that sessions running at once
 could be told apart; the reader of that format was not told. It splits on
 the first space expecting a timestamp, got a number, refused every line,
-and the file obelus writes was the one file it could not give a reading --
+and the file Obelus writes was the one file it could not give a reading --
 so `ctrl+t` was greyed out on it. A format with a writer and a reader in
 the same program has a test that the one reads the other, or they drift and
 the symptom turns up somewhere that looks unrelated.
@@ -374,9 +384,9 @@ lives in the walk, and saying otherwise would have been a win claimed
 rather than got.
 
 **Do not delete what you do not recognise.** Obelus wrote its own settings
-file whole, on the grounds that obelus wrote all of it. That is not true --
+file whole, on the grounds that Obelus wrote all of it. That is not true --
 readers put lines in by hand -- so writing it whole silently took out
-everything obelus did not know: a setting from a newer version, a key
+everything Obelus did not know: a setting from a newer version, a key
 renamed since, a line with a typo in it, and the comment beside them. It
 took them out on the next switch the reader flipped, which is nowhere near
 where they would look. A project's file was already edited rather than
@@ -386,7 +396,7 @@ too.
 **Ask the same question of every layer.** The column saying where a value
 came from asked the project "does your file name this setting" and asked the
 reader "does your value differ from the default". So a reader who wrote a
-setting down and happened to agree with obelus was told they had never been
+setting down and happened to agree with Obelus was told they had never been
 here. Both answers were available -- `apply` returns the keys a table set --
 and one of them was being thrown away.
 
@@ -418,7 +428,7 @@ one found by time and one by place -- so the arrow between them stays inside
 one errand. The project's commits are the odd one out: its rows stop being
 about the file on screen, and what hangs under them is somebody else's
 files. That is a key of its own (`f10`), not a third tab. It used to cost an
-escape -- obelus's commands did not run from inside a list, so the project's
+escape -- Obelus's commands did not run from inside a list, so the project's
 history was escape and then `f10` -- and that went when a view's key started
 reaching it from inside another view (below): `f10` from a file's history
 goes straight to the project's, and the two stay two views.
@@ -562,7 +572,7 @@ was `f1` until this, and moved to `ctrl+k` (`keymap::keys_card`) because `f1`
 names the files.
 
 **One mark for "the keys are here", and it says nothing else.** Every list,
-page and card in obelus puts `selected_row_background` behind the row the
+page and card in Obelus puts `selected_row_background` behind the row the
 reader is on -- a picker's rows, the settings', an agent's question, the
 transcript -- and the same colour behind the one item of a row of them, for
 the things laid out across a row rather than down a column. Where there is a
@@ -590,7 +600,7 @@ and `shift+enter` is how a paragraph is written in the box a message to an
 agent goes in. `main` pushes the *narrowest* kitty-keyboard flag
 (`DISAMBIGUATE_ESCAPE_CODES`) for it, pops it on the way out and from a panic
 hook, and `alt+enter` breaks the line as well, because alt is the escape
-prefix and always arrives. Nothing else in obelus depends on the protocol.
+prefix and always arrives. Nothing else in Obelus depends on the protocol.
 
 **Wherever enter means something else, a line is `shift+enter` *and*
 `alt+enter`.** Both, every time, and it is one rule rather than a decision
@@ -623,11 +633,11 @@ Writing to a server's stdin needs its own thread, because a busy server stops
 draining the pipe. An answer that arrives after the world has moved on is the
 normal case, which is why requests record the version they asked against.
 
-**obelus does not split its window, so several obelus processes is the
+**Obelus does not split its window, so several Obelus processes is the
 normal case.** A terminal already splits, tiles and tabs better than an
-editor can from the inside, so obelus has one region and no panes. What that
+editor can from the inside, so Obelus has one region and no panes. What that
 buys has to be paid for on the other side: two or three of them on one
-project, plus the reader's own shell in the same repository, is how obelus is
+project, plus the reader's own shell in the same repository, is how Obelus is
 actually used, and nothing it writes outside a buffer belongs to it alone.
 
 Three rules come out of that, and every one of them was broken:
@@ -645,12 +655,12 @@ restarting it under the reader because another window chose differently is
 somebody else's decision arriving as an interruption.
 
 *Anything written must survive another process writing it at the same
-moment.* `save_to` wrote in place, which truncates first; a second obelus
+moment.* `save_to` wrote in place, which truncates first; a second Obelus
 reading in that gap got an empty file, took it for "no settings", and wrote
 its defaults over everything the reader had. It writes beside the file and
 renames over it now -- the one filesystem operation with no gap in it -- and
-reading distinguishes "there is no file" from "there is a file obelus cannot
-read". The second stops obelus writing at all: what is in that file is the
+reading distinguishes "there is no file" from "there is a file Obelus cannot
+read". The second stops Obelus writing at all: what is in that file is the
 reader's, and saving over something it could not read replaces settings it
 never saw. It says so on the status row and starts saving again the moment
 the file reads, which the watcher notices.
@@ -664,7 +674,7 @@ longer the one the file is against. `HEAD` and `index` are watched, and
 
 *A repository and its worktrees are one project.* The notes are about the
 code and the code is the same code, so a reader with three worktrees open
-means to come back to one list -- and what obelus keeps about a project is
+means to come back to one list -- and what Obelus keeps about a project is
 keyed by `common_dir`, which is git's own answer to which repository this
 is. `obelus_git::project` is that key and everything using it must use the
 same one: the notes and the table saying which conversation is about which
@@ -678,17 +688,17 @@ shared with the next person anyway, since `.obelus` is a directory readers
 gitignore.
 
 *A conversation is not a thing two of them may have open at once.* The agent
-takes one prompt turn at a time and the queue that keeps obelus to one lives
+takes one prompt turn at a time and the queue that keeps Obelus to one lives
 in a process, so a second process prompting the same conversation walks
-straight past it -- no `2 waiting` anywhere, because neither obelus can see
+straight past it -- no `2 waiting` anywhere, because neither Obelus can see
 the other's queue. So a note's conversation is claimed, and the claim is a
-lock the system holds rather than anything obelus writes down: an obelus that
+lock the system holds rather than anything Obelus writes down: an Obelus that
 is killed, crashes or loses power gives it up without being asked, which a
 process number in a file cannot do -- it has to be believed, checked against
 a process that may be somebody else's by now, and given a staleness nobody
 can pick. The claim has a *file* as well, created and removed with it,
 because a lock is invisible to the watcher: nothing is written when one is
-taken, so the file is what another obelus wakes on. The file's existence
+taken, so the file is what another Obelus wakes on. The file's existence
 means nothing on its own -- one left behind by a process that died is a file
 nobody holds -- and asking for the lock is what says which it is.
 
@@ -701,7 +711,7 @@ Two smaller ones, in the same spirit. An install claims the agent's directory
 with a file created exclusively, so two windows asked for the same agent do
 not run two `npm`s into one prefix; the claim is given up by being dropped,
 and one left behind by a killed process is taken over after ten minutes. And
-every log line carries the process's number, because several obelus
+every log line carries the process's number, because several Obelus
 processes share one log and two interleaved stories with nothing to tell them
 apart are neither of them readable.
 
@@ -720,7 +730,7 @@ src/
                     preview is of a subject, not of a path (previewing); a
                     project may carry settings, and it is not the reader,
                     and the reader's is the layer it is laid over
-                    (preferences); what obelus says before the reader's
+                    (preferences); what Obelus says before the reader's
                     first words is one piece that is always said and one
                     the topic adds, and the reader's own words go into a
                     template last (opening)
@@ -748,7 +758,7 @@ src/
                     ranks is settled per tab, a list still arriving sits
                     still, say "still reading" where it moves nothing,
                     which tabs a view has must be cheap (picker); a list
-                    obelus offers is the reader's own project (picker/files);
+                    Obelus offers is the reader's own project (picker/files);
                     a question is a card, not a picker (card); a tool call
                     is somewhere to go, the transcript's cursor stands only
                     on rows that do something, a run of tool calls is one
@@ -806,16 +816,16 @@ protocol, iTerm2's inline images or sixels can be handed pixels, and
 can is asked once, before the alternate screen** (`Images::detect`, from
 `main`), because asking means writing an escape sequence and reading the
 answer. Everything else gets the glyph: half-blocks are for photographs and
-obelus has none. So a test, a pipe and most terminals draw the glyph path,
+Obelus has none. So a test, a pipe and most terminals draw the glyph path,
 which is why the fixtures never contain pixels.
 
 **The agent protocol comes from its own crate, joined to the loop on one
 thread.** `agent-client-protocol` is the reference implementation and it is
 built around `async`; `acp::link` is the join, and it is the only place in
-obelus where a runtime exists. Its module doc has the rest: why the runtime
+Obelus where a runtime exists. Its module doc has the rest: why the runtime
 is current-thread, why the two directions are not symmetrical, and the one
 ordering the protocol does not promise. `tests/agent.rs` drives a real
-process at it -- `tests/fixtures/fake-agent.sh`, which also checks obelus
+process at it -- `tests/fixtures/fake-agent.sh`, which also checks Obelus
 kept the promises it made in the handshake.
 
 **One screen animates at a time, and only while something is moving.** The
@@ -835,7 +845,7 @@ round trips.
 
 **A change that has happened is the working tree's; a change that has not is
 the agent's to show.** An agent that edits a file leaves the file different
-from the last commit, and drawing that is what obelus does all day: the
+from the last commit, and drawing that is what Obelus does all day: the
 margin, `show-change`, `alt+d`. Rendering the agent's own diff over it would
 be a second answer to the same question, and the wrong one when something
 else has touched the file too -- so an edit that has been made is a row with
@@ -851,7 +861,7 @@ being said. `Theme::marker_colour` is where both views ask what a change
 looks like.
 
 The protocol sends the file as it is and as it would be rather than a patch,
-so obelus diffs the two with `Changes::between` -- the engine the margins
+so Obelus diffs the two with `Changes::between` -- the engine the margins
 come from. Nothing parses anybody's patch text, and a proposal is read with
 the same hunks as everything else. The rows are worked out once, when the
 call arrives: a frame is not the place to diff a file.
@@ -866,8 +876,8 @@ One answer: enter on it answers the card, with whatever is in the box. Many:
 enter ticks, and the card is sent from a row that says `submit`, because
 ticking and sending cannot both be enter. In the box: enter sends, `alt` and
 enter makes a line, which is what enter does in the box anywhere else in
-obelus. No new key was needed -- not even space, which everywhere else in
-obelus is a character.
+Obelus. No new key was needed -- not even space, which everywhere else in
+Obelus is a character.
 
 Walking does *not* choose. The box is under the answers, so every way to it
 walks over them, and a card whose answer followed the focus would answer
@@ -883,8 +893,8 @@ least 2` on the row that sends it, or a row of its own where there is none
 got it wrong.
 
 **What a permission request is about is a row in the transcript, not a line
-of obelus's own.** It used to write "asking to run the tests" as a note and
-then put the question underneath -- the same words twice, once obelus
+of Obelus's own.** It used to write "asking to run the tests" as a note and
+then put the question underneath -- the same words twice, once Obelus
 started putting the call itself in the transcript. Now the call goes where
 every call goes, waiting, which is what says the agent is asking about it;
 the card below carries the answers and whatever the agent said about why.
@@ -902,7 +912,7 @@ list needs one next. It is
 wrapped to the width and capped at five rows: it is somebody else's prose,
 and an agent explaining itself at length must not push the list it belongs
 to off the screen. `raw_input` is not used -- that is the agent's own
-arguments in its own shape, and reading meaning into it would be obelus
+arguments in its own shape, and reading meaning into it would be Obelus
 guessing. A form said it in a transcript line of its own once ("it asks:
 ..."), which is the same words twice: the question is on screen, and what
 it is about belongs over it rather than above the last thing the agent
@@ -914,7 +924,7 @@ settings' filter or the conversation's own row. A row belonging to what is
 behind the list is a prompt with somebody else's words in it, and the caret
 sitting in it says the words are being typed there.
 
-**A command is the agent's namespace; a setting is obelus's to draw.** Two
+**A command is the agent's namespace; a setting is Obelus's to draw.** Two
 things in the protocol, and they must not be mistaken for each other. An
 agent's slash commands are names it takes *in a prompt* -- a client offers
 them and sends the text, and that is all. Session *config options* are the
@@ -927,7 +937,7 @@ option with its current value, walked and changed there -- not a command,
 because the keys that move what is on a screen belong to that screen, the
 way `shift+tab` always has.
 
-obelus used to take `/model` for itself: the agent's command and obelus's
+Obelus used to take `/model` for itself: the agent's command and Obelus's
 setting had the same name, and Copilot's own answer to that command is "the
 model-picker dialog is only available in the interactive CLI", so opening
 the setting's values instead looked like a kindness. It was a guess about
@@ -940,7 +950,7 @@ and `allow_all`. It does not elicit for `/model` either -- with
 `elicitation.form` advertised it still answers in words. Its mode ids are
 URLs, and most of its rows describe themselves with their own name, which is
 why a description that repeats the name is dropped. What kind each of those
-options is declared as, obelus now writes to the log as it arrives: how an
+options is declared as, Obelus now writes to the log as it arrives: how an
 agent declares one decides how it is drawn and what enter does to it, so
 that line is where "why is this one drawn like that" is answered.
 
@@ -958,7 +968,7 @@ can render perfectly and show nothing.
 **Nothing draws a band of colour across a row.** The status row is the page's
 own colour, like the conversation's row below the box: it has a rule above it
 saying it is a different subject from the file, and saying that twice makes a
-strip -- the heaviest thing obelus draws -- out of the smallest part of the
+strip -- the heaviest thing Obelus draws -- out of the smallest part of the
 screen. What is left of that band is `raised_background`, one shade off the
 page, behind the cap a key is drawn in at the foot of a view and behind the
 card that lists every key -- a few cells wide, and a box, never a row.
@@ -986,7 +996,7 @@ actually has against what is on disk is the only thing that says the two
 halves agree. It asserts nothing about whether that file is currently dirty.
 
 **A test whose input is the checkout's own history only passes at one
-moment.** Where obelus draws a run of changes is checked against real `git
+moment.** Where Obelus draws a run of changes is checked against real `git
 diff`, and it was checked over the last sixty commits of whatever checkout
 it ran in -- so it meant something different after every commit, could go
 red over a change that had nothing to do with the one under test, and went
@@ -1003,10 +1013,10 @@ pass however the diff was written.
 The sweep is kept, because it is what *finds* them, and it is `#[ignore]`d:
 run deliberately, skipping the pairs it has already handed over, so red
 means there is a new one to look at. When it turns one up, that pair joins
-the fixtures. One of them, `serving`, is there because obelus and git draw
+the fixtures. One of them, `serving`, is there because Obelus and git draw
 it differently and always will: two independent implementations of one
 algorithm broke a tie differently, both diffs put the file back, and
-obelus's is four edits the smaller. What is held to there is that the hunks
+Obelus's is four edits the smaller. What is held to there is that the hunks
 reconstruct the file, which is the claim underneath the other one.
 
 ## Comments
@@ -1046,7 +1056,7 @@ Which is why nobody does it. zed writes -- and has no git library at all: 21
 subcommands shelled out, blame and diff included, plus its own `GIT_ASKPASS`
 script talking back over a socket. helix reads -- and uses gix, with no network
 feature and no git commands whatsoever. There is no third combination. The
-choice is not which library; it is whether to write at all, and obelus does not.
+choice is not which library; it is whether to write at all, and Obelus does not.
 
 If that is ever revisited: shell out for all four verbs, because one of them
 (push) has no other option and two mechanisms for one act is worse than one.

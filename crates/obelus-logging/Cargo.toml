@@ -1,6 +1,6 @@
 [package]
 name = "obelus-logging"
-description = "The two logs obelus writes"
+description = "The two logs Obelus writes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

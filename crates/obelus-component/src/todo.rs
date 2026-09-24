@@ -6,7 +6,7 @@
 //! and it is left with escape like every other dialog here.
 //!
 //! What the keys are is said at the foot of the view rather than learned:
-//! there are six of them, three do nothing anywhere else in obelus, and a
+//! there are six of them, three do nothing anywhere else in Obelus, and a
 //! view whose keys can only be found by reading the source is a view nobody
 //! uses twice.
 //!
@@ -64,7 +64,7 @@ pub struct Row {
     ///
     /// `None` where nothing hangs under it, which is most notes and every
     /// row that is not a note's first. The mark is the one every other
-    /// folding thing in obelus wears, because it is the same act: one row
+    /// folding thing in Obelus wears, because it is the same act: one row
     /// standing in for several, and a key that opens it.
     pub under: Option<bool>,
 }
@@ -73,7 +73,7 @@ pub struct Row {
 /// conversation wants something.
 ///
 /// Which a list of notes has to say, because the answer outlives the
-/// session: obelus writes down which conversation is about which note, so
+/// session: Obelus writes down which conversation is about which note, so
 /// a note talked over yesterday is one the agent still has every word of
 /// -- and until this, the only way to find out was to open it and see
 /// whether anything came back.
@@ -85,7 +85,7 @@ pub enum Talked {
     /// There is a conversation: open now, or written down against this
     /// note and waiting to be taken up again.
     Yes,
-    /// Another obelus has it open.
+    /// Another Obelus has it open.
     ///
     /// Not this one's to enter and not this one's to describe: what the
     /// agent is doing in there is being told to the window that asked, so
@@ -190,7 +190,7 @@ pub struct TodoView {
     ///
     /// The page changes the copy it holds, so that the frame can show what
     /// the reader just did, and says what it did here. The file is *not*
-    /// written from that copy: another obelus has this tree open too, and a
+    /// written from that copy: another Obelus has this tree open too, and a
     /// file written whole from a copy is that one's last minute taken back
     /// out. What reaches the disk is these, done to the file as it is at the
     /// moment of writing -- see [`obelus_git::todo::Change`].
@@ -213,7 +213,7 @@ pub struct TodoView {
     /// which is the difference between a note the reader has just begun and
     /// a note the file has. Without it, typing into a note another window
     /// deleted while this page held it would write the note back -- this
-    /// reader's obelus undoing somebody's deliberate act, on a keystroke
+    /// reader's Obelus undoing somebody's deliberate act, on a keystroke
     /// that was about neither of those things.
     unwritten: HashSet<NoteId>,
 }
@@ -240,7 +240,7 @@ fn places_by_name(todo: &Todo, known: &[(NoteId, Option<LineNumber>)]) -> Vec<Op
 impl TodoView {
     /// Takes the file again, keeping what the reader was doing.
     ///
-    /// Somebody else has written it -- a second obelus, or the reader's own
+    /// Somebody else has written it -- a second Obelus, or the reader's own
     /// editor -- and what they wrote is now what the file says. Reopening
     /// the view would be the simple answer and would throw away the note
     /// being written, so instead the notes are swapped and the two things
@@ -301,7 +301,7 @@ impl TodoView {
                 return Some((at, composer));
             }
             // A note that says nothing has never been in anybody's file:
-            // obelus does not write one down, so its not being there is not
+            // Obelus does not write one down, so its not being there is not
             // somebody having taken it away. It goes back where the reader
             // had it -- put at the end instead, a note just started would
             // walk to the bottom of the list the moment anything else wrote
@@ -777,7 +777,7 @@ impl TodoView {
     /// goes nowhere.
     ///
     /// A note with nothing in it is thrown away, the same as anywhere else
-    /// -- obelus does not write one down -- and then the caret goes to the
+    /// -- Obelus does not write one down -- and then the caret goes to the
     /// nearest note there still is, because a list with notes in it and no
     /// caret anywhere is a list no key can reach.
     fn settle(&mut self) -> bool {
@@ -1117,7 +1117,7 @@ impl TodoView {
     /// The letters go in the note the caret is in, always: this page is a
     /// page of notes being written. What acts on a note *as a note* -- tick
     /// it, go where it points, move it, take it away -- is under `alt`,
-    /// which is the question alt asks everywhere in obelus: about the thing
+    /// which is the question alt asks everywhere in Obelus: about the thing
     /// the cursor is on.
     pub fn handle_key(&mut self, key: &KeyEvent, page: u16) -> TodoOutcome {
         // The width the box is asked about is this view's own answer, not

@@ -1,4 +1,4 @@
-//! What obelus asks a language server, and what it does with the answers.
+//! What Obelus asks a language server, and what it does with the answers.
 //!
 //! One half of the semantic layer: [`obelus_lsp`] speaks the protocol, and
 //! this decides when to speak it and what a reply means to the views. The
@@ -42,7 +42,7 @@ impl App {
 
     /// The server for the file being read, and what it is doing.
     ///
-    /// Only the current file's: a status bar listing every server obelus has
+    /// Only the current file's: a status bar listing every server Obelus has
     /// started would be a table, and the question a reader has is whether
     /// *this* file's questions can be answered.
     #[must_use]
@@ -205,7 +205,7 @@ impl App {
             return;
         }
         let version = buffer.version();
-        // The whole document, which is what obelus sends and means to: a
+        // The whole document, which is what Obelus sends and means to: a
         // range needs the *old* document's coordinates in the encoding the
         // server agreed to, which is the shape every coordinate bug in this
         // program has had.
@@ -222,7 +222,7 @@ impl App {
         // Only where there is somebody to ask. A file no server is reading
         // has no question waiting for it to stop moving, and one noted
         // anyway would wake the screen for a third of a second after every
-        // keystroke in it -- which is most of what obelus opens.
+        // keystroke in it -- which is most of what Obelus opens.
         if self.servers.contains_key(&language) {
             self.will_settle(DocumentId::new(index));
         }
@@ -310,7 +310,7 @@ impl App {
             .ok_or_else(|| "No file open".to_string())?;
         let language = buffer
             .language()
-            .ok_or_else(|| "Not a language obelus knows".to_string())?;
+            .ok_or_else(|| "Not a language Obelus knows".to_string())?;
 
         // On a name, before anything about servers. Every question in the
         // menu is about the thing under the cursor, and on a bracket or a
@@ -370,7 +370,7 @@ impl App {
     /// Asks what a server works out about a document the reader has
     /// stopped changing.
     ///
-    /// The one moment obelus asks for these that does not depend on the
+    /// The one moment Obelus asks for these that does not depend on the
     /// server saying anything. A save asks, and so does a server finishing
     /// its own work -- but a server that reports no work of its own never
     /// finishes any, and a reader who has not saved has changed the file
@@ -385,7 +385,7 @@ impl App {
         self.settling = None;
         // Not the semantic tokens. They are a whole file's worth of answer
         // per ask, which is why they wait for a save -- and while the
-        // reader types, the tree obelus parses itself is what answers for
+        // reader types, the tree Obelus parses itself is what answers for
         // them.
         self.ask_standing(settling.buffer.get(), Standing::Colours);
         self.ask_standing(settling.buffer.get(), Standing::Hints);
@@ -394,7 +394,7 @@ impl App {
     /// Asks one of the standing questions about a document.
     ///
     /// Standing because nobody asks them: they are what a server can say
-    /// about a whole file, and obelus asks them wherever the file has
+    /// about a whole file, and Obelus asks them wherever the file has
     /// stopped moving. One function for the three because they differ in
     /// four things and agree in everything else -- which document, whether
     /// it is a file at all, what it is called, which version, and what to
@@ -726,7 +726,7 @@ impl App {
         );
     }
 
-    /// Hands obelus what a server would have the reader know.
+    /// Hands Obelus what a server would have the reader know.
     pub fn hints_for_test(&mut self, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
         let version = self
@@ -763,7 +763,7 @@ impl App {
             .map_or(0, Vec::len)
     }
 
-    /// Hands obelus an answer about the colours, as a server would.
+    /// Hands Obelus an answer about the colours, as a server would.
     pub fn colours_for_test(&mut self, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
         let version = self
@@ -979,7 +979,7 @@ impl App {
         // straight at the client: finishing a handshake is a moment the
         // application acts on -- it is when the files already open can
         // first be asked about -- and a test that reached past it would be
-        // testing a path obelus does not have.
+        // testing a path Obelus does not have.
         self.handle(crate::event::Event::Lsp(obelus_lsp::Message {
             language,
             message: serde_json::json!({
@@ -1039,10 +1039,10 @@ impl App {
     /// Puts a server in front of the application, for a test that needs
     /// the whole way a message comes in rather than the end of it.
     ///
-    /// The program is the test's, because what is being read is obelus's
+    /// The program is the test's, because what is being read is Obelus's
     /// half of the conversation: one that says nothing back is enough for
     /// that, and a real server cannot be made to ask an awkward question
-    /// on demand. Nothing reads what obelus says to it -- the wire is
+    /// on demand. Nothing reads what Obelus says to it -- the wire is
     /// read elsewhere, where a server that echoes is the point.
     pub fn stand_in_server_for_test(
         &mut self,
@@ -1050,7 +1050,7 @@ impl App {
         command: &'static str,
     ) -> bool {
         // The application's own channel where it has one, so that a test
-        // holding the other end of it reads whatever obelus writes -- a
+        // holding the other end of it reads whatever Obelus writes -- a
         // server that echoes turns the wire into something a test can
         // assert about. A throwaway otherwise.
         let sender = self.events.clone().unwrap_or_else(|| {
@@ -1071,12 +1071,12 @@ impl App {
         }
     }
 
-    /// Hands obelus a reply, by the id it was asked under.
+    /// Hands Obelus a reply, by the id it was asked under.
     ///
     /// Through the same door the event loop uses, which is the point: what
     /// a reply *means* is decided by the question it was remembered as,
     /// and a test that calls the handler itself has chosen that for
-    /// obelus.
+    /// Obelus.
     pub fn answer_for_test(
         &mut self,
         language: LanguageId,
@@ -1224,7 +1224,7 @@ impl App {
     /// Stops the server for the current file and starts it again.
     ///
     /// The way out of a server that has died, or wedged, or was installed
-    /// after obelus started: those are the three states where every question
+    /// after Obelus started: those are the three states where every question
     /// gets the same silence, and none of them is worth restarting the whole
     /// program over. With none running it simply starts one, which is why it
     /// is offered whether or not there is one.
@@ -1302,7 +1302,7 @@ impl App {
         };
         let path = buffer.path().to_path_buf();
         let Some(language) = buffer.syntax().map(SyntaxState::language) else {
-            self.note = Some("Not a language obelus knows".to_string());
+            self.note = Some("Not a language Obelus knows".to_string());
             return;
         };
 
@@ -1687,11 +1687,11 @@ impl App {
     ///
     /// Twice over, and neither copy is the other's cache. What arrived is
     /// kept as it arrived, for every file a server talks about -- and a
-    /// server talks about files obelus does not have open: rust-analyzer
+    /// server talks about files Obelus does not have open: rust-analyzer
     /// says what a `cargo check` found, which is the project rather than
     /// the buffer. That copy is the only one there can be for those files,
     /// because a range becomes a place by being counted against the text
-    /// it is in and obelus has not read that text.
+    /// it is in and Obelus has not read that text.
     ///
     /// Then, for a file that *is* open, the same news placed. Everything
     /// that has to line up with a character on screen reads that one: the
@@ -1762,7 +1762,7 @@ impl App {
     /// The line of the nearest problem one way or the other.
     ///
     /// By line number rather than by the order the server sent them: they
-    /// arrive in file order from every server obelus talks to, and a walk
+    /// arrive in file order from every server Obelus talks to, and a walk
     /// that trusts that would step backwards the day one does not. Several
     /// on a line are one stop, because the complaint under the caret says
     /// how many are there.
@@ -1877,7 +1877,7 @@ impl App {
             .into_iter()
             .filter(|radius| match radius {
                 Wrong::File => self.current_buffer().is_some(),
-                // Always: obelus is started in a directory, and a project
+                // Always: Obelus is started in a directory, and a project
                 // nobody has said anything about is an empty list saying
                 // so rather than a missing tab.
                 Wrong::Project => true,
@@ -2013,7 +2013,7 @@ impl App {
     /// right, in the order it is in the file.
     ///
     /// Read from what arrived rather than from what was placed, for every
-    /// radius alike: most of a project is files obelus has not opened, and
+    /// radius alike: most of a project is files Obelus has not opened, and
     /// the ones it has say the same thing either way. The notes a server
     /// hangs on other diagnostics are left out for the reason they are
     /// left out everywhere a reader works through what is wrong -- see
@@ -2062,7 +2062,7 @@ impl Wrong {
 /// One row of a list of problems, wherever the problem is.
 ///
 /// The place is the one the server sent, in the units it sent it in, which
-/// is what a row that names a place carries everywhere in obelus: one kind
+/// is what a row that names a place carries everywhere in Obelus: one kind
 /// of value for "go here", and the conversion in one place.
 fn trouble_row(
     trouble: &obelus_lsp::trouble::Reported,
@@ -2100,7 +2100,7 @@ fn trouble_row(
 /// One box, wherever it is drawn: under the caret in the file being read,
 /// and under the line a preview is showing of somewhere else. A preview
 /// whose box said something other than the editor's would be a promise
-/// obelus does not keep, and two of these would be two sets of decisions
+/// Obelus does not keep, and two of these would be two sets of decisions
 /// about wrapping, framing and which of several troubles to show.
 ///
 /// `chosen` is the column of the one the reader picked out of a list, where
@@ -2217,7 +2217,7 @@ fn counted(severities: &[obelus_lsp::trouble::Severity]) -> String {
 /// A question about a whole document that nobody asked for.
 ///
 /// Standing, because the reader never presses anything to send one: they
-/// are what a server can say about a file as a whole, and obelus asks them
+/// are what a server can say about a file as a whole, and Obelus asks them
 /// wherever the file has stopped moving -- opened, written, re-read, and a
 /// moment after the reader stops typing.
 ///
@@ -2534,7 +2534,7 @@ pub(super) fn named(language: LanguageId) -> &'static str {
 ///
 /// The count of the other troubles on the line rides the bottom rail
 /// rather than sitting inside it. What is inside the frame is what a
-/// server said; the frame is obelus's, and so is the arithmetic -- the
+/// server said; the frame is Obelus's, and so is the arithmetic -- the
 /// same line [`obelus_buffer::Block::changed`] draws for a commit's
 /// `+n -n`. Told apart by where it is rather than by a shade, because the
 /// whole of this is drawn in one colour: the rails share their rows with
@@ -2627,7 +2627,7 @@ mod tests {
         assert_eq!(rows[1].label, "fn after() {}");
     }
 
-    /// A place obelus cannot read the line of is still somewhere to go, and
+    /// A place Obelus cannot read the line of is still somewhere to go, and
     /// the row says where.
     #[test]
     fn a_line_that_cannot_be_read_leaves_the_place_as_the_row() {

@@ -6,7 +6,7 @@
 //!
 //! What a program is *called* there is not what it is called here:
 //! `rust-analyzer` is `rust-analyzer.exe`, and the endings that count are the
-//! reader's own `PATHEXT` rather than a list obelus is entitled to write out.
+//! reader's own `PATHEXT` rather than a list Obelus is entitled to write out.
 //! [`which`] answers that one, and answers more of it than a search written
 //! here did -- the application's directory and the working directory come
 //! before `PATH` on that platform, and a name with a separator in it is not a
@@ -78,7 +78,7 @@ mod tests {
     use super::{as_started_here, found, on_path};
 
     /// The probe has to reject a directory and a non-executable file, or
-    /// obelus tries to spawn something that cannot run and reports it as the
+    /// Obelus tries to spawn something that cannot run and reports it as the
     /// server failing rather than as never having been there.
     ///
     /// And it has to find what is there. The name is this platform's own,

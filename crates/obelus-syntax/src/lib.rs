@@ -20,7 +20,7 @@ use obelus_text::kind::SyntaxKind;
 use ropey::Rope;
 use tree_sitter::{Language, Node, Query};
 
-/// A language obelus can highlight.
+/// A language Obelus can highlight.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LanguageId {
     /// Rust.
@@ -64,7 +64,7 @@ pub enum LanguageId {
 }
 
 impl LanguageId {
-    /// The language a file's extension implies, if obelus knows it.
+    /// The language a file's extension implies, if Obelus knows it.
     ///
     /// Extension only. Content sniffing and modelines are guesses that are
     /// wrong in exactly the cases where being wrong is confusing, and a file
@@ -74,7 +74,7 @@ impl LanguageId {
         Self::for_name(path.extension()?.to_str()?)
     }
 
-    /// The language a name implies, if obelus knows it.
+    /// The language a name implies, if Obelus knows it.
     ///
     /// Extensions and the names themselves, because the two arrive from
     /// different places and mean the same thing: a file is called `.rs` and
@@ -108,7 +108,7 @@ impl LanguageId {
         }
     }
 
-    /// The language an injection query names, if obelus has it.
+    /// The language an injection query names, if Obelus has it.
     ///
     /// A different question from [`Self::for_name`], asked in a different
     /// place: that one answers what a file is, and this one answers what is
@@ -131,7 +131,7 @@ impl LanguageId {
     /// that toggling a comment needs. The toggling itself knows no
     /// languages at all -- helix and zed both keep this as data for the
     /// same reason, in a configuration file because their languages come
-    /// from outside. obelus's are compiled in beside their grammars, so
+    /// from outside. Obelus's are compiled in beside their grammars, so
     /// this is compiled in beside them.
     ///
     /// `None` for a language with only block comments. Better to say so and
@@ -213,7 +213,7 @@ pub enum Paint {
     /// `@none`, which a query uses to stop an enclosing pattern painting
     /// something: markdown's puts it on the inside of a fence, where the
     /// fence itself is a literal and the code in it is not. Not the same as
-    /// a capture obelus has no colour for -- that one leaves what is
+    /// a capture Obelus has no colour for -- that one leaves what is
     /// already there alone, and this one takes it away.
     Plain,
     /// Nothing at all: a capture the theme has no opinion about.
@@ -236,7 +236,7 @@ pub struct Grammar {
 impl Grammar {
     fn new(language: Language, source: &str) -> Self {
         let query = Query::new(&language, source)
-            .expect("a highlight query shipped with obelus should compile");
+            .expect("a highlight query shipped with Obelus should compile");
         let paints = query
             .capture_names()
             .iter()
@@ -526,10 +526,10 @@ mod tests {
     /// is understood.
     #[test]
     fn the_theme_understands_what_the_queries_capture() {
-        // The two obelus leaves plain on purpose. They are a *style* rather
+        // The two Obelus leaves plain on purpose. They are a *style* rather
         // than a kind of thing: the file says `*like this*`, the delimiters
         // either side are already punctuation, and a colour for the words
-        // between them would be a colour obelus invented. A theme that grows
+        // between them would be a colour Obelus invented. A theme that grows
         // bold and italic is where they would be answered, not here.
         const PLAIN: &[&str] = &["text.emphasis", "text.strong"];
 

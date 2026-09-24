@@ -1,6 +1,6 @@
 [package]
 name = "obelus-app"
-description = "Everything obelus knows, the screen, and the loop"
+description = "Everything Obelus knows, the screen, and the loop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

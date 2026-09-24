@@ -1,4 +1,4 @@
-//! What obelus shows when nothing is open.
+//! What Obelus shows when nothing is open.
 //!
 //! Two layouts. The wide one is a wordmark, the keys as caps, and a footer;
 //! the narrow one is the keys and nothing else. A screen too small for even
@@ -43,7 +43,7 @@ const OFFERED: &[(Command, &str)] = &[
     (Command::SearchProject, "Search files"),
     (Command::AgentOpen, "Ask the agent"),
     (Command::CommandPalette, "Run a command"),
-    (Command::Quit, "Leave obelus"),
+    (Command::Quit, "Leave Obelus"),
 ];
 
 /// How many columns of keys the plate carries under it.
@@ -124,8 +124,8 @@ fn label(built: &str) -> String {
 /// The plate's foot with that set into it.
 ///
 /// Composed here rather than written into [`WORDMARK`], because neither is
-/// obelus's to spell: the version comes from the manifest and the build from
-/// whatever started obelus, and a copy in a string here is a copy that goes
+/// Obelus's to spell: the version comes from the manifest and the build from
+/// whatever started Obelus, and a copy in a string here is a copy that goes
 /// stale the moment either moves.
 ///
 /// An edge with no room for both falls back to the version, and then to
@@ -290,7 +290,7 @@ impl WelcomeView<'_> {
             cells,
             left,
             y,
-            "obelus",
+            "Obelus",
             Style::new().fg(self.theme.foreground),
         );
         // The version and the build at the other end of the same row, which
@@ -298,7 +298,7 @@ impl WelcomeView<'_> {
         // The widest of them that fits beside the name, and nothing where
         // neither does: this layout is what a screen too small for the
         // plate gets, and the name is the part of it worth the room.
-        let room = usize::from(width).saturating_sub("obelus".width() + 1);
+        let room = usize::from(width).saturating_sub("Obelus".width() + 1);
         if let Some(said) = [label(self.built), label("")]
             .into_iter()
             .map(|said| said.trim().to_string())

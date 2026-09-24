@@ -8,7 +8,7 @@
 //!
 //! The protocol asks one question per item per direction, and it has no
 //! way at all to say whether an item has callers short of naming them. So
-//! a mark that offered to open a row obelus had not asked about would be a
+//! a mark that offered to open a row Obelus had not asked about would be a
 //! guess -- and measured against rust-analyzer on this project, the guess
 //! is wrong most of the time: five of the six callers of one function here
 //! have no callers of their own.
@@ -922,7 +922,7 @@ impl App {
     ///
     /// What wakes the screen: a busy server takes seconds over one of
     /// these, and a mark drawn once and never again is a mark that says
-    /// obelus has stopped rather than that it is waiting.
+    /// Obelus has stopped rather than that it is waiting.
     pub(super) fn calls_turning(&self) -> bool {
         self.calls
             .as_ref()
@@ -934,7 +934,7 @@ impl App {
         self.calls.is_some()
     }
 
-    /// Hands obelus an item, as a server that prepared one would.
+    /// Hands Obelus an item, as a server that prepared one would.
     pub fn prepared_for_test(&mut self, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
@@ -950,7 +950,7 @@ impl App {
         );
     }
 
-    /// Hands obelus an answer about one row of the tree it is showing.
+    /// Hands Obelus an answer about one row of the tree it is showing.
     ///
     /// Opened where the reader is waiting on that row and filed where they
     /// are not, which is what the two kinds of question mean.
@@ -971,7 +971,7 @@ impl App {
         }
     }
 
-    /// Hands obelus a server's refusal to answer about a row.
+    /// Hands Obelus a server's refusal to answer about a row.
     pub fn refused_call_for_test(&mut self, row: usize, why: &str) {
         let Some((direction, id)) = self
             .calls
@@ -990,7 +990,7 @@ impl App {
         );
     }
 
-    /// Hands obelus an answer to the question it was asking before the
+    /// Hands Obelus an answer to the question it was asking before the
     /// reader turned the tree round.
     pub fn late_call_for_test(&mut self, row: usize, answer: serde_json::Value) {
         let Some((direction, id)) = self

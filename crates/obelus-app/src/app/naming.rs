@@ -121,7 +121,7 @@ impl App {
         self.uses.len()
     }
 
-    /// Hands obelus an answer about a version of the document that has
+    /// Hands Obelus an answer about a version of the document that has
     /// been left behind, which is what a late answer is.
     pub fn uses_at_version_for_test(&mut self, answer: serde_json::Value, version: i32) {
         let Some(id) = self.current else { return };
@@ -135,7 +135,7 @@ impl App {
         );
     }
 
-    /// Hands obelus an answer, as a server would.
+    /// Hands Obelus an answer, as a server would.
     pub fn uses_for_test(&mut self, answer: serde_json::Value) {
         let Some(id) = self.current else { return };
         let version = self

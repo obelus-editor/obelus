@@ -1,4 +1,4 @@
-//! Markdown, laid out into rows, from the tree obelus already parses.
+//! Markdown, laid out into rows, from the tree Obelus already parses.
 //!
 //! This borrowed a markdown renderer for a long time, and to use one at all
 //! it had to cut the fenced blocks out of the source first: the renderer
@@ -15,7 +15,7 @@
 //!
 //! What is borrowed now is nothing. The wrapping is
 //! [`obelus_text::wrapped_from`] and the column widths are [`table`], both
-//! obelus's own.
+//! Obelus's own.
 
 /// How wide a table's columns are drawn.
 mod table;
@@ -70,7 +70,7 @@ pub fn render(source: &str, width: u16) -> Vec<Row> {
     laying.rows
 }
 
-/// A source obelus cannot parse, wrapped and no more.
+/// A source Obelus cannot parse, wrapped and no more.
 fn plainly(source: &str, width: u16) -> Vec<Row> {
     obelus_text::wrapped_from(source, width)
         .into_iter()
@@ -353,7 +353,7 @@ impl Laying<'_> {
         let content = node
             .children(&mut node.walk())
             .find(|child| child.kind() == "code_fence_content");
-        // Whether obelus has the grammar the fence names. Where it has not
+        // Whether Obelus has the grammar the fence names. Where it has not
         // -- a fence that says `ruby`, or says nothing -- the block keeps
         // the one colour that means "this is code" and nothing more, because
         // there is nobody to tell its parts apart.
@@ -653,7 +653,7 @@ struct Look {
 ///
 /// From the inline grammar rather than by looking for stars -- and from the
 /// tree the document already has, rather than one parsed here. What a
-/// paragraph is made of is a second language inside it, and obelus parses
+/// paragraph is made of is a second language inside it, and Obelus parses
 /// that for the buffer whether or not anybody is reading.
 fn stripped(gathered: &Gathered, ink: Ink, inside: Option<Node<'_>>) -> (Gathered, Vec<Look>) {
     let plain = Look {
@@ -804,7 +804,7 @@ fn spanned(said: &str, at: usize, look: Look, gathered: &Gathered) -> Span {
 
 /// One row of a block of code, split into runs of a single kind.
 ///
-/// `named` is whether obelus has the grammar the fence named. Where it has
+/// `named` is whether Obelus has the grammar the fence named. Where it has
 /// not -- a fence that says `ruby`, or says nothing at all -- the whole row
 /// keeps the one colour that means "this is code", because there is nobody
 /// to tell its parts apart.
@@ -849,7 +849,7 @@ fn coloured(
 /// One run of code, in the ink its kind asks for.
 fn inked(said: &str, at: usize, kind: Option<SyntaxKind>, gathered: &Gathered) -> Span {
     // A run its own grammar said nothing about -- the spaces between the
-    // words of a language obelus does parse -- is the plain colour. The
+    // words of a language Obelus does parse -- is the plain colour. The
     // colour that means "code" is for a block nobody could read at all.
     let ink = kind.map_or(Ink::Plain, Ink::Syntax);
     match gathered.source_of(at) {

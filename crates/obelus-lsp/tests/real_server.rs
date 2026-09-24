@@ -5,7 +5,7 @@
 //! do with an answer, and a server cannot be made to give a stale one on
 //! demand. What no amount of that catches is an assumption about real servers
 //! being wrong — that they will negotiate byte offsets, that they declare the
-//! questions they answer — and those are assumptions obelus is built on.
+//! questions they answer — and those are assumptions Obelus is built on.
 //!
 //! Skipped where rust-analyzer is not installed. The handshake is fast enough
 //! to run every time; waiting for a project to be indexed is not, so the round
@@ -124,7 +124,7 @@ fn usable() -> bool {
 }
 
 /// The assumption the whole coordinate story rests on: offered bytes and
-/// UTF-16, a real server takes bytes. If it stopped, every position obelus
+/// UTF-16, a real server takes bytes. If it stopped, every position Obelus
 /// sends would be in the wrong units and every jump would land a few
 /// characters off on any line that is not plain ASCII.
 #[test]
@@ -139,7 +139,7 @@ fn a_real_server_negotiates_byte_offsets() {
     assert_eq!(
         client.encoding(),
         &lsp_types::PositionEncodingKind::UTF8,
-        "a server that will not count bytes puts obelus on the UTF-16 path"
+        "a server that will not count bytes puts Obelus on the UTF-16 path"
     );
     client.shutdown();
 }
@@ -168,7 +168,7 @@ fn a_real_server_declares_the_questions_the_menu_offers() {
 }
 
 /// The panel is offered after `.` and `::` because the server says those
-/// characters mean something. obelus has no table of its own -- it asks
+/// characters mean something. Obelus has no table of its own -- it asks
 /// about letters and about whatever the server names -- so a server that
 /// stopped declaring them would leave `std::` offering nothing, with
 /// nothing anywhere saying why.
@@ -197,7 +197,7 @@ fn a_real_server_declares_the_characters_that_ask_for_a_completion() {
     // documentation in the answer itself. The panel asks only where a
     // server says it would answer, which is why that is not asserted here.
     // The same for the call the cursor is inside: `(` and `,` are what
-    // rust-analyzer says ask about one, and obelus has no list of its own.
+    // rust-analyzer says ask about one, and Obelus has no list of its own.
     assert!(
         obelus_lsp::signature::supported(capabilities),
         "rust-analyzer no longer answers textDocument/signatureHelp"
@@ -217,7 +217,7 @@ fn a_real_server_declares_the_characters_that_ask_for_a_completion() {
         obelus_lsp::actions::supported(capabilities),
         "rust-analyzer no longer offers anything to do"
     );
-    // Where else a name is used, which obelus asks without being asked.
+    // Where else a name is used, which Obelus asks without being asked.
     assert!(
         obelus_lsp::uses::supported(capabilities),
         "rust-analyzer no longer answers textDocument/documentHighlight"
@@ -228,11 +228,11 @@ fn a_real_server_declares_the_characters_that_ask_for_a_completion() {
         "rust-analyzer no longer answers textDocument/hover"
     );
     // And filling one in, which it advertises only to a client that has
-    // said it wants the filling: undeclared, obelus was told no and the
+    // said it wants the filling: undeclared, Obelus was told no and the
     // whole `completionItem/resolve` path it has was never reached.
     assert!(
         obelus_lsp::complete::resolves(capabilities),
-        "rust-analyzer no longer fills a completion item in, or obelus has \
+        "rust-analyzer no longer fills a completion item in, or Obelus has \
          stopped saying which parts of one it wants"
     );
     client.shutdown();
@@ -361,7 +361,7 @@ fn a_real_server_offers_what_could_be_typed() {
         let offer = obelus_lsp::complete::offer_in(&reply.result, &text, &encoding);
         if offer.candidates.is_empty() {
             // Still reading the project, which is the same empty answer a
-            // question with no answer gets: asking again is what obelus
+            // question with no answer gets: asking again is what Obelus
             // does.
             std::thread::sleep(Duration::from_millis(300));
             continue;
@@ -426,7 +426,7 @@ fn a_real_server_offers_what_could_be_typed() {
 /// Ignored by default because it waits for the project to be indexed. A
 /// server answers with nothing until then, which is the same answer it gives
 /// for a symbol that has no definition — so the retry here is the same thing
-/// obelus does, and its absence would make this test assert that indexing is
+/// Obelus does, and its absence would make this test assert that indexing is
 /// instant.
 #[test]
 #[ignore = "waits for the project to be indexed"]
@@ -492,7 +492,7 @@ fn a_real_server_finds_a_definition() {
                 );
                 break;
             }
-            // Still reading the project. Asking again is what obelus does.
+            // Still reading the project. Asking again is what Obelus does.
             action::Outcome::NotYet => std::thread::sleep(Duration::from_millis(300)),
             // Nothing, which is also what a server that has not finished
             // loading answers: it reports no progress until it starts, so
@@ -518,7 +518,7 @@ fn a_real_server_finds_a_definition() {
 ///
 /// The queue has no other observable effect: rust-analyzer reads the
 /// workspace from disk, so it answers the same whether or not it was told a
-/// file is open. What is being checked is that obelus does not send a server
+/// file is open. What is being checked is that Obelus does not send a server
 /// something it is entitled to refuse — so the check is on what has not gone
 /// out yet, not on what came back.
 #[test]
@@ -632,11 +632,11 @@ fn a_restarted_server_hands_out_the_same_ids_again() {
 
 /// A real server's outline: nested, and about the names.
 ///
-/// Two assumptions obelus is built on, neither of which a value-based test
+/// Two assumptions Obelus is built on, neither of which a value-based test
 /// can check. The protocol lets a server answer `documentSymbol` with a flat
 /// list whose positions are the *definitions* -- which start at an attribute
 /// or a doc comment as often as at the name -- unless the client declares it
-/// understands the nested shape. obelus declares it; this is what says the
+/// understands the nested shape. Obelus declares it; this is what says the
 /// declaration is still being honoured.
 #[test]
 fn a_real_server_outlines_a_file_by_name_and_by_nesting() {
@@ -709,7 +709,7 @@ fn a_real_server_outlines_a_file_by_name_and_by_nesting() {
 
 /// A real server offers something to do on ordinary code.
 ///
-/// The assumption `alt+a` rests on, and the one that was wrong: obelus
+/// The assumption `alt+a` rests on, and the one that was wrong: Obelus
 /// declared nothing about code actions, and rust-analyzer answers `null`
 /// to every `textDocument/codeAction` from a client that has not said it
 /// understands the literal shape -- whatever the file, wherever the
@@ -769,7 +769,7 @@ fn a_real_server_offers_something_to_do_on_ordinary_code() {
     let offered = actions::offered_in(&reply.result);
     assert!(
         !offered.is_empty(),
-        "a real server offered nothing to do on a struct declaration, which          is what it answers when obelus has not declared it understands          code actions: {:?}",
+        "a real server offered nothing to do on a struct declaration, which          is what it answers when Obelus has not declared it understands          code actions: {:?}",
         reply.result
     );
     // And they arrive as actions rather than as bare commands, which is
@@ -783,7 +783,7 @@ fn a_real_server_offers_something_to_do_on_ordinary_code() {
     );
 }
 
-/// A server obelus started is a server obelus stops.
+/// A server Obelus started is a server Obelus stops.
 #[test]
 fn a_server_does_not_outlive_the_shutdown() {
     let Some((mut client, events)) = start() else {
@@ -802,11 +802,11 @@ fn a_server_does_not_outlive_the_shutdown() {
     assert!(!alive(pid), "the server outlived the shutdown");
 }
 
-/// And a server obelus lets go of is a server obelus stops, which is the
+/// And a server Obelus lets go of is a server Obelus stops, which is the
 /// half that was missing: stopping one on purpose was never the leak.
 ///
 /// Broken deliberately by leaving it to `Child`'s own `Drop`, which does
-/// nothing at all. Every other way a client went -- obelus ending, a test
+/// nothing at all. Every other way a client went -- Obelus ending, a test
 /// finishing, one server replacing another -- left the process running.
 #[test]
 fn a_server_does_not_outlive_its_client() {
@@ -919,7 +919,7 @@ fn a_real_server_says_who_calls_something() {
         .expect("opening the document");
 
     // Until the project is indexed a server prepares nothing, which is the
-    // same answer it gives for a comma -- so this waits the way obelus
+    // same answer it gives for a comma -- so this waits the way Obelus
     // does.
     let deadline = Instant::now() + INDEXED;
     let item = loop {
@@ -941,7 +941,7 @@ fn a_real_server_says_who_calls_something() {
     };
     assert_eq!(
         hierarchy::root_of(&item)
-            .expect("an item obelus can read")
+            .expect("an item Obelus can read")
             .name,
         "one_call",
         "the server prepared something else"
@@ -972,8 +972,8 @@ fn a_real_server_says_who_calls_something() {
 
 /// Whether a process is still there, asked of the system.
 ///
-/// Of the system and not of obelus: what these tests are about is that a
-/// server obelus let go of is gone, and [`Client::check_alive`] is obelus's
+/// Of the system and not of Obelus: what these tests are about is that a
+/// server Obelus let go of is gone, and [`Client::check_alive`] is Obelus's
 /// own answer to that question -- the thing under test. A test that asked
 /// it would be asking the rule what it expects.
 ///
@@ -989,7 +989,7 @@ fn alive(pid: u32) -> bool {
         // and reports whether the process is there. A process that has
         // ended but not been waited for still answers to it -- which is
         // the same answer the command gave, so these tests read as they
-        // always did, and they pass because obelus reaps what it kills.
+        // always did, and they pass because Obelus reaps what it kills.
         let Ok(pid) = libc::pid_t::try_from(pid) else {
             return false;
         };
@@ -1028,7 +1028,7 @@ fn alive(pid: u32) -> bool {
 /// What a real server would have the reader know, on the wire.
 ///
 /// The request carries a range and the answer carries positions, and both
-/// are things obelus can only get wrong silently: a range spelt wrong is
+/// are things Obelus can only get wrong silently: a range spelt wrong is
 /// answered with nothing, which from this side looks exactly like a file
 /// with no types to work out.
 #[test]
@@ -1115,7 +1115,7 @@ fn a_real_server_works_out_what_the_file_does_not_say() {
 /// A file that moves takes its meaning with it, and the server says which
 /// paths it wants to hear about before that happens.
 ///
-/// Two filters, and obelus reads both: `**/*.rs` for files and `**` for
+/// Two filters, and Obelus reads both: `**/*.rs` for files and `**` for
 /// folders. A server that stopped declaring them would leave every move
 /// silently breaking the references to it, and the only sign would be the
 /// next build.
@@ -1147,7 +1147,7 @@ fn a_real_server_says_which_files_it_wants_told_about_before_they_move() {
     // for files, so a file that is not one is nobody's business.
     assert!(
         !renaming::asked_before(capabilities, &root().join("README.md"), false),
-        "obelus is asking about files the server did not register for"
+        "Obelus is asking about files the server did not register for"
     );
     client.shutdown();
 }
@@ -1156,7 +1156,7 @@ fn a_real_server_says_which_files_it_wants_told_about_before_they_move() {
 /// back the `mod` line in another file that names it.
 ///
 /// Ignored for the reason its siblings are -- a server answers `null`
-/// until it has read the project, which is the state obelus reports as
+/// until it has read the project, which is the state Obelus reports as
 /// "not ready" rather than as "Nothing to change". Nothing is moved: the
 /// question is asked about a move that does not happen, which is exactly
 /// what the protocol is for.
@@ -1194,7 +1194,7 @@ fn a_real_server_works_out_what_moving_a_file_would_change() {
             continue;
         };
         // `null` while it is still reading the project, which is the
-        // answer obelus distinguishes from an empty edit.
+        // answer Obelus distinguishes from an empty edit.
         let wanted = edits::wanted_in(&result);
         if wanted.is_empty() {
             std::thread::sleep(Duration::from_millis(300));
@@ -1214,11 +1214,11 @@ fn a_real_server_works_out_what_moving_a_file_would_change() {
         wanted.changes
     );
     // And no file operations: rust-analyzer leaves the move itself to
-    // obelus and only says what the text has to become. If that ever
-    // changed, obelus would be refusing an operation it had asked for.
+    // Obelus and only says what the text has to become. If that ever
+    // changed, Obelus would be refusing an operation it had asked for.
     assert!(
         wanted.refused.is_empty(),
-        "the server asked obelus to move files itself: {:?}",
+        "the server asked Obelus to move files itself: {:?}",
         wanted.refused
     );
     client.shutdown();

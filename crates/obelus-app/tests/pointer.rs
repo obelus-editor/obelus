@@ -2,7 +2,7 @@
 //!
 //! A terminal reports where a button went down and nothing else -- no
 //! double click, no idea what is under it -- so everything here is
-//! obelus's own arithmetic, and the part worth testing is that a cell on
+//! Obelus's own arithmetic, and the part worth testing is that a cell on
 //! screen becomes the place in the file a reader was pointing at.
 
 mod support;

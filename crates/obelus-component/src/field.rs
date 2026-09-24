@@ -1,6 +1,6 @@
 //! One line with a caret in it.
 //!
-//! The three boxes obelus asks a short question in -- a list's query, the
+//! The three boxes Obelus asks a short question in -- a list's query, the
 //! settings' filter, the prompt on the status bar -- were three `String`s
 //! with `push` and `pop`. They had no caret at all: a reader could type at
 //! the end and rub out from the end, and nothing else. Fixing the middle of

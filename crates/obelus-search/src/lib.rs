@@ -72,7 +72,7 @@ impl Scope {
 ///
 /// Three switches, which are the three every reader has met: the query as a
 /// pattern, the query as a whole word, and the capitals as typed. They are
-/// the reader's, kept for as long as obelus is running and not written
+/// the reader's, kept for as long as Obelus is running and not written
 /// down: a pattern answers *this* question, and one turned on to find one
 /// thing next Tuesday should not still be on the Tuesday after.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

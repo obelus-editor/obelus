@@ -2,7 +2,7 @@
 //!
 //! A server that accepts `utf-8` makes a protocol position the same thing as a
 //! tree-sitter point: a line, and bytes into that line. One that will not
-//! counts UTF-16 code units, which differ from every other column obelus has
+//! counts UTF-16 code units, which differ from every other column Obelus has
 //! the moment a character outside the basic multilingual plane appears.
 
 use lsp_types::{Position, PositionEncodingKind};

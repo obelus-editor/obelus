@@ -1,6 +1,6 @@
 //! Where a list is: which row has the focus, and which rows are on screen.
 //!
-//! Every list in obelus had its own answer to this and they did not agree.
+//! Every list in Obelus had its own answer to this and they did not agree.
 //! The rule they should all follow is one sentence -- *move the window by
 //! the least that puts the focused row back on screen* -- and it had three
 //! implementations, so it had to be fixed three times: once for the
@@ -293,7 +293,7 @@ impl Window {
     /// Whether there is more list than there is screen.
     ///
     /// What decides whether a scrollbar is drawn: a bar on a list that fits
-    /// is a bar that says nothing, and every list in obelus follows the
+    /// is a bar that says nothing, and every list in Obelus follows the
     /// same rule about that.
     #[must_use]
     pub fn scrollable(&self, height: u16) -> bool {

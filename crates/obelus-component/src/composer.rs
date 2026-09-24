@@ -185,7 +185,7 @@ impl Composer {
     ///
     /// Which is all shift ever means on a motion. A box is where a reader
     /// reaches for it first -- to take back the line they have just
-    /// written -- and it was the one place in obelus where the pair did
+    /// written -- and it was the one place in Obelus where the pair did
     /// something else entirely.
     pub fn hold_home(&mut self, width: u16) {
         self.writing

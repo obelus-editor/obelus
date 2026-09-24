@@ -1,4 +1,4 @@
-//! What a server offers to type next, turned into values obelus can show.
+//! What a server offers to type next, turned into values Obelus can show.
 //!
 //! The protocol's completion item is a form with a dozen optional fields
 //! whose defaults refer to one another: the text to put in is `textEdit`, or
@@ -87,7 +87,7 @@ pub const fn supported(capabilities: &ServerCapabilities) -> bool {
 ///
 /// A server says which characters mean "there is something to offer here
 /// even though no word has been started": `.` and `::` in Rust, `<` in a
-/// template, a quote inside a string. obelus asks about letters by itself
+/// template, a quote inside a string. Obelus asks about letters by itself
 /// and has no idea which punctuation means anything in which language, so
 /// this is the server's list or nothing.
 ///
@@ -132,7 +132,7 @@ pub fn offer_in(
         return Offer::default();
     };
     let Ok(response) = serde_json::from_value::<Option<CompletionResponse>>(value.clone()) else {
-        tracing::debug!("a completion answer in a shape obelus does not know");
+        tracing::debug!("a completion answer in a shape Obelus does not know");
         return Offer::default();
     };
     let (items, incomplete) = match response {
@@ -188,7 +188,7 @@ pub fn resolved_into(
     }
 }
 
-/// One item, in obelus's own terms.
+/// One item, in Obelus's own terms.
 fn candidate_of(item: CompletionItem, text: &Text, encoding: &PositionEncodingKind) -> Candidate {
     let raw = serde_json::to_value(&item).unwrap_or(Value::Null);
     // What goes in, in the order the protocol says to look: the edit the
@@ -199,7 +199,7 @@ fn candidate_of(item: CompletionItem, text: &Text, encoding: &PositionEncodingKi
             Some(span_of(edit.range, text, encoding)),
         ),
         // Two ranges, one of which replaces what is in front of the cursor
-        // as well. obelus takes the replacing one: a reader completing in
+        // as well. Obelus takes the replacing one: a reader completing in
         // the middle of a word means to replace the word, which is what
         // every editor that offers the choice defaults to.
         Some(CompletionTextEdit::InsertAndReplace(edit)) => (
@@ -353,12 +353,12 @@ mod tests {
             icon_of(CompletionItemKind::METHOD),
             Some(obelus_icons::for_kind(SyntaxKind::Function))
         );
-        // And a kind obelus has nothing to say about wears nothing.
+        // And a kind Obelus has nothing to say about wears nothing.
         assert_eq!(icon_of(CompletionItemKind::TEXT), None);
     }
 
     /// The punctuation that asks a question is the server's to name. A
-    /// server that names none is a server obelus only asks about words.
+    /// server that names none is a server Obelus only asks about words.
     #[test]
     fn only_the_characters_a_server_named_ask_anything() {
         let mut capabilities = ServerCapabilities::default();

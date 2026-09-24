@@ -54,7 +54,7 @@ impl App {
             .filter(|scope| match scope {
                 Scope::File => self.current_buffer().is_some(),
                 // Somewhere to walk is all this one needs, and there always
-                // is: obelus is started in a directory.
+                // is: Obelus is started in a directory.
                 Scope::Project => true,
                 Scope::Symbols => self
                     .current_buffer()
@@ -171,7 +171,7 @@ impl App {
     /// character that is not a space: the label is the line trimmed, and
     /// both ends of that trim are the same rule wherever a row is built.
     ///
-    /// An empty list for a file obelus cannot parse or cannot read, which is
+    /// An empty list for a file Obelus cannot parse or cannot read, which is
     /// an answer rather than a miss: the row is not asked about again.
     fn colours_of(&mut self, path: &Path, line: u32) -> Vec<Colouring> {
         // The file being read is already parsed, and its tree is the one

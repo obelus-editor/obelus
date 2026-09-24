@@ -1,6 +1,6 @@
 //! Showing a colour that is written down.
 //!
-//! A server that knows a language knows its colours, and what obelus does
+//! A server that knows a language knows its colours, and what Obelus does
 //! with that is paint the characters themselves -- so a reader looking at
 //! a stylesheet sees `#3264eb` in blue rather than reading six digits and
 //! imagining it.
@@ -111,7 +111,7 @@ fn a_colour_about_a_file_that_has_changed_is_dropped() {
     );
 }
 
-/// And the question obelus actually sends, read off the wire.
+/// And the question Obelus actually sends, read off the wire.
 ///
 /// The one thing a server sees is the method name, and nothing that feeds
 /// an answer in by hand can check it: a request spelt wrong is answered by
@@ -126,7 +126,7 @@ fn the_question_that_goes_out_is_the_one_the_protocol_names() {
     let (_scratch, mut app) = styling("colour-asked", "a { color: #3264eb; }\n");
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
-    // A server that says back whatever it is told, so what obelus writes
+    // A server that says back whatever it is told, so what Obelus writes
     // can be read.
     assert!(
         app.stand_in_server_for_test(LanguageId::Css, "cat"),
@@ -143,7 +143,7 @@ fn the_question_that_goes_out_is_the_one_the_protocol_names() {
     assert_eq!(
         asked.len(),
         1,
-        "obelus asked nobody where the colours are: {asked:?}"
+        "Obelus asked nobody where the colours are: {asked:?}"
     );
     assert!(
         asked[0]["params"]["textDocument"]["uri"]

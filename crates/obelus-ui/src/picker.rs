@@ -30,7 +30,7 @@ const LIST_ROWS: u16 = 10;
 /// puts its mark.
 ///
 /// The glyph and a blank after it, which is what the icon beside it gets.
-/// Every mark obelus draws is one cell; a wider one would push its own row
+/// Every mark Obelus draws is one cell; a wider one would push its own row
 /// along rather than everybody's.
 const MARKER_COLUMNS: u16 = 2;
 
@@ -557,7 +557,7 @@ impl PickerView<'_> {
         let label_style = match (item.status, item.kind) {
             // Nothing wins over a row that cannot be chosen: a dim row with
             // a bright name in it reads as available, which is the one
-            // thing the dim is there to deny. Nothing in obelus currently
+            // thing the dim is there to deny. Nothing in Obelus currently
             // makes a row that is both disabled and carries a status, so
             // there is no test under this -- it is here because the rule
             // written above it was not true.
@@ -860,7 +860,7 @@ impl PickerView<'_> {
 /// The shared row writer, for a column counted from the row's own left
 /// edge rather than from the screen's.
 ///
-/// Every list in obelus draws its characters through
+/// Every list in Obelus draws its characters through
 /// [`crate::write_marked`] -- what marks a match, what colours a line of
 /// code, what a truncated head skips. A picker's rows are laid out relative
 /// to the row, so this is the one line of arithmetic between the two.

@@ -56,7 +56,7 @@
 //! characters. The note that used to be here called that a cosmetic slip in one
 //! cell; what it looked like on screen was a row of ┬ across the whole width,
 //! under a list previewing a file of grids, and the reader who found it was
-//! looking at an obelus previewing obelus's own fixtures. A markdown table has
+//! looking at an Obelus previewing Obelus's own fixtures. A markdown table has
 //! the same glyphs and would have done the same thing.
 //!
 //! So the shape of the thing says what it is, and nothing reads the grid back.
@@ -84,7 +84,7 @@
 //! per language -- because the run was *built* to stop before the bracket. A
 //! run that closes with nothing leaves the mark on its own.
 //!
-//! Two colours, because they are two different things. The mark is obelus's own
+//! Two colours, because they are two different things. The mark is Obelus's own
 //! and is drawn the way its notes are; the closing text *is* the file's and
 //! keeps the colour the highlighting gives it where it really lives. A brace
 //! that changed colour on its way up the screen would read as something else.
@@ -116,7 +116,7 @@ const MINIMUM_GUTTER_WIDTH: u16 = 5;
 
 /// The column the change markers take, on the left.
 ///
-/// Reserved whenever obelus has an answer about the file -- that is, when it
+/// Reserved whenever Obelus has an answer about the file -- that is, when it
 /// is in a repository -- and not otherwise. A column that came and went as
 /// the file was *edited* would rewrap the text under the reader; one that
 /// depends only on which file is open does not.
@@ -228,7 +228,7 @@ pub fn text_offset(lines: usize, changed: bool, folds: bool) -> u16 {
 /// than worked out again by whoever is pointing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Margin {
-    /// What changed on this line, where obelus has an answer about the
+    /// What changed on this line, where Obelus has an answer about the
     /// file.
     Changes,
     /// Which line it is.
@@ -242,7 +242,7 @@ pub enum Margin {
 /// Which column a cell of a row is in.
 ///
 /// `changed` and `folds` are what [`text_offset`] is given, because they
-/// decide whether those columns are there at all -- a file obelus knows
+/// decide whether those columns are there at all -- a file Obelus knows
 /// nothing about has no change margin, and one with nothing to fold has no
 /// fold column, and a cell cannot be in a column that was never reserved.
 #[must_use]
@@ -268,7 +268,7 @@ pub fn margin_at(cell: u16, lines: usize, changed: bool, folds: bool) -> Margin 
 /// file squeezed into the height of the screen -- so they belong beside
 /// each other, and the reader reads across them: here is where you are, and
 /// here is what has changed. It used to be *outside* the bar, which put the
-/// bar one column short of the screen's edge; every list in obelus puts its
+/// bar one column short of the screen's edge; every list in Obelus puts its
 /// own bar in the last column, so a list opened over a file made the bar
 /// jump sideways, and a list with a preview under it had one bar in two
 /// columns with a rule between them. Inside the bar, both are true at once.
@@ -276,10 +276,10 @@ pub fn margin_at(cell: u16, lines: usize, changed: bool, folds: bool) -> Margin 
 /// One column, the same width as the margin on the other side: the two are
 /// one answer at two scales -- what changed on this line, and where else in
 /// the file to look. Reserved on the same terms as the margin, so a file
-/// obelus knows nothing about spends nothing.
+/// Obelus knows nothing about spends nothing.
 ///
 /// On the left with the margin rather than out beyond the scrollbar, which
-/// is where it was. Every other list in obelus puts its bar in the last
+/// is where it was. Every other list in Obelus puts its bar in the last
 /// column; the editor's sat one column short of it, so a file list opened
 /// over a file made the bar jump sideways -- and inside one screen, a list
 /// with a preview under it had its bar in two different columns with a rule
@@ -362,14 +362,14 @@ pub struct EditorView<'a> {
     /// Empty for a preview: a preview is somewhere else, and what is wrong
     /// with the file the reader is editing is not about it.
     troubles: &'a [obelus_lsp::trouble::Trouble],
-    /// What has changed since the last commit, if obelus knows.
+    /// What has changed since the last commit, if Obelus knows.
     ///
     /// `None` for a file outside a repository, and then the margin takes no
     /// column at all.
     changes: Option<&'a Changes>,
     /// The hunks the reader has opened, by the line each hangs above.
     opened: Vec<LineNumber>,
-    /// Who last changed each line of the version that was blamed, if obelus
+    /// Who last changed each line of the version that was blamed, if Obelus
     /// has been told and the reader wants to see it.
     blame: Option<&'a [Option<obelus_git::Blamed>]>,
     /// Whether that version is the text on screen, line for line.
@@ -841,11 +841,11 @@ impl Widget for EditorView<'_> {
                                 // line, and it is drawn in its trouble's
                                 // colour so that it does not read as a
                                 // line of the file written in English.
-                                // Its last row is obelus counting the
+                                // Its last row is Obelus counting the
                                 // other troubles on that line rather than
                                 // the server's own words, and goes a shade
                                 // back for the reason the commit's `+n -n`
-                                // does: obelus's arithmetic must not read
+                                // does: Obelus's arithmetic must not read
                                 // as something somebody said.
                                 //
                                 // A deletion keeps the plain colour: the
@@ -875,7 +875,7 @@ impl Widget for EditorView<'_> {
                         // margin marks the same two facts in, because they
                         // are the same two facts -- and drawn here rather
                         // than written into the message, which would make
-                        // obelus's arithmetic part of what the author
+                        // Obelus's arithmetic part of what the author
                         // wrote.
                         if let Some((added, removed)) = block.changed.filter(|_| {
                             block.kind == obelus_buffer::Held::Message
@@ -1034,7 +1034,7 @@ impl Widget for EditorView<'_> {
                 // The cursor's line only, and only after the *last* row of
                 // it: the note is about the line the reader is on. On every
                 // line it is a wall of grey beside the code -- it is on
-                // screen more often than any other text obelus draws -- and
+                // screen more often than any other text Obelus draws -- and
                 // a reader who wants the name for a line can put the cursor
                 // on it, which is where their attention already is.
                 let last_row = index + 1 == text.row_count(line, wrap_width);
@@ -1042,7 +1042,7 @@ impl Widget for EditorView<'_> {
                 //
                 // Two colours, because they are two different things. The
                 // mark is the view's -- it is not in the file, and it is
-                // drawn the way every other note obelus adds is. The
+                // drawn the way every other note Obelus adds is. The
                 // closing line *is* in the file, so it is drawn the colour
                 // it would be at home: a brace that changed colour on its
                 // way up the screen would read as something else.
@@ -1105,7 +1105,7 @@ impl Widget for EditorView<'_> {
         let scrolled = viewport.top.get() > 0 || viewport.top_row > 0;
         if bar > 0 && (more_below || scrolled) {
             // The whole region, so the bar is in the last column of it --
-            // which is where every list in obelus puts its own, and what
+            // which is where every list in Obelus puts its own, and what
             // keeps them in one line when a list opens over a file.
             // Counted in the lines that are *shown*: the bar answers how
             // much of this there is and which part of it is in front of
@@ -1127,7 +1127,7 @@ impl Widget for EditorView<'_> {
 /// and the run's closing line when it has one worth showing.
 ///
 /// Two pieces rather than one string because they are coloured
-/// differently: the mark is obelus's and the closing line is the file's.
+/// differently: the mark is Obelus's and the closing line is the file's.
 /// The closing line comes along only when it is short enough to read as a
 /// closing mark rather than as code in its own right.
 fn elided(text: &obelus_text::Text, fold: &obelus_buffer::folds::Fold) -> Elision {
@@ -1172,7 +1172,7 @@ fn elided(text: &obelus_text::Text, fold: &obelus_buffer::folds::Fold) -> Elisio
 
 /// What a folded row draws after its own text.
 struct Elision {
-    /// The view's own mark, drawn the way obelus draws its notes.
+    /// The view's own mark, drawn the way Obelus draws its notes.
     mark: String,
     /// What is left of the run's last line, or nothing when the server did
     /// not say where the run stops on it.

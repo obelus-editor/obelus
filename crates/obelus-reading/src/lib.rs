@@ -13,7 +13,7 @@
 
 /// A log file, read as the entries it is made of.
 ///
-/// Not obelus's own logging, which is the log it *writes* about itself.
+/// Not Obelus's own logging, which is the log it *writes* about itself.
 /// This one is a file somebody opens.
 pub mod log;
 

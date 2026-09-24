@@ -1,7 +1,7 @@
 //! What a server says is wrong with a file.
 //!
 //! Against values rather than against a server: what is interesting is
-//! what obelus does with a notification -- where it draws it, what it
+//! what Obelus does with a notification -- where it draws it, what it
 //! counts, what it lists -- and a server cannot be made to find a mistake
 //! on demand.
 
@@ -507,7 +507,7 @@ fn the_caret_walks_from_one_problem_to_the_next() {
 ///
 /// The count of the others on the line rides the bottom rail rather than
 /// sitting inside: what is inside is what the server said, and the frame
-/// is obelus's, and so is the arithmetic.
+/// is Obelus's, and so is the arithmetic.
 ///
 /// Broken deliberately by returning the words unframed, by putting the
 /// count inside the frame with them, or by dropping the indent: each is a
@@ -574,7 +574,7 @@ fn a_complaint_is_framed_and_its_count_rides_the_rail() {
         column(rows[about], "nmae"),
         "the frame does not start under the word it is about:\n{dump}"
     );
-    // On the rail, which is obelus's, and not inside, which is the
+    // On the rail, which is Obelus's, and not inside, which is the
     // server's.
     assert!(
         rows[bottom].contains("and 1 more here"),

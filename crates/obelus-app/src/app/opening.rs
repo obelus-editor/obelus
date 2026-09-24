@@ -1,4 +1,4 @@
-//! What obelus says to an agent before the reader's first words.
+//! What Obelus says to an agent before the reader's first words.
 //!
 //! Two pieces, and the difference between them is the whole of this module.
 //! The first is said in every conversation and never changes: who the agent
@@ -16,7 +16,7 @@
 //! because their subjects differ. The first cannot change, so "has it gone"
 //! is a bit. The second is the reader's own file, which they rewrite
 //! between two messages, so what is written down is what the note *said* --
-//! and obelus compares rather than checks a flag. Rewording the `.txt`
+//! and Obelus compares rather than checks a flag. Rewording the `.txt`
 //! around it is not the note being rewritten and does not send it again.
 
 use obelus_git::todo::NoteId;
@@ -36,24 +36,24 @@ const NOTE: &str = include_str!("note.txt");
 /// it needs is what changed.
 const REWORDED: &str = include_str!("reworded.txt");
 
-/// What obelus has to say before the reader's own words, this time.
+/// What Obelus has to say before the reader's own words, this time.
 ///
 /// Three things rather than one string, because saying it is three things
 /// at once: the block that goes in front of the reader's words, the line
-/// the transcript shows where obelus put something of the reader's own in
+/// the transcript shows where Obelus put something of the reader's own in
 /// there, and what the topic was made from -- written down beside the
-/// conversation, so that tomorrow's obelus can tell whether the agent is
+/// conversation, so that tomorrow's Obelus can tell whether the agent is
 /// out of date.
 pub(super) struct Opening {
     /// The block, first of the prompt's own.
     pub words: String,
-    /// What the transcript says obelus did, where it did anything the
+    /// What the transcript says Obelus did, where it did anything the
     /// reader has a stake in.
     ///
-    /// Only the topic fills this. What obelus puts in the prompt in the
+    /// Only the topic fills this. What Obelus puts in the prompt in the
     /// reader's name is the reader's to see -- and the piece that says who
     /// the agent is talking to is not in their name: it is the client
-    /// introducing itself, about obelus rather than about them or their
+    /// introducing itself, about Obelus rather than about them or their
     /// work. A line saying so would be the same line at the head of every
     /// conversation they ever open, which is a row that has stopped
     /// telling anybody anything.
@@ -65,7 +65,7 @@ pub(super) struct Opening {
 }
 
 impl App {
-    /// Everything obelus has to tell this agent before the reader's words,
+    /// Everything Obelus has to tell this agent before the reader's words,
     /// given what it has been told already.
     ///
     /// `None` when it has been told all of it, which is the ordinary case:
@@ -112,7 +112,7 @@ impl App {
         told: Option<&str>,
     ) -> Option<(String, &'static str, String)> {
         match topic {
-            // Nothing obelus knows that the agent does not: what a loose
+            // Nothing Obelus knows that the agent does not: what a loose
             // conversation is about is whatever the reader types.
             Topic::Loose => None,
             Topic::Note(note) => self.about_the_note(note, told),
@@ -129,7 +129,7 @@ impl App {
     /// would rather not call it at all.
     ///
     /// Read from the file every time, because the note is the reader's and
-    /// they rewrite it -- in obelus, in their own editor, between two
+    /// they rewrite it -- in Obelus, in their own editor, between two
     /// messages. So this answers "what does this agent not know" rather
     /// than "has it been told yet": once for a conversation that is new,
     /// again whenever the note has changed under one that is not, and
@@ -148,7 +148,7 @@ impl App {
             .notes
             .into_iter()
             .find(|other| other.id == *note)?;
-        // What can change, in the note's own data and none of obelus's
+        // What can change, in the note's own data and none of Obelus's
         // words: rewording the templates is not the note being rewritten
         // and must not read as it.
         let now = match &about.at {
@@ -174,7 +174,7 @@ impl App {
     }
 }
 
-/// Fills a template in: obelus's own values first, the reader's words last.
+/// Fills a template in: Obelus's own values first, the reader's words last.
 ///
 /// The order is the whole of it. A note whose text happens to contain
 /// `{name}` would otherwise have that stand in for the note's name -- the
@@ -196,7 +196,7 @@ mod tests {
     ///
     /// The reader writes their notes; nothing stops one of them containing
     /// the words `{name}`, and when it does those words are theirs and not
-    /// a hole for obelus to fill. Which is true only because their words go
+    /// a hole for Obelus to fill. Which is true only because their words go
     /// in after every other placeholder has already gone.
     ///
     /// Broken deliberately by filling `{said}` in first, which puts the

@@ -1,14 +1,14 @@
-//! The agents obelus can talk to, and where they come from.
+//! The agents Obelus can talk to, and where they come from.
 //!
 //! An agent is another program that speaks the Agent Client Protocol over
 //! its own standard input and output -- the same shape as a language
-//! server, and for the same reason: obelus does not implement anybody's
+//! server, and for the same reason: Obelus does not implement anybody's
 //! model, it talks to whatever the reader already has.
 //!
-//! Which agents exist is not obelus's to decide. There is a registry, kept
+//! Which agents exist is not Obelus's to decide. There is a registry, kept
 //! by the protocol's own authors, and [`registry`] reads it: forty entries
 //! with a name, a version, a description and how to install each one. What
-//! is here is the shape of an entry, where obelus keeps what it installs,
+//! is here is the shape of an entry, where Obelus keeps what it installs,
 //! and how it tells whether it has.
 
 pub mod acp;
@@ -22,7 +22,7 @@ pub mod registry;
 
 use std::path::{Path, PathBuf};
 
-/// Something obelus found out about an agent, or heard from one.
+/// Something Obelus found out about an agent, or heard from one.
 ///
 /// Not `Clone`, and it may not become so: a question from an agent carries
 /// the one channel its answer goes back through, and there is one answer.
@@ -35,7 +35,7 @@ pub enum Event {
     /// arrives first so the page has something to show, and the fetched
     /// list replaces it when it lands.
     Registry {
-        /// Every agent it lists that obelus can make sense of.
+        /// Every agent it lists that Obelus can make sense of.
         agents: Vec<Agent>,
         /// Why nothing was fetched, when nothing was. A page that says
         /// "fetching" for ever is a page that is lying by then.
@@ -68,7 +68,7 @@ pub enum Event {
         /// Why it did not work, or `None` because it did.
         failure: Option<String>,
     },
-    /// Something from the agent obelus is talking to.
+    /// Something from the agent Obelus is talking to.
     ///
     /// Typed, unlike the language server's messages: the protocol's own
     /// crate does the reading, so what arrives here is what it means. Some
@@ -77,7 +77,7 @@ pub enum Event {
     Acp(crate::acp::Incoming),
 }
 
-/// What obelus is doing about an agent.
+/// What Obelus is doing about an agent.
 ///
 /// Six states rather than the four questions a view used to ask -- is one
 /// chosen, is it running, has it a session, is it working -- because those
@@ -103,7 +103,7 @@ pub enum Talking {
     Gone,
 }
 
-/// One row of the agents page: what the registry says, and what obelus
+/// One row of the agents page: what the registry says, and what Obelus
 /// knows about it here.
 ///
 /// Here rather than with the page because none of the four is the page's:
@@ -115,11 +115,11 @@ pub enum Talking {
 pub struct Listed {
     /// The registry's entry.
     pub agent: Agent,
-    /// What obelus knows about it locally.
+    /// What Obelus knows about it locally.
     pub status: Status,
     /// How far an install has got, while one is running.
     pub progress: Option<install::Progress>,
-    /// Whether this is the one obelus would talk to.
+    /// Whether this is the one Obelus would talk to.
     pub active: bool,
 }
 
@@ -131,7 +131,7 @@ pub struct Listed {
 /// nothing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Agent {
-    /// The registry's own name for it, which is what obelus stores when a
+    /// The registry's own name for it, which is what Obelus stores when a
     /// reader picks one.
     pub id: String,
     /// What to call it on screen.
@@ -156,9 +156,9 @@ pub struct Agent {
 
 /// How an agent is installed and started.
 ///
-/// Three kinds in the registry, and obelus can install two of them. The
+/// Three kinds in the registry, and Obelus can install two of them. The
 /// third needs a download, a checksum and an archive of the right shape for
-/// this machine, which is a stack of dependencies obelus has not earned yet
+/// this machine, which is a stack of dependencies Obelus has not earned yet
 /// -- so those say so and offer their website instead of a button that
 /// would not work.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -192,7 +192,7 @@ pub enum Distribution {
 }
 
 impl Distribution {
-    /// Whether obelus can install this one.
+    /// Whether Obelus can install this one.
     ///
     /// All three kinds, now that it can download and unpack: what it cannot
     /// do is an archive in a shape it has no unpacker for, and that is
@@ -203,11 +203,11 @@ impl Distribution {
     }
 }
 
-/// Where obelus keeps the agents it installs.
+/// Where Obelus keeps the agents it installs.
 ///
 /// Its own directory under the reader's data directory, never the machine's
-/// global `npm` prefix: obelus installing something into a place the reader
-/// shares with everything else is obelus deciding for them. Removing an
+/// global `npm` prefix: Obelus installing something into a place the reader
+/// shares with everything else is Obelus deciding for them. Removing an
 /// agent is removing a directory.
 #[must_use]
 pub fn root() -> Option<PathBuf> {
@@ -222,7 +222,7 @@ pub fn root() -> Option<PathBuf> {
 /// those three files, so installing the second would rewrite the first's
 /// manifest and removing either would be impossible to do cleanly.
 ///
-/// `None` for a name obelus will not make a directory of. This is the one
+/// `None` for a name Obelus will not make a directory of. This is the one
 /// place an id from the registry -- somebody else's string -- becomes a
 /// path, so it is the one place that has to check.
 #[must_use]
@@ -244,15 +244,15 @@ pub const CLAIM: &str = "installing";
 
 /// How long a claim is believed before it is taken over.
 ///
-/// An obelus that was killed mid-install leaves one behind, and nothing
-/// else will ever remove it. Ten minutes is longer than any install obelus
+/// An Obelus that was killed mid-install leaves one behind, and nothing
+/// else will ever remove it. Ten minutes is longer than any install Obelus
 /// has seen and short enough that a reader who kills one and tries again
 /// does not have to wonder what is wrong.
 const CLAIMED_FOR: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// Says this process is installing an agent, unless another one is.
 ///
-/// Several obelus processes on one machine share this directory, and an
+/// Several Obelus processes on one machine share this directory, and an
 /// install is a program writing a tree into it: two at once is two `npm`s
 /// with one prefix, and the mixed tree they leave says nothing about which
 /// half is which. The record written at the end still keeps the *status*
@@ -263,7 +263,7 @@ const CLAIMED_FOR: std::time::Duration = std::time::Duration::from_secs(600);
 /// a race between processes without asking anybody to agree first.
 pub fn claim(id: &str, root: &std::path::Path) -> Result<Claim, String> {
     let Some(home) = home(id, root) else {
-        return Err(format!("{id} is not a name obelus can keep a directory of"));
+        return Err(format!("{id} is not a name Obelus can keep a directory of"));
     };
     std::fs::create_dir_all(&home).map_err(|error| format!("{home:?}: {error}"))?;
     let path = home.join(CLAIM);
@@ -279,7 +279,7 @@ pub fn claim(id: &str, root: &std::path::Path) -> Result<Claim, String> {
                 .and_then(|when| when.elapsed().ok())
                 .is_some_and(|since| since > CLAIMED_FOR);
             if !stale {
-                return Err(format!("another obelus is installing {id}"));
+                return Err(format!("another Obelus is installing {id}"));
             }
             tracing::warn!(id, "taking over an install that was left behind");
             Ok(Claim { path })
@@ -313,7 +313,7 @@ impl Drop for Claim {
 /// "is this installed": `npm` builds its tree in an order of its own -- the
 /// package's manifest first, the `node_modules/.bin` link after it -- so an
 /// install killed halfway through leaves a directory that looks exactly like
-/// a finished one. This file exists only where obelus saw the install finish
+/// a finished one. This file exists only where Obelus saw the install finish
 /// *and* could work out what to run, so an interrupted install is simply not
 /// an install, and the card offers to do it again.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -326,7 +326,7 @@ pub struct Installation {
     ///
     /// Recorded rather than read back off the install: an archive says
     /// nothing about itself once it is a directory, and a reader whose
-    /// version obelus cannot name can never be told there is a newer one.
+    /// version Obelus cannot name can never be told there is a newer one.
     pub version: String,
 }
 
@@ -351,7 +351,7 @@ pub fn remember(
     root: &std::path::Path,
 ) -> Result<(), String> {
     let Some(home) = home(id, root) else {
-        return Err(format!("{id} is not a name obelus can keep a directory of"));
+        return Err(format!("{id} is not a name Obelus can keep a directory of"));
     };
     let record = serde_json::json!({
         "command": command,
@@ -376,7 +376,7 @@ pub fn installation(id: &str, root: &std::path::Path) -> Option<Installation> {
     // Gone from disk since it was written -- the reader removed the
     // directory, or npm did. Nothing to start, so nothing is installed.
     // A relative command is somebody on the path (`uvx`), which is not
-    // obelus's to check.
+    // Obelus's to check.
     if command.is_absolute() && !command.exists() {
         return None;
     }
@@ -400,7 +400,7 @@ pub fn installation(id: &str, root: &std::path::Path) -> Option<Installation> {
     })
 }
 
-/// What obelus knows about one agent locally.
+/// What Obelus knows about one agent locally.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {
     /// Not here, and installable.
@@ -420,7 +420,7 @@ pub enum Status {
     },
     /// The install ran and did not work, with what it said.
     Failed(String),
-    /// Not something obelus can install.
+    /// Not something Obelus can install.
     Unavailable(&'static str),
 }
 
@@ -471,7 +471,7 @@ pub fn command_for(agent: &Agent, root: &std::path::Path) -> Option<(PathBuf, Ve
 /// valid application. So the `.cmd` is asked for first.
 ///
 /// The bare name is still the answer where there is nothing else, because
-/// that is every other platform and because an install obelus has not seen
+/// that is every other platform and because an install Obelus has not seen
 /// before is better started and found wanting than not tried.
 fn shim(beside: &Path, binary: &str) -> Option<PathBuf> {
     let named = |ending: &str| {
@@ -516,7 +516,7 @@ fn binary_name(manifest: &serde_json::Value, package: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    /// Two obelus processes asked for the same agent: one installs it.
+    /// Two Obelus processes asked for the same agent: one installs it.
     ///
     /// They share this directory, and an install is a program writing a
     /// tree into it -- two at once is two `npm`s with one prefix. The claim
@@ -530,7 +530,7 @@ mod tests {
         let mine = super::claim("some-agent", &root).expect("the first claim");
         let theirs = super::claim("some-agent", &root);
         assert!(
-            theirs.is_err_and(|why| why.contains("another obelus")),
+            theirs.is_err_and(|why| why.contains("another Obelus")),
             "two of them installed it at once"
         );
         // And another agent is another install, which this says nothing
@@ -550,7 +550,7 @@ mod tests {
 
     /// A claim nobody gave up is taken over once it is old enough.
     ///
-    /// An obelus that was killed mid-install leaves one behind, and nothing
+    /// An Obelus that was killed mid-install leaves one behind, and nothing
     /// else will ever remove it: without this, one kill locks a reader out
     /// of their own agent for good.
     #[test]
@@ -563,7 +563,7 @@ mod tests {
         std::fs::write(&path, "").expect("a claim nobody will give up");
 
         // Old enough to be nobody's. The file's own time is what says so,
-        // which is what a second obelus has to go on.
+        // which is what a second Obelus has to go on.
         let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
         let file = std::fs::File::options()
             .write(true)
@@ -606,7 +606,7 @@ mod tests {
                 arguments: Vec::new(),
             },
         };
-        // What npm leaves behind, in the place obelus now asks it to work.
+        // What npm leaves behind, in the place Obelus now asks it to work.
         let install = |prefix: &std::path::Path| {
             let package = prefix.join("node_modules").join("thing");
             std::fs::create_dir_all(&package).expect("a directory");

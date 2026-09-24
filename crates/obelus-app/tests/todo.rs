@@ -898,8 +898,8 @@ fn the_words_keys_work_in_a_note_too() {
 
 /// A note somebody else added while the list was open is not written over.
 ///
-/// obelus writes the whole file from what it holds, so the window that
-/// matters is exactly this: the list is open, another obelus -- or the
+/// Obelus writes the whole file from what it holds, so the window that
+/// matters is exactly this: the list is open, another Obelus -- or the
 /// reader's own editor -- writes the file, and then something here saves.
 /// Without hearing about the change, the save puts the file back the way it
 /// was and the other note is gone.
@@ -913,8 +913,8 @@ fn a_note_added_from_outside_survives_the_next_save() {
     let mut app = open(&scratch, 76, 24);
     let file = obelus_git::todo::path(scratch.path());
 
-    // Somebody else, with the list open. Their file keeps obelus's note --
-    // they read it before writing, as obelus would -- and adds one.
+    // Somebody else, with the list open. Their file keeps Obelus's note --
+    // they read it before writing, as Obelus would -- and adds one.
     let theirs = std::fs::read_to_string(&file).expect("the notes");
     std::fs::write(
         &file,
@@ -931,14 +931,14 @@ fn a_note_added_from_outside_survives_the_next_save() {
         after.contains("theirs"),
         "the note added from outside was written over:\n{after}"
     );
-    assert!(after.contains("the first"), "obelus lost its own:\n{after}");
+    assert!(after.contains("the first"), "Obelus lost its own:\n{after}");
 }
 
-/// The notes do not open on a file obelus cannot read, and nothing is
+/// The notes do not open on a file Obelus cannot read, and nothing is
 /// written over it.
 ///
 /// An empty page is not what a file that will not parse says -- it is what
-/// obelus can make of one -- and a page that opens is a page the reader
+/// Obelus can make of one -- and a page that opens is a page the reader
 /// writes into. One note, and the list they had is replaced by it. So the
 /// key says why and goes nowhere, which leaves them somewhere they can fix
 /// it from.
@@ -955,7 +955,7 @@ fn the_notes_do_not_open_on_a_file_that_will_not_read() {
 
     assert!(
         app.notes().is_none(),
-        "the notes opened on a file obelus cannot read"
+        "the notes opened on a file Obelus cannot read"
     );
     assert!(
         app.note().unwrap_or_default().contains("will not read"),
@@ -965,14 +965,14 @@ fn the_notes_do_not_open_on_a_file_that_will_not_read() {
     assert_eq!(
         std::fs::read_to_string(&file).expect("the notes"),
         half,
-        "the file obelus could not read was written over"
+        "the file Obelus could not read was written over"
     );
 }
 
 /// What the reader did while the file would not read is not lost: it goes
 /// in the moment the file reads again.
 ///
-/// They broke the file in their own editor with the page open. obelus says
+/// They broke the file in their own editor with the page open. Obelus says
 /// so and writes nothing -- and what they do on the page in the meantime is
 /// still the only account of itself there is, so it waits rather than going
 /// with the attempt. Dropped instead, it sat on the page looking written
@@ -1003,7 +1003,7 @@ fn what_was_done_while_the_file_would_not_read_lands_when_it_reads_again() {
     assert_eq!(
         std::fs::read_to_string(&file).expect("the notes"),
         "[[todo]]\nsaid = \"half a no",
-        "the file obelus could not read was written over"
+        "the file Obelus could not read was written over"
     );
 
     // They fix it, and the next thing that writes takes the tick with it.
@@ -1021,7 +1021,7 @@ fn what_was_done_while_the_file_would_not_read_lands_when_it_reads_again() {
 
 /// Two windows on one tree, and neither of them loses the other's note.
 ///
-/// The one this is all for. `split` is not obelus's answer to reading two
+/// The one this is all for. `split` is not Obelus's answer to reading two
 /// things at once -- a second window is -- so two obeluses on one tree is
 /// the ordinary case and not the exotic one, and what a reader does in each
 /// of them has to survive the other. Nothing is told about anything here:
@@ -1996,7 +1996,7 @@ fn the_notes_are_wrapped_to_the_width_of_the_frame_being_drawn() {
 /// What was pasted stays on the page when the file is read again.
 ///
 /// The notes file is watched while the page is open, so anything that
-/// writes it -- another obelus, the reader's own editor, obelus itself --
+/// writes it -- another Obelus, the reader's own editor, Obelus itself --
 /// comes back as a reread. A reread keeps the box the reader is typing in,
 /// and a note the caret is in is laid out from that box; rebuilding the
 /// rows before the box was put back laid it out from the file instead, and
@@ -2015,7 +2015,7 @@ fn what_was_pasted_stays_on_the_page_when_the_file_is_read_again() {
     press(&mut app, KeyCode::Enter);
     app.handle(Event::Paste("the words the reader pasted".to_string()));
 
-    // Somebody else writes the file, and obelus takes it again.
+    // Somebody else writes the file, and Obelus takes it again.
     let path = obelus_git::todo::path(scratch.path());
     let written = std::fs::read_to_string(&path).expect("the notes");
     std::fs::write(
@@ -2034,7 +2034,7 @@ fn what_was_pasted_stays_on_the_page_when_the_file_is_read_again() {
 
 /// A paste does not write the notes file over somebody else's change.
 ///
-/// obelus writes the file whole, from what it holds, so every save is a
+/// Obelus writes the file whole, from what it holds, so every save is a
 /// save over whatever else has been written since -- which is why the page
 /// hears about the file while it is open. A paste that saved wrote the
 /// whole file on a keystroke, before the reader could have heard anything,
@@ -2053,7 +2053,7 @@ fn a_paste_does_not_write_the_notes_file_over_somebody_elses_change() {
     let path = obelus_git::todo::path(scratch.path());
     press(&mut app, KeyCode::Enter);
 
-    // Another writer, and obelus has not heard about it yet.
+    // Another writer, and Obelus has not heard about it yet.
     let written = std::fs::read_to_string(&path).expect("the notes");
     std::fs::write(
         &path,
@@ -2112,12 +2112,12 @@ fn starting_a_note_does_not_put_a_blank_one_in_the_file() {
     );
 }
 
-/// What obelus writes down is what the reader has on the page.
+/// What Obelus writes down is what the reader has on the page.
 ///
 /// The words are in the box until the reader leaves the note, so every
 /// save that asked the view for its notes wrote the note as it *stood* --
 /// without them. Anything that saves while a note is open therefore wrote
-/// the file a keystroke behind the page, and another obelus or an agent
+/// the file a keystroke behind the page, and another Obelus or an agent
 /// reading it at that moment was handed the older words.
 ///
 /// Broken deliberately by asking for `todo().clone()` instead of
@@ -2185,7 +2185,7 @@ fn a_note_that_says_nothing_is_not_written_down() {
 /// A note being typed into stays where the reader has it when the file is
 /// read again.
 ///
-/// A note that says nothing is not in anybody's file, because obelus does
+/// A note that says nothing is not in anybody's file, because Obelus does
 /// not write one -- so its absence from a reread is not somebody having
 /// taken it away. Treated as a deletion it was put back at the end, and a
 /// note just started walked to the bottom of the list the moment anything
@@ -2201,7 +2201,7 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
 
     // Started on the first of three, so it is the second row.
     press(&mut app, KeyCode::Enter);
-    // Somebody else writes the file, and obelus takes it again.
+    // Somebody else writes the file, and Obelus takes it again.
     let written = std::fs::read_to_string(&path).expect("the notes");
     std::fs::write(
         &path,
@@ -2233,7 +2233,7 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
 
 /// The note the keys are on is marked down its edge, not by its ground.
 ///
-/// Every other list in obelus says "the keys are here" with a background,
+/// Every other list in Obelus says "the keys are here" with a background,
 /// and this is the one list whose rows the reader also selects text
 /// *inside*. Two grounds on the same cells is the reader unable to see
 /// where what they are holding begins or ends, which is the only thing a
@@ -2270,7 +2270,7 @@ fn the_note_the_keys_are_on_is_marked_down_its_edge() {
     //
     // The *list*, and not the whole page: the foot draws each key in a cap,
     // and a cap's ground is the same colour as a selected row in the themes
-    // obelus ships. Under a rule and among keys it is not something the
+    // Obelus ships. Under a rule and among keys it is not something the
     // selection argues with.
     let ground = support::spelled(app.theme().selected_row_background);
     let letters: Vec<char> = support::legend_block(&dump)
@@ -2470,7 +2470,7 @@ fn closing_the_notes_writes_what_was_typed() {
     );
 }
 
-/// And so does leaving obelus, for the same reason and without asking.
+/// And so does leaving Obelus, for the same reason and without asking.
 ///
 /// An unwritten buffer is a decision -- the reader's change, or the file on
 /// disk -- and there is no such decision here.
@@ -2524,10 +2524,10 @@ fn the_status_row_says_it_is_the_notes_and_what_is_left() {
 ///
 /// A note lives nowhere but the file, and the page writes the whole file
 /// from the copy it holds -- on the reader's next keystroke in it, on its
-/// being closed, on obelus leaving. So a page that never heard about the
+/// being closed, on Obelus leaving. So a page that never heard about the
 /// write held the file as it was before, and put it back. The agent ticked
 /// a note off, said so, and was telling the truth; by the time the reader
-/// went to look, obelus had undone it.
+/// went to look, Obelus had undone it.
 ///
 /// Obelus watches the file and re-reads it when anybody writes it, its own
 /// writes included, and that was not the half that was broken: the
@@ -2590,7 +2590,7 @@ fn a_note_an_agent_writes_behind_the_conversation_is_not_put_back() {
 
     // Then the reader goes back to their notes -- which goes back to the
     // page, not to the file -- and it is written down, the way closing it
-    // and leaving obelus both write it down.
+    // and leaving Obelus both write it down.
     dispatch::dispatch(&mut app, Command::TodoOpen);
     let _ = support::render(&mut app, 76, 18);
     assert!(app.notes().is_some(), "the notes are not back on screen");
@@ -2607,7 +2607,7 @@ fn a_note_an_agent_writes_behind_the_conversation_is_not_put_back() {
 
 /// Escape writes the note down and leaves the caret in it.
 ///
-/// Escape everywhere in obelus leaves whatever is *over* what is being
+/// Escape everywhere in Obelus leaves whatever is *over* what is being
 /// read, and nothing is over this: the notes are a document rather than a
 /// thing on top of one. So what it does here is the writing down -- which
 /// is what leaving a note used to be the only moment for.
@@ -2619,7 +2619,7 @@ fn a_note_an_agent_writes_behind_the_conversation_is_not_put_back() {
 /// the caret went out on escape and no key could bring it back. Not an
 /// arrow, not a letter.
 ///
-/// A note with nothing in it is still thrown away -- obelus does not write
+/// A note with nothing in it is still thrown away -- Obelus does not write
 /// one down -- and then the caret goes to the nearest note there still is,
 /// because a list with notes in it and the caret nowhere is a list no key
 /// can reach.
@@ -2822,7 +2822,7 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
     );
 
     // And the mark, which opens the conversation about that note. There is
-    // no agent here, so what is asserted is that obelus went to a
+    // no agent here, so what is asserted is that Obelus went to a
     // conversation rather than staying in the notes.
     press(&mut app, 1, area.x + 1);
     assert!(

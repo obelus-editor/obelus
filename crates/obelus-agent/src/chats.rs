@@ -1,14 +1,14 @@
-//! Which of a project's notes have a conversation open, and in whose obelus.
+//! Which of a project's notes have a conversation open, and in whose Obelus.
 //!
-//! obelus does not split its window, so several obelus processes on one
+//! Obelus does not split its window, so several Obelus processes on one
 //! project is the normal case -- and a conversation is not a thing two of
 //! them may have open at once. The agent keeps what was said and takes one
 //! prompt turn at a time; two clients prompting one conversation is two
-//! turns in it, which is the thing obelus's own queue exists to prevent,
+//! turns in it, which is the thing Obelus's own queue exists to prevent,
 //! arriving from outside the process that queue lives in.
 //!
 //! So a conversation is claimed, and the claim is a lock the operating
-//! system holds rather than anything obelus writes down. A process that is
+//! system holds rather than anything Obelus writes down. A process that is
 //! killed, crashes or loses power releases it on the way out without having
 //! to be asked, which is the whole reason for choosing a lock over a process
 //! number in a file: a number has to be believed, checked against a process
@@ -18,7 +18,7 @@
 //!
 //! The file itself is what the watcher can see. A lock is invisible to it --
 //! nothing is written when one is taken -- so the file is created with the
-//! claim and removed with it, and that is the signal another obelus wakes
+//! claim and removed with it, and that is the signal another Obelus wakes
 //! on. The file's *existence* means nothing on its own: one left behind by a
 //! process that died is a file nobody holds, and asking for the lock is what
 //! says which it is.
@@ -41,11 +41,11 @@ pub fn directory(root: &Path) -> Option<PathBuf> {
     )
 }
 
-/// Says this obelus has the conversation about `note`, unless another has.
+/// Says this Obelus has the conversation about `note`, unless another has.
 ///
-/// `None` is another obelus holding it. Also a system with nowhere to keep
+/// `None` is another Obelus holding it. Also a system with nowhere to keep
 /// the claim, and that is deliberately the same answer: a reader whose
-/// machine cannot say who has what is a reader for whom obelus cannot keep
+/// machine cannot say who has what is a reader for whom Obelus cannot keep
 /// this promise, and the honest thing is to decline rather than to let two
 /// windows into one conversation while saying nothing.
 #[must_use]
@@ -69,7 +69,7 @@ pub fn claim(root: &Path, note: &NoteId) -> Option<Claim> {
 
 /// Every note in this project whose conversation somebody has open.
 ///
-/// Including this obelus's own: a lock is about the open file and not about
+/// Including this Obelus's own: a lock is about the open file and not about
 /// the process, so a second look from the same process finds its own claim
 /// in the way. Which of them are this one's is a question this cannot answer
 /// and the caller already knows -- it is holding them.
@@ -110,18 +110,18 @@ pub fn held_by_anybody(root: &Path, note: &NoteId) -> bool {
         .is_ok_and(|file| held_by_somebody_else(&file))
 }
 
-/// A conversation this obelus has open, which it gives up by being dropped.
+/// A conversation this Obelus has open, which it gives up by being dropped.
 ///
 /// Dropped rather than given up by hand, for the reason the install's claim
 /// beside this one is: every way out of a conversation would otherwise have
 /// to remember, and the one that forgot would lock the reader out of their
-/// own note until they restarted obelus.
+/// own note until they restarted Obelus.
 #[derive(Debug)]
 pub struct Claim {
     path: PathBuf,
     /// Held open for as long as the claim is: the lock belongs to the open
     /// file and goes when it closes, which is also what makes a killed
-    /// obelus give it up.
+    /// Obelus give it up.
     #[expect(
         dead_code,
         reason = "it is the lock itself: what it is for is staying open"
@@ -133,7 +133,7 @@ impl Drop for Claim {
     fn drop(&mut self) {
         // The name goes here and the lock goes a moment later, when the
         // file this holds is closed on the way out of this. That order is
-        // the useful one: another obelus wakes on the file going, and by
+        // the useful one: another Obelus wakes on the file going, and by
         // the time it has looked the lock is gone too.
         if let Err(error) = std::fs::remove_file(&self.path) {
             tracing::warn!(%error, path = %self.path.display(), "a claim outlived its conversation");
@@ -147,7 +147,7 @@ impl Drop for Claim {
 /// would answer without taking anything is `fcntl`'s `F_GETLK`, and `fcntl`
 /// locks are the ones a process drops in their entirety when it closes *any*
 /// descriptor on the file -- which this opens twice, once to hold a claim
-/// and once to look at one, so obelus would let go of its own claim by
+/// and once to look at one, so Obelus would let go of its own claim by
 /// glancing at it.
 ///
 /// A lock taken here is given up again when the file closes, at the end of
@@ -208,9 +208,9 @@ mod tests {
         root
     }
 
-    /// Two obelus cannot have one note's conversation open at once.
+    /// Two Obelus cannot have one note's conversation open at once.
     ///
-    /// The agent takes one prompt turn at a time and obelus queues what the
+    /// The agent takes one prompt turn at a time and Obelus queues what the
     /// reader says into a running one -- a queue that lives in one process,
     /// so a second process prompting the same conversation walks straight
     /// past it. This is the half of that promise the other process can see.
@@ -218,7 +218,7 @@ mod tests {
     /// Two claims from one process rather than two processes, and it is the
     /// same question: a `flock` belongs to the open file and not to the
     /// process, so a second `open` of the same path is as much somebody else
-    /// as another obelus is. That is also what makes [`held`] work.
+    /// as another Obelus is. That is also what makes [`held`] work.
     ///
     /// Broken deliberately by having `claim` answer `Some` without asking
     /// `held_by_somebody_else`: the second one comes back held as well.
@@ -230,7 +230,7 @@ mod tests {
         let first = claim(&root, &note).expect("nobody had it");
         assert!(
             claim(&root, &note).is_none(),
-            "a second obelus was let into the conversation"
+            "a second Obelus was let into the conversation"
         );
         assert!(held(&root).contains(&note), "the claim does not show");
 
@@ -244,7 +244,7 @@ mod tests {
         assert!(claim(&root, &note).is_some(), "nobody can have it now");
     }
 
-    /// A claim left behind by an obelus that died is not a claim.
+    /// A claim left behind by an Obelus that died is not a claim.
     ///
     /// Which is the whole reason for a lock rather than a process number
     /// written down: nothing sweeps this directory, nothing has to decide
@@ -259,7 +259,7 @@ mod tests {
         let note = NoteId::read("0123456B").expect("a name");
         let path = directory(&root).expect("somewhere").join(note.as_str());
         std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
-        std::fs::write(&path, "").expect("what the dead obelus left");
+        std::fs::write(&path, "").expect("what the dead Obelus left");
 
         assert!(held(&root).is_empty(), "a leftover file reads as a claim");
         assert!(

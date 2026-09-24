@@ -1,6 +1,6 @@
 [package]
 name = "obelus-command"
-description = "Everything obelus can be asked to do, by name"
+description = "Everything Obelus can be asked to do, by name"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

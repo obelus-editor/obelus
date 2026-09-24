@@ -1,4 +1,4 @@
-//! What a server says a place is, and what obelus does with it.
+//! What a server says a place is, and what Obelus does with it.
 //!
 //! Against values rather than against a server: the interesting rules are
 //! where the answer is drawn, what it marks, and what happens when the
@@ -199,7 +199,7 @@ fn the_paging_keys_read_the_rest_of_it() {
 ///
 /// A hover holds a README, and a README's fenced blocks are boxes of their
 /// own -- so without the blank there were two lines side by side with
-/// nothing between them, one obelus's and one the document's. The raised
+/// nothing between them, one Obelus's and one the document's. The raised
 /// ground says the same thing a second way, for a panel whose contents
 /// reach its edge: a box outlined in one thin line over code of exactly
 /// the same colour is a box that disappears into what it covers.
@@ -235,7 +235,7 @@ fn a_panel_holds_its_contents_off_its_own_edge() {
     }
 
     // And the panel's own cells wear the raised ground -- asked of the
-    // cells and not of the legend, because the themes obelus ships give a
+    // cells and not of the legend, because the themes Obelus ships give a
     // selected row the same colour, so a legend that has it says nothing
     // about which thing on screen is wearing it.
     let ground = support::spelled(app.theme().raised_background);

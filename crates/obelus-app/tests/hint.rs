@@ -104,7 +104,7 @@ fn the_caret_walks_past_a_hint_without_entering_it() {
 }
 
 /// An answer about a document that has moved since is refused: the places
-/// it names are places in the file as it was, and obelus has no way to tell
+/// it names are places in the file as it was, and Obelus has no way to tell
 /// where they went.
 ///
 /// Which is not the same as what an edit does to the hints already drawn --
@@ -150,7 +150,7 @@ fn the_question_that_goes_out_is_the_one_the_protocol_names() {
     dispatch::dispatch(&mut app, Command::FileSave);
 
     let asked = support::heard_requests(&heard, "textDocument/inlayHint", 1);
-    assert_eq!(asked.len(), 1, "obelus asked nobody: {asked:?}");
+    assert_eq!(asked.len(), 1, "Obelus asked nobody: {asked:?}");
     assert_eq!(
         asked[0]["params"]["range"]["start"]["line"], 0,
         "the question does not start at the top of the file: {:?}",
@@ -372,11 +372,11 @@ fn the_switch_takes_them_away_and_brings_them_back() {
     );
 }
 
-/// The whole way through, against a real server: a file open in obelus, a
+/// The whole way through, against a real server: a file open in Obelus, a
 /// language server started under it, and a type nobody wrote down drawn in
 /// the line it belongs to.
 ///
-/// Everything else here hands obelus an answer. This is the one that says
+/// Everything else here hands Obelus an answer. This is the one that says
 /// the answers arrive at all -- which is the half that was broken twice:
 /// once because nothing asked again once a server could be asked, and once
 /// because the reader had not asked for them.
@@ -405,7 +405,7 @@ fn a_real_server_draws_a_type_nobody_wrote_down() {
     );
     app.serve_current_for_test();
 
-    // The loop obelus runs, until something a server worked out is on
+    // The loop Obelus runs, until something a server worked out is on
     // screen.
     let deadline = Instant::now() + Duration::from_secs(180);
     loop {
@@ -523,7 +523,7 @@ fn probe_how_long_until_they_come_back() {
 /// A file the reader has stopped changing is asked about again, without
 /// their having saved it and without the server having said anything.
 ///
-/// The one moment obelus asks for these that depends on nothing but the
+/// The one moment Obelus asks for these that depends on nothing but the
 /// reader. A save asks, and so does a server finishing work of its own --
 /// but a server that reports no work never finishes any, and the reader
 /// who changed a colour and is looking at it has saved nothing.

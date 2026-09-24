@@ -1,6 +1,6 @@
-//! The one runtime obelus's waiting is done on.
+//! The one runtime Obelus's waiting is done on.
 //!
-//! obelus's loop is a thread blocked on a channel, and that does not
+//! Obelus's loop is a thread blocked on a channel, and that does not
 //! change: one owner of the application's state, and no `.await` between a
 //! key arriving and the screen it produced. What is here is for the other
 //! side -- the work that is *waiting* rather than working. A language
@@ -10,7 +10,7 @@
 //!
 //! One runtime for all of it, rather than one per thing that wanted async.
 //! There were two before this -- the agent's connection built one, and the
-//! tools obelus offers an agent built another -- each on a thread whose
+//! tools Obelus offers an agent built another -- each on a thread whose
 //! whole job was to own it.
 //!
 //! Multi-threaded, and this is the reason: a language server's answer is
@@ -46,6 +46,6 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 /// terminal is read on, which is also expected rather than handled.
 pub fn handle() -> &'static Handle {
     RUNTIME
-        .get_or_init(|| Runtime::new().expect("building the runtime obelus waits on"))
+        .get_or_init(|| Runtime::new().expect("building the runtime Obelus waits on"))
         .handle()
 }

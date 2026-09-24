@@ -480,7 +480,7 @@ fn the_rows_are_coloured_like_the_code_they_are() {
             .unwrap_or_default()
     }
 
-    // The file scope, from the buffer obelus already has parsed. The
+    // The file scope, from the buffer Obelus already has parsed. The
     // fixture's line is indented with a tab, which the label does not carry:
     // a run counted from the start of the *line* would colour the wrong
     // characters of the row.
@@ -869,7 +869,7 @@ fn the_symbols_scope_needs_a_server() {
     );
     assert_eq!(app.note(), None, "a key that did nothing said so");
 
-    // And the palette shows it dim -- findable, so a reader learns obelus
+    // And the palette shows it dim -- findable, so a reader learns Obelus
     // can do it, and not choosable, because right now it cannot.
     support::press_control(&mut app, 'p');
     let rows: Vec<(String, bool)> = app

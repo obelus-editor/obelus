@@ -14,7 +14,7 @@
 //! did in the binaries they came from once the glyphs were off by default.
 //! The two about a glyph that should *not* be there -- in the query, in the
 //! palette -- pass either way, which is why they are here: off, there is no
-//! glyph to keep out, and they would pass whatever obelus did.
+//! glyph to keep out, and they would pass whatever Obelus did.
 
 mod support;
 

@@ -13,12 +13,12 @@
 //!
 //! A tool call is somewhere to go, not something to read about. The
 //! protocol says what sort of thing the agent is doing (`kind`) and which files
-//! it was in (`locations`), and obelus kept neither: a row with a title and a
+//! it was in (`locations`), and Obelus kept neither: a row with a title and a
 //! tick on it. The kind picks the glyph, because a reader scanning a turn is
 //! looking for whether it *changed* anything and that is a picture rather than
 //! a sentence; the locations go on the row as a path, written relative to the
-//! tree obelus was opened on. Other clients open a preview from one of these;
-//! obelus opens a *buffer* -- with its jump list, its definitions, its hunks --
+//! tree Obelus was opened on. Other clients open a preview from one of these;
+//! Obelus opens a *buffer* -- with its jump list, its definitions, its hunks --
 //! which is the one thing a reader has that they do not.
 //!
 //! Everything on the row is kept rather than rebuilt, because an update carries
@@ -71,7 +71,7 @@
 //! says why it thinks the bug is where it thinks it is. It gets a heading so a
 //! reader who has read it can put it away, and only when it is long enough for
 //! that to be worth a row: a heading over three words is two rows saying one
-//! thing. obelus never closes it by itself, which also means it can never close
+//! thing. Obelus never closes it by itself, which also means it can never close
 //! under somebody who is reading it.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -91,7 +91,7 @@ pub enum Speaker {
     Thought,
     /// The agent using a tool.
     Tool,
-    /// obelus itself: what went wrong, what was allowed, what stopped.
+    /// Obelus itself: what went wrong, what was allowed, what stopped.
     Note,
     /// Somewhere on the web the agent sent the reader, and whether what
     /// was to happen there has happened.
@@ -120,7 +120,7 @@ pub enum Speaker {
 
 /// What a command is doing, for the row that is about it.
 ///
-/// Handed over rather than read: obelus holds the process, and the rows
+/// Handed over rather than read: Obelus holds the process, and the rows
 /// are filled from it every frame the way [`Chat::doing`] is.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Doing {
@@ -149,7 +149,7 @@ pub struct Said {
     /// The files a tool call named.
     ///
     /// Kept whole rather than as one line of text, because they are places
-    /// to go: obelus opens files for a living, and a tool call is the agent
+    /// to go: Obelus opens files for a living, and a tool call is the agent
     /// saying which ones it has been in.
     pub places: Vec<obelus_agent::acp::Place>,
     /// The change it is making, as the rows that draw it.
@@ -158,10 +158,10 @@ pub struct Said {
     /// rather than the two texts: the diff is worked out once, when it
     /// arrives.
     pub change: Vec<obelus_git::change::Line>,
-    /// The command obelus is running for this call, where it is running
+    /// The command Obelus is running for this call, where it is running
     /// one.
     ///
-    /// The output is not kept here: obelus holds the process, and what it
+    /// The output is not kept here: Obelus holds the process, and what it
     /// has printed is read off that every frame -- the same rule
     /// [`Chat::doing`] follows, so there is no way for the rows to be
     /// showing a command's output from a moment ago.
@@ -183,7 +183,7 @@ pub struct Said {
     pub words: Vec<String>,
     /// Whether the reader has opened or closed what this begins.
     ///
-    /// `None` means nobody has said, and obelus decides: a change under a
+    /// `None` means nobody has said, and Obelus decides: a change under a
     /// call folds itself once the change is made, and its thinking stays
     /// open because thinking is prose somebody may want to read. Once the
     /// reader says otherwise it stays the way they left it.
@@ -260,7 +260,7 @@ pub struct Row {
     pub place: Option<(obelus_agent::acp::Place, usize)>,
     /// The web address it points at, where it points at one.
     ///
-    /// Beside `place` and not folded into it: a file obelus opens itself
+    /// Beside `place` and not folded into it: a file Obelus opens itself
     /// and a URL it hands to the machine are two different things to do,
     /// and a row that said only "somewhere" would make whoever pressed the
     /// key work out which.
@@ -291,7 +291,7 @@ pub struct Row {
     pub depth: u8,
     /// Which text of which thing said this row was laid out from.
     ///
-    /// `None` for the rows obelus makes up rather than lays out: the blank
+    /// `None` for the rows Obelus makes up rather than lays out: the blank
     /// between two things said, the heading over a folded run, the row
     /// that says what is happening now, a step of a plan. Those are not
     /// anybody's words and there is nothing in them to take a copy of --
@@ -685,7 +685,7 @@ pub struct Chat {
     input: Composer,
     /// Which rows of the transcript are on screen.
     ///
-    /// The same window every list in obelus has, in its following form: it
+    /// The same window every list in Obelus has, in its following form: it
     /// sits at the end until the reader scrolls up, and goes back to
     /// following when they come back down. Without that a streaming answer
     /// either drags the view around while it is being read, or arrives off
@@ -752,8 +752,8 @@ impl Row {
 /// content, which is the thing it asks clients to read as markdown.
 ///
 /// The agent's answer and its thinking do. The reader's own message does
-/// not -- obelus has it as they typed it, and reflowing somebody's words
-/// back at them is obelus deciding what they meant. Nor do the rows obelus
+/// not -- Obelus has it as they typed it, and reflowing somebody's words
+/// back at them is Obelus deciding what they meant. Nor do the rows Obelus
 /// makes up itself: a note, a state, a step of a plan, a run's heading.
 ///
 /// Nor a tool call, which is not one voice: what it carries is the
@@ -811,8 +811,8 @@ fn plain(text: String) -> Vec<Span> {
 /// what a tool call carries all arrive as `ContentBlock::Text`, which is
 /// the one the protocol writes "Clients SHOULD render this text as
 /// Markdown" about. A tool call's *title* is not one of those, nor are the
-/// lines of a change, nor the reader's own message -- obelus has that as
-/// they typed it and has no business reflowing it -- nor anything obelus
+/// lines of a change, nor the reader's own message -- Obelus has that as
+/// they typed it and has no business reflowing it -- nor anything Obelus
 /// says in its own voice.
 ///
 /// The wrapping is markdown's own, because that is where the difficulty
@@ -870,7 +870,7 @@ impl Chat {
     /// The settings are the agent's and it can change them mid-sentence --
     /// a model with no thinking levels takes that row away -- so the place
     /// the focus names has to be checked against the list that is really
-    /// there, once a frame, like every other window in obelus.
+    /// there, once a frame, like every other window in Obelus.
     pub fn settle_focus(&mut self, settings: usize) {
         if let Focus::Settings(at) = self.focus {
             self.focus = match settings {
@@ -886,9 +886,9 @@ impl Chat {
         self.said.is_empty()
     }
 
-    /// Whether anybody but obelus has said anything in it.
+    /// Whether anybody but Obelus has said anything in it.
     ///
-    /// Which is not "is it empty": obelus writes in a conversation of its
+    /// Which is not "is it empty": Obelus writes in a conversation of its
     /// own accord -- why the agent stopped, why the old one could not be
     /// taken up -- and a page holding nothing but that is a page with
     /// nothing to come back to. The difference matters where something is
@@ -922,7 +922,7 @@ impl Chat {
     ///
     /// A message is a command when its first character is a slash and
     /// nothing else: that is the whole rule, and it is the reader's to
-    /// invoke rather than obelus's to guess at.
+    /// invoke rather than Obelus's to guess at.
     #[must_use]
     pub fn typing_command(&self) -> Option<String> {
         let text = self.input.text();
@@ -943,7 +943,7 @@ impl Chat {
     /// Whether there is more of what was said than there is room for.
     ///
     /// What decides whether the transcript draws a bar, the way every other
-    /// list in obelus decides it: a bar on something that fits is a bar
+    /// list in Obelus decides it: a bar on something that fits is a bar
     /// that says nothing.
     #[must_use]
     pub fn scrollable(&self, room: u16) -> bool {
@@ -995,7 +995,7 @@ impl Chat {
     /// The rows stay as they are and stop being dim. They are not merged
     /// into the one prompt they left as: the reader said three things and
     /// the page is what they said, so rewriting their own half of it under
-    /// them would be obelus editing the page rather than adding to it.
+    /// them would be Obelus editing the page rather than adding to it.
     pub fn sent(&mut self) {
         if !self.said.iter().any(|said| said.unsent) {
             return;
@@ -1028,9 +1028,9 @@ impl Chat {
     /// it comes back only this way.
     ///
     /// Some agents also send these during a live turn, echoing back the
-    /// prompt they were just given -- which obelus put on the page itself
+    /// prompt they were just given -- which Obelus put on the page itself
     /// the moment it was sent. So a chunk the last thing said already says
-    /// is dropped: what makes that safe is that the only rows obelus writes
+    /// is dropped: what makes that safe is that the only rows Obelus writes
     /// in this voice are the ones it was handed by the reader, so a repeat
     /// of what is already there is the agent's copy of it and not a second
     /// thing they said.
@@ -1045,7 +1045,7 @@ impl Chat {
         }
     }
 
-    /// Adds one of obelus's own remarks.
+    /// Adds one of Obelus's own remarks.
     pub fn note(&mut self, text: &str) {
         self.push(Speaker::Note, text, None);
     }
@@ -1106,7 +1106,7 @@ impl Chat {
         // know whether anything is happening at all, and when it says
         // nothing there is nothing else on screen to say why -- so a
         // report that it stayed blank is a report with no evidence in it,
-        // and the log is where obelus keeps what a reader cannot show.
+        // and the log is where Obelus keeps what a reader cannot show.
         tracing::info!(was = ?self.doing, now = ?what, "what is happening now");
         self.forget_the_layout();
         self.doing = what.map(str::to_string);
@@ -1173,11 +1173,11 @@ impl Chat {
     /// an agent that is told to stop is asked to send the updates it owes
     /// -- but one that never saw the cancellation does not, and its calls
     /// sit at `in_progress` for ever: a mark that says a thing is running
-    /// while obelus has told the reader nothing is. `cancelled` is the
-    /// protocol's own word for it, so this is obelus writing down what the
+    /// while Obelus has told the reader nothing is. `cancelled` is the
+    /// protocol's own word for it, so this is Obelus writing down what the
     /// agent would have said rather than a state of its own invention.
     ///
-    /// The whole conversation rather than the last turn, because obelus
+    /// The whole conversation rather than the last turn, because Obelus
     /// does not keep the boundary between turns: a call from a turn that
     /// ended properly is not in one of these states to begin with.
     pub fn stop_the_calls(&mut self) {
@@ -1195,7 +1195,7 @@ impl Chat {
 
     /// Says what a command is doing, for every row that is running one.
     ///
-    /// Called every frame with whatever obelus's own runner has, the way
+    /// Called every frame with whatever Obelus's own runner has, the way
     /// [`Chat::doing`] is: the output belongs to the process and the rows
     /// are drawn from it rather than from a copy that could be a moment
     /// behind. Which command a row is about is the row's own `ran`, so a
@@ -1237,7 +1237,7 @@ impl Chat {
     /// Says what was to happen where the reader was sent has happened.
     ///
     /// Nothing at all for a name nothing is waiting on: an agent may say a
-    /// question is over that this obelus never asked -- a second one is
+    /// question is over that this Obelus never asked -- a second one is
     /// listening to the same session -- and a row invented to mark it done
     /// would be a row about something the reader never did.
     pub fn arrived(&mut self, id: &str) {
@@ -1298,7 +1298,7 @@ impl Chat {
         // collection*. What a call says is what it says now, not a log of
         // what it has said -- a plan put to the reader is replaced by what
         // became of the asking, and that is the agent's account of that
-        // call rather than something for obelus to overrule.
+        // call rather than something for Obelus to overrule.
         if !call.said.is_empty() {
             said.words = call.said.clone();
         }
@@ -1551,7 +1551,7 @@ impl Chat {
             // which is the same title and was the only one being wrapped.
             // Put down as one run however long it was, the calls whose
             // headings ran off the side were exactly the ones with
-            // something behind them to read, and a command obelus had run
+            // something behind them to read, and a command Obelus had run
             // is a title as long as the command.
             //
             // The first row is what opens and what folds; the rest are the
@@ -1608,7 +1608,7 @@ impl Chat {
                     .map(|spans| Self::under(said, spans, depth, Some((at, Source::Text)))),
             );
             if open {
-                // Markdown, unless obelus is running a command for this
+                // Markdown, unless Obelus is running a command for this
                 // call: then these words are the command and what it has
                 // printed, put here by [`Chat::running`], and a terminal's
                 // bytes are not prose. Read as markdown they lose the line
@@ -1639,7 +1639,7 @@ impl Chat {
 
         let words = laid_out(&said.text, room, reads_as_markdown(said.speaker));
         // Thinking long enough to be worth putting away gets a heading of
-        // its own, which is what folds it. obelus does not fold it away by
+        // its own, which is what folds it. Obelus does not fold it away by
         // itself -- an agent's reasoning about the code is often the most
         // of what a turn is worth -- but a reader who has read it should be
         // able to close it. Short thinking is just the words: a heading
@@ -1654,7 +1654,7 @@ impl Chat {
                 })
                 .collect();
         }
-        // The heading is obelus's word for what is behind it, not the
+        // The heading is Obelus's word for what is behind it, not the
         // agent's: there is nothing in it to take a copy of.
         let mut rows = vec![self.opening(
             said,
@@ -1786,19 +1786,19 @@ impl Chat {
         }
         // A change is open while it is the question: the agent is asking to
         // make it, and what it is asking about is the lines. Once it is
-        // made the file itself has them, and obelus draws a file's changes
+        // made the file itself has them, and Obelus draws a file's changes
         // in the margin beside them -- so the block folds away and the row
         // that opens it stays. A command still running is the same case:
         // what it is printing is the thing being waited on.
         //
         // Having failed is not on this list, and was. The reasoning was
         // that a reader whose tests have just failed is looking for the
-        // failure -- true, and not obelus's to act on, because "failed" is
+        // failure -- true, and not Obelus's to act on, because "failed" is
         // a word from the agent and a great many commands say it without
         // anything being wrong. `grep` exits 1 with nothing to report,
         // `diff` exits 1 on a difference, `test` exits 1 for false: an
         // agent asking a question with a command gets a non-zero answer
-        // and marks the call failed, and obelus was throwing the output of
+        // and marks the call failed, and Obelus was throwing the output of
         // every one of those open and holding it open. What is left is the
         // mark, which says where to look, and the key, which is one press.
         matches!(said.state.as_deref(), Some("pending" | "in_progress"))
@@ -1807,7 +1807,7 @@ impl Chat {
     /// Whether the run of calls beginning at `at` is open.
     ///
     /// What the reader said about it, and otherwise shut. A run is a log:
-    /// obelus makes one out of a stretch of calls of a kind exactly
+    /// Obelus makes one out of a stretch of calls of a kind exactly
     /// because nobody reads a log line by line, and a run that decides for
     /// itself when to be a log again is a run the reader cannot keep shut.
     ///
@@ -2013,7 +2013,7 @@ impl Chat {
     /// The agent's own words and nothing else. A turn is a dozen tool
     /// calls and a paragraph, and what somebody who has scrolled up wants
     /// to know is whether it has answered them -- not how much machinery
-    /// went past. obelus's own notes are not news either: they are obelus
+    /// went past. Obelus's own notes are not news either: they are Obelus
     /// talking about the conversation rather than anything said in it.
     ///
     /// A streaming answer is one of these and stays one: chunks are
@@ -2047,7 +2047,7 @@ impl Chat {
     ///
     /// `thinking` decides what escape means: while the agent is working it
     /// stops the agent, and otherwise there is nothing here to stop and the
-    /// key is not this component's. Escape everywhere in obelus means "stop
+    /// key is not this component's. Escape everywhere in Obelus means "stop
     /// what is happening", and once a conversation is a document rather than
     /// something over one, leaving it is not stopping anything.
     pub fn handle_key(
@@ -2073,7 +2073,7 @@ impl Chat {
         // a conversation is a document rather than something over one, so
         // `ctrl+q` leaves and `f2` lists what is open from inside it. A
         // conversation that swallowed those would be one a reader cannot
-        // use obelus from.
+        // use Obelus from.
         //
         // Except the two ends of the transcript, which are nobody else's.
         // The arms below share Home and End three ways -- bare moves the
@@ -2437,7 +2437,7 @@ impl Chat {
         if let Some(spot) = rows.get(place.row)?.spot_at(place.character) {
             return Some(spot);
         }
-        // Downwards first: the rows obelus draws itself sit above what they
+        // Downwards first: the rows Obelus draws itself sit above what they
         // are about -- a heading over its run, a blank before what follows
         // it -- so the words they belong to are the ones under them.
         rows.iter()
@@ -2638,7 +2638,7 @@ impl Chat {
             // Whatever the row is: a heading opens and closes what is
             // under it, and a row that names a file goes there. Both are
             // "do what this row is for", which is what enter means
-            // everywhere else in obelus. On a row that is only words it
+            // everywhere else in Obelus. On a row that is only words it
             // does nothing, because there is nothing there to do.
             KeyCode::Enter if bare => {
                 let row = laid.get(at.row).cloned();
@@ -2701,7 +2701,7 @@ mod tests {
 
     /// One call that failed does not throw the run it is in open.
     ///
-    /// A run is a log: obelus makes one out of a stretch of calls of a kind
+    /// A run is a log: Obelus makes one out of a stretch of calls of a kind
     /// exactly because nobody reads a log line by line. It opened itself
     /// whenever any call in it had failed, and "failed" is a word from the
     /// agent, said of a `grep` that matched nothing as readily as of a
@@ -2829,7 +2829,7 @@ mod tests {
     /// A frame that changes nothing does not lay the conversation out again.
     ///
     /// Both of these are asked on every frame -- what is happening now, and
-    /// what the commands obelus is running have printed -- and both threw
+    /// what the commands Obelus is running have printed -- and both threw
     /// the rows away before looking at whether the answer had moved. So
     /// every keypress laid the whole conversation out from its bytes:
     /// 75ms of it on a transcript of a thousand rows, against 213us for
@@ -2960,7 +2960,7 @@ mod tests {
     /// however long, on a call carrying something -- which is backwards.
     /// A call with something behind it is a call worth reading, so the
     /// headings that ran off the side of the screen were exactly those.
-    /// And obelus runs commands for an agent, where the title *is* the
+    /// And Obelus runs commands for an agent, where the title *is* the
     /// command: the longest titles there are belong to the calls that
     /// always carry what the command printed.
     ///
@@ -3588,7 +3588,7 @@ mod tests {
         chat.chunk(Speaker::Agent, bulleted);
         chat.settle(laid(&chat).len(), ROOM.transcript);
 
-        // The rows this is about: ones whose first run is obelus's own.
+        // The rows this is about: ones whose first run is Obelus's own.
         let rows = laid(&chat);
         assert!(
             rows[0]
@@ -3695,7 +3695,7 @@ mod tests {
     /// content collection* -- and what the diff beside them already did. A
     /// plan put to the reader is replaced by what became of the asking, and
     /// which of the two the row shows is the agent's account of its own
-    /// call rather than obelus's to keep both of.
+    /// call rather than Obelus's to keep both of.
     #[test]
     fn a_call_shows_what_it_says_now_and_a_later_word_replaces_it() {
         let mut chat = Chat::new();
@@ -3789,7 +3789,7 @@ mod tests {
     /// Thinking is not folded away, but it can be put away.
     ///
     /// An agent's reasoning about the code is often the most of what a turn
-    /// is worth, so obelus never closes it for the reader -- and short
+    /// is worth, so Obelus never closes it for the reader -- and short
     /// thinking has no heading at all, because a heading over three words
     /// is two rows saying one thing.
     #[test]
@@ -3811,7 +3811,7 @@ mod tests {
         );
         let rows = chat.rows(ROOM.reading);
         assert_eq!(rows[0].text(), "thought", "long thinking has no heading");
-        assert!(rows[0].open, "obelus closed the thinking by itself");
+        assert!(rows[0].open, "Obelus closed the thinking by itself");
         assert!(rows.len() > 1, "the thinking is not under its heading");
 
         chat.fold(Folds::Said(0));
@@ -4134,7 +4134,7 @@ mod tests {
         );
     }
 
-    /// A key with a modifier obelus has no meaning for is not swallowed:
+    /// A key with a modifier Obelus has no meaning for is not swallowed:
     /// `ctrl+q` still quits with the conversation open.
     #[test]
     fn a_chord_falls_through_to_the_key_table() {
@@ -4163,7 +4163,7 @@ mod remembering {
     /// the keys, by the caret and by the drawing. So they are kept, and a
     /// copy is handed out: a twentieth of the cost.
     ///
-    /// Which buys a way to be wrong that obelus did not have before. Rows
+    /// Which buys a way to be wrong that Obelus did not have before. Rows
     /// kept past the moment they stopped being true are a screen that has
     /// stopped saying what happened -- an answer that never appears, a
     /// tool call stuck on "pending", a run that will not open. So every

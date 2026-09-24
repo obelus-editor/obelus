@@ -128,7 +128,7 @@ mod tests {
         );
     }
 
-    /// Headers obelus does not know are skipped, which the protocol says to
+    /// Headers Obelus does not know are skipped, which the protocol says to
     /// do and which real servers rely on.
     #[tokio::test]
     async fn an_unknown_header_is_stepped_over() {

@@ -6,8 +6,8 @@
 //! they are walked and drawn are [`obelus_component::todo`] and
 //! [`obelus_ui::todo`].
 //!
-//! Read when the view opens rather than held: obelus is not the only thing
-//! that can write the file -- the reader has an editor, and a second obelus
+//! Read when the view opens rather than held: Obelus is not the only thing
+//! that can write the file -- the reader has an editor, and a second Obelus
 //! is an ordinary thing to have open -- and a copy kept from startup would
 //! be a copy that is wrong by the time anybody looks at it.
 
@@ -148,7 +148,7 @@ impl App {
     /// Writes what the notes hold, if the reader has them open.
     ///
     /// The one place the three moments share: the pause, closing the
-    /// document, and leaving obelus. A note is only ever in the file, so
+    /// document, and leaving Obelus. A note is only ever in the file, so
     /// the pause is what makes the other two rare rather than what makes
     /// them unnecessary.
     pub(super) fn write_the_notes(&mut self) {
@@ -165,7 +165,7 @@ impl App {
     /// brings the page up to what came out.
     ///
     /// The one way anything the reader does reaches the disk. Not the page's
-    /// copy written whole: another obelus has this project open -- that is what
+    /// copy written whole: another Obelus has this project open -- that is what
     /// a second window is for -- and a file written from a copy is that
     /// window's last minute taken back out, with neither reader told. What
     /// goes is the acts, done inside the lock to whatever the file says by
@@ -241,7 +241,7 @@ impl App {
     /// The page the notes are on, wherever it is.
     ///
     /// By document rather than by what the reader is looking at: the notes
-    /// are written down by the clock, by an agent's tool, and by obelus
+    /// are written down by the clock, by an agent's tool, and by Obelus
     /// leaving, and at none of those moments is the page necessarily the one
     /// on screen.
     fn the_notes_page(&mut self) -> Option<&mut TodoView> {
@@ -255,8 +255,8 @@ impl App {
     /// ways it did not.
     ///
     /// Two sentences because they ask two different things of the reader.
-    /// One is theirs to fix and obelus is holding off until they do -- the
-    /// file is there and says something obelus cannot read, and writing over
+    /// One is theirs to fix and Obelus is holding off until they do -- the
+    /// file is there and says something Obelus cannot read, and writing over
     /// it would be trading what they wrote for whatever this session happens
     /// to be holding. The other is a disk, and nothing they type will help.
     fn the_notes_will_not(&mut self, why: &obelus_git::todo::NotChanged) {
@@ -279,13 +279,13 @@ impl App {
     /// not written is a name minted again on the next open -- nothing could
     /// be keyed to one. Through the same door as everything else, which
     /// reads the file again inside the lock, so what comes back is the file
-    /// rather than this obelus's guess at it.
+    /// rather than this Obelus's guess at it.
     fn the_notes_now(&mut self) -> Option<Todo> {
         let todo = match obelus_git::todo::read(&self.working_directory) {
             obelus_git::todo::Reading::Nothing => return Some(Todo::default()),
             obelus_git::todo::Reading::Notes(todo) => todo,
             // Nothing is shown and nothing is written. An empty page is not
-            // what this file says -- it is what obelus can make of a file it
+            // what this file says -- it is what Obelus can make of a file it
             // cannot read -- and a reader who starts writing notes into it
             // has begun replacing their own list one note at a time.
             obelus_git::todo::Reading::Unreadable(why) => {
@@ -437,7 +437,7 @@ impl App {
 
     /// The place a note made now would be about.
     ///
-    /// Relative to the project, because every path obelus writes down is: an
+    /// Relative to the project, because every path Obelus writes down is: an
     /// absolute one is about one machine, and the file it names is about the
     /// project.
     ///
@@ -476,7 +476,7 @@ impl App {
     /// it, which is the moment a typed paragraph is written down too. This
     /// did save, and saved the note *without* what had just been pasted
     /// into it -- the box is not the note until `keep` takes it -- so the
-    /// file gained a note with nothing in it, and obelus, which hears about
+    /// file gained a note with nothing in it, and Obelus, which hears about
     /// its own writes while the page is open, read that back over the words
     /// the reader was looking at.
     pub(super) fn paste_into_notes(&mut self, what: &str) {
@@ -577,7 +577,7 @@ impl App {
                 // rewritten on its next message, quoting words it wrote
                 // itself. Which is right, and not worth suppressing: the
                 // tools name no conversation -- the door they come through
-                // is the one the protocol puts no session on -- so obelus
+                // is the one the protocol puts no session on -- so Obelus
                 // cannot tell which agent asked, and what landed is not
                 // always what was asked for anyway.
                 "reworded".to_string()
@@ -618,7 +618,7 @@ impl App {
     ///
     /// Reconciled against what was just written rather than acted on when a
     /// key deletes one: a note can go several ways -- the key, another
-    /// obelus, the reader's own editor -- and a rule that only fired for one
+    /// Obelus, the reader's own editor -- and a rule that only fired for one
     /// of them is a rule that mostly does not.
     ///
     /// The conversation itself is closed too. A document about a note that
@@ -665,7 +665,7 @@ impl App {
         // application rather than to the notes.
         let area = self.editor_area;
         // Before the notes are borrowed to take the key: the foot holds a
-        // key back where another obelus has that conversation, and the
+        // key back where another Obelus has that conversation, and the
         // rows the list gets are what is left under the foot.
         let elsewhere = self.the_note_is_elsewhere();
         let Some(notes) = self.notes_mut() else {
@@ -758,7 +758,7 @@ impl App {
     /// Opens the file a note is about, at the line it is about.
     ///
     /// The same door a search result and a symbol go through, which is what
-    /// makes the place a note points at behave like every other place obelus
+    /// makes the place a note points at behave like every other place Obelus
     /// sends a reader: the file opens, the jump is recorded so `alt+left`
     /// comes back, and a file that will not open leaves them where they
     /// were and says so.

@@ -137,7 +137,7 @@ pub trait Screen {
     /// Who last changed each line of the file being read, if the answer has
     /// arrived and the reader wants to see it.
     fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]>;
-    /// Which build this is, where whatever started obelus has said.
+    /// Which build this is, where whatever started Obelus has said.
     ///
     /// Empty where nothing has, which is every test: the welcome screen
     /// then says the version alone, the way it always did. A commit in a
@@ -146,7 +146,7 @@ pub trait Screen {
     fn built(&self) -> &str;
     /// The card an agent's question is on, while one is up.
     fn card(&self) -> Option<&Card>;
-    /// What has changed in the current file, if obelus can tell.
+    /// What has changed in the current file, if Obelus can tell.
     fn changes(&self) -> Option<&obelus_git::Changes>;
     /// The conversation, while it is what the reader is looking at.
     fn chat(&self) -> Option<&Chat>;
@@ -175,7 +175,7 @@ pub trait Screen {
     /// The runs the editor marks: the uses of the name the pointer is
     /// resting on.
     fn marked_runs(&self) -> &[obelus_text::coordinates::Span];
-    /// What obelus has to say, until the next key.
+    /// What Obelus has to say, until the next key.
     fn note(&self) -> Option<&str>;
     /// The notes, while the reader is in them.
     fn notes(&self) -> Option<&TodoView>;
@@ -218,7 +218,7 @@ pub trait Screen {
     fn signature(&self) -> Option<&obelus_lsp::signature::Signature>;
     /// The agent's own commands, while one is being typed.
     fn slash(&self) -> Option<&Picker>;
-    /// What obelus is doing about an agent.
+    /// What Obelus is doing about an agent.
     fn talking(&self) -> Talking;
     /// The room the text has, once the gutter has taken its columns.
     fn text_area(&self) -> TextArea;
@@ -229,12 +229,12 @@ pub trait Screen {
     /// What the server says is wrong with the file being read.
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble];
     /// Whether the note the reader is standing on has its conversation
-    /// open in another obelus.
+    /// open in another Obelus.
     fn the_note_is_elsewhere(&self) -> bool;
     /// The note the conversation being read is about, in the words the
     /// reader wrote.
     fn what_this_conversation_is_about(&self) -> Option<String>;
-    /// Where obelus was started, and the root every path is shown relative to.
+    /// Where Obelus was started, and the root every path is shown relative to.
     fn working_directory(&self) -> &Path;
 }
 
@@ -291,7 +291,7 @@ pub struct Regions {
 #[must_use]
 pub fn regions(area: Rect) -> Regions {
     let status_height = area.height.min(1);
-    // A rule between the two, which is what every other boundary in obelus
+    // A rule between the two, which is what every other boundary in Obelus
     // has. The status bar has a band of its own and so did not need one to
     // be read as a different thing; what it needed one for is the row above
     // it, which is a picker's list, a page of settings or the box a message
@@ -465,7 +465,7 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
 /// Draws one frame into a cell grid.
 ///
 /// Takes the grid rather than a `Frame` so the golden tests can assert on the
-/// cells obelus wrote. Going through a `Frame` would mean reading them back
+/// cells Obelus wrote. Going through a `Frame` would mean reading them back
 /// from the backend afterwards, and by then ratatui's diff has dropped the
 /// cell a wide glyph covers — correctly, since the terminal advances two
 /// columns for it, but the record left behind cannot be told apart from a cell
@@ -596,7 +596,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
 /// The frames a mark that says something is happening turns through.
 ///
 /// Braille, which needs no particular font: a terminal that cannot draw
-/// these cannot draw the rest of obelus either, and this is the one thing
+/// these cannot draw the rest of Obelus either, and this is the one thing
 /// on screen that has to be legible without one. Ten frames at the ticker's
 /// twelve a second is a turn a second and a bit.
 const SPINNING: [char; 10] = [
@@ -898,10 +898,10 @@ pub fn put(cells: &mut CellBuffer, x: u16, y: u16, character: char, style: Style
 /// it takes the whole frame down, because what puts a frame on the screen
 /// asks every cell how wide it is and a control character has no answer.
 ///
-/// This is not obelus's own text. It is whatever an agent said, whatever a
+/// This is not Obelus's own text. It is whatever an agent said, whatever a
 /// tool put in its output, whatever is in a file somebody opened -- and a
 /// reader of code meets a tab in all three. None of them is a reason for
-/// obelus to stop.
+/// Obelus to stop.
 ///
 /// One cell, which is what `put` already counted a control character as, so
 /// nothing that walks a row in step with it has to learn a new rule. A tab
@@ -940,7 +940,7 @@ pub fn write(cells: &mut CellBuffer, x: u16, y: u16, contents: &str, style: Styl
 ///
 /// `stop` is the first column that may not be written, the way a `Rect`'s
 /// right is. A wide glyph that would straddle it is not drawn at all: half
-/// of one is a cell the terminal advances over and obelus did not count.
+/// of one is a cell the terminal advances over and Obelus did not count.
 pub fn write_within(
     cells: &mut CellBuffer,
     x: u16,
@@ -970,7 +970,7 @@ pub fn write_within(
 /// Two shapes because the questions have two shapes: a fuzzy match lands on
 /// scattered characters, while a substring match -- or a selection, which is
 /// the same shape and gets the same treatment -- is one run. Every row in
-/// obelus marks them the same way, which is what this is for: a row in a
+/// Obelus marks them the same way, which is what this is for: a row in a
 /// narrowed list has to say why it is in it, and a row of a note has to say
 /// what the reader has hold of.
 #[derive(Clone, Copy, Debug, Default)]
@@ -1106,7 +1106,7 @@ pub fn write_marked(
 /// A row of tabs, and the arrows that say how to change them.
 ///
 /// The one that is showing gets the selected row's background, which is the
-/// same thing that marks a selected row: on any of obelus's screens, that
+/// same thing that marks a selected row: on any of Obelus's screens, that
 /// background means "this is the one you are on". Returns the column after
 /// the last tab.
 ///
@@ -1444,7 +1444,7 @@ pub const TICK_WIDTH: u16 = 2;
 ///
 /// This was a slider: a four-cell track with a knob at one end of it. What
 /// a slider says is *which way it is*, by a position the eye has to measure
-/// against a track two cells longer than the knob -- and obelus draws it in
+/// against a track two cells longer than the knob -- and Obelus draws it in
 /// a row of text, at a size where that measurement is a guess. A box is
 /// either marked or it is not, which is the same question answered in a
 /// glyph.
@@ -1503,7 +1503,7 @@ fn width_of(hint: &Hint) -> usize {
 
 /// Marks a row that stopped before it had said everything.
 ///
-/// The mark obelus cuts text with everywhere else, in the dim ink, in the
+/// The mark Obelus cuts text with everywhere else, in the dim ink, in the
 /// blank the next item would have started in. Where the pointer to the card
 /// is up this says which of the two is the whole list; where there is no
 /// card -- a document's foot has none behind it -- it says on its own that
@@ -1529,7 +1529,7 @@ fn cut(cells: &mut CellBuffer, x: u16, y: u16, edge: u16, theme: &Theme) {
 /// touching with nothing between them.
 pub const PANEL_INSET: u16 = 2;
 
-/// The frame round something obelus floats over the reader's work.
+/// The frame round something Obelus floats over the reader's work.
 ///
 /// One shape for all of them: the completion list, the signature line, a
 /// hover, and the card of every key. They are the same kind of thing --
@@ -1541,7 +1541,7 @@ pub const PANEL_INSET: u16 = 2;
 /// boxes -- a markdown table, a fenced block -- are square, because that is
 /// what every markdown renderer draws. A square frame around a square frame
 /// is one thing that looks like two; a round one says which of them is
-/// obelus's furniture and which is the reader's text. The ground says the
+/// Obelus's furniture and which is the reader's text. The ground says the
 /// same thing again for a panel whose contents reach its edge.
 pub fn panel(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
     if area.width < 2 || area.height < 2 {
@@ -1619,7 +1619,7 @@ pub fn footed(area: Rect, hints: &[Hint]) -> Rect {
 ///
 /// What belongs here is what *this* view does. A key that means the same
 /// thing wherever the reader is does not: escape backs out of the nearest
-/// thing everywhere in obelus -- `keymap::why_not` refuses to rebind it for
+/// thing everywhere in Obelus -- `keymap::why_not` refuses to rebind it for
 /// that reason -- so a foot that spends a third of itself saying `Leave` is
 /// a row of the reader's screen saying what every other view already said.
 /// Those go on the card, which is every key here rather than the ones worth
@@ -1847,7 +1847,7 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
 
 /// What a list says when it has nothing in it.
 ///
-/// One place, so that every empty list in obelus says its own reason in the
+/// One place, so that every empty list in Obelus says its own reason in the
 /// same voice and the same colour. What the reason *is* belongs to whoever
 /// knows it -- the application for a list of files, the component for a
 /// filtered one.
@@ -1999,16 +1999,16 @@ pub(crate) fn glyphs_held() -> std::sync::MutexGuard<'static, ()> {
 mod tests {
     use super::{drop_from_left, drop_from_right, tick, truncate_from_left, truncate_from_right};
 
-    /// A control character in what is drawn does not take obelus down.
+    /// A control character in what is drawn does not take Obelus down.
     ///
     /// A tab in a tool call's output, a stray escape in what an agent said,
-    /// a `\r` in a file somebody opened: obelus put each of them straight
+    /// a `\r` in a file somebody opened: Obelus put each of them straight
     /// into a cell, and the frame died -- not where it was written, but
     /// later, when what puts a frame on the screen walked the cells asking
     /// each how wide it was. A control character has no answer to that, and
-    /// the whole of obelus went with the question.
+    /// the whole of Obelus went with the question.
     ///
-    /// Which is why this draws a real frame. Every golden test in obelus
+    /// Which is why this draws a real frame. Every golden test in Obelus
     /// reads the cells straight out of the buffer, and the buffer was
     /// perfectly happy: nothing between writing a cell and a terminal
     /// receiving it ever asked.
@@ -2054,7 +2054,7 @@ mod tests {
     /// one without, because both are drawn.
     ///
     /// Broken deliberately by giving either pair the same character twice:
-    /// every switch obelus draws goes quiet about its state, and only this
+    /// every switch Obelus draws goes quiet about its state, and only this
     /// says so -- the views' own tests flip a switch and read the box, and
     /// the settings' one flips the glyphs themselves and so reads one of
     /// each pair.

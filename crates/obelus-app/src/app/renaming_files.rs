@@ -306,7 +306,7 @@ impl App {
         };
         let aside = match instead {
             Some(said) => Some(said),
-            // Said only when a server told obelus it was not ready. A
+            // Said only when a server told Obelus it was not ready. A
             // server that had nothing to change says so with an empty
             // edit, and a reader who renamed a file with no references to
             // it should not be told anything went wrong.

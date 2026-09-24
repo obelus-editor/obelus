@@ -7,7 +7,7 @@
 //! `keymap::why_not` is the one judgement of what may be bound, and the
 //! three families are the whole of it. It is asked by the page that binds keys,
 //! by the table read out of the config file, and by the test that holds the
-//! shipped table to the same rule -- so obelus cannot give itself a key it
+//! shipped table to the same rule -- so Obelus cannot give itself a key it
 //! refuses the reader, and a reason is written once. What it refuses, and why
 //! each of them would be a binding that silently never fires:
 //!
@@ -22,7 +22,7 @@
 //!   pressed;
 //! * a bare character, `enter`, `tab`, `backspace`, `delete` -- typing, and the
 //!   keys every list and box takes itself;
-//! * `escape`, which obelus keeps: give up on the nearest thing is not
+//! * `escape`, which Obelus keeps: give up on the nearest thing is not
 //!   negotiable, and it is the one default a reader cannot move;
 //! * anything with two modifiers, and `ctrl` with a capital letter -- a control
 //!   byte cannot say which case the letter was, so `ctrl+shift+p` works only on
@@ -30,7 +30,7 @@
 //!   the escape prefix and really does carry the shifted letter;
 //! * a function key with anything held, for the same reason.
 //!
-//! `ctrl+b` belongs to tmux, so obelus does not ship it -- a reader outside
+//! `ctrl+b` belongs to tmux, so Obelus does not ship it -- a reader outside
 //! tmux may still have it. `ctrl+a` is screen's prefix and is shipped anyway,
 //! because "all of it" is what that key means in every program with a
 //! selection.
@@ -38,10 +38,10 @@
 //! Keys are rebound on the keys page, and the file holds the changes. The
 //! table is data on `App`, so a rebinding is `Keymap::rebind` plus a line in
 //! the config's `[keys]` -- command *name* to chord spelled out (`ctrl+p`),
-//! because an enum's spelling and a keycode are obelus's business rather than
+//! because an enum's spelling and a keycode are Obelus's business rather than
 //! the reader's. What is in the file is a list of changes over the defaults, so
 //! a reader who moved one key still gets the new default for everything else,
-//! and a name or a chord obelus cannot read is skipped with a word in the log.
+//! and a name or a chord Obelus cannot read is skipped with a word in the log.
 //! Rebinding moves *every* binding of the command -- `close-file` is bound in
 //! `Normal` and in `Buffers` and is still one command with one key -- and a
 //! command that had none gets one in `Normal`, which is where a key a reader
@@ -59,15 +59,15 @@ use obelus_command::Command;
 
 /// The modifiers a binding can name.
 ///
-/// `SUPER`, `HYPER` and `META` are not among them. They do arrive -- obelus
+/// `SUPER`, `HYPER` and `META` are not among them. They do arrive -- Obelus
 /// asks for the kitty keyboard protocol, and under it a key is reported with
 /// every modifier held -- but only from the terminals that speak it, and the
 /// desktop takes them first anyway: super is the window manager's modifier
-/// on every system obelus runs on. A binding there would be eaten before the
+/// on every system Obelus runs on. A binding there would be eaten before the
 /// terminal saw it, which looks to a reader like a broken program. The same
 /// reason `ctrl+alt+arrow` is refused further down.
 ///
-/// A key arriving with one of them is therefore not a key obelus understands,
+/// A key arriving with one of them is therefore not a key Obelus understands,
 /// and [`KeyChord::from_event`] gives no chord for it. That is deliberately
 /// different from ignoring the modifier: `ctrl+super+q` is not `ctrl+q`, and
 /// quitting because of the half of the chord we recognize is a wrong answer
@@ -227,7 +227,7 @@ impl KeyChord {
             "delete" => KeyCode::Delete,
             "tab" => KeyCode::Tab,
             "backtab" => KeyCode::BackTab,
-            // Both ways of writing an arrow: the drawn one is what obelus
+            // Both ways of writing an arrow: the drawn one is what Obelus
             // writes, and the word is what somebody typing the file by hand
             // reaches for.
             "left" | "\u{2190}" => KeyCode::Left,
@@ -262,7 +262,7 @@ impl KeyChord {
     /// matched: terminals speaking the kitty keyboard protocol report both a
     /// press and a release, and treating them alike fires every binding twice.
     /// And a key held with a modifier outside [`BINDABLE_MODIFIERS`] is a key
-    /// obelus has no name for.
+    /// Obelus has no name for.
     #[must_use]
     pub fn from_event(event: &KeyEvent) -> Option<Self> {
         match event.kind {
@@ -279,7 +279,7 @@ impl KeyChord {
 /// The reader is either reading a file or inside something -- a list, the
 /// settings, the counts -- and those are different worlds as far as the keys
 /// go. What is bound everywhere applies to the first and not to the second:
-/// a dialog takes the keys it is given here and nothing else, so obelus's
+/// a dialog takes the keys it is given here and nothing else, so Obelus's
 /// own commands cannot put a second dialog over the first.
 ///
 /// A conversation is on the first side of that line, not the second: it is
@@ -287,7 +287,7 @@ impl KeyChord {
 /// file work in it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Context {
-    /// Applies whatever obelus is showing -- as long as that is a file.
+    /// Applies whatever Obelus is showing -- as long as that is a file.
     Always,
     /// Reading a file, with nothing over it.
     Normal,
@@ -296,7 +296,7 @@ pub enum Context {
     Documents,
     /// Reading a conversation with an agent, with nothing over it.
     ///
-    /// A document, so obelus's own keys reach it -- but not quite the same
+    /// A document, so Obelus's own keys reach it -- but not quite the same
     /// document as a file: a key that reads as "the note about what I am
     /// looking at" means "write one about this line" in a file and "show me
     /// the one this came from" here, and those are two commands on one key.
@@ -341,7 +341,7 @@ pub struct Keymap {
 }
 
 impl Keymap {
-    /// The bindings obelus ships with.
+    /// The bindings Obelus ships with.
     ///
     /// Three families, and the family is the memorable part.
     ///
@@ -459,7 +459,7 @@ impl Keymap {
                 // And `f12`, which is not one of those three: it is the one
                 // jump this whole program is for. "Join the semantic graph
                 // to the git timeline -- jump to a definition from inside a
-                // diff" is the first paragraph obelus was written under, and
+                // diff" is the first paragraph Obelus was written under, and
                 // the jump had no key at all while every editor a reader
                 // arrives from puts it here.
                 //
@@ -511,7 +511,7 @@ impl Keymap {
                 // Control, on the letter of the word. `ctrl+p` for the
                 // palette; `ctrl+w` is "close this" in every browser and
                 // most editors, and in a terminal it is also the shell's
-                // "delete the last word", which obelus has no use for
+                // "delete the last word", which Obelus has no use for
                 // because nothing here is typed at a shell.
                 Binding {
                     command: Command::CommandPalette,
@@ -556,7 +556,7 @@ impl Keymap {
                     chord: control('t'),
                 },
                 // `ctrl+l` for a line. Free in a full-screen program: the
-                // shell's `ctrl+l` clears a screen obelus is drawing.
+                // shell's `ctrl+l` clears a screen Obelus is drawing.
                 Binding {
                     command: Command::GoLine,
                     context: Context::Normal,
@@ -637,7 +637,7 @@ impl Keymap {
                 // Not borrowed from an IDE, whatever the chord looks like:
                 // JetBrains' `alt+enter` is its intentions and quick fixes,
                 // which here is `alt+a` -- the server offering to *change*
-                // the file, not obelus offering to go and look at it. A
+                // the file, not Obelus offering to go and look at it. A
                 // comment claiming the muscle memory would be claiming it
                 // for the wrong half.
                 //
@@ -667,7 +667,7 @@ impl Keymap {
                     chord: KeyChord::new(KeyCode::Char('f'), KeyModifiers::ALT),
                 },
                 // `alt+m` for match, which is what this is called
-                // everywhere. Not `%`: obelus binds no bare keys, because
+                // everywhere. Not `%`: Obelus binds no bare keys, because
                 // the day it takes typed text is the day every one of them
                 // becomes a character.
                 Binding {
@@ -740,7 +740,7 @@ impl Keymap {
                 // This is the one an IDE reader reaches for with a chord --
                 // JetBrains' `alt+enter`, VS Code's `ctrl+.` -- and it is on
                 // a letter anyway, because neither of those can be had here.
-                // `alt+enter` is spent above on a menu obelus invented; and
+                // `alt+enter` is spent above on a menu Obelus invented; and
                 // `ctrl+.` is not a key a terminal has a byte for, so it
                 // arrives only from the terminals speaking the keyboard
                 // protocol and is silence in the rest. The same reason
@@ -784,7 +784,7 @@ impl Keymap {
                 // `alt+c` for comment, on the letter like the rest of this
                 // family -- and `ctrl+/`, which is what everyone else uses,
                 // for the terminals that can say it. Most send `ctrl+_` or a
-                // bare control byte for that chord and obelus never hears
+                // bare control byte for that chord and Obelus never hears
                 // it; the letter is the one that works everywhere.
                 Binding {
                     command: Command::CommentToggle,
@@ -923,10 +923,10 @@ impl Keymap {
     /// reader who rebinds one key should still be given the new default for
     /// everything they said nothing about.
     ///
-    /// Anything the file names that obelus does not -- a command that has
+    /// Anything the file names that Obelus does not -- a command that has
     /// been renamed, a chord it cannot read -- is skipped with a word in the
     /// log. A config file with a typo in it should leave a reader with
-    /// obelus, not with a table full of holes.
+    /// Obelus, not with a table full of holes.
     #[must_use]
     pub fn with(bindings: &std::collections::BTreeMap<String, String>) -> Self {
         let mut keymap = Self::new();
@@ -942,14 +942,14 @@ impl Keymap {
                 continue;
             }
             let Some(chord) = KeyChord::parse(text) else {
-                tracing::warn!(name, text, "not a key obelus can read");
+                tracing::warn!(name, text, "not a key Obelus can read");
                 continue;
             };
             // The same judgement the page that binds keys makes. A chord
             // that cannot fire is worse in a file than on a page: there is
             // nothing on screen to say why the key does nothing.
             if let Some(why) = why_not(chord) {
-                tracing::warn!(name, text, why, "not a key obelus can be given");
+                tracing::warn!(name, text, why, "not a key Obelus can be given");
                 continue;
             }
             keymap.rebind(command, Some(chord));
@@ -1011,7 +1011,7 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
     match chord.code {
         // The keys that move about a file. The editor takes them before the
         // table is reached -- bare and with shift -- and the rest are
-        // spoken for: `ctrl` and an arrow is the word motion obelus does
+        // spoken for: `ctrl` and an arrow is the word motion Obelus does
         // not have yet, and `ctrl` and a paging key is the previous and
         // next buffer.
         KeyCode::Up
@@ -1053,7 +1053,7 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
             Some("The terminal sends another key for this")
         }
         KeyCode::Char(_) => None,
-        _ => Some("Not a key obelus can be given"),
+        _ => Some("Not a key Obelus can be given"),
     }
 }
 
@@ -1102,16 +1102,16 @@ mod tests {
 
     use super::{Context, KeyChord, Keymap};
 
-    /// Every binding obelus ships with is one a reader could have made.
+    /// Every binding Obelus ships with is one a reader could have made.
     ///
     /// The shipped table and the page that binds keys answer to the same
-    /// function, so a default outside the families would be a key obelus
+    /// function, so a default outside the families would be a key Obelus
     /// gives itself and refuses to the reader.
     #[test]
     fn every_default_binding_is_one_the_reader_could_make() {
         for binding in Keymap::new().bindings() {
             let chord = binding.chord;
-            // Escape is the one key obelus keeps and a reader cannot have:
+            // Escape is the one key Obelus keeps and a reader cannot have:
             // the rule is about what may be *taken*, and what escape means
             // -- give up on the nearest thing -- is not negotiable.
             if chord.code == KeyCode::Esc {
@@ -1120,7 +1120,7 @@ mod tests {
             assert_eq!(
                 super::why_not(chord),
                 None,
-                "{} is on {}, which obelus would not let a reader bind",
+                "{} is on {}, which Obelus would not let a reader bind",
                 binding.command.name(),
                 chord.label_in(false)
             );
@@ -1134,7 +1134,7 @@ mod tests {
                     binding.command.name()
                 );
             }
-            // `ctrl+b` is tmux's prefix, so obelus does not ship it --
+            // `ctrl+b` is tmux's prefix, so Obelus does not ship it --
             // though a reader outside tmux may have it.
             assert_ne!(
                 chord,

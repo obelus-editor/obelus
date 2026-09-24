@@ -9,7 +9,7 @@
 //! A box, because it sits on top of code: the file behind it goes on being
 //! a file, and a list of names with no edge would read as lines of it. The
 //! same box-drawing characters a table is made of, in the same colour --
-//! there is one way to draw an edge in obelus and this is it.
+//! there is one way to draw an edge in Obelus and this is it.
 
 use obelus_component::completion::{
     Completion, DETAIL_GAP, ICON_COLUMNS, LEAST_DOCUMENTATION, MOST_DOCUMENTATION, MOST_ROWS,

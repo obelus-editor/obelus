@@ -8,7 +8,7 @@
 //!
 //! The agent is `tests/fixtures/fake-agent.sh`, a real process on the other
 //! end of a real pipe. It mints `s-1`, `s-2`, … and answers about whichever
-//! conversation the request named, so an obelus that routed by "the one
+//! conversation the request named, so an Obelus that routed by "the one
 //! opened last" would look correct against an agent that did the same -- and
 //! the two would be wrong together.
 
@@ -137,7 +137,7 @@ fn a_prompt_waiting_for_a_conversation_says_it_is_thinking() {
 /// reader opening the view is a request to talk. A view can open on a note
 /// that already names a conversation now, and then that first session is
 /// one nobody wants: empty, so the agent never writes it down and it is
-/// gone by the next start -- and obelus wrote it against the note in place
+/// gone by the next start -- and Obelus wrote it against the note in place
 /// of the conversation the reader had actually been having, asked for it
 /// the next morning, was told there was no such thing, and opened another
 /// empty one to replace it. The reader's conversation went in the first
@@ -211,8 +211,8 @@ fn a_second_conversation_opens_on_the_same_agent() {
 /// What is said in one conversation arrives in that one.
 ///
 /// The words come back on a `session/update` that names the conversation,
-/// and obelus threw that name away until there were two to tell apart. An
-/// obelus that still did would put the second agent's answer into the first
+/// and Obelus threw that name away until there were two to tell apart. An
+/// Obelus that still did would put the second agent's answer into the first
 /// reader's transcript.
 #[test]
 fn an_answer_comes_back_in_the_conversation_it_was_asked_in() {
@@ -281,7 +281,7 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
             _ => false,
         },
     );
-    // Spelled the way the wire spells it, which is the way obelus now
+    // Spelled the way the wire spells it, which is the way Obelus now
     // reads it: `endturn` was `{:?}` lowercased, and every arm written
     // against the protocol's own `end_turn` was unreachable.
     assert_eq!(
@@ -291,10 +291,10 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
     );
 }
 
-/// What obelus has to keep, and what it does not.
+/// What Obelus has to keep, and what it does not.
 ///
-/// The agent keeps every word: `session/load` replays it, so obelus keeps
-/// none. What obelus keeps is the one thing the agent cannot know, which is
+/// The agent keeps every word: `session/load` replays it, so Obelus keeps
+/// none. What Obelus keeps is the one thing the agent cannot know, which is
 /// which of its conversations is about which of this tree's notes -- and
 /// the name the agent gave that conversation, because that is what a list
 /// of open documents calls it and a replay is not obliged to send it again.
@@ -303,7 +303,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     use obelus_agent::acp::sessions;
     use obelus_git::todo::NoteId;
 
-    // The table lives in obelus's state directory, and a test that wrote to
+    // The table lives in Obelus's state directory, and a test that wrote to
     // the reader's would be a test that left something on their machine.
     // `Scratch` says where it goes instead, for every test that makes one:
     // the notes are kept there too now, so this is no longer the one test
@@ -331,7 +331,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     assert_eq!(kept.title.as_deref(), Some("why refilter drops rows"));
 
     // And a second sitting on the same tree does not put back what the
-    // first one wrote: read-modify-write, because a second obelus on one
+    // first one wrote: read-modify-write, because a second Obelus on one
     // tree is an ordinary thing to have running.
     let other = NoteId::read("JKMNPQRS").expect("a name");
     sessions::change(root, Some(&[note.clone(), other.clone()]), |kept| {
@@ -355,7 +355,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
 
     // A note that has gone takes its conversation with it, collected on the
     // way past rather than when the note was deleted -- because a note can
-    // go without obelus watching.
+    // go without Obelus watching.
     sessions::change(root, Some(std::slice::from_ref(&other)), |_| {});
     let back = sessions::read(root).remembered().expect("the table");
     assert!(

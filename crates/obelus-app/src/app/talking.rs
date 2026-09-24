@@ -1,7 +1,7 @@
 //! Talking to the active agent.
 //!
 //! One agent at a time, started when the reader first opens a conversation
-//! and left running until they close obelus or choose another. A
+//! and left running until they close Obelus or choose another. A
 //! conversation is a document in the list of what is open, so leaving one is
 //! going somewhere else rather than closing it: what was said is still there
 //! when the reader comes back to that row.
@@ -92,12 +92,12 @@ impl App {
             talk.started_on.clear();
             if had {
                 talk.chat
-                    .note("The agent this was with is no longer the one obelus talks to");
+                    .note("The agent this was with is no longer the one Obelus talks to");
             }
         }
     }
 
-    /// Asks the active agent what it can be set to, if obelus has never
+    /// Asks the active agent what it can be set to, if Obelus has never
     /// been told.
     ///
     /// On a conversation of its own, opened and let go on the other side
@@ -153,7 +153,7 @@ impl App {
                 // Claimed before it is opened, and the claim is what
                 // decides: asking first and opening after would be two
                 // windows both finding it free in the same moment. Where
-                // another obelus has it, nothing opens -- the row in the
+                // another Obelus has it, nothing opens -- the row in the
                 // list already says so, and this is the reader pressing
                 // the key on it anyway.
                 let Some(claim) = obelus_agent::chats::claim(&self.working_directory, note) else {
@@ -179,7 +179,7 @@ impl App {
         self.go_to_document(DocumentId::new(at));
         // Started where nothing is running, and then asked about *this*
         // conversation just the same. Returning here is what the reader
-        // met every morning: the first note they opened after obelus
+        // met every morning: the first note they opened after Obelus
         // started did the starting and stopped, before the line below
         // that looks up the name written down beside the note. So it
         // asked for nothing, the session the agent opens on its way up
@@ -201,11 +201,11 @@ impl App {
     /// a conversation's back. The connection used to mint one the moment
     /// it came up -- and a view that opens on a note already naming a
     /// conversation then had a second, empty one to go with it, which the
-    /// agent does not keep and obelus could still write down against the
+    /// agent does not keep and Obelus could still write down against the
     /// note in place of the one the reader had been talking in.
     ///
-    /// The one it had before where obelus wrote the name down: the agent
-    /// kept every word of it, which is why obelus keeps none. A new one
+    /// The one it had before where Obelus wrote the name down: the agent
+    /// kept every word of it, which is why Obelus keeps none. A new one
     /// otherwise -- one agent, several conversations, because an agent
     /// holds a project's worth of context and a second process would pay
     /// for all of it twice.
@@ -237,7 +237,7 @@ impl App {
         }
     }
 
-    /// The conversation obelus had about this note with the agent that is
+    /// The conversation Obelus had about this note with the agent that is
     /// running, if it wrote one down.
     fn remembered_session(&self, note: &obelus_git::todo::NoteId) -> Option<String> {
         let agent = self.talker.as_ref()?.id();
@@ -250,7 +250,7 @@ impl App {
     }
 
     /// What this agent has already been told, in a conversation about this
-    /// note that obelus wrote down.
+    /// note that Obelus wrote down.
     ///
     /// Both halves together, because they are read at one moment for one
     /// purpose -- filling in a conversation that is being picked up where
@@ -271,7 +271,7 @@ impl App {
     /// notes are in -- which is what a row of the notes names.
     ///
     /// Two places count. A conversation open right now is one, and a name
-    /// written down against the note is the other: obelus keeps those so
+    /// written down against the note is the other: Obelus keeps those so
     /// that a note talked over yesterday can be taken up again, and a list
     /// that only knew about open ones would say "nobody has talked about
     /// this" to a reader whose agent still holds every word of it.
@@ -282,7 +282,7 @@ impl App {
     /// one would send them to a note that opens an empty page.
     ///
     /// Whether the note the reader is standing on has its conversation
-    /// open in another obelus.
+    /// open in another Obelus.
     ///
     /// What the foot asks, so that the key it offers is a key that works.
     /// Asked of the one note rather than read off [`Self::talked_about`],
@@ -294,7 +294,7 @@ impl App {
         let Some(note) = self.notes().and_then(|notes| notes.selected_note()) else {
             return false;
         };
-        // This obelus's own claim is a lock like anybody's, so the
+        // This Obelus's own claim is a lock like anybody's, so the
         // conversations it is holding are what tell the two apart.
         let mine = self
             .documents
@@ -320,8 +320,8 @@ impl App {
             .remembered()
             .unwrap_or_default();
         let agent = self.settled.config.agent.clone().unwrap_or_default();
-        // Every note somebody has open, this obelus included -- a lock is
-        // about the open file and not about the process, so obelus finds
+        // Every note somebody has open, this Obelus included -- a lock is
+        // about the open file and not about the process, so Obelus finds
         // its own claims in the way. Which of them are its own it knows
         // from the conversations it is holding, just below.
         let elsewhere = obelus_agent::chats::held(&self.working_directory);
@@ -338,10 +338,10 @@ impl App {
                     .find(|talk| matches!(&talk.topic, Topic::Note(id) if *id == note.id));
 
                 // Somebody else's window has it. Ahead of everything
-                // below, because those are all this obelus's account of a
+                // below, because those are all this Obelus's account of a
                 // conversation it is in and this is the one case where it
                 // is in no position to give one: what the agent is doing
-                // in there is being told to the obelus that asked.
+                // in there is being told to the Obelus that asked.
                 if open.is_none() && elsewhere.contains(&note.id) {
                     return Talked::Elsewhere;
                 }
@@ -371,7 +371,7 @@ impl App {
 
     /// Forgets the conversation written down against one note.
     ///
-    /// For the one case where obelus knows there is nothing to come back
+    /// For the one case where Obelus knows there is nothing to come back
     /// to: the agent was asked for it by name and said it has no such
     /// thing. Left in the file, that name is asked for again on the next
     /// start and refused again, and the note goes on saying there is a
@@ -381,7 +381,7 @@ impl App {
             return;
         };
         // `None` where the file will not read, so that nothing is swept
-        // against a list obelus does not have: what is remembered here is
+        // against a list Obelus does not have: what is remembered here is
         // keyed to notes, and an empty list of names would forget every
         // conversation this project has.
         let notes: Option<Vec<obelus_git::todo::NoteId>> =
@@ -396,7 +396,7 @@ impl App {
 
     /// Writes down which conversation is about which note.
     ///
-    /// Every time one is named or renamed, because the moment obelus does
+    /// Every time one is named or renamed, because the moment Obelus does
     /// not survive is the one nobody plans for: a crash between opening a
     /// conversation and remembering it is a conversation the agent keeps
     /// and nobody can reach.
@@ -424,14 +424,14 @@ impl App {
                 // the first turn, so a name minted and never used is a
                 // name that will not be there tomorrow. Written down the
                 // moment it was minted, it displaced the note's real
-                // conversation, and the next morning obelus asked for it,
+                // conversation, and the next morning Obelus asked for it,
                 // was told there is no such thing, opened another empty
                 // one and wrote *that* down. The reader's conversation
                 // went in the first round of it and every round after was
                 // the same round again.
                 //
                 // Anything *said*, rather than anything on the page:
-                // obelus writes in a conversation of its own accord, and
+                // Obelus writes in a conversation of its own accord, and
                 // a page holding nothing but "starting again, because"
                 // is a page with nothing to come back to.
                 if !talk.chat.anything_said() {
@@ -455,10 +455,10 @@ impl App {
         }
         // The notes as the file has them, so that anything about a note
         // somebody has taken away goes at the same time. A note can go
-        // without obelus watching, so the collecting is done on the way past
+        // without Obelus watching, so the collecting is done on the way past
         // rather than when one is deleted.
         // `None` where the file will not read, so that nothing is swept
-        // against a list obelus does not have: what is remembered here is
+        // against a list Obelus does not have: what is remembered here is
         // keyed to notes, and an empty list of names would forget every
         // conversation this project has.
         let notes: Option<Vec<obelus_git::todo::NoteId>> =
@@ -478,7 +478,7 @@ impl App {
     ///
     /// Read from the file rather than kept, like everything else about the
     /// notes: the reader can change what one says from the notes page, from
-    /// their own editor, or from a second obelus, and a header holding a
+    /// their own editor, or from a second Obelus, and a header holding a
     /// copy would go on saying what the note used to.
     #[must_use]
     pub fn what_this_conversation_is_about(&self) -> Option<String> {
@@ -536,7 +536,7 @@ impl App {
         Some(&self.conversation()?.chat)
     }
 
-    /// What obelus is doing about an agent, in the conversation being read.
+    /// What Obelus is doing about an agent, in the conversation being read.
     ///
     /// Past the state of the process itself, every rung is about *this*
     /// conversation rather than about the agent: both readers of this ask
@@ -562,7 +562,7 @@ impl App {
         // Nobody ever saw it -- the row that says it lives in a
         // transcript, and there is no transcript here. The ticker did: a
         // frame asks whether anything is moving, "starting..." is a word
-        // with a turning mark beside it, and so obelus woke twelve times a
+        // with a turning mark beside it, and so Obelus woke twelve times a
         // second behind every file, every list and the notes, for a turn
         // that was not running. An agent that is up and being asked
         // nothing is ready, which is what this now says.
@@ -692,7 +692,7 @@ impl App {
     /// Flips one of the agent's switches to its other side.
     ///
     /// Which is the whole of what a switch can be asked: the list of two
-    /// values obelus makes for it is what the settings page needs, and on
+    /// values Obelus makes for it is what the settings page needs, and on
     /// the conversation's own row a list of two is a list nobody wants.
     pub(super) fn flip_agent_setting(&mut self, id: &str) {
         let session = self.session_now();
@@ -732,7 +732,7 @@ impl App {
 
     /// Writes down what the agent says it can be set to.
     ///
-    /// The list belongs to a conversation and obelus needs it before there
+    /// The list belongs to a conversation and Obelus needs it before there
     /// is one: the settings page is about what a conversation should
     /// *start* on, and a page that had nothing to show until the reader
     /// had already opened one would be asking them to do the thing they
@@ -753,7 +753,7 @@ impl App {
     ///
     /// From either place it can be said: the settings of a conversation
     /// the reader is in, and the list that comes back from asking on a
-    /// conversation of obelus's own.
+    /// conversation of Obelus's own.
     pub(super) fn write_down_the_offers(&mut self, settings: &[acp::Setting]) {
         let Some(root) = self.agents_root() else {
             return;
@@ -767,14 +767,14 @@ impl App {
         };
         if let Err(error) = obelus_agent::options::remember(&id, settings, &root) {
             // A word in the log and nothing on screen: the reader asked
-            // for a conversation, not for obelus to keep notes, and the
+            // for a conversation, not for Obelus to keep notes, and the
             // page this would have fed says for itself when it has
             // nothing to draw.
             tracing::warn!(%error, id, "not writing down what the agent offers");
             return;
         }
         // What the settings page hands out comes from what was read, so a
-        // file obelus has just written is a file to read again -- which is
+        // file Obelus has just written is a file to read again -- which is
         // what makes the page fill in while it is open.
         self.reread_what_the_agent_offers();
     }
@@ -818,8 +818,8 @@ impl App {
                 continue;
             };
             // Once each. An agent that refused, or that has put it back
-            // since, has answered -- and obelus asking again would be
-            // obelus arguing with it.
+            // since, has answered -- and Obelus asking again would be
+            // Obelus arguing with it.
             if already.contains(&setting.id) {
                 continue;
             }
@@ -909,7 +909,7 @@ impl App {
                 if let Some(now) = &opening.now {
                     talk.told = Some(now.clone());
                 }
-                // What obelus sends in the reader's name is the reader's
+                // What Obelus sends in the reader's name is the reader's
                 // to see. Which the piece saying who the agent is talking
                 // to is not -- see `Opening::said`.
                 if let Some(said) = opening.said {
@@ -998,14 +998,14 @@ impl App {
 
     /// Asks the agent to stop what it is doing.
     ///
-    /// And stops the commands obelus is running for this conversation,
-    /// rather than only asking. The processes are obelus's -- it started
+    /// And stops the commands Obelus is running for this conversation,
+    /// rather than only asking. The processes are Obelus's -- it started
     /// them -- and an agent told to stop is under no obligation to release
     /// a terminal on its way out: one that did not would leave a build
     /// running that the reader has just said they want stopped, with
     /// nothing left on screen that could stop it.
     ///
-    /// The half obelus owes for not asking before it runs them: a key
+    /// The half Obelus owes for not asking before it runs them: a key
     /// stops it.
     pub(super) fn interrupt_agent(&mut self) {
         let running: Vec<String> = self
@@ -1018,7 +1018,7 @@ impl App {
         }
         // And the calls it left open, which the agent will not close if it
         // never saw the cancellation: a row that says it is running under a
-        // conversation obelus has said is resting is the one thing on
+        // conversation Obelus has said is resting is the one thing on
         // screen that cannot both be true.
         if let Some(talk) = self.conversation_mut() {
             talk.chat.stop_the_calls();
@@ -1210,7 +1210,7 @@ impl App {
                 true
             }
             // Enter chooses from the list, like enter chooses in every other
-            // list -- and like every other completion in obelus, which is
+            // list -- and like every other completion in Obelus, which is
             // one rule rather than a key per panel. What sends the message
             // is enter *after* the name is settled, by which time there is
             // no list.
@@ -1321,7 +1321,7 @@ impl App {
             ChatOutcome::TakeBack(words) => {
                 if let Some(talk) = self.conversation_mut() {
                     // In front of whatever they had started typing, as its
-                    // own paragraph: neither of the two is obelus's to
+                    // own paragraph: neither of the two is Obelus's to
                     // throw away.
                     let started = talk.chat.writing().text();
                     let put = match started.trim().is_empty() {
@@ -1335,7 +1335,7 @@ impl App {
             // Somewhere the reader was sent, sent again: the browser tab
             // is closed, the sign-in was not finished. The agent is not
             // asked anything -- it was told they went the first time, and
-            // it is watching the far end rather than obelus.
+            // it is watching the far end rather than Obelus.
             ChatOutcome::Away(url) => {
                 if let Err(error) = obelus_clipboard::links::open(&url) {
                     tracing::warn!(%error, "the link was not opened");
@@ -1352,7 +1352,7 @@ impl App {
             // because hiding it was the only way to show a file.
             ChatOutcome::GoTo(place) => {
                 // The protocol counts a file's lines from one and the rest
-                // of obelus counts them from zero, which is what `go_to`
+                // of Obelus counts them from zero, which is what `go_to`
                 // takes: a language server's numbering, because that is who
                 // it was written for.
                 let line = place.line.unwrap_or(1).saturating_sub(1);
@@ -1425,7 +1425,7 @@ impl App {
     /// whatever they were reading.
     ///
     /// What is still here is the clearing: a card is drawn inside the
-    /// conversation, so anything of obelus's own over that region would be a
+    /// conversation, so anything of Obelus's own over that region would be a
     /// card the reader cannot see while the agent waits on it.
     ///
     /// And whatever question was already up, which is the same clearing
@@ -1436,7 +1436,7 @@ impl App {
     /// the card on screen back to the wrong one of them.
     ///
     /// One agent cannot do this: the protocol's dispatch loop hands a
-    /// message to one handler at a time and waits for it, and obelus's
+    /// message to one handler at a time and waits for it, and Obelus's
     /// elicitation handler waits for the reader -- so a second question
     /// from the same connection is not read until the first is answered.
     /// Two agents are two connections and two loops, and both of their
@@ -1585,7 +1585,7 @@ impl App {
         if let Some(talk) = self.conversation_mut() {
             talk.card = None;
             // A row rather than the card kept open: the agent is no longer
-            // waiting on obelus -- it was told they went -- so the box has
+            // waiting on Obelus -- it was told they went -- so the box has
             // to come back. What is left is a thing under way, which is
             // what the transcript already has a shape for.
             talk.chat.away(&going.id, &going.message, &going.url);
@@ -1682,7 +1682,7 @@ impl App {
     /// Takes what the reader put on the card.
     pub(super) fn answer_card(&mut self, chosen: &[String], words: Option<&str>) {
         // Somewhere to go is neither a form nor a permission: nothing was
-        // filled in, and what the answer decides is whether obelus opens
+        // filled in, and what the answer decides is whether Obelus opens
         // something.
         if self.conversation().is_some_and(|talk| talk.going.is_some()) {
             self.answer_going(chosen.first().map(String::as_str));
@@ -1750,7 +1750,7 @@ impl App {
                 // Nothing typed, and nothing needed: left out of the
                 // answer, the way an empty box leaves out a field that
                 // takes words. A complaint about a number nobody was
-                // asked for is obelus insisting on its own behalf.
+                // asked for is Obelus insisting on its own behalf.
                 acp::Takes::Number { .. } if text.is_empty() && !field.required => {}
                 acp::Takes::Number { whole, least, most } => {
                     let Some(reply) = self.number_of(field, &text, *whole, *least, *most) else {
@@ -1956,7 +1956,7 @@ impl App {
             | acp::Incoming::Write { .. }
             // A command names no conversation: `CreateTerminalRequest` has
             // a session on it, but the four that follow have only the
-            // command's own name, and obelus runs them for whoever asked.
+            // command's own name, and Obelus runs them for whoever asked.
             | acp::Incoming::Run { .. }
             | acp::Incoming::Wrote { .. }
             | acp::Incoming::Waited { .. }
@@ -2035,21 +2035,21 @@ impl App {
         }
     }
 
-    /// Whether any command obelus was asked to run is still going.
+    /// Whether any command Obelus was asked to run is still going.
     #[must_use]
     pub fn anything_running(&self) -> bool {
         self.runs.anything_running()
     }
 
-    /// Puts what obelus's commands are doing on the rows that are about
+    /// Puts what Obelus's commands are doing on the rows that are about
     /// them.
     ///
     /// Every frame, from the runner rather than from anything kept: the
     /// process owns its output, and a row drawn from a copy is a row that
     /// can be a moment behind what the reader is watching.
     ///
-    /// This is the half obelus owes for not asking. The agent decides
-    /// whether to ask before running something; obelus decides that once
+    /// This is the half Obelus owes for not asking. The agent decides
+    /// whether to ask before running something; Obelus decides that once
     /// it runs, the reader sees the command in the words it was run in and
     /// everything it printed.
     pub(super) fn show_what_is_running(&mut self) {
@@ -2072,7 +2072,7 @@ impl App {
                     words.push_str(output.trim_end());
                 }
                 if truncated {
-                    words.push_str("\n\u{2026} and more, which obelus did not keep");
+                    words.push_str("\n\u{2026} and more, which Obelus did not keep");
                 }
                 // How it ended, where that is not simply well. The mark on
                 // the row says a command failed and cannot say what a
@@ -2080,7 +2080,7 @@ impl App {
                 // nothing exits 1 and a command that is not installed
                 // exits 127, and one of those is an answer and the other
                 // is a morning wasted. The number was nowhere on the page
-                // -- obelus kept it, told the agent when it asked, and
+                // -- Obelus kept it, told the agent when it asked, and
                 // showed the reader a glyph.
                 //
                 // Last, under the output, because that is where the
@@ -2123,7 +2123,7 @@ impl App {
     /// Answers whoever is waiting on a command that has ended.
     ///
     /// Once a frame, like the language servers' own check: a command ends
-    /// when it ends, and nothing tells obelus but asking.
+    /// when it ends, and nothing tells Obelus but asking.
     pub(super) fn check_runs(&mut self) {
         if self.waiting_on.is_empty() {
             return;
@@ -2177,7 +2177,7 @@ impl App {
             let at = self.conversation_at(|talk| talk.asked_for.as_ref() == Some(session));
             // And the name goes with it. The agent has said it has no
             // such conversation, which is as certain as this gets, and a
-            // name left in the file is one obelus asks for again on the
+            // name left in the file is one Obelus asks for again on the
             // next start -- the same refusal, the same fresh start, every
             // morning, with the note's row saying all the while that
             // there is something to come back to.
@@ -2198,7 +2198,7 @@ impl App {
                 // two it is: both go back to "not said yet" together, or
                 // the half that is left behind is the half never said.
                 talk.told = None;
-                // And what obelus had already asked that session for goes
+                // And what Obelus had already asked that session for goes
                 // with it: the one starting is a new conversation, and it
                 // opens on what the reader chose like any other.
                 talk.started_on.clear();
@@ -2239,7 +2239,7 @@ impl App {
                 talk.session = Some(session.clone());
             }
             self.remember_the_conversations();
-            // After the conversation has its name, not before: what obelus
+            // After the conversation has its name, not before: what Obelus
             // has already asked this one for is written down on the
             // conversation, and a note written before there is one to
             // write it on is a question asked twice.
@@ -2247,7 +2247,7 @@ impl App {
             self.start_the_session_on_what_was_chosen(&session);
             return;
         }
-        // What came back from asking on a conversation of obelus's own.
+        // What came back from asking on a conversation of Obelus's own.
         // It names none, because by the time it arrives there is none.
         if let acp::Incoming::Offers(offers) = &incoming {
             let offers = offers.clone();
@@ -2282,9 +2282,9 @@ impl App {
                     self.in_talk(whose, |chat| chat.chunk(Speaker::Thought, &text))
                 }
                 // The reader's own words, as the agent has them. What this
-                // is for is a conversation taken up again after obelus was
+                // is for is a conversation taken up again after Obelus was
                 // shut: the transcript is the agent's, and this is the half
-                // of it obelus cannot write itself.
+                // of it Obelus cannot write itself.
                 acp::Update::Heard(text) => self.in_talk(whose, |chat| chat.heard(&text)),
                 acp::Update::Tool { call, status } => {
                     self.in_talk(whose, |chat| chat.tool(&call, &status))
@@ -2332,7 +2332,7 @@ impl App {
                 match self.conversation_mut() {
                     Some(talk) => talk.chat.note(&said),
                     // Nothing on screen is a conversation, which is the
-                    // ordinary case for what obelus asked on its own
+                    // ordinary case for what Obelus asked on its own
                     // account -- the reader is on the settings page. The
                     // status row rather than nowhere: an agent that will
                     // not answer because nobody has signed in says so
@@ -2375,7 +2375,7 @@ impl App {
             } => self.send_the_reader(&message, &url, &id, answer),
             acp::Incoming::Finished { id } => self.went_through(&id),
             // A command the agent asked for. Run without asking the
-            // reader -- the agent asks, which is the rule obelus's own
+            // reader -- the agent asks, which is the rule Obelus's own
             // tools follow too -- and put on the page while it runs.
             acp::Incoming::Run {
                 command,
@@ -2470,8 +2470,8 @@ impl App {
         // Nothing to fail here: the process is started on the thread, and
         // an agent that will not run says so as the conversation ending
         // with a reason -- which is the same path as one that dies later.
-        // What obelus offers the agent back, if it could take a socket.
-        // Started once and kept for as long as obelus runs: the address is
+        // What Obelus offers the agent back, if it could take a socket.
+        // Started once and kept for as long as Obelus runs: the address is
         // what each agent is told, so a second one started later reaches the
         // same tools.
         let tools = self.tools_url.clone();
@@ -2498,12 +2498,12 @@ impl App {
         };
         let Some(root) = self.agents_root() else {
             self.in_transcript(|chat| {
-                chat.note("This system has nowhere for obelus to keep an agent")
+                chat.note("This system has nowhere for Obelus to keep an agent")
             });
             return;
         };
         // What the install wrote down when it finished. Nothing here means
-        // no install finished -- the reader removed it, or obelus was shut
+        // no install finished -- the reader removed it, or Obelus was shut
         // while one was running -- and the agents page is where that is
         // fixed, so that is where they are sent.
         let Some(installed) = obelus_agent::installation(&id, &root) else {
@@ -2537,7 +2537,7 @@ impl App {
     ) {
         self.show_the_question(whose);
         // The call goes in the transcript, where every call goes, waiting
-        // -- which is what says the agent is asking about it. obelus used
+        // -- which is what says the agent is asking about it. Obelus used
         // to write a line of its own here ("asking to run the tests"), and
         // that is the same words twice now that what it is asking about is
         // a row above the question.
@@ -2565,7 +2565,7 @@ impl App {
         // command on which file rather than the line the title fits in.
         //
         // Nothing where the row above is carrying the question itself, for
-        // the reason the line obelus used to write here was deleted: those
+        // the reason the line Obelus used to write here was deleted: those
         // words are on the row, whole and foldable and still there after
         // the answer, and they are the reader's to scroll rather than the
         // card's to quote. A card is five rows tall, so a copy here is the
@@ -2647,17 +2647,17 @@ impl App {
 
     /// Answers the agent's request for a file's text.
     ///
-    /// From an open buffer when obelus has one, because what the reader is
+    /// From an open buffer when Obelus has one, because what the reader is
     /// looking at is not always what is on disk -- and the whole point of an
     /// agent inside a reader is that they are looking at the same thing.
     /// Otherwise from disk.
     ///
     /// Refused outside the project, whichever way the text would have come:
-    /// an agent asking for something outside the project obelus was started on
+    /// an agent asking for something outside the project Obelus was started on
     /// is asking for something the reader did not open it to look at.
     /// Writes a file for the agent.
     ///
-    /// Through the buffer where obelus has one open, so the reader can undo
+    /// Through the buffer where Obelus has one open, so the reader can undo
     /// it. That is the whole of why this is allowed at all: the objection
     /// was never that an agent should not change a file, it was that a
     /// reader could not see the change arrive or take it back. A document on
@@ -2911,7 +2911,7 @@ fn what_to_say(setting: &acp::Setting, value: &str) -> String {
 /// The lines of `text` an agent asked for.
 ///
 /// `line` is counted from one, which is the protocol's own choice and not
-/// obelus's: the file's first line is line 1.
+/// Obelus's: the file's first line is line 1.
 fn window(text: &str, line: Option<u32>, limit: Option<u32>) -> String {
     if line.is_none() && limit.is_none() {
         return text.to_string();

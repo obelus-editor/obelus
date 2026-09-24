@@ -109,7 +109,7 @@ impl SyntaxKind {
             // the kind of thing the element is, which is what a type is, and
             // in JSX a capitalised tag *is* a type. `tag.error` -- a close
             // tag matching nothing -- falls back to this rather than getting
-            // a colour of its own: obelus does not show diagnostics yet, and
+            // a colour of its own: Obelus does not show diagnostics yet, and
             // a colour that only appears in broken files is one nobody has
             // learnt.
             "tag" => Some(Self::Type),

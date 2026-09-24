@@ -203,7 +203,7 @@ fn the_counts_have_no_caret() {
 /// The counts take the screen whole: no status row, and no rule above one.
 ///
 /// Broken deliberately by drawing the view into `regions.editor` and
-/// obelus's own status row under it: the file behind the view was named
+/// Obelus's own status row under it: the file behind the view was named
 /// along the foot at a line and column belonging to a cursor that is nowhere
 /// on screen, and this failed.
 #[test]
@@ -403,7 +403,7 @@ fn the_tree_is_counted_on_a_thread_and_the_answer_comes_back() {
     );
 }
 
-/// The counts are a dialog: nothing of obelus's own opens over them, and a
+/// The counts are a dialog: nothing of Obelus's own opens over them, and a
 /// key bound in a dialog is not one of theirs.
 ///
 /// Broken deliberately by taking the counts out of `App::is_showing_dialog`:
@@ -432,7 +432,7 @@ fn the_counts_say_what_their_keys_do() {
     for word in ["Open", "Keys"] {
         assert!(text.contains(word), "{word:?} is not at the foot:\n{text}");
     }
-    // And not escape, which means the same thing in every view obelus has:
+    // And not escape, which means the same thing in every view Obelus has:
     // a foot is for what *this* one does. It is on the card.
     assert!(
         !text.contains("Leave"),

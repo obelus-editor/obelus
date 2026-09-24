@@ -1,14 +1,14 @@
-//! What obelus lets an agent do.
+//! What Obelus lets an agent do.
 //!
 //! An agent can read a file and ask permission through the protocol it is
 //! already speaking. What it cannot do through that protocol is anything
 //! about *obelus*: it has no way to say "I think that note is finished" or
 //! "here are two more worth writing down". MCP is the door for that, and
-//! obelus is the server on the other side of it.
+//! Obelus is the server on the other side of it.
 //!
 //! None of them asks the reader anything. Three of them change the reader's
 //! notes, and the asking before that is the agent's to do -- through
-//! `elicitation/create`, the protocol it is already speaking, which obelus
+//! `elicitation/create`, the protocol it is already speaking, which Obelus
 //! answers with the very card it used to raise itself.
 //!
 //! It was the other way round once: the tools raised that card and waited
@@ -16,7 +16,7 @@
 //! was a guarantee the reader always got a say. What it cost was three
 //! things. A tool call held a request open while a person decided. The card
 //! landed in whichever conversation happened to be waiting, because
-//! obelus's own asking went through the one door the protocol puts no
+//! Obelus's own asking went through the one door the protocol puts no
 //! session on -- so with two conversations open it was a guess. And the
 //! agent's client asked permission for the call as well, which put one act
 //! to the reader twice.
@@ -40,7 +40,7 @@
 //! words, not to the idea of a change.
 //!
 //! The dispatch is behind rmcp's macros rather than written out, which is
-//! the one place in obelus where a decision is not on the page beside the
+//! the one place in Obelus where a decision is not on the page beside the
 //! code that makes it. It buys the tools' JSON Schemas being generated from
 //! these function signatures, so the two cannot drift: written by hand they
 //! are two things, and changing one and forgetting the other is a mistake
@@ -58,23 +58,23 @@ use rmcp::{
 };
 use serde::Deserialize;
 
-/// An agent asked obelus to change the notes.
+/// An agent asked Obelus to change the notes.
 ///
 /// Through the loop rather than written from the server's own thread,
 /// because the loop is the one writer: the file is read, changed and
 /// written whole, and two threads doing that is one of them losing a
 /// change it never saw. The answer goes back so the tool can say what
-/// happened -- a wait on obelus itself, over in microseconds, and not
+/// happened -- a wait on Obelus itself, over in microseconds, and not
 /// the sort a person is at the other end of.
 #[derive(Debug)]
 pub struct Asked {
     /// What to do to them.
     pub doing: obelus_git::todo::Doing,
-    /// What obelus did, or why it did not.
+    /// What Obelus did, or why it did not.
     pub answer: futures::channel::oneshot::Sender<String>,
 }
 
-/// obelus, as an agent can reach it.
+/// Obelus, as an agent can reach it.
 #[derive(Clone)]
 pub struct Obelus {
     /// The project the notes belong to.
@@ -84,14 +84,14 @@ pub struct Obelus {
     /// Behind a pointer rather than as a type parameter: this struct has to
     /// be `Clone`, and the two impls that make it a server are written by
     /// `#[tool_router]` and `#[tool_handler]` on a plain `impl Obelus`. A
-    /// parameter here would have to appear in a macro expansion obelus does
+    /// parameter here would have to appear in a macro expansion Obelus does
     /// not write.
     events: Arc<dyn Sink<Asked>>,
     /// The tools, as `#[tool_router]` built them from the signatures below.
     ///
     /// Read by the macro-generated dispatch rather than by anything here,
     /// which is what the warning about it is: it is the whole of what this
-    /// type is *for*, reached through a door obelus does not write.
+    /// type is *for*, reached through a door Obelus does not write.
     #[expect(dead_code, reason = "read by the dispatch `#[tool_handler]` generates")]
     tools: ToolRouter<Self>,
 }
@@ -141,7 +141,7 @@ pub struct Offered {
     ///
     /// Left out or zero for a note of its own. One more than the note
     /// before it at the most -- a note cannot hang under one that is not
-    /// there -- and obelus brings anything deeper up to where it can hang.
+    /// there -- and Obelus brings anything deeper up to where it can hang.
     pub depth: Option<u16>,
 }
 
@@ -151,7 +151,7 @@ impl Obelus {
     #[must_use]
     pub fn new(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> Self {
         // One line per connection to the tools, which is the thing that
-        // could not be found out before: obelus offering them and an agent
+        // could not be found out before: Obelus offering them and an agent
         // taking them up looked exactly alike from outside, and both looked
         // like nothing at all.
         //
@@ -180,12 +180,12 @@ impl Obelus {
     /// spares a question about a tool whose whole act is to look something
     /// up. A hint and not a promise -- the protocol says so, and says a
     /// client should not trust one from a server it does not know -- but
-    /// obelus is the one making the claim about itself here, and it is
+    /// Obelus is the one making the claim about itself here, and it is
     /// true.
     ///
     /// The other two say nothing of the sort, because it would not be true:
     /// they write the reader's notes. What spares the question there is not
-    /// something obelus can say about a tool -- see the module's own note on
+    /// something Obelus can say about a tool -- see the module's own note on
     /// asking being the asking.
     #[tool(
         annotations(read_only_hint = true),
@@ -340,7 +340,7 @@ impl Obelus {
 
     /// Hands one of those to the main loop and waits for it to be done.
     ///
-    /// A wait on obelus itself, which is over in the time a file takes to
+    /// A wait on Obelus itself, which is over in the time a file takes to
     /// write. Not the sort a person is at the other end of: an agent that
     /// wants the reader asked asks them, through the protocol it is already
     /// speaking.
@@ -351,14 +351,14 @@ impl Obelus {
     }
 }
 
-/// What obelus did, as the agent hears it.
+/// What Obelus did, as the agent hears it.
 ///
-/// A loop that has gone is obelus shutting down, and a tool answered with
+/// A loop that has gone is Obelus shutting down, and a tool answered with
 /// "nobody is there" is better than one that never returns.
 fn said(what: Option<String>) -> CallToolResult {
     match what {
         Some(said) => CallToolResult::success(vec![ContentBlock::text(said)]),
-        None => CallToolResult::error(vec![ContentBlock::text("obelus is not there")]),
+        None => CallToolResult::error(vec![ContentBlock::text("Obelus is not there")]),
     }
 }
 
@@ -367,7 +367,7 @@ impl ServerHandler for Obelus {
     fn get_info(&self) -> InitializeResult {
         let mut info = InitializeResult::default();
         info.instructions = Some(
-            "obelus, the reader this conversation is happening inside. It \
+            "Obelus, the reader this conversation is happening inside. It \
              keeps this project's notes.\n\n\
              `todo_finish` ticks a note off; `todo_add` writes notes down; \
              `todo_reword` makes one say something else. All three change \
@@ -398,12 +398,12 @@ impl ServerHandler for Obelus {
 ///
 /// On the loopback and on whatever port the machine hands out: the agent is
 /// told the address, so there is nothing to agree in advance and nothing to
-/// collide with a second obelus.
+/// collide with a second Obelus.
 ///
 /// # Errors
 ///
 /// Where the socket cannot be taken, which is a machine with no loopback --
-/// obelus goes on without the tools and says so.
+/// Obelus goes on without the tools and says so.
 pub fn serve(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> std::io::Result<String> {
     use rmcp::transport::streamable_http_server::{
         StreamableHttpService, session::local::LocalSessionManager,
@@ -428,12 +428,12 @@ pub fn serve(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> std::io::R
         let listener = match tokio::net::TcpListener::from_std(listener) {
             Ok(listener) => listener,
             Err(error) => {
-                tracing::warn!(%error, "the tools obelus offers are not listening");
+                tracing::warn!(%error, "the tools Obelus offers are not listening");
                 return;
             }
         };
         if let Err(error) = axum::serve(listener, router).await {
-            tracing::warn!(%error, "the tools obelus offers stopped");
+            tracing::warn!(%error, "the tools Obelus offers stopped");
         }
     });
 

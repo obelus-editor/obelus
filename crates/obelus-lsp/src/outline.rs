@@ -152,7 +152,7 @@ pub struct Found {
 /// everything it has indexed, and for rust-analyzer that is every dependency
 /// of the project as well: a search for `new` in a repository of a dozen
 /// files comes back with hundreds of rows from the registry, and the one the
-/// reader meant is somewhere among them. A list obelus offers is a list of
+/// reader meant is somewhere among them. A list Obelus offers is a list of
 /// the reader's own tree -- the same rule the file list follows, and the
 /// reason it can stay instant. Going *to* a definition in a dependency is
 /// still going there: that is a jump the reader asked for by name, and this
@@ -186,7 +186,7 @@ pub fn found_in(result: Result<Value, String>, within: Option<&std::path::Path>)
     match serde_json::from_value::<Vec<lsp_types::WorkspaceSymbol>>(value) {
         Ok(symbols) => symbols.iter().filter_map(newer).filter(mine).collect(),
         Err(error) => {
-            tracing::debug!(%error, "a workspace/symbol answer in no shape obelus knows");
+            tracing::debug!(%error, "a workspace/symbol answer in no shape Obelus knows");
             Vec::new()
         }
     }
@@ -275,7 +275,7 @@ mod workspace_tests {
         assert!(found_in(Ok(reply), Some(&root())).is_empty());
     }
 
-    /// An error, a null and a shape obelus does not know all mean the same
+    /// An error, a null and a shape Obelus does not know all mean the same
     /// thing to the caller: no rows. A server that has not finished indexing
     /// answers null.
     #[test]

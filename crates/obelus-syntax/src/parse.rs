@@ -119,7 +119,7 @@ impl SyntaxState {
         let mut parser = Parser::new();
         parser
             .set_language(grammar(language).language())
-            .expect("a grammar shipped with obelus should load");
+            .expect("a grammar shipped with Obelus should load");
         let started = std::time::Instant::now();
         let tree = parse(&mut parser, text.rope(), None)?;
         let state = Self {
@@ -176,7 +176,7 @@ impl SyntaxState {
     /// node: is it a leaf -- whitespace and the gaps between tokens belong
     /// to containers, not to leaves -- and does its text start the way a
     /// name does. Language-agnostic on purpose: it holds for every grammar
-    /// obelus has, and a table of each language's identifier node kinds
+    /// Obelus has, and a table of each language's identifier node kinds
     /// would be fourteen rows to keep right.
     ///
     /// Deliberately generous. A keyword and the inside of a string both pass,
@@ -246,7 +246,7 @@ impl SyntaxState {
     /// Works out what the text means now, if that is still owed.
     ///
     /// Times itself, because whether this can be done between one keystroke
-    /// and the next is not a property of obelus -- it is a property of the
+    /// and the next is not a property of Obelus -- it is a property of the
     /// grammar, and they differ by two orders of magnitude.
     pub fn settle(&mut self, text: &Text) {
         if !self.behind {

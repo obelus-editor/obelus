@@ -2,7 +2,7 @@
 //!
 //! A server that knows a language knows its colours: `#3264eb` in CSS,
 //! `rgba(0, 0, 0, .5)`, a named constant a framework resolves. What it
-//! sends back is a range and three numbers, and what obelus draws from them
+//! sends back is a range and three numbers, and what Obelus draws from them
 //! is a cell of that colour in front of the literal -- so a reader looking
 //! at a stylesheet sees the colours rather than reads them.
 //!
@@ -11,7 +11,7 @@
 //! over the sixteen of an `rgba(0, 0, 0, .5)` said it over half a line.
 //!
 //! A cell in front of a literal is a cell the file does not contain, which
-//! is a thing obelus refused to draw for a long time: a screen whose
+//! is a thing Obelus refused to draw for a long time: a screen whose
 //! columns are not the file's columns is a screen that lies about where
 //! things are. What makes it honest now is that the lie is told in one
 //! place -- [`obelus_text::Phantom`], in the module that is the only place
@@ -107,7 +107,7 @@ mod tests {
         Text::from_string("a { color: #3264eb; }\n")
     }
 
-    /// The range a server names becomes the characters obelus paints.
+    /// The range a server names becomes the characters Obelus paints.
     #[test]
     fn a_colour_is_where_the_server_said_and_what_it_said() {
         let found = in_reply(

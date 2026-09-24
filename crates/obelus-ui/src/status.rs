@@ -19,7 +19,7 @@ use crate::{Marked, Screen, fill, relative_to, truncate_from_left, write, write_
 /// The status region.
 pub struct StatusView<'a> {
     buffer: Option<&'a Buffer>,
-    /// Something obelus has to tell the reader, until their next key.
+    /// Something Obelus has to tell the reader, until their next key.
     ///
     /// What a language server says it is doing used to share this. It is
     /// not the same kind of thing: a note is a sentence about something
@@ -165,7 +165,7 @@ fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) 
             // answer may be about the reading rather than about the
             // symbol. Braille, which needs no particular font -- it is
             // drawn whether or not glyphs are, like every other mark in
-            // obelus that turns.
+            // Obelus that turns.
             if let Some(phase) = busy {
                 return format!("{}  {name} ", crate::spinning(phase));
             }

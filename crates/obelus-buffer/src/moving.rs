@@ -174,7 +174,7 @@ impl Buffer {
     /// After that, the smallest thing in the *tree* that holds what is
     /// already selected: the argument, then the call, then the statement,
     /// then the block. A grammar is the only thing that knows where those
-    /// begin and end, and obelus has one for the file already.
+    /// begin and end, and Obelus has one for the file already.
     ///
     /// Where there is no grammar, the steps are the line and then the
     /// file. Two coarse steps are worth having: a reader with a text file

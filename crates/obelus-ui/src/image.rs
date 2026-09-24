@@ -4,7 +4,7 @@
 //! an escape sequence -- kitty's graphics protocol, iTerm2's inline images,
 //! or sixels -- and every one of those is a different encoding of the same
 //! request. `ratatui-image` does the encoding and the asking; what is here
-//! is obelus's answer to the two questions it leaves open: how big is the
+//! is Obelus's answer to the two questions it leaves open: how big is the
 //! space, and what happens when the terminal cannot do it at all.
 //!
 //! The answer to the second one is a Nerd Font glyph, which is why this
@@ -12,7 +12,7 @@
 //! the half-block rendering `ratatui-image` also offers. A sixteen-pixel
 //! mark pressed into two half-block cells is four coloured squares; the
 //! glyph is a drawing of the thing. Half-blocks are for photographs, and
-//! obelus has no photographs.
+//! Obelus has no photographs.
 //!
 //! Detection happens once, before the alternate screen: it writes a query
 //! to the terminal and reads the reply, which cannot be done from inside a
@@ -149,7 +149,7 @@ impl Images {
 
     /// Encodes one mark, unless it already has been.
     ///
-    /// The palette is the view's, and a palette obelus has not drawn with
+    /// The palette is the view's, and a palette Obelus has not drawn with
     /// before empties the cache: pixels cannot be recoloured after the fact.
     pub fn prepare(&mut self, id: &str, svg: &str, focused: bool, palette: Palette) {
         let Some(picker) = &self.picker else { return };
@@ -258,13 +258,13 @@ fn hex(colour: Color) -> String {
     format!("#{red:02x}{green:02x}{blue:02x}")
 }
 
-/// The channels of a colour obelus drew from a theme.
+/// The channels of a colour Obelus drew from a theme.
 ///
-/// Themes are written in RGB -- obelus has `COLORTERM=truecolor` and says
+/// Themes are written in RGB -- Obelus has `COLORTERM=truecolor` and says
 /// so -- so this is a total function over what actually reaches it. The
 /// arms for the rest are there because `Color` is somebody else's enum:
 /// black for the dark ones and white for the light ones is not a colour
-/// scheme, it is a refusal to guess a palette obelus does not have.
+/// scheme, it is a refusal to guess a palette Obelus does not have.
 fn rgb(colour: Color) -> (u8, u8, u8) {
     match colour {
         Color::Rgb(red, green, blue) => (red, green, blue),
@@ -291,7 +291,7 @@ mod tests {
     /// come back with, without a terminal to ask.
     fn terminal(protocol: ProtocolType) -> Images {
         // `halfblocks` is the only constructor that needs no terminal to
-        // ask: it carries a cell size and the protocol obelus treats as
+        // ask: it carries a cell size and the protocol Obelus treats as
         // "cannot", so the kind wanted is set over the top of it.
         let mut picker = Picker::halfblocks();
         picker.set_protocol_type(protocol);
@@ -343,7 +343,7 @@ mod tests {
     /// nothing on it.
     #[test]
     fn a_mark_becomes_the_terminals_own_escape_sequence() {
-        // The two obelus can be handed: kitty's graphics APC, and a
+        // The two Obelus can be handed: kitty's graphics APC, and a
         // sixel's device control string -- which a sixel arrives behind a
         // clear-this-much of its own, hence `contains` rather than a
         // prefix.

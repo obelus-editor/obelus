@@ -111,7 +111,7 @@ const MOST_WRITING: u16 = 6;
 /// reader can see.
 ///
 /// The status row is not among them. While the conversation is what the
-/// screen is showing, obelus's own status row is the conversation's -- one
+/// screen is showing, Obelus's own status row is the conversation's -- one
 /// row at the foot of the screen, which is where a status row goes. A band
 /// of its own inside the region would be a second status bar with the real
 /// one under it, and the pair reads as one bar two rows tall.
@@ -267,14 +267,14 @@ pub fn regions_capped(area: Rect, needed: usize, most: u16) -> Regions {
 /// What a tool call says about where it was working, given what its title
 /// has already said.
 ///
-/// The path as a reader writes it -- relative to the project obelus was opened
+/// The path as a reader writes it -- relative to the project Obelus was opened
 /// on -- and the line when the agent named one. And how many other files it
 /// named, because a call that touched six of them says so on its one row
 /// until the reader opens it.
 ///
 /// Unless the title is already that path. An agent's title for a call is
 /// usually the verb and the file -- `Write crates/obelus-reading/src/
-/// blocks.rs` -- and obelus writes the path after it because the path is
+/// blocks.rs` -- and Obelus writes the path after it because the path is
 /// the affordance: a row that names a file is a row that goes there. Both,
 /// and the row said one thing twice and ran off the edge of the screen,
 /// taking the mark that says there is more behind it and the count of what
@@ -324,7 +324,7 @@ fn used_up(usage: &acp::Usage) -> Option<(String, bool)> {
     let part = usage.used.saturating_mul(100) / usage.room;
     let mut said = format!("{part}%");
     if let Some(cost) = &usage.cost {
-        // The code rather than a sign, and after the amount: obelus knows
+        // The code rather than a sign, and after the amount: Obelus knows
         // no currency's sign, and a guessed one is a number about the wrong
         // money.
         said.push_str(&format!("{SEPARATOR}{:.2} {}", cost.amount, cost.currency));
@@ -381,7 +381,7 @@ fn said(setting: &acp::Setting) -> (String, bool) {
 pub struct ChatView<'a> {
     chat: &'a Chat,
     theme: &'a Theme,
-    /// What obelus is doing about an agent.
+    /// What Obelus is doing about an agent.
     state: Talking,
     /// What to call it.
     name: Option<&'a str>,
@@ -392,7 +392,7 @@ pub struct ChatView<'a> {
     focus: Focus,
     /// The card an agent's question is on, while it is waiting on one.
     card: Option<&'a Card>,
-    /// The project obelus was opened on, for writing the paths an agent names
+    /// The project Obelus was opened on, for writing the paths an agent names
     /// the way a reader writes them.
     root: &'a Path,
     /// Where the animation has got to, for the row that turns.
@@ -404,7 +404,7 @@ pub struct ChatView<'a> {
     /// would otherwise differ only in what was said in them. A label reading
     /// "chat" would answer a question nobody asked -- they pressed the key.
     about: Option<String>,
-    /// What obelus has to say, until the next key.
+    /// What Obelus has to say, until the next key.
     ///
     /// A conversation has a status row of its own, so it has to carry this
     /// too: without it every command that answers by saying something --
@@ -442,7 +442,7 @@ impl<'a> ChatView<'a> {
     ///
     /// A place in what was said rather than the row and column it was
     /// pointed at with, because that is what a selection keeps -- and this
-    /// is the only piece of obelus that knows both, the rows having just
+    /// is the only piece of Obelus that knows both, the rows having just
     /// been laid out at the width the screen has.
     ///
     /// A point in a row the reading drew rather than read -- a blank, the
@@ -515,7 +515,7 @@ impl<'a> ChatView<'a> {
             // reading rather than something to type in, so what the caret
             // says there is "you are here" and nothing about where words
             // would go -- which is the same thing a caret says in a file
-            // obelus is reading.
+            // Obelus is reading.
             Focus::Transcript(place) => return in_transcript(area, chat, card, place),
             // Nowhere, while the keys are walking the row of settings: a
             // caret left blinking in the box would say that what is typed
@@ -724,10 +724,10 @@ impl Widget for ChatView<'_> {
         // reader has scrolled away from.
         //
         // The key is spelled out rather than taken from the key table,
-        // which is where every other hint in obelus gets its spelling.
+        // which is where every other hint in Obelus gets its spelling.
         // This one cannot be: `ctrl+end` is on the list of chords the
         // table refuses, because the editor takes it before the table is
-        // reached -- so the one key obelus will not let a reader rebind is
+        // reached -- so the one key Obelus will not let a reader rebind is
         // the one it has to name here.
         self.the_way_back(cells, regions.writing.y - 1, area);
         // The card where the box would be: while the agent is waiting on
@@ -787,7 +787,7 @@ impl ChatView<'_> {
         }
         // The same bar everything else that scrolls has, in the same
         // column: a transcript that scrolled and said nothing about it was
-        // the one scrolling thing in obelus with no answer to "how much of
+        // the one scrolling thing in Obelus with no answer to "how much of
         // this is there". The column is already spare -- the rows are
         // wrapped to leave it -- so nothing moves to make room.
         if self.chat.scrollable(area.height) {
@@ -806,7 +806,7 @@ impl ChatView<'_> {
             // so that a run reads as one thing rather than as a stretch of
             // rows that happen to look alike.
             let words = words + u16::from(row.depth) * DEEPER;
-            // The row the cursor is on, lit the way every list in obelus
+            // The row the cursor is on, lit the way every list in Obelus
             // lights one -- but only where the row does something, because
             // that is what the light promises: what is lit is what enter
             // opens.
@@ -955,7 +955,7 @@ impl ChatView<'_> {
             // hundred columns of `grep` left the row with nothing on it
             // saying the call could be opened, or how it went, or how much
             // it changed: the one row about a rewritten file said nothing
-            // about the rewriting, and read as a line obelus had lost the
+            // about the rewriting, and read as a line Obelus had lost the
             // end of.
             let tail = self.tail_of(row, dim, here);
             let kept: usize = tail
@@ -1066,7 +1066,7 @@ impl ChatView<'_> {
     /// conversation's: which way of working the agent is in, and how to
     /// change it.
     ///
-    /// Drawn into obelus's own status region rather than into a row of the
+    /// Drawn into Obelus's own status region rather than into a row of the
     /// conversation's, so that there is one status bar on the screen and it
     /// is at the foot of it.
     pub fn status(&self, cells: &mut CellBuffer, area: Rect) {
@@ -1188,7 +1188,7 @@ impl ChatView<'_> {
         }
 
         // What each one says, and what it takes to say it. The focused one
-        // carries the arrow obelus puts on everything with a list behind
+        // carries the arrow Obelus puts on everything with a list behind
         // it, so it is wider than the others by exactly that.
         let chosen = match self.focus {
             Focus::Settings(at) => Some(at.min(self.settings.len() - 1)),
@@ -1243,7 +1243,7 @@ impl ChatView<'_> {
 
     /// The settings as words, with whether each is on.
     ///
-    /// The focused one carries the arrow obelus puts on everything with a
+    /// The focused one carries the arrow Obelus puts on everything with a
     /// list behind it, so it is wider than the others by exactly that --
     /// which is why the words are made before anything measures them.
     fn setting_words(&self) -> Vec<(String, bool)> {
@@ -1495,7 +1495,7 @@ impl ChatView<'_> {
             tail.push((2, "Enter takes it back".to_string(), dim));
         }
         // Where it said it was working. The path is its own affordance:
-        // obelus opens files, so a row that names one is a row that goes
+        // Obelus opens files, so a row that names one is a row that goes
         // there.
         if let Some((place, more)) = &row.place {
             let said = said_place(&row.text(), place, self.root, *more);
@@ -1589,7 +1589,7 @@ mod tests {
 
     /// Where a tool call was, written the way a reader writes a path.
     ///
-    /// Relative to the project obelus was opened on, because that is the part
+    /// Relative to the project Obelus was opened on, because that is the part
     /// already known -- and left alone when it is somewhere else, because a
     /// path outside the tree is news. The others it named are counted
     /// rather than listed: the row is one row until the reader opens it.

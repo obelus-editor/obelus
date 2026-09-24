@@ -1,10 +1,10 @@
 //! What a server says a piece of a file is.
 //!
 //! One answer, in markdown, about one place -- which is what makes it the
-//! simplest thing a language server sends and the one obelus can show with
+//! simplest thing a language server sends and the one Obelus can show with
 //! what it already has: rust-analyzer's hover is a fenced code block
 //! holding the signature, a rule, and the documentation under it, and
-//! obelus renders exactly that for a README.
+//! Obelus renders exactly that for a README.
 //!
 //! The range is the other half of the answer and the half editors usually
 //! throw away: the server says *which characters* it is talking about, and

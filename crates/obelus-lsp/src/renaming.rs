@@ -4,7 +4,7 @@
 //! module `lsp::hint`, and moving it to `src/lsp/hints.rs` leaves every
 //! `use crate::hint` in the project naming something that is not
 //! there any more. The server is the only thing that knows which words
-//! those are: obelus moves the file, and asks first what else has to
+//! those are: Obelus moves the file, and asks first what else has to
 //! change so that the project still says what it said.
 //!
 //! Two messages, either side of the move. `workspace/willRenameFiles` is
@@ -50,7 +50,7 @@ pub fn told_after(capabilities: &ServerCapabilities, path: &Path, directory: boo
 
 /// What both messages carry: where it was and where it is.
 ///
-/// `None` for a path that cannot be a uri, which is a path obelus cannot
+/// `None` for a path that cannot be a uri, which is a path Obelus cannot
 /// name to a server at all.
 #[must_use]
 pub fn params(from: &Path, to: &Path) -> Option<Value> {
@@ -90,7 +90,7 @@ fn matches(filters: &[FileOperationFilter], path: &Path, directory: bool) -> boo
     };
     filters.iter().any(|filter| {
         // A scheme the server named and did not name `file` is about
-        // documents obelus has no path for.
+        // documents Obelus has no path for.
         if filter
             .scheme
             .as_deref()

@@ -498,7 +498,7 @@ fn remember(text: &Text, cursor: &mut Cursor, width: u16) {
 
 /// The motion a navigation key stands for.
 ///
-/// A modifier obelus has no meaning for disqualifies the key: `ctrl+left` is a
+/// A modifier Obelus has no meaning for disqualifies the key: `ctrl+left` is a
 /// word motion it does not have yet, and treating it as a plain left would be
 /// a wrong answer rather than a missing one.
 pub fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
@@ -508,7 +508,7 @@ pub fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
 
     match (modifiers, key.code) {
         // Not `ctrl+PageUp`/`ctrl+PageDown`: those mean previous and next tab
-        // almost everywhere, and the nearest thing obelus has to a tab is a
+        // almost everywhere, and the nearest thing Obelus has to a tab is a
         // buffer, so they are worth leaving free.
         // A word at a time, which is the other thing `ctrl` and an arrow
         // mean everywhere a reader has been.
@@ -524,7 +524,7 @@ pub fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
         (KeyModifiers::CONTROL, KeyCode::End) => Some((Motion::DocumentEnd, false)),
         // With shift as well, the same two motions extend the selection.
         // Without these the ends of the file are the one place a selection
-        // cannot reach, and the rule that a modifier obelus has no meaning
+        // cannot reach, and the rule that a modifier Obelus has no meaning
         // for disqualifies the key made them do nothing at all.
         (m, KeyCode::Home) if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
             Some((Motion::DocumentStart, true))
@@ -592,7 +592,7 @@ pub fn typing_for(key: &KeyEvent) -> Option<Typing> {
 
 /// A text with a caret in it, and what the caret has hold of.
 ///
-/// The three places obelus puts a caret were three of these written by hand:
+/// The three places Obelus puts a caret were three of these written by hand:
 /// the file being read, a block opened above one of its lines, and the box a
 /// note or a message is written in. They agreed about nothing except by
 /// accident, so `ctrl+left` walked a word in the first and did nothing in

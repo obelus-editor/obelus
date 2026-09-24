@@ -1,8 +1,8 @@
 //! Asking what a place is, and showing the answer over it.
 //!
 //! The question a reader asks most often about somebody else's code, and
-//! the one obelus could answer with what it already had: the answer is
-//! markdown about one place, and obelus renders markdown and knows where a
+//! the one Obelus could answer with what it already had: the answer is
+//! markdown about one place, and Obelus renders markdown and knows where a
 //! place is on screen.
 //!
 //! Two ways in, because they are two different gestures with the same

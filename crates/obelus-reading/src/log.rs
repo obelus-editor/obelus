@@ -9,7 +9,7 @@
 //! colouring of the text.
 //!
 //! Four formats, tried in order, because a log file does not say which it
-//! is. Three are written out here -- obelus's own, and syslog's two -- and
+//! is. Three are written out here -- Obelus's own, and syslog's two -- and
 //! they are written out because each is a fixed run of fields with fixed
 //! separators, which is less code than reading somebody else's parser. The
 //! fourth is `access_log_parser`, which is a real parser of a real format
@@ -30,7 +30,7 @@
 //! which is what makes the reading safe to try on anything: the worst it can do
 //! is show the file.
 //!
-//! Three of the four formats are written out in `log.rs` -- obelus's own
+//! Three of the four formats are written out in `log.rs` -- Obelus's own
 //! `tracing` layout and syslog's two -- because each is a fixed run of fields
 //! with fixed separators, which is less code than reading somebody else's
 //! parser. The fourth is `access_log_parser`, which earns the dependency: an
@@ -120,10 +120,10 @@ pub struct Entry {
     pub fields: Vec<(String, String)>,
 }
 
-/// The formats obelus can read, in the order they are tried.
+/// The formats Obelus can read, in the order they are tried.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
-    /// What obelus writes: `tracing`'s own layout.
+    /// What Obelus writes: `tracing`'s own layout.
     Ours,
     /// Syslog as the wire carries it, RFC 5424.
     Syslog,
@@ -136,7 +136,7 @@ pub enum Format {
 impl Format {
     /// Every format, in the order a line is offered to them.
     ///
-    /// Most particular first: obelus's own layout and RFC 5424 both begin
+    /// Most particular first: Obelus's own layout and RFC 5424 both begin
     /// with a timestamp no other format would produce, and the classic
     /// syslog line is the loosest of the four -- offered last so it cannot
     /// claim a line one of the others would have read properly.
@@ -157,7 +157,7 @@ impl Format {
 /// Which format a file is in, if any of them claims it.
 ///
 /// By reading the file rather than by its name: a syslog file is called
-/// `syslog`, an access log `access.log`, and obelus's own `obelus.log` --
+/// `syslog`, an access log `access.log`, and Obelus's own `obelus.log` --
 /// the extension says nothing, so the lines are asked instead.
 ///
 /// A majority of the first lines, not one of them: a source file with a log
@@ -198,10 +198,10 @@ pub fn format_of(source: &str) -> Option<Format> {
 
 /// `2026-09-11T02:49:00.854699Z  INFO obelus::app: said this key=value`
 fn ours(line: &str) -> Option<Entry> {
-    // Which obelus said it, first: one file holds every session, and
+    // Which Obelus said it, first: one file holds every session, and
     // several of them run at once -- a reader following one has to be able
     // to tell it from the others. Written by the subscriber, so it is there
-    // on every line of obelus's own; kept as a field, where the rest of
+    // on every line of Obelus's own; kept as a field, where the rest of
     // what a line carries by name already goes.
     let (whose, line) = match line.split_once(' ') {
         Some((first, rest)) if first.bytes().all(|byte| byte.is_ascii_digit()) => {
@@ -210,7 +210,7 @@ fn ours(line: &str) -> Option<Entry> {
         _ => (None, line),
     };
     let (stamp, rest) = line.split_once(' ')?;
-    // A timestamp, and a strict one: this is the format obelus writes, so
+    // A timestamp, and a strict one: this is the format Obelus writes, so
     // there is no need to guess at what a date looks like.
     let when = time_of_day(stamp)?;
     let rest = rest.trim_start();
@@ -249,7 +249,7 @@ fn syslog(line: &str) -> Option<Entry> {
     let process = parts.next()?;
     let _message_id = parts.next()?;
     let said = parts.next().unwrap_or_default();
-    // The structured data comes first in what is left, and obelus shows it
+    // The structured data comes first in what is left, and Obelus shows it
     // as what it is: named values.
     let (said, fields) = structured(said);
     Some(Entry {
@@ -350,7 +350,7 @@ fn access(line: &str) -> Option<Entry> {
             ],
         ),
         // The other kinds the parser knows -- CloudFront, a cloud's own --
-        // are not what this is offered, and a line obelus cannot describe
+        // are not what this is offered, and a line Obelus cannot describe
         // is better left as it was written.
         _ => return None,
     };
@@ -783,7 +783,7 @@ a banner nobody parses
         assert_eq!(drawn, source.lines().collect::<Vec<&str>>());
     }
 
-    /// The format obelus writes, which is the one it does not have to guess
+    /// The format Obelus writes, which is the one it does not have to guess
     /// about: the parts are fixed and so is what separates them.
     #[test]
     fn our_own_format_is_read() {

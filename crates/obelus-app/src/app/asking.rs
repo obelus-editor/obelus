@@ -1,4 +1,4 @@
-//! The questions obelus stops to ask, and what answering one does.
+//! The questions Obelus stops to ask, and what answering one does.
 //!
 //! What a question *is* lives in [`obelus_buffer::question`], and the list it
 //! turns into is [`Picker::asking`]. What is here is which questions get asked,
@@ -138,7 +138,7 @@ impl App {
     /// in.
     ///
     /// The path relative to the working directory, which is how every other
-    /// list in obelus names a file -- and not the bare file name, because a
+    /// list in Obelus names a file -- and not the bare file name, because a
     /// reader may have four files called `mod.rs` open and only one of them
     /// is the one about to be closed. It goes in the prompt rather than in
     /// the block above the ways out: a block that said the path while the

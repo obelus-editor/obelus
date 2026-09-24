@@ -10,7 +10,7 @@
 //! each cell would like to be and answers with how wide each column will be,
 //! so that whoever is laying the table out can wrap the cells that no longer
 //! fit. A number in and a number out, which is what makes it testable
-//! against the answer obelus has been shipping.
+//! against the answer Obelus has been shipping.
 
 /// The narrowest a column may be drawn.
 ///

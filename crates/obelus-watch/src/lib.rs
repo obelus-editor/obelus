@@ -1,14 +1,14 @@
 //! Noticing that a file changed on disk.
 //!
 //! An agent rewriting a file while it is open is the normal case, not the
-//! exceptional one, so obelus reloads by itself rather than asking. Most of
+//! exceptional one, so Obelus reloads by itself rather than asking. Most of
 //! the work here is the edge cases: without them this arrives as "sometimes it
 //! does not refresh", which is the hardest kind of bug to be told about.
 //!
 //! This is a *freshness* mechanism and not a correctness one, and nothing
 //! that matters may be hung on it. Events are dropped when the kernel's
 //! queue overflows, never arrive at all on NFS and several container
-//! mounts, and cannot say anything about what happened before obelus
+//! mounts, and cannot say anything about what happened before Obelus
 //! started. Missing one has to mean "the screen is a moment out of date",
 //! never "somebody's work was written over": the question of whether a save
 //! would go over somebody else's change is asked of disk at the moment of
@@ -89,7 +89,7 @@ impl Watcher {
             move |result: notify::Result<notify::Event>| match result {
                 Ok(event) => {
                     // Access events say nothing changed, and they arrive
-                    // whenever anything reads the file — including obelus.
+                    // whenever anything reads the file — including Obelus.
                     if matches!(event.kind, EventKind::Access(_)) {
                         return;
                     }

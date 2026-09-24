@@ -2,11 +2,11 @@
 //!
 //! One flat file of `key = value` lines, written whole every time anything
 //! changes. Whole rather than edited in place because there is nothing in it
-//! worth preserving that obelus does not know about -- no comments it wrote,
+//! worth preserving that Obelus does not know about -- no comments it wrote,
 //! no ordering it chose -- and a rewrite cannot half-apply.
 //!
 //! Missing, unreadable, or nonsense all mean the same thing: the defaults.
-//! A reader whose config file has a typo in it should get obelus, not an
+//! A reader whose config file has a typo in it should get Obelus, not an
 //! error message where their editor was.
 //!
 //! The settings are a *table* ([`ALL`]), the way the commands are: a setting
@@ -17,7 +17,7 @@
 //! What a project may set is a property of the setting, `Reach`, not a list of
 //! exceptions somewhere: the next setting a stranger should not be trusted with
 //! will be found by asking that question while writing the setting down.
-//! `agent` is `ReaderOnly` because it says which agent obelus *starts*, and a
+//! `agent` is `ReaderOnly` because it says which agent Obelus *starts*, and a
 //! program starting because a file in a downloaded project said so is a
 //! decision that belongs to the person at the keyboard; `keys` is `ReaderOnly`
 //! because a project that could rebind them could put `quit` where a reader
@@ -39,7 +39,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Here rather than beside the themes themselves because it is a written
 /// default like every other field below it -- the name of a theme, not a
-/// theme -- and the list of names obelus will accept is already next door.
+/// theme -- and the list of names Obelus will accept is already next door.
 pub const DEFAULT_THEME: &str = "dark";
 
 /// Everything the reader can decide.
@@ -66,7 +66,7 @@ pub struct Config {
     /// The protocol's `source.` code actions: what a server offers to do
     /// to a file rather than to a place in one -- the imports sorted, the
     /// corrections it can make on its own. They are the only actions
-    /// obelus takes without a key being pressed, which is why they are the
+    /// Obelus takes without a key being pressed, which is why they are the
     /// only ones it asks for by name.
     pub code_actions_on_save: bool,
     /// Whether what a language server works out is drawn in the file.
@@ -95,7 +95,7 @@ pub struct Config {
     /// "where is that build log" is a question asked once and then not
     /// again for a week.
     pub ignored_files: bool,
-    /// How long the pointer has to rest on a word before obelus asks what
+    /// How long the pointer has to rest on a word before Obelus asks what
     /// it is, in milliseconds.
     ///
     /// Zero is off: the pointer then asks nothing, and `alt+h` is the way
@@ -104,7 +104,7 @@ pub struct Config {
     /// wants it slow enough never to appear by accident, and one reading
     /// somebody else's wants it as fast as their hand stops.
     pub hover_delay: usize,
-    /// Which agent obelus talks to, by the registry's own name for it.
+    /// Which agent Obelus talks to, by the registry's own name for it.
     ///
     /// One, or none. Two would mean every question having to say which
     /// agent it was for, and a reader having to know.
@@ -124,7 +124,7 @@ pub struct Config {
     /// rather not choose again every time.
     ///
     /// Only what they have said. A setting that is not in here is one
-    /// obelus says nothing about, and the conversation starts on whatever
+    /// Obelus says nothing about, and the conversation starts on whatever
     /// the agent starts it on -- which is a different thing from starting
     /// on the value the agent happened to be on last time, and the reason
     /// this is a map of what was said rather than a copy of a session.
@@ -138,7 +138,7 @@ impl Default for Config {
             // Off, because a patched font is a thing the reader has to have
             // gone and got, and whether they have cannot be asked: a
             // default that assumes it draws a box beside every name for
-            // everybody who has not, and a box is how obelus looks broken.
+            // everybody who has not, and a box is how Obelus looks broken.
             // Without the font, the fallbacks read correctly; with it, one
             // switch turns the glyphs on.
             icons: false,
@@ -149,7 +149,7 @@ impl Default for Config {
             // who wants it can say so, and then it is a line's own choice
             // no longer.
             wrap: false,
-            // What the code obelus is written in uses, which is also what
+            // What the code Obelus is written in uses, which is also what
             // the rest of the program laid a tab out at before a reader
             // could say otherwise.
             tab_width: obelus_text::TAB_WIDTH,
@@ -169,13 +169,13 @@ impl Default for Config {
             ignored_files: false,
             // Long enough that crossing a line of code does not ask about
             // every word on the way, short enough that a reader who has
-            // stopped does not wonder whether obelus noticed. The figure
+            // stopped does not wonder whether Obelus noticed. The figure
             // every editor with a mouse uses.
             hover_delay: 400,
-            // None until the reader installs one: obelus does not choose an
+            // None until the reader installs one: Obelus does not choose an
             // agent for anybody.
             agent: None,
-            // Nothing moved: the table obelus ships with.
+            // Nothing moved: the table Obelus ships with.
             keys: std::collections::BTreeMap::new(),
             // And nothing said about any agent: every conversation starts
             // where the agent starts it.
@@ -221,11 +221,11 @@ pub enum Kind {
 /// dozen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Group {
-    /// How obelus looks.
+    /// How Obelus looks.
     Appearance,
     /// What it says about the file being read.
     Reading,
-    /// Which files obelus offers, and where it looks for them.
+    /// Which files Obelus offers, and where it looks for them.
     Files,
 }
 
@@ -249,7 +249,7 @@ impl Group {
 /// A project's own settings are written by whoever wrote the project, and a
 /// reader who opens somebody's repository has not agreed to everything in it.
 /// Most of these are harmless to hand over -- a theme, a wrapped line, a name
-/// in the margin -- and some are not: `agent` says which agent obelus starts,
+/// in the margin -- and some are not: `agent` says which agent Obelus starts,
 /// and a program starting because a file in a downloaded project said so is a
 /// decision that belongs to the person at the keyboard. The keys are the
 /// same: a project that could rebind them could put a reader's `quit` somewhere
@@ -273,7 +273,7 @@ pub enum Reach {
 pub enum Whose {
     /// The reader's, wherever this system keeps such things.
     Reader,
-    /// The project obelus was opened on.
+    /// The project Obelus was opened on.
     Project,
 }
 
@@ -314,7 +314,7 @@ impl Setting {
         whose == Whose::Reader || self.reach == Reach::Anywhere
     }
 
-    /// The setting a key names, if obelus has one.
+    /// The setting a key names, if Obelus has one.
     #[must_use]
     pub fn named(key: &str) -> Option<&'static Self> {
         ALL.iter().find(|setting| setting.key == key)
@@ -334,12 +334,12 @@ const WIDTHS: &[&str] = &["2", "4", "8"];
 /// the same thing.
 const DELAYS: &[&str] = &["0", "200", "400", "800"];
 
-/// Every setting obelus has.
+/// Every setting Obelus has.
 pub const ALL: &[Setting] = &[
     Setting {
         key: "theme",
         name: "Colour theme",
-        about: "The colours obelus draws in",
+        about: "The colours Obelus draws in",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Choice(THEMES),
@@ -379,7 +379,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "hover_delay",
         name: "Ask on a rest",
-        about: "how long the pointer has to rest on a word before obelus says what it is, in milliseconds -- zero asks only when a key does",
+        about: "how long the pointer has to rest on a word before Obelus says what it is, in milliseconds -- zero asks only when a key does",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Count(DELAYS),
@@ -506,7 +506,7 @@ impl Config {
     /// Stops saying, which puts the setting back in the agent's hands.
     ///
     /// The agent's own table goes when the last of its settings does: a
-    /// table with nothing in it says obelus was thinking about that agent,
+    /// table with nothing in it says Obelus was thinking about that agent,
     /// which after this it is not.
     pub fn unset_agent_default(&mut self, agent: &str, setting: &str) {
         let Some(chosen) = self.agents.get_mut(agent) else {
@@ -532,12 +532,12 @@ pub fn path() -> Option<PathBuf> {
 /// Where a project keeps settings of its own, if it keeps any.
 ///
 /// `.obelus/config.toml`, and only that. A project keeps more than settings for
-/// obelus -- a theme of its own, whatever comes after it -- and one
+/// Obelus -- a theme of its own, whatever comes after it -- and one
 /// directory holding all of it is one thing to find, to copy between
 /// machines and to name in a `.gitignore`, where a dotfile per kind of thing
 /// is a row of them at the top of every listing of the project.
 ///
-/// The working directory itself, without walking up: obelus has one answer
+/// The working directory itself, without walking up: Obelus has one answer
 /// to which project it is on -- the file list walks it, the counts count it,
 /// git is read from it -- and settings found by walking somewhere else would
 /// be a second answer to that question.
@@ -551,7 +551,7 @@ pub fn project_path(root: &Path) -> Option<PathBuf> {
 ///
 /// Three answers, like [`read_from`]'s four: there is none, here it is, or
 /// it will not read. A project's file that will not read is *not* a reason to
-/// stop -- obelus goes on with the reader's own settings and says so in the
+/// stop -- Obelus goes on with the reader's own settings and says so in the
 /// log -- which is why this hands back the reason rather than a config with
 /// the defaults in it.
 pub fn read_table(path: &Path) -> Result<Option<toml::Table>, String> {
@@ -579,7 +579,7 @@ pub fn load() -> Reading {
 pub fn read_from(path: &Path) -> Reading {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
-        // Not there yet is the ordinary case, not an error: obelus writes
+        // Not there yet is the ordinary case, not an error: Obelus writes
         // the file the first time something is changed.
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Reading::Nothing;
@@ -597,12 +597,12 @@ pub fn read_from(path: &Path) -> Reading {
 
 /// What reading the settings file found.
 ///
-/// "There is no file" and "there is a file obelus cannot read" are different
+/// "There is no file" and "there is a file Obelus cannot read" are different
 /// answers and were the same one: both became the defaults, and a session
 /// that started on the defaults writes the defaults back the first time
-/// anything is changed. A file being written by another obelus at that
+/// anything is changed. A file being written by another Obelus at that
 /// moment, or edited by hand into something that will not parse, is then a
-/// file whose contents obelus has thrown away.
+/// file whose contents Obelus has thrown away.
 #[derive(Clone, Debug)]
 pub enum Reading {
     /// This system has nowhere to keep one.
@@ -611,7 +611,7 @@ pub enum Reading {
     Nothing,
     /// There is one; this is what it says, and these are the settings it
     /// named. A setting it named is the reader's whether or not what they
-    /// wrote differs from what obelus would have done.
+    /// wrote differs from what Obelus would have done.
     Settings(Config, Vec<&'static str>),
     /// There is one and it could not be read, with what went wrong.
     Unreadable(String),
@@ -632,7 +632,7 @@ pub fn from_toml(text: &str) -> Config {
 ///
 /// Which keys, not only what they came to: a reader who writes a setting
 /// down has said something about it even where what they said is what
-/// obelus would have done anyway, and a page that worked that out by
+/// Obelus would have done anyway, and a page that worked that out by
 /// comparing with the default could not tell them from a reader who said
 /// nothing at all.
 fn from_table(table: &toml::Table) -> (Config, Vec<&'static str>) {
@@ -649,7 +649,7 @@ fn from_table(table: &toml::Table) -> (Config, Vec<&'static str>) {
 /// starts on is a table of the agent's own words. All three are the
 /// reader's alone.
 ///
-/// A key obelus has never heard of reaches nowhere, which costs nothing --
+/// A key Obelus has never heard of reaches nowhere, which costs nothing --
 /// nothing reads it either way -- and means a key added to the file before
 /// it is added here cannot arrive from a project.
 #[must_use]
@@ -748,7 +748,7 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     if let Some(keys) = table.get("keys").and_then(toml::Value::as_table)
         && allowed("keys")
     {
-        // Whatever is a string. A command obelus has never heard of and a
+        // Whatever is a string. A command Obelus has never heard of and a
         // chord it cannot read are dealt with where the table is built,
         // which is the one place that knows what either of those is.
         for (name, chord) in keys {
@@ -779,7 +779,7 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
         }
     }
 
-    // And a word for the lines obelus walked past. A key it has never heard
+    // And a word for the lines Obelus walked past. A key it has never heard
     // of -- a setting that has gone, a name that has changed, a word spelled
     // wrong -- is read, ignored, and from the outside looks exactly like one
     // that was obeyed. The line above says as much when a project oversteps,
@@ -793,10 +793,10 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     set
 }
 
-/// Whether a key in a settings file names a setting obelus has.
+/// Whether a key in a settings file names a setting Obelus has.
 ///
 /// The three that are not rows in [`ALL`] count: they are settings a reader
-/// writes by hand or sets somewhere else on the page, not settings obelus
+/// writes by hand or sets somewhere else on the page, not settings Obelus
 /// has stopped having.
 fn known(key: &str) -> bool {
     matches!(key, "agent" | "keys" | "agents") || Setting::named(key).is_some()
@@ -811,24 +811,24 @@ pub fn to_toml(config: &Config) -> String {
 /// The file's contents for a config, laid over a file that already exists.
 ///
 /// Edited rather than rewritten, the way a project's file is. Obelus used to
-/// write its own file whole on the grounds that obelus wrote all of it,
+/// write its own file whole on the grounds that Obelus wrote all of it,
 /// which is not true: readers open it and put lines in by hand. Writing it
-/// whole took out everything obelus did not recognise -- a setting from a
+/// whole took out everything Obelus did not recognise -- a setting from a
 /// newer version, a key that has been renamed since, a line with a typo in
 /// it -- silently, on the next switch they flipped. A program that will not
 /// edit a file it is reading should not quietly delete from one it owns.
 ///
 /// A file that is not toml at all is started again from nothing: there is
-/// no document to lay anything over, and obelus has already said so
+/// no document to lay anything over, and Obelus has already said so
 /// elsewhere.
 ///
 /// Only what differs from the default is written, and a line that has come
 /// back to the default is taken out. A file with every setting in it
 /// freezes the defaults of the version that wrote it: the glyphs went off
 /// by default, and every reader who had ever flipped anything kept them on,
-/// because obelus had written `icons = true` down for them the first time
+/// because Obelus had written `icons = true` down for them the first time
 /// it saved. The same rule the keys and the agents already kept -- a line
-/// is something the reader said, not something obelus was thinking about.
+/// is something the reader said, not something Obelus was thinking about.
 #[must_use]
 pub fn over(existing: &str, config: &Config) -> String {
     lay(existing, config, false)
@@ -847,7 +847,7 @@ pub fn over(existing: &str, config: &Config) -> String {
 fn template() -> String {
     let every = lay("", &Config::default(), true);
     let mut said = String::from(
-        "# Every setting, at its default. To set one, take it out of its comment\n# and change it: a line that says the default is taken out when obelus\n# next saves, so that a default which changes reaches you.\n",
+        "# Every setting, at its default. To set one, take it out of its comment\n# and change it: a line that says the default is taken out when Obelus\n# next saves, so that a default which changes reaches you.\n",
     );
     for line in every.lines() {
         said.push_str("# ");
@@ -932,7 +932,7 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         toml_edit::value(config.agent.clone().unwrap_or_default()),
     );
     // Only while the reader has moved something: an empty table in the file
-    // says obelus was thinking about keys, which it was not.
+    // says Obelus was thinking about keys, which it was not.
     if config.keys.is_empty() {
         document.remove("keys");
     } else {
@@ -943,7 +943,7 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         document["keys"] = toml_edit::Item::Table(keys);
     }
     // The same rule, an agent at a time: a table for an agent the reader
-    // has said nothing about is obelus writing down that it thought about
+    // has said nothing about is Obelus writing down that it thought about
     // it. `unset_agent_default` already drops one that empties; this is
     // the same answer for a config that arrived from anywhere else.
     let agents: Vec<(&String, &std::collections::BTreeMap<String, String>)> = config
@@ -973,7 +973,7 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
 
 /// What a path really names, following any links.
 ///
-/// A reader who keeps their settings in git links the place obelus looks at
+/// A reader who keeps their settings in git links the place Obelus looks at
 /// the file in their repository, which makes the difference between the two
 /// paths matter twice. Writing has to go *through* the link, because a
 /// rename replaces what the name refers to -- the link would become an
@@ -981,7 +981,7 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
 /// that would go somewhere the repository never sees, silently. And
 /// watching has to follow it, because what a `git pull` rewrites is the
 /// file at the far end: a watch on the link's own directory hears nothing,
-/// so settings arriving from another machine would sit on disk until obelus
+/// so settings arriving from another machine would sit on disk until Obelus
 /// was next started.
 ///
 /// A path that is not there yet cannot be resolved, and is its own answer:
@@ -994,7 +994,7 @@ pub fn resolved(path: &Path) -> PathBuf {
 /// Sets or removes one key in a project's own settings file.
 ///
 /// Edited rather than rewritten. Obelus's own file it writes whole, because
-/// obelus wrote all of it; a project's is written by hand and committed, so it
+/// Obelus wrote all of it; a project's is written by hand and committed, so it
 /// has comments in it, an order somebody chose, and possibly keys this
 /// version has never heard of. A round trip through a `toml::Table` would
 /// throw all three away on the first switch a reader flipped.
@@ -1058,7 +1058,7 @@ pub fn write_project(path: &Path, key: &str, value: Option<&Value>) -> std::io::
     };
     std::fs::create_dir_all(directory)?;
     // Beside it and renamed over it, for the reason the reader's own file is
-    // written that way: another obelus on this project may be reading it at
+    // written that way: another Obelus on this project may be reading it at
     // this moment, and a plain write truncates first.
     let beside = path.with_extension("toml.writing");
     std::fs::write(&beside, document.to_string())?;
@@ -1067,7 +1067,7 @@ pub fn write_project(path: &Path, key: &str, value: Option<&Value>) -> std::io::
 
 /// Where a project's settings *would* go, for a project that has none yet.
 ///
-/// The directory, always. A project keeps more than settings for obelus -- a
+/// The directory, always. A project keeps more than settings for Obelus -- a
 /// theme of its own, whatever comes after it -- and one directory holding
 /// all of it is one thing to find, to copy between machines and to put in a
 /// `.gitignore`, where a dotfile per kind of thing is a row of them at the
@@ -1081,14 +1081,14 @@ pub fn project_path_for(root: &Path) -> PathBuf {
 ///
 /// The path is passed in rather than looked up here, so that nothing can
 /// write to the reader's real file by accident: a test, or a probe run while
-/// working on obelus, has to say where it is writing.
+/// working on Obelus, has to say where it is writing.
 pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
     // Through the link rather than over it: a rename replaces what the name
     // refers to, and where the settings are kept in a dotfiles repository
     // the name refers to a link.
     let resolved = resolved(path);
     let path = resolved.as_path();
-    // What is in it already, so that whatever obelus does not recognise
+    // What is in it already, so that whatever Obelus does not recognise
     // stays there. The template where there is nothing: the first write
     // makes the file, and makes it saying what there is to set. A file the
     // reader emptied is not nothing, and stays as empty as they left it.
@@ -1101,7 +1101,7 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
         return std::fs::write(path, over(&existing, config));
     };
     std::fs::create_dir_all(directory)?;
-    // Written beside it and renamed over it, because another obelus may be
+    // Written beside it and renamed over it, because another Obelus may be
     // reading this file at this moment: a plain write truncates first, and
     // a reader landing in that gap sees an empty file, takes it for "no
     // settings", and writes its defaults over everything the reader has.
@@ -1128,7 +1128,7 @@ mod tests {
     /// A path that is a link is written *through*, not over.
     ///
     /// Which is how anybody keeps their settings in git: the file lives in a
-    /// dotfiles repository and the place obelus looks is a link to it. The
+    /// dotfiles repository and the place Obelus looks is a link to it. The
     /// atomic rename replaces what the name refers to, and the name refers
     /// to the link -- so saving turned the link into an ordinary file and
     /// the repository stopped hearing about changes, with nothing on screen
@@ -1182,7 +1182,7 @@ mod tests {
 
     /// Saving replaces the file rather than rewriting it where it lies.
     ///
-    /// Which is what makes it safe for another obelus to be reading it at
+    /// Which is what makes it safe for another Obelus to be reading it at
     /// that moment: a write in place truncates first, and a reader landing
     /// in that gap sees an empty file, takes it for "no settings", and
     /// writes its own defaults over everything the reader had. A rename
@@ -1209,7 +1209,7 @@ mod tests {
 
         assert_ne!(
             first, second,
-            "the settings were rewritten where they lay, which another obelus can read half of"
+            "the settings were rewritten where they lay, which another Obelus can read half of"
         );
         assert_eq!(
             from_toml(&std::fs::read_to_string(&path).expect("the file")).theme,
@@ -1217,7 +1217,7 @@ mod tests {
             "the new settings are not what is in the file"
         );
         // And nothing left beside it: a file called `config.toml.writing`
-        // in a reader's config directory is obelus's mess, not theirs.
+        // in a reader's config directory is Obelus's mess, not theirs.
         let beside: Vec<_> = std::fs::read_dir(&directory)
             .expect("the directory")
             .filter_map(Result::ok)
@@ -1228,7 +1228,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
     }
 
-    /// A key obelus has never heard of is a line that did nothing, and the
+    /// A key Obelus has never heard of is a line that did nothing, and the
     /// only way to find out from the outside is to be told.
     #[test]
     fn a_key_obelus_does_not_know_is_reported() {
@@ -1237,7 +1237,7 @@ mod tests {
         assert!(known("keys"), "the key table is not known");
         assert!(
             !known("blame"),
-            "a name obelus has stopped using is still known"
+            "a name Obelus has stopped using is still known"
         );
         assert!(!known("prevlew"), "a name spelled wrong is known");
     }
@@ -1262,7 +1262,7 @@ mod tests {
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and
             // both have to survive the file or the reader makes them again
-            // every time obelus starts.
+            // every time Obelus starts.
             keys: [
                 ("open-file".to_string(), "alt+o".to_string()),
                 ("close-file".to_string(), String::new()),
@@ -1296,7 +1296,7 @@ mod tests {
         );
     }
 
-    /// A file with a typo in it gives obelus, not an error message where the
+    /// A file with a typo in it gives Obelus, not an error message where the
     /// editor was: every field falls back on its own.
     #[test]
     fn nonsense_in_the_file_is_the_default() {
@@ -1307,8 +1307,8 @@ mod tests {
         let mixed = from_toml("theme = 7\nicons = false\n");
         assert_eq!(mixed.theme, Config::default().theme);
         assert!(!mixed.icons);
-        // And a key obelus does not know is not an error either: an older
-        // obelus reading a newer file should still start.
+        // And a key Obelus does not know is not an error either: an older
+        // Obelus reading a newer file should still start.
         assert_eq!(from_toml("nonsense = true"), Config::default());
     }
 
@@ -1413,7 +1413,7 @@ mod tests {
     /// taking out the named arm alone changes nothing -- the fallback
     /// already refuses a key with no row on the page. The arm stays all
     /// the same: the rule is that a project may not set this, and a rule that
-    /// holds only because obelus happens to have no setting by that name
+    /// holds only because Obelus happens to have no setting by that name
     /// is a rule nobody has written down.
     #[test]
     fn a_tree_may_not_say_what_an_agent_starts_on() {
@@ -1444,7 +1444,7 @@ mod tests {
     /// Unsetting the last of an agent's settings takes its table out.
     ///
     /// The same rule the keys follow: a table with nothing in it says
-    /// obelus was thinking about that agent, which after this it is not --
+    /// Obelus was thinking about that agent, which after this it is not --
     /// and a reader who opens the file looking for what they undid would
     /// find the heading still there.
     ///
@@ -1464,12 +1464,12 @@ mod tests {
         );
     }
 
-    /// An agent obelus has never installed keeps what the reader wrote.
+    /// An agent Obelus has never installed keeps what the reader wrote.
     ///
-    /// The table is obelus's to write whole, the way the keys are -- which
+    /// The table is Obelus's to write whole, the way the keys are -- which
     /// is only lossless because reading takes *every* agent out of the
     /// file, including ones this machine has never installed and ones a
-    /// newer obelus knows about. A read that kept only the installed ones
+    /// newer Obelus knows about. A read that kept only the installed ones
     /// would quietly empty the file on the next switch anybody flipped.
     ///
     /// Broken deliberately by having the writer keep only the agents it
@@ -1509,7 +1509,7 @@ mod tests {
             "the defaults were written down: {written:?}"
         );
 
-        // What an older obelus left behind: every setting, one of them at a
+        // What an older Obelus left behind: every setting, one of them at a
         // default that has changed since, and a line of the reader's own.
         let existing = "theme = \"dark\"\nicons = true\nwrap = false\n# mine\nfuture_setting = 3\n";
         let config = Config {
@@ -1528,12 +1528,12 @@ mod tests {
         );
         assert!(
             written.contains("future_setting = 3"),
-            "a line obelus does not know went: {written:?}"
+            "a line Obelus does not know went: {written:?}"
         );
         assert_eq!(from_toml(&written), config);
     }
 
-    /// A file obelus makes lists every setting, in comments, and says none
+    /// A file Obelus makes lists every setting, in comments, and says none
     /// of them.
     ///
     /// Only what differs is written, so the first file would otherwise be

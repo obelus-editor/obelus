@@ -10,7 +10,7 @@ use obelus_app::{app::App, event::Event};
 use obelus_syntax::LanguageId;
 use serde_json::json;
 
-/// A file with a server obelus knows the command for.
+/// A file with a server Obelus knows the command for.
 fn reading(name: &str) -> (support::Scratch, App) {
     let scratch = support::Scratch::new(&format!("serving-{name}"));
     let path = scratch.path().join("main.rs");
@@ -60,7 +60,7 @@ fn a_busy_server_turns_rather_than_talking() {
             }
         }),
     }));
-    assert!(app.server_busy(), "obelus did not notice it was busy");
+    assert!(app.server_busy(), "Obelus did not notice it was busy");
 
     let busy = support::render(&mut app, 100, 12);
     for said in ["Indexing", "1/240", "core"] {
@@ -70,7 +70,7 @@ fn a_busy_server_turns_rather_than_talking() {
         );
     }
     // The badge turns instead, in braille -- which is drawn whether or not
-    // glyphs are, like every other mark in obelus that turns.
+    // glyphs are, like every other mark in Obelus that turns.
     let turning = |dump: &str| {
         support::text_block(dump)
             .chars()

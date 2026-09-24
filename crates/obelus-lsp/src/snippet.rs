@@ -6,7 +6,7 @@
 //! `$1`, `${1:a default}`, `$0` for where to end up, `\$` for a real dollar.
 //! Everything else -- variables like `$TM_FILENAME`, choices like
 //! `${1|a,b|}`, transformations -- is either something a completion item
-//! almost never carries or something obelus would have to invent an answer
+//! almost never carries or something Obelus would have to invent an answer
 //! for, so it expands to nothing and the text around it survives.
 //!
 //! What is deliberately not here is *mirroring*: a snippet with `$1` twice

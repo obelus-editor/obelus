@@ -1,4 +1,4 @@
-//! What obelus offers an agent, over the wire an agent really uses.
+//! What Obelus offers an agent, over the wire an agent really uses.
 //!
 //! The server is started the way the loop starts it and spoken to with
 //! `ureq`, which is already here for the registry: what is being tested is
@@ -10,7 +10,7 @@ mod support;
 
 use std::sync::mpsc::channel;
 
-/// A tree with one note, and obelus listening on it.
+/// A tree with one note, and Obelus listening on it.
 fn listening(name: &str) -> (support::Scratch, String) {
     let scratch = support::Scratch::new(name);
     support::make_room_for_notes(scratch.path());
@@ -47,7 +47,7 @@ fn ask(url: &str, session: Option<&str>, body: &str) -> (String, Option<String>)
     (said, named)
 }
 
-/// The handshake, and then what obelus says it can do.
+/// The handshake, and then what Obelus says it can do.
 ///
 /// The tools come out of the function signatures in `src/mcp.rs` -- that is
 /// the whole reason the protocol crate is here rather than the dispatch
@@ -61,7 +61,7 @@ fn an_agent_is_told_what_obelus_can_do() {
         None,
         r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
     );
-    assert!(said.contains("obelus"), "it did not say who it is:\n{said}");
+    assert!(said.contains("Obelus"), "it did not say who it is:\n{said}");
     let session = session.expect("a session of its own");
 
     let (listed, _) = ask(
@@ -82,7 +82,7 @@ fn an_agent_is_told_what_obelus_can_do() {
     // The one that only looks says so, which is what spares the reader a
     // question about a tool whose whole act is to look something up. The
     // three that write the notes say nothing of the sort, and a
-    // `readOnlyHint` on any of them would be obelus telling an agent
+    // `readOnlyHint` on any of them would be Obelus telling an agent
     // something untrue about itself to buy a quieter turn.
     // Cut at the names rather than at the word, because a tool's
     // description may name another tool -- `todo_finish` names `todo_list`
@@ -140,7 +140,7 @@ fn an_agent_can_read_what_the_tree_means_to_come_back_to() {
 ///
 /// Driven over the wire and answered by a loop of this test's own, because
 /// the writing is the loop's: the server hands it the act and waits for it
-/// to be done, which is a wait on obelus rather than on a person.
+/// to be done, which is a wait on Obelus rather than on a person.
 #[test]
 fn what_an_agent_writes_down_is_in_the_file() {
     use obelus_app::app::App;
@@ -362,7 +362,7 @@ fn a_depth_nothing_could_hang_at_is_brought_up_before_it_is_written() {
 ///
 /// The one act here that loses something, so what it must not lose as well
 /// is everything that is not words: its name -- which every conversation
-/// obelus has written down is keyed to -- where it points, whether it is
+/// Obelus has written down is keyed to -- where it points, whether it is
 /// ticked, and what hangs under it. Written as a remove and an insert this
 /// would pass a test that only read the text back, and the reader would
 /// find a note that had lost its place, its children and the conversation

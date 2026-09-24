@@ -8,9 +8,9 @@
 //!
 //! Strip the filtering from a picker and nothing is left but the row
 //! drawing, and what a card needs on top of that is a row that *grows*,
-//! which the list machinery cannot have: every picker in obelus counts one
+//! which the list machinery cannot have: every picker in Obelus counts one
 //! row per screen row, and a file list of thousands must not pay for a box
-//! one caller wants. So this composes the two halves obelus already has --
+//! one caller wants. So this composes the two halves Obelus already has --
 //! the rows, and the [`Composer`] a message is written in, which is what a
 //! message to an agent is written in everywhere else -- and `ui/card.rs`
 //! draws them.
@@ -23,7 +23,7 @@
 //!
 //! The form on it is asked in the agent's order. `elicitation/create`'s
 //! schema arrives as a *map* of fields -- JSON objects have no order to keep
-//! -- so the order the agent wrote them in is gone before obelus sees it,
+//! -- so the order the agent wrote them in is gone before Obelus sees it,
 //! and asking in the alphabet's order put an "Other, if none of these suit"
 //! in front of the list it was an alternative to. What is left to go on is
 //! `required`: those first, in the order the agent listed them, and the rest
@@ -141,7 +141,7 @@ pub struct Card {
     /// Which is the difference between a card that can be sent with
     /// nothing but the reader's own words on it and one that cannot: the
     /// agent said it will not take the form without a named answer, and
-    /// offering to send it anyway would be obelus promising something on
+    /// offering to send it anyway would be Obelus promising something on
     /// the agent's behalf.
     needed: bool,
     /// The fewest of them the agent will take, if it said.
@@ -395,7 +395,7 @@ impl Card {
     /// is missing when it is not.
     ///
     /// Said rather than refused: a row that cannot be used is drawn dim
-    /// with the reason on it, which is how obelus says no to everything
+    /// with the reason on it, which is how Obelus says no to everything
     /// else -- a command that does not apply here, a row that cannot be
     /// chosen.
     #[must_use]
@@ -581,7 +581,7 @@ impl Card {
             return CardOutcome::Ignored;
         };
         // A line in the box, asked for either of the two ways the box takes
-        // anywhere else in obelus: `shift+enter` is what a reader reaches
+        // anywhere else in Obelus: `shift+enter` is what a reader reaches
         // for and it needs the kitty keyboard protocol to arrive at all,
         // and alt is the escape prefix, which is as old as terminals. This
         // is the same box, asked a different question.

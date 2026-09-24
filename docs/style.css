@@ -1,4 +1,4 @@
-/* obelus — the site.
+/* Obelus — the site.
    One stylesheet, no build step, no fonts off the network. The palette is
    ink on paper and a scholar's red in the margin, which is what an obelus
    was drawn in. */
@@ -98,7 +98,7 @@ pre {
 }
 pre code { background: none; padding: 0; font-size: inherit; }
 
-/* Key caps. One cap holds a whole chord — `ctrl+p` — which is how obelus
+/* Key caps. One cap holds a whole chord — `ctrl+p` — which is how Obelus
    writes a chord on its own screen. The stack prefers a Nerd Font where the
    visitor has one and falls back to their own monospace, so nobody is shown
    a box. */

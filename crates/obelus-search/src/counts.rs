@@ -180,7 +180,7 @@ impl Counted {
 
             for report in &language.reports {
                 counted.files.push(File {
-                    // Relative, because every path obelus shows is: an
+                    // Relative, because every path Obelus shows is: an
                     // absolute one in a column is the same prefix repeated
                     // down the screen, pushing the part that differs off the
                     // end of the row.
@@ -242,7 +242,7 @@ pub fn spawn_count(root: &Path, sender: impl Sink<Box<Counted>>) {
         let mut languages = tokei::Languages::new();
         // No excluded paths of its own: what to leave out is
         // `.gitignore`'s answer, which the walk already obeys, and a
-        // second list here would be obelus disagreeing with the file
+        // second list here would be Obelus disagreeing with the file
         // list about what is in the project.
         languages.get_statistics(&[&root], &[], &tokei::Config::default());
         let counted = Counted::from_tokei(&languages, &root);
@@ -366,7 +366,7 @@ mod tests {
     /// A language written inside another is kept apart from it.
     ///
     /// Over the repository itself, because the shape being asserted on --
-    /// Rust with Markdown written inside its doc comments -- is what obelus
+    /// Rust with Markdown written inside its doc comments -- is what Obelus
     /// is made of and is tedious to fake.
     ///
     /// Broken deliberately by folding the children's lines into the parent's

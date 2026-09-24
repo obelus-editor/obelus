@@ -1,26 +1,26 @@
 //! Talking to an agent, over the Agent Client Protocol.
 //!
-//! An ACP agent is another program on the other end of a pipe: obelus starts
+//! An ACP agent is another program on the other end of a pipe: Obelus starts
 //! it, says who it is, opens a session rooted at the project, and then sends
 //! prompts and reads what comes back.
 //!
 //! The protocol itself is `agent-client-protocol`, its own authors' crate.
 //! Every method has a type whose field names the compiler checks, which is
-//! the whole reason to use it: obelus had the nine methods it needs written
+//! the whole reason to use it: Obelus had the nine methods it needs written
 //! out by hand, checked once against the published schema, and a protocol
 //! that grows a field or renames an outcome would have gone on compiling and
 //! quietly stopped matching.
 //!
-//! What that crate is built around is `async`, and obelus's main loop is a
+//! What that crate is built around is `async`, and Obelus's main loop is a
 //! thread blocked on a channel. [`link`] is the join: one thread runs a
-//! tokio runtime with the connection in it, what obelus wants becomes an
+//! tokio runtime with the connection in it, what Obelus wants becomes an
 //! [`Ask`] sent to that thread, and everything the agent says goes into a
 //! [`crate::Event`], which reaches the loop's own channel like the
 //! keyboard and the file walk do.
 //!
-//! What obelus tells an agent about itself is the shape of the product: it
+//! What Obelus tells an agent about itself is the shape of the product: it
 //! will read a file out -- from a buffer, so an agent sees what the reader
-//! sees -- and it will not write one. That was once because obelus wrote
+//! sees -- and it will not write one. That was once because Obelus wrote
 //! nothing at all, and letting an agent write through it would have been a
 //! code editor with no undo. Obelus has an undo now, and the reason has
 //! changed rather than gone: a change the reader did not make is a change
@@ -88,7 +88,7 @@ pub struct Talk {
     /// connection rather than on a session, because at that moment there is
     /// no session for it to be on.
     ///
-    /// With whatever obelus had to say about the conversation first, because
+    /// With whatever Obelus had to say about the conversation first, because
     /// the first thing said is what carries it and the first thing said is
     /// what gets held.
     held: Option<(String, Option<String>)>,
@@ -97,7 +97,7 @@ pub struct Talk {
     /// The last number handed out, and the next one is one more. On the
     /// connection rather than on a session so that a number means one turn
     /// whichever conversation it turns out to be about -- and because the
-    /// conversation an answer belongs to is a thing obelus reads *off* the
+    /// conversation an answer belongs to is a thing Obelus reads *off* the
     /// answer, so a count kept per conversation would be a count that has
     /// to be found before it can be used.
     turns: Turn,
@@ -109,7 +109,7 @@ pub struct Talk {
 /// about on a frame and cannot wait for an answer to.
 #[derive(Debug, Default)]
 pub struct Session {
-    /// Which turn is in flight in this one, by obelus's own count.
+    /// Which turn is in flight in this one, by Obelus's own count.
     ///
     /// A number and not a flag, because the answer that ends a turn does
     /// not say which turn it is about -- the protocol has no name for one.
@@ -145,7 +145,7 @@ pub struct Session {
     /// not answered.
     ///
     /// `session/set_mode` answers with nothing at all, so what is shown
-    /// after that key is obelus's own guess -- and a guess has to be taken
+    /// after that key is Obelus's own guess -- and a guess has to be taken
     /// back if the agent refuses, or the row goes on naming a mode the
     /// agent is not in.
     guessed: Option<(String, String)>,
@@ -193,16 +193,16 @@ impl Session {
     /// The agent's own order, which is the only order that means anything:
     /// the spec asks a client to place options by it, and an agent puts its
     /// mode where a reader looks for it. Nothing is sorted here -- the mode
-    /// is first because the agent says so, not because obelus moved it.
+    /// is first because the agent says so, not because Obelus moved it.
     ///
-    /// The one thing obelus has to place is a mode from the older, dedicated
+    /// The one thing Obelus has to place is a mode from the older, dedicated
     /// methods: it is not in that array at all, so it goes in front of it,
     /// which is where the old methods drew it.
     ///
     /// And the mode is only in the list once. An agent part-way through the
     /// protocol's change offers it both ways at the same time, so the option
     /// wins and the old one is left out -- decided by what the agent said
-    /// the option is *about*, not by obelus recognising a name.
+    /// the option is *about*, not by Obelus recognising a name.
     fn merge(&mut self) {
         let carried = self
             .options
@@ -329,7 +329,7 @@ impl Talk {
         });
     }
 
-    /// Asks for one it had before, by the name obelus wrote down.
+    /// Asks for one it had before, by the name Obelus wrote down.
     ///
     /// An agent that will not take it up -- it has forgotten, it never
     /// could -- opens a new one instead and says so, because a reader who
@@ -485,12 +485,12 @@ impl Talk {
     ///
     /// The turn is left in flight: it ends with the agent's own `cancelled`
     /// stop reason, which is the agent saying it has stopped rather than
-    /// obelus assuming it.
+    /// Obelus assuming it.
     pub fn interrupt(&mut self, session: Option<&SessionId>) {
         let Some(id) = session.cloned() else {
             return;
         };
-        // Named, so that the end obelus writes for it is about the turn the
+        // Named, so that the end Obelus writes for it is about the turn the
         // reader stopped and not about whatever is running by the time it
         // is read. A turn that is not running has nothing to stop.
         let Some(turn) = self.session(session).and_then(|open| open.turn) else {
@@ -605,7 +605,7 @@ impl Talk {
                 self.sessions.entry(session.clone()).or_default().title = Some(title.clone());
                 // Kept *and* passed up, which none of the other folded
                 // updates are: it is the name a conversation goes by in the
-                // list of open documents, and a name has to survive obelus
+                // list of open documents, and a name has to survive Obelus
                 // being shut. Whoever writes that down is above this.
                 Some(Incoming::Update {
                     session,
@@ -635,7 +635,7 @@ impl Talk {
                 open.merge();
                 // Kept *and* passed up, like the title and unlike the rest
                 // of the folded updates: what an agent offers to be set is
-                // something obelus acts on outside this mirror -- it is
+                // something Obelus acts on outside this mirror -- it is
                 // written down beside the install so the settings page has
                 // it before there is a conversation, and it is what the
                 // reader's standing choices are matched against. Folded
@@ -677,12 +677,12 @@ impl Talk {
                 // running says so again on its next update", which was
                 // never true: `say` is the only place this is ever set, and
                 // no update touches it. A turn that outlives a `Failed`
-                // about something else is a turn obelus has stopped saying
+                // about something else is a turn Obelus has stopped saying
                 // is running, and the honest reason to accept that is that
                 // it cannot tell which turn the failure was about.
                 for open in self.sessions.values_mut() {
                     open.turn = None;
-                    // A mode obelus showed as on that the agent would not
+                    // A mode Obelus showed as on that the agent would not
                     // take.
                     open.unguess();
                 }

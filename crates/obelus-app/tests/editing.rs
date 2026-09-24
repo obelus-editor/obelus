@@ -628,7 +628,7 @@ mod keys {
         let _turn = CLIPBOARD
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // Nothing outside obelus: a suite that used whatever this machine
+        // Nothing outside Obelus: a suite that used whatever this machine
         // has would reach into the clipboard of whoever ran it, and would
         // pass or fail by what happened to be on it.
         let _turn = support::clipboard_turn();
@@ -701,10 +701,10 @@ mod keys {
             None,
             "something was on the clipboard before anything was put there"
         );
-        obelus_clipboard::copy("what obelus cut").expect("copying");
+        obelus_clipboard::copy("what Obelus cut").expect("copying");
         assert_eq!(
             obelus_clipboard::paste().as_deref(),
-            Some("what obelus cut"),
+            Some("what Obelus cut"),
             "a sequence that cannot be read back left nothing to paste"
         );
     }
@@ -899,7 +899,7 @@ mod saving {
         );
     }
 
-    /// obelus recognises the file it just wrote, so its own save arriving
+    /// Obelus recognises the file it just wrote, so its own save arriving
     /// back through the watcher is answered by one `stat` rather than by
     /// reading the file again.
     #[test]
@@ -910,7 +910,7 @@ mod saving {
 
         assert!(
             !app.current_buffer().expect("a buffer").file_touched(),
-            "obelus does not recognise the file it just wrote"
+            "Obelus does not recognise the file it just wrote"
         );
     }
 
@@ -998,7 +998,7 @@ mod saving {
     fn a_save_asks_disk_rather_than_the_mark() {
         let (_scratch, mut app, path) = reading("save-unwatched", "mine\n");
         support::type_text(&mut app, "x");
-        // Written behind obelus's back, with no `FileChanged` fed in: this
+        // Written behind Obelus's back, with no `FileChanged` fed in: this
         // is what an overflowed watcher queue or a filesystem that reports
         // nothing looks like from in here.
         std::fs::write(&path, "somebody else's\n").expect("rewriting it");
@@ -2059,7 +2059,7 @@ mod indenting {
     }
 }
 
-/// An agent changing a file obelus has open.
+/// An agent changing a file Obelus has open.
 mod agents {
     use obelus_app::app::{App, dispatch};
     use obelus_buffer::Buffer;
@@ -2164,7 +2164,7 @@ mod formatting {
     use obelus_lsp::action;
 
     /// A server saying "Nothing to change" is not a server failing, and a
-    /// layout obelus cannot read is not half a layout to apply.
+    /// layout Obelus cannot read is not half a layout to apply.
     #[test]
     fn only_a_layout_that_can_be_followed_is_followed() {
         assert!(
@@ -2181,7 +2181,7 @@ mod formatting {
         );
         assert!(
             action::edits_in(Some(serde_json::json!({ "not": "edits" }))).is_none(),
-            "something obelus cannot read was taken for a layout"
+            "something Obelus cannot read was taken for a layout"
         );
 
         let edits = action::edits_in(Some(serde_json::json!([{
@@ -2211,7 +2211,7 @@ mod format_on_save {
     #[test]
     fn a_file_nobody_can_lay_out_is_still_written() {
         let scratch = support::Scratch::new("format-none");
-        // An extension no language server obelus knows is started for.
+        // An extension no language server Obelus knows is started for.
         let path = scratch.path().join("sample.unknownlang");
         std::fs::write(&path, "one\n").expect("writing it");
         let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);

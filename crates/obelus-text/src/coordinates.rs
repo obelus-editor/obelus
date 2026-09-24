@@ -1,4 +1,4 @@
-//! The coordinate spaces obelus works in, each as its own type.
+//! The coordinate spaces Obelus works in, each as its own type.
 //!
 //! Four of them describe the same position in different units, and mixing them
 //! up is the single most likely source of bugs in a program like this: a byte

@@ -70,7 +70,7 @@ pub enum SettingsOutcome {
     Unset(&'static str),
     /// An agent should be installed.
     Install(String),
-    /// An agent should be the one obelus talks to.
+    /// An agent should be the one Obelus talks to.
     Activate(String),
     /// Whichever agent was active should stop being.
     Deactivate,
@@ -94,14 +94,14 @@ pub enum SettingsOutcome {
     /// level with the first.
     ///
     /// Its own outcome and not [`SettingsOutcome::Choose`]: that one names
-    /// a setting of obelus's own by a key obelus wrote, and this one names
+    /// a setting of Obelus's own by a key Obelus wrote, and this one names
     /// somebody else's setting in somebody else's words.
     ChooseForAgent(String),
     /// One of them should stop being set, and go back to being the
     /// agent's.
     ///
     /// `delete`, which is what it means on the project's page: take this one
-    /// out. Here what is left is not a default of obelus's but the agent's
+    /// out. Here what is left is not a default of Obelus's but the agent's
     /// own answer, which is the third state every one of these rows has.
     UnsetForAgent(String),
     /// The reader is done with the view.
@@ -137,7 +137,7 @@ pub const DESCRIPTION_INDENT: u16 = 3;
 ///
 /// The line is the whole of what tells a reader that these rows are about
 /// the *next* conversation. Without it the group is indistinguishable from
-/// obelus's own, whose settings take effect where they stand -- and the way
+/// Obelus's own, whose settings take effect where they stand -- and the way
 /// that is found out is by changing one and going back to a conversation
 /// that has not moved.
 pub const HEADING_ROWS: u16 = 3;
@@ -176,7 +176,7 @@ pub enum Page {
     Settings,
     /// Every command, and the key it is on.
     Keys,
-    /// The agents obelus can install.
+    /// The agents Obelus can install.
     Agents,
 }
 
@@ -187,7 +187,7 @@ impl Page {
     /// The pages one file's settings have.
     ///
     /// The project's have one. Which keys a reader is on and which agent
-    /// obelus talks to are the reader's alone -- a downloaded project that
+    /// Obelus talks to are the reader's alone -- a downloaded project that
     /// could set either would be starting programs and moving `quit` under
     /// somebody's fingers -- so on the project's page those two tabs went
     /// nowhere. They said so, in a sentence, and the rows behind the
@@ -196,7 +196,7 @@ impl Page {
     ///
     /// Not drawn dim and not refusing when pressed: a tab is for somewhere
     /// else to go, and one that goes nowhere is a tab that lies. The foot
-    /// of every view in obelus follows the same rule, listing the keys
+    /// of every view in Obelus follows the same rule, listing the keys
     /// that do something here and keeping the rest for `F1`.
     #[must_use]
     pub const fn of(whose: Whose) -> &'static [Self] {
@@ -234,11 +234,11 @@ pub struct Offering {
     /// What it last said it can be set to.
     pub offers: Vec<Offer>,
     /// What the reader has said each is to start on, by the agent's id for
-    /// the setting. What is not in here is what obelus says nothing about.
+    /// the setting. What is not in here is what Obelus says nothing about.
     pub chosen: std::collections::BTreeMap<String, String>,
     /// Why there is nothing to list, where there is nothing.
     ///
-    /// An agent obelus has not talked to yet has told it nothing, which is
+    /// An agent Obelus has not talked to yet has told it nothing, which is
     /// not the same as an agent with nothing to be set -- and a group that
     /// simply was not drawn would say the second. So the group is drawn,
     /// with this in it instead of rows.
@@ -255,7 +255,7 @@ pub struct Offering {
 /// group that the query left, and where there is none there is no heading.
 #[derive(Clone, Copy, Debug)]
 pub enum Shown<'a> {
-    /// One of obelus's own settings.
+    /// One of Obelus's own settings.
     Obelus {
         /// The setting.
         setting: &'static Setting,
@@ -268,7 +268,7 @@ pub enum Shown<'a> {
         /// What the agent offers, in the agent's own words.
         offer: &'a Offer,
         /// Which of its values the reader has chosen, if they have chosen
-        /// one. `None` is the third state these rows have and obelus's own
+        /// one. `None` is the third state these rows have and Obelus's own
         /// do not: leave it to the agent.
         chosen: Option<&'a str>,
         /// The agent whose name this row opens the heading of, where it is
@@ -291,7 +291,7 @@ pub enum Shown<'a> {
 }
 
 impl Shown<'_> {
-    /// The setting this row is about, where it is one of obelus's own.
+    /// The setting this row is about, where it is one of Obelus's own.
     #[must_use]
     pub const fn setting(&self) -> Option<&'static Setting> {
         match self {
@@ -353,7 +353,7 @@ pub struct Settings {
     /// Which row has the focus and which is on top -- of the settings, or
     /// of the cards, whichever page is showing.
     ///
-    /// The same window every other list in obelus has, which is what makes
+    /// The same window every other list in Obelus has, which is what makes
     /// this page scroll the way they do: by the least that puts the focused
     /// row back on screen, and no further.
     window: Window,
@@ -603,7 +603,7 @@ impl Settings {
     /// through it.
     #[must_use]
     // The rows borrow the offering and not the page: what is on them comes
-    // from the table obelus ships with and from what the application
+    // from the table Obelus ships with and from what the application
     // handed in, and a page that lent itself out here could not move its
     // own window while it held them.
     pub fn rows<'a>(&self, offering: Option<&'a Offering>) -> Vec<Shown<'a>> {
@@ -639,7 +639,7 @@ impl Settings {
         // with it.
         //
         // And the agent's own, under a heading of its name. Last, because
-        // obelus's settings are the page a reader came to and an agent's
+        // Obelus's settings are the page a reader came to and an agent's
         // are about somewhere else; and a group rather than a tab of its
         // own, because it is the same shape of thing -- a name, a line
         // about it, and one control -- and a reader looking for the one
@@ -662,7 +662,7 @@ impl Settings {
         // The reason there are none, where there are none and the reader
         // has not narrowed them away themselves: a group that was simply
         // not drawn would say the agent has nothing to be set, which is a
-        // sentence about the agent and one obelus has no grounds for.
+        // sentence about the agent and one Obelus has no grounds for.
         if let Some(saying) = offering.silence.as_deref()
             && query.is_empty()
             && let Some(opens) = opens
@@ -765,7 +765,7 @@ impl Settings {
     /// The filter is a plain substring, so a match is one run of them -- and
     /// the run is what the view colours. Without it a row in a narrowed list
     /// leaves the reader working out why it is there, which is the question
-    /// the highlight answers everywhere else in obelus.
+    /// the highlight answers everywhere else in Obelus.
     ///
     /// `None` for a row that matched on its key rather than on its name,
     /// and for no query at all: there is nothing on the row to point at.
@@ -832,7 +832,7 @@ impl Settings {
                 return SettingsOutcome::Bind(command, None);
             }
             let Some(chord) = KeyChord::from_event(key) else {
-                // A release, or a modifier obelus cannot bind. Nothing to
+                // A release, or a modifier Obelus cannot bind. Nothing to
                 // say about it: the row is still waiting.
                 return SettingsOutcome::Consumed;
             };
@@ -868,7 +868,7 @@ impl Settings {
             return SettingsOutcome::Consumed;
         }
 
-        // The same rule every other view follows: a modifier obelus has no
+        // The same rule every other view follows: a modifier Obelus has no
         // meaning for disqualifies the key rather than being ignored.
         let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
             return SettingsOutcome::Ignored;
@@ -954,7 +954,7 @@ impl Settings {
                         Status::Installed if listed.active => SettingsOutcome::Deactivate,
                         Status::Installed => SettingsOutcome::Activate(listed.agent.id.clone()),
                         // Nothing to press while it is running, and nothing
-                        // to press on one obelus cannot install.
+                        // to press on one Obelus cannot install.
                         Status::Installing | Status::Unavailable(_) => SettingsOutcome::Consumed,
                     },
                     None => SettingsOutcome::Consumed,
@@ -1008,7 +1008,7 @@ impl Settings {
             // Only there -- the reader's own settings have no "unset", a
             // setting they have not changed is simply the default.
             // And on one of the agent's rows, wherever the page is: what
-            // is left there is not a default of obelus's but the agent's
+            // is left there is not a default of Obelus's but the agent's
             // own answer, so there is something to go back to.
             KeyCode::Delete
                 if bare

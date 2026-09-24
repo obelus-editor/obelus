@@ -1,4 +1,4 @@
-//! Everything obelus does before there is a screen.
+//! Everything Obelus does before there is a screen.
 //!
 //! The order is the part worth having a name: the paths are read before
 //! anything takes the screen, the project is settled before the settings that
@@ -7,7 +7,7 @@
 //! lines that happened to be in that order rather than as an order with
 //! reasons.
 //!
-//! What is deliberately *not* here is anything that knows how obelus is
+//! What is deliberately *not* here is anything that knows how Obelus is
 //! drawn. Taking over a terminal -- the alternate screen, raw mode, the
 //! mouse, the keyboard protocol -- and handing it back belong to whoever
 //! does the drawing, and so does asking it what it can do.
@@ -26,7 +26,7 @@ use crate::app::{self, App};
 /// past inside an alternate one. Whoever calls this takes the screen
 /// afterwards, not before.
 ///
-/// `built` is the commit obelus was built at, which only the binary knows:
+/// `built` is the commit Obelus was built at, which only the binary knows:
 /// it comes from a build script, and a build script's `rustc-env` reaches
 /// the crate it belongs to and nothing else. Handed in, the same way
 /// [`App::built_at`] already takes it.
@@ -36,7 +36,7 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
     let opening = app::opening(paths);
 
     // The first line of every session, and the one a reader of the log
-    // needs before any other: which obelus this is, where it was run, and
+    // needs before any other: which Obelus this is, where it was run, and
     // what it was asked for. Without it there is no telling which run is
     // being read, or that a run happened at all.
     //
@@ -51,13 +51,13 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
         // answered from there.
         built,
         directory = ?std::env::current_dir().ok(),
-        // And the project obelus settled on, which the arguments may have
+        // And the project Obelus settled on, which the arguments may have
         // moved: every path in the rest of the log is relative to it.
         project = ?opening.root,
         paths = paths.len(),
         opens = opening.files.len(),
         list = opening.list,
-        "obelus starting"
+        "Obelus starting"
     );
 
     let buffers = opening
@@ -91,7 +91,7 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
 /// kill, and handing the screen back is itself a thing that can fail.
 pub fn finish(outcome: &Result<()>) {
     match outcome {
-        Ok(()) => tracing::info!("obelus leaving"),
-        Err(error) => tracing::error!(%error, "obelus stopping on an error"),
+        Ok(()) => tracing::info!("Obelus leaving"),
+        Err(error) => tracing::error!(%error, "Obelus stopping on an error"),
     }
 }

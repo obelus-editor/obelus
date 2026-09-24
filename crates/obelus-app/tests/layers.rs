@@ -189,7 +189,7 @@ fn only_a_question_leaves_the_file_pointable() {
 /// other places that also held an order agreed. It is now one array, read
 /// backwards, and this is the assertion that it is read at all.
 ///
-/// A list over a page is the pair to use because it is one obelus really
+/// A list over a page is the pair to use because it is one Obelus really
 /// has: a setting's choices, and any list opened while a page is showing.
 #[test]
 fn a_key_goes_to_the_nearest_layer() {
@@ -315,7 +315,7 @@ fn two_pages_are_never_open_at_once() {
 /// And the one nesting that is allowed stays allowed.
 ///
 /// A list opens *over* a page rather than instead of it: a setting's
-/// choices, and an agent's own question. This is the one place obelus
+/// choices, and an agent's own question. This is the one place Obelus
 /// stacks two things the reader is in, and it is why the rule is "a view
 /// covers what shares its room" rather than "opening covers".
 #[test]

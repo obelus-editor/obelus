@@ -3,7 +3,7 @@
 //! The floor under the outline. A language server knows more -- nesting,
 //! containers, the difference between a method and a free function that
 //! happens to look like one -- but it has to be installed, started and
-//! finished indexing, and obelus can highlight fourteen languages while
+//! finished indexing, and Obelus can highlight fourteen languages while
 //! knowing how to start a server for nine of them. The tree is already in
 //! the buffer, so this answer costs a query over one file and is available
 //! the moment the file is open.
@@ -110,7 +110,7 @@ pub fn outline(state: &SyntaxState, text: &Text) -> Vec<Symbol> {
                 kind,
                 line,
                 column,
-                // A name spanning lines is not a name obelus can mark, so the
+                // A name spanning lines is not a name Obelus can mark, so the
                 // mark stops at the end of the first one.
                 end_column: if end_line == line {
                     end_column
@@ -151,7 +151,7 @@ pub fn outline(state: &SyntaxState, text: &Text) -> Vec<Symbol> {
     symbols
 }
 
-/// Whether obelus can outline a language at all without a server.
+/// Whether Obelus can outline a language at all without a server.
 #[must_use]
 pub fn has_tags(language: LanguageId) -> bool {
     tags_query(language).is_some()
@@ -169,7 +169,7 @@ fn kind_of(definition: &str) -> SyntaxKind {
         "constant" => SyntaxKind::Constant,
         "module" | "namespace" | "package" => SyntaxKind::Keyword,
         "field" | "property" | "member" => SyntaxKind::Property,
-        // Something upstream added that obelus has not been taught. A name
+        // Something upstream added that Obelus has not been taught. A name
         // with the ordinary foreground still reads; a panic would not.
         _ => SyntaxKind::Variable,
     }
@@ -188,7 +188,7 @@ fn tags_query(language: LanguageId) -> Option<&'static tree_sitter::Query> {
             static $cell: OnceLock<tree_sitter::Query> = OnceLock::new();
             Some($cell.get_or_init(|| {
                 tree_sitter::Query::new(crate::grammar(language).language(), $source)
-                    .expect("a tags query shipped with obelus should compile")
+                    .expect("a tags query shipped with Obelus should compile")
             }))
         }};
     }
@@ -198,7 +198,7 @@ fn tags_query(language: LanguageId) -> Option<&'static tree_sitter::Query> {
     /// It was written for code navigation tools that index callables and
     /// types, so it has no pattern for a constant. A reader looking for
     /// `COMPACT_ROWS` in an outline of this very file would not find it.
-    /// Rust only, because Rust is the language obelus is written in and the
+    /// Rust only, because Rust is the language Obelus is written in and the
     /// one its own outline is read against every day -- a patch per language
     /// is a maintenance burden, and this is one line.
     const RUST_EXTRA: &str = "

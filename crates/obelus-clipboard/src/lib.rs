@@ -5,22 +5,22 @@
 //! library. An outside program -- `wl-copy`, `xclip`, `pbcopy`, `tmux` --
 //! when there is one, and OSC 52 when there is not.
 //!
-//! OSC 52 hands the text to whatever is drawing obelus, and that program owns
+//! OSC 52 hands the text to whatever is drawing Obelus, and that program owns
 //! it from then on. Two things follow, and they are why it is the fallback
 //! rather than nothing:
 //!
-//! - **It survives obelus exiting.** On Wayland and X11 the clipboard has no
+//! - **It survives Obelus exiting.** On Wayland and X11 the clipboard has no
 //!   server; the content belongs to a live client, and a library that offered
 //!   it from inside this process would lose it the moment the process ended.
 //!   Copy, quit, paste is the most ordinary thing a reader does with a copy.
 //! - **It works over ssh.** The terminal is on the reader's own machine while
-//!   obelus is not, and a display-server connection has nothing to connect to
+//!   Obelus is not, and a display-server connection has nothing to connect to
 //!   at this end.
 //!
 //! It cannot be *read*, though. Many terminals refuse -- a program that could
 //! ask what is on your clipboard is a program that can read your passwords --
 //! and helix does not even try: its own OSC 52 provider answers a read with
-//! "not supported". So obelus keeps whatever it last copied or cut, and hands
+//! "not supported". So Obelus keeps whatever it last copied or cut, and hands
 //! that back when nothing else can answer. Text from outside arrives instead
 //! by the terminal's own paste, which is bracketed and comes in as an event.
 //!
@@ -38,7 +38,7 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
-/// Whatever obelus last copied or cut.
+/// Whatever Obelus last copied or cut.
 ///
 /// What a paste falls back to. Kept whether or not the provider took the
 /// copy, because the case it is for is exactly the one where the provider
@@ -71,7 +71,7 @@ pub enum Provider {
     Win32Yank,
     /// The escape sequence, which writes and cannot read.
     Osc52,
-    /// Nothing outside obelus at all.
+    /// Nothing outside Obelus at all.
     ///
     /// What a test gets, so that running the suite does not reach into the
     /// clipboard of whoever is running it -- and what the copy and paste
@@ -125,7 +125,7 @@ impl Provider {
 /// What this machine has, asked once and remembered.
 ///
 /// The order is helix's, which is nvim's: a multiplexer first, because it is
-/// what is between obelus and the terminal; then the display server the
+/// what is between Obelus and the terminal; then the display server the
 /// environment says is running; then the escape sequence, which needs
 /// nothing and can be wrong about nothing except whether the terminal was
 /// listening.
@@ -167,7 +167,7 @@ pub fn provider() -> Provider {
 
 /// Puts text back, from wherever it can be got.
 ///
-/// The provider first, and what obelus kept when the provider cannot read --
+/// The provider first, and what Obelus kept when the provider cannot read --
 /// which is OSC 52 always, and any of the others when the program is not
 /// there any more or says nothing.
 #[must_use]
@@ -184,7 +184,7 @@ pub fn paste() -> Option<String> {
     match outcome {
         Ok(output) if output.status.success() => match String::from_utf8(output.stdout) {
             // An empty clipboard is not an answer worth having over one
-            // obelus is sure of.
+            // Obelus is sure of.
             Ok(text) if !text.is_empty() => Some(text),
             _ => kept(),
         },
@@ -206,7 +206,7 @@ pub fn use_provider_for_test(provider: Provider) {
     }
 }
 
-/// Remembers what obelus put on the clipboard.
+/// Remembers what Obelus put on the clipboard.
 fn keep(text: &str) {
     if let Ok(mut kept) = KEPT.lock() {
         *kept = Some(text.to_string());

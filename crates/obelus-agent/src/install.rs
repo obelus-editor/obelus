@@ -14,7 +14,7 @@
 //! infers an install from the files a package manager left, because that cannot
 //! be done: `npm` writes a package's manifest before it links the executable,
 //! so a run killed halfway leaves a directory shaped exactly like a finished
-//! one. It did read them once, and the cost was a reader whose obelus was shut
+//! one. It did read them once, and the cost was a reader whose Obelus was shut
 //! mid-install and who then had a card reading "active" over an agent nothing
 //! could start, with no button on it but the one that turned it off.
 //! Working out what to run happens *inside* the install, where the registry's
@@ -128,14 +128,14 @@ async fn install(
     started: Instant,
     sender: &impl Sink<Event>,
 ) -> Result<(), String> {
-    // Said first, so that a second obelus asked for the same agent stops
+    // Said first, so that a second Obelus asked for the same agent stops
     // here rather than running a second `npm` into the same directory.
     // Held to the end of this function and given up by being dropped,
     // however it ends.
     let _claim = super::claim(&agent.id, root)?;
     let Some(home) = super::home(&agent.id, root) else {
         return Err(format!(
-            "{} is not a name obelus can keep a directory of",
+            "{} is not a name Obelus can keep a directory of",
             agent.id
         ));
     };
@@ -172,15 +172,15 @@ async fn install(
 
 /// Asks `npm` for a package, into this agent's own directory.
 ///
-/// `--prefix` and nothing global: obelus installing into a place the reader
-/// shares with everything else on the machine is obelus deciding for them.
+/// `--prefix` and nothing global: Obelus installing into a place the reader
+/// shares with everything else on the machine is Obelus deciding for them.
 /// And a prefix per agent, because the prefix is where npm keeps the
 /// manifest -- one shared between agents would be rewritten by whichever
 /// was installed last.
 async fn node(package: &str, home: &Path) -> Result<(), String> {
     let (package, home) = (package.to_string(), home.to_path_buf());
     // A blocking job: `npm install` is a subprocess that reads the network
-    // and writes a tree, and none of that is waiting obelus can do
+    // and writes a tree, and none of that is waiting Obelus can do
     // anything else during.
     obelus_runtime::handle()
         .spawn_blocking(move || node_now(&package, &home))
@@ -359,8 +359,8 @@ fn unpack(bytes: &[u8], name: &str, into: &Path) -> Result<(), String> {
             .map_err(|error| format!("unpacking it: {error}"));
     }
     // `.tar.bz2` is four of the registry's hundred entries, and a shape
-    // obelus has no unpacker for. Saying which shape beats saying "failed".
-    Err(format!("obelus cannot unpack {name}"))
+    // Obelus has no unpacker for. Saying which shape beats saying "failed".
+    Err(format!("Obelus cannot unpack {name}"))
 }
 
 /// Makes an unpacked program executable.
@@ -434,7 +434,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// An install that another obelus is already doing does not run twice.
+    /// An install that another Obelus is already doing does not run twice.
     ///
     /// They share the agent's directory, and an install is a program
     /// writing a tree into it: two at once is two of them with one prefix,
@@ -460,13 +460,13 @@ mod tests {
             },
         };
 
-        // The other obelus, holding the claim for as long as this is held.
+        // The other Obelus, holding the claim for as long as this is held.
         let theirs = crate::claim(&agent.id, &root).expect("their claim");
 
         let (sender, _events) = std::sync::mpsc::channel::<crate::Event>();
         let outcome = super::install(&agent, &root, std::time::Instant::now(), &sender).await;
         assert!(
-            outcome.is_err_and(|why| why.contains("another obelus")),
+            outcome.is_err_and(|why| why.contains("another Obelus")),
             "it installed over an install that was already running"
         );
         assert_eq!(
@@ -487,7 +487,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// A name obelus would not make a directory of is an install that fails
+    /// A name Obelus would not make a directory of is an install that fails
     /// rather than one that writes somewhere else.
     #[tokio::test]
     async fn an_install_under_an_impossible_name_fails() {

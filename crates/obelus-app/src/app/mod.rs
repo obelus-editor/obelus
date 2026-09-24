@@ -1,7 +1,7 @@
 //! Application state, and the loop that drives it.
 //!
-//! `App` holds everything obelus knows and everything it can be asked to
-//! do, so its methods are as many as the things obelus does. They are split
+//! `App` holds everything Obelus knows and everything it can be asked to
+//! do, so its methods are as many as the things Obelus does. They are split
 //! across this directory by *what they are about* -- the file being read,
 //! the language server, the repository, the search, the settings -- rather
 //! than by size, and each file is one `impl App` block. Nothing moved
@@ -11,7 +11,7 @@
 //!
 //! The files are named for the *aspect*, not for the module they talk to:
 //! `obelus_git` is the reading of a repository and `history` here is what
-//! obelus does with what it reads. What is left in this file is the state
+//! Obelus does with what it reads. What is left in this file is the state
 //! itself, the keys, the frame, and the loop.
 pub mod agents;
 mod asking;
@@ -159,7 +159,7 @@ struct Dragging {
     y: u16,
 }
 
-/// Everything obelus is currently showing or remembering.
+/// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
     keymap: Keymap,
@@ -252,10 +252,10 @@ pub struct App {
     troubles: HashMap<PathBuf, Vec<obelus_lsp::trouble::Trouble>>,
     /// What every server has said about every file, as it said it.
     ///
-    /// The whole project rather than the files obelus has open, and in the
+    /// The whole project rather than the files Obelus has open, and in the
     /// protocol's own units rather than in any document's: a range is
     /// placed by counting against the text it is in, and most of what a
-    /// server talks about after a `cargo check` is text obelus has not
+    /// server talks about after a `cargo check` is text Obelus has not
     /// read. Dropping those was dropping the answer to "where is this
     /// project broken", which is a question about the files nobody has
     /// opened yet.
@@ -268,7 +268,7 @@ pub struct App {
     /// Where the pointer was last put down, and how many times in a row.
     ///
     /// A terminal reports button presses and nothing about double clicks,
-    /// so the count is obelus's own: the same cell, pressed again inside
+    /// so the count is Obelus's own: the same cell, pressed again inside
     /// the time below, is the second press of one gesture.
     clicked: Option<(u16, u16, std::time::Instant, u8)>,
     /// What could be typed next, while a server's answer is on screen.
@@ -305,7 +305,7 @@ pub struct App {
     /// Where the pointer is resting, since when, and whether that rest
     /// has already asked its question.
     ///
-    /// A hover on a rest is the one thing in obelus that happens because a
+    /// A hover on a rest is the one thing in Obelus that happens because a
     /// reader did *nothing*, so the doing-nothing has to be measured: the
     /// same cell, still under the pointer when the next tick lands. The
     /// asking is remembered because a pointer left on a word that has no
@@ -402,13 +402,13 @@ pub struct App {
     /// the edge and waited would wait for ever: the selection they are
     /// making stops where the screen does.
     dragging: Option<Dragging>,
-    /// Which build this is, as whatever started obelus was told at compile
+    /// Which build this is, as whatever started Obelus was told at compile
     /// time.
     ///
-    /// Held rather than worked out, because obelus cannot work it out: the
+    /// Held rather than worked out, because Obelus cannot work it out: the
     /// commit is known to the one crate with a build script, which is the
     /// binary's own, and everything under it takes it as a string like any
-    /// other fact about how obelus was started.
+    /// other fact about how Obelus was started.
     built: &'static str,
     /// What git says about the files in the tree, while a list of them is
     /// open.
@@ -416,13 +416,13 @@ pub struct App {
     /// Gathered when a list opens and kept until the next one, because it is
     /// a walk of the whole tree and the rows arrive in batches afterwards.
     statuses: std::collections::HashMap<PathBuf, obelus_git::Standing>,
-    /// Where an agent reaches what obelus offers it, if it could listen.
+    /// Where an agent reaches what Obelus offers it, if it could listen.
     ///
     /// Taken once and kept: the address is what each agent is told, so a
     /// second one started later reaches the same tools rather than a second
     /// server nobody asked for.
     tools_url: Option<String>,
-    /// The agent obelus is talking to, once something has needed it.
+    /// The agent Obelus is talking to, once something has needed it.
     talker: Option<obelus_agent::acp::Talk>,
     /// The commands an agent asked to run, while they run.
     ///
@@ -439,7 +439,7 @@ pub struct App {
         String,
         obelus_agent::acp::Answer<Option<obelus_agent::running::Ended>>,
     )>,
-    /// What obelus knows about the agents it could run.
+    /// What Obelus knows about the agents it could run.
     agents: agents::Agents,
     /// The settings as they stand, and where each part came from.
     settled: preferences::Settled,
@@ -491,7 +491,7 @@ pub struct App {
     ///
     /// The gap between the two is a round trip: a server that knows the
     /// language knows which other files name this one by where it is, and
-    /// obelus asks before renaming it rather than leaving the reader to
+    /// Obelus asks before renaming it rather than leaving the reader to
     /// find out from the next build.
     renaming: Option<renaming_files::Renaming>,
     /// Which directories of the file tree are open, relative to the root.
@@ -563,7 +563,7 @@ pub struct App {
     outside: bool,
     /// How the search is looking: the three switches at its foot.
     ///
-    /// The reader's, kept for as long as obelus is running and not written
+    /// The reader's, kept for as long as Obelus is running and not written
     /// to their settings: a pattern answers *this* question, and one turned
     /// on to find one thing should not still be on next week.
     looking: obelus_search::Looking,
@@ -720,7 +720,7 @@ impl App {
             highlights: Highlights::default(),
             editor_area: Rect::ZERO,
             // Read once. Nothing later asks the operating system again, so
-            // every path obelus shows is relative to the same root for the
+            // every path Obelus shows is relative to the same root for the
             // whole session even if something else changes the process's
             // directory.
             working_directory: std::env::current_dir().unwrap_or_default(),
@@ -803,7 +803,7 @@ impl App {
         &self.highlights
     }
 
-    /// Where obelus was started, and the root every path is shown relative to.
+    /// Where Obelus was started, and the root every path is shown relative to.
     #[must_use]
     pub fn working_directory(&self) -> &Path {
         &self.working_directory
@@ -916,25 +916,25 @@ impl App {
     /// missing program.
     ///
     /// Public because it is the whole of what starting means, and a test
-    /// about what obelus does on the way up has nothing else to call.
+    /// about what Obelus does on the way up has nothing else to call.
     pub fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
-        // What obelus offers an agent back. Started with the loop rather
+        // What Obelus offers an agent back. Started with the loop rather
         // than with the first agent, because the address is what an agent is
         // told and telling two of them two addresses would be two servers.
         match obelus_mcp::serve(&self.working_directory, std::sync::Arc::new(sender.clone())) {
             // Said, because the silent half of this is the half nobody can
             // ask about: whether an agent was offered anything, and whether
-            // it took it, were both questions obelus had no answer to.
+            // it took it, were both questions Obelus had no answer to.
             Ok(url) => {
-                tracing::info!(url, "obelus is offering an agent its tools");
+                tracing::info!(url, "Obelus is offering an agent its tools");
                 self.tools_url = Some(url);
             }
             Err(error) => {
-                // Not a reason to stop: an obelus that cannot listen is an
-                // obelus an agent cannot ask anything of, which is what it
+                // Not a reason to stop: an Obelus that cannot listen is an
+                // Obelus an agent cannot ask anything of, which is what it
                 // was until now.
-                tracing::warn!(%error, "obelus is offering an agent nothing");
+                tracing::warn!(%error, "Obelus is offering an agent nothing");
             }
         }
         self.start_watching(sender);
@@ -1010,7 +1010,7 @@ impl App {
             .count()
     }
 
-    /// Says where obelus's own tools are, without listening anywhere.
+    /// Says where Obelus's own tools are, without listening anywhere.
     ///
     /// The loop starts a server and puts its address here; a test wants the
     /// address handed to an agent without a port being opened for it, which
@@ -1030,7 +1030,7 @@ impl App {
     pub fn working_directory_for_test(&mut self, root: PathBuf) {
         self.work_in(root);
         // And whatever that project has to say about the settings, which
-        // is what putting obelus on a project means: at startup the two happen
+        // is what putting Obelus on a project means: at startup the two happen
         // together, and a test that moved one without the other would be
         // testing an application no reader can have.
         self.apply_project();
@@ -1050,7 +1050,7 @@ impl App {
                 tracing::warn!(%error, path = %buffer.path().display(), "not watching");
             }
         }
-        // And what git keeps its state in, because obelus is not the only
+        // And what git keeps its state in, because Obelus is not the only
         // thing in the repository: a commit in another window, or in a
         // shell, changes what has changed in every file on screen. The
         // margin would otherwise go on showing a diff against a commit that
@@ -1060,9 +1060,9 @@ impl App {
                 tracing::warn!(%error, path = %path.display(), "not watching the repository");
             }
         }
-        // And the settings, because obelus is not the only obelus. Several
+        // And the settings, because Obelus is not the only Obelus. Several
         // of them on one project is the ordinary way to work -- the
-        // terminal splits the window, obelus does not -- so a setting
+        // terminal splits the window, Obelus does not -- so a setting
         // changed in one of them is a setting changed for all of them, and
         // a file read once at startup would leave every other window
         // holding what the reader has already moved on from.
@@ -1080,7 +1080,7 @@ impl App {
             }
         }
         // And the project's own settings, for the same reason twice over:
-        // another obelus on this project may be looking at them, and a `git
+        // another Obelus on this project may be looking at them, and a `git
         // pull` rewrites them under everybody.
         // The file the project *would* have, not the one it has: watching only
         // what was there at startup is the "read once" mistake with a longer
@@ -1093,7 +1093,7 @@ impl App {
         }
         self.watcher = Some(watcher);
         // And wherever the colours come from, which is its own question:
-        // a theme is a file obelus never writes and something else may
+        // a theme is a file Obelus never writes and something else may
         // replace under it.
         self.watch_theme();
     }
@@ -1285,7 +1285,7 @@ impl App {
     /// rest of the session.
     pub(crate) fn settle_syntax(&mut self) {
         // Nothing else has to be told: the text did not move, only what
-        // obelus knows about it, so everything keyed on the version stays
+        // Obelus knows about it, so everything keyed on the version stays
         // keyed on the version it already had.
         for buffer in self
             .documents
@@ -1314,7 +1314,7 @@ impl App {
     /// Which set of key bindings a key is looked up in.
     ///
     /// What the reader is in, rather than what they are doing: a dialog
-    /// takes the keys bound in it and no others, so obelus's own commands
+    /// takes the keys bound in it and no others, so Obelus's own commands
     /// cannot open a second dialog over the first -- `f1` in a
     /// conversation used to put a file list on top of it, which then took
     /// two escapes to leave and gave no way to tell which of the two a key
@@ -1426,7 +1426,7 @@ impl App {
     ///
     /// A conversation is not one of these, and stopped being one when it
     /// became a document: it is *what* is being read, not something over it,
-    /// which is why obelus's own keys work inside one.
+    /// which is why Obelus's own keys work inside one.
     ///
     /// The question on the status bar is not one of these. It is a row
     /// rather than a screen, what it is asking about is still visible
@@ -1454,12 +1454,12 @@ impl App {
     /// ticks have arrived by the time a screen is drawn depends on how
     /// quickly the machine got there. A golden screen holding one is a
     /// golden screen that passes on the machine it was made on -- which is
-    /// what `⠋` against `⠼` means, and it says nothing about obelus.
+    /// what `⠋` against `⠼` means, and it says nothing about Obelus.
     pub const fn phase_for_test(&mut self, phase: u32) {
         self.phase = phase;
     }
 
-    /// What obelus has to say, until the next key.
+    /// What Obelus has to say, until the next key.
     #[must_use]
     pub fn note(&self) -> Option<&str> {
         self.note.as_deref()
@@ -1798,12 +1798,12 @@ impl App {
                     self.reread_theme();
                 } else if self.is_the_notes_file(&path) {
                     // What the project means to come back to, written by
-                    // another obelus, the reader's own editor -- or by this
-                    // obelus, which hears its own writes like anybody
+                    // another Obelus, the reader's own editor -- or by this
+                    // Obelus, which hears its own writes like anybody
                     // else's. Not told apart, because there is nothing to
                     // gain by it: a reread keeps the box the reader is
                     // typing in and puts the caret back by name, so reading
-                    // back what obelus itself just wrote changes nothing on
+                    // back what Obelus itself just wrote changes nothing on
                     // the page.
                     self.reread_notes();
                 } else if obelus_git::state_moved(&path) {
@@ -1812,7 +1812,7 @@ impl App {
                     self.reload_path(&path);
                 }
                 // And the servers, whatever it was: a file changing on
-                // disk is news to them as much as to obelus -- a branch
+                // disk is news to them as much as to Obelus -- a branch
                 // checked out, a build script's output, an editor
                 // somewhere else. Some of them watch for themselves and
                 // will have heard already; the protocol's own answer is
@@ -1825,7 +1825,7 @@ impl App {
                     return;
                 };
                 // Whether it had finished its handshake before this
-                // message, because finishing one is a moment obelus has to
+                // message, because finishing one is a moment Obelus has to
                 // act on: every standing question about an open file is
                 // refused while a server cannot say what it answers, and
                 // opening a file is the moment they are all asked.
@@ -1838,7 +1838,7 @@ impl App {
                 // handshake, and nothing asking again for as long as the
                 // reader sits still.
                 let working = client.working_on().is_some();
-                // Everything the protocol needs rather than obelus — the
+                // Everything the protocol needs rather than Obelus — the
                 // handshake, progress, the server's own log lines — is dealt
                 // with in there.
                 let reply = client.on_message(&message);
@@ -1858,7 +1858,7 @@ impl App {
                 }
                 // Named, because the row says nothing else about who is
                 // complaining -- and left in the words it arrived in,
-                // which are the server's and not obelus's to rewrite.
+                // which are the server's and not Obelus's to rewrite.
                 if let Some(said) = complaints.last() {
                     let name = obelus_lsp::command_for(language).unwrap_or(language.name());
                     tracing::warn!(language = language.name(), "{said}");
@@ -2014,7 +2014,7 @@ impl App {
         if KeyChord::from_event(&key).is_none() {
             return;
         }
-        // Whatever obelus had to say has been read by now, or was not going to
+        // Whatever Obelus had to say has been read by now, or was not going to
         // be.
         self.note = None;
         // And a drag is over. Mostly it ended with the button coming up,
@@ -2042,7 +2042,7 @@ impl App {
         // because escape belongs to whatever is in front, and every other
         // key belongs to whatever owns the thing it moves. One order, the
         // one `layers` declares, read backwards. What a layer does not want
-        // falls through it, which is how `ctrl+q` still leaves obelus from
+        // falls through it, which is how `ctrl+q` still leaves Obelus from
         // inside any of them.
         for layer in self.layers().nearest_first() {
             let taken = match layer {
@@ -2340,7 +2340,7 @@ impl App {
     /// Walks to one of a view's tabs, by the shorter way round.
     ///
     /// The tabs wrap, so from where the reader is to where they pressed is
-    /// at most half the tabs away -- which for every list obelus has is one
+    /// at most half the tabs away -- which for every list Obelus has is one
     /// step. Walked rather than jumped because what a tab *costs* is the
     /// application's: a scope asks the search again, a radius walks the
     /// history again, a direction turns the calls round. Going the short
@@ -2625,7 +2625,7 @@ impl App {
         // to the row rather than to the words in it.
         //
         // Free of the selection, and not by luck: every row that folds is
-        // one obelus drew itself -- the heading over a run of tool calls,
+        // one Obelus drew itself -- the heading over a run of tool calls,
         // the one over a piece of thinking, the one over the agent's plan
         // -- and none of them is anybody's words. A press on one already
         // meant nothing but "let go", so opening it costs the reader
@@ -2996,7 +2996,7 @@ where
     // where the last frame left it, and then -- for a frame that names a
     // position -- *shows* the caret before moving it. Both are moments when
     // a terminal that repaints mid-write would draw a caret somewhere
-    // obelus did not put one. Ordinarily nothing repaints mid-write and
+    // Obelus did not put one. Ordinarily nothing repaints mid-write and
     // nobody sees either of them; handing a terminal a sixel makes it draw
     // then and there, which had a caret flashing across the agents page on
     // every step of the selection.
@@ -3036,12 +3036,12 @@ where
     Ok(())
 }
 
-/// What the command line asked obelus to open.
+/// What the command line asked Obelus to open.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Opening {
     /// The project to work in, absolute, where the arguments named one.
     ///
-    /// `None` for no arguments at all, which leaves the directory obelus
+    /// `None` for no arguments at all, which leaves the directory Obelus
     /// was started in -- the shell's answer to the same question.
     pub root: Option<PathBuf>,
     /// The files to open, in the order they were given.
@@ -3060,7 +3060,7 @@ pub struct Opening {
 /// Absolute, and by the same rule [`obelus_buffer::Buffer::open`] uses on
 /// a file: made absolute rather than canonical, so a project reached through
 /// a symlink is still shown under the name the reader typed. A relative
-/// root would fail quietly -- every path obelus shows is worked out by
+/// root would fail quietly -- every path Obelus shows is worked out by
 /// stripping this off an absolute one, and git is asked about it from a
 /// process whose own directory nothing here controls.
 #[must_use]
@@ -3093,7 +3093,7 @@ pub fn opening(paths: &[PathBuf]) -> Opening {
     }
 }
 
-/// A path from the command line, made absolute against where obelus was
+/// A path from the command line, made absolute against where Obelus was
 /// started.
 fn absolute(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
@@ -3104,7 +3104,7 @@ fn absolute(path: &Path) -> PathBuf {
 /// It blocks on the channel, and the terminal is read by a thread that
 /// sends into the same channel. Which way round that goes is the whole
 /// design, and it is not obvious from here, so: a loop has to block on
-/// exactly one thing or spin, and obelus has two sides to wait on -- the
+/// exactly one thing or spin, and Obelus has two sides to wait on -- the
 /// terminal, and everything else. Everything else is fourteen of the
 /// nineteen [`Event`](crate::event::Event) variants, and every one of them
 /// arrives with the reader's hands still: a walk finding files, a language
@@ -3118,7 +3118,7 @@ fn absolute(path: &Path) -> PathBuf {
 /// type, the agent's answer appears a keystroke late, and a file that
 /// changed on disk is not re-read until you press something. Parking on
 /// neither means spinning, or drawing on a clock at sixty frames a second
-/// -- and obelus draws when something happened, which is what lets it be a
+/// -- and Obelus draws when something happened, which is what lets it be a
 /// process that is genuinely asleep when nothing is.
 ///
 /// `terminal.draw` is synchronous and blocks the loop on a write to stdout.
@@ -3152,7 +3152,7 @@ where
 
         let Ok(event) = events.recv() else {
             // Every sender is gone, so no further event can arrive. Which
-            // is not how obelus is meant to end -- the reader asks -- so it
+            // is not how Obelus is meant to end -- the reader asks -- so it
             // says so: the keyboard's thread has died.
             tracing::warn!("nothing is left to send events, so there is nothing to wait for");
             break;
