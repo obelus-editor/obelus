@@ -311,6 +311,25 @@ page folds. The counts can spend theirs only when something does; a note's
 words are wrapped to what is left of the row, so a column that came and went
 would re-wrap the page the moment a reader put the first note under another.
 
+**A box is the reader's once they have put something in it, not because
+it exists.** A reread keeps the box the caret is in, so that somebody
+else's write cannot take back a word the reader has just typed. But the
+notes open with the caret already in a note -- there is no mode to get into
+-- so a box exists before anything has been typed into it, holding this
+page's own copy of what the note said. Kept over the file, that copy is
+this window saying the other window's change did not happen: the note a
+reader happened to be standing on was the one note no other window could
+ever change under them, and since a page opens on the first note, that was
+usually the note they were both looking at. `TodoView::reread` asks whether
+the box still says what the page's copy said -- the same question it
+already asked about a note the other window *deleted* -- and where it does,
+takes the file's words and puts them in the box.
+
+Both halves need a test, because each passes with the other broken: one
+window's write arriving in the other, and the reader's unwritten words
+surviving a write to the very note they are in. Neither had one, which is
+how this lasted.
+
 **A setting the reader turned on is not a reason to refuse them.** Saving
 with formatting on and no server to ask writes the file unformatted. The
 alternative is a file that is never written because of something the reader

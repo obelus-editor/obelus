@@ -298,6 +298,23 @@ impl TodoView {
         let mut let_go_at = None;
         let writing = writing.and_then(|(was, mut note, composer)| {
             if let Some(at) = self.todo.find(&note.id) {
+                // The box is kept because what is in it is the reader's --
+                // and it is only theirs once they have put something there.
+                // Untouched, it holds this page's own copy of the note, and
+                // keeping that over the file is this page saying the other
+                // window's change did not happen. Which is not a corner: a
+                // page opens with the caret already in a note, so the note
+                // a reader happens to be standing on was the one note no
+                // other window could ever change under them.
+                //
+                // The same question the branch below asks about a note that
+                // has gone, asked about one that is still here.
+                let said = self.todo.notes[at].said.clone();
+                if obelus_git::todo::trimmed(&composer.text()) == note.said && said != note.said {
+                    let mut fresh = Composer::new();
+                    fresh.replace(&said);
+                    return Some((at, fresh));
+                }
                 return Some((at, composer));
             }
             // A note that says nothing has never been in anybody's file:

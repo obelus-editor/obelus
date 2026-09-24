@@ -1064,6 +1064,72 @@ fn two_windows_on_one_tree_keep_both_their_notes() {
     );
 }
 
+/// What one window writes, the other shows without being asked twice.
+///
+/// The whole of the two-window path in one test: one types, its own clock
+/// comes back and writes the file, the watcher tells the other, and the
+/// other reads it again. Every piece of that had a test except the joins
+/// between them, which is where a reader's "they do not sync" lives.
+#[test]
+fn a_note_written_in_one_window_arrives_in_the_other() {
+    let scratch = tree("two-sync", THREE);
+    let mut one = open(&scratch, 76, 24);
+    let mut two = open(&scratch, 76, 24);
+    let file = obelus_git::todo::path(scratch.path());
+
+    support::type_text(&mut one, "!!");
+    one.handle(Event::NotesSettled);
+    let written = std::fs::read_to_string(&file).expect("the notes");
+    assert!(
+        written.contains("!!wire the counts"),
+        "the first window never wrote it down:\n{written}"
+    );
+
+    // The other window's caret is where a page opens it: in the first
+    // note, which is the one that changed. That is the ordinary case and
+    // was the broken one.
+    // What the watcher hands the other window, by the path it watched.
+    two.handle(Event::Watched(obelus_watch::Changed { path: file }));
+    let dump = support::render(&mut two, 76, 24);
+    let shown = support::text_block(&dump);
+    assert!(
+        shown.contains("!!wire"),
+        "the other window is still showing the old notes:\n{shown}"
+    );
+}
+
+/// And what the reader has in the box is theirs, even when the other
+/// window changed that very note.
+///
+/// The other half of the one above, and the half the fix to it could have
+/// taken away: a box is kept because what is in it is the reader's, so the
+/// question is whether they have put anything there -- not whether a box
+/// exists. Untested, "keep the box" and "take the file" each pass with the
+/// other broken.
+#[test]
+fn what_is_being_typed_beats_what_the_other_window_wrote() {
+    let scratch = tree("two-typing", THREE);
+    let mut one = open(&scratch, 76, 24);
+    let mut two = open(&scratch, 76, 24);
+    let file = obelus_git::todo::path(scratch.path());
+
+    // The second window's reader is part way through the first note and has
+    // not stopped long enough for it to be written down.
+    support::type_text(&mut two, "??");
+
+    // The first window changes the same note, and its own clock writes it.
+    support::type_text(&mut one, "!!");
+    one.handle(Event::NotesSettled);
+
+    two.handle(Event::Watched(obelus_watch::Changed { path: file }));
+    let dump = support::render(&mut two, 76, 24);
+    let shown = support::text_block(&dump);
+    assert!(
+        shown.contains("??wire"),
+        "the reader's own unwritten words were taken off the page:\n{shown}"
+    );
+}
+
 /// A note taken away in one window is not put back by the other one
 /// ticking it off.
 ///
