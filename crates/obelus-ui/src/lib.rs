@@ -210,6 +210,8 @@ pub trait Screen {
     fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)>;
     /// What a language server is busy with, if one is.
     fn server_working_on(&self) -> Option<&str>;
+    /// Whether the server behind the file being read is busy with something.
+    fn server_busy(&self) -> bool;
     /// The settings view, while it is open.
     fn settings(&self) -> Option<&Settings>;
     /// What the call the cursor is inside takes, while it is showing.

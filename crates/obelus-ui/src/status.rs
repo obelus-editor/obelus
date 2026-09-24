@@ -19,10 +19,14 @@ use crate::{Marked, Screen, fill, relative_to, truncate_from_left, write, write_
 /// The status region.
 pub struct StatusView<'a> {
     buffer: Option<&'a Buffer>,
-    /// Something to tell the reader, or what a language server is busy with.
+    /// Something obelus has to tell the reader, until their next key.
     ///
-    /// One place for both: they are the same kind of thing — a passing word
-    /// about state — and a note is the more urgent of the two.
+    /// What a language server says it is doing used to share this. It is
+    /// not the same kind of thing: a note is a sentence about something
+    /// that just happened, and a server's progress is a few hundred
+    /// messages over a cold start, changing between the file's name and
+    /// the cursor's position while a reader tries to read both. What is
+    /// left of it is the badge, which turns.
     middle: Option<&'a str>,
     /// How many rows the rendering has, when one is on screen.
     rows: Option<usize>,
@@ -33,6 +37,15 @@ pub struct StatusView<'a> {
     /// listening, and that question is asked *after* the answer disappoints:
     /// a marker that had come and gone would not be there to answer it.
     server: Option<(&'static str, ServerState)>,
+    /// Whether that server is busy, for the mark that turns.
+    ///
+    /// The whole of what the row says about it now, and the reason the row
+    /// has to say anything: an empty answer during indexing and an empty
+    /// answer about a symbol with no definition are the same message on
+    /// the wire, and this is what tells them apart.
+    busy: bool,
+    /// Where the animation has got to, for that mark.
+    phase: u32,
     /// When a picker is open the row is its prompt instead.
     picker: Option<&'a Picker>,
     /// And when the settings are open, the row is what narrows them.
@@ -59,9 +72,11 @@ impl<'a> StatusView<'a> {
     pub fn new(app: &'a impl Screen) -> Self {
         Self {
             buffer: app.current_buffer(),
-            middle: app.note().or_else(|| app.server_working_on()),
+            middle: app.note(),
             rows: app.rendered_rows(),
             server: app.server_state(),
+            busy: app.server_busy(),
+            phase: app.phase(),
             troubles: app.troubles(),
             picker: app.picker(),
             settings: app.settings(),
@@ -141,12 +156,25 @@ impl Widget for StatusView<'_> {
 /// without saying what, which is not an answer a reader can act on. The
 /// trailing space is the gap before the cursor position.
 #[must_use]
-fn server_badge(server: Option<(&'static str, ServerState)>) -> String {
+fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) -> String {
     server
-        .map(|(name, state)| match obelus_icons::enabled() {
-            // Two blanks: one that the glyph bleeds into, one to read by.
-            true => format!("{}  {name} ", state.glyph()),
-            false => format!("{} {name} ", state.mark()),
+        .map(|(name, state)| {
+            // Busy beats the state it is in, because a server that is
+            // reading the project is a server that is there: what the
+            // reader wants off this mark while it turns is that an empty
+            // answer may be about the reading rather than about the
+            // symbol. Braille, which needs no particular font -- it is
+            // drawn whether or not glyphs are, like every other mark in
+            // obelus that turns.
+            if let Some(phase) = busy {
+                return format!("{}  {name} ", crate::spinning(phase));
+            }
+            match obelus_icons::enabled() {
+                // Two blanks: one that the glyph bleeds into, one to read
+                // by.
+                true => format!("{}  {name} ", state.glyph()),
+                false => format!("{} {name} ", state.mark()),
+            }
         })
         .unwrap_or_default()
 }
@@ -351,7 +379,7 @@ impl StatusView<'_> {
             .unwrap_or_default();
         let working_width = text_width(&working);
 
-        let badge = server_badge(self.server);
+        let badge = server_badge(self.server, self.busy.then_some(self.phase));
         let badge_width = text_width(&badge);
 
         // What is wrong with the file, as a count of each kind: a reader
@@ -577,12 +605,12 @@ mod tests {
     #[test]
     fn a_badge_says_which_server_and_which_state() {
         let _held = crate::glyphs_held();
-        assert_eq!(server_badge(None), "");
+        assert_eq!(server_badge(None, None), "");
         // Whichever way the glyphs are switched, the badge names the server
         // and marks the state, and the two are told apart by the first
         // character.
         for state in [ServerState::Ready, ServerState::Starting, ServerState::Gone] {
-            let badge = server_badge(Some(("rust-analyzer", state)));
+            let badge = server_badge(Some(("rust-analyzer", state)), None);
             assert!(badge.contains("rust-analyzer"), "{badge:?}");
             let mark = badge.chars().next().expect("a mark");
             assert_eq!(

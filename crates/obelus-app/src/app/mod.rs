@@ -1231,6 +1231,13 @@ impl App {
             // a mark that does not turn is a mark saying nothing is
             // happening.
             || self.calls_turning()
+            // And the badge on the status row, for as long as this file's
+            // server is reading the project. The same rule again, and the
+            // reason the badge turns at all: an empty answer while it
+            // reads and an empty answer about a symbol with no definition
+            // are the same message, and a mark standing still says the
+            // second.
+            || self.server_busy()
             // And a drag held against an edge, which is the one of these
             // that is waiting on the reader's hand rather than on
             // something happening by itself. It is here for the same
@@ -1832,11 +1839,24 @@ impl App {
                 // Unasked-for news about a file, which arrives on the same
                 // pipe as the answers and belongs to nobody's question.
                 let published = client.take_published();
+                // And what it says went wrong, which is the one thing it
+                // says that belongs on the reader's row rather than in the
+                // log: the rest of its talk is progress, and the badge
+                // says that by turning.
+                let complaints = client.take_complaints();
                 // And the edits it wants made, which arrive the same way
                 // and are answered by making them.
                 let asked = client.take_asked_edits();
                 for params in published {
                     self.on_published(language, &params);
+                }
+                // Named, because the row says nothing else about who is
+                // complaining -- and left in the words it arrived in,
+                // which are the server's and not obelus's to rewrite.
+                if let Some(said) = complaints.last() {
+                    let name = obelus_lsp::command_for(language).unwrap_or(language.name());
+                    tracing::warn!(language = language.name(), "{said}");
+                    self.note = Some(format!("{name}: {said}"));
                 }
                 for edit in &asked {
                     self.on_asked_edit(language, edit);
@@ -3248,6 +3268,9 @@ impl Screen for App {
     }
     fn server_working_on(&self) -> Option<&str> {
         App::server_working_on(self)
+    }
+    fn server_busy(&self) -> bool {
+        App::server_busy(self)
     }
     fn settings(&self) -> Option<&Settings> {
         App::settings(self)

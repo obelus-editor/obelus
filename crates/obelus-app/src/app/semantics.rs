@@ -18,6 +18,28 @@ impl App {
         self.servers.values().find_map(Client::working_on)
     }
 
+    /// Whether the server behind the file being read is busy.
+    ///
+    /// The badge's question rather than [`Self::server_working_on`]'s: that
+    /// one is any server, and this names the one the badge names.
+    ///
+    /// A bit, not the words. What a server says it is doing is its own
+    /// running commentary -- `rust-analyzer` sends a few hundred of them
+    /// over a cold start -- and a row that changed every few frames put
+    /// that commentary between the file's name and the cursor's position,
+    /// where a reader is trying to read two facts that do not move. What
+    /// they need from it is that it is busy, which is one bit and a mark
+    /// that turns.
+    #[must_use]
+    pub fn server_busy(&self) -> bool {
+        let Some(language) = self.current_buffer().and_then(Buffer::language) else {
+            return false;
+        };
+        self.servers
+            .get(&language)
+            .is_some_and(|client| client.working_on().is_some())
+    }
+
     /// The server for the file being read, and what it is doing.
     ///
     /// Only the current file's: a status bar listing every server obelus has

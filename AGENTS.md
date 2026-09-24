@@ -257,6 +257,30 @@ said, not inventing a state of its own. The exception is a call obelus is
 running the command for, whose state comes from the runner every frame and
 is not obelus's to overwrite.
 
+**A server's running commentary is not news; that it is running is.**
+`rust-analyzer` sends a few hundred progress messages over a cold start --
+every crate scanned, every file indexed -- and each landed on the status row
+between the file's name and the cursor's position, which are the two things
+a reader looks at that row to read. What those words were really for is one
+bit: an empty answer while a server is reading the project and an empty
+answer about a symbol with no definition are the same message on the wire,
+and the row is the only thing that tells them apart. So the badge that names
+the server turns while it is busy, in the same braille everything else in
+obelus turns in, and the words stay in the log.
+
+Which needed the ticker woken for it, like every other mark that turns --
+one drawn once and never again is a mark saying nothing is happening. And
+`ServerState` gained no variant for it: "busy" is not a state beside
+`Ready`, it is a thing a ready server is doing, and a fourth variant would
+have had `f10`'s "rust-analyzer is not answering" said about a server that
+was answering fine.
+
+Of what a server says in words, only what it calls an error reaches the
+reader. All four kinds went to the log at `debug`, which for the loudest is
+the wrong place: a workspace it could not discover is why every question for
+the rest of the session comes back empty. The other three are a diary, and
+the log is what a diary is for.
+
 **Folding is one act, and the notes are the fourth place it happens.** A run
 of lines in a file, a run of tool calls in a transcript, a commit's files in
 a list, and now what hangs under a note: one row standing in for several,

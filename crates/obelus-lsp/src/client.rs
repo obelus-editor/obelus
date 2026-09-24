@@ -87,6 +87,8 @@ pub struct Client {
     encoding: PositionEncodingKind,
     /// Progress tokens in flight, and what each says it is doing.
     working: HashMap<String, String>,
+    /// What the server has said went wrong, until somebody takes it.
+    complaints: Vec<String>,
     /// What the server has said is wrong, since the caller last looked.
     ///
     /// Diagnostics arrive unasked, so there is no question waiting for
@@ -171,6 +173,7 @@ impl Client {
             // the expensive one.
             encoding: PositionEncodingKind::UTF16,
             working: HashMap::new(),
+            complaints: Vec::new(),
             published: Vec::new(),
             asked: Vec::new(),
             sent: 0,
@@ -258,6 +261,20 @@ impl Client {
     #[must_use]
     pub fn working_on(&self) -> Option<&str> {
         self.working.values().next().map(String::as_str)
+    }
+
+    /// Everything the server has complained about since this was last
+    /// asked, in its own words.
+    ///
+    /// Only what it sent as an error. A server talks: `rust-analyzer` says
+    /// which crate it is loading, which proc macro it could not build,
+    /// that it is done -- and none of that is the reader's to act on, so
+    /// none of it leaves the log. An error is: a workspace it could not
+    /// discover is why every question for the rest of the session comes
+    /// back empty, and a reader with no way to see that is a reader
+    /// wondering what they broke.
+    pub fn take_complaints(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.complaints)
     }
 
     /// Everything the server has said is wrong since this was last asked.
@@ -518,8 +535,19 @@ impl Client {
             // set a server sends replaces whatever it said before.
             "textDocument/publishDiagnostics" => self.published.push(params.clone()),
             "window/logMessage" | "window/showMessage" => {
-                if let Some(text) = params.get("message").and_then(Value::as_str) {
-                    tracing::debug!(language = self.language.name(), "{text}");
+                let Some(text) = params.get("message").and_then(Value::as_str) else {
+                    return;
+                };
+                tracing::debug!(language = self.language.name(), "{text}");
+                // `1` is the protocol's number for an error, and the only
+                // one of the four that is the reader's business. A server
+                // that wanted a word said out loud sends `showMessage`;
+                // one keeping a diary sends `logMessage`, and the diary is
+                // what the log is for.
+                if method == "window/showMessage"
+                    && params.get("type").and_then(Value::as_i64) == Some(1)
+                {
+                    self.complaints.push(text.to_string());
                 }
             }
             other => tracing::trace!(language = self.language.name(), "ignoring {other}"),
