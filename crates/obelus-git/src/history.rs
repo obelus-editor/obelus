@@ -315,14 +315,27 @@ fn walk(within: &Path, only: Option<&Path>, mut each: impl FnMut(Option<Commit>)
 /// A history is the one question that outlives the file: a reader can ask
 /// about something a commit deleted, and there is a good answer. So the
 /// resolved form is tried first -- it is the one that handles symlinks --
-/// and a plain strip of the working directory answers for the rest.
+/// and for the rest the deepest part of the path that is still there is
+/// resolved and what has gone is put back on the end.
+///
+/// Resolved, not merely made absolute: the working directory is resolved,
+/// and a path that is not is spelled differently wherever a symlink sits
+/// above the repository -- which on a mac is every temporary directory,
+/// `/var` being `/private/var`. The strip found nothing, and every row of
+/// a history older than a move opened nothing.
 fn within_repository(repository: &gix::Repository, path: &Path) -> Option<PathBuf> {
     if let Some(relative) = super::in_repository(repository, path) {
         return Some(relative);
     }
     let work_dir = repository.workdir()?.canonicalize().ok()?;
     let path = std::path::absolute(path).ok()?;
-    Some(path.strip_prefix(work_dir).ok()?.to_path_buf())
+    let (there, gone) = path.ancestors().find_map(|ancestor| {
+        Some((
+            ancestor.canonicalize().ok()?,
+            path.strip_prefix(ancestor).ok()?,
+        ))
+    })?;
+    Some(there.join(gone).strip_prefix(work_dir).ok()?.to_path_buf())
 }
 
 /// What a commit did to a path.
