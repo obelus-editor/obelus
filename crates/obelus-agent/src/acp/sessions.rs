@@ -463,6 +463,13 @@ mod tests {
     /// one: the write goes ahead and this goes red.
     #[test]
     fn a_file_that_will_not_read_is_not_written_over() {
+        // Said before the directory is asked for: this one builds its
+        // project *inside* obelus's state directory, so without it the
+        // test leaves a table in the reader's own -- which it had been
+        // doing since it was written.
+        obelus_logging::state_directory_for_test(
+            std::env::temp_dir().join(format!("obelus-sessions-state-{}", std::process::id())),
+        );
         let Some(state) = obelus_logging::state_directory() else {
             return;
         };
