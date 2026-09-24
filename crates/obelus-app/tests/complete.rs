@@ -122,33 +122,6 @@ fn a_candidate_replaces_the_word_it_was_offered_for() {
     assert_eq!(text(&app), "fn main() {\n    pu\n}\n");
 }
 
-/// The picture on a row is the one thing that separates two candidates a
-/// colour cannot: a module and a keyword are both keyword-coloured.
-#[test]
-fn the_picture_on_a_row_says_what_the_candidate_is() {
-    let (_scratch, mut app) = editing("complete-pictures", "fn main() {\n    p\n}\n");
-    support::press(&mut app, crossterm::event::KeyCode::Down);
-    support::press(&mut app, crossterm::event::KeyCode::End);
-    app.complete_for_test(json!([
-        { "label": "path", "kind": 9 },
-        { "label": "pub", "kind": 14 },
-    ]));
-
-    let dump = support::render(&mut app, 60, 16);
-    let rows: Vec<&str> = support::text_block(&dump).lines().collect();
-    let picture = |name: &str| {
-        rows.iter()
-            .find(|row| row.contains(name))
-            .and_then(|row| row.chars().find(|cell| *cell as u32 >= 0xf0000))
-            .unwrap_or_else(|| panic!("{name} has no picture:\n{dump}"))
-    };
-    assert_ne!(
-        picture("path"),
-        picture("pub"),
-        "a module and a keyword are drawn alike:\n{dump}"
-    );
-}
-
 /// A server that says what to replace is obeyed: it knows things obelus
 /// does not, like whether the dot before the word is part of what is being
 /// completed.

@@ -36,7 +36,7 @@ impl App {
                 };
                 (Marking::Unwritten, glyph)
             }),
-            icon: Some(obelus_icons::for_path(buffer.path())),
+            icon: obelus_icons::enabled().then(|| obelus_icons::for_path(buffer.path())),
             label: relative(buffer.path(), root),
             detail: None,
             // Which commit, for a buffer read from one. Two buffers can
@@ -671,7 +671,8 @@ impl App {
                         // them to look at first, and how much each moved is
                         // most of that answer.
                         changed: counts.get(&root.join(&name)).copied(),
-                        icon: Some(obelus_icons::for_path(std::path::Path::new(&name))),
+                        icon: obelus_icons::enabled()
+                            .then(|| obelus_icons::for_path(std::path::Path::new(&name))),
                         // A submodule is another repository at a path, and
                         // obelus has no notion of one. It is listed because
                         // it is a change to this tree and git reports it as

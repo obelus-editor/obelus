@@ -1,18 +1,18 @@
 screen 76x24  editor 76x22  status 76x1
 -- text --
- 0| 󰚩  Fake Agent 0.1                                                          
+ 0| Fake Agent 0.1                                                             
  1|────────────────────────────────────────────────────────────────────────────
- 2| 󰀓  /many                                                                   
+ 2| >  /many                                                                   
  3|                                                                            
- 4| 󰈙  4 Files  ▾ 󰄬                                                            
- 5|   󰈙  Read src/app  tests/fixtures/many_lines.rs:4 󰄬                        
- 6|   󰈙  Read src/acp  tests/fixtures/many_lines.rs:4 󰄬                        
- 7|   󰈙  Read src/buffer  tests/fixtures/many_lines.rs:4 󰄬                     
- 8|   󰈙  Read src/ui  tests/fixtures/many_lines.rs:4 󰄬                         
+ 4| +  4 Files  ▾ Done                                                         
+ 5|   +  Read src/app  tests/fixtures/many_lines.rs:4 Done                     
+ 6|   +  Read src/acp  tests/fixtures/many_lines.rs:4 Done                     
+ 7|   +  Read src/buffer  tests/fixtures/many_lines.rs:4 Done                  
+ 8|   +  Read src/ui  tests/fixtures/many_lines.rs:4 Done                      
  9|                                                                            
-10| 󰆍  Run the tests 󰅙                                                         
+10| +  Run the tests Failed                                                    
 11|                                                                            
-12| 󰚩  that is where it is                                                     
+12| *  that is where it is                                                     
 13|                                                                            
 14|                                                                            
 15|                                                                            
@@ -21,21 +21,21 @@ screen 76x24  editor 76x22  status 76x1
 18|                                                                            
 19|                                                                            
 20|────────────────────────────────────────────────────────────────────────────
-21| 󰅂                                                                          
+21| >                                                                          
 22|────────────────────────────────────────────────────────────────────────────
-23| ask first · Fast · Allow everything                               󰘶󰌒  mode 
+23| ask first · Fast · Allow everything                        shift+tab  mode 
 -- style --
- 0|abaaccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 2|acaacccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|abbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 2|abaabbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  4|ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda
- 5|aaabaabbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaa
- 6|aaabaabbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaa
- 7|aaabaabbbbbbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaa
- 8|aaabaabbbbbbbbbbbaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbabaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|aaacaaccccccccccccaaccccccccccccccccccccccccccccccaccccaaaaaaaaaaaaaaaaaaaaa
+ 6|aaacaaccccccccccccaaccccccccccccccccccccccccccccccaccccaaaaaaaaaaaaaaaaaaaaa
+ 7|aaacaacccccccccccccccaaccccccccccccccccccccccccccccccaccccaaaaaaaaaaaaaaaaaa
+ 8|aaacaacccccccccccaaccccccccccccccccccccccccccccccaccccaaaaaaaaaaaaaaaaaaaaaa
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-10|abaabbbbbbbbbbbbbaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+10|acaacccccccccccccaeeeeeeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -45,14 +45,14 @@ screen 76x24  editor 76x22  status 76x1
 17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 19|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-20|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-21|abaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-22|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-23|acccccccccbbbccccbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbba
+20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+21|acaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+22|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+23|abbbbbbbbbcccbbbbcccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccca
 -- legend --
 a fg=#e4e4e7 bg=#18181b
-b fg=#52525b bg=#18181b
-c fg=#a1a1aa bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#52525b bg=#18181b
 d fg=#52525b bg=#27272a
 e fg=#f472b6 bg=#18181b
 -- cursor --

@@ -1,7 +1,7 @@
 screen 76x24  editor 76x22  status 76x1
 -- text --
- 0|▐󰀓 󰚩  󰄱 talked about                                                        
- 1|      󰄱 never mentioned                                                     
+ 0|▐? *  □ talked about                                                        
+ 1|      □ never mentioned                                                     
  2|                                                                            
  3|                                                                            
  4|                                                                            
@@ -21,9 +21,9 @@ screen 76x24  editor 76x22  status 76x1
 18|                                                                            
 19|                                                                            
 20|────────────────────────────────────────────────────────────────────────────
-21|   󰌑  Another    󰘵 󱁐  Done    󰘵 a  Talk    󰘵 󰌍  Drop    󰘵 ↑ 󰘵 ↓  Move       
+21|   enter  Another    alt+space  Done    alt+a  Talk   …                     
 22|────────────────────────────────────────────────────────────────────────────
-23| 󰡖  Todo                                                  2 to come back to 
+23| Todo                                                     2 to come back to 
 -- style --
  0|abcdcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
@@ -46,7 +46,7 @@ screen 76x24  editor 76x22  status 76x1
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 20|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-21|cceeecdddddddccceeeeecddddccceeeeecddddccceeeeecddddccceeeeeeeeecddddccccccc
+21|cceeeeeeecdddddddccceeeeeeeeeeecddddccceeeeeeecddddcccdccccccccccccccccccccc
 22|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 23|ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 -- legend --

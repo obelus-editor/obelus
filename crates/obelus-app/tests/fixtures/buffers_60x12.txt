@@ -1,6 +1,6 @@
 screen 60x12  editor 60x10  status 60x1
 -- text --
- 0|  tests/fixtures/sample.rs                                 
+ 0| tests/fixtures/sample.rs                                   
  1|                                                            
  2|                                                            
  3|                                                            
@@ -11,7 +11,7 @@ screen 60x12  editor 60x10  status 60x1
  8|                                                            
  9|                                                            
 10|────────────────────────────────────────────────────────────
-11| 󰍉                                                          
+11| >                                                          
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
  1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -31,4 +31,4 @@ b fg=#e4e4e7 bg=#18181b
 c fg=#52525b bg=#18181b
 d fg=#d4d4d8 bg=#18181b
 -- cursor --
-4,11
+3,11

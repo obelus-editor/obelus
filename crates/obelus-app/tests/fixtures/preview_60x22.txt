@@ -1,7 +1,7 @@
 screen 60x22  editor 60x20  status 60x1
 -- text --
- 0|  tests/fixtures/sample.rs                                 
- 1|  tests/fixtures/long.rs                                   
+ 0| tests/fixtures/sample.rs                                   
+ 1| tests/fixtures/long.rs                                     
  2|                                                            
  3|                                                            
  4|                                                            
@@ -19,12 +19,12 @@ screen 60x22  editor 60x20  status 60x1
 16|                                                            
 17|                                                            
 18|────────────────────────────────────────────────────────────
-19|   󰘵 i  Ignored files 󰄱     󰘵 n  Rename            󱊫  Keys  
+19|   alt+i  Ignored files □     alt+n  Rename       f1  Keys  
 20|────────────────────────────────────────────────────────────
-21| 󰍉  fixtures                                                
+21| > fixtures                                                 
 -- style --
- 0|aaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac
- 1|cccccccccbbbbbbbbccccccccccccccccccccccccccccccccccccccccccc
+ 0|aaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac
+ 1|cccccccbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccc
  2|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  4|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
@@ -42,7 +42,7 @@ screen 60x22  editor 60x20  status 60x1
 16|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 17|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 18|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-19|cciiiiicdddddddddddddcdcccciiiiicddddddccccccccccciiicddddcc
+19|cciiiiiiicdddddddddddddcdcccciiiiiiicddddddcccccciiiicddddcc
 20|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 21|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --
@@ -57,4 +57,4 @@ h fg=#a3e635 bg=#18181b
 i fg=#a1a1aa bg=#27272a
 j fg=#d4d4d8 bg=#18181b
 -- cursor --
-12,21
+11,21

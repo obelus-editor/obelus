@@ -526,7 +526,10 @@ fn a_foot_that_ran_out_of_room_says_so() {
         rows[rows.len() - 3].to_string()
     };
 
-    let whole = foot(&mut app, 76);
+    // A hundred columns, because without the glyphs a key is spelled out
+    // -- `alt+backspace` rather than a cap of two characters -- and every
+    // key the notes answer to takes that much.
+    let whole = foot(&mut app, 100);
     assert!(
         whole.contains("Move"),
         "the wide row is not the whole row:\n{whole}"
@@ -700,8 +703,10 @@ fn the_caret_is_on_the_cell_the_letter_goes_in() {
 #[test]
 fn dropping_a_note_is_at_the_foot() {
     let scratch = tree("drop-foot", THREE);
-    let mut app = open(&scratch, 76, 14);
-    let text = support::text_block(&support::render(&mut app, 76, 14)).to_string();
+    // Wide enough for the whole foot with every key spelled out, which is
+    // how it is drawn without the glyphs.
+    let mut app = open(&scratch, 100, 14);
+    let text = support::text_block(&support::render(&mut app, 100, 14)).to_string();
     assert!(text.contains("Drop"), "the foot does not say how:\n{text}");
 }
 
@@ -1781,7 +1786,7 @@ fn a_nested_note_is_drawn_further_in_than_the_one_it_hangs_under() {
     // the edge.
     let boxes = |needle: &str| {
         let said = listed(needle);
-        let at = said.find(['\u{f0130}', '\u{f0131}', '['])?;
+        let at = said.find([obelus_ui::tick(false), obelus_ui::tick(true)])?;
         Some(obelus_text::text_width(&said[..at]))
     };
     // Two cells in from the top note's box, and two cells short of its own

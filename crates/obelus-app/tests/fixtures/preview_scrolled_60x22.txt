@@ -1,6 +1,6 @@
 screen 60x22  editor 60x20  status 60x1
 -- text --
- 0|  tests/fixtures/many_lines.rs                             
+ 0| tests/fixtures/many_lines.rs                               
  1|                                                            
  2|                                                            
  3|                                                            
@@ -19,11 +19,11 @@ screen 60x22  editor 60x20  status 60x1
 16|  12 pub const LINE_11: u32 = 11;                          █
 17|  13 pub const LINE_12: u32 = 12;                          █
 18|────────────────────────────────────────────────────────────
-19|   󰘵 i  Ignored files 󰄱     󰘵 n  Rename            󱊫  Keys  
+19|   alt+i  Ignored files □     alt+n  Rename       f1  Keys  
 20|────────────────────────────────────────────────────────────
-21| 󰍉  many                                                    
+21| > many                                                     
 -- style --
- 0|aaaaaaaaaaaaaaaaaabbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac
+ 0|aaaaaaaaaaaaaaaabbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac
  1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  2|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
@@ -42,7 +42,7 @@ screen 60x22  editor 60x20  status 60x1
 16|ccddceeeceeeeecfffffffgcfffccchhgcccccccccccccccccccccccccci
 17|ccddceeeceeeeecfffffffgcfffccchhgcccccccccccccccccccccccccci
 18|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-19|ccjjjjjcdddddddddddddcdccccjjjjjcddddddcccccccccccjjjcddddcc
+19|ccjjjjjjjcdddddddddddddcdccccjjjjjjjcddddddccccccjjjjcddddcc
 20|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 21|kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
 -- legend --
@@ -58,4 +58,4 @@ i fg=#404047 bg=#18181b
 j fg=#a1a1aa bg=#27272a
 k fg=#d4d4d8 bg=#18181b
 -- cursor --
-8,21
+7,21

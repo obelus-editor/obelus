@@ -231,7 +231,7 @@ cargo build --release</code></pre>
 
       <p>Optional, but worth having:</p>
       <ul>
-        <li>A <strong>Nerd Font</strong>, for the glyphs beside a file's name and on the status bar. Without one, turn <code>icons</code> off in the settings and no boxes appear.</li>
+        <li>A <strong>Nerd Font</strong>, for the glyphs beside a file's name and on the status bar. The glyphs are off until <code>icons</code> is turned on in the settings, so without one no boxes appear.</li>
         <li>A <strong>language server</strong> for your language (<code>rust-analyzer</code> for Rust). Without one, reading still works — there is just no definition, no diagnostics, no outline.</li>
         <li>An <strong>ACP</strong> agent. obelus can install one from the registry — see below.</li>
       </ul>
@@ -413,7 +413,7 @@ ob ../another-repo   # a directory: that is the project</code></pre>
         </tr></thead>
         <tbody>
           <tr><td><code>theme</code></td><td><code>"dark"</code></td><td>The colours obelus draws in</td></tr>
-          <tr><td><code>icons</code></td><td><code>true</code></td><td>Nerd Font glyphs — a terminal without a patched font draws a box instead</td></tr>
+          <tr><td><code>icons</code></td><td><code>false</code></td><td>Nerd Font glyphs — a terminal without a patched font draws a box instead</td></tr>
           <tr><td><code>wrap</code></td><td><code>false</code></td><td>Whether a line too long for the screen carries onto the next row. Off, so a line is a line</td></tr>
           <tr><td><code>blame_margin</code></td><td><code>true</code></td><td>Who last changed the line the cursor is on</td></tr>
           <tr><td><code>tab_width</code></td><td><code>4</code></td><td>How wide a tab is drawn</td></tr>

@@ -9,7 +9,7 @@ screen 40x10  editor 40x8  status 40x1
  6|   3 fn after() {}                      
  7|   4                                    
  8|────────────────────────────────────────
- 9|   tests/fixtures/long.rs          1:1 
+ 9| tests/fixtures/long.rs             1:1 
 -- style --
  0|aaabaccaddddddbbabbaaaaaaaaaaaaaaaaaaaaa
  1|aaaeacccccafffffbabbfffbaggbaaaaaaaaaaaa

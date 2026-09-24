@@ -3,11 +3,11 @@ screen 76x24  editor 76x22  status 76x1
  0|  Languages  Files                                                      ⇤ ⇥ 
  1|────────────────────────────────────────────────────────────────────────────
  2|                                     Files   Lines    Code Comments  Blank  
- 3| 󰉋 All                                   3   39544   31564    4765    3215  
- 4| ├  Rust                               94   38342   31501    3638    3203  
- 5| │ ╰   Markdown                         90    8080       0    7036    1044  
- 6| ├  Plain Text                         23    1051       0    1051       0  
- 7| ╰  TOML                                2     151      63      76      12  
+ 3| All                                     3   39544   31564    4765    3215  
+ 4| ├ Rust                                 94   38342   31501    3638    3203  
+ 5| │ ╰ Markdown                           90    8080       0    7036    1044  
+ 6| ├ Plain Text                           23    1051       0    1051       0  
+ 7| ╰ TOML                                  2     151      63      76      12  
  8|                                                                            
  9|                                                                            
 10|                                                                            
@@ -23,14 +23,14 @@ screen 76x24  editor 76x22  status 76x1
 20|                                                                            
 21|                                                                            
 22|────────────────────────────────────────────────────────────────────────────
-23|   󰌑  Read it                                                      󱊫  Keys  
+23|   enter  Read it                                                 f1  Keys  
 -- style --
  0|abbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  2|cccccccccccccccccccccccccccccccccccccdddddcccdddddccccddddcddddddddccdddddcc
  3|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbc
  4|cacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 5|cacacccddddddddcccccccccccccccccccccccccddccccddddcccccccdccccddddccccddddcc
+ 5|cacacddddddddcccccccccccccccccccccccccccddccccddddcccccccdccccddddccccddddcc
  6|cacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  7|cacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
@@ -48,7 +48,7 @@ screen 76x24  editor 76x22  status 76x1
 20|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 21|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-23|cceeecaaaaaaaccccccccccccccccccccccccccccccccccccccccccccccccccccceeecaaaacc
+23|cceeeeeeecaaaaaaacccccccccccccccccccccccccccccccccccccccccccccccceeeecaaaacc
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a

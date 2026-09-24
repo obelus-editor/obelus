@@ -78,30 +78,30 @@ fn a_switch_takes_effect_and_is_written_down() {
 
     // Down onto the second row of the appearance tab, which is the glyphs.
     support::press(&mut app, KeyCode::Down);
-    assert!(obelus_icons::enabled(), "the glyphs start on");
+    assert!(!obelus_icons::enabled(), "the glyphs start off");
     support::press(&mut app, KeyCode::Enter);
 
-    assert!(!obelus_icons::enabled(), "the glyphs are still on");
-    assert!(!app.config().icons, "the setting did not change");
+    assert!(obelus_icons::enabled(), "the glyphs are still off");
+    assert!(app.config().icons, "the setting did not change");
     let written = std::fs::read_to_string(&file).expect("the file was written");
     assert!(
-        !obelus_config::from_toml(&written).icons,
+        obelus_config::from_toml(&written).icons,
         "the file does not say so: {written:?}"
     );
 
     // And again the other way.
     support::press(&mut app, KeyCode::Enter);
-    assert!(obelus_icons::enabled(), "enter did not toggle it back");
+    assert!(!obelus_icons::enabled(), "enter did not toggle it back");
 
     // Space is a character, not a second way to flip it: these pages
     // filter by typing, and "Agent 1" is a name a reader will type.
     support::press(&mut app, KeyCode::Char(' '));
-    assert!(obelus_icons::enabled(), "space flipped the switch");
+    assert!(!obelus_icons::enabled(), "space flipped the switch");
     assert_eq!(app.settings().expect("the settings").query(), " ");
 
     // Put the glyphs back for whatever runs next: this is process-wide
     // state, which is the price of a switch the drawing code can read.
-    obelus_icons::use_glyphs(true);
+    obelus_icons::use_glyphs(false);
 }
 
 /// A setting with choices opens the ordinary compact list over the view:
@@ -257,23 +257,23 @@ fn a_switch_is_a_box_that_enter_marks() {
             .expect("the row")
     };
 
-    assert!(app.config().icons, "the glyphs start on");
-    let on = box_of(&mut app);
+    assert!(!app.config().icons, "the glyphs start off");
+    let off = box_of(&mut app);
     support::press(&mut app, KeyCode::Enter);
-    assert!(!app.config().icons, "enter did not flip it");
+    assert!(app.config().icons, "enter did not flip it");
     assert_ne!(
         box_of(&mut app),
-        on,
+        off,
         "the box reads the same whichever way it is set"
     );
 
     // The arrows do not touch it: they are the tabs'.
     support::press(&mut app, KeyCode::Right);
-    assert!(!app.config().icons, "an arrow flipped the switch");
+    assert!(app.config().icons, "an arrow flipped the switch");
     support::press(&mut app, KeyCode::Left);
-    assert!(!app.config().icons, "an arrow flipped the switch");
+    assert!(app.config().icons, "an arrow flipped the switch");
 
-    obelus_icons::use_glyphs(true);
+    obelus_icons::use_glyphs(false);
 }
 
 /// The tabs are the groups, the arrows walk them -- only the arrows, the way
@@ -464,7 +464,7 @@ fn the_view_closes_and_the_file_is_what_it_shows() {
     second.config_file_for_test(file.clone());
     assert_eq!(second.theme_name(), "light");
     assert!(!second.config().blame_margin);
-    obelus_icons::use_glyphs(true);
+    obelus_icons::use_glyphs(false);
 }
 
 /// Settings arriving from another machine are noticed, link and all.
@@ -1081,9 +1081,9 @@ fn nothing_is_written_without_being_told_where() {
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     // It still took effect, and there was nowhere to write it.
-    assert!(!app.config().icons);
+    assert!(app.config().icons);
     assert_eq!(app.note(), None, "it complained about not saving");
-    obelus_icons::use_glyphs(true);
+    obelus_icons::use_glyphs(false);
 }
 
 /// Choosing a theme from the theme picker is kept too: a reader who picks
@@ -1727,7 +1727,13 @@ fn a_key_that_could_never_fire_is_refused() {
         (KeyCode::PageDown, KeyModifiers::NONE, "editor"),
         (KeyCode::Char('i'), KeyModifiers::CONTROL, "terminal"),
         (KeyCode::Char('z'), KeyModifiers::NONE, "Typing"),
-        (KeyCode::Tab, KeyModifiers::NONE, "takes this one"),
+        // The front of the reason, which is what a row this narrow has
+        // room for once the key is spelled out rather than drawn.
+        (
+            KeyCode::Tab,
+            KeyModifiers::NONE,
+            "every list and box takes this",
+        ),
     ] {
         app.handle(Event::Key(KeyEvent::new(code, modifiers)));
         let dump = support::render(&mut app, 66, 12);
@@ -2128,7 +2134,7 @@ fn a_press_on_a_switch_flips_it() {
         "a press on the switch did not flip it"
     );
 
-    obelus_icons::use_glyphs(true);
+    obelus_icons::use_glyphs(false);
 }
 
 /// A press on a tab goes to it.
@@ -2188,7 +2194,7 @@ fn a_press_on_a_tab_goes_to_it() {
         "the press did not go to the tab"
     );
 
-    obelus_icons::use_glyphs(true);
+    obelus_icons::use_glyphs(false);
 }
 
 /// One of the agent's settings, as an agent sends it.

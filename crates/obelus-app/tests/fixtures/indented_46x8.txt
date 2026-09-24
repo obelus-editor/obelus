@@ -7,7 +7,7 @@ screen 46x8  editor 46x6  status 46x1
  4|              zeta);                         █
  5|   4      }                                  █
  6|──────────────────────────────────────────────
- 7|   tests/fixtures/indented.rs            1:1 
+ 7| tests/fixtures/indented.rs               1:1 
 -- style --
  0|aaabacddaeeeeebbabaaaaaaaaaaaaaaaaaaaaaaaaaaab
  1|aaacacaaaaddaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaab

@@ -101,7 +101,10 @@ fn the_mark_on_an_unwritten_buffer_does_not_recede() {
     press_function(&mut app, 2);
 
     let dump = support::render(&mut app, 60, 12);
-    let mark = support::colour_under(&dump, obelus_icons::ui::UNSAVED);
+    // The plain mark, because the glyphs are off until the reader turns
+    // them on; with them it is `obelus_icons::ui::UNSAVED`, in the same
+    // colour.
+    let mark = support::colour_under(&dump, '\u{2022}');
     assert_eq!(
         mark,
         support::spelled(DARK.status_stale),
@@ -980,148 +983,6 @@ fn control_home_and_end_do_not_panic_on_an_empty_list() {
     picker.handle_key(&control(KeyCode::End), PAGE);
     picker.handle_key(&control(KeyCode::Home), PAGE);
     assert_eq!(picker.selected(), 0);
-}
-
-/// A file's glyph goes in its own two columns before the name, so the query
-/// never matches it and the matched characters of the name still line up.
-#[test]
-fn the_file_picker_shows_a_glyph_for_each_file() {
-    let mut app = app();
-    press_function(&mut app, 1);
-    app.handle(Event::Search(obelus_search::Event::FilesFound {
-        generation: 1,
-        paths: vec![
-            "src/app.rs".into(),
-            "Cargo.toml".into(),
-            "mystery.qqq".into(),
-        ],
-        ignored: false,
-    }));
-    // The flat listing, which is what a query is asked against: a file
-    // list is a tree until the reader says what they are after.
-    type_text(&mut app, "r");
-
-    let dump = support::render(&mut app, 40, 8);
-    let text = support::text_block(&dump);
-
-    // The Rust glyph, the config glyph, and the generic one.
-    assert!(text.contains('\u{e7a8}'), "no Rust glyph:\n{dump}");
-    assert!(text.contains('\u{e615}'), "no config glyph:\n{dump}");
-    assert!(text.contains('\u{f15b}'), "no generic glyph:\n{dump}");
-}
-
-/// And the glyph wears the name's colour. The icon is part of the name: a
-/// file git says has changed is a changed file picture and all, and a glyph
-/// left in the plain foreground reads as a second thing on the row.
-#[test]
-fn a_glyph_is_the_colour_of_the_name_beside_it() {
-    use obelus_git::FileStatus;
-
-    let mut app = app();
-    let root = app.working_directory().to_path_buf();
-    // Two statuses, so the colours are two: a test where every row is the
-    // same colour cannot tell the name's colour from the plain one.
-    app.statuses_for_test(
-        [
-            (root.join("new.rs"), FileStatus::New.into()),
-            (root.join("old.rs"), FileStatus::Changed.into()),
-        ]
-        .into_iter()
-        .collect(),
-    );
-    support::lay_out(&mut app, 60, 12);
-    press_function(&mut app, 1);
-    // The changed listing, which is the one whose rows git has coloured.
-    press(&mut app, KeyCode::Tab);
-
-    let dump = support::render(&mut app, 60, 12);
-    let text: Vec<&str> = support::text_block(&dump).lines().collect();
-    let styles: Vec<&str> = support::style_block(&dump).lines().collect();
-
-    // Where the glyph is and where the name starts, read off the row itself
-    // rather than counted out here: what this is about is the two wearing
-    // one colour, not which column either is in.
-    let colours = |name: &str| {
-        let row = text
-            .iter()
-            .position(|row| row.contains(name))
-            .unwrap_or_else(|| panic!("no row for {name}:\n{dump}"));
-        let glyph = text[row]
-            .char_indices()
-            .find(|(_, character)| ('\u{e000}'..='\u{f8ff}').contains(character))
-            .map(|(index, _)| text[row][..index].chars().count())
-            .unwrap_or_else(|| panic!("no glyph on the row for {name}:\n{dump}"));
-        let label = text[row]
-            .find(name)
-            .map(|index| text[row][..index].chars().count())
-            .expect("the name");
-        let at = |column: usize| styles[row].chars().nth(column).unwrap_or(' ');
-        (at(glyph), at(label))
-    };
-
-    let (new_glyph, new_label) = colours("new.rs");
-    let (old_glyph, old_label) = colours("old.rs");
-    assert_eq!(
-        new_glyph, new_label,
-        "the glyph is not the colour of the name beside it:\n{dump}"
-    );
-    assert_eq!(
-        old_glyph, old_label,
-        "the glyph is not the colour of the name beside it:\n{dump}"
-    );
-    assert_ne!(
-        new_glyph, old_glyph,
-        "both glyphs are one colour, so neither is the name's:\n{dump}"
-    );
-}
-
-/// The glyph is not in the haystack. Nothing a reader types is a private-use
-/// codepoint, and having one in there would only skew the scores.
-#[test]
-fn a_query_matches_the_name_and_not_the_glyph() {
-    let mut app = app();
-    press_function(&mut app, 1);
-    app.handle(Event::Search(obelus_search::Event::FilesFound {
-        generation: 1,
-        paths: vec!["src/app.rs".into()],
-        ignored: false,
-    }));
-
-    type_text(&mut app, "app");
-    let dump = support::render(&mut app, 40, 8);
-    assert!(support::text_block(&dump).contains("src/app.rs"), "{dump}");
-    assert!(
-        support::legend_block(&dump).contains("bg=#38577f"),
-        "the name's matched characters lost their background:\n{dump}"
-    );
-
-    // And a query of the glyph itself matches nothing.
-    for _ in 0..3 {
-        press(&mut app, KeyCode::Backspace);
-    }
-    type_text(&mut app, "\u{e7a8}");
-    let dump = support::render(&mut app, 40, 8);
-    assert!(
-        !support::text_block(&dump).contains("src/app.rs"),
-        "the glyph was matchable:\n{dump}"
-    );
-}
-
-/// Commands and themes are not files; a glyph for each would be decoration.
-#[test]
-fn the_command_palette_has_no_glyphs() {
-    let mut app = app();
-    press_control(&mut app, 'p');
-    // One row taller than the list needs, because the screen keeps one for
-    // the rule over the status bar.
-    let dump = support::render(&mut app, 60, 13);
-    let text = support::text_block(&dump);
-    assert!(
-        !text
-            .chars()
-            .any(|character| ('\u{e000}'..='\u{f8ff}').contains(&character)),
-        "a private-use codepoint reached the palette:\n{dump}"
-    );
 }
 
 /// A path too long for the row loses its head, not its tail. The file name is

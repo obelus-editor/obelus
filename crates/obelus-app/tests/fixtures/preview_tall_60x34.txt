@@ -1,15 +1,15 @@
 screen 60x34  editor 60x32  status 60x1
 -- text --
- 0|  aaa_many.rs                                             █
- 1|  other01.rs                                              █
- 2|  other02.rs                                              █
- 3|  other03.rs                                              █
- 4|  other04.rs                                              █
- 5|  other05.rs                                              █
- 6|  other06.rs                                              █
- 7|  other07.rs                                              █
- 8|  other08.rs                                              █
- 9|  other09.rs                                              █
+ 0| aaa_many.rs                                               █
+ 1| other01.rs                                                █
+ 2| other02.rs                                                █
+ 3| other03.rs                                                █
+ 4| other04.rs                                                █
+ 5| other05.rs                                                █
+ 6| other06.rs                                                █
+ 7| other07.rs                                                █
+ 8| other08.rs                                                █
+ 9| other09.rs                                                █
 10|────────────────────────────────────────────────────────────
 11|   1 pub const LINE_1: u32 = 1;                            █
 12|   2 pub const LINE_2: u32 = 2;                            █
@@ -31,9 +31,9 @@ screen 60x34  editor 60x32  status 60x1
 28|  18 pub const LINE_18: u32 = 18;                          █
 29|  19 pub const LINE_19: u32 = 19;                          █
 30|────────────────────────────────────────────────────────────
-31|   󰘵 i  Ignored files 󰄱     󰘵 n  Rename            󱊫  Keys  
+31|   alt+i  Ignored files □     alt+n  Rename       f1  Keys  
 32|────────────────────────────────────────────────────────────
-33| 󰍉                                                          
+33| >                                                          
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
  1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
@@ -66,7 +66,7 @@ screen 60x34  editor 60x32  status 60x1
 28|cceecfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
 29|cceecfffcfffffcgggggggbcgggccchhbccccccccccccccccccccccccccd
 30|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-31|cciiiiiceeeeeeeeeeeeececccciiiiiceeeeeeccccccccccciiiceeeecc
+31|cciiiiiiiceeeeeeeeeeeeececccciiiiiiiceeeeeecccccciiiiceeeecc
 32|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 33|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --
@@ -81,4 +81,4 @@ h fg=#f472b6 bg=#18181b
 i fg=#a1a1aa bg=#27272a
 j fg=#d4d4d8 bg=#18181b
 -- cursor --
-4,33
+3,33

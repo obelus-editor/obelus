@@ -2,23 +2,23 @@ screen 34x10  editor 34x8  status 34x1
 -- text --
  0|       obelus        v0.1.0       
  1|                                  
- 2|        󱊫  󰈞 Open a file          
- 3|        󱊭  󰣞 Changed files        
- 4|        󱊰  󰉓 Search files         
- 5|        󱊮  󰚩 Ask the agent        
- 6|       󰘴 p 󰆍 Run a command        
- 7|       󰘴 q 󰈆 Leave obelus         
+ 2|           f1 Open a file         
+ 3|           f3 Changed files       
+ 4|           f6 Search files        
+ 5|           f4 Ask the agent       
+ 6|       ctrl+p Run a command       
+ 7|       ctrl+q Leave obelus        
  8|──────────────────────────────────
  9|                                  
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaabbbbbbaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|aaaaaaaaaaababbbbbbbbbbbaaaaaaaaaa
- 3|aaaaaaaaaaababbbbbbbbbbbbbaaaaaaaa
- 4|aaaaaaaaaaababbbbbbbbbbbbaaaaaaaaa
- 5|aaaaaaaaaaababbbbbbbbbbbbbaaaaaaaa
- 6|aaaaaaaaaaababbbbbbbbbbbbbaaaaaaaa
- 7|aaaaaaaaaaababbbbbbbbbbbbaaaaaaaaa
+ 2|aaaaaaaaaaaaaabbbbbbbbbbbaaaaaaaaa
+ 3|aaaaaaaaaaaaaabbbbbbbbbbbbbaaaaaaa
+ 4|aaaaaaaaaaaaaabbbbbbbbbbbbaaaaaaaa
+ 5|aaaaaaaaaaaaaabbbbbbbbbbbbbaaaaaaa
+ 6|aaaaaaaaaaaaaabbbbbbbbbbbbbaaaaaaa
+ 7|aaaaaaaaaaaaaabbbbbbbbbbbbaaaaaaaa
  8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
  9|cccccccccccccccccccccccccccccccccc
 -- legend --

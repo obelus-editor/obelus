@@ -8,18 +8,18 @@ screen 60x20  editor 60x18  status 60x1
  5|────────────────────────────────────────────────────────────
  6|  All  Files  Search  Code  Edit  Git  obelus           ⇤ ⇥ 
  7|────────────────────────────────────────────────────────────
- 8| 󰈞 open-file  Open a file                                󱊫 █
- 9| 󰣞 open-changed-file  Open a file that has changed       󱊭 █
-10| 󰆓 save-file  Write this file back to disk             󰘴 s █
-11| 󰑐 reload-file  Re-read this file from disk            󰘴 r █
-12| 󰈢 switch-document  Switch to something already open     󱊬 █
-13| 󰮘 close-document  Close what is being read            󰘴 w █
-14| 󰝰 rename-file  Call this file something else, or move it  █
-15| 󰍔 toggle-preview  Show this file rendered, or stop    󰘴 t █
-16| 󰏘 choose-theme  Change the colours                        █
-17| 󰆍 run-command  Run a command by name                  󰘴 p █
+ 8| open-file  Open a file                                 f1 █
+ 9| open-changed-file  Open a file that has changed        f3 █
+10| save-file  Write this file back to disk            ctrl+s █
+11| reload-file  Re-read this file from disk           ctrl+r █
+12| switch-document  Switch to something already open      f2 █
+13| close-document  Close what is being read           ctrl+w █
+14| rename-file  Call this file something else, or move it    █
+15| toggle-preview  Show this file rendered, or stop   ctrl+t █
+16| choose-theme  Change the colours                          █
+17| run-command  Run a command by name                 ctrl+p █
 18|────────────────────────────────────────────────────────────
-19| 󰍉                                                          
+19| >                                                          
 -- style --
  0|aaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaacaaaaaadddaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -29,16 +29,16 @@ screen 60x20  editor 60x18  status 60x1
  5|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  6|cgggggcccccccccccccccccccccccccccccccccccccccccccccccccccccc
  7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
- 8|gggggggggggggghhhhhhhhhhhgggggggggggggggggggggggggggggggghgb
+ 8|gggggggggggghhhhhhhhhhhggggggggggggggggggggggggggggggggghhgb
  9|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
-10|aaaaaaaaaaaaaaccccccccccccccccccccccccccccaaaaaaaaaaaaacccai
-11|aaaaaaaaaaaaaaaacccccccccccccccccccccccccccaaaaaaaaaaaacccai
-12|aaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccaaaaacai
-13|aaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccaaaaaaaaaaaacccai
-14|aaaaaaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccaai
+10|aaaaaaaaaaaaccccccccccccccccccccccccccccaaaaaaaaaaaaccccccai
+11|aaaaaaaaaaaaaacccccccccccccccccccccccccccaaaaaaaaaaaccccccai
+12|aaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccaaaaaaccai
+13|aaaaaaaaaaaaaaaaaccccccccccccccccccccccccaaaaaaaaaaaccccccai
+14|aaaaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccaaaai
 15|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
-16|aaaaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaai
-17|aaaaaaaaaaaaaaaacccccccccccccccccccccaaaaaaaaaaaaaaaaaacccai
+16|aaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaai
+17|aaaaaaaaaaaaaacccccccccccccccccccccaaaaaaaaaaaaaaaaaccccccai
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --
@@ -53,4 +53,4 @@ h fg=#52525b bg=#27272a
 i fg=#404047 bg=#18181b
 j fg=#d4d4d8 bg=#18181b
 -- cursor --
-4,19
+3,19

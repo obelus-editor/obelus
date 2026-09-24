@@ -135,7 +135,13 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             theme: DEFAULT_THEME.to_string(),
-            icons: true,
+            // Off, because a patched font is a thing the reader has to have
+            // gone and got, and whether they have cannot be asked: a
+            // default that assumes it draws a box beside every name for
+            // everybody who has not, and a box is how obelus looks broken.
+            // Without the font, the fallbacks read correctly; with it, one
+            // switch turns the glyphs on.
+            icons: false,
             blame_margin: true,
             // Off, so a line is a line: a reader counting rows, comparing
             // two files side by side, or looking at a table in a comment is

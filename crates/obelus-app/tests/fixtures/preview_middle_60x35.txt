@@ -34,7 +34,7 @@ screen 60x35  editor 60x33  status 60x1
 31|  40                                                       █
 32|                                                           █
 33|────────────────────────────────────────────────────────────
-34| 󰍉                                                          
+34| >                                                          
 -- style --
  0|abbbabbbbbaccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad
  1|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
@@ -85,4 +85,4 @@ j fg=#404047 bg=#18181b
 k fg=#fbbf24 bg=#1e3a5f
 l fg=#d4d4d8 bg=#18181b
 -- cursor --
-4,34
+3,34

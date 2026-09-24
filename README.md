@@ -24,9 +24,10 @@ ob src/main.rs       # read a file — its repository is the project
 ob ../another-repo   # a directory: that is the project
 ```
 
-A Nerd Font and a language server are both optional. Without a patched font,
-turn `icons` off and no boxes appear; without a server, reading still works and
-there is no definition, no diagnostics and no outline.
+A Nerd Font and a language server are both optional. The glyphs are off until
+`icons` is turned on, so a terminal without a patched font draws no boxes;
+without a server, reading still works and there is no definition, no
+diagnostics and no outline.
 
 ## What works
 

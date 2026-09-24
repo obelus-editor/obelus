@@ -748,10 +748,11 @@ fn a_title_longer_than_the_row_keeps_the_row_its_own_end() {
         row.contains('\u{2026}'),
         "the title was cut off with nothing saying so:\n{dump}"
     );
-    // And the row still says how the call went: the glyph a finished call
-    // wears, which is the thing the title used to push off the screen.
+    // And the row still says how the call went: the word a finished call
+    // wears without the glyphs, which is the thing the title used to push
+    // off the screen.
     assert!(
-        row.contains(obelus_icons::ui::DONE),
+        row.contains("Done"),
         "the row lost its own account of the call:\n{dump}"
     );
 }
@@ -4952,12 +4953,13 @@ fn a_tool_call_that_is_still_running_turns_at_the_front_of_its_row() {
         "the mark on a running call does not turn"
     );
     assert!(
-        !running.contains(obelus_icons::ui::RUNNING),
+        !running.contains("Running"),
         "the row says it is running twice, once of them standing still:\n{running}"
     );
 
-    // Answered, the call ends: the kind comes back and the end of the row
-    // says how it went.
+    // Answered, the call ends: the mark a tool call wears comes back --
+    // without the glyphs, the one mark every kind shares -- and the end of
+    // the row says how it went.
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the end of the turn", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -4968,11 +4970,11 @@ fn a_tool_call_that_is_still_running_turns_at_the_front_of_its_row() {
         "a call that has finished is still turning:\n{ended}"
     );
     assert!(
-        ended.contains(obelus_icons::for_tool("read")),
-        "the call never got its kind back:\n{ended}"
+        ended.contains("+  Read the file"),
+        "the call never got its mark back:\n{ended}"
     );
     assert!(
-        ended.contains(obelus_icons::ui::DONE),
+        ended.contains("Done"),
         "a call that finished does not say so:\n{ended}"
     );
 }
@@ -4986,13 +4988,16 @@ const SPINNING: [&str; 10] = [
     "\u{2807}", "\u{280f}",
 ];
 
-/// The glyph a note wears when there is a conversation about it.
-const MARK: char = obelus_icons::ui::AGENT;
+/// The mark a note wears when there is a conversation about it.
+///
+/// The plain one, because the glyphs are off until the reader turns them
+/// on: where they are on it is `obelus_icons::ui::AGENT`.
+const MARK: char = '*';
 
 /// And the one it wears beside that while the conversation is waiting on
-/// an answer -- the same glyph the list of open documents puts on a
-/// conversation with a question in it.
-const WAITING: char = obelus_icons::ui::READER;
+/// an answer -- where the glyphs are on, the same one the list of open
+/// documents puts on a conversation with a question in it.
+const WAITING: char = '?';
 
 /// The first conversation opened after obelus starts is taken up too.
 ///

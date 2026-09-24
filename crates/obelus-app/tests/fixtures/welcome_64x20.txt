@@ -10,11 +10,11 @@ screen 64x20  editor 64x18  status 64x1
  7|      ║ ▀█████▀ ██████▀ ███████ ███████ ▀█████▀ ▀█████▀ ║       
  8|      ╚════════════════════ v0.1.0 ═════════════════════╝       
  9|                                                                
-10|           󱊫  󰈞 Open a file        󱊭  󰣞 Changed files           
+10|             f1 Open a file          f3 Changed files           
 11|                                                                
-12|           󱊰  󰉓 Search files       󱊮  󰚩 Ask the agent           
+12|             f6 Search files         f4 Ask the agent           
 13|                                                                
-14|         󰘴 p  󰆍 Run a command    󰘴 q  󰈆 Leave obelus            
+14|         ctrl+p Run a command    ctrl+q Leave obelus            
 15|                                                                
 16|                                                                
 17|                                                                
@@ -31,11 +31,11 @@ screen 64x20  editor 64x18  status 64x1
  7|aaaaaababbbbbccacccddddaddeeeeeaffffffgaggggghhahhhiiiiaiaaaaaaa
  8|aaaaaabbbbbbbccccccdddddddeaeeeeffafffggggggghhhhhhiiiiiiaaaaaaa
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-10|aaaaaaaaaaaaaajajjjjjjjjjjjaaaaaaaaaaajajjjjjjjjjjjjjaaaaaaaaaaa
+10|aaaaaaaaaaaaaaaajjjjjjjjjjjaaaaaaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaa
 11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-12|aaaaaaaaaaaaaajajjjjjjjjjjjjaaaaaaaaaajajjjjjjjjjjjjjaaaaaaaaaaa
+12|aaaaaaaaaaaaaaaajjjjjjjjjjjjaaaaaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaa
 13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-14|aaaaaaaaaaaaaajajjjjjjjjjjjjjaaaaaaaaajajjjjjjjjjjjjaaaaaaaaaaaa
+14|aaaaaaaaaaaaaaaajjjjjjjjjjjjjaaaaaaaaaaajjjjjjjjjjjjaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

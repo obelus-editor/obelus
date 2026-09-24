@@ -40,7 +40,9 @@ use std::path::Path;
 /// threading a flag into every function that draws a glyph, including the
 /// pure ones that turn a name into a character. It is written once at
 /// startup and once per change of the setting, and read while drawing.
-static NERD_FONT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+///
+/// Off until the settings say otherwise, which is the setting's own default.
+static NERD_FONT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Turns the glyphs on or off.
 pub fn use_glyphs(on: bool) {

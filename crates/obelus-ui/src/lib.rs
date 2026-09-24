@@ -2088,7 +2088,7 @@ mod tests {
                 "the box reads the same either way, with glyphs {glyphs}"
             );
         }
-        obelus_icons::use_glyphs(true);
+        obelus_icons::use_glyphs(false);
     }
 
     #[test]
