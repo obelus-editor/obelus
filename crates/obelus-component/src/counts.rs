@@ -541,7 +541,7 @@ impl Counts {
                 self.keys = false;
                 CountsOutcome::Consumed
             }
-            KeyCode::F(1) if bare => {
+            _ if obelus_editing::keymap::is_keys_card(key) => {
                 self.keys = !self.keys;
                 CountsOutcome::Consumed
             }

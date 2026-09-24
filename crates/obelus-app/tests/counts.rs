@@ -438,7 +438,7 @@ fn the_counts_say_what_their_keys_do() {
         !text.contains("Leave"),
         "the foot is spending itself on escape:\n{text}"
     );
-    support::press_function(&mut app, 1);
+    support::press_control(&mut app, 'k');
     assert!(
         support::text_block(&support::render(&mut app, 76, 18)).contains("Leave"),
         "and it is not on the card either"
@@ -455,8 +455,8 @@ fn the_counts_say_what_their_keys_do() {
         text.contains("Read it"),
         "enter does not say what it does:\n{text}"
     );
-    // And `f1` says all of them, at length.
-    press(&mut app, KeyCode::F(1));
+    // And `ctrl+k` says all of them, at length.
+    support::press_control(&mut app, 'k');
     let dump = support::render(&mut app, 76, 18);
     assert!(
         support::text_block(&dump).contains("Read the file this row names"),

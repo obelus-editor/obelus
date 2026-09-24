@@ -552,7 +552,7 @@ fn a_foot_that_ran_out_of_room_says_so() {
 
 /// The foot points at no card, and takes back the room the pointer had.
 ///
-/// Every other view with a foot ends it with `f1 keys`, because every other
+/// Every other view with a foot ends it with `ctrl+k keys`, because every other
 /// view with a foot is a layer and has a card behind it. Pointing at one
 /// from here would be a key that appears to do nothing -- and would cost
 /// the row the eight cells the pointer sits in, which is a hint.

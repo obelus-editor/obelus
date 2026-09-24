@@ -1516,7 +1516,7 @@ impl Picker {
                 PickerOutcome::Consumed
             }
             KeyCode::Esc if bare => PickerOutcome::Cancelled,
-            KeyCode::F(1) if bare && self.footed => {
+            _ if self.footed && obelus_editing::keymap::is_keys_card(key) => {
                 self.keys = !self.keys;
                 PickerOutcome::Consumed
             }

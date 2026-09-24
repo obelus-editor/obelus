@@ -417,9 +417,11 @@ the refs tab both end in the same thing -- a version of the file being read,
 one found by time and one by place -- so the arrow between them stays inside
 one errand. The project's commits are the odd one out: its rows stop being
 about the file on screen, and what hangs under them is somebody else's
-files. That is a key of its own (`f10`), not a third tab. The cost is real
-and was taken deliberately: obelus's commands do not run from inside a list,
-so reaching the project's history from a file's is escape and then `f10`.
+files. That is a key of its own (`f10`), not a third tab. It used to cost an
+escape -- obelus's commands did not run from inside a list, so the project's
+history was escape and then `f10` -- and that went when a view's key started
+reaching it from inside another view (below): `f10` from a file's history
+goes straight to the project's, and the two stay two views.
 
 **Two buffers can wear one path, so a list of them says which is which.**
 The file and the file as some commit had it differ in what they say, in
@@ -515,7 +517,9 @@ command is gone and `App::blame` reads the setting.
   the next reports `f17` for the same press, so a modified function key is a
   binding that works on one machine and not the next. `f9`-`f12` are git's,
   and empty until each is earned -- a file's history and a project's, a
-  patch to review, a panel of what a commit touched.
+  patch to review, a panel of what a commit touched. Which is also why one
+  reaches its view from inside another: every view it names takes the whole
+  screen, so going to it is a swap and never a stack.
 * **Control does something to the file in front of you**, on the letter of
   the word: `p` the palette, `w` close, `r` re-read, `t` toggle the reading
   its format has, `l` a line number, `a` all of it, `c` copy, `q` leave.
@@ -543,6 +547,19 @@ reach. The one exception is `Context::Buffers`: the list of open files binds
 the key that closes a file, because the thing to close is the row. So a new
 dialog gets a context, and a key it should keep gets a binding in it -- not a
 fall-through.
+
+**Except a key that names another whole view.** What the rule above prevents
+is a view opened *over* a view. A key whose command takes the whole screen
+(`Command::opens_a_view`) does not do that from inside another whole-screen
+view: `App::switch_view` leaves the one showing the way escape would -- which
+puts back what it changed -- and opens the other, so there is still one thing
+on screen and one escape back to the file. Where the key names a tab of the
+view already showing (`f3` in `f1`'s list, `f6` in the search) it walks to
+the tab and the query stays. A list over the file rather than instead of it
+-- the palette, a menu -- keeps its keys: it is somewhere the reader is
+choosing, and a function key is not a way out of it. The card of every key
+was `f1` until this, and moved to `ctrl+k` (`keymap::keys_card`) because `f1`
+names the files.
 
 **One mark for "the keys are here", and it says nothing else.** Every list,
 page and card in obelus puts `selected_row_background` behind the row the

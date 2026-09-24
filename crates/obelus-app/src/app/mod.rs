@@ -39,6 +39,7 @@ mod renaming;
 mod renaming_files;
 mod searching;
 mod semantics;
+mod switching;
 pub mod talking;
 
 use std::{
@@ -2108,6 +2109,20 @@ impl App {
         // the palette to find out why: `f3` on a tree with nothing changed
         // used to open a list of nothing and say so on the status row,
         // which is a sentence nobody asked for.
+        //
+        // Except for a key that names another whole-screen view, from inside
+        // one: that goes to the view it names, in place of this one, rather
+        // than being refused because a dialog is showing. What a key means in
+        // a file is what it means here -- the table is asked as though the
+        // file were what is showing -- and only the keys that open a view
+        // are let through, so nothing opens over anything.
+        if self.in_a_whole_view()
+            && let Some(command) = self.keymap.lookup(&key, Context::Normal)
+            && command.opens_a_view()
+        {
+            self.switch_view(command);
+            return;
+        }
         if let Some(command) = self.keymap.lookup(&key, self.context())
             && self.offers(command)
         {

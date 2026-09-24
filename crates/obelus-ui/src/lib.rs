@@ -1430,26 +1430,6 @@ impl Hint {
     }
 }
 
-/// The key that opens the list of what the keys here are.
-///
-/// `f1`, which has meant help for longer than any of this. It reaches no
-/// command from inside a view -- [`obelus_editing::keymap::Context::Dialog`]
-/// binds nothing, and that is the point -- and it is not a character, so it
-/// works even in a view that takes every character the reader types.
-///
-/// The same key opens a file from the page being read, which is the one
-/// place in obelus where a chord means two things. It can only ever mean
-/// one of them at a time, and each is what the reader wants from the page
-/// it belongs to. `?` would have been the other candidate and cannot be:
-/// the notes, the settings and every picker take each character typed.
-#[must_use]
-pub fn keys_chord() -> obelus_editing::keymap::KeyChord {
-    obelus_editing::keymap::KeyChord::new(
-        crossterm::event::KeyCode::F(1),
-        crossterm::event::KeyModifiers::NONE,
-    )
-}
-
 /// How wide a tick is, in cells.
 ///
 /// Two: a Nerd Font draws its glyphs over two columns while the terminal
@@ -1632,8 +1612,9 @@ pub fn footed(area: Rect, hints: &[Hint]) -> Rect {
 
 /// The keys a view answers to, along the bottom of it under a rule.
 ///
-/// The common ones that can be pressed at the moment, and `f1` at the
-/// right-hand end saying there are more. At the foot rather than beside a
+/// The common ones that can be pressed at the moment, and
+/// [`obelus_editing::keymap::keys_card`] at the right-hand end saying there
+/// are more. At the foot rather than beside a
 /// title, because a key needs a word and words need room.
 ///
 /// What belongs here is what *this* view does. A key that means the same
@@ -1651,9 +1632,9 @@ pub fn foot(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
 ///
 /// A card of every key is a layer's: something opened over the reader's
 /// work, which owns the keyboard while it is up and has to be able to say
-/// so. A document is where the reader already was, `f1` over one is
-/// whatever `f1` means everywhere, and this row is the whole of what the
-/// view says about itself -- so it points at nothing, and gets the width
+/// so. A document is where the reader already was, the card's key over one
+/// is whatever that key means everywhere, and this row is the whole of what
+/// the view says about itself -- so it points at nothing, and gets the width
 /// the pointer would have taken.
 pub fn foot_without_a_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
     row_of_keys(cells, area, hints, theme, false);
@@ -1688,7 +1669,7 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
     // The one at the end first, because it is the one that must not be given
     // up: a foot that ran out of room and dropped the way to the rest of the
     // keys would be a foot that hides the thing it exists to point at.
-    let chord = keys_chord().label();
+    let chord = obelus_editing::keymap::keys_card().label();
     let width = u16::try_from(cap_width(&chord) + 1 + text_width("Keys")).unwrap_or(0);
     let edge = match area.width.checked_sub(width + 2).filter(|_| card) {
         Some(offset) => {

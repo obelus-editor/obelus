@@ -244,7 +244,7 @@ ob ../another-repo   # a directory: that is the project</code></pre>
       <h3>The first five minutes</h3>
       <ol>
         <li><kbd>F1</kbd> opens a file. Type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>enter</kbd> to accept, <kbd>esc</kbd> to cancel.</li>
-        <li>Not sure which keys a view takes? Press <kbd>F1</kbd>. The row at the foot lists what is available <em>now</em>; <kbd>F1</kbd> opens all of them, with the rest greyed out.</li>
+        <li>Not sure which keys a view takes? Press <kbd>ctrl+k</kbd>. The row at the foot lists what is available <em>now</em>; <kbd>ctrl+k</kbd> opens all of them, with the rest greyed out.</li>
         <li><kbd>ctrl+p</kbd> is the command palette: anything you cannot remember a key for is findable by name.</li>
         <li>Put the cursor on a change and press <kbd>alt+d</kbd>: the hunk opens <em>in place</em>, with what was there before it.</li>
         <li>See a line you doubt: <kbd>alt+t</kbd>, and write a sentence. It goes in this project's notes, and <code>todo</code> brings them all back.</li>
@@ -269,7 +269,7 @@ ob ../another-repo   # a directory: that is the project</code></pre>
           <th><span>Does</span></th>
         </tr></thead>
         <tbody>
-          <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>Choose a file under the project and open it. In a view that has one, <kbd>F1</kbd> is the list of keys instead</td></tr>
+          <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>Choose a file under the project and open it</td></tr>
           <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>Choose among the documents already open</td></tr>
           <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>One of the files that changed since the last commit</td></tr>
           <tr><td><kbd>F4</kbd></td><td><code>talk-to-agent</code></td><td>Talk to the active agent</td></tr>
@@ -339,7 +339,7 @@ ob ../another-repo   # a directory: that is the project</code></pre>
 
       <h3>Moving, and inside a list</h3>
       <p>Navigation is not a command, so it is not in the tables above: the arrows, <kbd>PageUp</kbd>/<kbd>PageDown</kbd>, <kbd>Home</kbd>/<kbd>End</kbd> for the line's ends, <kbd>ctrl+Home</kbd>/<kbd>ctrl+End</kbd> for the file's. Up and down move by <em>visual</em> row, so a wrapped line still moves the way it looks. <kbd>shift</kbd> never names a command: it only ever extends.</p>
-      <p>Inside a list — any picker, the settings, the counts, the notes — type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to cover ground, <kbd>Home</kbd>/<kbd>End</kbd> for either end, <kbd>enter</kbd> acts on the row you are on, <kbd>esc</kbd> cancels, and <kbd>F1</kbd> lists every key.</p>
+      <p>Inside a list — any picker, the settings, the counts, the notes — type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to cover ground, <kbd>Home</kbd>/<kbd>End</kbd> for either end, <kbd>enter</kbd> acts on the row you are on, <kbd>esc</kbd> cancels, and <kbd>ctrl+k</kbd> lists every key. A function key works from inside a whole-screen view as well, and goes to the view it names in place of the one showing — <kbd>F6</kbd> from the files is the search, <kbd>F3</kbd> is the files' other tab.</p>
     </section>
 
     <section id="commands">
@@ -448,7 +448,7 @@ quit = ""            # taken away</code></pre>
 
       <blockquote><p>An <em>obelus</em> is the mark a scholar put beside a line they doubted. This is that mark, written down.</p></blockquote>
 
-      <p><kbd>alt+t</kbd> while reading opens the notes with one started against the line under the cursor; <code>todo</code> opens them all. The page is always being written: the caret is in it when it opens, a letter is a letter, <kbd>enter</kbd> starts another note and <kbd>shift+enter</kbd> a line inside one. What acts on a note <em>as</em> a note is under <kbd>alt</kbd>: tick it, go to what it is about, move it, take it away. The keys are along the bottom, and <kbd>F1</kbd> has the rest of them.</p>
+      <p><kbd>alt+t</kbd> while reading opens the notes with one started against the line under the cursor; <code>todo</code> opens them all. The page is always being written: the caret is in it when it opens, a letter is a letter, <kbd>enter</kbd> starts another note and <kbd>shift+enter</kbd> a line inside one. What acts on a note <em>as</em> a note is under <kbd>alt</kbd>: tick it, go to what it is about, move it, take it away. The keys are along the bottom.</p>
 
       <p>A note may be about a line or about the project, and both are ordinary: "this cache is wrong" belongs to a line, "wire the counts page up to the search" belongs to the project. Where it points goes on a row of its own under it, and one that says nothing is not kept. A note can hang under another; the indentation is the nesting.</p>
 

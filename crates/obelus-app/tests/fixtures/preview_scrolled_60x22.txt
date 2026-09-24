@@ -19,7 +19,7 @@ screen 60x22  editor 60x20  status 60x1
 16|  12 pub const LINE_11: u32 = 11;                          █
 17|  13 pub const LINE_12: u32 = 12;                          █
 18|────────────────────────────────────────────────────────────
-19|   alt+i  Ignored files □     alt+n  Rename       f1  Keys  
+19|   alt+i  Ignored files □    …                ctrl+k  Keys  
 20|────────────────────────────────────────────────────────────
 21| > many                                                     
 -- style --
@@ -42,7 +42,7 @@ screen 60x22  editor 60x20  status 60x1
 16|ccddceeeceeeeecfffffffgcfffccchhgcccccccccccccccccccccccccci
 17|ccddceeeceeeeecfffffffgcfffccchhgcccccccccccccccccccccccccci
 18|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-19|ccjjjjjjjcdddddddddddddcdccccjjjjjjjcddddddccccccjjjjcddddcc
+19|ccjjjjjjjcdddddddddddddcdccccdcccccccccccccccjjjjjjjjcddddcc
 20|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 21|kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
 -- legend --

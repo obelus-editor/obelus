@@ -92,7 +92,7 @@ disagree about what a modified function key sends.
 
 | Key | Does |
 |---|---|
-| `F1` | Open a file — and, in a view that has one, the list of its keys |
+| `F1` | Open a file |
 | `F2` `F3` | Switch to an open document · one that changed since the last commit |
 | `F4` | Talk to the agent |
 | `F5` `F6` | Search this file · every file |
@@ -133,8 +133,10 @@ for the file's. Up and down move by one *visual* row. Shift never names a
 command; it only ever extends.
 
 Inside any list — a picker, the settings, the notes — type to narrow, `↑`/`↓`
-to choose, `enter` to act on the row you are on, `Esc` to cancel, and `F1` for
-every key it takes.
+to choose, `enter` to act on the row you are on, `Esc` to cancel, and `ctrl+k`
+for every key it takes. A function key works from inside a whole-screen view
+too, and goes to the view it names in place of this one: `F6` from the files
+is the search, `F3` is the files' other tab.
 
 Every *action* is a named command and the key table is data, so rebinding is a
 matter of loading a different table — and everything that shows a key reads

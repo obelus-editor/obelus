@@ -13,7 +13,7 @@ screen 76x14  editor 76x12  status 76x1
 10|   ├  file05.rs                                385     355      20      10 █
 11|   ├  file06.rs                                376     346      20      10 █
 12|────────────────────────────────────────────────────────────────────────────
-13|   enter  Close                                                   f1  Keys  
+13|   enter  Close                                               ctrl+k  Keys  
 -- style --
  0|aaaaaaaaaaaabbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -28,7 +28,7 @@ screen 76x14  editor 76x12  status 76x1
 10|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
 11|cacacccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-13|cchhhhhhhcaaaaacccccccccccccccccccccccccccccccccccccccccccccccccchhhhcaaaacc
+13|cchhhhhhhcaaaaacccccccccccccccccccccccccccccccccccccccccccccchhhhhhhhcaaaacc
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a

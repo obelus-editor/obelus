@@ -704,6 +704,88 @@ pub const ALL: &[CommandSpec] = &[
 ];
 
 impl Command {
+    /// Whether the command opens something that takes the whole screen.
+    ///
+    /// Which is what makes its key reach it from inside another such thing:
+    /// the view on screen gives way to the one the key names, so there is
+    /// still one thing on screen and one escape back to the file. A key that
+    /// opened something *over* a view -- a list over a list -- would be two
+    /// of them, and that is the thing a view keeping its keys to itself is
+    /// for. Spelled out per command, so a new one has to say.
+    #[must_use]
+    pub const fn opens_a_view(self) -> bool {
+        match self {
+            Self::FileOpen
+            | Self::FileChanged
+            | Self::DocumentList
+            | Self::SearchFile
+            | Self::SearchProject
+            | Self::SearchSymbols
+            | Self::SymbolOutline
+            | Self::HistoryFile
+            | Self::HistoryProject
+            | Self::CountLines
+            | Self::ConfigOpen
+            | Self::ConfigProject
+            // Documents rather than views, and whole-screen all the same:
+            // what the reader goes to, from wherever they are.
+            | Self::AgentOpen
+            | Self::TodoOpen => true,
+            // Over the file rather than instead of it -- the palette, the
+            // menus, a list of what a server offers -- or not a thing to look
+            // at at all.
+            Self::FileReload
+            | Self::FileSave
+            | Self::DocumentClose
+            | Self::FileRename
+            | Self::PreviewToggle
+            | Self::ThemeSelect
+            | Self::CommandPalette
+            | Self::SymbolMenu
+            | Self::SymbolComplete
+            | Self::SymbolHover
+            | Self::CodeActions
+            | Self::SymbolRename
+            | Self::SymbolTroubles
+            | Self::SymbolDefinition
+            | Self::SymbolTypeDefinition
+            | Self::SymbolImplementation
+            | Self::SymbolReferences
+            | Self::SymbolCalls
+            | Self::GoLine
+            | Self::GoBracket
+            | Self::HistoryLine
+            | Self::Fold
+            | Self::FoldAll
+            | Self::UnfoldAll
+            | Self::GitHunk
+            | Self::SymbolTroublePrevious
+            | Self::SymbolTroubleNext
+            | Self::GitPrevious
+            | Self::GitNext
+            | Self::SelectionCopy
+            | Self::SelectionCut
+            | Self::Paste
+            | Self::LineUp
+            | Self::LineDown
+            | Self::CommentToggle
+            | Self::Undo
+            | Self::Redo
+            | Self::SelectionClear
+            | Self::SelectionAll
+            | Self::SelectionWiden
+            | Self::GoBack
+            | Self::GoForward
+            | Self::TodoAdd
+            | Self::ConfigFile
+            | Self::LogOpen
+            | Self::LogServers
+            | Self::LspRestart
+            | Self::LspStop
+            | Self::Quit => false,
+        }
+    }
+
     /// Which group the command belongs to.
     ///
     /// Spelled out per command rather than read off the name: a name says

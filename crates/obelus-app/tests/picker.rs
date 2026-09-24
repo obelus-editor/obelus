@@ -703,8 +703,8 @@ fn the_list_moves_only_when_the_cursor_reaches_an_edge() {
     );
 }
 
-/// The file list says at its foot that it has a key of its own, and `f1`
-/// says the rest.
+/// The file list says at its foot that it has a key of its own, and
+/// `ctrl+k` says the rest.
 ///
 /// Only that list: every other one answers to the arrows, enter and escape,
 /// and a row saying so would be a row spent on what the reader just did.
@@ -718,11 +718,11 @@ fn the_file_list_says_what_its_own_key_does() {
         "the file list has no foot:\n{dump}"
     );
 
-    press_function(&mut app, 1);
+    press_control(&mut app, 'k');
     let card = support::render(&mut app, 72, 24);
     assert!(
         support::text_block(&card).contains("Offer the files the project ignores"),
-        "f1 said nothing:\n{card}"
+        "ctrl+k said nothing:\n{card}"
     );
 }
 

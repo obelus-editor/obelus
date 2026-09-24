@@ -1982,8 +1982,8 @@ fn the_settings_say_what_their_keys_do() {
         assert!(word_on(&text, word), "{word:?} is not at the foot:\n{text}");
     }
 
-    // `f1` says all of them, at length.
-    support::press(&mut app, KeyCode::F(1));
+    // `ctrl+k` says all of them, at length.
+    support::press_control(&mut app, 'k');
     let dump = support::render(&mut app, 76, 16);
     let text = support::text_block(&dump);
     assert!(text.contains("The keys here"), "no card:\n{dump}");

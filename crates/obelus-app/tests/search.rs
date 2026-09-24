@@ -266,7 +266,7 @@ fn a_cut_foot_still_points_at_the_card() {
     );
 
     // And the key the row could not hold is on the card.
-    support::press_function(&mut app, 1);
+    support::press_control(&mut app, 'k');
     assert!(
         support::text_block(&support::render(&mut app, 44, 16)).contains("as typed"),
         "the card does not have what the foot dropped"

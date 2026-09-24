@@ -861,6 +861,13 @@ impl Settings {
             }
         }
 
+        // The card's key before the modifiers are judged, because it has
+        // one: control is what every key below this refuses.
+        if obelus_editing::keymap::is_keys_card(key) {
+            self.keys_showing = !self.keys_showing;
+            return SettingsOutcome::Consumed;
+        }
+
         // The same rule every other view follows: a modifier obelus has no
         // meaning for disqualifies the key rather than being ignored.
         let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
@@ -896,10 +903,6 @@ impl Settings {
             // The card first: a key that opens a thing closes that thing.
             KeyCode::Esc if bare && self.keys_showing => {
                 self.keys_showing = false;
-                SettingsOutcome::Consumed
-            }
-            KeyCode::F(1) if bare => {
-                self.keys_showing = !self.keys_showing;
                 SettingsOutcome::Consumed
             }
             KeyCode::Esc if bare => SettingsOutcome::Cancelled,

@@ -384,14 +384,11 @@ impl Keymap {
                 // F1-F4: what to read. The three ways into a file, and the
                 // agent, which is the fourth thing a reader turns to.
                 //
-                // `f1` is also the key that opens the list of what the keys
-                // are, in every view that has one -- see
-                // the renderer's `keys_chord`. Two meanings, and deliberately:
-                // a view is a [`Context::Dialog`], which binds nothing, so
-                // the two can never both be reachable. Deliberately this way
-                // round, too: the file is what a reader wants from the page
-                // they spend their time on, and help is what they want from
-                // a page they have just opened and do not know yet.
+                // Reached from inside a view as well as from a file: a key
+                // that opens a view goes straight to it from another one --
+                // see `App::switch_view`. Which is why the card of every key
+                // is not `f1` any more, and has a key of its own:
+                // [`keys_card`].
                 Binding {
                     command: Command::FileOpen,
                     context: Context::Normal,
@@ -1067,6 +1064,30 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
 #[must_use]
 pub fn function(number: u8) -> KeyChord {
     KeyChord::new(KeyCode::F(number), KeyModifiers::NONE)
+}
+
+/// The key that opens the card of every key, in every view that has one.
+///
+/// `ctrl+k`, on the letter of the word like the rest of the control family.
+/// It was `f1`, which has meant help for longer than any of this -- until a
+/// function key in a view went to the view it names, and `f1` names the
+/// files. `?` cannot be it: the notes, the settings and every picker take
+/// each character typed.
+///
+/// One definition, because it is answered in four places -- each view that
+/// has a card, and the foot that says which key opens it -- and a foot
+/// naming one key while the view listens for another is a card nobody can
+/// open.
+#[must_use]
+pub fn keys_card() -> KeyChord {
+    control('k')
+}
+
+/// Whether a key is [`keys_card`], for a view deciding whether to open its
+/// card.
+#[must_use]
+pub fn is_keys_card(event: &KeyEvent) -> bool {
+    KeyChord::from_event(event) == Some(keys_card())
 }
 
 /// A chord for `ctrl` plus a character.
