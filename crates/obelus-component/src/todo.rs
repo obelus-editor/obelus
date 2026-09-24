@@ -803,12 +803,50 @@ impl TodoView {
         self.enter_note(note, false);
     }
 
+    /// The note that is on the page in this one's place.
+    ///
+    /// Itself, unless it hangs under something folded -- then the note
+    /// standing in for it is the outermost folded one above it, which is
+    /// the row the reader can see. Asked of what is shut rather than of
+    /// the rows, because a caller may be moving the caret to a note the
+    /// rows do not have yet: one just added, one just moved.
+    ///
+    /// A caret in a note that is folded away is a caret with no row to sit
+    /// on, and nothing draws one -- which is what walking down off a
+    /// folded note did.
+    fn on_the_page(&self, at: usize) -> usize {
+        let Some(note) = self.todo.notes.get(at) else {
+            return at;
+        };
+        let mut depth = note.depth;
+        let mut shown = at;
+        for (above, note) in self.todo.notes[..at].iter().enumerate().rev() {
+            // Only the notes this one hangs under, outwards: anything at
+            // this depth or deeper is beside it rather than over it.
+            if note.depth >= depth {
+                continue;
+            }
+            depth = note.depth;
+            if self.shut.contains(&note.id) {
+                shown = above;
+            }
+            if depth == 0 {
+                break;
+            }
+        }
+        shown
+    }
+
     /// Puts the caret in a note, keeping whatever the last one said.
     ///
     /// The commit happens here rather than on a key, because leaving a note
     /// *is* finishing it: there is no other moment, and asking the reader to
     /// mark one would be the mode again under another name.
     fn enter_note(&mut self, to: usize, end: bool) {
+        // Never into a note that is folded away. Every way the caret moves
+        // comes through here, so this is the one place that has to know it
+        // -- and the alternative is each of them remembering.
+        let to = self.on_the_page(to);
         self.keep();
         let Some(note) = self.todo.notes.get(to) else {
             self.writing = None;
@@ -1184,10 +1222,16 @@ impl TodoView {
                 let Some(at) = self.selected() else {
                     return TodoOutcome::Consumed;
                 };
+                // The next note that is *on the page*: what hangs under a
+                // folded one is not somewhere to stand, the same as a
+                // folded run of lines in a file. Stepping by one index
+                // walked straight into one, and the caret went out.
                 let to = match down {
-                    true if at + 1 < self.todo.notes.len() => at + 1,
-                    false if at > 0 => at - 1,
-                    _ => return TodoOutcome::Consumed,
+                    true => (at + 1..self.todo.notes.len()).find(|to| self.on_the_page(*to) == *to),
+                    false => (0..at).rev().find(|to| self.on_the_page(*to) == *to),
+                };
+                let Some(to) = to else {
+                    return TodoOutcome::Consumed;
                 };
                 self.enter_note(to, !down);
                 TodoOutcome::Consumed

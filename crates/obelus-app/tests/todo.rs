@@ -1612,6 +1612,77 @@ fn what_hangs_under_a_note_folds_away() {
     );
 }
 
+/// Walking down off a folded note lands on the next note that is showing.
+///
+/// Stepping by one note's index walked straight into what had just been
+/// folded away: the caret was put in a note with no rows, nothing drew it,
+/// and the reader's cursor was simply gone -- still there, still taking
+/// keys, on a note they could not see.
+///
+/// The same rule a file's folds have, where the cursor comes out with the
+/// lines because there is nowhere inside to stand. Asked in one place,
+/// because every way the caret moves goes through `enter_note` and the
+/// alternative is each of them remembering.
+///
+/// Broken deliberately by stepping to `at + 1` again: the caret goes into
+/// "walk it once", which is not on the page, and `caret` answers `None`.
+#[test]
+fn walking_off_a_folded_note_lands_on_one_that_is_showing() {
+    let scratch = tree("folding-walk", NESTED);
+    let mut app = open(&scratch, 76, 20);
+    let _ = support::render(&mut app, 76, 20);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::Fold);
+
+    let on = |app: &obelus_app::app::App| {
+        app.notes()
+            .and_then(obelus_component::todo::TodoView::selected_note)
+            .map(|note| note.said.clone())
+    };
+    assert_eq!(on(&app).as_deref(), Some("the counts tree"));
+
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(
+        on(&app).as_deref(),
+        Some("the settings page"),
+        "down went into a note that is folded away"
+    );
+    // And there is a caret to see, which is the half the reader noticed:
+    // the dump says where the terminal was told to put it.
+    let dump = support::render(&mut app, 76, 20);
+    assert!(
+        !dump.contains("-- cursor --\nnone"),
+        "the caret is nowhere on the page:\n{dump}"
+    );
+
+    // And back up again, over the same gap.
+    support::press(&mut app, KeyCode::Up);
+    assert_eq!(
+        on(&app).as_deref(),
+        Some("the counts tree"),
+        "up went into a note that is folded away"
+    );
+
+    // Not only the arrows. Taking the last showing note away leaves the
+    // caret at the last note there is, which is folded away -- so the one
+    // place every way of moving it goes through has to know, rather than
+    // each of them. Broken deliberately by dropping the `on_the_page` at
+    // the top of `enter_note`: this reads "then draw it", a note that is
+    // not on the page, and the caret goes out again.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(on(&app).as_deref(), Some("the settings page"));
+    app.handle(alt(KeyCode::Backspace));
+    assert_eq!(
+        on(&app).as_deref(),
+        Some("the counts tree"),
+        "the caret was left in a note that is folded away"
+    );
+    let dump = support::render(&mut app, 76, 20);
+    assert!(
+        !dump.contains("-- cursor --\nnone"),
+        "the caret is nowhere on the page:\n{dump}"
+    );
+}
+
 /// A note with nothing under it is not offered the key that folds.
 ///
 /// The question is about the note and is answered without doing the work,
