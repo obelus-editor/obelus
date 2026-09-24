@@ -493,7 +493,7 @@ while IFS= read -r line; do
             esac
             first=""
             case "$line" in
-                *'"text":"You are talking to somebody reading code in obelus'*)
+                *'"text":"This is obelus, the client you are talking through'*)
                     first="always" ;;
             esac
             case "$line" in
