@@ -3532,6 +3532,7 @@ version = "0.1.0"
 dependencies = [
  "gix",
  "imara-diff",
+ "obelus-logging",
  "obelus-runtime",
  "obelus-sink",
  "obelus-text",

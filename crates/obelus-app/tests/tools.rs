@@ -13,9 +13,9 @@ use std::sync::mpsc::channel;
 /// A tree with one note, and obelus listening on it.
 fn listening(name: &str) -> (support::Scratch, String) {
     let scratch = support::Scratch::new(name);
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"wire the counts tree up\"\ndone = false\n",
     )
     .expect("the notes");
@@ -146,9 +146,9 @@ fn what_an_agent_writes_down_is_in_the_file() {
     use obelus_app::app::App;
 
     let scratch = support::Scratch::new("tools-written");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one that was there\"\ndone = false\n",
     )
     .expect("the notes");
@@ -230,9 +230,9 @@ fn what_an_agent_writes_down_is_in_the_file() {
 #[test]
 fn a_note_of_several_lines_is_one_entry() {
     let scratch = support::Scratch::new("tools-paragraph");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"\"\"\nthe title\nand a body\nof two lines\n\"\"\"\ndone = false\n",
     )
     .expect("the notes");
@@ -313,8 +313,8 @@ fn a_depth_nothing_could_hang_at_is_brought_up_before_it_is_written() {
     use obelus_app::app::App;
 
     let scratch = support::Scratch::new("tools-too-deep");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
-    let file = scratch.path().join(".obelus").join("todo.toml");
+    support::make_room_for_notes(scratch.path());
+    let file = obelus_git::todo::path(scratch.path());
     std::fs::write(
         &file,
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one\"\ndone = false\n",
@@ -376,8 +376,8 @@ fn a_reworded_note_is_the_same_note() {
     use obelus_app::app::App;
 
     let scratch = support::Scratch::new("tools-reworded");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
-    let file = scratch.path().join(".obelus").join("todo.toml");
+    support::make_room_for_notes(scratch.path());
+    let file = obelus_git::todo::path(scratch.path());
     std::fs::write(
         &file,
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"what it was written for\"\n\
@@ -461,9 +461,9 @@ fn a_note_cannot_be_reworded_into_nothing() {
     use obelus_app::app::App;
 
     let scratch = support::Scratch::new("tools-reworded-empty");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one that was there\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");

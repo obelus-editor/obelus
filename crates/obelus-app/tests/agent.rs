@@ -3030,9 +3030,9 @@ fn a_paste_goes_into_the_card_and_not_behind_it() {
 #[test]
 fn a_conversation_about_a_note_says_so_in_its_first_message() {
     let scratch = support::Scratch::new("agent-note-opening");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"0123456J\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -3107,9 +3107,9 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
 #[test]
 fn a_question_that_arrives_while_the_reader_is_away_waits_in_its_own_conversation() {
     let scratch = support::Scratch::new("agent-question-away");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"0123456M\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -3189,9 +3189,9 @@ fn a_question_that_arrives_while_the_reader_is_away_waits_in_its_own_conversatio
 #[test]
 fn an_agent_that_stops_takes_the_questions_in_every_conversation_with_it() {
     let scratch = support::Scratch::new("agent-question-stopped");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"0123456N\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -3493,9 +3493,9 @@ fn a_list_over_a_conversation_covers_the_box() {
 #[test]
 fn a_question_about_a_notes_conversation_is_asked_in_it() {
     let scratch = support::Scratch::new("agent-note-question");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"0123456L\"\nsaid = \"wire the counts tree up to the search\"\n\
          done = false\ndepth = 0\n",
     )
@@ -3636,9 +3636,9 @@ fn a_loose_conversation_is_told_who_it_is_with_and_no_more() {
 #[test]
 fn notes_that_will_not_read_do_not_forget_the_conversations() {
     let scratch = support::Scratch::new("agent-notes-unreadable");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     let note = "0123456N";
-    let notes = scratch.path().join(".obelus").join("todo.toml");
+    let notes = obelus_git::todo::path(scratch.path());
     std::fs::write(
         &notes,
         format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
@@ -3715,10 +3715,10 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
 #[test]
 fn a_conversation_the_agent_has_forgotten_is_started_again() {
     let scratch = support::Scratch::new("agent-forgotten");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     let note = "0123456J";
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
     )
     .expect("the notes");
@@ -4539,9 +4539,9 @@ fn remembering_how(
     tools: Option<&str>,
 ) -> (support::Scratch, App, Receiver<Event>) {
     let scratch = support::Scratch::new(name);
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
     )
     .expect("the notes");
@@ -4609,9 +4609,9 @@ fn settled(app: &App) -> bool {
 #[test]
 fn a_note_says_whether_anybody_has_talked_about_it() {
     let scratch = support::Scratch::new("agent-note-marks");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"0123456Q\"\nsaid = \"talked about\"\ndone = false\ndepth = 0\n\n         [[todo]]\nid = \"0123456R\"\nsaid = \"never mentioned\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
@@ -5016,9 +5016,9 @@ const WAITING: char = obelus_icons::ui::READER;
 #[test]
 fn the_first_conversation_opened_after_a_restart_is_taken_up() {
     let scratch = support::Scratch::new("agent-note-first");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"0123456P\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
@@ -5885,7 +5885,7 @@ fn an_agent_is_told_what_the_note_says_only_when_it_does_not_know_it() {
     // messages. Now the agent is out of date, and the next thing said
     // carries the difference.
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"0123456S\"\nsaid = \"a note, thought better of\"\n\
          done = false\ndepth = 0\n",
     )
@@ -5958,9 +5958,9 @@ fn an_agent_is_told_what_the_note_says_only_when_it_does_not_know_it() {
 #[test]
 fn the_key_from_a_conversation_to_the_notes_lands_the_caret_in_them() {
     let scratch = support::Scratch::new("agent-alt-t");
-    std::fs::create_dir_all(scratch.path().join(".obelus")).expect("the directory");
+    support::make_room_for_notes(scratch.path());
     std::fs::write(
-        scratch.path().join(".obelus").join("todo.toml"),
+        obelus_git::todo::path(scratch.path()),
         "[[todo]]\nid = \"0123456Y\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");

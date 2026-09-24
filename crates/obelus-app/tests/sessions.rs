@@ -303,16 +303,12 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     use obelus_agent::acp::sessions;
     use obelus_git::todo::NoteId;
 
-    let scratch = support::Scratch::new("sessions-kept");
     // The table lives in obelus's state directory, and a test that wrote to
     // the reader's would be a test that left something on their machine.
-    // Set for this binary, which is the only one that touches it.
-    //
-    // SAFETY: nothing else in this test binary reads the environment, and
-    // the tests that share it do not touch the state directory at all.
-    unsafe {
-        std::env::set_var("XDG_STATE_HOME", scratch.path());
-    }
+    // `Scratch` says where it goes instead, for every test that makes one:
+    // the notes are kept there too now, so this is no longer the one test
+    // in the suite that touches it.
+    let scratch = support::Scratch::new("sessions-kept");
     let root = scratch.path();
     let note = NoteId::read("ABCDEFGH").expect("a name");
 

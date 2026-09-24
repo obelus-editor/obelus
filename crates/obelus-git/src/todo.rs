@@ -28,10 +28,51 @@ use obelus_text::coordinates::LineNumber;
 
 /// Where a project keeps what it means to come back to.
 ///
-/// Beside the settings, in the directory obelus keeps a project's things in.
+/// In obelus's own state directory, named after the project rather than
+/// after the checkout: a repository and its worktrees are one project, and
+/// a reader with three of them open means to come back to one list.
+///
+/// It used to sit in the project's own `.obelus`, beside the settings, so
+/// that the next person to open the project would find the same questions
+/// already asked. They never did: `.obelus` is a directory readers
+/// gitignore -- obelus's own repository is one of them -- so the notes were
+/// one reader's own already. Being one reader's own, they were also one
+/// *checkout's*, which is the half of it that was actually wrong.
 #[must_use]
 pub fn path(root: &Path) -> PathBuf {
+    let Some(state) = obelus_logging::state_directory() else {
+        // Nowhere of this machine's own to keep them, which is where they
+        // were kept before there was anywhere else. A reader on such a
+        // machine has a checkout's notes rather than a project's: the old
+        // answer, and not a wrong one.
+        return beside_a_checkout(root);
+    };
+    state
+        .join("todo")
+        .join(format!("{}.toml", crate::project(root)))
+}
+
+/// Where a checkout's notes sat before they were kept per project.
+fn beside_a_checkout(root: &Path) -> PathBuf {
     root.join(".obelus").join("todo.toml")
+}
+
+/// The notes to carry over, for a project that has none where they go now.
+///
+/// The *main* checkout's, and deliberately not this one's: a reader with
+/// worktrees has one of these files in each, they do not say the same thing,
+/// and obelus putting them together would be obelus deciding what their
+/// notes say. The project is the repository, so the repository's own
+/// checkout is the one that carries them over. The others are left exactly
+/// where they are, for the reader to take what they want out of them --
+/// nothing here deletes one.
+fn left_beside_a_checkout(root: &Path) -> Option<PathBuf> {
+    // The same answer [`crate::project`] names the file by, so that what is
+    // carried over is the checkout the project was named after. A project
+    // git has never heard of has no other checkout to be confused with, and
+    // its notes are where it is.
+    let was = beside_a_checkout(&crate::main_checkout(root).unwrap_or_else(|| root.to_path_buf()));
+    was.exists().then_some(was)
 }
 
 /// The place a note is about, as it was written down.
@@ -433,8 +474,17 @@ pub fn read(root: &Path) -> Reading {
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         // Not there yet is the ordinary case and not a failure: the file is
-        // written the first time a reader writes a note down.
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Reading::Nothing,
+        // written the first time a reader writes a note down. Or the notes
+        // are where they used to be, which is the same thing for a reader
+        // who had some before obelus kept them per project -- read from
+        // there until the first change writes them here.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match left_beside_a_checkout(root).map(std::fs::read_to_string) {
+                None => return Reading::Nothing,
+                Some(Ok(text)) => text,
+                Some(Err(error)) => return Reading::Unreadable(error.to_string()),
+            }
+        }
         Err(error) => return Reading::Unreadable(error.to_string()),
     };
     match text.parse::<toml::Table>() {
@@ -1017,6 +1067,18 @@ pub fn at_commit(root: &Path) -> Option<gix::ObjectId> {
 
 #[cfg(test)]
 mod tests {
+    /// Somewhere of this run's own for the notes to be kept in.
+    ///
+    /// They live in obelus's state directory, so a test that did not say
+    /// this would write into the reader's own and leave it there. One
+    /// directory for the binary, because it is set once and the tests name
+    /// their projects apart by their scratch paths anyway.
+    fn state_of_its_own() {
+        obelus_logging::state_directory_for_test(
+            std::env::temp_dir().join(format!("obelus-git-state-{}", std::process::id())),
+        );
+    }
+
     use super::*;
 
     fn note(said: &str) -> Note {
@@ -1240,6 +1302,7 @@ mod tests {
         let scratch =
             std::env::temp_dir().join(format!("obelus-todo-reading-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&scratch);
+        state_of_its_own();
         std::fs::create_dir_all(&scratch).expect("the directory");
 
         assert!(
@@ -1277,6 +1340,7 @@ mod tests {
         let scratch =
             std::env::temp_dir().join(format!("obelus-todo-guard-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&scratch);
+        state_of_its_own();
         let path = path(&scratch);
         std::fs::create_dir_all(path.parent().expect("the directory")).expect("the directory");
         let half = "[[todo]]\nid = \"0123456A\"\nsaid = \"half a no";

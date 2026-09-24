@@ -472,6 +472,17 @@ pub(crate) struct Scratch {
     name: String,
 }
 
+/// Makes the directory a project's notes are written into.
+///
+/// They are kept in obelus's state directory now rather than beside the
+/// project, so a test that writes a file of them has to ask where that is
+/// -- and make the directory, which obelus itself makes on its way past.
+pub(crate) fn make_room_for_notes(root: &std::path::Path) {
+    let path = obelus_git::todo::path(root);
+    let directory = path.parent().expect("the notes are in a directory");
+    std::fs::create_dir_all(directory).expect("the directory");
+}
+
 impl Scratch {
     /// An empty directory, whatever was there before.
     pub(crate) fn new(name: &str) -> Self {
@@ -493,6 +504,14 @@ impl Scratch {
             "two tests asked for the scratch directory {name:?}, and they would clear each other's"
         );
         drop(taken);
+        // The notes and the table of conversations live in obelus's state
+        // directory now, so a suite that did not say otherwise would write
+        // into the reader's own. One directory for the whole binary: every
+        // test names its project after its own scratch, so they do not meet
+        // inside it.
+        obelus_logging::state_directory_for_test(
+            std::env::temp_dir().join(format!("obelus-state-{}", std::process::id())),
+        );
 
         let path = std::env::temp_dir().join(format!("obelus-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);

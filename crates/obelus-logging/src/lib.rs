@@ -292,6 +292,23 @@ fn newest_log(directory: &Path, prefix: &str) -> Option<PathBuf> {
         .map(|(_, path)| path)
 }
 
+/// Somewhere else to keep it, for the tests.
+///
+/// The notes and the table of which conversation is about which note are
+/// both kept in here, so a suite that did not say otherwise would write
+/// into the reader's own state directory and leave it there. Set once and
+/// shared by every test in the binary: the environment would do it too, and
+/// is what the first test that needed it reached for, but setting the
+/// environment while other tests are running is the thing the language made
+/// unsafe -- and this is wanted by tests that run at the same time.
+#[doc(hidden)]
+pub fn state_directory_for_test(directory: PathBuf) {
+    let _ = ELSEWHERE.set(directory);
+}
+
+/// Where [`state_directory_for_test`] put it, if anywhere.
+static ELSEWHERE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
 /// Where obelus keeps what it has worked out and could work out again.
 ///
 /// State rather than config or data, which is what the directory is for: a
@@ -308,6 +325,12 @@ fn newest_log(directory: &Path, prefix: &str) -> Option<PathBuf> {
 /// do.
 #[must_use]
 pub fn state_directory() -> Option<PathBuf> {
+    // Before the environment, because a test that has said where its state
+    // goes has said so about a machine whose `XDG_STATE_HOME` is the
+    // reader's own.
+    if let Some(elsewhere) = ELSEWHERE.get() {
+        return Some(elsewhere.clone());
+    }
     // Said by name, wherever it is said. A reader who sets this has told
     // every program they run where its state goes, and obelus is one.
     if let Some(state) = std::env::var_os("XDG_STATE_HOME") {

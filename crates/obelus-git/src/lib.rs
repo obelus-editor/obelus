@@ -101,6 +101,68 @@ fn in_repository(repository: &gix::Repository, path: &Path) -> Option<PathBuf> {
     Some(file.strip_prefix(work_dir).ok()?.to_path_buf())
 }
 
+/// What names the project a path is in, for the things obelus keeps about it.
+///
+/// A repository and its worktrees are one project. The notes are about the
+/// code and the code is the same code: a reader with three worktrees open
+/// has one list of what they mean to come back to, not three. `common_dir`
+/// is git's own answer to "which repository is this" -- a linked worktree's
+/// is the main checkout's -- so all of them come out with one name.
+///
+/// Canonicalised rather than merely made absolute, which is what settles the
+/// same directory reached by two spellings. On Windows that is the whole of
+/// it: `canonicalize` goes through `GetFinalPathNameByHandle`, so the
+/// spelling the reader typed comes back as the one the disk has. Elsewhere
+/// it resolves the symlinks that would otherwise keep two paths to one
+/// directory apart. A path that will not canonicalise -- it has gone, or
+/// cannot be opened -- is taken as it came, because a name obelus cannot
+/// work out is worse than one that is merely long.
+///
+/// Not a path: a file name. Every character a file name cannot safely carry
+/// becomes `_`, which is many-to-one and does not matter -- what is wanted
+/// is that one project is one name, not that the name can be read back.
+#[must_use]
+pub fn project(root: &Path) -> String {
+    let named = main_checkout(root).unwrap_or_else(|| root.to_path_buf());
+    let named = named
+        .canonicalize()
+        .or_else(|_| std::path::absolute(&named))
+        .unwrap_or(named);
+    named
+        .to_string_lossy()
+        .chars()
+        .map(|character| match character {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' => character,
+            _ => '_',
+        })
+        .collect()
+}
+
+/// The checkout a project's things are named after, where git knows of one.
+///
+/// The main worktree, which every linked one shares: `common_dir` is its
+/// `.git`, so the checkout is that directory's parent. `None` where git has
+/// never heard of this path, and where the repository keeps its `.git`
+/// somewhere else entirely -- a bare one, or `--separate-git-dir` -- because
+/// then the parent is not a checkout and naming the project after it would
+/// be naming it after somebody's directory of git directories.
+#[must_use]
+pub fn main_checkout(root: &Path) -> Option<PathBuf> {
+    let repository = repository(root)?;
+    // Resolved rather than taken as it comes: gix hands back what the
+    // worktree's `commondir` file says, joined to the git directory and not
+    // tidied, so a linked worktree answers
+    // `.../.git/worktrees/one/../..` -- whose last component is `..` and
+    // whose parent is the wrong directory by two levels. Canonical is also
+    // what the name wants on Windows, where it is what turns the spelling
+    // the reader typed into the one the disk has.
+    let common = repository.common_dir().canonicalize().ok()?;
+    if common.file_name()? != ".git" {
+        return None;
+    }
+    Some(common.parent()?.to_path_buf())
+}
+
 /// The repository a path is in, if it is in one.
 ///
 /// Discovered from the path rather than from the working directory: the file

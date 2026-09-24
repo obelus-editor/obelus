@@ -134,24 +134,21 @@ impl Remembered {
 
 /// Where one project's table is kept.
 ///
-/// The project's own path, made into a file name: a reader with two
-/// checkouts of one repository has two sets of notes, and one file for
-/// both would be one set of conversations for two sets of notes.
+/// Named by the same answer the notes are, and it has to be the same
+/// answer: this table says which conversation is about which note, so a
+/// key that told two checkouts apart while the notes no longer did would
+/// be one note with two conversations under it -- the reader opening it in
+/// one worktree and finding an empty page in the next.
+///
+/// It read the checkout's own path once, for the opposite reason, and the
+/// reason went when the notes did: two checkouts of one repository used to
+/// be two sets of notes.
 #[must_use]
 pub fn path(root: &Path) -> Option<PathBuf> {
-    let root = std::path::absolute(root).unwrap_or_else(|_| root.to_path_buf());
-    let flattened: String = root
-        .to_string_lossy()
-        .chars()
-        .map(|character| match character {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' => character,
-            _ => '_',
-        })
-        .collect();
     Some(
         obelus_logging::state_directory()?
             .join("sessions")
-            .join(format!("{flattened}.toml")),
+            .join(format!("{}.toml", obelus_git::project(root))),
     )
 }
 

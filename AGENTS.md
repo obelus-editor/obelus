@@ -645,6 +645,21 @@ another window left the margin drawing a diff against a commit that was no
 longer the one the file is against. `HEAD` and `index` are watched, and
 `App::forget_what_git_said` drops the hunks and the blame when either moves.
 
+*A repository and its worktrees are one project.* The notes are about the
+code and the code is the same code, so a reader with three worktrees open
+means to come back to one list -- and what obelus keeps about a project is
+keyed by `common_dir`, which is git's own answer to which repository this
+is. `obelus_git::project` is that key and everything using it must use the
+same one: the notes and the table saying which conversation is about which
+note were keyed apart once, and one note with two conversations under it is
+a reader opening it in one worktree and finding an empty page in the next.
+Canonicalised, because gix hands `common_dir` back untidied -- a linked
+worktree answers `.../.git/worktrees/one/../..` -- and because on Windows
+that is what turns the spelling the reader typed into the one the disk has.
+The notes moved out of the project's own `.obelus` for this: they were never
+shared with the next person anyway, since `.obelus` is a directory readers
+gitignore.
+
 Two smaller ones, in the same spirit. An install claims the agent's directory
 with a file created exclusively, so two windows asked for the same agent do
 not run two `npm`s into one prefix; the claim is given up by being dropped,

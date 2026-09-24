@@ -5234,3 +5234,101 @@ fn the_change_margin_opens_what_the_line_replaced() {
         "a click on the numbers did not reach the line"
     );
 }
+
+/// A repository and its worktrees are one project.
+///
+/// The notes are about the code and the code is the same code: a reader with
+/// three worktrees of one repository open means to come back to one list,
+/// not three. `common_dir` is git's own answer to which repository this is,
+/// and a linked worktree's is the main checkout's -- so all of them come out
+/// with one name and share the file that name picks.
+///
+/// Broken deliberately by naming the project after `root` rather than after
+/// `main_checkout(root)`: the two paths are different paths, so they flatten
+/// to different names and a note made in one worktree cannot be seen from
+/// the next.
+#[test]
+fn a_worktree_and_its_repository_are_one_project() {
+    let repository = Repository::new("one-project", "fn main() {}\n");
+    let beside = repository
+        .directory()
+        .with_file_name(format!("obelus-worktree-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&beside);
+    repository.run(&[
+        "worktree",
+        "add",
+        "--quiet",
+        "-b",
+        "elsewhere",
+        beside.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(
+        obelus_git::project(&repository.directory()),
+        obelus_git::project(&beside),
+        "a worktree and the repository it belongs to were named apart"
+    );
+    // And the name is still a name: two repositories are two projects.
+    let other = Repository::new("another-project", "fn main() {}\n");
+    assert_ne!(
+        obelus_git::project(&repository.directory()),
+        obelus_git::project(&other.directory()),
+        "two repositories came out as one project"
+    );
+}
+
+/// Notes from before they were kept per project are still the reader's.
+///
+/// They sat in the project's own `.obelus` and are kept in obelus's state
+/// directory now. A reader who had a list and opened obelus to an empty one
+/// would think it had gone: it is still on disk, and nothing on the page
+/// would say so.
+///
+/// The main checkout's, deliberately. A reader with worktrees has one of
+/// these files in each, they do not say the same thing, and obelus putting
+/// them together would be obelus deciding what their notes say -- so the
+/// repository's own checkout is the one that carries them over and the rest
+/// are left exactly where they are.
+///
+/// Broken deliberately by having `left_beside_a_checkout` answer `None`:
+/// both of these read as a project with no notes at all.
+#[test]
+fn notes_kept_beside_a_checkout_are_still_read() {
+    let repository = Repository::new("notes-carried-over", "fn main() {}\n");
+    obelus_logging::state_directory_for_test(
+        std::env::temp_dir().join(format!("obelus-git-tests-state-{}", std::process::id())),
+    );
+    let beside = repository
+        .directory()
+        .with_file_name(format!("obelus-carried-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&beside);
+    repository.run(&[
+        "worktree",
+        "add",
+        "--quiet",
+        "-b",
+        "carried",
+        beside.to_str().expect("a path"),
+    ]);
+
+    // Where they used to be, in the checkout the project is named after.
+    let was = repository.directory().join(".obelus");
+    std::fs::create_dir_all(&was).expect("the directory");
+    std::fs::write(
+        was.join("todo.toml"),
+        "[[todo]]\nid = \"0123456A\"\nsaid = \"from before\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    for root in [repository.directory(), beside] {
+        let notes = obelus_git::todo::read(&root)
+            .notes()
+            .expect("the notes read");
+        assert_eq!(
+            notes.notes.first().map(|note| note.said.as_str()),
+            Some("from before"),
+            "the notes were not carried over, read from {}",
+            root.display()
+        );
+    }
+}
