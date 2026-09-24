@@ -246,6 +246,10 @@ fn a_theme_whose_directory_is_replaced_arrives_here() {
     std::fs::create_dir_all(state.join("current/theme")).expect("the directory");
     let real = state.join("current/theme/obelus.toml");
     std::fs::write(&real, "base = \"dark\"\nbackground = \"#121212\"\n").expect("the theme");
+    // Spelled the way the disk spells it, which is the way a watcher
+    // reports it: on a mac the temporary directory is itself behind a
+    // link, `/var` to `/private/var`, and no watcher says `/var`.
+    let real = real.canonicalize().expect("the theme");
     std::os::unix::fs::symlink(&real, scratch.join("themes/omarchy.toml")).expect("the link");
     std::fs::write(scratch.join("config.toml"), "theme = \"omarchy\"\n").expect("the settings");
 

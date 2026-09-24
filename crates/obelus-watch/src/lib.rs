@@ -17,6 +17,7 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -51,7 +52,20 @@ pub struct Watcher {
     /// with it: several open files share one directory, and a watch dropped
     /// when the first of them closes would leave the rest not reloading.
     directories: HashMap<PathBuf, usize>,
+    /// What each watched directory was called by whoever asked for it, by
+    /// what the disk calls it.
+    ///
+    /// A change is reported under the path it was watched by, because that
+    /// is the path its handler compares with. The system's own spelling is
+    /// not always that one: on a mac `FSEvents` hands back the resolved
+    /// path, so a file opened under `/tmp` or `/var` -- symlinks to
+    /// `/private/...` -- or under a symlinked checkout changed under a name
+    /// nothing was listening for, and never reloaded.
+    spellings: Spellings,
 }
+
+/// See [`Watcher::spellings`].
+type Spellings = Arc<Mutex<HashMap<PathBuf, HashSet<PathBuf>>>>;
 
 impl std::fmt::Debug for Watcher {
     /// `RecommendedWatcher` has no `Debug`, and the interesting part is which
@@ -68,6 +82,8 @@ impl Watcher {
     /// Starts watching, reporting changes on `sender`.
     pub fn new(sender: impl Sink<Changed>) -> Result<Self> {
         let (raw_sender, raw_receiver) = tokio::sync::mpsc::unbounded_channel::<PathBuf>();
+        let spellings = Spellings::default();
+        let spelled = Arc::clone(&spellings);
 
         let inner = RecommendedWatcher::new(
             move |result: notify::Result<notify::Event>| match result {
@@ -77,7 +93,12 @@ impl Watcher {
                     if matches!(event.kind, EventKind::Access(_)) {
                         return;
                     }
-                    for path in event.paths {
+                    let spellings = spelled.lock().unwrap_or_else(|poison| poison.into_inner());
+                    for path in event
+                        .paths
+                        .into_iter()
+                        .flat_map(|path| respelled(&spellings, path))
+                    {
                         // The receiver is gone, so the debouncing has
                         // ended and there is nothing left to tell.
                         if raw_sender.send(path).is_err() {
@@ -96,6 +117,7 @@ impl Watcher {
         Ok(Self {
             inner,
             directories: HashMap::new(),
+            spellings,
         })
     }
 
@@ -130,6 +152,7 @@ impl Watcher {
         if *count > 1 {
             return Ok(());
         }
+        self.spell(directory, true);
         self.inner
             .watch(directory, RecursiveMode::NonRecursive)
             .with_context(|| format!("watching {}", directory.display()))
@@ -158,9 +181,50 @@ impl Watcher {
             return;
         }
         self.directories.remove(&directory);
+        self.spell(&directory, false);
         if let Err(error) = self.inner.unwatch(&directory) {
             tracing::debug!(%error, directory = %directory.display(), "not unwatched");
         }
+    }
+
+    /// Remembers, or forgets, what a watched directory was called.
+    ///
+    /// Forgotten by the name it was given rather than by resolving it
+    /// again, because a directory that has gone resolves to nothing and its
+    /// name would stay behind.
+    fn spell(&self, directory: &Path, watched: bool) {
+        let mut spellings = self
+            .spellings
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if watched {
+            let resolved = directory
+                .canonicalize()
+                .unwrap_or_else(|_| directory.to_path_buf());
+            spellings
+                .entry(resolved)
+                .or_default()
+                .insert(directory.to_path_buf());
+        } else {
+            spellings.retain(|_, names| {
+                names.remove(directory);
+                !names.is_empty()
+            });
+        }
+    }
+}
+
+/// A changed path, under every name its directory was watched by.
+///
+/// As it came when its directory is not one this knows by another name,
+/// which is every event on a system that reports the path it was given.
+fn respelled(spellings: &HashMap<PathBuf, HashSet<PathBuf>>, path: PathBuf) -> Vec<PathBuf> {
+    let (Some(directory), Some(name)) = (path.parent(), path.file_name()) else {
+        return vec![path];
+    };
+    match spellings.get(directory) {
+        Some(names) => names.iter().map(|named| named.join(name)).collect(),
+        None => vec![path],
     }
 }
 

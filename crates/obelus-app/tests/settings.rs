@@ -494,6 +494,10 @@ fn a_change_to_the_file_a_link_points_at_is_a_change_to_the_settings() {
 
     let real = repository.join("config.toml");
     std::fs::write(&real, "theme = \"dark\"\n").expect("the file");
+    // Spelled the way the disk spells it, which is the way a watcher
+    // reports it: on a mac the temporary directory is itself behind a
+    // link, `/var` to `/private/var`, and no watcher says `/var`.
+    let real = real.canonicalize().expect("the file");
     let linked = config_home.join("config.toml");
     std::os::unix::fs::symlink(&real, &linked).expect("a link");
 
