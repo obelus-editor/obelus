@@ -1455,7 +1455,60 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
     );
 }
 
-/// Where obelus draws a run of changes, against where git draws it.
+/// `@@ -old,count +new,count @@`, as the runs obelus would name.
+///
+/// Shared by the two tests that ask git where a change is, because a second
+/// reading of git's own headers is a second thing to get wrong.
+fn hunk_headers(text: &str) -> Vec<String> {
+    text.lines()
+        .filter(|line| line.starts_with("@@"))
+        .map(|line| {
+            let mut parts = line.split(' ').skip(1);
+            let before = parts.next().unwrap_or("-0,0").trim_start_matches('-');
+            let after = parts.next().unwrap_or("+0,0").trim_start_matches('+');
+            let count = |part: &str| {
+                part.split_once(',')
+                    .map_or(1, |(_, many)| many.parse().unwrap_or(1))
+            };
+            let start: usize = after
+                .split(',')
+                .next()
+                .and_then(|start| start.parse().ok())
+                .unwrap_or(0);
+            let (added, removed): (usize, usize) = (count(after), count(before));
+            // git names the line *before* a pure deletion; obelus marks
+            // the line it sits in front of.
+            let at = if added == 0 { start + 1 } else { start };
+            format!("{at}+{added}-{removed}")
+        })
+        .collect()
+}
+
+/// The same question asked of this repository's own history.
+///
+/// Not part of an ordinary run, because its input is the last sixty commits
+/// of whatever checkout it is in: it means something different after every
+/// commit, it can go red over a change that has nothing to do with the one
+/// under test, and it goes green again on its own when the commit that
+/// reddened it slides out of the window. A test that only passes in one
+/// checkout is a broken test, and one that only passes at one *moment* is
+/// the same thing with a clock on it.
+///
+/// Kept, because it is what *finds* the cases: every pair in the corpus
+/// beside it was caught by this. So it is run deliberately -- `cargo test --
+/// --ignored` -- and it skips the pairs it has already handed over, which is
+/// what makes red mean something: there is a new one to look at, rather than
+/// the one already written down coming round again until it slides out of
+/// the window.
+///
+/// Measured while it was being made deliberate: of 363 file diffs in the
+/// window, 360 are drawn exactly where git draws them, two differ only in
+/// where an insertion among identical lines was anchored -- which is what
+/// [`same_runs`] is for -- and one is `fixtures/diffs/serving`, which
+/// [`a_diff_obelus_draws_puts_the_file_back`] has the rest of.
+///
+/// Broken deliberately by not skipping the recorded pairs: `serving` comes
+/// round again and this goes red over a thing that has been looked at.
 ///
 /// Over this repository's own history rather than a hand-written pair. A
 /// minimal diff still has choices in it -- a block inserted where the lines
@@ -1475,7 +1528,8 @@ fn the_map_beside_the_bar_shows_the_whole_file() {
 /// Skipped where there is no history to read, which is what a tarball
 /// without a `.git` is.
 #[test]
-fn a_run_of_changes_is_where_git_draws_it() {
+#[ignore = "its input is the checkout's own last sixty commits"]
+fn a_run_of_changes_is_where_git_draws_it_in_this_history() {
     let root = std::path::PathBuf::from(env!("OBELUS_TREE"));
     let git = |arguments: &[&str]| {
         let out = std::process::Command::new("git")
@@ -1494,31 +1548,24 @@ fn a_run_of_changes_is_where_git_draws_it() {
         return;
     }
 
-    // `@@ -old,count +new,count @@`, as the runs obelus would name.
-    let headers = |text: &str| -> Vec<String> {
-        text.lines()
-            .filter(|line| line.starts_with("@@"))
-            .map(|line| {
-                let mut parts = line.split(' ').skip(1);
-                let before = parts.next().unwrap_or("-0,0").trim_start_matches('-');
-                let after = parts.next().unwrap_or("+0,0").trim_start_matches('+');
-                let count = |part: &str| {
-                    part.split_once(',')
-                        .map_or(1, |(_, many)| many.parse().unwrap_or(1))
-                };
-                let start: usize = after
-                    .split(',')
-                    .next()
-                    .and_then(|start| start.parse().ok())
-                    .unwrap_or(0);
-                let (added, removed): (usize, usize) = (count(after), count(before));
-                // git names the line *before* a pure deletion; obelus marks
-                // the line it sits in front of.
-                let at = if added == 0 { start + 1 } else { start };
-                format!("{at}+{added}-{removed}")
-            })
-            .collect()
-    };
+    let headers = hunk_headers;
+
+    // What it has already handed over. A pair that is in the corpus has been
+    // looked at and written down; finding it again is not news, and a sweep
+    // that went red over one would be red until the commit slid out of the
+    // window -- which is the sweep saying "there is something to look at"
+    // when there is not.
+    let recorded: Vec<(String, String)> = DIFFS
+        .iter()
+        .chain(std::iter::once(&"serving"))
+        .map(|name| {
+            let (after, before, _) = a_diff(name);
+            (
+                std::fs::read_to_string(&before).expect("the file as it was"),
+                after,
+            )
+        })
+        .collect();
 
     let mut checked = 0usize;
     for id in &commits {
@@ -1536,6 +1583,12 @@ fn a_run_of_changes_is_where_git_draws_it() {
             ) else {
                 continue;
             };
+            if recorded
+                .iter()
+                .any(|(was, now)| was == &before && now == &after)
+            {
+                continue;
+            }
             let ours: Vec<String> = obelus_git::change::Changes::between(&before, &after)
                 .hunks()
                 .iter()
@@ -5329,6 +5382,131 @@ fn notes_kept_beside_a_checkout_are_still_read() {
             Some("from before"),
             "the notes were not carried over, read from {}",
             root.display()
+        );
+    }
+}
+
+/// The pairs the history sweep turned up, kept so the question has an answer
+/// that does not move.
+///
+/// Every one of them is a diff the tidying changes: taken as the algorithm
+/// leaves it, each is drawn somewhere git does not put it. That is what makes
+/// them worth keeping -- a pair anybody would write by hand is drawn the same
+/// way with the tidying and without, so a corpus of those would pass however
+/// `Changes::between` was written.
+const DIFFS: &[&str] = &["highlight", "reading", "viewing", "trouble"];
+
+/// Reads one of them, before and after.
+fn a_diff(name: &str) -> (String, std::path::PathBuf, std::path::PathBuf) {
+    let root = std::path::PathBuf::from(env!("OBELUS_TREE"))
+        .join("crates/obelus-app/tests/fixtures/diffs");
+    let (before, after) = (
+        root.join(format!("{name}.before")),
+        root.join(format!("{name}.after")),
+    );
+    let text = std::fs::read_to_string(&after).expect("the file as it is");
+    (text, before, after)
+}
+
+/// Where obelus draws a run of changes, against where git draws it.
+///
+/// A minimal diff still has choices in it -- a block inserted where the lines
+/// around it repeat can be written as starting a line or two earlier, and one
+/// change can be written as two hunks with a line between them -- and which
+/// reading you get is what decides which lines are marked in the margin. So
+/// obelus tidies the diff the way git does before showing it, and this is
+/// what says the two still agree.
+///
+/// Against real git rather than against a recorded answer: what "changed"
+/// means has to be what git says it means, and a list of hunks written down
+/// beside the files would only ever agree with itself. Fixed files rather
+/// than the checkout's own history, which is
+/// [`a_run_of_changes_is_where_git_draws_it_in_this_history`] and moves every
+/// commit.
+///
+/// Broken deliberately by taking `postprocess_lines` out of
+/// `Changes::between`: all four of these go, because all four were chosen
+/// for being diffs it changes.
+#[test]
+fn a_run_of_changes_is_where_git_draws_it() {
+    for name in DIFFS {
+        let (after, before_path, after_path) = a_diff(name);
+        let ours: Vec<String> = obelus_git::change::Changes::between(
+            &std::fs::read_to_string(&before_path).expect("the file as it was"),
+            &after,
+        )
+        .hunks()
+        .iter()
+        .map(|hunk| {
+            format!(
+                "{}+{}-{}",
+                hunk.line.get() + 1,
+                hunk.lines,
+                hunk.removed.len()
+            )
+        })
+        .collect();
+        // `--no-index` is how real git is asked about two files that are not
+        // in a repository, and it answers with the same headers `show` does.
+        // It exits non-zero because they differ, which is not a failure.
+        let out = std::process::Command::new("git")
+            .args([
+                "-c",
+                "diff.algorithm=histogram",
+                "diff",
+                "--no-index",
+                "-U0",
+            ])
+            .arg(&before_path)
+            .arg(&after_path)
+            .output()
+            .expect("running git");
+        let theirs = hunk_headers(&String::from_utf8_lossy(&out.stdout));
+        assert!(
+            same_runs(&ours, &theirs, &after),
+            "{name}\n  obelus {ours:?}\n  git    {theirs:?}"
+        );
+    }
+}
+
+/// Every run obelus draws puts the file back.
+///
+/// The claim underneath the one above, and the one that has to hold whatever
+/// git would have said: a hunk carries the lines that were there before, so
+/// the marks in the margin are only honest if replacing what they cover with
+/// what they carry gives the file as it was.
+///
+/// Asked of `serving` as well, which is the one pair in the corpus where git
+/// draws the change somewhere else. Both accounts are diffs of the same two
+/// files and both put the file back -- obelus's is four edits the smaller --
+/// and where two independent implementations of one algorithm break a tie
+/// differently there is nothing to fix. What can be held to is this.
+///
+/// Broken deliberately by taking one line off the end of `hunk.removed` in
+/// `Changes::between`: the file comes back a line short.
+#[test]
+fn a_diff_obelus_draws_puts_the_file_back() {
+    for name in DIFFS.iter().chain(std::iter::once(&"serving")) {
+        let (after, before_path, _) = a_diff(name);
+        let before = std::fs::read_to_string(&before_path).expect("the file as it was");
+        let changes = obelus_git::change::Changes::between(&before, &after);
+        let now: Vec<&str> = after.lines().collect();
+        let mut put_back: Vec<String> = Vec::new();
+        let mut at = 0usize;
+        // The hunks come in order, so walking them and the file together
+        // rebuilds it: what a hunk covers is dropped and what it carries
+        // goes in instead.
+        for hunk in changes.hunks() {
+            let starts = hunk.line.get();
+            put_back.extend(now[at..starts].iter().map(|line| (*line).to_string()));
+            put_back.extend(hunk.removed.iter().cloned());
+            at = starts + hunk.lines;
+        }
+        put_back.extend(now[at..].iter().map(|line| (*line).to_string()));
+        assert_eq!(
+            put_back.join("\n"),
+            before.trim_end_matches('\n'),
+            "{name}: the hunks do not put the file back"
         );
     }
 }

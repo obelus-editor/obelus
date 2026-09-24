@@ -19,7 +19,7 @@ cargo +nightly fmt              # NOT `cargo fmt`
 cargo clippy --all-features --all-targets
 cargo run -- src/app.rs
 UPDATE_FIXTURES=1 cargo test    # regenerate golden cell grids
-cargo test -- --ignored         # the slow real-server tests
+cargo test -- --ignored         # the slow real-server tests, and the diff sweep
 OBELUS_REQUIRE_LSP=1 cargo test # a missing rust-analyzer fails rather than skips
 ```
 
@@ -967,6 +967,30 @@ deliberate exception: `the_committed_text_comes_from_git` reads *this*
 repository's `src/lib.rs` through `git show`, because a diff of what git
 actually has against what is on disk is the only thing that says the two
 halves agree. It asserts nothing about whether that file is currently dirty.
+
+**A test whose input is the checkout's own history only passes at one
+moment.** Where obelus draws a run of changes is checked against real `git
+diff`, and it was checked over the last sixty commits of whatever checkout
+it ran in -- so it meant something different after every commit, could go
+red over a change that had nothing to do with the one under test, and went
+green again on its own when the offending commit slid out of the window. It
+is the same rule as the fixture that carried `~/Work/obelus`, with a clock
+on it.
+
+The pairs live in `tests/fixtures/diffs/` now and the answer comes from real
+`git diff --no-index`, so nothing is written down that could only agree with
+itself. Every pair in there is a diff the tidying changes -- a hand-written
+one is drawn the same way with it and without, so a corpus of those would
+pass however the diff was written.
+
+The sweep is kept, because it is what *finds* them, and it is `#[ignore]`d:
+run deliberately, skipping the pairs it has already handed over, so red
+means there is a new one to look at. When it turns one up, that pair joins
+the fixtures. One of them, `serving`, is there because obelus and git draw
+it differently and always will: two independent implementations of one
+algorithm broke a tie differently, both diffs put the file back, and
+obelus's is four edits the smaller. What is held to there is that the hunks
+reconstruct the file, which is the claim underneath the other one.
 
 ## Comments
 

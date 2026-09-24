@@ -1,0 +1,112 @@
+//! Which kind of thing each byte on screen is.
+//!
+//! Computed for the visible range only, from the tree, every frame. Two
+//! consequences, both deliberate: a reparse invalidates nothing, because there
+//! is no cache to invalidate; and a whole-file query never runs, so the cost
+//! does not grow with the file.
+
+use std::ops::Range;
+
+use obelus_text::{Text, coordinates::ByteOffset, kind::SyntaxKind};
+use tree_sitter::{Node, QueryCursor, StreamingIterator as _, Tree};
+
+use crate::{Grammar, Paint, parse::SyntaxState, rope_chunks};
+
+/// The kind of every byte in one range of the document.
+///
+/// One entry per byte rather than a list of spans: the ranges overlap, the
+/// rule for resolving that is "the innermost wins", and writing outer spans
+/// first and letting inner ones overwrite is the whole implementation. The
+/// range is a screenful, so this is a few kilobytes that get reused.
+#[derive(Debug, Default)]
+pub struct Highlights {
+    start: usize,
+    kinds: Vec<Option<SyntaxKind>>,
+}
+
+impl Highlights {
+    /// Recomputes for a byte range, reusing the allocation.
+    pub fn refresh(&mut self, state: &SyntaxState, text: &Text, range: Range<ByteOffset>) {
+        let start = range.start.get();
+        let end = range.end.get().max(start);
+
+        self.start = start;
+        self.kinds.clear();
+        self.kinds.resize(end - start, None);
+        // Nothing visible, so nothing to colour -- and asking anyway is not
+        // harmless: an empty byte range is no restriction as far as
+        // tree-sitter is concerned, so the query would answer with captures
+        // from the whole document and every one of them would be outside
+        // the nothing there is to write them into.
+        //
+        // Reachable two ways: a screen with no room for the text at all,
+        // and a viewport whose top line is the empty one a file ending in a
+        // newline has.
+        if self.kinds.is_empty() {
+            return;
+        }
+
+        self.paint(crate::grammar(state.language()), state.tree(), text);
+        // Then the languages inside this one, outermost first -- which is
+        // the order they were found in, and the same rule as everywhere
+        // else here: what is inside wins. A run of Rust in a fence is drawn
+        // over the fence's own colour, and what the Rust query says nothing
+        // about is left plain by the `@none` the markdown query puts there.
+        for injected in state.injected() {
+            self.paint(crate::grammar(injected.language()), injected.tree(), text);
+        }
+    }
+
+    /// Writes what one tree's query says about the range already set up.
+    fn paint(&mut self, grammar: &Grammar, tree: &Tree, text: &Text) {
+        let start = self.start;
+        let end = start + self.kinds.len();
+        let mut cursor = QueryCursor::new();
+        cursor.set_byte_range(start..end);
+
+        let rope = text.rope();
+        let mut provider = |node: Node<'_>| rope_chunks(rope, node);
+
+        // Outer spans first, so an inner one overwrites them. Sorting the
+        // whole set would need the whole set; the query already yields
+        // captures in document order, and within one position tree-sitter
+        // gives the outermost node first, which is the same order.
+        let mut captures = cursor.captures(grammar.query(), tree.root_node(), &mut provider);
+        while let Some((matched, index)) = captures.next() {
+            let capture = matched.captures()[*index];
+            let kind = match grammar.paint(capture.index) {
+                Paint::As(kind) => Some(kind),
+                Paint::Plain => None,
+                Paint::Nothing => continue,
+            };
+            let node = capture.node.byte_range();
+            // Clipped to what is on screen, and dropped if that leaves
+            // nothing: a capture can begin past the end of the range or
+            // finish before its start, and either way the slice it names
+            // does not exist.
+            let from = node.start.max(start) - start;
+            let to = node.end.min(end).saturating_sub(start);
+            if from >= to {
+                continue;
+            }
+            for slot in &mut self.kinds[from..to] {
+                *slot = kind;
+            }
+        }
+    }
+
+    /// Forgets everything, for when there is nothing to highlight.
+    pub fn clear(&mut self) {
+        self.start = 0;
+        self.kinds.clear();
+    }
+
+    /// What kind of thing a byte is, if it is one the theme colours.
+    #[must_use]
+    pub fn kind_at(&self, byte: ByteOffset) -> Option<SyntaxKind> {
+        self.kinds
+            .get(byte.get().checked_sub(self.start)?)
+            .copied()
+            .flatten()
+    }
+}
