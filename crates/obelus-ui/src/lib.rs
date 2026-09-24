@@ -226,9 +226,6 @@ pub trait Screen {
     fn project_config(&self) -> Option<&Path>;
     /// What the server says is wrong with the file being read.
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble];
-    /// How much the reader has said into the conversation being read that
-    /// the agent has not been given yet.
-    fn waiting_to_be_said(&self) -> usize;
     /// The note the conversation being read is about, in the words the
     /// reader wrote.
     fn what_this_conversation_is_about(&self) -> Option<String>;

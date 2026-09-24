@@ -805,35 +805,22 @@ impl App {
         }
     }
 
-    /// Sends what the reader typed, or holds it until the turn is over.
+    /// Sends what the reader typed, or puts it on the page to go when the
+    /// turn is over.
     ///
     /// A conversation takes one prompt turn at a time. What the reader says
-    /// into a running one waits, and goes when the turn ends -- see
-    /// [`Conversation::waiting`](crate::conversation::Conversation::waiting)
-    /// for why the protocol leaves no third option.
+    /// into a running one waits on the page, dim, where they can see it and
+    /// take it back -- see
+    /// [`Conversation`](crate::conversation::Conversation) for why the
+    /// protocol leaves no third option.
     pub(super) fn send_to_agent(&mut self, text: &str) {
-        // Behind whatever is already waiting, as well as behind a running
-        // turn. A conversation is a thing said in an order, and a message
-        // that went out in front of one the reader typed first would put
-        // their own words to the agent back to front.
-        let queued = self
-            .conversation()
-            .is_some_and(|talk| !talk.waiting.is_empty());
-        let thinking = self.talking() == Talking::Thinking;
-        if thinking || queued {
+        if self.talking() == Talking::Thinking {
             if let Some(talk) = self.conversation_mut() {
-                talk.waiting.push_back(text.to_string());
-                // Typing again is the reader picking the conversation back
-                // up after they stopped it, so whatever they had waiting
-                // goes with this.
-                talk.held_back = false;
-            }
-            if !thinking {
-                self.say_what_was_waiting(Whose::Whoever);
+                talk.chat.will_say(text);
             }
             return;
         }
-        self.say_in(Whose::Whoever, text);
+        self.say_in(Whose::Whoever, text, false);
     }
 
     /// Says one thing in the conversation `whose` names.
@@ -843,7 +830,7 @@ impl App {
     /// ending says whatever was waiting behind it -- which may be a
     /// conversation they have since walked away from, because a turn goes
     /// on running while they read something else.
-    fn say_in(&mut self, whose: Whose, text: &str) {
+    fn say_in(&mut self, whose: Whose, text: &str, on_the_page: bool) {
         // What this agent does not know yet, if anything: who it is talking
         // to, and what the conversation is about. Worked out here rather
         // than kept, because a note is a file the reader can change between
@@ -874,7 +861,12 @@ impl App {
                     talk.chat.note(said);
                 }
             }
-            talk.chat.asked(text);
+            // Unless they are already there, dim, waiting for this moment:
+            // what goes out is those rows joined, and writing them again
+            // would be saying the whole of it twice.
+            if !on_the_page {
+                talk.chat.asked(text);
+            }
         }
         let opening = opening.map(|opening| opening.words);
         // There is something to come back to now, which is the moment a
@@ -924,63 +916,29 @@ impl App {
         talker.say(session.as_ref(), text, opening.as_deref());
     }
 
-    /// How much the reader has said into this conversation that the agent
-    /// has not been given yet.
-    #[must_use]
-    pub fn waiting_to_be_said(&self) -> usize {
-        self.conversation().map_or(0, |talk| talk.waiting.len())
-    }
-
-    /// Sends what is waiting rather than letting it wait, which is what
-    /// enter on an empty box means.
+    /// Says what the reader had waiting, now that the turn it was waiting
+    /// on is over.
     ///
-    /// The turn in front of it is stopped rather than raced: two prompts in
-    /// one conversation is the thing this whole queue exists to prevent, so
-    /// what is waiting stays waiting one moment longer and goes when the
-    /// turn obelus just cancelled comes to a halt. Which is where
-    /// [`Self::say_what_was_waiting`] picks it up.
+    /// All of it, as one prompt: three things typed into one running turn
+    /// are one thing the reader is saying, and an agent handed only the
+    /// first of them answers a question it has not been asked the whole
+    /// of. Joined by a blank line, which is what the box's own `alt+enter`
+    /// makes, so what arrives is what they would have typed.
     ///
-    /// The order matters: stopping it holds the queue back, and this is the
-    /// one stop that does not mean "and leave it there" -- the reader asked
-    /// for the opposite in the same keypress.
-    fn say_what_is_waiting_now(&mut self) {
-        if self
-            .conversation()
-            .is_none_or(|talk| talk.waiting.is_empty())
-        {
-            return;
-        }
-        if self.talking() == Talking::Thinking {
-            self.interrupt_agent();
-            if let Some(talk) = self.conversation_mut() {
-                talk.held_back = false;
-            }
-            return;
-        }
-        // Nothing to stop: the reader stopped it themselves a moment ago,
-        // and this is them changing their mind about what they left behind.
-        if let Some(talk) = self.conversation_mut() {
-            talk.held_back = false;
-        }
-        self.say_what_was_waiting(Whose::Whoever);
-    }
-
-    /// Says the next thing the reader had waiting, now that the turn it was
-    /// waiting on is over.
-    ///
-    /// One at a time, because one is all a conversation takes: what is left
-    /// goes when this turn ends in its turn.
+    /// A turn the reader stopped releases these too. Their words were
+    /// never taken from them -- the rows are on the page and enter takes
+    /// one back -- so escape means "stop what the agent is doing" and not
+    /// "unsay what I said".
     fn say_what_was_waiting(&mut self, whose: Whose) {
         let Some(talk) = self.talk_mut(whose) else {
             return;
         };
-        if talk.held_back {
+        let waiting = talk.chat.unsent();
+        if waiting.is_empty() {
             return;
         }
-        let Some(next) = talk.waiting.pop_front() else {
-            return;
-        };
-        self.say_in(whose, &next);
+        talk.chat.sent();
+        self.say_in(whose, &waiting.join("\n\n"), true);
     }
 
     /// Asks the agent to stop what it is doing.
@@ -1009,12 +967,6 @@ impl App {
         // screen that cannot both be true.
         if let Some(talk) = self.conversation_mut() {
             talk.chat.stop_the_calls();
-        }
-        // What they said while it was running stays said and stays unsent.
-        // Sending it the moment the thing they just stopped comes to a halt
-        // is obelus speaking for them straight after they said not to.
-        if let Some(talk) = self.conversation_mut() {
-            talk.held_back = true;
         }
         let session = self.session_now();
         let Some(talker) = self.talker.as_mut() else {
@@ -1311,8 +1263,18 @@ impl App {
                 self.interrupt_agent();
                 true
             }
-            ChatOutcome::SendWaiting => {
-                self.say_what_is_waiting_now();
+            ChatOutcome::TakeBack(words) => {
+                if let Some(talk) = self.conversation_mut() {
+                    // In front of whatever they had started typing, as its
+                    // own paragraph: neither of the two is obelus's to
+                    // throw away.
+                    let started = talk.chat.writing().text();
+                    let put = match started.trim().is_empty() {
+                        true => words,
+                        false => format!("{words}\n\n{started}"),
+                    };
+                    talk.chat.put(&put);
+                }
                 true
             }
             // Somewhere the reader was sent, sent again: the browser tab

@@ -404,9 +404,6 @@ pub struct ChatView<'a> {
     /// would otherwise differ only in what was said in them. A label reading
     /// "chat" would answer a question nobody asked -- they pressed the key.
     about: Option<String>,
-    /// How much the reader has said that has not gone yet, for the mark
-    /// that says so.
-    waiting: usize,
     /// What obelus has to say, until the next key.
     ///
     /// A conversation has a status row of its own, so it has to carry this
@@ -435,7 +432,6 @@ impl<'a> ChatView<'a> {
             root: app.working_directory(),
             phase: app.phase(),
             about: app.what_this_conversation_is_about(),
-            waiting: app.waiting_to_be_said(),
             note: app.note(),
             usage: app.agent_usage(),
         })
@@ -752,24 +748,15 @@ impl ChatView<'_> {
     /// answered them yet, and the scrollbar beside them can only say how
     /// much there is -- never whether any of it is new.
     fn the_way_back(&self, cells: &mut CellBuffer, y: u16, area: Rect) {
-        // What is waiting first, where anything is. Both are about the
-        // conversation as a whole and there is one row for them, and of the
-        // two this is the one the reader cannot find out any other way: the
-        // end of the transcript is a keypress away, and a message that has
-        // not gone looks exactly like one that has.
-        let label = match (self.waiting, self.chat.at_the_end()) {
-            (0, true) => return,
-            (0, false) => {
-                let said = match self.chat.said_since() {
-                    0 => "To the end".to_string(),
-                    1 => "1 new message".to_string(),
-                    many => format!("{many} new messages"),
-                };
-                format!("  {said}  ctrl+end \u{2193}  ")
-            }
-            (1, _) => "  1 waiting  enter sends it now  ".to_string(),
-            (many, _) => format!("  {many} waiting  enter sends the first now  "),
+        if self.chat.at_the_end() {
+            return;
+        }
+        let said = match self.chat.said_since() {
+            0 => "To the end".to_string(),
+            1 => "1 new message".to_string(),
+            many => format!("{many} new messages"),
         };
+        let label = format!("  {said}  ctrl+end \u{2193}  ");
         let width = text_width(&label);
         let Ok(width) = u16::try_from(width) else {
             return;
@@ -832,6 +819,14 @@ impl ChatView<'_> {
             let here =
                 row.acts() && matches!(self.focus, Focus::Transcript(place) if place.row == at);
             let (glyph, style) = self.voice(row, plain, dim);
+            // What has not gone yet is said in the ink: the reader's own
+            // words, dim, until the turn in front of them ends. Not by
+            // taking the background away -- that mark says where the keys
+            // are and says nothing else.
+            let style = match row.unsent {
+                Some(_) => dim,
+                None => style,
+            };
             // A line of a change is drawn the way an opened hunk is drawn
             // in a file: tinted its whole width, with the marker's own bar
             // against the text. The same two colours, because it is the
@@ -962,7 +957,7 @@ impl ChatView<'_> {
             // it changed: the one row about a rewritten file said nothing
             // about the rewriting, and read as a line obelus had lost the
             // end of.
-            let tail = self.tail_of(row, dim);
+            let tail = self.tail_of(row, dim, here);
             let kept: usize = tail
                 .iter()
                 .map(|(gap, said, _)| usize::from(*gap) + text_width(said))
@@ -1489,8 +1484,16 @@ impl ChatView<'_> {
     /// need has to be known *before* the words are drawn and what is drawn
     /// has to be the same thing that was measured. Two answers to "what
     /// goes at the end of this row" is how the end of a row goes missing.
-    fn tail_of(&self, row: &Row, dim: Style) -> Vec<(u16, String, Style)> {
+    fn tail_of(&self, row: &Row, dim: Style, standing: bool) -> Vec<(u16, String, Style)> {
         let mut tail = Vec::new();
+        // What enter does here, on the row it would do it to: the one row
+        // in a transcript whose key hands something back rather than
+        // opening it, so a reader has no way to guess it. Only while they
+        // are standing on it -- said on every waiting row at once it would
+        // be answering somebody who has not asked yet.
+        if row.unsent.is_some() && standing {
+            tail.push((2, "Enter takes it back".to_string(), dim));
+        }
         // Where it said it was working. The path is its own affordance:
         // obelus opens files, so a row that names one is a row that goes
         // there.
@@ -1766,7 +1769,6 @@ mod caret {
                         root: std::path::Path::new("/"),
                         phase: 0,
                         about: None,
-                        waiting: 0,
                         note: None,
                         usage: None,
                     };

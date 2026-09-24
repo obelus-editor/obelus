@@ -199,6 +199,18 @@ pub struct Said {
     /// question is which of the two things beginning there the reader
     /// meant.
     pub run_opened: Option<bool>,
+    /// Whether this is something the reader has said that has not gone yet.
+    ///
+    /// A conversation takes one prompt turn at a time, so what the reader
+    /// says into a running one sits on the page until that turn ends. On
+    /// the page rather than in a queue beside it because the words are the
+    /// reader's: a count on the status row said how many were waiting and
+    /// never which, and there was nowhere to stand to take one back.
+    ///
+    /// Only ever true of [`Speaker::Reader`]. It goes false for all of
+    /// them at once, when they go together -- see [`Chat::sent`], where
+    /// the ink stops being dim, which is the receipt.
+    pub unsent: bool,
 }
 
 /// What the mark on a row opens and closes.
@@ -262,6 +274,13 @@ pub struct Row {
     pub folds: Option<Folds>,
     /// Whether what it folds is open, for the mark that says so.
     pub open: bool,
+    /// Which thing said this is, where it is one the reader has said that
+    /// has not gone yet.
+    ///
+    /// The index and not a flag, because the key that stands here takes
+    /// that one back and has to name it. On the first row only, like
+    /// everything else that is true of the whole of what was said.
+    pub unsent: Option<usize>,
     /// What the row is, where it is a line of a change: gone, new, or the
     /// line it is at.
     pub marker: Option<obelus_text::marker::Marker>,
@@ -359,7 +378,7 @@ impl Row {
     /// does nothing is a key that appears not to work.
     #[must_use]
     pub const fn acts(&self) -> bool {
-        self.place.is_some() || self.folds.is_some() || self.away.is_some()
+        self.place.is_some() || self.folds.is_some() || self.away.is_some() || self.unsent.is_some()
     }
 
     /// How many characters the row draws.
@@ -493,14 +512,9 @@ pub enum ChatOutcome {
     Send(String),
     /// Ask the agent to stop.
     Interrupt,
-    /// Send what the reader has waiting, without waiting for the turn.
-    ///
-    /// Enter on an empty box, which is otherwise the one keypress here that
-    /// does nothing at all. Whether there *is* anything waiting is not this
-    /// component's to know -- the queue belongs to the conversation -- so
-    /// this is the key saying what it meant and the application deciding
-    /// whether it meant anything.
-    SendWaiting,
+    /// Put these words back in the box: the reader took back something
+    /// they had said that had not gone yet.
+    TakeBack(String),
     /// Move to the agent's next way of working.
     StepMode,
     /// Open what a row of the transcript names.
@@ -948,6 +962,65 @@ impl Chat {
         self.push(Speaker::Reader, text, None);
     }
 
+    /// Adds one the reader has said into a turn that is still running.
+    ///
+    /// It goes on the page where everything they say goes, and says about
+    /// itself that it has not gone. What it is waiting for is the turn in
+    /// front of it: [`Self::unsent`] is what leaves with that turn.
+    pub fn will_say(&mut self, text: &str) {
+        self.push(Speaker::Reader, text, None);
+        if let Some(said) = self.said.last_mut() {
+            said.unsent = true;
+        }
+    }
+
+    /// Everything the reader has said that has not gone, in the order they
+    /// said it.
+    ///
+    /// All of it, because all of it goes as one prompt: three things
+    /// typed into one running turn are one thing the reader is saying, and
+    /// an agent given only the first of them answers a question it has not
+    /// been asked the whole of.
+    #[must_use]
+    pub fn unsent(&self) -> Vec<String> {
+        self.said
+            .iter()
+            .filter(|said| said.unsent)
+            .map(|said| said.text.clone())
+            .collect()
+    }
+
+    /// Says that what was waiting has gone.
+    ///
+    /// The rows stay as they are and stop being dim. They are not merged
+    /// into the one prompt they left as: the reader said three things and
+    /// the page is what they said, so rewriting their own half of it under
+    /// them would be obelus editing the page rather than adding to it.
+    pub fn sent(&mut self) {
+        if !self.said.iter().any(|said| said.unsent) {
+            return;
+        }
+        // The dim ink is laid out from this, so the rows it made are no
+        // longer the rows it would make.
+        self.forget_the_layout();
+        for said in &mut self.said {
+            said.unsent = false;
+        }
+    }
+
+    /// Takes back one thing the reader said before it went, and hands the
+    /// words back.
+    ///
+    /// Only something that has not gone: a thing already said to an agent
+    /// cannot be unsaid, and a row that has gone does not offer this.
+    pub fn take_back(&mut self, at: usize) -> Option<String> {
+        if !self.said.get(at).is_some_and(|said| said.unsent) {
+            return None;
+        }
+        self.forget_the_layout();
+        Some(self.said.remove(at).text)
+    }
+
     /// Takes the reader's own words back from the agent.
     ///
     /// What this is for is a conversation taken up again: the agent replays
@@ -1081,6 +1154,7 @@ impl Chat {
             words: vec![url.to_string()],
             opened: None,
             run_opened: None,
+            unsent: false,
         });
     }
 
@@ -1199,6 +1273,7 @@ impl Chat {
                 words: call.said.clone(),
                 opened: None,
                 run_opened: None,
+                unsent: false,
             });
             return;
         };
@@ -1328,6 +1403,7 @@ impl Chat {
                 // transcript would be filing it as one.
                 folds: planning.then_some(Folds::Plan),
                 open: self.plan_open,
+                unsent: None,
                 marker: None,
                 changed: None,
                 depth: 0,
@@ -1351,6 +1427,7 @@ impl Chat {
                             place: None,
                             folds: None,
                             open: false,
+                            unsent: None,
                             marker: None,
                             changed: None,
                             depth: 1,
@@ -1420,6 +1497,7 @@ impl Chat {
             away: None,
             folds: Some(Folds::Run(run.start)),
             open,
+            unsent: None,
             marker: None,
             changed: None,
             depth: 0,
@@ -1629,6 +1707,10 @@ impl Chat {
             },
             folds,
             open: folds.is_some_and(|what| self.is_open_now(what)),
+            unsent: match said.unsent {
+                true => from.map(|(at, _)| at),
+                false => None,
+            },
             marker: None,
             changed: None,
             depth,
@@ -1649,6 +1731,7 @@ impl Chat {
             away: None,
             folds: None,
             open: false,
+            unsent: None,
             marker: None,
             changed: None,
             depth,
@@ -1670,6 +1753,7 @@ impl Chat {
             away: None,
             folds: None,
             open: false,
+            unsent: None,
             marker: None,
             changed: None,
             depth: 0,
@@ -2040,7 +2124,7 @@ impl Chat {
             }
             KeyCode::Enter => {
                 if self.input.is_blank() {
-                    return ChatOutcome::SendWaiting;
+                    return ChatOutcome::Consumed;
                 }
                 ChatOutcome::Send(self.input.take())
             }
@@ -2269,6 +2353,7 @@ impl Chat {
             words: Vec::new(),
             opened: None,
             run_opened: None,
+            unsent: false,
         });
     }
 
@@ -2558,19 +2643,31 @@ impl Chat {
             KeyCode::Enter if bare => {
                 let row = laid.get(at.row).cloned();
                 match row {
-                    Some(row) => match (row.folds, row.place, row.away) {
-                        (Some(begins), _, _) => {
+                    Some(row) => match (row.unsent, row.folds, row.place, row.away) {
+                        // Something they said that has not gone: the only
+                        // row here whose key gives rather than opens.
+                        (Some(which), ..) => match self.take_back(which) {
+                            // Back to the box with them, where the caret
+                            // is: taking something back is almost always
+                            // meaning to say it again differently.
+                            Some(words) => {
+                                self.leave_the_transcript(at);
+                                Some(ChatOutcome::TakeBack(words))
+                            }
+                            None => Some(ChatOutcome::Consumed),
+                        },
+                        (None, Some(begins), _, _) => {
                             self.fold(begins);
                             // The heading stays under the reader: what
                             // moved is what is below it.
                             self.show_to(at.row, laid.len(), room);
                             Some(ChatOutcome::Consumed)
                         }
-                        (None, Some((place, _)), _) => Some(ChatOutcome::GoTo(place)),
+                        (None, None, Some((place, _)), _) => Some(ChatOutcome::GoTo(place)),
                         // And a row that points at a web address goes
                         // there, which is the same rule about the same key.
-                        (None, None, Some(url)) => Some(ChatOutcome::Away(url)),
-                        (None, None, None) => Some(ChatOutcome::Consumed),
+                        (None, None, None, Some(url)) => Some(ChatOutcome::Away(url)),
+                        (None, None, None, None) => Some(ChatOutcome::Consumed),
                     },
                     None => Some(ChatOutcome::Consumed),
                 }
@@ -4026,13 +4123,14 @@ mod tests {
         // Sent, so the row is empty: a prompt still sitting there after
         // being sent is a prompt that gets sent twice.
         assert_eq!(chat.writing().text(), "");
-        // And an empty row sends nothing of its own: it asks for whatever
-        // the reader has waiting, which is the application's to have or not
-        // have. Nothing here knows about that queue, which is why this is
-        // the key saying what it meant rather than doing it.
+        // And an empty box sends nothing at all. It used to stand for
+        // "send what I have waiting", which was one key meaning two
+        // things: harmless with words in the box, and a stop to a running
+        // turn without them. What is waiting is rows in the transcript
+        // now, and each of them has its own key.
         assert_eq!(
             chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
-            ChatOutcome::SendWaiting
+            ChatOutcome::Consumed
         );
     }
 

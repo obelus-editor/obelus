@@ -79,29 +79,6 @@ pub struct Conversation {
     /// down beside the note like `told` so that picking one up again does
     /// not repeat it.
     pub introduced: bool,
-    /// What the reader said while the agent was working, in the order they
-    /// said it.
-    ///
-    /// The protocol takes one prompt turn at a time -- `session/cancel`
-    /// names a session and not a turn, and the answer to `session/prompt`
-    /// says "the turn is over" with nothing on it saying which turn -- so a
-    /// second prompt sent into a running one leaves obelus unable to tell
-    /// the two apart. It could not: the first answer home put the
-    /// conversation back to resting while the other turn worked on,
-    /// unmarked, with no spinner and no key that would stop it.
-    ///
-    /// So what the reader types goes here instead, and leaves when the turn
-    /// ends. Kept on the conversation rather than beside the connection,
-    /// because it is one reader's words to one agent and because it has to
-    /// be drawn: what is held back is shown over the box.
-    pub waiting: std::collections::VecDeque<String>,
-    /// Whether what is waiting stays waiting.
-    ///
-    /// Set when the reader stops the turn themselves. Sending their words
-    /// the moment the thing they just stopped comes to a halt is obelus
-    /// speaking for them straight after they said not to; the next thing
-    /// they send starts it moving again.
-    pub held_back: bool,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.

@@ -208,15 +208,29 @@ same flag, so escape would not even send the cancellation. zed queues for
 this reason too, and "send it now" there is `cancel` awaited and *then* the
 prompt, never the two at once.
 
-What is waiting is the reader's, so it is on screen (over the box, where the
-way back to the end goes) and it is theirs to release: enter on an empty box
-stops the turn in front of it, which was the one keypress in a conversation
-that did nothing at all. Stopping the turn themselves holds it back instead
--- sending what they typed the moment the thing they just stopped comes to a
-halt is obelus speaking for them straight after they said not to -- and the
-next thing they send picks it up again, in front of nothing: a queue that
-let a later message overtake an earlier one would put their own words to the
-agent back to front.
+**What is waiting is the reader's, so it waits where their words live.** It
+goes straight into the transcript, dim, one row per thing they said, and
+enter on one takes that one back into the box. It was a count over the box
+-- `2 waiting` -- which said how many and never which, and offered nowhere
+to stand to change their mind; and the key that released it was enter on an
+empty box, one key that was harmless with words in the box and a stop to a
+running turn without them, a pair of presses apart.
+
+**And it goes as one prompt, not one per turn.** Three things typed into a
+running turn are one thing the reader is saying -- fix the tests, and the
+lint, and then commit -- so they are joined with a blank line, which is what
+the box's own `alt+enter` makes. One per turn meant the agent answered the
+first without ever seeing the second, and the third did not reach it until
+two turns had run. The rows stay the rows they were: the page is what the
+reader said, and obelus adds to their half of it rather than rewriting it.
+
+Stopping the turn releases them. Escape means "stop what the agent is
+doing", not "unsay what I said" -- it used to mean both, because the words
+had been taken off the page into a queue and obelus sending them unasked
+would have been obelus speaking for them. They are on the page now, and
+taking one back is a key on the row it is about. They still go in the order
+they were typed: a queue that let a later message overtake an earlier one
+would put their own words to the agent back to front.
 
 **So obelus numbers its own turns**, because the protocol will not: the
 number goes out with the prompt, comes back on the answer, and an answer

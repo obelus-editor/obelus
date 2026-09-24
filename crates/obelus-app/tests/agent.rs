@@ -453,8 +453,8 @@ fn what_the_reader_says_into_a_running_turn_waits_for_it() {
     support::type_text(&mut app, "/blocks");
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
-        app.waiting_to_be_said(),
-        1,
+        app.chat().map(|chat| chat.unsent()),
+        Some(vec!["/blocks".to_string()]),
         "what the reader typed was not held back"
     );
     // Still working on the first one, and still saying so -- which is the
@@ -465,27 +465,27 @@ fn what_the_reader_says_into_a_running_turn_waits_for_it() {
         !text.contains("blocks="),
         "the second message went into the running turn:\n{text}"
     );
-    // And the reader can see it has not gone.
+    // And the reader can see it, in their own words, where their words go.
     assert!(
-        text.contains("1 waiting"),
-        "nothing on screen says a message is waiting:\n{text}"
+        text.contains("/blocks"),
+        "what is waiting is not on the page:\n{text}"
     );
 }
 
-/// A turn the reader stopped does not let what they said out behind it.
+/// A turn the reader stopped lets what they said out behind it.
 ///
-/// Stopping is the reader saying no more of this. Sending what they typed
-/// the moment the thing they just stopped comes to a halt is obelus
-/// speaking for them straight after they said not to -- and what they typed
-/// was written to steer a turn that no longer exists.
+/// Stopping is the reader saying "stop what the agent is doing". It used to
+/// mean "and hold my words back as well", because the words had been taken
+/// off the page into a queue and obelus sending them unasked was obelus
+/// speaking for them. They are on the page now, in their own voice, and
+/// enter on one takes it back -- so escape has no business unsaying them,
+/// and stopping the turn is the one key that means "go now".
 ///
-/// The next thing they send is them picking it up again, and then both go,
-/// in the order they were typed.
-///
-/// Broken deliberately by not setting `held_back` in `interrupt_agent`,
-/// which lets the message out on the `Ended` that escape itself produces.
+/// Broken deliberately by returning from the `cancelled` arm of
+/// `Incoming::Ended` before it reaches `say_what_was_waiting`, which is
+/// what `held_back` used to do: `blocks=` never arrives.
 #[test]
-fn a_turn_the_reader_stopped_keeps_what_was_waiting_behind_it() {
+fn a_turn_the_reader_stopped_lets_what_was_waiting_go() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -499,61 +499,44 @@ fn a_turn_the_reader_stopped_keeps_what_was_waiting_behind_it() {
     support::press(&mut app, KeyCode::Enter);
 
     support::press(&mut app, KeyCode::Esc);
-    pump(&mut app, &events, "the turn to end", |app| {
-        app.talking() == obelus_agent::Talking::Ready
+    pump(&mut app, &events, "what was waiting", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks="))
+        })
     });
     let text = screen(&mut app);
     assert!(
         text.contains("Stopped"),
         "it did not say it stopped:\n{text}"
     );
-    assert!(
-        !text.contains("blocks="),
-        "what they typed went out behind the turn they stopped:\n{text}"
-    );
     assert_eq!(
-        app.waiting_to_be_said(),
-        1,
-        "what they typed was thrown away rather than held"
-    );
-
-    // And picking the conversation up again lets it out, in front of what
-    // they said to pick it up with.
-    support::type_text(&mut app, "/echo");
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "both of them", |app| {
-        app.chat().is_some_and(|chat| {
-            chat.rows(WIDTH)
-                .iter()
-                .any(|row| row.text().contains("heard you"))
-        })
-    });
-    let text = screen(&mut app);
-    let blocks = at_row(&rows(&text), "blocks=", &text);
-    let echoed = at_row(&rows(&text), "heard you", &text);
-    assert!(
-        blocks < echoed,
-        "what was said first was not said first:\n{text}"
+        app.chat().map(|chat| chat.unsent()),
+        Some(Vec::new()),
+        "it went and was kept waiting as well"
     );
 }
 
-/// Enter on an empty box sends what is waiting rather than waiting.
+/// Several things said into one running turn arrive as one prompt.
 ///
-/// The one keypress in a conversation that did nothing at all, and the
-/// reader who has changed their mind about waiting has nowhere else to say
-/// so: the turn in front of theirs may be a build with ten minutes left in
-/// it.
+/// Three things typed into a turn are one thing the reader is saying -- fix
+/// the tests, and the lint, and then commit -- and an agent handed only the
+/// first of them answers a question it has not been asked the whole of. It
+/// used to go one per turn: the second waited on the answer to the first,
+/// which the agent wrote without ever seeing it.
 ///
-/// It stops that turn rather than racing it, because two prompts in one
-/// conversation is what the queue exists to prevent -- so what is waiting
-/// waits one moment longer and goes when the cancelled turn comes to a
-/// halt.
+/// Asked of the agent rather than of the page, because the page shows the
+/// reader's rows either way and what is in question is what was *sent*.
+/// The fake agent reads a prompt by what is in it, and `/forever` is the
+/// arm it tries before `/blocks`: joined, the prompt reaches the arm named
+/// by its second half, and `blocks=` never arrives.
 ///
-/// Broken deliberately by having `ChatOutcome::SendWaiting` do nothing,
-/// which is what enter on an empty box used to do: the turn runs on and
-/// `blocks=` never arrives.
+/// Broken deliberately by sending only `unsent()[0]` from
+/// `say_what_was_waiting`, which leaves `/forever` behind and answers
+/// `/blocks` on its own.
 #[test]
-fn enter_on_an_empty_box_sends_what_is_waiting_now() {
+fn what_was_waiting_goes_as_one_prompt() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -565,21 +548,103 @@ fn enter_on_an_empty_box_sends_what_is_waiting_now() {
     });
     support::type_text(&mut app, "/blocks");
     support::press(&mut app, KeyCode::Enter);
-    assert_eq!(app.waiting_to_be_said(), 1);
-
-    // The box is empty -- what was typed went to the queue, not into it.
+    support::type_text(&mut app, "/forever");
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "what was waiting", |app| {
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent().len()),
+        Some(2),
+        "both should be waiting"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    pump(&mut app, &events, "the stop to land", |app| {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text().contains("blocks="))
+                .any(|row| row.text().contains("Stopped"))
         })
     });
+    // Long enough for an answer to either of them to have arrived.
+    settle(&mut app, &events, Duration::from_millis(500));
+    let text = screen(&mut app);
+    assert!(
+        !text.contains("blocks="),
+        "the first went on its own, without the second:\n{text}"
+    );
+    // And something did go: the second half of the one prompt is a turn
+    // that does not end.
     assert_eq!(
-        app.waiting_to_be_said(),
-        0,
-        "it was sent and kept waiting as well"
+        app.talking(),
+        obelus_agent::Talking::Thinking,
+        "nothing was sent at all:\n{text}"
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent()),
+        Some(Vec::new()),
+        "they are still marked as waiting"
+    );
+}
+
+/// Enter on something the reader said that has not gone takes it back.
+///
+/// The one row in a transcript whose key hands something back rather than
+/// opening it. What is waiting is the reader's, and it is on the page in
+/// their own words precisely so that there is somewhere to stand to change
+/// their mind -- a count on the status row said how many were waiting and
+/// never which, and offered no way to reach one.
+///
+/// The words go back in the box rather than away, because taking something
+/// back is almost always meaning to say it again differently.
+///
+/// Broken deliberately twice: dropping the `(Some(which), ..)` arm from
+/// the enter match in `Chat::handle_key` leaves the row doing what it used
+/// to do, which is nothing; and taking `unsent` out of `Row::acts` leaves
+/// the key working with nothing on the row saying so, which is a key
+/// nobody finds.
+#[test]
+fn enter_on_something_not_yet_sent_takes_it_back() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.chat().map(|chat| chat.unsent().len()), Some(1));
+
+    // Up to the row, which is the last thing said and so the first one the
+    // cursor reaches.
+    support::press(&mut app, KeyCode::Up);
+    // And the row says what the key will do, which is the only way to find
+    // out: this is the one row in a transcript that hands something back.
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Enter takes it back"),
+        "the row says nothing about the key standing on it:\n{text}"
+    );
+    support::press(&mut app, KeyCode::Enter);
+
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent()),
+        Some(Vec::new()),
+        "it is still waiting to be said"
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some("/blocks".to_string()),
+        "the words were not handed back to the box"
+    );
+    // And it is not on the page any more: a row saying they said it, under
+    // a box holding the same words, is the same thing twice.
+    let text = screen(&mut app);
+    assert_eq!(
+        text.matches("/blocks").count(),
+        1,
+        "the row it was taken back from is still there:\n{text}"
     );
 }
 
@@ -705,7 +770,7 @@ fn a_title_longer_than_the_row_keeps_the_row_its_own_end() {
 /// turn that replaced it and the conversation goes to resting with an agent
 /// still working in it -- the whole bug this queue was written for,
 /// arriving by the one door the queue leaves open, which is the reader
-/// saying "send it now".
+/// stopping a turn with something waiting behind it.
 ///
 /// Broken deliberately by dropping the `open.turn != Some(turn)` guard in
 /// `Talk::on`, so that any answer ends whatever is running: this reads
@@ -726,9 +791,9 @@ fn the_answer_to_a_cancelled_turn_does_not_end_the_next_one() {
     support::type_text(&mut app, "/forever");
     support::press(&mut app, KeyCode::Enter);
 
-    // Send it now: the first turn is cancelled, and the agent answers that
-    // prompt with `cancelled` somewhere behind us.
-    support::press(&mut app, KeyCode::Enter);
+    // Stop the first turn, which lets the second out behind it: the agent
+    // answers the cancelled prompt with `cancelled` somewhere behind us.
+    support::press(&mut app, KeyCode::Esc);
     pump(&mut app, &events, "the first turn to end", |app| {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
@@ -737,8 +802,8 @@ fn the_answer_to_a_cancelled_turn_does_not_end_the_next_one() {
         })
     });
     assert_eq!(
-        app.waiting_to_be_said(),
-        0,
+        app.chat().map(|chat| chat.unsent()),
+        Some(Vec::new()),
         "what was waiting did not go when the cancelled turn ended"
     );
     // Long enough for the agent's own answer to the cancelled prompt to
