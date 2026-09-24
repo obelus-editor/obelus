@@ -3,7 +3,10 @@
 #
 # Written in `sh` on purpose: a test that needs python, or node, or a second
 # Rust binary, is a test that stops running on somebody's machine. What it
-# needs of a shell is `read`, `case` and `sed`, which is POSIX.
+# needs of a shell is `read`, `case` and `sed`, which is POSIX -- and only
+# POSIX: an alternation is `sed -E` and `|`, because `\|` in a basic
+# expression is GNU's, and BSD's sed on a mac matches nothing with it, so
+# every answer went out with no id and not one conversation got started.
 #
 # It plays one conversation:
 #
@@ -52,7 +55,7 @@ fi
 # Real clients number requests however they like -- the protocol's own crate
 # uses uuids -- and an answer has to carry back exactly what came in.
 id_of() {
-    printf '%s' "$1" | sed -n 's/.*"id":\("[^"]*"\|[0-9]*\).*/\1/p'
+    printf '%s' "$1" | sed -En 's/.*"id":("[^"]*"|[0-9]*).*/\1/p'
 }
 
 # Which conversation a request is about, read out of the request rather than
@@ -222,7 +225,7 @@ while IFS= read -r line; do
             which=$(printf '%s' "$line" | sed -n 's/.*"configId":"\([^"]*\)".*/\1/p')
             # A value id keeps its quotes here and is stripped below; a
             # switch arrives as `true` or `false`, which is the value.
-            got=$(printf '%s' "$line" | sed -n 's/.*"value":\("[^"]*"\|true\|false\).*/\1/p')
+            got=$(printf '%s' "$line" | sed -En 's/.*"value":("[^"]*"|true|false).*/\1/p')
             case "$which" in
                 model) model=$(printf '%s' "$got" | tr -d '"') ;;
                 allow_all) allow="$got" ;;
@@ -603,7 +606,7 @@ while IFS= read -r line; do
             case "$line" in
                 *'"action":"accept"'*)
                     how=$(printf '%s' "$line" | sed -n 's/.*"how":"\([^"]*\)".*/\1/p')
-                    sure=$(printf '%s' "$line" | sed -n 's/.*"sure":\(true\|false\).*/\1/p')
+                    sure=$(printf '%s' "$line" | sed -En 's/.*"sure":(true|false).*/\1/p')
                     times=$(printf '%s' "$line" | sed -n 's/.*"times":\([0-9.]*\).*/\1/p')
                     # In brackets, so a test can say exactly what came
                     # back: a whole number sent as a float would otherwise
