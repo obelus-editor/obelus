@@ -28,3 +28,12 @@ tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
 zip.workspace = true
+
+# Claiming a conversation is a lock the system holds, so that an obelus that
+# is killed gives it up without having to be asked. One question, two ways of
+# putting it, and neither platform is made to carry the other's.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

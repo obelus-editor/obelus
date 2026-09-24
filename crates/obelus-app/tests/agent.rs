@@ -6499,3 +6499,91 @@ fn choosing_another_agent_stops_the_one_that_was_running() {
         "the conversation was left holding a session nobody can reach:\n{dump}"
     );
 }
+
+/// A note whose conversation another obelus has open says so, and the key
+/// does not open a second one.
+///
+/// obelus does not split its window, so two of them on one project is the
+/// ordinary case -- and a conversation is not a thing two may have open at
+/// once. The agent takes one prompt turn at a time and the queue that keeps
+/// it to one lives in a process, so a second process prompting the same
+/// conversation walks straight past it: no `2 waiting` anywhere, because the
+/// two obelus cannot see each other's queues.
+///
+/// The claim another obelus holds is a lock on a file of its own, which is
+/// what this takes out from under obelus: a lock belongs to the open file
+/// rather than to the process, so one taken here is as much somebody else's
+/// as one taken in another window.
+///
+/// Two deliberate breaks, which are the two halves of it. Opening the
+/// conversation whether or not `chats::claim` answered lets the second
+/// window in -- `app.chat()` comes back `Some`. And offering `Talk` in the
+/// foot regardless leaves the page promising a key that does nothing.
+///
+/// What it does *not* cover is a claim nobody holds reading as one, because
+/// here the file exists and is locked and the two answers agree. That is
+/// `chats::tests::a_file_nobody_holds_is_not_a_claim`, where they do not.
+#[test]
+fn a_conversation_another_obelus_has_open_is_not_opened_again() {
+    let scratch = support::Scratch::new("agent-note-elsewhere");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456T\"\nsaid = \"somebody else has this\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let id = obelus_git::todo::NoteId::read("0123456T").expect("a name");
+
+    // The other obelus, holding it for as long as this is held.
+    let theirs = obelus_agent::chats::claim(scratch.path(), &id).expect("their claim");
+
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    assert_eq!(
+        app.talked_about().first(),
+        Some(&obelus_component::todo::Talked::Elsewhere),
+        "the row does not say the conversation is somebody else's"
+    );
+
+    // And the key on it opens nothing, because the claim is the answer and
+    // the claim is not this obelus's to have.
+    support::press_alt(&mut app, 'a');
+    assert!(
+        app.chat().is_none(),
+        "a second window was let into the conversation"
+    );
+    // And the foot does not offer the key it will not honour. Nothing is
+    // said on the status row: the lock beside the note says it, and the
+    // foot says it again by having nothing to say -- a note as well would
+    // be a third answer to a question the page has answered twice.
+    let dump = support::render(&mut app, WIDTH, 18);
+    assert!(
+        !dump.contains("Talk"),
+        "the foot offers a key that does nothing here:\n{dump}"
+    );
+
+    // Given up, it is the reader's again: they closed it in the other
+    // window and this one does not have to be restarted.
+    drop(theirs);
+    assert_eq!(
+        app.talked_about().first(),
+        Some(&obelus_component::todo::Talked::Not),
+        "the note is still somebody else's after they let it go"
+    );
+    let dump = support::render(&mut app, WIDTH, 18);
+    assert!(
+        dump.contains("Talk"),
+        "the key is still held back after the other obelus let go:\n{dump}"
+    );
+    support::press_alt(&mut app, 'a');
+    assert!(
+        app.chat().is_some(),
+        "the conversation could not be opened after it was given up"
+    );
+}

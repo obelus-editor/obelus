@@ -298,6 +298,8 @@ ureq = "3.4.1"
 libc = "0.2.189"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
     "Win32_System_Threading",
 ] }
 

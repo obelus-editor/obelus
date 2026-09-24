@@ -884,6 +884,11 @@ impl App {
             if let Some(watcher) = self.watcher.as_mut() {
                 watcher.unwatch(&obelus_git::todo::path(&self.working_directory));
             }
+            if let Some(directory) = obelus_agent::chats::directory(&self.working_directory)
+                && let Some(watcher) = self.watcher.as_mut()
+            {
+                watcher.unwatch_directory(&directory);
+            }
         }
         let Some(document) = self.documents.get_mut(id.get()).and_then(Option::take) else {
             return;

@@ -110,6 +110,22 @@ impl App {
         {
             tracing::debug!(%error, "not watching what the project means to come back to");
         }
+        // And which of them somebody else has a conversation open about,
+        // which is a directory rather than a file: a claim is a file
+        // appearing and going again, so there is nothing here to watch by
+        // name. A lock is invisible to a watcher -- taking one writes
+        // nothing -- which is why the claim has a file at all.
+        if let Some(directory) = obelus_agent::chats::directory(&self.working_directory) {
+            // Made here, because a watch on a directory that is not there
+            // yet is a watch on nothing: the first conversation in a
+            // project would open in the other window unseen.
+            let _ = std::fs::create_dir_all(&directory);
+            if let Some(watcher) = self.watcher.as_mut()
+                && let Err(error) = watcher.watch_directory(&directory)
+            {
+                tracing::debug!(%error, "not watching which conversations are open elsewhere");
+            }
+        }
     }
 
     /// Writes the notes down once the reader has stopped typing in them.
@@ -648,11 +664,15 @@ impl App {
         // from the region it is drawn in, and the region belongs to the
         // application rather than to the notes.
         let area = self.editor_area;
+        // Before the notes are borrowed to take the key: the foot holds a
+        // key back where another obelus has that conversation, and the
+        // rows the list gets are what is left under the foot.
+        let elsewhere = self.the_note_is_elsewhere();
         let Some(notes) = self.notes_mut() else {
             return false;
         };
         notes.lay_out(laid.0, laid.1);
-        let hints = obelus_ui::todo::hints(notes);
+        let hints = obelus_ui::todo::hints(notes, elsewhere);
         let list = obelus_ui::todo::list_region(area, &hints);
         let outcome = notes.handle_key(key, list.height);
         // Typing, which is the one change that is not one act: every other

@@ -79,6 +79,18 @@ pub struct Conversation {
     /// down beside the note like `told` so that picking one up again does
     /// not repeat it.
     pub introduced: bool,
+    /// This obelus's claim on the conversation, while it is open.
+    ///
+    /// A conversation is not a thing two obelus may have open at once: the
+    /// agent takes one prompt turn at a time and the queue that keeps it to
+    /// one lives in a process, so a second process prompting the same
+    /// conversation walks straight past it. Held here because here is what
+    /// goes when the document does -- a claim given up by hand is a claim
+    /// some way out of a conversation forgets.
+    ///
+    /// `None` for a conversation about no note: there is nothing for two
+    /// windows to collide over, because nothing else can name it.
+    pub claim: Option<obelus_agent::chats::Claim>,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.

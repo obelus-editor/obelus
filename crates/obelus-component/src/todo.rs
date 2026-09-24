@@ -85,6 +85,13 @@ pub enum Talked {
     /// There is a conversation: open now, or written down against this
     /// note and waiting to be taken up again.
     Yes,
+    /// Another obelus has it open.
+    ///
+    /// Not this one's to enter and not this one's to describe: what the
+    /// agent is doing in there is being told to the window that asked, so
+    /// the most this one can say is whose it is not. Said at all because a
+    /// row that simply refused the key would read as broken.
+    Elsewhere,
     /// An agent is working in it right now.
     ///
     /// Said for the same reason the list of open documents says it: what

@@ -147,17 +147,35 @@ impl App {
                 .and_then(Document::chat)
                 .is_some_and(|talk| talk.topic == wanted)
         });
-        let at = at.unwrap_or_else(|| {
-            let (told, introduced) = self.remembered_telling(note);
-            let talk = crate::conversation::Conversation {
-                told,
-                introduced,
-                topic: wanted,
-                ..crate::conversation::Conversation::default()
-            };
-            self.documents.push(Some(talk.into()));
-            self.documents.len() - 1
-        });
+        let at = match at {
+            Some(at) => at,
+            None => {
+                // Claimed before it is opened, and the claim is what
+                // decides: asking first and opening after would be two
+                // windows both finding it free in the same moment. Where
+                // another obelus has it, nothing opens -- the row in the
+                // list already says so, and this is the reader pressing
+                // the key on it anyway.
+                let Some(claim) = obelus_agent::chats::claim(&self.working_directory, note) else {
+                    // Nothing said, because the row already says it: the
+                    // lock beside it, and the foot with no `Talk` on it
+                    // while the reader is standing there. A note here
+                    // would be a second answer to a question the page has
+                    // answered.
+                    return;
+                };
+                let (told, introduced) = self.remembered_telling(note);
+                let talk = crate::conversation::Conversation {
+                    told,
+                    introduced,
+                    topic: wanted,
+                    claim: Some(claim),
+                    ..crate::conversation::Conversation::default()
+                };
+                self.documents.push(Some(talk.into()));
+                self.documents.len() - 1
+            }
+        };
         self.go_to_document(DocumentId::new(at));
         // Started where nothing is running, and then asked about *this*
         // conversation just the same. Returning here is what the reader
@@ -263,6 +281,30 @@ impl App {
     /// switched away from is not one they can reach, and saying there is
     /// one would send them to a note that opens an empty page.
     ///
+    /// Whether the note the reader is standing on has its conversation
+    /// open in another obelus.
+    ///
+    /// What the foot asks, so that the key it offers is a key that works.
+    /// Asked of the one note rather than read off [`Self::talked_about`],
+    /// which walks the whole directory and is wanted by the view on the
+    /// same frame: two callers asking one question two ways is how the
+    /// answer gets expensive.
+    #[must_use]
+    pub fn the_note_is_elsewhere(&self) -> bool {
+        let Some(note) = self.notes().and_then(|notes| notes.selected_note()) else {
+            return false;
+        };
+        // This obelus's own claim is a lock like anybody's, so the
+        // conversations it is holding are what tell the two apart.
+        let mine = self
+            .documents
+            .iter()
+            .flatten()
+            .filter_map(Document::chat)
+            .any(|talk| matches!(&talk.topic, Topic::Note(id) if *id == note.id));
+        !mine && obelus_agent::chats::held_by_anybody(&self.working_directory, &note.id)
+    }
+
     /// Worked out each time rather than kept. The file is a few lines and
     /// it is read only while the notes are on screen, and the thing a
     /// cache would buy here is the one thing this must not have: an answer
@@ -278,6 +320,11 @@ impl App {
             .remembered()
             .unwrap_or_default();
         let agent = self.settled.config.agent.clone().unwrap_or_default();
+        // Every note somebody has open, this obelus included -- a lock is
+        // about the open file and not about the process, so obelus finds
+        // its own claims in the way. Which of them are its own it knows
+        // from the conversations it is holding, just below.
+        let elsewhere = obelus_agent::chats::held(&self.working_directory);
         notes
             .todo()
             .notes
@@ -290,6 +337,14 @@ impl App {
                     .filter_map(Document::chat)
                     .find(|talk| matches!(&talk.topic, Topic::Note(id) if *id == note.id));
 
+                // Somebody else's window has it. Ahead of everything
+                // below, because those are all this obelus's account of a
+                // conversation it is in and this is the one case where it
+                // is in no position to give one: what the agent is doing
+                // in there is being told to the obelus that asked.
+                if open.is_none() && elsewhere.contains(&note.id) {
+                    return Talked::Elsewhere;
+                }
                 if open.is_some_and(|talk| talk.card.is_some()) {
                     return Talked::Waiting;
                 }

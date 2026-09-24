@@ -146,6 +146,13 @@ pub mod ui {
     pub const TODO: char = '\u{f0131}';
     /// The same box, with the mark in it.
     pub const TODO_DONE: char = '\u{f0132}';
+    /// A conversation another obelus has open, which this one may not
+    /// enter.
+    ///
+    /// A lock, because that is what it is: the claim is a lock the system
+    /// holds, and the reader's question about the row is whether the key
+    /// will work on it.
+    pub const ELSEWHERE: char = '\u{f033e}';
     /// A directory, on a row whose children are what it holds.
     ///
     /// The plain folder rather than [`TREE`]: that one is the whole of what

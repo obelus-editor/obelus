@@ -42,7 +42,7 @@ pub fn list_region(area: Rect, hints: &[Hint]) -> Rect {
 /// selected, so the row is what can be pressed right now rather than a
 /// standing notice.
 #[must_use]
-pub fn hints(notes: &Notes) -> Vec<Hint> {
+pub fn hints(notes: &Notes, elsewhere: bool) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     let chord = obelus_editing::keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
@@ -71,9 +71,13 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
         Hint::common(alt(KeyCode::Enter), "Go there")
             .saying("Go to what it is about")
             .when(notes.can_go()),
+        // Not where another obelus has that conversation open: a
+        // conversation is not a thing two of them may have at once, so the
+        // key does nothing there and a foot offering it would be the page
+        // promising something it will not do.
         Hint::common(alt(KeyCode::Char('a')), "Talk")
             .saying("Talk to an agent about this one")
-            .when(on.is_some()),
+            .when(on.is_some() && !elsewhere),
         // Taking a whole note away is the one thing here a reader will go
         // looking for and not find, because backspace on its own is a
         // letter.
@@ -118,10 +122,10 @@ pub fn text_width_in(area: Rect) -> u16 {
 /// the settings keep theirs through their own card because theirs is on
 /// the status row, which no card covers.
 #[must_use]
-pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
+pub fn caret(area: Rect, notes: &Notes, elsewhere: bool) -> Option<ratatui::layout::Position> {
     let composer = notes.writing()?;
     let at = notes.writing_at()?;
-    let hints = hints(notes);
+    let hints = hints(notes, elsewhere);
     let list = list_region(area, &hints);
     let window = notes.window();
     let row = at.checked_sub(window.top())?;
@@ -149,10 +153,10 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
 /// note's row, the foot, outside the page. A click there is not a click in
 /// the box, and the box is the only thing here with a caret in it.
 #[must_use]
-pub fn place_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(u16, u16)> {
+pub fn place_at(area: Rect, notes: &Notes, elsewhere: bool, x: u16, y: u16) -> Option<(u16, u16)> {
     let composer = notes.writing()?;
     let at = notes.writing_at()?;
-    let hints = hints(notes);
+    let hints = hints(notes, elsewhere);
     let list = list_region(area, &hints);
     if y < list.y || y >= list.bottom() || x < list.x + MARGIN || x >= list.right() {
         return None;
@@ -197,8 +201,14 @@ pub enum Column {
 ///
 /// `None` for a point outside the list, or past the last row.
 #[must_use]
-pub fn row_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(usize, Column)> {
-    let list = list_region(area, &hints(notes));
+pub fn row_at(
+    area: Rect,
+    notes: &Notes,
+    elsewhere: bool,
+    x: u16,
+    y: u16,
+) -> Option<(usize, Column)> {
+    let list = list_region(area, &hints(notes, elsewhere));
     if y < list.y || y >= list.bottom() || x < list.x || x >= list.right() {
         return None;
     }
@@ -315,6 +325,15 @@ const TALKED: u16 = 2;
 fn working_mark(talked: Talked, phase: u32) -> Option<String> {
     match talked {
         Talked::Not | Talked::Yes => None,
+        // Whose it is, where it is not this obelus's. It goes in this
+        // column and not the one beside it because this is the column
+        // about what a conversation is doing -- and an empty one here
+        // would say "nothing", which is a thing this obelus is in no
+        // position to say about somebody else's window.
+        Talked::Elsewhere => Some(match obelus_icons::enabled() {
+            true => obelus_icons::ui::ELSEWHERE.to_string(),
+            false => "-".to_string(),
+        }),
         Talked::Working => Some(crate::spinning(phase).to_string()),
         Talked::Waiting => Some(match obelus_icons::enabled() {
             true => obelus_icons::ui::READER.to_string(),
@@ -338,7 +357,9 @@ fn talked_mark(talked: Talked) -> Option<String> {
     };
     match talked {
         Talked::Not => None,
-        Talked::Yes | Talked::Working | Talked::Waiting => Some(said),
+        // A conversation open elsewhere is still a conversation, and this
+        // column says only that there is one.
+        Talked::Yes | Talked::Elsewhere | Talked::Working | Talked::Waiting => Some(said),
     }
 }
 
@@ -348,6 +369,9 @@ pub struct TodoUi<'a> {
     theme: &'a Theme,
     /// Which notes have a conversation, in the notes' own order.
     talked: Vec<Talked>,
+    /// Whether the note the reader is on has its conversation open in
+    /// another obelus, which is the one key the foot holds back.
+    elsewhere: bool,
     /// How far the ticker has got, for the mark that turns.
     ///
     /// The only thing here that changes without the reader doing
@@ -366,6 +390,7 @@ impl<'a> TodoUi<'a> {
             notes: app.notes()?,
             theme: app.theme(),
             talked: app.talked_about(),
+            elsewhere: app.the_note_is_elsewhere(),
             phase: app.phase(),
         })
     }
@@ -380,7 +405,7 @@ impl Widget for TodoUi<'_> {
                 .fg(self.theme.foreground)
                 .bg(self.theme.background),
         );
-        let hints = hints(self.notes);
+        let hints = hints(self.notes, self.elsewhere);
         foot_without_a_card(cells, area, &hints, self.theme);
 
         let list = list_region(area, &hints);

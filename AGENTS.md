@@ -660,6 +660,26 @@ The notes moved out of the project's own `.obelus` for this: they were never
 shared with the next person anyway, since `.obelus` is a directory readers
 gitignore.
 
+*A conversation is not a thing two of them may have open at once.* The agent
+takes one prompt turn at a time and the queue that keeps obelus to one lives
+in a process, so a second process prompting the same conversation walks
+straight past it -- no `2 waiting` anywhere, because neither obelus can see
+the other's queue. So a note's conversation is claimed, and the claim is a
+lock the system holds rather than anything obelus writes down: an obelus that
+is killed, crashes or loses power gives it up without being asked, which a
+process number in a file cannot do -- it has to be believed, checked against
+a process that may be somebody else's by now, and given a staleness nobody
+can pick. The claim has a *file* as well, created and removed with it,
+because a lock is invisible to the watcher: nothing is written when one is
+taken, so the file is what another obelus wakes on. The file's existence
+means nothing on its own -- one left behind by a process that died is a file
+nobody holds -- and asking for the lock is what says which it is.
+
+Nothing is said on the status row when the key is refused. The lock beside
+the note says it, and the foot says it again by not offering `Talk` there:
+the reader is told before they press, which is the rule the palette follows
+for a command it will not run.
+
 Two smaller ones, in the same spirit. An install claims the agent's directory
 with a file created exclusively, so two windows asked for the same agent do
 not run two `npm`s into one prefix; the claim is given up by being dropped,

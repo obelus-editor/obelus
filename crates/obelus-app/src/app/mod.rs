@@ -1557,8 +1557,13 @@ impl App {
         // really drawn in -- the foot under it is part of what decides how
         // many rows there are, and it grows and shrinks with what the note
         // under the caret can do.
+        let elsewhere = self.the_note_is_elsewhere();
         let seen = self.notes().map(|notes| {
-            obelus_ui::todo::list_region(self.editor_area, &obelus_ui::todo::hints(notes)).height
+            obelus_ui::todo::list_region(
+                self.editor_area,
+                &obelus_ui::todo::hints(notes, elsewhere),
+            )
+            .height
         });
         if let (Some(seen), Some(notes)) = (seen, self.notes_mut()) {
             notes.settle_window(seen);
@@ -2197,9 +2202,10 @@ impl App {
         if kind == Pointer::Pressed && self.press_in_a_note(x, y) {
             return;
         }
+        let elsewhere = self.the_note_is_elsewhere();
         let Some(at) = self
             .notes()
-            .and_then(|notes| obelus_ui::todo::place_at(area, notes, x, y))
+            .and_then(|notes| obelus_ui::todo::place_at(area, notes, elsewhere, x, y))
         else {
             return;
         };
@@ -2489,9 +2495,10 @@ impl App {
         use obelus_ui::todo::Column;
 
         let area = self.editor_area;
+        let elsewhere = self.the_note_is_elsewhere();
         let Some((row, column)) = self
             .notes()
-            .and_then(|notes| obelus_ui::todo::row_at(area, notes, x, y))
+            .and_then(|notes| obelus_ui::todo::row_at(area, notes, elsewhere, x, y))
         else {
             return false;
         };
@@ -3295,6 +3302,9 @@ impl Screen for App {
     }
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble] {
         App::troubles(self)
+    }
+    fn the_note_is_elsewhere(&self) -> bool {
+        App::the_note_is_elsewhere(self)
     }
     fn what_this_conversation_is_about(&self) -> Option<String> {
         App::what_this_conversation_is_about(self)

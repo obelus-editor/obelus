@@ -145,6 +145,7 @@ pub(crate) fn open_fixture(name: &str) -> Buffer {
 
 /// Draws an application at the given size and dumps the cells.
 pub(crate) fn render(app: &mut App, width: u16, height: u16) -> String {
+    state_of_its_own();
     let area = Rect::new(0, 0, width, height);
     let mut cells = CellBuffer::empty(area);
     let cursor = app.draw_into(&mut cells, area);
@@ -472,6 +473,29 @@ pub(crate) struct Scratch {
     name: String,
 }
 
+/// Keeps this run's state out of the reader's own.
+///
+/// The notes, the table of which conversation is about which note and the
+/// claims saying which are open all live in obelus's state directory, so a
+/// test that did not say this would write into the reader's and leave it
+/// there -- which the suite did, for as long as the conversations have been
+/// kept there. One directory for the binary: every test names its project
+/// after its own scratch, so they do not meet inside it.
+///
+/// A value rather than `XDG_STATE_HOME`, which is what the first test that
+/// needed it reached for: setting the environment while other tests are
+/// running is the thing the language made unsafe, and this is wanted by
+/// tests that run at the same time.
+///
+/// Called from both doors a test comes in by -- making a scratch directory
+/// and laying the screen out -- because a test that does neither touches
+/// nothing of obelus's either.
+pub(crate) fn state_of_its_own() {
+    obelus_logging::state_directory_for_test(
+        std::env::temp_dir().join(format!("obelus-state-{}", std::process::id())),
+    );
+}
+
 /// Makes the directory a project's notes are written into.
 ///
 /// They are kept in obelus's state directory now rather than beside the
@@ -504,14 +528,7 @@ impl Scratch {
             "two tests asked for the scratch directory {name:?}, and they would clear each other's"
         );
         drop(taken);
-        // The notes and the table of conversations live in obelus's state
-        // directory now, so a suite that did not say otherwise would write
-        // into the reader's own. One directory for the whole binary: every
-        // test names its project after its own scratch, so they do not meet
-        // inside it.
-        obelus_logging::state_directory_for_test(
-            std::env::temp_dir().join(format!("obelus-state-{}", std::process::id())),
-        );
+        state_of_its_own();
 
         let path = std::env::temp_dir().join(format!("obelus-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);

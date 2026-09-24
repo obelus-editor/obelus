@@ -12,6 +12,7 @@
 //! and how it tells whether it has.
 
 pub mod acp;
+pub mod chats;
 pub mod running;
 
 pub mod icon;

@@ -3378,6 +3378,7 @@ dependencies = [
  "dirs",
  "flate2",
  "futures",
+ "libc",
  "obelus-git",
  "obelus-logging",
  "obelus-program",
@@ -3391,6 +3392,7 @@ dependencies = [
  "tokio",
  "toml 1.1.5+spec-1.1.0",
  "tracing",
+ "windows-sys 0.61.2",
  "zip",
 ]
 

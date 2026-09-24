@@ -228,6 +228,9 @@ pub trait Screen {
     fn project_config(&self) -> Option<&Path>;
     /// What the server says is wrong with the file being read.
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble];
+    /// Whether the note the reader is standing on has its conversation
+    /// open in another obelus.
+    fn the_note_is_elsewhere(&self) -> bool;
     /// The note the conversation being read is about, in the words the
     /// reader wrote.
     fn what_this_conversation_is_about(&self) -> Option<String>;
@@ -424,7 +427,7 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
             }
             // And the notes, which are written into the same way.
             if let Some(notes) = app.notes() {
-                return todo::caret(regions.editor, notes);
+                return todo::caret(regions.editor, notes, app.the_note_is_elsewhere());
             }
         }
     }
