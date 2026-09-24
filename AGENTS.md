@@ -257,6 +257,26 @@ said, not inventing a state of its own. The exception is a call obelus is
 running the command for, whose state comes from the runner every frame and
 is not obelus's to overwrite.
 
+**Folding is one act, and the notes are the fourth place it happens.** A run
+of lines in a file, a run of tool calls in a transcript, a commit's files in
+a list, and now what hangs under a note: one row standing in for several,
+`alt+f`, and the same arrow. So `Command::Fold` asks whichever document is
+being read rather than the file always -- which is what it did, folding a
+run of lines behind the notes that the reader could not see. `Requires`
+follows it, because the palette and the key are one judgement.
+
+What folds is what hangs *under* a note, never a note's own lines: a list
+showing a third of each note is a list a reader has to open one row at a
+time to read, which is what they opened it to avoid. Which notes are shut is
+this session's and is kept by *name* -- `todo.toml` is a file another window
+is writing, and a set of positions belongs to whichever order the notes were
+in when it was made.
+
+The arrow gets a column of its own, always, whether or not anything on the
+page folds. The counts can spend theirs only when something does; a note's
+words are wrapped to what is left of the row, so a column that came and went
+would re-wrap the page the moment a reader put the first note under another.
+
 **A setting the reader turned on is not a reason to refuse them.** Saving
 with formatting on and no server to ask writes the file unformatted. The
 alternative is a file that is never written because of something the reader

@@ -2490,6 +2490,13 @@ impl App {
         // Down the keys' own paths, rather than a second way to tick a
         // note off and a second way to open its conversation.
         match column {
+            // The arrow, which the key reaches through the command rather
+            // than through the notes' own keys -- so this goes the same
+            // way, which is the point of going down a key's path at all.
+            Column::Folds => {
+                self.toggle_fold();
+                return true;
+            }
             Column::Tick => self.notes_key(&crossterm::event::KeyEvent::new(
                 crossterm::event::KeyCode::Char(' '),
                 crossterm::event::KeyModifiers::ALT,

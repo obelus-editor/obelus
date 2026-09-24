@@ -1158,6 +1158,16 @@ impl App {
     /// saying so would be the third answer to a question the palette
     /// settled.
     pub fn toggle_fold(&mut self) {
+        // The notes, where they are the document being read. The same act
+        // on a different subject: one row standing in for several, and the
+        // key that opens it. What hangs under a note is the run there, the
+        // way a run of lines is the run in a file -- and the file behind
+        // the notes is not what the reader is looking at, which is what
+        // this used to fold.
+        if let Some(notes) = self.notes_mut() {
+            notes.toggle_fold();
+            return;
+        }
         // The file's own runs, always. A block used to be asked first --
         // "fold what the cursor is inside", and a commit's message was a
         // thing the reader was put inside -- but nothing a block holds

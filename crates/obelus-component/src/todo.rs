@@ -59,6 +59,14 @@ pub struct Row {
     /// what gets drawn, and a selection given in the note's own lines would
     /// have to be taken apart again by whoever draws it.
     pub held: Option<Range<usize>>,
+    /// Whether this row heads notes hanging under it, and whether they are
+    /// showing.
+    ///
+    /// `None` where nothing hangs under it, which is most notes and every
+    /// row that is not a note's first. The mark is the one every other
+    /// folding thing in obelus wears, because it is the same act: one row
+    /// standing in for several, and a key that opens it.
+    pub under: Option<bool>,
 }
 
 /// Whether a note has a conversation about it, and whether that
@@ -180,6 +188,18 @@ pub struct TodoView {
     /// out. What reaches the disk is these, done to the file as it is at the
     /// moment of writing -- see [`obelus_git::todo::Change`].
     pending: Vec<Change>,
+    /// The notes whose children the reader has folded away.
+    ///
+    /// By name and not by position: the file is another window's to change,
+    /// and a set of indices is a set that belongs to whichever order the
+    /// notes were in when it was made. A name is the one thing about a note
+    /// that still means what it meant afterwards.
+    ///
+    /// This session's and not the file's. Which notes are open is the same
+    /// kind of fact as which runs of a file are folded -- something the
+    /// reader did to what is in front of them, not something they wrote
+    /// down -- and `todo.toml` is a file two obeluses share.
+    shut: HashSet<NoteId>,
     /// The notes this page started that are not in the file yet.
     ///
     /// What tells "put this note in" from "change the one that is there",
@@ -634,13 +654,35 @@ impl TodoView {
         self.enter_note(self.todo.notes.len() - 1, true);
     }
 
-    /// Lays the notes out as rows: every line of every one of them.
+    /// Lays the notes out as rows: every line of every note that is showing.
     ///
-    /// Nothing is folded away. A note is what it says, and a list that shows
-    /// a third of each note is a list a reader has to open one row at a time
-    /// to read -- which is what they opened the list to avoid.
+    /// No note is shown in part. A note is what it says, and a list that
+    /// shows a third of each note is a list a reader has to open one row at
+    /// a time to read -- which is what they opened the list to avoid. What
+    /// folds is what hangs *under* a note, which is a different question
+    /// and the one a long list actually asks.
     fn rebuild(&mut self) {
         let mut rows = Vec::new();
+        // Which notes are hidden by a shut one above them, worked out in
+        // one pass: `Todo::under` gives a contiguous run, so a note inside
+        // one is inside it whatever is shut further down.
+        let mut hidden = vec![false; self.todo.notes.len()];
+        for at in 0..self.todo.notes.len() {
+            if hidden[at] {
+                continue;
+            }
+            let note = &self.todo.notes[at];
+            if !self.shut.contains(&note.id) {
+                continue;
+            }
+            for below in hidden
+                .iter_mut()
+                .take(at + 1 + self.todo.under(at))
+                .skip(at + 1)
+            {
+                *below = true;
+            }
+        }
         // Wrapped where the reader asked for wrapping, and one row per line
         // where they did not -- the same answer the file behind this view
         // gives, because it is the same question, and the same width the
@@ -648,6 +690,16 @@ impl TodoView {
         // the same rows.
         let room = self.caret_width().max(1);
         for (index, note) in self.todo.notes.iter().enumerate() {
+            if hidden[index] {
+                continue;
+            }
+            // Whether anything hangs under it, and whether it is showing.
+            // On the note's own row, which is the row the key acts on and
+            // the row the mark goes on.
+            let under = match self.todo.under(index) {
+                0 => None,
+                _ => Some(!self.shut.contains(&note.id)),
+            };
             // A note the caret is in shows what is in the box, not what is
             // on disk: the reader is looking at their own typing, and it is
             // the box that knows what of it they have hold of.
@@ -665,6 +717,7 @@ impl TodoView {
                 done: note.done,
                 depth: note.depth,
                 held: first.held,
+                under,
             });
             for line in lines {
                 rows.push(Row {
@@ -675,6 +728,10 @@ impl TodoView {
                     done: note.done,
                     depth: note.depth,
                     held: line.held,
+                    // Only the note's own row carries it: the mark is
+                    // about the note, and one on every line of it would
+                    // be a column of arrows saying the same thing.
+                    under: None,
                 });
             }
             // And where it points, under what it says: a row of its own
@@ -696,6 +753,7 @@ impl TodoView {
                     // of it, and it is not the reader's to take a copy of
                     // by selecting it.
                     held: None,
+                    under: None,
                 });
             }
         }
@@ -955,6 +1013,41 @@ impl TodoView {
     #[must_use]
     pub fn selected_note(&self) -> Option<&Note> {
         self.todo.notes.get(self.selected()?)
+    }
+
+    /// Whether anything hangs under the note the caret is in.
+    ///
+    /// The question the key is gated on, and it is about the note rather
+    /// than about what is showing: a note with children answers yes whether
+    /// they are folded or not, because the key both folds and unfolds.
+    /// Asked without doing the work, which is what a requirement has to be.
+    #[must_use]
+    pub fn can_fold(&self) -> bool {
+        self.selected().is_some_and(|at| self.todo.under(at) > 0)
+    }
+
+    /// Folds what hangs under the note the caret is in, or unfolds it.
+    ///
+    /// Says whether it did anything, so a key that reached a note with
+    /// nothing under it stays silent rather than saying a word about a
+    /// thing it did not do.
+    pub fn toggle_fold(&mut self) -> bool {
+        let Some(at) = self.selected().filter(|at| self.todo.under(*at) > 0) else {
+            return false;
+        };
+        let Some(id) = self.todo.notes.get(at).map(|note| note.id.clone()) else {
+            return false;
+        };
+        if !self.shut.remove(&id) {
+            self.shut.insert(id);
+        }
+        // The caret needs nothing done to it. What folds is what hangs
+        // *under* the note it is in, so every row it could be on is a row
+        // that is still there -- and what moved is below it. Putting it
+        // back on the note looked like care and was a second answer to a
+        // question nobody had asked.
+        self.rebuild();
+        true
     }
 
     /// Whether there is anywhere for enter to go from here.

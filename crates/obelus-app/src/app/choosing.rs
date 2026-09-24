@@ -262,6 +262,11 @@ impl App {
             // stays on the line the block hangs above while the caret is up
             // in rows the file does not have. Nothing a block holds folds
             // now, so the question is the file's again.
+            // The notes answer for themselves where they are the document
+            // being read: what folds there is what hangs under a note.
+            Requires::AFoldHere if self.notes().is_some() => self
+                .notes()
+                .is_some_and(obelus_component::todo::TodoView::can_fold),
             Requires::AFoldHere => self.current_buffer().is_some_and(|buffer| {
                 buffer.folds().is_folded_at(buffer.cursor().line)
                     || buffer.folds().offered_at(buffer.cursor().line).is_some()

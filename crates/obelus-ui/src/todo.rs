@@ -176,6 +176,8 @@ pub enum Column {
     /// Either of the two marks saying somebody has talked about this
     /// note: what the conversation is doing, and that it is there.
     Talked,
+    /// The arrow saying what hangs under it is folded away, or is not.
+    Folds,
     /// The box saying whether it is done.
     Tick,
     /// The words of the note.
@@ -212,7 +214,15 @@ pub fn row_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(usize, Colum
         // are two halves of the same claim, and a press on either is a
         // reader asking to be taken there.
         true if x > list.x && x < list.x + 1 + WORKING + TALKED => Column::Talked,
-        true if x >= list.x + 1 + WORKING + TALKED + step && x < list.x + MARGIN + step => {
+        // The arrow, which is its own act: a press on it is a reader
+        // asking for what is under the note, not for the note to be done.
+        true if row.under.is_some()
+            && x >= list.x + 1 + WORKING + TALKED + step
+            && x < list.x + 1 + WORKING + TALKED + FOLDS + step =>
+        {
+            Column::Folds
+        }
+        true if x >= list.x + 1 + WORKING + TALKED + FOLDS + step && x < list.x + MARGIN + step => {
             Column::Tick
         }
         true => Column::Words,
@@ -248,7 +258,27 @@ const HALF: char = '\u{2590}';
 /// pointer and the wrapping all ask it: the column below was added by hand
 /// at the two places that draw and the pointer went on landing two cells
 /// off, which is a selection that starts where the reader did not put it.
-const MARGIN: u16 = 1 + WORKING + TALKED + 2;
+const MARGIN: u16 = 1 + WORKING + TALKED + FOLDS + 2;
+
+/// The column a note's fold mark goes in.
+///
+/// After the note's own indent and in front of its box, which is where the
+/// counts put theirs and where a tree puts one: a note further in has its
+/// arrow further in, or the arrow stops saying which row it belongs to.
+///
+/// Always there, whether or not anything on the page folds -- the same
+/// answer the two columns beside it give, for the reason [`TALKED`] gives:
+/// a column that appears and disappears moves every note beside it, and
+/// here it would move them the moment a reader put the first note under
+/// another. The counts can spend theirs only when something folds because
+/// nothing there is being typed into; a note's own words are wrapped to
+/// what is left of the row, so a column that came and went would re-wrap
+/// the page.
+///
+/// One cell, not two: an arrow is an ordinary glyph in every font, where
+/// the icons beside it are private-use codepoints the font draws two cells
+/// wide.
+const FOLDS: u16 = 1;
 
 /// The column that says what is happening in a note's conversation.
 ///
@@ -519,9 +549,20 @@ impl TodoUi<'_> {
         }
         let step = row.depth * obelus_git::todo::INDENT;
         if row.head {
+            // What is under it, where anything is: the mark every other
+            // folding thing in obelus wears, because it is the same act.
+            if let Some(open) = row.under {
+                put(
+                    cells,
+                    area.x + 1 + WORKING + TALKED + step,
+                    y,
+                    crate::opens(open),
+                    Style::new().fg(self.theme.gutter).bg(background),
+                );
+            }
             put(
                 cells,
-                area.x + 1 + WORKING + TALKED + step,
+                area.x + 1 + WORKING + TALKED + FOLDS + step,
                 y,
                 crate::tick(row.done),
                 style,

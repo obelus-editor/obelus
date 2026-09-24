@@ -1,7 +1,7 @@
 screen 76x24  editor 76x22  status 76x1
 -- text --
- 0|▐󰀓 󰚩 󰄱 talked about                                                         
- 1|     󰄱 never mentioned                                                      
+ 0|▐󰀓 󰚩  󰄱 talked about                                                        
+ 1|      󰄱 never mentioned                                                     
  2|                                                                            
  3|                                                                            
  4|                                                                            
@@ -57,4 +57,4 @@ d fg=#52525b bg=#18181b
 e fg=#a1a1aa bg=#27272a
 f fg=#d4d4d8 bg=#18181b
 -- cursor --
-7,0
+8,0

@@ -1547,6 +1547,115 @@ fn a_step_is_offered_only_where_there_is_one() {
     assert!(!can(&app, true), "a note at the top was offered a step out");
 }
 
+/// What hangs under a note folds away, and the arrow says it has.
+///
+/// The list is the reader's whole plan, and a plan is a tree: a note broken
+/// into six is six rows of detail under one row of intent, and a reader
+/// looking for what to do next is reading the intents. Folding is the key
+/// that gives them that -- the same key and the same mark as a run of lines
+/// in a file, a run of tool calls in a transcript and a commit's files in a
+/// list, because it is the same act: one row standing in for several.
+///
+/// The caret needs nothing done to it, and this says so: what folds is
+/// what hangs *under* the note it is in, so every row it could be on is a
+/// row that is still there. Putting it back on the note afterwards looked
+/// like care, and breaking it deliberately left this test green -- which
+/// is what a claim nobody can break looks like.
+///
+/// Broken deliberately two ways. Leaving the hidden notes in `rebuild`
+/// folds nothing. And having `toggle_fold` fold unconditionally rather
+/// than toggling never brings them back.
+#[test]
+fn what_hangs_under_a_note_folds_away() {
+    let scratch = tree("folding", NESTED);
+    let mut app = open(&scratch, 76, 20);
+    let showing = |app: &mut obelus_app::app::App, needle: &str| {
+        support::render(app, 76, 20).contains(needle)
+    };
+    assert!(showing(&mut app, "walk it once"), "nothing to fold away");
+
+    // The caret opens in the first note, which is the one the others hang
+    // under and so the one the key acts on.
+    assert!(
+        app.offers(obelus_command::Command::Fold),
+        "a note with two under it was not offered the key"
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::Fold);
+
+    let dump = support::render(&mut app, 76, 20);
+    assert!(
+        dump.contains("the counts tree"),
+        "the note itself went with what was under it:\n{dump}"
+    );
+    for gone in ["walk it once", "and cache the walk", "then draw it"] {
+        assert!(!dump.contains(gone), "{gone:?} is still showing:\n{dump}");
+    }
+    // And the one that hangs under nothing is untouched.
+    assert!(
+        dump.contains("the settings page"),
+        "a note at the top went with somebody else's children:\n{dump}"
+    );
+    // And the caret is still in the note it was in.
+    assert_eq!(
+        app.notes()
+            .and_then(obelus_component::todo::TodoView::selected_note)
+            .map(|note| note.said.as_str()),
+        Some("the counts tree"),
+        "the caret left the note the key was pressed on"
+    );
+
+    // The same key brings them back.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::Fold);
+    assert!(
+        showing(&mut app, "and cache the walk"),
+        "the key that folded them would not unfold them"
+    );
+}
+
+/// A note with nothing under it is not offered the key that folds.
+///
+/// The question is about the note and is answered without doing the work,
+/// which is what a requirement has to be -- and a key offered on every note
+/// is a key that does nothing on most of them.
+///
+/// Broken deliberately by having `can_fold` answer from the caret alone
+/// rather than from what is under it: the key comes live on every note.
+///
+/// That `AFoldHere` asks the notes at all is the other test's to hold up
+/// -- taking the arm out leaves the question with the file behind the
+/// notes, which offers no fold at the cursor either, so this one stays
+/// green while the key stops working entirely.
+#[test]
+fn a_note_with_nothing_under_it_does_not_offer_the_key() {
+    let scratch = tree("folding-none", NESTED);
+    let mut app = open(&scratch, 76, 20);
+    let _ = support::render(&mut app, 76, 20);
+
+    // Down to "and cache the walk", which is the deepest and has nothing
+    // under it. By the keys, because that is how a reader gets there.
+    for _ in 0..2 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    assert_eq!(
+        app.notes()
+            .and_then(obelus_component::todo::TodoView::selected_note)
+            .map(|note| note.said.as_str()),
+        Some("and cache the walk"),
+        "the caret is not on the note this is about"
+    );
+    assert!(
+        !app.offers(obelus_command::Command::Fold),
+        "a note with nothing under it was offered the key"
+    );
+    // And the key does nothing rather than folding the note above it.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::Fold);
+    let dump = support::render(&mut app, 76, 20);
+    assert!(
+        dump.contains("walk it once"),
+        "it folded a note the caret was not on:\n{dump}"
+    );
+}
+
 /// A note that hangs under another starts further in, box and all.
 ///
 /// Broken deliberately by indenting the words and leaving the box in a
@@ -1576,10 +1685,15 @@ fn a_nested_note_is_drawn_further_in_than_the_one_it_hangs_under() {
             .map_or(said.len(), |(index, _)| index);
         &said[after_the_mark..]
     };
-    // Where the words start, counted from the row's own left edge.
+    // Where the words start, counted in cells from the row's own left
+    // edge. Measured to the words rather than to the first ink on the row,
+    // because what is in front of them is not the same on every row: a note
+    // with something under it wears an arrow a column ahead of its box, and
+    // one without wears nothing there. The words are what has to line up.
     let starts = |needle: &str| {
         let said = listed(needle);
-        said.len() - said.trim_start().len()
+        let at = said.find(needle).expect("the words on their own row");
+        obelus_text::text_width(&said[..at])
     };
 
     let top = starts("the counts tree");
@@ -1596,10 +1710,12 @@ fn a_nested_note_is_drawn_further_in_than_the_one_it_hangs_under() {
     // the edge.
     let boxes = |needle: &str| {
         let said = listed(needle);
-        said.find(['\u{f0130}', '\u{f0131}', '[', ' '])
-            .map(|_| said.len() - said.trim_start().len())
+        let at = said.find(['\u{f0130}', '\u{f0131}', '['])?;
+        Some(obelus_text::text_width(&said[..at]))
     };
-    assert_eq!(boxes("walk it once"), Some(top + 2));
+    // Two cells in from the top note's box, and two cells short of its own
+    // words: the box sits between the arrow and what the note says.
+    assert_eq!(boxes("walk it once"), Some(starts("walk it once") - 2));
 }
 
 /// A deep note's words are wrapped to fit where they are drawn.
@@ -2611,10 +2727,12 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
         });
     };
 
-    // The box, which is the fifth column: one clear of the edge, the two
-    // that say what the conversation is doing, and the two that say there
-    // is one.
-    press(&mut app, 1, area.x + 5);
+    // The box, which is the sixth column: one clear of the edge, the two
+    // that say what the conversation is doing, the two that say there is
+    // one, and the one a note's arrow goes in -- kept on a note with
+    // nothing under it, because a column that comes and goes moves every
+    // note beside it.
+    press(&mut app, 1, area.x + 6);
     let written = obelus_git::todo::read(scratch.path())
         .notes()
         .expect("the notes");
