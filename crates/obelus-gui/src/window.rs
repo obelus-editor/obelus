@@ -383,7 +383,10 @@ impl ApplicationHandler<Waking> for Showing {
         if let Some(fonts) = self.fonts.as_ref() {
             let here = fonts.here();
             tracing::info!(faces = here.len(), "the faces this machine has");
-            let _ = doing.send(Event::Fonts(here));
+            let _ = doing.send(Event::Fonts {
+                here,
+                otherwise: fonts.otherwise().map(str::to_string),
+            });
         }
 
         let proxy = self.proxy.clone();

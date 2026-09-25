@@ -145,6 +145,11 @@ impl Fonts {
         self.measure();
     }
 
+    /// What this machine calls its monospaced face, where it said.
+    pub(crate) fn otherwise(&self) -> Option<&str> {
+        self.otherwise.as_deref()
+    }
+
     /// What the faces on this machine are called, for the reader to choose
     /// between.
     ///

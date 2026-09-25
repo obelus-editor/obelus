@@ -417,6 +417,9 @@ pub struct App {
     /// is nothing to offer. What it is for is the list a setting's names
     /// are built in, which offers what is here and takes what is typed.
     fonts_here: Vec<String>,
+    /// And which of them it calls monospaced, which is what a reader who
+    /// has chosen none of them is drawn in.
+    monospace_here: Option<String>,
     /// A setting's list of names, while the reader is building one.
     ///
     /// Which setting it is goes with it: the list knows names and nothing
@@ -759,6 +762,7 @@ impl App {
             dragging: None,
             built: "",
             fonts_here: Vec::new(),
+            monospace_here: None,
             names: None,
             replacing: false,
             drawing: None,
@@ -1975,14 +1979,20 @@ impl App {
             // no handling of its own beyond waking the loop.
             Event::Resize => {}
             Event::Closed => self.request_quit(),
-            Event::Fonts(names) => {
-                tracing::info!(faces = names.len(), "the window says what it can draw with");
-                self.fonts_here = names;
+            Event::Fonts { here, otherwise } => {
+                tracing::info!(
+                    faces = here.len(),
+                    ?otherwise,
+                    "the window says what it can draw with"
+                );
+                self.fonts_here = here;
+                self.monospace_here = otherwise;
                 // A list already open takes them now: the reader opened it
                 // before the window had finished asking, which is the
                 // ordinary case on a machine with a thousand fonts.
+                let (here, otherwise) = (self.fonts_here.clone(), self.monospace_here.clone());
                 if let Some((_, names)) = self.names.as_mut() {
-                    names.offered(self.fonts_here.clone());
+                    names.offered(here, otherwise);
                 }
             }
             Event::Watched(obelus_watch::Changed { path }) => {

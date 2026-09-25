@@ -47,7 +47,13 @@ pub enum Event {
     /// no list to offer. Sent once, when the window has enumerated them,
     /// which is why it arrives as an event rather than being asked for --
     /// the answer is not ready when the reader opens the list.
-    Fonts(Vec<String>),
+    Fonts {
+        /// Every face, for the reader to choose between.
+        here: Vec<String>,
+        /// And which of them this machine calls its monospaced one, which
+        /// is what a reader who chooses none of them gets.
+        otherwise: Option<String>,
+    },
     /// The reader asked to close what Obelus is drawn in.
     ///
     /// A terminal never says this: closing one kills the process, and there

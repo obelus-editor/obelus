@@ -124,6 +124,13 @@ pub struct Names {
     chosen: Vec<String>,
     /// What this machine has.
     offered: Vec<String>,
+    /// What it calls its monospaced face, which is what the reader gets
+    /// while they have chosen nothing.
+    ///
+    /// Said on the page rather than left as "the machine's own": a reader
+    /// deciding whether to choose anything is deciding against something,
+    /// and a name is what that something is.
+    otherwise: Option<String>,
     /// What is being typed, which filters the offers and is itself an
     /// offer when it matches nothing.
     query: Field,
@@ -152,10 +159,11 @@ impl std::fmt::Debug for Names {
 impl Names {
     /// A list of what the reader has chosen, over what this machine has.
     #[must_use]
-    pub fn new(chosen: Vec<String>, offered: Vec<String>) -> Self {
+    pub fn new(chosen: Vec<String>, offered: Vec<String>, otherwise: Option<String>) -> Self {
         let mut names = Self {
             chosen,
             offered,
+            otherwise,
             query: Field::new(),
             window: Window::default(),
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
@@ -178,9 +186,16 @@ impl Names {
     /// The window enumerates its fonts on its own thread and says so when
     /// it has; until then the list is what the reader chose, and what they
     /// type is still a name they can add.
-    pub fn offered(&mut self, offered: Vec<String>) {
+    pub fn offered(&mut self, offered: Vec<String>, otherwise: Option<String>) {
         self.offered = offered;
+        self.otherwise = otherwise;
         self.settle();
+    }
+
+    /// What is drawn with while nothing is chosen, where the machine said.
+    #[must_use]
+    pub fn otherwise(&self) -> Option<&str> {
+        self.otherwise.as_deref()
     }
 
     /// What the reader has chosen, in their order.
@@ -517,6 +532,7 @@ mod tests {
                 "Noto Sans CJK SC".to_string(),
                 "Noto Color Emoji".to_string(),
             ],
+            Some("Liberation Mono".to_string()),
         )
     }
 
@@ -642,7 +658,7 @@ mod tests {
     /// that does anything.
     #[test]
     fn the_focus_steps_over_what_is_not_a_name() {
-        let empty = Names::new(Vec::new(), vec!["Iosevka".to_string()]);
+        let empty = Names::new(Vec::new(), vec!["Iosevka".to_string()], None);
         // Nothing chosen: the first two rows say so and divide the page,
         // so the focus starts on the offer below them.
         assert!(empty.rows()[empty.window().focus()].stands());

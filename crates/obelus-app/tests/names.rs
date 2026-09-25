@@ -13,12 +13,15 @@ use obelus_app::app::App;
 fn building() -> App {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 20);
-    app.handle(obelus_app::event::Event::Fonts(vec![
-        "Iosevka".to_string(),
-        "JetBrains Mono".to_string(),
-        "Noto Color Emoji".to_string(),
-        "Noto Sans CJK SC".to_string(),
-    ]));
+    app.handle(obelus_app::event::Event::Fonts {
+        here: vec![
+            "Iosevka".to_string(),
+            "JetBrains Mono".to_string(),
+            "Noto Color Emoji".to_string(),
+            "Noto Sans CJK SC".to_string(),
+        ],
+        otherwise: Some("Liberation Mono".to_string()),
+    });
     app.open_names("fonts");
     app
 }
@@ -59,7 +62,10 @@ fn a_list_longer_than_the_band_scrolls() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     support::lay_out(&mut app, 60, 20);
     let many: Vec<String> = (0..30).map(|at| format!("Face {at:02}")).collect();
-    app.handle(obelus_app::event::Event::Fonts(many));
+    app.handle(obelus_app::event::Event::Fonts {
+        here: many,
+        otherwise: None,
+    });
     app.open_names("fonts");
 
     for _ in 0..20 {

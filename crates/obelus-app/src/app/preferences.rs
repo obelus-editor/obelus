@@ -273,7 +273,11 @@ impl App {
         };
         self.names = Some((
             key,
-            obelus_component::names::Names::new(chosen, self.fonts_here.clone()),
+            obelus_component::names::Names::new(
+                chosen,
+                self.fonts_here.clone(),
+                self.monospace_here.clone(),
+            ),
         ));
     }
 

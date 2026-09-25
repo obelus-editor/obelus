@@ -187,6 +187,15 @@ impl NamesView<'_> {
                 );
             }
             Row::Empty => {
+                // Named where the machine said what it calls monospaced: a
+                // reader deciding whether to choose anything is deciding
+                // against something, and a name is what that something is.
+                // The sentence keeps its capital and the name keeps its own
+                // spelling.
+                let said = match self.names.otherwise() {
+                    Some(face) => format!("Nothing chosen, so {face}"),
+                    None => "Nothing chosen, so the machine's own monospaced face".to_string(),
+                };
                 crate::nothing(
                     cells,
                     Rect {
@@ -194,7 +203,7 @@ impl NamesView<'_> {
                         height: 1,
                         ..room
                     },
-                    "Nothing chosen, so the machine's own monospaced face",
+                    &said,
                     self.theme,
                 );
             }
