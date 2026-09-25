@@ -7876,3 +7876,70 @@ fn a_file_an_older_obelus_wrote_is_brought_up_to_date() {
         "the file still does not say which of them is the mode"
     );
 }
+
+/// Choosing the agent again repairs a file that says half of what it
+/// should.
+///
+/// The one thing a reader would try, and it did nothing: Obelus asked an
+/// agent what it offers only when it had *no* list for it, and a file
+/// written before this listed everything while saying neither what the
+/// agent opens on nor which of the settings is the mode. So the page that
+/// exists to set an agent up could not set it up.
+///
+/// Broken deliberately by asking only on an empty list again -- `told` back
+/// to `!offers.is_empty()`: the file is left as it was and the conversation
+/// this opens never happens.
+#[test]
+fn choosing_the_agent_again_repairs_a_file_that_says_half_of_it() {
+    let scratch = support::Scratch::new("agent-half-an-answer");
+    let root = agents_root_for("half-an-answer");
+    let home = root.join("fake");
+    std::fs::create_dir_all(&home).expect("the agent's directory");
+    std::fs::write(
+        home.join("options.json"),
+        r#"{"options":[{"id":"mode","name":"Mode","about":null,
+           "values":[{"id":"ask","name":"ask first","about":null},
+                     {"id":"code","name":"write code","about":null}],
+           "kind":"select"}]}"#,
+    )
+    .expect("the half-written file");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.agents_root_for_test(root.clone());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    // What the settings page does when a reader chooses this one, without
+    // the page: it reads what it has and asks where that is not enough.
+    app.reread_what_the_agent_offers_for_test();
+    app.learn_what_the_agent_offers_for_test();
+    pump(&mut app, &events, "what it opens on", |app| {
+        app.agent_offering().is_some_and(|offering| {
+            offering
+                .offers
+                .iter()
+                .any(|offer| offer.id == "mode" && offer.current.is_some())
+        })
+    });
+
+    let obelus_agent::options::Reading::Offers(offers) = obelus_agent::options::read("fake", &root)
+    else {
+        panic!("the file did not read back");
+    };
+    let mode = offers
+        .iter()
+        .find(|offer| offer.id == "mode")
+        .expect("the setting is still there");
+    assert_eq!(mode.current.as_deref(), Some("ask"));
+    assert_eq!(mode.category, obelus_agent::acp::Category::Mode);
+}

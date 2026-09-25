@@ -166,10 +166,20 @@ impl App {
     }
 
     pub(super) fn learn_what_the_agent_offers(&mut self) {
-        if matches!(
-            self.agents.offers.as_ref().map(|(_, read)| read),
-            Some(obelus_agent::options::Reading::Offers(offers)) if !offers.is_empty()
-        ) {
+        // Half an answer is not an answer. What Obelus keeps beside an
+        // install has gained fields since it was first written -- which
+        // value the agent opens on, and which of the settings is the mode
+        // -- and a file from before them lists everything and says neither.
+        // Asking only when the list is *empty* left choosing the agent
+        // again, which is the one thing a reader would try, doing nothing
+        // at all.
+        let told = match self.agents.offers.as_ref().map(|(_, read)| read) {
+            Some(obelus_agent::options::Reading::Offers(offers)) => {
+                !offers.is_empty() && offers.iter().any(|offer| offer.current.is_some())
+            }
+            _ => false,
+        };
+        if told {
             return;
         }
         if self.talker.is_none() {

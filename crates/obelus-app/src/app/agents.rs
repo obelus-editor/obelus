@@ -239,6 +239,11 @@ impl App {
     /// it is the agent's own statement about itself rather than anything
     /// the two are editing, so the worst a stale copy can do is list what
     /// that agent offered an hour ago.
+    /// The same, for a test that has not been through the settings page.
+    pub fn reread_what_the_agent_offers_for_test(&mut self) {
+        self.reread_what_the_agent_offers();
+    }
+
     pub(super) fn reread_what_the_agent_offers(&mut self) {
         let id = match self.config().agent.as_deref() {
             None | Some("") => {
