@@ -602,10 +602,13 @@ impl Painter {
                 reason = "a glyph is offset by pixels, and there are few of them"
             )]
             let (x, y) = (glyph.x as f32, glyph.y as f32);
+            // The grid's baseline for writing, and a mark's own for a mark
+            // -- see `font::Placed::baseline`.
+            let baseline = glyph.baseline.unwrap_or(cell.baseline);
             self.quads.push(Quad {
                 rect: [
                     left + x + spot.left,
-                    top + cell.baseline + y - spot.top,
+                    top + baseline + y - spot.top,
                     spot.width,
                     spot.height,
                 ],

@@ -52,6 +52,29 @@ pub(crate) struct Placed {
     pub(crate) x: i32,
     /// And how far down, from the cell's baseline.
     pub(crate) y: i32,
+    /// The baseline this glyph's own layout asked for, where that is not
+    /// the one the grid is counted in.
+    ///
+    /// `None` for writing, which goes on the grid's baseline because that
+    /// is what a line of text *is*: a letter from a fallback face put on
+    /// its own would be a letter stepping out of the line it is in.
+    ///
+    /// `Some` for a mark, which shares nothing with the letters beside it.
+    /// It is a picture, carried in a face of Obelus's own, and it is drawn
+    /// at whatever size fits the cell rather than at the size the prose is
+    /// -- `Symbols Nerd Font Mono` designs its glyphs a whole cell wide,
+    /// so almost every one of them is laid out again smaller. Both of
+    /// those move the baseline it wants: at a sixteen-pixel size in a
+    /// nineteen-pixel line, the reader's face asks for 15.71, the symbols
+    /// face for 14.30, and the same mark shrunk to fit a ten-pixel cell
+    /// for 12.50. Drawn on the first of those, every mark in the window
+    /// hung three pixels low -- a quarter of a letter's height, and
+    /// visibly below where a terminal puts the same key.
+    ///
+    /// The face says all of this; nothing here measures pixels to find it
+    /// out. Sideways the same question was settled the same way: `shape`
+    /// puts a mark in the middle of the room it was given.
+    pub(crate) baseline: Option<f32>,
 }
 
 /// How big a cell is, in real pixels.
@@ -333,6 +356,12 @@ fn shape(
     let middle = ((room - drawn) / 2.0).round() as i32;
     for glyph in &mut placed {
         glyph.x += middle;
+        // Writing goes on the baseline the grid is counted in, whichever
+        // face it came from: that is what keeps a line a line. A mark goes
+        // on the one its own face asked for -- see `Placed::baseline`.
+        if !mark {
+            glyph.baseline = None;
+        }
     }
     placed
 }
@@ -438,6 +467,11 @@ fn laid(
                 key: physical.cache_key,
                 x: physical.x,
                 y: physical.y,
+                // What this layout asked for, at the face and the size it
+                // actually used. Whether it is the one to draw on is
+                // `shape`'s to say -- it is the only thing here that knows
+                // whether this cell is a mark or writing.
+                baseline: Some(run.line_y),
             });
             faces.push(glyph.font_id);
         }
@@ -471,6 +505,51 @@ mod tests {
         // Letters, digits and CJK are the machine's.
         assert!(!is_a_mark('a'));
         assert!(!is_a_mark('读'));
+    }
+
+    /// A mark is drawn on the baseline its own face asked for; writing is
+    /// drawn on the one the grid is counted in.
+    ///
+    /// Which is the difference between a picture and a line of text. The
+    /// marks are carried in a face of Obelus's own and are designed a whole
+    /// cell wide, so almost every one is laid out again smaller to fit --
+    /// and both the face and the size move the baseline it wants. Drawn on
+    /// the reader's instead, every mark in the window hung low: a quarter
+    /// of a letter's height at the size this measures, which is where
+    /// `ctrl`'s keycap sat visibly below where a terminal puts it.
+    ///
+    /// The numbers are not asserted -- they are the faces' own and change
+    /// with whatever this machine has -- but the *relationship* is: a
+    /// mark's baseline is its own and is above the grid's, and writing has
+    /// none of its own to be put on.
+    ///
+    /// Deliberate break: clearing `baseline` for marks as well as for
+    /// writing puts them all back on the grid's, and the assertion below
+    /// that a mark has one of its own fails.
+    #[test]
+    fn a_mark_is_drawn_on_the_baseline_its_own_face_asked_for() {
+        let mut fonts = Fonts::new(16.0);
+        let cell = fonts.cell();
+        // `md-apple_keyboard_control`, which is what `ctrl` is drawn as.
+        let mark: Vec<Placed> = fonts.glyphs("\u{f0634}", false, false).to_vec();
+        let letter: Vec<Placed> = fonts.glyphs("k", false, false).to_vec();
+        assert!(
+            !mark.is_empty() && !letter.is_empty(),
+            "nothing was laid out"
+        );
+        assert!(
+            letter.iter().all(|glyph| glyph.baseline.is_none()),
+            "a letter was given a baseline of its own, which takes it out of its line"
+        );
+        for glyph in &mark {
+            let own = glyph.baseline.expect("a mark is drawn on its own baseline");
+            assert!(
+                own < cell.baseline,
+                "the mark's face asks for {own} and the grid is counted at {}, so drawing it \
+                 on the grid's would not have moved it",
+                cell.baseline
+            );
+        }
     }
 }
 
