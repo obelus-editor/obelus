@@ -353,9 +353,20 @@ Only a conversation nobody has said anything in may say what the agent
 starts on. The list arrives as part of some conversation and the value that
 one is on is a fact about that conversation at that moment; written down
 from a conversation the reader has been changing, it would be read next
-week as what the agent opens on. `Ask::Offers` opens one to read the list
-off and lets it go again, and that one is the only caller of
-`options::remember_what_it_starts_on`.
+week as what the agent opens on. Two arrive that way and no others: the one
+`Ask::Offers` opens to read the list off and lets go again, and the reader's
+own, in the moment it is minted -- which is the one that costs nothing and
+is what actually teaches Obelus, because choosing an agent is something a
+reader did once, months ago. A conversation *taken up* again is not among
+them: it arrives on whatever it was left on, which is why `Started` asks
+whether it was minted before it writes anything down.
+
+And the file is read where it is wanted. It was loaded when the settings
+page opened and when an agent was chosen, so a reader who chose theirs last
+month and went straight to a conversation had a blank row and a correct
+file. Once, on the frame that wants it, because the read writes the field
+whatever it finds -- an agent that has said nothing is `Reading::Nothing`,
+which is an answer and not a gap to try again.
 
 And the key on that row still works: it writes the answer down on the
 conversation (`Conversation::wanted_on`) and starts it, so the row moves at

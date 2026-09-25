@@ -929,6 +929,20 @@ impl App {
         else {
             return;
         };
+        // Read once where nobody has read it for this agent. Nothing did:
+        // the file was loaded when the settings page opened or when an
+        // agent was chosen, so a reader who chose theirs last month and
+        // went straight to a conversation had an empty row for it. Once
+        // only, because the read writes the field either way -- an agent
+        // that has said nothing is `Reading::Nothing`, which is an answer.
+        if self
+            .agents
+            .offers
+            .as_ref()
+            .is_none_or(|(whose, _)| *whose != id)
+        {
+            self.reread_what_the_agent_offers();
+        }
         let Some(obelus_agent::options::Reading::Offers(offers)) = self
             .agents
             .offers
@@ -1088,12 +1102,27 @@ impl App {
     /// Only what it offers, never which value this conversation is on:
     /// that is a fact about one conversation at one moment, and on this
     /// page a week later it would read as a fact about now.
-    fn keep_what_the_agent_offers(&mut self, session: &acp::SessionId) {
+    /// Writes down what a session says its agent offers.
+    ///
+    /// `minted` says this conversation was opened fresh rather than taken
+    /// up again, which is what makes the values it arrives on the *agent's*
+    /// own: nobody has said anything in it yet. One being taken up again
+    /// arrives on whatever it was left on, which is a fact about that
+    /// conversation and about nothing else.
+    ///
+    /// So the reader's first conversation with an agent is what teaches
+    /// Obelus what the next one starts on, at no cost -- and the
+    /// alternative, opening a conversation of Obelus's own to ask, is the
+    /// thing opening a view stopped doing.
+    fn keep_what_the_agent_offers(&mut self, session: &acp::SessionId, minted: bool) {
         let settings = match self.talker.as_ref() {
             Some(talker) => talker.settings(Some(session)).to_vec(),
             None => return,
         };
-        self.write_down_the_offers(&settings);
+        match minted {
+            true => self.write_down_what_the_agent_starts_on(&settings),
+            false => self.write_down_the_offers(&settings),
+        }
     }
 
     /// Writes down what the agent says it can be set to.
@@ -2611,11 +2640,15 @@ impl App {
             // Two of them starting at once is the case this is for: told
             // apart by nothing, the second answer would go to whichever
             // happened to be first in the list.
-            let asked = self
-                .conversation_at(|talk| talk.asked_for.as_ref() == Some(&session))
-                .or_else(|| {
-                    self.conversation_at(|talk| talk.session.is_none() && talk.asked_for.is_none())
-                });
+            let taken_up = self.conversation_at(|talk| talk.asked_for.as_ref() == Some(&session));
+            let asked = taken_up.or_else(|| {
+                self.conversation_at(|talk| talk.session.is_none() && talk.asked_for.is_none())
+            });
+            // Whether this one was minted rather than taken up again, which
+            // decides whether what it arrives set to is the agent's own
+            // answer or whatever that conversation was left on. Asked here
+            // because `asked_for` is cleared just below.
+            let minted = taken_up.is_none();
             let mine = asked.and_then(|at| {
                 self.documents
                     .get_mut(at)
@@ -2660,7 +2693,7 @@ impl App {
             // has already asked this one for is written down on the
             // conversation, and a note written before there is one to
             // write it on is a question asked twice.
-            self.keep_what_the_agent_offers(&session);
+            self.keep_what_the_agent_offers(&session, minted);
             self.start_the_session_on_what_was_chosen(&session);
             return;
         }
@@ -2680,7 +2713,7 @@ impl App {
         } = &incoming
         {
             let session = session.clone();
-            self.keep_what_the_agent_offers(&session);
+            self.keep_what_the_agent_offers(&session, false);
             self.start_the_session_on_what_was_chosen(&session);
             return;
         }

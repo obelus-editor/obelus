@@ -7729,3 +7729,76 @@ fn the_row_says_what_the_next_turn_runs_on_before_there_is_one() {
             .is_some_and(|mode| mode.current_name() == Some("write code"))
     });
 }
+
+/// A second sitting has the row, because the first conversation taught it.
+///
+/// The way a reader actually arrives: an agent chosen some time ago, Obelus
+/// started fresh, and `f4` pressed. Nothing here opens a conversation of
+/// Obelus's own to ask what the agent offers -- opening a view asks for
+/// nothing, which is the point -- so the row is filled from the file beside
+/// the install, and what put the *values* in that file is the reader's own
+/// first conversation: a session nobody had said anything in yet, which is
+/// the one kind whose values are the agent's own.
+///
+/// Two deliberate breaks, which are the two halves of why the row was still
+/// empty after the first go at this. Taking the read out of
+/// `settle_what_the_next_turn_runs_on` leaves the file unread until
+/// something else opens the settings page -- a reader who goes straight to
+/// a conversation never does. And passing `false` for `minted` in the
+/// `Started` arm means nothing ever writes down what the agent starts on
+/// but choosing an agent again, so the file a previous version wrote is
+/// never upgraded.
+#[test]
+fn the_row_is_there_on_a_later_sitting_because_the_first_conversation_taught_it() {
+    let scratch = support::Scratch::new("agent-row-second-sitting");
+    let root = agents_root();
+    let agent = |scratch: &support::Scratch| {
+        let (mut app, events) = wired();
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        app.agents_root_for_test(root.clone());
+        app.talk_to(
+            "fake",
+            Path::new("sh"),
+            &["tests/fixtures/fake-agent.sh".to_string()],
+        );
+        app.configure(
+            obelus_config::Config {
+                agent: Some("fake".to_string()),
+                ..obelus_config::Config::default()
+            },
+            Vec::new(),
+        );
+        (app, events)
+    };
+
+    // The first sitting: the reader opens a conversation and says
+    // something, which is the only thing they do.
+    {
+        let (mut app, events) = agent(&scratch);
+        obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+        support::type_text(&mut app, "/echo");
+        support::press(&mut app, KeyCode::Enter);
+        pump(&mut app, &events, "the answer", |app| {
+            said_in_transcript(app, "heard you")
+        });
+    }
+
+    // The next one. Nothing is said, nothing is asked of the agent -- and
+    // the row says what this conversation will run on.
+    let (mut app, _events) = agent(&scratch);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Idle,
+        "opening it asked the agent for something, so this proves nothing"
+    );
+    let row = rows(&support::render(&mut app, WIDTH, HEIGHT))
+        .last()
+        .copied()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        row.contains("ask first") && row.contains("shift+tab  mode"),
+        "the row says nothing about what this conversation will run on:\n{row}"
+    );
+}
