@@ -44,13 +44,6 @@ use crate::{
     keys,
 };
 
-/// How big the text is, in points.
-///
-/// One number, until there is a setting for it: what it will be is a line
-/// in the settings page like every other preference, and what it must not
-/// be is a command.
-const SIZE: f32 = 14.0;
-
 /// How many rows a notch of the wheel moves, which is what every terminal
 /// sends and so what the rest of Obelus already expects.
 const NOTCH: isize = 3;
@@ -106,10 +99,26 @@ struct Showing {
     /// `o` is spelling one character, and passing those presses on as well
     /// would put the spelling in the file and the word after it.
     composing: bool,
+    /// How big the text is, in points, as the settings last said.
+    ///
+    /// Kept because the two things it is measured against move on their
+    /// own: the screen's scale changes when the window is dragged to
+    /// another monitor, and the setting changes when the reader -- or
+    /// another Obelus -- says so.
+    points: f32,
 }
 
 impl Showing {
     fn new(app: App, proxy: EventLoopProxy<Waking>) -> Self {
+        // Read before the application is put on its own thread, because
+        // this is what the first window is built at: afterwards the size
+        // arrives down the frames channel like every other change to what
+        // is drawn.
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a size in points, which is two digits"
+        )]
+        let points = app.config().font_size as f32;
         Self {
             starting: Some(app),
             window: None,
@@ -126,7 +135,35 @@ impl Showing {
             held: false,
             rolled: 0.0,
             composing: false,
+            points,
         }
+    }
+
+    /// The text is a different size: either the reader said so, or the
+    /// window moved to a screen of another density.
+    ///
+    /// Everything about the grid follows from the size of a cell, so all of
+    /// it is done again: the faces measure themselves, the glyphs already
+    /// drawn are the wrong size, the number of columns has changed, and the
+    /// application has to be told so that it lays the next frame out to fit.
+    fn redraw_at(&mut self, points: f32) {
+        let Some(window) = self.window.as_ref() else {
+            return;
+        };
+        self.points = points;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a scale factor is a small number"
+        )]
+        let pixels = points * window.scale_factor() as f32;
+        if let Some(fonts) = self.fonts.as_mut() {
+            fonts.resize(pixels);
+        }
+        if let Some(painter) = self.painter.as_mut() {
+            painter.forget_the_glyphs();
+        }
+        self.remeasure();
+        self.tell(Event::Resize);
     }
 
     /// What Obelus's loop returned, or that it never got to run.
@@ -245,7 +282,7 @@ impl ApplicationHandler<Waking> for Showing {
             clippy::cast_possible_truncation,
             reason = "a scale factor is a small number"
         )]
-        let fonts = Fonts::new(SIZE * window.scale_factor() as f32);
+        let fonts = Fonts::new(self.points * window.scale_factor() as f32);
         let painter = match crate::paint::Painter::new(Arc::clone(&window)) {
             Ok(painter) => painter,
             Err(error) => {
@@ -268,10 +305,18 @@ impl ApplicationHandler<Waking> for Showing {
         self.doing = Some(doing.clone());
 
         let proxy = self.proxy.clone();
-        let wake = Arc::new(move || {
+        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let _ = proxy.send_event(Waking::Frame);
         });
-        let cells = Cells::new(frames, wake, Arc::clone(&self.measured));
+        let cells = Cells::new(
+            frames.clone(),
+            Arc::clone(&wake),
+            Arc::clone(&self.measured),
+        );
+        // And the other direction: what the settings say about the window,
+        // which the application sends when they change and nobody else can
+        // answer.
+        app.drawn_by(Arc::new(crate::grid::Sizing::new(frames, wake)));
         // The one place Obelus is told where its events go, which is what
         // starts the watcher, the servers and the walk of the project.
         app.start(doing);
@@ -313,8 +358,25 @@ impl ApplicationHandler<Waking> for Showing {
                 // provoked -- and drawing the older ones would be drawing
                 // screens the reader is never meant to see.
                 let mut drew = false;
+                let mut sized = None;
                 while let Ok(update) = frames.try_recv() {
-                    drew |= self.page.apply(update);
+                    match update {
+                        // Not a cell, so the page never sees it.
+                        Update::TextSize(points) => sized = Some(points),
+                        cells => drew |= self.page.apply(cells),
+                    }
+                }
+                if let Some(points) = sized {
+                    #[expect(
+                        clippy::cast_precision_loss,
+                        reason = "a size in points, which is two digits"
+                    )]
+                    let points = points as f32;
+                    // Said on the way up as well as on a change, so this is
+                    // usually the size it already is.
+                    if (points - self.points).abs() > f32::EPSILON {
+                        self.redraw_at(points);
+                    }
                 }
                 if drew {
                     self.point_the_input_method();
@@ -350,20 +412,11 @@ impl ApplicationHandler<Waking> for Showing {
                 self.remeasure();
                 self.tell(Event::Resize);
             }
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "a scale factor is a small number"
-                )]
-                if let Some(fonts) = self.fonts.as_mut() {
-                    fonts.resize(SIZE * scale_factor as f32);
-                }
-                if let Some(painter) = self.painter.as_mut() {
-                    painter.forget_the_glyphs();
-                }
-                self.remeasure();
-                self.tell(Event::Resize);
-            }
+            // The window is on a screen of another density, so a point is
+            // a different number of pixels. Which is the same work as the
+            // reader choosing another size, and the window asks its own
+            // scale on the way through.
+            WindowEvent::ScaleFactorChanged { .. } => self.redraw_at(self.points),
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::Ime(ime) => match ime {
                 // The spelling so far, which the input method draws itself

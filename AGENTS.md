@@ -696,6 +696,29 @@ through untouched, which is why the surface is viewed without its sRGB
 conversion -- a theme's `#1e1e2e` is the colour the reader picked, and a
 pipeline that corrects it draws a different one.
 
+Nor is every setting shared. A terminal draws with the font the reader gave
+the terminal and a window draws with its own, so `font_size` means nothing
+in one and the glyph switch means nothing in the other -- and a row shown
+where it does nothing is worse than a missing one, because the reader
+changes it, watches nothing happen, and has learnt something untrue. So a
+setting says where it is `Drawn`, the page shows the ones that apply, and
+the *file* keeps them all: the other Obelus on that machine is the one they
+are for. What a front end owns, it is told about -- `App::drawn_by` and one
+method, called when it says who it is and again after every change, which
+in `obg` goes down the frames channel like everything else about what is on
+the screen.
+
+A full-width character is two columns of the grid and one glyph, and the
+second column is a cell `ratatui` has *reset*: no text, no colours. A
+terminal never draws it, because the terminal advanced two columns itself.
+A window draws every cell, so it has to be told -- `Look::columns` -- or it
+paints the default background behind the right half of every Chinese
+character. The glyph itself is left the size the face drew it and centred
+in its two cells, scaled down only where it does not fit: cosmic-text's
+`monospace_width` closes the gap the other way, by growing the glyph a
+fifth until its advance is a whole number of cells, and that is a line of
+Chinese visibly larger than the Latin above it.
+
 **Obelus does not split its window, so several Obelus processes is the
 normal case.** A terminal already splits, tiles and tabs better than an
 editor can from the inside, so Obelus has one region and no panes. What that

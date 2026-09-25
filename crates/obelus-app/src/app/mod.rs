@@ -409,6 +409,10 @@ pub struct App {
     /// binary's own, and everything under it takes it as a string like any
     /// other fact about how Obelus was started.
     built: &'static str,
+    /// What is drawing Obelus, where it has anything to be told.
+    ///
+    /// `None` in a terminal, which is told nothing: see [`App::drawn_by`].
+    drawing: Option<std::sync::Arc<dyn Drawing>>,
     /// What git says about the files in the tree, while a list of them is
     /// open.
     ///
@@ -691,6 +695,7 @@ impl App {
             waking: false,
             dragging: None,
             built: "",
+            drawing: None,
             prompt: None,
             changes: None,
             statuses: std::collections::HashMap::new(),
@@ -3046,6 +3051,27 @@ pub(crate) fn relative(path: &Path, root: &Path) -> String {
         .unwrap_or(path)
         .display()
         .to_string()
+}
+
+/// What the thing drawing Obelus can be told.
+///
+/// One method, and the shape is deliberate: this is not a way for the
+/// application to drive a front end, it is the list of settings that mean
+/// something only to whatever is drawing. A terminal implements none of it
+/// because there is none of it a terminal owns -- its font and its size
+/// belong to the terminal and to the reader who configured it.
+///
+/// `Send + Sync`, because in a window the application runs on a thread of
+/// its own and what it is talking to is the window's loop.
+pub trait Drawing: std::fmt::Debug + Send + Sync {
+    /// The text should be this many points from now on.
+    ///
+    /// Said once when the front end says who it is, and again after every
+    /// change to the settings -- including one made in another Obelus,
+    /// which the watcher notices. Called from the application's own thread,
+    /// so what it must not do is wait: putting it down a channel is what
+    /// the window does.
+    fn text_size(&self, points: usize);
 }
 
 /// Lays out, scrolls and draws one frame.

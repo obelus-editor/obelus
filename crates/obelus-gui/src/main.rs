@@ -50,6 +50,12 @@ fn main() -> Result<()> {
     // log as well.
     obelus_logging::catch_panics();
 
+    // Before the settings are read, because what Obelus is drawn on
+    // decides what some of them mean: the marks are carried here rather
+    // than installed, and how big the text is is a question a terminal
+    // does not have.
+    obelus_config::drawn_in_a_window();
+
     // Opened before there is a window, so that a bad path reports itself on
     // the console the reader started Obelus from rather than flashing past
     // inside a window that is about to close. The order inside is argued
@@ -70,9 +76,32 @@ fn main() -> Result<()> {
     // marks are carried in the binary, so it is not the compromise it is
     // there.
     app.use_images(obelus_ui::image::Images::none());
-    // The marks, which here are a fact about the binary rather than a guess
-    // about the machine.
-    obelus_icons::use_glyphs(true);
-
     window::show(app)
+}
+
+#[cfg(test)]
+mod tests {
+    /// A window offers the settings a window has, and not the ones a
+    /// terminal has.
+    ///
+    /// Both halves, because each passes with the other broken. The glyph
+    /// switch is a terminal's question -- here the face is carried in the
+    /// binary and there is nothing to decide -- and the text size is the
+    /// opposite: a terminal's font belongs to the terminal.
+    ///
+    /// Deliberate break: `Setting::shown` answering `true` for everything,
+    /// which is what it did before there were two front ends.
+    #[test]
+    fn a_window_offers_a_window_s_settings() {
+        obelus_config::drawn_in_a_window();
+        let shown = |key: &str| {
+            obelus_config::Setting::named(key)
+                .expect("a setting Obelus has")
+                .shown()
+        };
+        assert!(!shown("icons"));
+        assert!(shown("font_size"));
+        // And what both of them are drawn with is nobody's front end.
+        assert!(shown("theme"));
+    }
 }

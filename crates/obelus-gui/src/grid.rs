@@ -46,6 +46,46 @@ pub(crate) enum Update {
     Caret(Option<Position>),
     /// The end of a frame: what came before it is what to draw.
     Frame,
+    /// How big the text is, in points.
+    ///
+    /// A setting, so it arrives the way every other change to what is on
+    /// the screen arrives: down this channel, in order, from the thread
+    /// that knows what the settings say.
+    TextSize(usize),
+}
+
+/// How the window is told what the settings say about it.
+///
+/// The other direction on the same wire. What crosses is not a frame, so
+/// the window takes it out of the queue before the page sees it -- a page
+/// knows about cells and a text size is not one.
+#[derive(Clone)]
+pub(crate) struct Sizing {
+    updates: Sender<Update>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl std::fmt::Debug for Sizing {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Sizing")
+    }
+}
+
+impl Sizing {
+    /// Says where to send what the application works out about the window.
+    pub(crate) fn new(updates: Sender<Update>, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
+        Self { updates, wake }
+    }
+}
+
+impl obelus_app::app::Drawing for Sizing {
+    fn text_size(&self, points: usize) {
+        // A window that has gone is a send that fails, and the application
+        // is about to find that out for itself on its next frame.
+        if self.updates.send(Update::TextSize(points)).is_ok() {
+            (self.wake)();
+        }
+    }
 }
 
 /// The window is gone, so there is nowhere for a frame to go.
@@ -326,6 +366,13 @@ impl Page {
                 false
             }
             Update::Frame => true,
+            // Taken out of the queue before the page is handed anything,
+            // because it is not about a cell. A page that reached this
+            // would be a window that failed to act on it.
+            Update::TextSize(points) => {
+                tracing::warn!(points, "a text size reached the page");
+                false
+            }
         }
     }
 

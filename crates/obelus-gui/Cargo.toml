@@ -17,6 +17,7 @@ workspace = true
 
 [dependencies]
 obelus-app.workspace = true
+obelus-config.workspace = true
 obelus-icons.workspace = true
 obelus-logging.workspace = true
 # How many cells a cell's text takes, which is the application's own answer

@@ -4173,6 +4173,7 @@ dependencies = [
  "crossterm",
  "etagere",
  "obelus-app",
+ "obelus-config",
  "obelus-icons",
  "obelus-logging",
  "obelus-text",

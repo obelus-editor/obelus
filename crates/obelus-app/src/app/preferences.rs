@@ -704,8 +704,18 @@ impl App {
         // A theme chosen is a theme living somewhere else, so what is
         // watched for a change to it moves with it.
         self.watch_theme();
-        obelus_icons::use_glyphs(self.settled.config.icons);
+        // The switch is a terminal's: a window carries the face the marks
+        // are in, so they are drawn there whatever a file written on
+        // another machine says -- and the settings page does not offer the
+        // row at all. See `obelus_config::Drawn`.
+        obelus_icons::use_glyphs(self.settled.config.icons || obelus_config::in_a_window());
         obelus_text::lay_tabs_at(self.settled.config.tab_width);
+        // And the one setting the application cannot act on itself: how
+        // big the text is, which means something only where Obelus draws
+        // its own pixels and is that front end's to do something about.
+        if let Some(drawing) = self.drawing.as_ref() {
+            drawing.text_size(self.settled.config.font_size);
+        }
         // The table the reader's own bindings leave. Built rather than
         // patched: what is in the file is a list of changes over the
         // defaults, and applying them to a table that has already had them

@@ -45,6 +45,18 @@ fn open(file: &std::path::Path) -> App {
     app
 }
 
+/// How many settings this Obelus puts on the page.
+///
+/// Not every setting there is: `font_size` means nothing in a terminal and
+/// is not offered in one, the same way the glyph switch is not offered in a
+/// window.
+fn shown() -> usize {
+    obelus_config::ALL
+        .iter()
+        .filter(|setting| setting.shown())
+        .count()
+}
+
 /// The settings are a dialog: nothing of Obelus's own opens over them.
 #[test]
 fn nothing_of_obeluss_own_opens_over_the_settings() {
@@ -302,8 +314,10 @@ fn every_setting_is_on_one_page_under_a_heading() {
             .filter_map(|shown| Some(shown.setting()?.name.to_string()))
             .collect::<Vec<_>>()
     };
-    // Every setting Obelus has, in the order the groups are written in.
-    assert_eq!(rows(&app).len(), obelus_config::ALL.len());
+    // Every setting this Obelus shows, in the order the groups are written
+    // in. Shown rather than every setting there is: a terminal does not
+    // offer how big the text is, because its font is its own.
+    assert_eq!(rows(&app).len(), shown());
     assert_eq!(rows(&app)[0], "Colour theme");
     assert_eq!(
         rows(&app).last().map(String::as_str),
@@ -1128,7 +1142,7 @@ fn the_ends_and_the_pages_are_reachable() {
 
     // Every setting on one page: End reaches the last, Home the first, and
     // neither wraps past its end.
-    let last = obelus_config::ALL.len() - 1;
+    let last = shown() - 1;
     support::press(&mut app, KeyCode::End);
     assert_eq!(focus(&app), last, "End did not reach the last row");
     support::press(&mut app, KeyCode::End);
@@ -2808,4 +2822,57 @@ fn an_empty_filter_has_no_caret() {
         obelus_ui::cursor_position(screen, &app).is_none(),
         "the caret stayed behind in an emptied filter"
     );
+}
+
+/// What a front end is told, kept for a test to look at.
+#[derive(Debug, Default)]
+struct Told(std::sync::Mutex<Vec<usize>>);
+
+impl obelus_app::app::Drawing for Told {
+    fn text_size(&self, points: usize) {
+        self.0.lock().expect("what was said").push(points);
+    }
+}
+
+impl Told {
+    /// The last size it was told, or nothing if it was never told.
+    ///
+    /// The last rather than the whole list: reading the settings applies
+    /// them more than once -- the reader's answers, then the project's laid
+    /// over them -- and how many times is not something this is about.
+    fn last(&self) -> Option<usize> {
+        self.0.lock().expect("what was said").last().copied()
+    }
+}
+
+/// The one setting the application cannot act on reaches the thing that
+/// can, both when it says who it is and every time the settings change.
+///
+/// Both halves, because each passes with the other broken: a front end
+/// told only at startup draws at the old size for the rest of the session,
+/// and one told only on a change starts at whatever it guessed.
+///
+/// Deliberate break: taking the call out of `apply_config` leaves the
+/// second assertion at one entry, and taking it out of `drawn_by` leaves
+/// the first empty.
+#[test]
+fn the_size_of_the_text_reaches_whatever_is_drawing() {
+    let _taken = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("sizing");
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "font_size = 20\n").expect("the settings");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file.clone());
+    let told = std::sync::Arc::new(Told::default());
+    app.drawn_by(told.clone());
+    assert_eq!(told.last(), Some(20), "the size it starts at");
+
+    // And the reader changes it -- or another Obelus does, which arrives
+    // the same way: the file is read again and what it says is applied.
+    std::fs::write(&file, "font_size = 24\n").expect("the settings");
+    app.config_file_for_test(file);
+    assert_eq!(told.last(), Some(24), "the size it was changed to");
 }

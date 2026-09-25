@@ -616,7 +616,7 @@ impl Settings {
             let mut opens = Some(group);
             for setting in obelus_config::ALL
                 .iter()
-                .filter(|setting| setting.group == group)
+                .filter(|setting| setting.group == group && setting.shown())
             {
                 if !(query.is_empty()
                     || setting.name.to_lowercase().contains(&query)

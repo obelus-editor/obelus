@@ -59,6 +59,14 @@ pub struct Config {
     pub wrap: bool,
     /// How wide a tab is drawn, and how many spaces the tab key puts in.
     pub tab_width: usize,
+    /// How big the text is, in points, where Obelus draws its own.
+    ///
+    /// A window's setting and nothing to a terminal, whose font is the
+    /// terminal's own business and not Obelus's to have an opinion about.
+    /// It is in the one settings file either way: two Obeluses on one
+    /// machine are the normal case, and a reader who set this in a window
+    /// has not asked for a second file to keep it in.
+    pub font_size: usize,
     /// Whether to ask a language server to lay the file out before writing.
     pub format_on_save: bool,
     /// Whether to make the server's whole-file fixes before writing.
@@ -153,6 +161,7 @@ impl Default for Config {
             // the rest of the program laid a tab out at before a reader
             // could say otherwise.
             tab_width: obelus_text::TAB_WIDTH,
+            font_size: DEFAULT_FONT_SIZE,
             // Off: a formatter that ran without being asked would rewrite
             // a file somebody opened to read, and the first they would know
             // of it is the diff.
@@ -212,6 +221,47 @@ pub enum Kind {
     /// what a reader is doing either way -- and a spinner for a number with
     /// three sensible values is a control nobody needs.
     Count(&'static [&'static str]),
+}
+
+/// Where a setting means anything.
+///
+/// Obelus is drawn on two things and they do not ask for the same
+/// preferences: a terminal draws with the font the reader gave the
+/// terminal, and a window draws with its own. A setting shown where it does
+/// nothing is worse than a missing one -- the reader changes it, watches
+/// nothing happen, and has learnt something untrue about the program.
+///
+/// It is still one file and one table. What is hidden is a row on the
+/// settings page; the value stays in the file, because the other Obelus on
+/// the same machine is the one it is for -- and writing the file is careful
+/// not to delete what it does not recognise for the same reason.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Drawn {
+    /// Wherever Obelus is drawn.
+    Anywhere,
+    /// Only where a terminal is drawing it.
+    InATerminal,
+    /// Only where Obelus draws its own pixels.
+    InAWindow,
+}
+
+/// Whether this Obelus is the one that draws its own pixels.
+///
+/// A global, like the tab width and the glyph switch, and for the same
+/// reason: it is one decision the whole program shares, settled once before
+/// anything is drawn, and threading it through would put a parameter on
+/// every list of settings rather than on the one fact.
+static IN_A_WINDOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Says that Obelus is drawing its own pixels, which `obg` says once.
+pub fn drawn_in_a_window() {
+    IN_A_WINDOW.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether Obelus is drawing its own pixels.
+#[must_use]
+pub fn in_a_window() -> bool {
+    IN_A_WINDOW.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Which group of settings a setting belongs to.
@@ -305,6 +355,8 @@ pub struct Setting {
     pub kind: Kind,
     /// Which files may set it.
     pub reach: Reach,
+    /// Where it means anything.
+    pub drawn: Drawn,
 }
 
 impl Setting {
@@ -312,6 +364,16 @@ impl Setting {
     #[must_use]
     pub fn settable_by(&self, whose: Whose) -> bool {
         whose == Whose::Reader || self.reach == Reach::Anywhere
+    }
+
+    /// Whether this setting is one to show the reader here.
+    #[must_use]
+    pub fn shown(&self) -> bool {
+        match self.drawn {
+            Drawn::Anywhere => true,
+            Drawn::InATerminal => !in_a_window(),
+            Drawn::InAWindow => in_a_window(),
+        }
     }
 
     /// The setting a key names, if Obelus has one.
@@ -326,6 +388,18 @@ const THEMES: &[&str] = &["dark", "light"];
 
 /// The tab widths anybody sets.
 const WIDTHS: &[&str] = &["2", "4", "8"];
+
+/// The text sizes a window offers, in points.
+///
+/// A list rather than a number to nudge up and down, for the reason every
+/// other count here is a list: a reader picking a size tries three of them
+/// and keeps one, and the sizes between are a difference nobody sees. What
+/// is offered is small enough to fit a lot of code on the screen and large
+/// enough to read on a dense one.
+const SIZES: &[&str] = &["11", "12", "13", "14", "16", "18", "20", "24"];
+
+/// How big the text is where Obelus draws its own, in points.
+pub const DEFAULT_FONT_SIZE: usize = 14;
 
 /// How long a rest is, in milliseconds, as the few anybody picks.
 ///
@@ -343,6 +417,7 @@ pub const ALL: &[Setting] = &[
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Choice(THEMES),
+        drawn: Drawn::Anywhere,
     },
     Setting {
         key: "icons",
@@ -351,6 +426,11 @@ pub const ALL: &[Setting] = &[
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
+        // A window carries the face the glyphs are in, so there is nothing
+        // to decide: they are drawn. The switch is a terminal's, which
+        // draws with whatever font the reader installed -- a guess Obelus
+        // cannot make for them.
+        drawn: Drawn::InATerminal,
     },
     Setting {
         key: "wrap",
@@ -359,6 +439,7 @@ pub const ALL: &[Setting] = &[
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
     },
     Setting {
         key: "blame_margin",
@@ -367,6 +448,7 @@ pub const ALL: &[Setting] = &[
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
     },
     Setting {
         key: "tab_width",
@@ -375,6 +457,16 @@ pub const ALL: &[Setting] = &[
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Count(WIDTHS),
+        drawn: Drawn::Anywhere,
+    },
+    Setting {
+        key: "font_size",
+        name: "Text size",
+        about: "How big the text is in a window, in points",
+        group: Group::Appearance,
+        reach: Reach::Anywhere,
+        kind: Kind::Count(SIZES),
+        drawn: Drawn::InAWindow,
     },
     Setting {
         key: "hover_delay",
@@ -383,6 +475,7 @@ pub const ALL: &[Setting] = &[
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Count(DELAYS),
+        drawn: Drawn::Anywhere,
     },
     Setting {
         key: "format_on_save",
@@ -391,6 +484,7 @@ pub const ALL: &[Setting] = &[
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
     },
     Setting {
         key: "code_actions_on_save",
@@ -399,6 +493,7 @@ pub const ALL: &[Setting] = &[
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
     },
     Setting {
         key: "inlay_hints",
@@ -407,6 +502,7 @@ pub const ALL: &[Setting] = &[
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
     },
     Setting {
         key: "diagnostics",
@@ -415,6 +511,7 @@ pub const ALL: &[Setting] = &[
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
     },
     Setting {
         key: "ignored_files",
@@ -423,6 +520,7 @@ pub const ALL: &[Setting] = &[
         group: Group::Files,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
     },
 ];
 
@@ -439,6 +537,7 @@ impl Config {
             "blame_margin" => Some(Value::Switch(self.blame_margin)),
             "wrap" => Some(Value::Switch(self.wrap)),
             "tab_width" => Some(Value::Count(self.tab_width)),
+            "font_size" => Some(Value::Count(self.font_size)),
             "hover_delay" => Some(Value::Count(self.hover_delay)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
             "code_actions_on_save" => Some(Value::Switch(self.code_actions_on_save)),
@@ -461,6 +560,7 @@ impl Config {
             // somebody typed `0` into should not make every tab nothing.
             ("tab_width", Value::Count(width)) => self.tab_width = *width,
             ("hover_delay", Value::Count(delay)) => self.hover_delay = *delay,
+            ("font_size", Value::Count(points)) => self.font_size = *points,
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
             ("code_actions_on_save", Value::Switch(on)) => self.code_actions_on_save = *on,
             ("inlay_hints", Value::Switch(on)) => self.inlay_hints = *on,
@@ -713,6 +813,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     {
         config.hover_delay = usize::try_from(delay).unwrap_or(0);
     }
+    if let Some(points) = table.get("font_size").and_then(toml::Value::as_integer)
+        && allowed("font_size")
+    {
+        config.font_size = usize::try_from(points).unwrap_or(DEFAULT_FONT_SIZE);
+    }
     if let Some(on) = table.get("format_on_save").and_then(toml::Value::as_bool)
         && allowed("format_on_save")
     {
@@ -895,6 +1000,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "tab_width",
         config.tab_width != default.tab_width,
         toml_edit::value(i64::try_from(config.tab_width).unwrap_or(4)),
+    );
+    put(
+        "font_size",
+        config.font_size != default.font_size,
+        toml_edit::value(i64::try_from(config.font_size).unwrap_or(14)),
     );
     put(
         "hover_delay",
@@ -1253,6 +1363,7 @@ mod tests {
             blame_margin: false,
             wrap: true,
             tab_width: 8,
+            font_size: 18,
             hover_delay: 800,
             format_on_save: true,
             code_actions_on_save: true,

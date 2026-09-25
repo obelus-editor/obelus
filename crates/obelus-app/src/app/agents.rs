@@ -307,6 +307,20 @@ impl App {
         self.agents.images = images;
     }
 
+    /// Says what is drawing Obelus, so that it can be told the settings it
+    /// is the only one that can act on.
+    ///
+    /// A terminal says nothing and is told nothing: its font, its size and
+    /// its colours are the terminal's own, and a reader who wants larger
+    /// text there asks the terminal for it. A window has no such owner --
+    /// it draws its own pixels -- so the size of the text is a setting
+    /// like any other, and this is how the change reaches the thing that
+    /// would have to redraw.
+    pub fn drawn_by(&mut self, drawing: std::sync::Arc<dyn crate::app::Drawing>) {
+        drawing.text_size(self.settled.config.font_size);
+        self.drawing = Some(drawing);
+    }
+
     /// The marks, for the view to draw.
     #[must_use]
     pub fn images(&self) -> &Images {
