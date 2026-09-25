@@ -139,6 +139,8 @@ pub trait Screen {
     fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]>;
     /// Whether what is typed goes over what is under the cursor.
     fn replacing(&self) -> bool;
+    /// The list of names a setting is being built into, while one is open.
+    fn names(&self) -> Option<&obelus_component::names::Names>;
     /// Which build this is, where whatever started Obelus has said.
     ///
     /// Empty where nothing has, which is every test: the welcome screen
@@ -251,6 +253,7 @@ pub mod counts;
 pub mod editor;
 pub mod hover;
 pub mod image;
+pub mod names;
 pub mod picker;
 pub mod reading;
 pub mod settings;
@@ -406,6 +409,15 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
     match app.layers().nearest() {
         Some(Layer::Prompt) => return on_the_status_row(status::answer_caret(app.prompt()?)),
         Some(Layer::Picker) => return on_the_status_row(status::prompt_caret(app.picker()?)),
+        // The same shape a picker's query has, because it is the same
+        // thing: what has been typed narrows what is above it.
+        Some(Layer::Names) => {
+            let names = app.names()?;
+            return on_the_status_row(status::filter_caret(
+                &names.query().said(),
+                names.query().caret().get(),
+            ));
+        }
         Some(Layer::Settings) => {
             let settings = app.settings()?;
             let said = settings.query();
@@ -559,6 +571,27 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             Layer::Picker => {
                 if let Some(list) = app.picker() {
                     list_over(cells, app, list, room_for_a_picker(app, regions.editor));
+                }
+            }
+            Layer::Names => {
+                if let Some(names) = app.names() {
+                    let room = room_for_a_picker(app, regions.editor);
+                    let region = names::region(names, room);
+                    names::NamesView::new(names, app.theme()).render(region, cells);
+                    // The edge every band gets, for the same reason a
+                    // compact list gets one: two different things sharing
+                    // a screen have to be told apart.
+                    if region.y > room.y {
+                        rule(
+                            cells,
+                            Rect {
+                                y: region.y - 1,
+                                height: 1,
+                                ..region
+                            },
+                            app.theme(),
+                        );
+                    }
                 }
             }
             // Drawn by the status row, which is the row it is on.

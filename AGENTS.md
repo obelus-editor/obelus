@@ -952,6 +952,41 @@ terminal's protocol alone downloaded nothing, prepared nothing, and drew
 the glyph a terminal without a protocol gets -- while sitting there able to
 draw any of them.
 
+**A list the reader builds is not a picker.** `component::names` is a list
+with a query over it, which is what a picker is, and it borrows a picker's
+parts for exactly that reason: the same window, the same six movement keys,
+the same matcher, the same marking of what matched, the same query on the
+status row. What it is not is a picker's *meaning*: a picker chooses one
+row and closes, and this one is opened to be changed -- every key that does
+anything adds, removes or moves, and the reader leaves when the list says
+what they meant. Share the mechanism, not the meaning, again.
+
+Two sections of one list: what the reader has chosen, in their order, and
+what else there is. The boundary between them is *a row*, and so is the
+line that says nothing has been chosen -- because everything that counts
+rows then counts the same ones, and a screen row that was not a row of the
+list would have to be added to every piece of arithmetic that says which
+row is where. Neither is somewhere to stand, so the focus steps over them
+the way a transcript's cursor stands only on rows that do something.
+
+Enter is one key saying one thing: what this row says about the list, the
+other way round. On an offer it puts the name in; on one of the reader's it
+takes that name out. What may go in comes from the caller -- the component
+knows names and nothing about fonts, because the next thing that wants it
+will have its own list -- and in `obg` that caller is the window, which is
+the only part of Obelus that can see a font database. It says so with an
+event, once, which is why the list takes what it is given later as well:
+the reader opens it before a machine with a thousand faces has finished
+answering.
+
+A name this machine does not have is still an answer. One settings file is
+read on every machine the reader uses, so the list says `Not on this
+machine` beside it and keeps it -- and what is drawn with is the first of
+their faces that actually drew the character, asked of the glyphs rather
+than of the font database, because cosmic-text substitutes a face of its
+own without being asked and a chain that did not notice would stop at the
+first name every time.
+
 **Obelus does not split its window, so several Obelus processes is the
 normal case.** A terminal already splits, tiles and tabs better than an
 editor can from the inside, so Obelus has one region and no panes. What that

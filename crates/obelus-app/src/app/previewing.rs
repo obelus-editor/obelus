@@ -373,6 +373,15 @@ impl App {
                 picker.move_selection_by(rows.signum());
                 true
             }
+            // A list is a list: a notch steps the selection, because the
+            // selection is what a list has to scroll.
+            Layer::Names => {
+                let Some((_, names)) = self.names.as_mut() else {
+                    return false;
+                };
+                names.step(rows.signum());
+                true
+            }
             // The counts, which are a list as well: the notch steps the row
             // rather than the view, for the same reason it does in a picker.
             Layer::Counts => {

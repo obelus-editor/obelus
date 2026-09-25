@@ -41,6 +41,13 @@ pub enum Event {
     Key(KeyEvent),
     /// The terminal was resized.
     Resize,
+    /// What the faces on this machine are called.
+    ///
+    /// Only a window can say: a terminal draws with its own font and has
+    /// no list to offer. Sent once, when the window has enumerated them,
+    /// which is why it arrives as an event rather than being asked for --
+    /// the answer is not ready when the reader opens the list.
+    Fonts(Vec<String>),
     /// The reader asked to close what Obelus is drawn in.
     ///
     /// A terminal never says this: closing one kills the process, and there

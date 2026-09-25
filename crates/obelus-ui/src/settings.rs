@@ -1270,6 +1270,20 @@ fn draw_control(
             let after = write(cells, x, y, &count.to_string(), style.fg(ink));
             put(cells, after + 1, y, '\u{25b8}', style.fg(theme.gutter));
         }
+        (Kind::Names, Value::Names(names)) => {
+            // Joined the way the file writes them, which is the way a
+            // reader would say them out loud: the order is the answer, so
+            // it is drawn in order and nothing is sorted.
+            let said = match names.is_empty() {
+                // Not "none": what happens with an empty list is that the
+                // machine's own face is used, and a row that said
+                // "nothing" would be a row saying no text is drawn.
+                true => "The machine's own".to_string(),
+                false => names.join(", "),
+            };
+            let after = write(cells, x, y, &said, style.fg(ink));
+            put(cells, after + 1, y, '\u{25b8}', style.fg(theme.gutter));
+        }
         (Kind::Choice(_), Value::Choice(word)) => {
             let after = write(cells, x, y, word, style.fg(ink));
             // Pointing right, at the value: the list it opens is the

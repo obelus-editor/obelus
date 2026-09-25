@@ -224,6 +224,10 @@ impl App {
                 self.open_choices(key, choices, &word);
                 true
             }
+            SettingsOutcome::Names(key) => {
+                self.open_names(key);
+                true
+            }
             SettingsOutcome::Install(id) => {
                 self.install_agent(&id);
                 true
@@ -245,6 +249,54 @@ impl App {
                 true
             }
             SettingsOutcome::Ignored => false,
+        }
+    }
+
+    /// Opens the list a setting's names are built in.
+    ///
+    /// What may go in it is what this machine has, which only the thing
+    /// drawing Obelus knows: a window says so when it starts, and until it
+    /// has, the list is what the reader already chose and whatever they
+    /// type.
+    ///
+    /// Public because it is the whole of what opening it means, and
+    /// because the setting it is for is a window's -- a test running as a
+    /// terminal has no row to press enter on.
+    pub fn open_names(&mut self, key: &'static str) {
+        // What it covers goes first, the same as every other opener: a
+        // question left under a band is a question nobody can see the
+        // answer to.
+        self.make_room(obelus_component::layers::Layer::Names.room());
+        let chosen = match self.settled.config.value_of(key) {
+            Some(obelus_config::Value::Names(names)) => names,
+            _ => Vec::new(),
+        };
+        self.names = Some((
+            key,
+            obelus_component::names::Names::new(chosen, self.fonts_here.clone()),
+        ));
+    }
+
+    /// Takes a key while that list is open.
+    pub(super) fn names_key(&mut self, key: &crossterm::event::KeyEvent) -> bool {
+        let page = self.names.as_ref().map_or(1, |(_, names)| {
+            obelus_ui::names::rows_drawn(names, self.picker_area())
+        });
+        let Some((setting, names)) = self.names.as_mut() else {
+            return false;
+        };
+        let setting = *setting;
+        match names.handle_key(key, page) {
+            obelus_component::names::Outcome::Consumed => true,
+            obelus_component::names::Outcome::Changed => {
+                let chosen = names.chosen().to_vec();
+                self.change_setting(setting, &obelus_config::Value::Names(chosen));
+                true
+            }
+            obelus_component::names::Outcome::Leave => {
+                self.leave(obelus_component::layers::Layer::Names);
+                true
+            }
         }
     }
 
@@ -715,6 +767,7 @@ impl App {
         // its own pixels and is that front end's to do something about.
         if let Some(drawing) = self.drawing.as_ref() {
             drawing.text_size(self.settled.config.font_size);
+            drawing.use_fonts(&self.settled.config.fonts);
         }
         // The table the reader's own bindings leave. Built rather than
         // patched: what is in the file is a list of changes over the

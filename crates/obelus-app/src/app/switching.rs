@@ -28,7 +28,9 @@ impl App {
                 .picker
                 .as_ref()
                 .is_some_and(|picker| picker.layout() == PickerLayout::FullArea),
-            Some(Layer::Prompt) | None => false,
+            // A band, like a compact list: the page that opened it is
+            // still behind it.
+            Some(Layer::Names) | Some(Layer::Prompt) | None => false,
         }
     }
 

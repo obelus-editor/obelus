@@ -42,6 +42,10 @@ fn open(app: &mut App, layer: Layer) {
         Layer::Counts => dispatch::dispatch(app, Command::CountLines),
         Layer::Settings => dispatch::dispatch(app, Command::ConfigOpen),
         Layer::Picker => dispatch::dispatch(app, Command::DocumentList),
+        // No command opens this one: it is what enter does on a setting
+        // that holds a list of names, and the only such setting is a
+        // window's -- so a test running as a terminal has no row to press.
+        Layer::Names => app.open_names("fonts"),
         Layer::Prompt => dispatch::dispatch(app, Command::GoLine),
     }
 }

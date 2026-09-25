@@ -87,6 +87,15 @@ impl Field {
         self.writing.is_blank()
     }
 
+    /// Empties it.
+    ///
+    /// Its own name rather than `replace("")`: emptying a box happens for
+    /// its own reasons -- a query that has done its job, a message that
+    /// has been sent -- and reads as itself at the call.
+    pub fn clear(&mut self) {
+        self.replace("");
+    }
+
     /// Puts something else in, with the caret after it.
     pub fn replace(&mut self, said: &str) {
         self.writing.replace(said, ROOM);

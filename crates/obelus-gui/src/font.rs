@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use cosmic_text::{
     Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style, SwashCache, SwashImage,
-    Weight,
+    Weight, fontdb,
 };
 
 /// The marks, carried.
@@ -76,6 +76,11 @@ pub(crate) struct Fonts {
     /// hundred cell contents over and over: without it every frame reshapes
     /// every cell, and shaping is the expensive half of drawing text.
     shaped: HashMap<(String, Weight, Style), Vec<Placed>>,
+    /// The faces the reader asked for, in the order they are tried.
+    ///
+    /// Empty is this machine's own monospaced face, which is what a
+    /// reader who has said nothing gets.
+    families: Vec<String>,
 }
 
 impl std::fmt::Debug for Fonts {
@@ -112,9 +117,42 @@ impl Fonts {
                 baseline: size,
             },
             shaped: HashMap::new(),
+            families: Vec::new(),
         };
         fonts.measure();
         fonts
+    }
+
+    /// Draws in these faces from now on, tried in this order.
+    ///
+    /// Nothing is refused: a name this machine does not have is stepped
+    /// over when it comes to be drawn with, because one settings file is
+    /// read on every machine the reader uses.
+    pub(crate) fn use_families(&mut self, names: &[String]) {
+        if self.families == names {
+            return;
+        }
+        self.families = names.to_vec();
+        self.shaped.clear();
+        self.measure();
+    }
+
+    /// What the faces on this machine are called, for the reader to choose
+    /// between.
+    ///
+    /// One name per family rather than one per face: what a reader picks
+    /// is `JetBrains Mono`, and the four files behind it are the weights
+    /// and the slants of the same face.
+    pub(crate) fn here(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .system
+            .db()
+            .faces()
+            .filter_map(|face| face.families.first().map(|(name, _)| name.clone()))
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        names
     }
 
     /// Draws at a different size from now on, which is a new window scale
@@ -136,6 +174,12 @@ impl Fonts {
     /// column is counted in; rounded, because a grid on fractional pixels
     /// is a grid whose columns do not line up with each other.
     fn measure(&mut self) {
+        // The reader's first face, because that is the one a column is
+        // counted in: a grid measured on the machine's monospace and drawn
+        // in something else would have a column of one width and a letter
+        // of another.
+        let first = self.families.first().cloned();
+        let family = first.as_deref().map_or(Family::Monospace, Family::Name);
         let mut buffer = Buffer::new(&mut self.system, self.metrics);
         let mut measuring = buffer.borrow_with(&mut self.system);
         measuring.set_size(None, None);
@@ -144,7 +188,7 @@ impl Fonts {
             // in a monospaced face and is not in a fallback one, and what
             // is being measured is the face that was actually chosen.
             "M",
-            &Attrs::new().family(Family::Monospace),
+            &Attrs::new().family(family),
             Shaping::Advanced,
             None,
         );
@@ -183,9 +227,10 @@ impl Fonts {
         let system = &mut self.system;
         let metrics = self.metrics;
         let width = self.cell.width;
+        let families = &self.families;
         self.shaped
             .entry(key)
-            .or_insert_with(|| shape(system, metrics, width, text, weight, style))
+            .or_insert_with(|| shape(system, metrics, width, families, text, weight, style))
     }
 
     /// The pixels of one glyph, or nothing where the face has none.
@@ -219,6 +264,7 @@ fn shape(
     system: &mut FontSystem,
     metrics: Metrics,
     width: f32,
+    families: &[String],
     text: &str,
     weight: Weight,
     style: Style,
@@ -231,7 +277,8 @@ fn shape(
         reason = "a cell is one or two columns, never billions"
     )]
     let room = columns as f32 * width;
-    let family = match text.chars().next().is_some_and(is_a_mark) {
+    let mark = text.chars().next().is_some_and(is_a_mark);
+    let family = match mark {
         // Asked for by name rather than left to the fallback chain. What
         // Obelus's marks are is a private use area code point, and a
         // fallback chain is organised by script: nothing about `\u{e702}`
@@ -243,7 +290,16 @@ fn shape(
         false => Family::Monospace,
     };
     let attrs = Attrs::new().family(family).weight(weight).style(style);
-    let (placed, drawn) = lay(system, metrics, text, &attrs);
+    // The reader's list, in their order, and then whatever the machine
+    // would have chosen. A name that is not here, or is here and does not
+    // cover this character, is stepped over: what says so is which face
+    // the glyphs actually came from, because cosmic-text will quietly
+    // substitute one of its own and a chain that did not notice would
+    // stop at the first name every time.
+    let (placed, drawn) = match mark {
+        true => lay(system, metrics, text, &attrs),
+        false => tried(system, metrics, families, text, &attrs),
+    };
     // Too wide for its cells, which happens where a fallback face is not a
     // monospaced one at all. Drawn again at the size that fits rather than
     // squeezed afterwards: a bitmap stretched sideways is a blurred letter,
@@ -268,6 +324,58 @@ fn shape(
     placed
 }
 
+/// Lays the text out in the first of the reader's faces that draws it.
+///
+/// "Draws it" is asked of the answer rather than of the font database: a
+/// family that is installed but has no glyph for this character is a family
+/// that did not draw it, and cosmic-text's own fallback will have put
+/// something else there without being asked. So the face each glyph came
+/// from is compared with the face that was asked for, and a substitution
+/// counts as a miss.
+///
+/// Where none of them draws it -- or the reader has named none -- the last
+/// attempt stands, which is the machine's own answer and is what a reader
+/// who has said nothing gets.
+fn tried(
+    system: &mut FontSystem,
+    metrics: Metrics,
+    families: &[String],
+    text: &str,
+    attrs: &Attrs<'_>,
+) -> (Vec<Placed>, f32) {
+    let mut last = None;
+    for family in families {
+        let wanted: Vec<fontdb::ID> = system
+            .db()
+            .faces()
+            .filter(|face| {
+                face.families
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case(family))
+            })
+            .map(|face| face.id)
+            .collect();
+        if wanted.is_empty() {
+            // Not on this machine, which the list the reader built says
+            // about itself as well.
+            continue;
+        }
+        let asked = Attrs {
+            family: Family::Name(family),
+            ..attrs.clone()
+        };
+        let (placed, drawn, faces) = laid(system, metrics, text, &asked);
+        if !faces.is_empty() && faces.iter().all(|face| wanted.contains(face)) {
+            return (placed, drawn);
+        }
+        last = Some((placed, drawn));
+    }
+    // Nothing of theirs drew it. Whatever the last attempt put there is
+    // still a drawing of this character, and where they named nothing at
+    // all there is no attempt to keep.
+    last.unwrap_or_else(|| lay(system, metrics, text, attrs))
+}
+
 /// One laying out, and how wide it came out.
 fn lay(
     system: &mut FontSystem,
@@ -275,11 +383,23 @@ fn lay(
     text: &str,
     attrs: &Attrs<'_>,
 ) -> (Vec<Placed>, f32) {
+    let (placed, drawn, _) = laid(system, metrics, text, attrs);
+    (placed, drawn)
+}
+
+/// The same, and which faces the glyphs came from.
+fn laid(
+    system: &mut FontSystem,
+    metrics: Metrics,
+    text: &str,
+    attrs: &Attrs<'_>,
+) -> (Vec<Placed>, f32, Vec<fontdb::ID>) {
     let mut buffer = Buffer::new(system, metrics);
     let mut shaping = buffer.borrow_with(system);
     shaping.set_size(None, None);
     shaping.set_text(text, attrs, Shaping::Advanced, None);
     let mut placed = Vec::new();
+    let mut faces = Vec::new();
     let mut drawn: f32 = 0.0;
     for run in shaping.layout_runs() {
         drawn = drawn.max(run.line_w);
@@ -290,9 +410,10 @@ fn lay(
                 x: physical.x,
                 y: physical.y,
             });
+            faces.push(glyph.font_id);
         }
     }
-    (placed, drawn)
+    (placed, drawn, faces)
 }
 
 /// Whether this is one of the marks Obelus carries its own face for.

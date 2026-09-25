@@ -48,6 +48,8 @@ pub struct StatusView<'a> {
     phase: u32,
     /// When a picker is open the row is its prompt instead.
     picker: Option<&'a Picker>,
+    /// And when a list of names is open, the row is its query.
+    names: Option<&'a obelus_component::names::Names>,
     /// And when the settings are open, the row is what narrows them.
     settings: Option<&'a obelus_component::settings::Settings>,
     /// And when a question is being asked, the row is the question.
@@ -87,6 +89,7 @@ impl<'a> StatusView<'a> {
             phase: app.phase(),
             troubles: app.troubles(),
             picker: app.picker(),
+            names: app.names(),
             settings: app.settings(),
             prompt: app.prompt(),
             notes: app.notes(),
@@ -134,6 +137,20 @@ impl Widget for StatusView<'_> {
             Some(Layer::Picker) => {
                 if let Some(picker) = self.picker {
                     self.render_prompt(picker, area, cells, style);
+                }
+            }
+            // The same row again: a list is a list, and what is typed at
+            // this one narrows what is above it exactly as a picker's
+            // does.
+            Some(Layer::Names) => {
+                if let Some(names) = self.names {
+                    write(
+                        cells,
+                        area.x + 1,
+                        area.y,
+                        &typed(None, &names.query().said()),
+                        style,
+                    );
                 }
             }
             // The same shape a picker's prompt has, because it is the same

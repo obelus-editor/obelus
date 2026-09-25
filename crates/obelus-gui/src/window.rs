@@ -377,6 +377,15 @@ impl ApplicationHandler<Waking> for Showing {
         self.frames = Some(drawn);
         self.doing = Some(doing.clone());
 
+        // What this machine can draw with, for the list a reader builds
+        // their own out of. Said once, from here, because the font
+        // database is loaded and nothing else in Obelus can see it.
+        if let Some(fonts) = self.fonts.as_ref() {
+            let here = fonts.here();
+            tracing::info!(faces = here.len(), "the faces this machine has");
+            let _ = doing.send(Event::Fonts(here));
+        }
+
         let proxy = self.proxy.clone();
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let _ = proxy.send_event(Waking::Frame);
@@ -441,10 +450,12 @@ impl ApplicationHandler<Waking> for Showing {
                 // screens the reader is never meant to see.
                 let mut drew = false;
                 let mut sized = None;
+                let mut faces = None;
                 while let Ok(update) = frames.try_recv() {
                     match update {
                         // Not cells, so the page never sees them.
                         Update::TextSize(points) => sized = Some(points),
+                        Update::Fonts(names) => faces = Some(names),
                         Update::Mark {
                             id,
                             focused,
@@ -467,6 +478,21 @@ impl ApplicationHandler<Waking> for Showing {
                         }
                         cells => drew |= self.page.apply(cells),
                     }
+                }
+                if let Some(names) = faces {
+                    // Which faces text is drawn in decides how wide a cell
+                    // is, so this is the same work a new size is: measure
+                    // again, throw away the glyphs, and tell the
+                    // application what the grid has become.
+                    if let Some(fonts) = self.fonts.as_mut() {
+                        fonts.use_families(&names);
+                    }
+                    if let Some(painter) = self.painter.as_mut() {
+                        painter.forget_the_glyphs();
+                    }
+                    self.remeasure();
+                    self.tell(Event::Resize);
+                    self.redraw();
                 }
                 if let Some(points) = sized {
                     #[expect(

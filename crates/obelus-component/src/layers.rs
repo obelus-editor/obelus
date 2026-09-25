@@ -34,6 +34,12 @@ pub enum Layer {
     /// What the tree means to come back to.
     /// The settings, the reader's or the tree's.
     Settings,
+    /// A list the reader is building: the names a setting holds, in the
+    /// order they want them tried.
+    ///
+    /// Not a picker, although it is a list with a query over it: a picker
+    /// chooses one row and closes, and this one is opened to be changed.
+    Names,
     /// A list with a query over it: the palette, the files, a search, a
     /// setting's choices, a commit's history, what a server offers to do.
     Picker,
@@ -50,7 +56,15 @@ pub enum Layer {
 /// the notes and the settings -- cannot be open together, so their order among
 /// themselves is never observed; it is declared anyway, because an order nobody
 /// wrote down is an order every reader of the code guesses at.
-pub const STACK: [Layer; 4] = [Layer::Counts, Layer::Settings, Layer::Picker, Layer::Prompt];
+pub const STACK: [Layer; 5] = [
+    Layer::Counts,
+    Layer::Settings,
+    // Over the settings, because that is what opens it, and under a
+    // picker, because a picker is what anything opens over anything.
+    Layer::Names,
+    Layer::Picker,
+    Layer::Prompt,
+];
 
 /// How much of the screen a view takes.
 ///
@@ -98,7 +112,10 @@ impl Layer {
         match self {
             Self::Counts => Room::Screen,
             Self::Settings => Room::Region,
-            Self::Picker => Room::Band,
+            // A band, like the list it is shaped like: the page that
+            // opened it is still behind it, which is where the setting
+            // being changed is written.
+            Self::Names | Self::Picker => Room::Band,
             Self::Prompt => Room::Row,
         }
     }
@@ -281,7 +298,7 @@ mod tests {
     #[test]
     fn only_a_row_leaves_the_global_keys_alone() {
         assert_eq!(Layer::Prompt.context(), Context::Normal);
-        for layer in [Layer::Counts, Layer::Settings, Layer::Picker] {
+        for layer in [Layer::Counts, Layer::Settings, Layer::Names, Layer::Picker] {
             assert_eq!(layer.context(), Context::Dialog, "{layer:?}");
         }
     }

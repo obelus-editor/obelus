@@ -339,6 +339,7 @@ impl App {
     /// would have to redraw.
     pub fn drawn_by(&mut self, drawing: std::sync::Arc<dyn crate::app::Drawing>) {
         drawing.text_size(self.settled.config.font_size);
+        drawing.use_fonts(&self.settled.config.fonts);
         self.drawing = Some(drawing);
     }
 

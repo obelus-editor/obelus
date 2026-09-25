@@ -54,6 +54,10 @@ pub(crate) enum Update {
     /// the screen arrives: down this channel, in order, from the thread
     /// that knows what the settings say.
     TextSize(usize),
+    /// Which faces to draw in, tried in this order.
+    ///
+    /// The same journey as the size, for the same reason.
+    Fonts(Vec<String>),
     /// What shape the caret is.
     ///
     /// Which is a fact about the frame it arrives with -- it depends on
@@ -179,6 +183,12 @@ impl obelus_app::app::Drawing for Telling {
         // A window that has gone is a send that fails, and the application
         // is about to find that out for itself on its next frame.
         if self.updates.send(Update::TextSize(points)).is_ok() {
+            (self.wake)();
+        }
+    }
+
+    fn use_fonts(&self, names: &[String]) {
+        if self.updates.send(Update::Fonts(names.to_vec())).is_ok() {
             (self.wake)();
         }
     }
@@ -526,6 +536,10 @@ impl Page {
             // would be a window that failed to act on it.
             Update::TextSize(points) => {
                 tracing::warn!(points, "a text size reached the page");
+                false
+            }
+            Update::Fonts(names) => {
+                tracing::warn!(faces = names.len(), "a list of faces reached the page");
                 false
             }
         }

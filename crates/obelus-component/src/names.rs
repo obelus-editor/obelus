@@ -1,0 +1,626 @@
+//! A list the reader builds by name, in the order they want it tried.
+//!
+//! What is in it, and what else there is to put in it. Two sections of one
+//! list: the names the reader has chosen, in their order, and the ones this
+//! machine turned out to have -- filtered by what is being typed, and
+//! without the ones already chosen, because a row that is already in the
+//! list is not one to offer again.
+//!
+//! Written for the fonts a window draws with and written to know nothing
+//! about fonts: what may go in comes from the caller as a list of names,
+//! because the next thing that wants this -- the globs a project ignores,
+//! the agents a reader keeps -- will have its own.
+//!
+//! It is a list with a query over it, which is what a picker is, and it
+//! borrows a picker's parts for exactly that reason: the same window, the
+//! same six movement keys, the same matcher, the same marking of what
+//! matched. What it is not is a picker: a picker chooses one row and
+//! closes, and this one is opened to be *changed* -- every key that does
+//! anything here adds, removes or moves, and the reader leaves when the
+//! list says what they meant.
+//!
+//! Cells only, like everything else in this crate. A window draws it the
+//! same way a terminal does.
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use nucleo_matcher::{
+    Matcher, Utf32Str,
+    pattern::{CaseMatching, Normalization, Pattern},
+};
+
+use crate::{
+    field::Field,
+    window::{Move, Window, Wrap},
+};
+
+/// One row of the list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Row {
+    /// One the reader has chosen, at this place in the order.
+    Chosen {
+        /// Where it sits, counted from one, which is what the reader is
+        /// ordering.
+        at: usize,
+        /// What it is called.
+        name: String,
+        /// Whether this machine has it. A settings file is read on every
+        /// machine the reader uses, and a name that means nothing here is
+        /// a name that means something there.
+        here: bool,
+    },
+    /// One that could be chosen.
+    Offer {
+        /// What it is called.
+        name: String,
+        /// Whether this machine has it, which is false only for the row
+        /// that is what the reader has typed.
+        here: bool,
+    },
+    /// Nothing has been chosen, so there is nothing above the boundary.
+    ///
+    /// A row rather than something the view draws beside the list, because
+    /// everything here is one list: a screen row that was not a row of it
+    /// would have to be added to every piece of arithmetic that says which
+    /// row is where.
+    Empty,
+    /// The boundary between what is chosen and what is on offer.
+    ///
+    /// Also a row, for the same reason -- and one the focus steps over,
+    /// the way a transcript's cursor stands only on rows that do
+    /// something.
+    Boundary,
+}
+
+impl Row {
+    /// What it is called.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Chosen { name, .. } | Self::Offer { name, .. } => name,
+            Self::Empty | Self::Boundary => "",
+        }
+    }
+
+    /// Whether this machine has it.
+    #[must_use]
+    pub const fn here(&self) -> bool {
+        match self {
+            Self::Chosen { here, .. } | Self::Offer { here, .. } => *here,
+            Self::Empty | Self::Boundary => true,
+        }
+    }
+
+    /// Whether this is one of the reader's.
+    #[must_use]
+    pub const fn chosen(&self) -> bool {
+        matches!(self, Self::Chosen { .. })
+    }
+
+    /// Whether the reader can stand on it.
+    ///
+    /// Two of them say something about the list rather than being part of
+    /// it, and a focus that could sit on either would be a row where every
+    /// key does nothing.
+    #[must_use]
+    pub const fn stands(&self) -> bool {
+        matches!(self, Self::Chosen { .. } | Self::Offer { .. })
+    }
+}
+
+/// What a key did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// Nothing anybody else has to hear about.
+    Consumed,
+    /// The list is different now, and has to be written down.
+    Changed,
+    /// The reader is done with it.
+    Leave,
+}
+
+/// A list of names, and what else there is.
+pub struct Names {
+    /// What the reader has chosen, in their order.
+    chosen: Vec<String>,
+    /// What this machine has.
+    offered: Vec<String>,
+    /// What is being typed, which filters the offers and is itself an
+    /// offer when it matches nothing.
+    query: Field,
+    window: Window,
+    matcher: Matcher,
+    /// The rows as they are now, and what matched in each of them.
+    ///
+    /// Worked out when something changes rather than when they are asked
+    /// for, because what asks is the view: matching needs the matcher,
+    /// which is a thing to change, and a frame has only what is there.
+    rows: Vec<Row>,
+    marks: Vec<Vec<u32>>,
+}
+
+impl std::fmt::Debug for Names {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Names")
+            .field("chosen", &self.chosen)
+            .field("offered", &self.offered.len())
+            .field("query", &self.query.said())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Names {
+    /// A list of what the reader has chosen, over what this machine has.
+    #[must_use]
+    pub fn new(chosen: Vec<String>, offered: Vec<String>) -> Self {
+        let mut names = Self {
+            chosen,
+            offered,
+            query: Field::new(),
+            window: Window::default(),
+            matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
+            rows: Vec::new(),
+            marks: Vec::new(),
+        };
+        names.settle();
+        // On something that can be pressed: with nothing chosen the first
+        // two rows are the line saying so and the boundary under it.
+        names.stand(true);
+        names
+    }
+
+    /// What this machine has, which may arrive after the list is open.
+    ///
+    /// The window enumerates its fonts on its own thread and says so when
+    /// it has; until then the list is what the reader chose, and what they
+    /// type is still a name they can add.
+    pub fn offered(&mut self, offered: Vec<String>) {
+        self.offered = offered;
+        self.settle();
+    }
+
+    /// What the reader has chosen, in their order.
+    #[must_use]
+    pub fn chosen(&self) -> &[String] {
+        &self.chosen
+    }
+
+    /// The box the query is typed in.
+    #[must_use]
+    pub const fn query(&self) -> &Field {
+        &self.query
+    }
+
+    /// Which rows are on screen, and which of them is under the keys.
+    #[must_use]
+    pub const fn window(&self) -> &Window {
+        &self.window
+    }
+
+    /// The same, to move.
+    pub const fn window_mut(&mut self) -> &mut Window {
+        &mut self.window
+    }
+
+    /// Every row, the chosen ones first.
+    #[must_use]
+    pub fn rows(&self) -> &[Row] {
+        &self.rows
+    }
+
+    /// Where what was typed matched, in the row at this place, for the view
+    /// to mark.
+    ///
+    /// Only the offers are matched against: the chosen rows are the
+    /// reader's own list and are not what is being searched.
+    #[must_use]
+    pub fn marks_at(&self, at: usize) -> &[u32] {
+        self.marks.get(at).map_or(&[], Vec::as_slice)
+    }
+
+    /// How many rows the chosen list has, which is where the boundary
+    /// between the two sections goes.
+    #[must_use]
+    pub fn taken(&self) -> usize {
+        self.chosen.len()
+    }
+
+    /// What is on offer: what the machine has, less what is already
+    /// chosen, filtered by what is being typed -- and what was typed,
+    /// where nothing is called that.
+    fn offers(&mut self) -> Vec<String> {
+        let said = self.query.said();
+        let typed = said.trim().to_string();
+        let mut offers: Vec<String> = Vec::new();
+        if typed.is_empty() {
+            offers.extend(
+                self.offered
+                    .iter()
+                    .filter(|name| !self.chosen.contains(name))
+                    .cloned(),
+            );
+            return offers;
+        }
+        let pattern = Pattern::parse(&typed, CaseMatching::Ignore, Normalization::Smart);
+        let mut buffer = Vec::new();
+        let mut ranked: Vec<(u32, &String)> = self
+            .offered
+            .iter()
+            .filter(|name| !self.chosen.contains(name))
+            .filter_map(|name| {
+                let haystack = Utf32Str::new(name, &mut buffer);
+                pattern
+                    .score(haystack, &mut self.matcher)
+                    .map(|score| (score, name))
+            })
+            .collect();
+        // Best first, and by name where two score the same: a list that
+        // reorders itself between two keystrokes for no visible reason is
+        // a list a reader cannot aim at.
+        ranked.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(right.1)));
+        offers.extend(ranked.into_iter().map(|(_, name)| name.clone()));
+        // What they typed, where nothing here is called that and they have
+        // not chosen it already. A settings file is read on more than one
+        // machine, so a name this one does not have is still worth adding.
+        let known = self.offered.iter().any(|name| name == &typed);
+        if !known && !self.chosen.contains(&typed) {
+            offers.push(typed);
+        }
+        offers
+    }
+
+    /// Walks the selection by this many rows, for a wheel.
+    ///
+    /// A notch steps the selection rather than the view, because a list's
+    /// view *is* its selection and there is nothing else in it to scroll.
+    pub fn step(&mut self, by: isize) {
+        let at = self.window.focus();
+        let to = at.saturating_add_signed(by);
+        self.window
+            .set_focus(to.min(self.rows.len().saturating_sub(1)));
+        self.stand(by >= 0);
+    }
+
+    /// Puts pasted text in the query.
+    ///
+    /// The same door a key goes through, so that what was pasted narrows
+    /// the list exactly as typing it would have.
+    pub fn put_in_query(&mut self, what: &str) {
+        self.query.put(what);
+        self.settle();
+        self.window.set_focus(self.taken());
+        self.stand(true);
+    }
+
+    /// Takes a key, and says what it did.
+    ///
+    /// `page` is how many rows are on screen, which is the view's answer
+    /// and not this one's.
+    pub fn handle_key(&mut self, key: &KeyEvent, page: u16) -> Outcome {
+        // Moving a chosen name is the one thing here that is a chord, and
+        // it is the chord the notes already use for moving a row.
+        if key.modifiers == KeyModifiers::ALT && matches!(key.code, KeyCode::Up | KeyCode::Down) {
+            let by = match key.code {
+                KeyCode::Up => -1,
+                _ => 1,
+            };
+            return self.shift(by);
+        }
+        if let Some(movement) = Move::of(key.code) {
+            // It does not wrap: the two sections are one list with an
+            // order to it, and walking off the last offer to land on the
+            // first chosen name is a jump nobody asked for.
+            let was = self.window.focus();
+            self.window.apply(movement, page, Wrap::No);
+            self.stand(self.window.focus() >= was);
+            return Outcome::Consumed;
+        }
+        match key.code {
+            KeyCode::Esc => Outcome::Leave,
+            // On one of the reader's own: take it out. On one that is
+            // offered: put it in. Which is the same key doing the same
+            // thing -- what this row says about the list, said the other
+            // way round.
+            KeyCode::Enter | KeyCode::Delete => self.toggle(),
+            _ => {
+                let said = self.query.said();
+                self.query.handle_key(key);
+                if self.query.said() != said {
+                    // A different query is a different list, and the row
+                    // the reader was on is not the row they are on now. On
+                    // the first thing they can press, which is the first
+                    // offer: what they are typing is a search for one.
+                    self.settle();
+                    self.window.set_focus(self.taken());
+                    self.stand(true);
+                }
+                Outcome::Consumed
+            }
+        }
+    }
+
+    /// Puts the row the reader is on into the list, or takes it out.
+    fn toggle(&mut self) -> Outcome {
+        let at = self.window.focus();
+        match self.rows.get(at).cloned() {
+            Some(Row::Chosen { at: place, .. }) => {
+                self.chosen.remove(place - 1);
+                self.settle();
+                // Where the row they were on used to be, which is now
+                // whatever moved up into it.
+                let last = self.rows.len().saturating_sub(1);
+                self.window.set_focus(at.min(last));
+                self.stand(true);
+                Outcome::Changed
+            }
+            Some(Row::Offer { name, .. }) => {
+                self.chosen.push(name);
+                // The query has done its job, and leaving it would leave
+                // the reader looking at a list filtered by the name they
+                // just used.
+                self.query.clear();
+                self.settle();
+                // On the one they just added, which is the last of the
+                // chosen rows: the next thing a reader does is often move
+                // it up.
+                self.window.set_focus(self.taken().saturating_sub(1));
+                self.stand(false);
+                Outcome::Changed
+            }
+            Some(Row::Empty | Row::Boundary) | None => Outcome::Consumed,
+        }
+    }
+
+    /// Moves the chosen row the reader is on up or down the list.
+    fn shift(&mut self, by: isize) -> Outcome {
+        let at = self.window.focus();
+        let Some(Row::Chosen { at: place, .. }) = self.rows.get(at).cloned() else {
+            // Only the reader's own list has an order. An offer has no
+            // place to be moved within.
+            return Outcome::Consumed;
+        };
+        let from = place - 1;
+        let Some(to) = from
+            .checked_add_signed(by)
+            .filter(|to| *to < self.chosen.len())
+        else {
+            return Outcome::Consumed;
+        };
+        self.chosen.swap(from, to);
+        self.settle();
+        // With the row, which is the whole point: a reader holding alt and
+        // pressing down watches one name walk down the list.
+        self.window.set_focus(to);
+        Outcome::Changed
+    }
+
+    /// Puts the focus on a row that does something, carrying on the way it
+    /// was going.
+    ///
+    /// The boundary and the line saying nothing is chosen are rows of the
+    /// list so that everything which counts rows counts the same ones.
+    /// What they are not is somewhere to stand.
+    fn stand(&mut self, onwards: bool) {
+        for _ in 0..self.rows.len() {
+            let at = self.window.focus();
+            if self.rows.get(at).is_none_or(Row::stands) {
+                return;
+            }
+            let next = match onwards {
+                true => at.saturating_add(1),
+                false => at.saturating_sub(1),
+            };
+            // The end of the list in the direction of travel: turn round
+            // rather than sit on a row that does nothing.
+            if next == at || next >= self.rows.len() {
+                self.turn(!onwards);
+                return;
+            }
+            self.window.set_focus(next);
+        }
+    }
+
+    /// The same, the other way, once.
+    fn turn(&mut self, onwards: bool) {
+        for _ in 0..self.rows.len() {
+            let at = self.window.focus();
+            if self.rows.get(at).is_none_or(Row::stands) {
+                return;
+            }
+            let next = match onwards {
+                true => at.saturating_add(1),
+                false => at.saturating_sub(1),
+            };
+            if next == at || next >= self.rows.len() {
+                return;
+            }
+            self.window.set_focus(next);
+        }
+    }
+
+    /// Works the rows out again, and tells the window how many there are.
+    fn settle(&mut self) {
+        let mut rows: Vec<Row> = self
+            .chosen
+            .iter()
+            .enumerate()
+            .map(|(at, name)| Row::Chosen {
+                at: at + 1,
+                name: name.clone(),
+                here: self.offered.iter().any(|offer| offer == name),
+            })
+            .collect();
+        if rows.is_empty() {
+            rows.push(Row::Empty);
+        }
+        rows.push(Row::Boundary);
+        let offers = self.offers();
+        rows.extend(offers.into_iter().map(|name| Row::Offer {
+            here: self.offered.iter().any(|offer| offer == &name),
+            name,
+        }));
+
+        // What matched, row by row, while the matcher is at hand: a view
+        // has no way to ask for this later.
+        let said = self.query.said();
+        let pattern = Pattern::parse(&said, CaseMatching::Ignore, Normalization::Smart);
+        let mut buffer = Vec::new();
+        self.marks = rows
+            .iter()
+            .map(|row| {
+                if said.is_empty() || row.chosen() {
+                    return Vec::new();
+                }
+                let mut marks = Vec::new();
+                let haystack = Utf32Str::new(row.name(), &mut buffer);
+                pattern.indices(haystack, &mut self.matcher, &mut marks);
+                marks.sort_unstable();
+                marks.dedup();
+                marks
+            })
+            .collect();
+
+        self.window.set_count(rows.len());
+        self.rows = rows;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    use super::*;
+
+    /// A list with two of the machine's four faces already chosen.
+    fn names() -> Names {
+        Names::new(
+            vec!["Iosevka".to_string()],
+            vec![
+                "Iosevka".to_string(),
+                "JetBrains Mono".to_string(),
+                "Noto Sans CJK SC".to_string(),
+                "Noto Color Emoji".to_string(),
+            ],
+        )
+    }
+
+    /// Presses a bare key.
+    fn press(names: &mut Names, code: KeyCode) -> Outcome {
+        names.handle_key(&KeyEvent::new(code, KeyModifiers::NONE), 10)
+    }
+
+    /// Types a word into the query.
+    fn type_in(names: &mut Names, word: &str) {
+        for character in word.chars() {
+            press(names, KeyCode::Char(character));
+        }
+    }
+
+    /// What is already chosen is not offered again.
+    ///
+    /// Deliberate break: leaving the chosen names in the offers puts
+    /// `Iosevka` on the page twice, once in each half, and enter on the
+    /// lower one adds a second copy of it.
+    #[test]
+    fn what_is_in_the_list_is_not_offered_again() {
+        let names = names();
+        let offered: Vec<&str> = names
+            .rows()
+            .iter()
+            .filter(|row| matches!(row, Row::Offer { .. }))
+            .map(Row::name)
+            .collect();
+        assert!(!offered.contains(&"Iosevka"), "{offered:?}");
+        assert_eq!(offered.len(), 3);
+    }
+
+    /// Enter on an offer puts it at the end of the list, and enter on one
+    /// of the reader's takes it out.
+    ///
+    /// Both halves, because each passes with the other broken: one key
+    /// means "put this in" above the boundary and "take this out" below
+    /// it, and a key that only ever added would leave a list nobody can
+    /// shorten.
+    #[test]
+    fn enter_puts_a_name_in_and_takes_one_out() {
+        let mut names = names();
+        type_in(&mut names, "jet");
+        assert_eq!(press(&mut names, KeyCode::Enter), Outcome::Changed);
+        assert_eq!(names.chosen(), ["Iosevka", "JetBrains Mono"]);
+        // Standing on what was just added.
+        assert_eq!(press(&mut names, KeyCode::Enter), Outcome::Changed);
+        assert_eq!(names.chosen(), ["Iosevka"]);
+    }
+
+    /// A name this machine does not have can still be added.
+    ///
+    /// One settings file is read on every machine the reader uses, so a
+    /// face that is only on the other one is still an answer.
+    ///
+    /// Deliberate break: offering only what matched the machine's list
+    /// leaves nothing to press enter on, and the name cannot be added at
+    /// all.
+    #[test]
+    fn a_name_this_machine_does_not_have_is_still_a_name() {
+        let mut names = names();
+        type_in(&mut names, "Fira Code");
+        let offered: Vec<&Row> = names
+            .rows()
+            .iter()
+            .filter(|row| matches!(row, Row::Offer { .. }))
+            .collect();
+        assert_eq!(offered.len(), 1);
+        assert_eq!(offered[0].name(), "Fira Code");
+        assert!(!offered[0].here());
+        assert_eq!(press(&mut names, KeyCode::Enter), Outcome::Changed);
+        assert_eq!(names.chosen(), ["Iosevka", "Fira Code"]);
+    }
+
+    /// Alt and an arrow move one of the reader's names, and the focus goes
+    /// with it.
+    ///
+    /// Deliberate break: swapping without moving the focus leaves the
+    /// reader holding alt and watching two names trade places under a
+    /// cursor that stays put.
+    #[test]
+    fn a_chosen_name_moves_with_the_focus() {
+        let mut names = names();
+        type_in(&mut names, "jet");
+        press(&mut names, KeyCode::Enter);
+        assert_eq!(names.chosen(), ["Iosevka", "JetBrains Mono"]);
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::ALT);
+        assert_eq!(names.handle_key(&up, 10), Outcome::Changed);
+        assert_eq!(names.chosen(), ["JetBrains Mono", "Iosevka"]);
+        assert_eq!(names.window().focus(), 0);
+        // And it stops at the end rather than wrapping round.
+        assert_eq!(names.handle_key(&up, 10), Outcome::Consumed);
+        assert_eq!(names.chosen(), ["JetBrains Mono", "Iosevka"]);
+    }
+
+    /// The focus never stands on the boundary or on the line that says
+    /// nothing is chosen.
+    ///
+    /// Deliberate break: taking the step-over out leaves a row where enter
+    /// does nothing, in the middle of a list where enter is the only key
+    /// that does anything.
+    #[test]
+    fn the_focus_steps_over_what_is_not_a_name() {
+        let empty = Names::new(Vec::new(), vec!["Iosevka".to_string()]);
+        // Nothing chosen: the first two rows say so and divide the page,
+        // so the focus starts on the offer below them.
+        assert!(empty.rows()[empty.window().focus()].stands());
+        let mut names = names();
+        for _ in 0..6 {
+            press(&mut names, KeyCode::Down);
+            assert!(
+                names.rows()[names.window().focus()].stands(),
+                "{:?}",
+                names.rows()[names.window().focus()]
+            );
+        }
+        for _ in 0..6 {
+            press(&mut names, KeyCode::Up);
+            assert!(names.rows()[names.window().focus()].stands());
+        }
+    }
+}

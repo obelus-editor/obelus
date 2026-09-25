@@ -59,6 +59,13 @@ pub struct Config {
     pub wrap: bool,
     /// How wide a tab is drawn, and how many spaces the tab key puts in.
     pub tab_width: usize,
+    /// The faces text is drawn in, tried in the order they are written.
+    ///
+    /// Empty means the machine's own monospaced face, whichever that is.
+    /// A name this machine does not have is stepped over rather than
+    /// refused: one settings file is read on every machine the reader
+    /// uses, and the fonts installed are not the same on two of them.
+    pub fonts: Vec<String>,
     /// How big the text is, in points, where Obelus draws its own.
     ///
     /// A window's setting and nothing to a terminal, whose font is the
@@ -161,6 +168,7 @@ impl Default for Config {
             // the rest of the program laid a tab out at before a reader
             // could say otherwise.
             tab_width: obelus_text::TAB_WIDTH,
+            fonts: Vec::new(),
             font_size: DEFAULT_FONT_SIZE,
             // Off: a formatter that ran without being asked would rewrite
             // a file somebody opened to read, and the first they would know
@@ -206,6 +214,12 @@ pub enum Value {
     /// a reader opening the file sees `tab_width = 4` rather than `"4"`, and
     /// what uses it wants a number rather than a parse.
     Count(usize),
+    /// An ordered list of names the reader built.
+    ///
+    /// Ordered because the order is the answer: these are the faces text is
+    /// tried in, first to last. A set would lose the only thing the reader
+    /// said.
+    Names(Vec<String>),
 }
 
 /// What sort of control a setting gets.
@@ -221,6 +235,14 @@ pub enum Kind {
     /// what a reader is doing either way -- and a spinner for a number with
     /// three sensible values is a control nobody needs.
     Count(&'static [&'static str]),
+    /// A list the reader builds by name, in the order they want it tried.
+    ///
+    /// No list of choices here, unlike the two above: what may go in comes
+    /// from the machine Obelus is running on rather than from anything
+    /// Obelus ships, and a setting written on one machine is read on
+    /// another. So the control offers what is here and takes what is
+    /// typed.
+    Names,
 }
 
 /// Where a setting means anything.
@@ -460,6 +482,15 @@ pub const ALL: &[Setting] = &[
         drawn: Drawn::Anywhere,
     },
     Setting {
+        key: "fonts",
+        name: "Fonts",
+        about: "The faces text is drawn in, tried in the order they are written",
+        group: Group::Appearance,
+        reach: Reach::Anywhere,
+        kind: Kind::Names,
+        drawn: Drawn::InAWindow,
+    },
+    Setting {
         key: "font_size",
         name: "Text size",
         about: "How big the text is in a window, in points",
@@ -538,6 +569,7 @@ impl Config {
             "wrap" => Some(Value::Switch(self.wrap)),
             "tab_width" => Some(Value::Count(self.tab_width)),
             "font_size" => Some(Value::Count(self.font_size)),
+            "fonts" => Some(Value::Names(self.fonts.clone())),
             "hover_delay" => Some(Value::Count(self.hover_delay)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
             "code_actions_on_save" => Some(Value::Switch(self.code_actions_on_save)),
@@ -561,6 +593,7 @@ impl Config {
             ("tab_width", Value::Count(width)) => self.tab_width = *width,
             ("hover_delay", Value::Count(delay)) => self.hover_delay = *delay,
             ("font_size", Value::Count(points)) => self.font_size = *points,
+            ("fonts", Value::Names(names)) => self.fonts = names.clone(),
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
             ("code_actions_on_save", Value::Switch(on)) => self.code_actions_on_save = *on,
             ("inlay_hints", Value::Switch(on)) => self.inlay_hints = *on,
@@ -818,6 +851,19 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     {
         config.font_size = usize::try_from(points).unwrap_or(DEFAULT_FONT_SIZE);
     }
+    if let Some(names) = table.get("fonts").and_then(toml::Value::as_array)
+        && allowed("fonts")
+    {
+        // Whatever of it is a name. A line somebody typed by hand with a
+        // number in the middle of it loses the number and keeps the rest,
+        // which is the same thing every other setting here does with a
+        // value of the wrong shape.
+        config.fonts = names
+            .iter()
+            .filter_map(|name| name.as_str().map(str::to_string))
+            .filter(|name| !name.trim().is_empty())
+            .collect();
+    }
     if let Some(on) = table.get("format_on_save").and_then(toml::Value::as_bool)
         && allowed("format_on_save")
     {
@@ -1002,6 +1048,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         toml_edit::value(i64::try_from(config.tab_width).unwrap_or(4)),
     );
     put(
+        "fonts",
+        config.fonts != default.fonts,
+        toml_edit::value(config.fonts.iter().collect::<toml_edit::Array>()),
+    );
+    put(
         "font_size",
         config.font_size != default.font_size,
         toml_edit::value(i64::try_from(config.font_size).unwrap_or(14)),
@@ -1129,6 +1180,9 @@ pub fn write_project(path: &Path, key: &str, value: Option<&Value>) -> std::io::
         Some(Value::Choice(word)) => document[key] = toml_edit::value(word.clone()),
         Some(Value::Count(count)) => {
             document[key] = toml_edit::value(i64::try_from(*count).unwrap_or(0));
+        }
+        Some(Value::Names(names)) => {
+            document[key] = toml_edit::value(names.iter().collect::<toml_edit::Array>());
         }
         None => {
             // What was written above the key goes with it, except for
@@ -1363,6 +1417,7 @@ mod tests {
             blame_margin: false,
             wrap: true,
             tab_width: 8,
+            fonts: vec!["JetBrains Mono".to_string(), "Noto Sans CJK SC".to_string()],
             font_size: 18,
             hover_delay: 800,
             format_on_save: true,
@@ -1469,6 +1524,16 @@ mod tests {
                         );
                     }
                 }
+                // Nothing to check against a list of choices: what may go
+                // in a list of names comes from the machine rather than
+                // from anything Obelus ships. What is checked is that it
+                // starts empty -- a default of Obelus's own would be a
+                // font name Obelus guessed at.
+                (super::Kind::Names, Value::Names(names)) => assert!(
+                    names.is_empty(),
+                    "{} defaults to {names:?}, which is a guess about somebody's machine",
+                    setting.key
+                ),
                 (kind, value) => {
                     panic!("{} is a {kind:?} holding a {value:?}", setting.key)
                 }

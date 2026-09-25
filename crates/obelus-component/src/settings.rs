@@ -80,6 +80,12 @@ pub enum SettingsOutcome {
     /// The list itself is the ordinary picker, opened by the application
     /// over this view. This one asks; it does not draw a list of its own.
     Choose(&'static str, &'static [&'static str], String),
+    /// Open the list of names this setting holds, for the reader to add to,
+    /// take from and put in order.
+    ///
+    /// Only the key: what is in the list is in the config, and what may go
+    /// in it comes from the machine rather than from anything here.
+    Names(&'static str),
     /// A command should be on this key from now on, or on none.
     ///
     /// Only ever a key nothing else is on: what is taken is said on the row
@@ -799,6 +805,7 @@ impl Settings {
                     .map(|first| (*first).to_string())
                     .unwrap_or_default(),
             ),
+            Kind::Names => Value::Names(Vec::new()),
             Kind::Count(counts) => Value::Count(
                 counts
                     .first()
@@ -1009,10 +1016,14 @@ impl Settings {
                             let word = match Self::value_of(setting, config) {
                                 Value::Choice(word) => word,
                                 Value::Count(count) => count.to_string(),
-                                Value::Switch(_) => String::new(),
+                                Value::Switch(_) | Value::Names(_) => String::new(),
                             };
                             SettingsOutcome::Choose(setting.key, choices, word)
                         }
+                        // A list the reader builds rather than one Obelus
+                        // offers, so what opens is not the short list of
+                        // choices but the thing that adds and orders.
+                        Kind::Names => SettingsOutcome::Names(setting.key),
                     },
                     None => SettingsOutcome::Consumed,
                 }

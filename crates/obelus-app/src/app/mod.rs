@@ -410,6 +410,19 @@ pub struct App {
     /// binary's own, and everything under it takes it as a string like any
     /// other fact about how Obelus was started.
     built: &'static str,
+    /// What this machine's faces are called, as whatever is drawing
+    /// Obelus reported them.
+    ///
+    /// Empty in a terminal, where the font is the terminal's own and there
+    /// is nothing to offer. What it is for is the list a setting's names
+    /// are built in, which offers what is here and takes what is typed.
+    fonts_here: Vec<String>,
+    /// A setting's list of names, while the reader is building one.
+    ///
+    /// Which setting it is goes with it: the list knows names and nothing
+    /// about what they are for, so what writes the answer down has to be
+    /// told where it goes.
+    names: Option<(&'static str, obelus_component::names::Names)>,
     /// Whether what is typed goes over what is under the cursor.
     ///
     /// Not a setting and not a preference: it is a mode, which is to say
@@ -745,6 +758,8 @@ impl App {
             waking: false,
             dragging: None,
             built: "",
+            fonts_here: Vec::new(),
+            names: None,
             replacing: false,
             drawing: None,
             prompt: None,
@@ -839,6 +854,12 @@ impl App {
             return;
         }
         self.should_quit = true;
+    }
+
+    /// The list of names being built, while one is open.
+    #[must_use]
+    pub fn names(&self) -> Option<&obelus_component::names::Names> {
+        self.names.as_ref().map(|(_, names)| names)
     }
 
     /// Whether what is typed goes over what is under the cursor.
@@ -1506,6 +1527,7 @@ impl App {
         layers::Layers::showing(|layer| match layer {
             layers::Layer::Counts => self.counts.is_some(),
             layers::Layer::Settings => self.settings.is_some(),
+            layers::Layer::Names => self.names.is_some(),
             layers::Layer::Picker => self.picker.is_some(),
             layers::Layer::Prompt => self.prompt.is_some(),
         })
@@ -1572,6 +1594,7 @@ impl App {
                     self.set_theme(&name, before);
                 }
             }
+            Layer::Names => self.names = None,
             Layer::Settings => self.settings = None,
             Layer::Counts => self.counts = None,
             Layer::Prompt => self.prompt = None,
@@ -1942,6 +1965,16 @@ impl App {
             // no handling of its own beyond waking the loop.
             Event::Resize => {}
             Event::Closed => self.request_quit(),
+            Event::Fonts(names) => {
+                tracing::info!(faces = names.len(), "the window says what it can draw with");
+                self.fonts_here = names;
+                // A list already open takes them now: the reader opened it
+                // before the window had finished asking, which is the
+                // ordinary case on a machine with a thousand fonts.
+                if let Some((_, names)) = self.names.as_mut() {
+                    names.offered(self.fonts_here.clone());
+                }
+            }
             Event::Watched(obelus_watch::Changed { path }) => {
                 // The settings, by either of their names: the watcher
                 // reports whichever path the change arrived on, and a
@@ -2243,6 +2276,7 @@ impl App {
         for layer in self.layers().nearest_first() {
             let taken = match layer {
                 Layer::Prompt => self.prompt_key(&key),
+                Layer::Names => self.names_key(&key),
                 Layer::Picker => self.picker_key(&key),
                 Layer::Settings => self.settings_key(&key),
                 Layer::Counts => self.counts_key(&key),
@@ -2538,6 +2572,12 @@ impl App {
             // The status row, which was asked before this.
             obelus_component::layers::Layer::Prompt => {}
             obelus_component::layers::Layer::Picker => self.press_in_picker(x, y),
+            // Nothing yet: what a press would have to land on is a row of
+            // two sections and a boundary between them, and a press that
+            // guessed wrong would add a font the reader did not point at.
+            // The keys do all of it, and a list nobody can click is not a
+            // list that lies about what it does.
+            obelus_component::layers::Layer::Names => {}
             obelus_component::layers::Layer::Counts => self.press_in_counts(x, y),
             obelus_component::layers::Layer::Settings => self.press_in_settings(x, y),
         }
@@ -3225,6 +3265,13 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// worked out while the frame is laid out and not kept anywhere else.
     /// The front end compares it with what it is already drawing.
     fn caret_is(&self, caret: Caret);
+
+    /// The text is drawn in these faces, tried in this order.
+    ///
+    /// A setting, like the size, and said the same way and at the same
+    /// moments. A name this machine does not have is the front end's to
+    /// step over: a settings file is read on more than one machine.
+    fn use_fonts(&self, names: &[String]);
 }
 
 /// Lays out, scrolls and draws one frame.
@@ -3459,6 +3506,9 @@ impl Screen for App {
     }
     fn replacing(&self) -> bool {
         App::replacing(self)
+    }
+    fn names(&self) -> Option<&obelus_component::names::Names> {
+        App::names(self)
     }
     fn built(&self) -> &str {
         self.built

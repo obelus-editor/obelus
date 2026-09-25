@@ -490,6 +490,14 @@ impl App {
                 }
                 return;
             }
+            // The query of the list a setting's names are built in, which
+            // is the box the reader is typing in while it is open.
+            Some(Layer::Names) => {
+                if let Some((_, names)) = self.names.as_mut() {
+                    names.put_in_query(what);
+                }
+                return;
+            }
             Some(Layer::Picker) => {
                 // A search's rows come from the query, so a query that
                 // changed by being pasted into has to be asked again -- the
