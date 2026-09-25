@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use obelus_app::{app, startup};
+use obelus_app::{app, event, startup};
 
 /// A terminal code reader. It doesn't want you to type.
 #[derive(Parser)]
@@ -80,7 +80,16 @@ fn main() -> Result<()> {
     let keyboard = enable_keyboard();
     app.use_images(images);
 
-    let outcome = app::run(&mut terminal, &mut app);
+    // The channel is made here, and the thread that fills it with what the
+    // terminal says is started here, because that thread is the terminal's
+    // half of the loop and this file is where the terminal lives. The loop
+    // itself is handed the far end and does not know which front end it is
+    // waiting on.
+    let (sender, events) = event::channel();
+    event::spawn_terminal_reader(sender.clone());
+    app.start(sender);
+
+    let outcome = app::run(&mut terminal, &mut app, events);
     startup::finish(&outcome);
 
     if mouse {

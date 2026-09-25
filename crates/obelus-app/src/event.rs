@@ -41,6 +41,14 @@ pub enum Event {
     Key(KeyEvent),
     /// The terminal was resized.
     Resize,
+    /// The reader asked to close what Obelus is drawn in.
+    ///
+    /// A terminal never says this: closing one kills the process, and there
+    /// is nothing to hear. A window's close button is the reader asking to
+    /// leave, which is what the key that leaves means -- so it goes the same
+    /// way, unwritten files and their question included, and the window
+    /// stays until the application says it is done.
+    Closed,
     /// The wheel turned, by this many rows. Negative is up the file.
     ///
     /// A wheel is not an arrow key: it moves the *view*, and the place the

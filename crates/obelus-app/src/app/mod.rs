@@ -98,7 +98,6 @@ use ratatui::{
 use semantics::{Asked, Question, named as server_named};
 
 use crate::{
-    event,
     event::{Event, Ticker},
     jump::{Jump, JumpList},
 };
@@ -1833,6 +1832,7 @@ impl App {
             // Redrawing is unconditional after every event, so a resize needs
             // no handling of its own beyond waking the loop.
             Event::Resize => {}
+            Event::Closed => self.request_quit(),
             Event::Watched(obelus_watch::Changed { path }) => {
                 // The settings, by either of their names: the watcher
                 // reports whichever path the change arrived on, and a
@@ -3176,9 +3176,9 @@ fn absolute(path: &Path) -> PathBuf {
 
 /// Runs until the application asks to quit or input ends.
 ///
-/// It blocks on the channel, and the terminal is read by a thread that
-/// sends into the same channel. Which way round that goes is the whole
-/// design, and it is not obvious from here, so: a loop has to block on
+/// It blocks on the channel, and input is read by a thread that sends into
+/// the same channel. Which way round that goes is the whole design, and it
+/// is not obvious from here, so: a loop has to block on
 /// exactly one thing or spin, and Obelus has two sides to wait on -- the
 /// terminal, and everything else. Everything else is fourteen of the
 /// nineteen [`Event`](crate::event::Event) variants, and every one of them
@@ -3201,17 +3201,25 @@ fn absolute(path: &Path) -> PathBuf {
 /// stdout is a pipe and a slow reader really does stall the write. Accepted
 /// for now — but nothing slow may go inside the draw closure, which is the
 /// mistake that actually happens.
-pub fn run<B>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()>
+///
+/// The receiving end is passed in, because the other end belongs to
+/// whatever is drawing Obelus: the terminal reads keys on a thread of its
+/// own, and a window gets them from the event loop it is obliged to run on
+/// its process's first thread. Both hold a `Sender`, and the loop here
+/// cannot tell which it is waiting on -- which is the whole point. So the
+/// front end makes the channel, starts its own input, and hands the
+/// application the sender with [`App::start`] before this is called.
+pub fn run<B>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+    events: std::sync::mpsc::Receiver<Event>,
+) -> Result<()>
 where
     B: Backend,
     // 0.30 made the backend's error an associated type; `anyhow` needs it to
     // be a real, sendable error before `?` will take it.
     B::Error: std::error::Error + Send + Sync + 'static,
 {
-    let (sender, events) = event::channel();
-    event::spawn_terminal_reader(sender.clone());
-    app.start(sender);
-
     while !app.should_quit() {
         // Timed, because a frame blocking the loop is the one performance
         // risk this design took knowingly: `draw` writes to stdout, and
@@ -3228,7 +3236,7 @@ where
         let Ok(event) = events.recv() else {
             // Every sender is gone, so no further event can arrive. Which
             // is not how Obelus is meant to end -- the reader asks -- so it
-            // says so: the keyboard's thread has died.
+            // says so: whatever was reading input has died.
             tracing::warn!("nothing is left to send events, so there is nothing to wait for");
             break;
         };
