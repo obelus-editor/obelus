@@ -163,8 +163,12 @@ impl Names {
             marks: Vec::new(),
         };
         names.settle();
-        // On something that can be pressed: with nothing chosen the first
-        // two rows are the line saying so and the boundary under it.
+        // On the first thing there is to add, not on the first thing they
+        // have: a list like this is opened to put something in it, and
+        // enter on one of their own names takes it out -- so opening with
+        // the focus there would make the first press of the one key that
+        // does anything undo their answer.
+        names.window.set_focus(names.taken());
         names.stand(true);
         names
     }
@@ -370,11 +374,13 @@ impl Names {
                 // just used.
                 self.query.clear();
                 self.settle();
-                // On the one they just added, which is the last of the
-                // chosen rows: the next thing a reader does is often move
-                // it up.
-                self.window.set_focus(self.taken().saturating_sub(1));
-                self.stand(false);
+                // Where they were, which is now the next thing to add: the
+                // name they took moved up across the boundary, so the row
+                // they are on holds the one after it. Every list a reader
+                // ticks through behaves this way, and the alternative --
+                // landing on what was just added -- makes enter twice mean
+                // add and then take back.
+                self.stand(true);
                 Outcome::Changed
             }
             Some(Row::Empty | Row::Boundary) | None => Outcome::Consumed,
@@ -557,9 +563,27 @@ mod tests {
         type_in(&mut names, "jet");
         assert_eq!(press(&mut names, KeyCode::Enter), Outcome::Changed);
         assert_eq!(names.chosen(), ["Iosevka", "JetBrains Mono"]);
-        // Standing on what was just added.
+        // Still among the offers, which is where adding leaves the reader:
+        // pressing it again adds the next one rather than taking back the
+        // one they just chose.
+        assert!(!names.rows()[names.window().focus()].chosen());
+        // Up to their own list, where the same key means the other thing.
+        press(&mut names, KeyCode::Up);
         assert_eq!(press(&mut names, KeyCode::Enter), Outcome::Changed);
         assert_eq!(names.chosen(), ["Iosevka"]);
+    }
+
+    /// The list opens on the first thing there is to add, not on the first
+    /// thing the reader already has.
+    ///
+    /// Deliberate break: leaving the focus at nought opens it on one of
+    /// their own names, where the one key that does anything takes that
+    /// name out -- which is the first press of it undoing their answer.
+    #[test]
+    fn it_opens_where_a_name_can_be_added() {
+        let names = names();
+        let on = &names.rows()[names.window().focus()];
+        assert!(matches!(on, Row::Offer { .. }), "{on:?}");
     }
 
     /// A name this machine does not have can still be added.
@@ -598,6 +622,9 @@ mod tests {
         type_in(&mut names, "jet");
         press(&mut names, KeyCode::Enter);
         assert_eq!(names.chosen(), ["Iosevka", "JetBrains Mono"]);
+        // Adding leaves the reader among the offers, and moving is about
+        // their own list: up to the name they just added.
+        press(&mut names, KeyCode::Up);
         let up = KeyEvent::new(KeyCode::Up, KeyModifiers::ALT);
         assert_eq!(names.handle_key(&up, 10), Outcome::Changed);
         assert_eq!(names.chosen(), ["JetBrains Mono", "Iosevka"]);

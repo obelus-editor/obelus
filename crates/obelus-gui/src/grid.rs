@@ -493,7 +493,18 @@ impl Page {
     /// places, and a grid reshaped around them would draw the old screen
     /// slewed. Obelus redraws the whole of it on the frame after a resize,
     /// which is the frame this is making room for.
+    ///
+    /// Only when the size really did change, which is the whole of what is
+    /// asked here. Measuring happens for reasons that are not a resize --
+    /// another font, another size of it -- and those leave the grid the
+    /// same shape: the application has nothing new to say, so it sends no
+    /// cells, and a page emptied on the way past is a window that goes
+    /// blank until the reader presses something. What it needs instead is
+    /// exactly what happens: the same cells, drawn again in the new face.
     pub(crate) fn resized(&mut self, columns: u16, rows: u16) {
+        if self.columns == columns && self.rows == rows {
+            return;
+        }
         self.columns = columns;
         self.rows = rows;
         self.cells.clear();
