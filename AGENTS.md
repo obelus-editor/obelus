@@ -337,6 +337,33 @@ switches the agent: that is a setting, and doing it from a row would drop
 the session of every conversation open, including the one the reader is
 standing in.
 
+**A row says what is true of the thing it is on, at both moments.** An
+agent's options come in the answer to `session/new` and nowhere else, so a
+conversation nothing has been said in has none of them -- and the row that
+draws them went blank the moment opening one stopped asking for a session.
+Blank is not "there is nothing to set"; it is "nobody has asked yet", on
+the one row a reader looks at to find out what they are about to run. So it
+says what the next turn *will* run on, out of the two things Obelus has
+without asking anybody: what the agent itself was on when a conversation
+was opened to read the list off, and what the reader has pinned over that.
+The same sentence at both moments -- what this conversation is set to --
+because before there is one, what it is set to is what it will start on.
+
+Only a conversation nobody has said anything in may say what the agent
+starts on. The list arrives as part of some conversation and the value that
+one is on is a fact about that conversation at that moment; written down
+from a conversation the reader has been changing, it would be read next
+week as what the agent opens on. `Ask::Offers` opens one to read the list
+off and lets it go again, and that one is the only caller of
+`options::remember_what_it_starts_on`.
+
+And the key on that row still works: it writes the answer down on the
+conversation (`Conversation::wanted_on`) and starts it, so the row moves at
+once rather than a second later, and the session is opened on what was
+asked for. Pressing there is the reader setting this conversation up, and a
+conversation is what that needs -- the same shape as `f11`, which starts the
+walk it was once gated on.
+
 **A conversation takes one prompt turn at a time, so what the reader says
 into a running one waits.** The protocol puts no turn on either end of the
 exchange: `session/cancel` names a session, and the answer to

@@ -7639,3 +7639,93 @@ fn an_obelus_that_is_killed_gives_its_conversation_back() {
         app.talked_about().first() == Some(&obelus_component::todo::Talked::Not)
     });
 }
+
+/// The conversation's row says what the next turn will run on, before there
+/// is a turn.
+///
+/// The protocol carries an agent's options in the answer to `session/new`
+/// and nowhere else, so a conversation nothing has been said in has none of
+/// them -- and opening one asks for nothing now, which left that row blank.
+/// Blank is not "there is nothing to set"; it is "nobody has asked yet",
+/// and the row is the one place a reader looks to find out what they are
+/// about to run.
+///
+/// What answers it without asking anybody: what the agent itself was on
+/// when Obelus opened a conversation to read the list off (beside its
+/// install), and what the reader has pinned over that. The row says the
+/// same thing at both moments -- what this conversation is set to -- and
+/// before there is one, that is what it will start on.
+///
+/// And the key still works. Pressing it writes the answer down and starts
+/// the conversation for it, so the row moves at once rather than a second
+/// later, and the session is opened on it when it lands.
+///
+/// Broken deliberately three ways: leaving `agent_settings` to answer with
+/// the session's alone puts the row back to blank; having
+/// `step_agent_mode` do nothing without a session makes the key look
+/// broken; and taking `wanted_on` out of
+/// `start_the_session_on_what_was_chosen` leaves the session on the agent's
+/// own value after the row had already said otherwise -- which is the
+/// worst of the three, because the screen and the agent disagree and only
+/// the screen is in front of the reader.
+#[test]
+fn the_row_says_what_the_next_turn_runs_on_before_there_is_one() {
+    let scratch = support::Scratch::new("agent-row-before-a-turn");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    // What Obelus learns by opening a conversation to read the list off and
+    // letting it go again, which is what choosing an agent does.
+    app.learn_what_the_agent_offers_for_test();
+    pump(&mut app, &events, "what it offers", |app| {
+        app.agent_offering()
+            .is_some_and(|offering| !offering.offers.is_empty())
+    });
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Idle,
+        "opening it asked for a session after all, so this proves nothing"
+    );
+    // Past whatever Obelus said on the row about starting the agent, which
+    // lasts until the next key like every other note.
+    support::press(&mut app, KeyCode::Right);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let row = rows(&dump).last().copied().unwrap_or_default().to_string();
+    assert!(
+        row.contains("ask first") && row.contains("shift+tab  mode"),
+        "the row says nothing about what this conversation will run on:\n{row}"
+    );
+
+    // And the key moves it, which is the reader setting this conversation
+    // up -- so the conversation starts.
+    support::press(&mut app, KeyCode::BackTab);
+    let row = rows(&support::render(&mut app, WIDTH, HEIGHT))
+        .last()
+        .copied()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        row.contains("write code"),
+        "the key that steps the mode did nothing:\n{row}"
+    );
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    pump(&mut app, &events, "the mode the reader asked for", |app| {
+        app.agent_mode()
+            .is_some_and(|mode| mode.current_name() == Some("write code"))
+    });
+}

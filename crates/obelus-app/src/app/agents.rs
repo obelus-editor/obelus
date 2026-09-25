@@ -88,6 +88,22 @@ pub(super) struct Agents {
     /// The agent's id is kept with it so that a copy left over from
     /// another agent is never handed out as this one's.
     pub offers: Option<(String, obelus_agent::options::Reading)>,
+    /// What the conversation on screen will open on, while it has not.
+    ///
+    /// The protocol carries an agent's options in the answer to
+    /// `session/new` and nowhere else, so a conversation nothing has been
+    /// said in has none of them -- and the row that draws them went blank,
+    /// which is not "there is nothing to set" but "nobody has asked yet".
+    /// This is that question answered from the two things Obelus has
+    /// without asking: what the agent last said it offers, beside its
+    /// install, and what the reader has pinned for it.
+    ///
+    /// Worked out once a frame rather than kept, because what goes into it
+    /// is already in memory and the reader can change any of the three
+    /// while looking at it. Empty while a conversation has a session of its
+    /// own, which is the ordinary case: then the row is the session's and
+    /// this would be a second answer to the same question.
+    pub before_a_session: Vec<obelus_agent::acp::Setting>,
 }
 
 impl App {

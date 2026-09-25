@@ -159,6 +159,12 @@ impl App {
     /// Asked once. What an agent offers is written down beside its
     /// install the first time it says, and an agent that has said is not
     /// asked again.
+    /// The same, for a test: choosing an agent is what does this, and a
+    /// test that drives `talk_to` has not been through the settings page.
+    pub fn learn_what_the_agent_offers_for_test(&mut self) {
+        self.learn_what_the_agent_offers();
+    }
+
     pub(super) fn learn_what_the_agent_offers(&mut self) {
         if matches!(
             self.agents.offers.as_ref().map(|(_, read)| read),
@@ -799,7 +805,12 @@ impl App {
     /// named apart because one key steps it.
     #[must_use]
     pub fn agent_mode(&self) -> Option<&acp::Setting> {
-        self.talker.as_ref()?.mode(self.session_now().as_ref())
+        // Through the settings rather than the talker, so that a
+        // conversation with no session finds the one it will open on --
+        // see [`App::agent_settings`].
+        self.agent_settings()
+            .iter()
+            .find(|setting| setting.category == acp::Category::Mode)
     }
 
     /// The commands it says it takes.
@@ -813,10 +824,52 @@ impl App {
     /// Moves to the agent's next way of working.
     pub(super) fn step_agent_mode(&mut self) {
         let session = self.session_now();
+        if session.is_none() {
+            // Worked out here rather than sent, for the reason above: the
+            // step is *this* row's next value, and which row that is
+            // Obelus knows without asking anybody.
+            let Some((setting, value)) = self.agent_mode().and_then(next_value) else {
+                return;
+            };
+            self.ask_this_conversation_for(&setting, &value);
+            return;
+        }
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
         talker.step_mode(session.as_ref());
+    }
+
+    /// Writes down what the reader asked a conversation for before it had a
+    /// session, and starts it.
+    ///
+    /// Two things and not one: the row draws what is written down, so it
+    /// answers the key at once; and the session is opened on it when it
+    /// arrives, which is what the reader actually asked for. Pressing here
+    /// is the reader setting this conversation up, and a conversation is
+    /// what that needs.
+    fn ask_this_conversation_for(&mut self, setting: &str, value: &str) {
+        let said = self
+            .agent_settings()
+            .iter()
+            .find(|known| known.id == setting)
+            .map(|known| (known.name.clone(), what_to_say(known, value)));
+        if let Some(talk) = self.conversation_mut() {
+            talk.wanted_on
+                .insert(setting.to_string(), value.to_string());
+            if let Some((name, told)) = said {
+                talk.chat.note(&format!("{name}: {told}"));
+            }
+        }
+        if self.talker.is_none() {
+            self.start_agent();
+        }
+        let note = match self.conversation().map(|talk| talk.topic.clone()) {
+            Some(Topic::Note(note)) => Some(note),
+            Some(Topic::Loose) | None => None,
+        };
+        let had = note.as_ref().and_then(|note| self.remembered_session(note));
+        self.ask_for_a_session(Whose::Whoever, had);
     }
 
     /// How full the agent's memory of this conversation is, once it has
@@ -829,9 +882,91 @@ impl App {
     /// The settings it lets the reader change.
     #[must_use]
     pub fn agent_settings(&self) -> &[acp::Setting] {
-        self.talker
+        let session = self.session_now();
+        let asked = self
+            .talker
             .as_ref()
-            .map_or(&[], |talker| talker.settings(self.session_now().as_ref()))
+            .map_or(&[] as &[acp::Setting], |talker| {
+                talker.settings(session.as_ref())
+            });
+        // What the conversation will open on, for one that has not. The row
+        // says the same thing at both moments -- what this conversation is
+        // set to -- and before there is one, what it is set to is what it
+        // will start on.
+        match asked.is_empty() {
+            true => &self.agents.before_a_session,
+            false => asked,
+        }
+    }
+
+    /// Works out what the conversation on screen will open on, for the row
+    /// that draws it before there is a session.
+    ///
+    /// Three things in order, each beating the one before: what the agent
+    /// itself was on when it last said what it offers, what the reader has
+    /// pinned for this agent, and what they have asked *this* conversation
+    /// for since they opened it. The last is what makes the key that
+    /// changes one look as though it worked: the session it is really
+    /// asking about is a second away.
+    ///
+    /// Nothing at all where the conversation has a session -- then the row
+    /// is the session's own -- or where the agent has never said what it
+    /// offers, which is a different thing from offering nothing and is why
+    /// [`obelus_agent::options::Reading`] has three answers.
+    pub(super) fn settle_what_the_next_turn_runs_on(&mut self) {
+        self.agents.before_a_session.clear();
+        let talk = self.conversation();
+        if talk.is_none_or(|talk| talk.session.is_some()) {
+            return;
+        }
+        let wanted = talk.map(|talk| talk.wanted_on.clone()).unwrap_or_default();
+        let Some(id) = self
+            .settled
+            .config
+            .agent
+            .clone()
+            .filter(|id| !id.is_empty())
+        else {
+            return;
+        };
+        let Some(obelus_agent::options::Reading::Offers(offers)) = self
+            .agents
+            .offers
+            .as_ref()
+            .filter(|(whose, _)| *whose == id)
+            .map(|(_, read)| read)
+        else {
+            return;
+        };
+        let chosen = self.config().agent_defaults(&id).clone();
+        self.agents.before_a_session = offers
+            .iter()
+            .filter_map(|offer| {
+                let current = wanted
+                    .get(&offer.id)
+                    .or_else(|| chosen.get(&offer.id))
+                    .or(offer.current.as_ref())?;
+                // A value nothing offers any more is a row with nothing to
+                // draw: the settings page is where that is said, in the
+                // colour of something that will not work.
+                if !offer.values.iter().any(|value| value.id == *current) {
+                    return None;
+                }
+                Some(acp::Setting {
+                    id: offer.id.clone(),
+                    name: offer.name.clone(),
+                    about: offer.about.clone(),
+                    values: offer.values.clone(),
+                    current: current.clone(),
+                    kind: offer.kind,
+                    category: offer.category,
+                    // Nothing goes out of this one: it is a picture of what
+                    // will be asked for, and what door it goes back through
+                    // is the session's business when there is one.
+                    legacy: false,
+                })
+            })
+            .collect();
     }
 
     /// One setting's values, as the ordinary compact list.
@@ -840,14 +975,19 @@ impl App {
     /// values are a list. A switch never comes here: it has two sides and
     /// is flipped where it stands.
     pub(super) fn open_agent_setting(&mut self, id: &str) {
-        let session = self.session_now();
+        // Through the settings rather than the talker, so that the list
+        // opens on a conversation that has no session yet: the values are
+        // the same values, and what choosing one does is the difference --
+        // see [`App::set_agent_setting`].
         let Some(setting) = self
-            .talker
-            .as_ref()
-            .and_then(|talker| talker.setting(session.as_ref(), id))
+            .agent_settings()
+            .iter()
+            .find(|setting| setting.id == id)
+            .cloned()
         else {
             return;
         };
+        let setting = &setting;
         let question = setting.name.clone();
         let current = setting.current_name().map(str::to_string);
         let items = setting
@@ -912,6 +1052,14 @@ impl App {
     /// Asks for one of them to be put on one of its values.
     pub(super) fn set_agent_setting(&mut self, setting: &str, value: &str) {
         let session = self.session_now();
+        // Before there is one, the answer is written down and the
+        // conversation is started for it: the reader asking what this one
+        // runs on is the reader using it, and the row says so at once
+        // rather than a second later when the session lands.
+        if session.is_none() {
+            self.ask_this_conversation_for(setting, value);
+            return;
+        }
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
@@ -953,7 +1101,20 @@ impl App {
     /// From either place it can be said: the settings of a conversation
     /// the reader is in, and the list that comes back from asking on a
     /// conversation of Obelus's own.
+    /// The same, from the conversation Obelus opened to read the list off
+    /// and let go again -- which is the one whose values mean anything
+    /// later, because nobody has said a word in it.
+    pub(super) fn write_down_what_the_agent_starts_on(&mut self, settings: &[acp::Setting]) {
+        self.write_the_offers(settings, true);
+    }
+
     pub(super) fn write_down_the_offers(&mut self, settings: &[acp::Setting]) {
+        self.write_the_offers(settings, false);
+    }
+
+    /// Writes the list down, saying whether it came from a conversation
+    /// nobody has touched.
+    fn write_the_offers(&mut self, settings: &[acp::Setting], fresh: bool) {
         let Some(root) = self.agents_root() else {
             return;
         };
@@ -964,7 +1125,11 @@ impl App {
         let Some(id) = self.talker.as_ref().map(|talker| talker.id().to_string()) else {
             return;
         };
-        if let Err(error) = obelus_agent::options::remember(&id, settings, &root) {
+        let written = match fresh {
+            true => obelus_agent::options::remember_what_it_starts_on(&id, settings, &root),
+            false => obelus_agent::options::remember(&id, settings, &root),
+        };
+        if let Err(error) = written {
             // A word in the log and nothing on screen: the reader asked
             // for a conversation, not for Obelus to keep notes, and the
             // page this would have fed says for itself when it has
@@ -999,7 +1164,18 @@ impl App {
             ),
             None => return,
         };
-        let chosen = self.config().agent_defaults(&agent).clone();
+        // What the reader has pinned for this agent, and over it what they
+        // asked *this* conversation for while it was opening -- which is
+        // the more recent of the two and about this one only.
+        let mut chosen = self.config().agent_defaults(&agent).clone();
+        let wanted = self
+            .conversation_at(|talk| talk.session.as_ref() == Some(session))
+            .and_then(|at| self.documents.get(at))
+            .and_then(Option::as_ref)
+            .and_then(Document::chat)
+            .map(|talk| talk.wanted_on.clone())
+            .unwrap_or_default();
+        chosen.extend(wanted);
         if chosen.is_empty() {
             return;
         }
@@ -2492,7 +2668,7 @@ impl App {
         // It names none, because by the time it arrives there is none.
         if let acp::Incoming::Offers(offers) = &incoming {
             let offers = offers.clone();
-            self.write_down_the_offers(&offers);
+            self.write_down_what_the_agent_starts_on(&offers);
             return;
         }
         // And again whenever the agent says what it offers, which is the
@@ -3140,6 +3316,25 @@ fn choices_of(values: &[acp::Value], chosen: &[String]) -> Vec<Choice> {
 ///
 /// Its name, or its id if the agent offered one it does not list -- which is
 /// still what the reader chose.
+/// The one after the one a setting is on, going round.
+///
+/// The same step `Talk::step_mode` takes on a session, worked out here for
+/// a conversation that has none: which value comes next is a question about
+/// the row, and the row is in front of the reader whether or not anybody
+/// has been asked about it.
+fn next_value(setting: &acp::Setting) -> Option<(String, String)> {
+    if setting.values.len() < 2 {
+        return None;
+    }
+    let at = setting
+        .values
+        .iter()
+        .position(|value| value.id == setting.current)
+        .unwrap_or(0);
+    let next = setting.values[(at + 1) % setting.values.len()].id.clone();
+    Some((setting.id.clone(), next))
+}
+
 fn what_to_say(setting: &acp::Setting, value: &str) -> String {
     setting
         .values

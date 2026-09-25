@@ -26,16 +26,18 @@ use std::path::Path;
 
 use serde_json::Value as Json;
 
-use crate::acp::{Kind, Setting, Value};
+use crate::acp::{Category, Kind, Setting, Value};
 
 /// What the file is called, inside the agent's own directory.
 pub const OPTIONS: &str = "options.json";
 
-/// One thing an agent says it can be set to, with no answer attached.
+/// One thing an agent says it can be set to.
 ///
-/// A [`Setting`] without `current`: the values it offers and what to call
-/// them, which is everything the settings page needs to let a reader say
-/// what a new conversation should start on.
+/// A [`Setting`] a conversation away: the values it offers, what to call
+/// them, and the one it was itself on when it said -- which between them
+/// are everything the settings page needs to let a reader say what a new
+/// conversation should start on, and everything the conversation's own row
+/// needs to say what the next turn will run on before there is a turn.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Offer {
     /// The agent's id for it, which is what a default names.
@@ -48,6 +50,37 @@ pub struct Offer {
     pub values: Vec<Value>,
     /// Which of the two shapes it is.
     pub kind: Kind,
+    /// Which value the agent itself was on when it said this.
+    ///
+    /// Not what the reader chose -- that is theirs and lives in their
+    /// settings file -- but what they get when they have chosen nothing,
+    /// which is the other half of "what will this conversation run on".
+    /// Without it that question could only be answered by opening a
+    /// conversation to ask, which is the thing opening a view no longer
+    /// does.
+    ///
+    /// Only ever from a conversation nobody has said anything in, which is
+    /// the whole of what makes it true: the list arrives as part of some
+    /// conversation, and the value that one is on is a fact about that
+    /// conversation at that moment. Kept from a conversation the reader has
+    /// been changing, it would be read next week as what the agent starts
+    /// on -- which is the mistake the file's shape was built to avoid, and
+    /// why [`Offer::of`] does not fill this in and
+    /// [`remember_what_it_starts_on`] is a door of its own.
+    ///
+    /// `None` for a file written before this was, for an agent Obelus has
+    /// only ever met through the reader's own conversations, and for one
+    /// that sent a value it does not offer: a name that is not in `values`
+    /// is a name nothing can be drawn from.
+    pub current: Option<String>,
+    /// What sort of thing it is about, as the agent itself says.
+    ///
+    /// Kept for the one question that cannot be answered without it: which
+    /// of these is the *mode*, which is the one a key steps and the one the
+    /// conversation's row draws first. Every category Obelus has not heard
+    /// of is `Other`, so a file written by a newer Obelus reads here as
+    /// silence rather than as a mistake.
+    pub category: Category,
 }
 
 impl Offer {
@@ -60,6 +93,26 @@ impl Offer {
             about: setting.about.clone(),
             values: setting.values.clone(),
             kind: setting.kind,
+            // Not from here: see [`Offer::current`].
+            current: None,
+            category: setting.category,
+        }
+    }
+
+    /// The same, from a conversation nobody has said anything in.
+    ///
+    /// Which is the one kind whose value means anything a week later: it is
+    /// what the agent itself opens on, and so what the next conversation
+    /// will run on where the reader has pinned nothing.
+    #[must_use]
+    pub fn of_a_fresh_one(setting: &Setting) -> Self {
+        Self {
+            current: setting
+                .values
+                .iter()
+                .any(|value| value.id == setting.current)
+                .then(|| setting.current.clone()),
+            ..Self::of(setting)
         }
     }
 
@@ -153,6 +206,14 @@ fn offer(entry: &Json) -> Option<Offer> {
             "switch" => Kind::Switch,
             _ => return None,
         },
+        current: text(entry, "current"),
+        category: match text(entry, "category").as_deref() {
+            Some("mode") => Category::Mode,
+            Some("model") => Category::Model,
+            Some("model_config") => Category::ModelConfig,
+            Some("thought_level") => Category::ThoughtLevel,
+            _ => Category::Other,
+        },
     })
 }
 
@@ -169,14 +230,52 @@ fn offer(entry: &Json) -> Option<Offer> {
 /// told from here, and a copy emptied by the second would be the settings
 /// page going blank on a reader who has set things on it.
 pub fn remember(id: &str, settings: &[Setting], root: &Path) -> Result<(), String> {
+    write_down(id, settings, root, Offer::of)
+}
+
+/// The same, from a conversation nobody has said anything in -- which also
+/// writes down what the agent itself opens on.
+///
+/// One caller, and it has to stay that way: the session `Ask::Offers` opens
+/// is made to read this list off and let go again, so nothing has touched
+/// it. Every other conversation's settings are that conversation's, and
+/// what one of those is on says nothing about what the next one starts on.
+pub fn remember_what_it_starts_on(
+    id: &str,
+    settings: &[Setting],
+    root: &Path,
+) -> Result<(), String> {
+    write_down(id, settings, root, Offer::of_a_fresh_one)
+}
+
+/// Writes the list, however the caller makes one of them.
+fn write_down(
+    id: &str,
+    settings: &[Setting],
+    root: &Path,
+    made: impl Fn(&Setting) -> Offer,
+) -> Result<(), String> {
     if settings.is_empty() {
         return Ok(());
     }
-    let offers: Vec<Offer> = settings.iter().map(Offer::of).collect();
-    if let Reading::Offers(already) = read(id, root)
-        && already == offers
-    {
-        return Ok(());
+    let mut offers: Vec<Offer> = settings.iter().map(made).collect();
+    if let Reading::Offers(already) = read(id, root) {
+        // What a fresh conversation said, carried over rather than dropped:
+        // this is the one thing in the file that did not come from the
+        // settings in hand, and a write from a conversation in use would
+        // otherwise take it away -- and then put it back the next time the
+        // reader chose an agent, which is a fact that comes and goes.
+        for offer in &mut offers {
+            if offer.current.is_none() {
+                offer.current = already
+                    .iter()
+                    .find(|had| had.id == offer.id)
+                    .and_then(|had| had.current.clone());
+            }
+        }
+        if already == offers {
+            return Ok(());
+        }
     }
     let Some(home) = crate::home(id, root) else {
         return Err(format!("{id} is not a name Obelus can keep a directory of"));
@@ -188,7 +287,7 @@ pub fn remember(id: &str, settings: &[Setting], root: &Path) -> Result<(), Strin
     // copy is repaired rather than kept for ever. What must not happen to
     // an unreadable one is being *read* as an agent that offers nothing,
     // which is why `read` has three answers and not two.
-    let document = serde_json::json!({
+    let mut document = serde_json::json!({
         "options": offers
             .iter()
             .map(|offer| serde_json::json!({
@@ -208,9 +307,27 @@ pub fn remember(id: &str, settings: &[Setting], root: &Path) -> Result<(), Strin
                     Kind::Select => "select",
                     Kind::Switch => "switch",
                 },
+                "category": match offer.category {
+                    Category::Mode => "mode",
+                    Category::Model => "model",
+                    Category::ModelConfig => "model_config",
+                    Category::ThoughtLevel => "thought_level",
+                    Category::Other => "other",
+                },
             }))
             .collect::<Vec<_>>(),
     });
+    // The one key that is left out where there is nothing to put in it. A
+    // `null` would read back the same, and it would also say in the file
+    // that Obelus had asked and been told nothing -- which is not what
+    // having never asked looks like.
+    if let Some(entries) = document.get_mut("options").and_then(Json::as_array_mut) {
+        for (entry, offer) in entries.iter_mut().zip(&offers) {
+            if let (Some(entry), Some(current)) = (entry.as_object_mut(), offer.current.as_ref()) {
+                entry.insert("current".to_string(), Json::String(current.clone()));
+            }
+        }
+    }
     std::fs::create_dir_all(&home).map_err(|error| format!("{home:?}: {error}"))?;
     // Beside it and renamed over it, because another Obelus may be reading
     // this file at this moment: a plain write truncates first, and a reader
@@ -224,7 +341,7 @@ pub fn remember(id: &str, settings: &[Setting], root: &Path) -> Result<(), Strin
 
 #[cfg(test)]
 mod tests {
-    use super::{Offer, Reading, read, remember};
+    use super::{Offer, Reading, read, remember, remember_what_it_starts_on};
     use crate::acp::{Kind, Setting, Value};
 
     /// A directory of this test's own.
@@ -258,6 +375,45 @@ mod tests {
             category: crate::acp::Category::Mode,
             legacy: false,
         }
+    }
+
+    /// What a conversation nobody has touched was on survives, and what a
+    /// conversation in use is on does not take it away.
+    ///
+    /// The two halves of the one field in this file that does not come from
+    /// the list in hand. It is what the agent itself opens on, which is
+    /// what the next conversation runs on where the reader has pinned
+    /// nothing -- and the only honest sample of it is the conversation
+    /// `Ask::Offers` opens to read the list off and lets go again.
+    ///
+    /// Broken deliberately two ways. Having `remember` use
+    /// `Offer::of_a_fresh_one` puts a conversation's own value in the file,
+    /// which is the mistake the shape of this file exists to prevent: the
+    /// second assertion reads back `accept-edits` as what the agent starts
+    /// on. Taking the carrying-over out of `write_down` loses it instead --
+    /// the first write said it and the second forgets it.
+    #[test]
+    fn what_a_fresh_conversation_was_on_is_what_the_agent_starts_on() {
+        let root = root("starts-on");
+        remember_what_it_starts_on("an-agent", &[setting("mode", "plan")], &root)
+            .expect("writing what it starts on");
+        let Reading::Offers(offers) = read("an-agent", &root) else {
+            panic!("the file did not read back");
+        };
+        assert_eq!(offers[0].current.as_deref(), Some("plan"));
+
+        // A conversation the reader has been changing says nothing about
+        // this, and must not be able to.
+        remember("an-agent", &[setting("mode", "accept-edits")], &root).expect("writing again");
+        let Reading::Offers(offers) = read("an-agent", &root) else {
+            panic!("the file did not read back");
+        };
+        assert_eq!(
+            offers[0].current.as_deref(),
+            Some("plan"),
+            "a conversation in use was taken for what the agent starts on"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// What an agent offers survives the file; which value it was on does
